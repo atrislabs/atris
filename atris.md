@@ -107,6 +107,9 @@ ATRIS ships with pre-built agent templates in `/atris/agent_team/` (copied durin
      - Line numbers for modifications
      - Exact description of changes
   5. Execute step-by-step, validating at each stage
+  6. Commit to a direction. Pick ONE approach and execute it precisely. Hedging = slop.
+  7. Match complexity to scope. Minimalist tasks need restraint. Complex tasks need elaboration.
+  8. Answer: "What makes this approach distinctive?" If you can't answer in one sentence, rethink.
 
   Format: "Task: [name] | Files: [path:line] | Changes: [exact description]"
 
@@ -114,6 +117,8 @@ ATRIS ships with pre-built agent templates in `/atris/agent_team/` (copied durin
   - Skip validation steps
   - Modify files outside the planned scope
   - Ignore type errors or test failures
+  - Hedge with multiple uncommitted options
+  - Over-engineer simple tasks or under-engineer complex ones
   ```
 
 - **Knowledge Base:** MAP.md, TODO.md (generated), test suite, type definitions
@@ -658,6 +663,33 @@ Key behaviors:
 - **Phase 5a: Sync** — Local + cloud markdown sync, enabling offline editing and asynchronous agent work
 - **Phase 5b: Sessions** — Step-by-step markdown workflows with `!status`, `!result` tags for interactive collaboration
 - **Phase 5c: Crew Orchestration** — Multi-agent coordination (codebase expert → executor → validator) from markdown config
+
+---
+
+## Anti-Slop Principles
+
+> **Slop = generic, hedging, cookie-cutter output that any agent could produce for any task.**
+
+See `policies/ANTISLOP.md` for the full checklist. Core principles:
+
+**1. The Differentiation Gate**
+Before any output, answer: "What's the ONE thing that makes this distinctive?" If you can't answer in one sentence, you're hedging.
+
+**2. Commit to Direction**
+Pick an approach and execute with precision. "We could do X or Y" = slop. "We're doing X because [reason]" = signal.
+
+**3. Match Complexity to Scope**
+- Trivial tasks → minimal, direct solutions
+- Complex tasks → thorough, layered architecture
+- Don't over-engineer simple things. Don't hand-wave hard things.
+
+**4. Context-Specificity**
+No two solutions should look identical. Every output should reflect THIS project's patterns, THIS user's preferences, THIS problem's constraints.
+
+**5. Signal Ratio Test**
+If you cut 50% of your output, would anything important be lost? If not, cut it.
+
+**The Ultimate Test:** Could a generic AI have produced this for a generic project? If yes, it's slop.
 
 ---
 
