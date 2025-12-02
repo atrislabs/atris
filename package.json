@@ -1,7 +1,7 @@
 {
   "name": "atris",
   "version": "2.0.6",
-  "description": "atrisDev - A new way to build and manage agents",
+  "description": "atrisDev (atris dev) - CLI for AI coding agents. Works with Claude Code, Cursor, Windsurf. Make any codebase AI-navigable.",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris.js"
@@ -22,11 +22,19 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "ai",
-    "agents",
-    "codebase",
-    "documentation",
-    "automation"
+    "atrisdev",
+    "atris-dev",
+    "atris",
+    "claude-code",
+    "cursor",
+    "windsurf",
+    "coding-agent",
+    "ai-coding-assistant",
+    "ai-workflow",
+    "developer-tools",
+    "cli",
+    "codebase-navigation",
+    "ai-agents"
   ],
   "author": "Keshav Rao (atrislabs)",
   "license": "MIT",
