@@ -6,13 +6,14 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 # atris-backend
 
-Prevents ai-generated backend from being over-engineered and over-abstracted.
+Part of the ATRIS policy system. Prevents ai-generated backend from being over-engineered.
 
-## When to Use
+## ATRIS Integration
 
-- Building APIs, services, database code
-- Reviewing backend code
-- User asks for architecture feedback
+This skill uses the ATRIS workflow:
+1. Check `atris/MAP.md` for existing patterns before building
+2. Reference `atris/policies/atris-backend.md` for full guidance
+3. After building, run `atris review` to validate against this policy
 
 ## Quick Reference
 
@@ -26,13 +27,25 @@ Prevents ai-generated backend from being over-engineered and over-abstracted.
 
 **API Design:** boring and consistent. same patterns everywhere.
 
-## Before Shipping
+## Before Shipping Checklist
 
+Run through `atris/policies/atris-backend.md` "before shipping" section:
 - can you explain this in one sentence?
 - are abstractions earning their keep?
 - do error messages help debugging?
 - anything "just in case" you could delete?
 
-## Full Policy
+## ATRIS Commands
 
-Read `atris/policies/atris-backend.md` for complete guidance.
+```bash
+atris            # load workspace context
+atris plan       # break down backend task
+atris do         # build with step-by-step validation
+atris review     # validate against this policy
+```
+
+## Learn More
+
+- Full policy: `atris/policies/atris-backend.md`
+- Navigation: `atris/MAP.md`
+- Workflow: `atris/PERSONA.md`

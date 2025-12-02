@@ -6,13 +6,14 @@ allowed-tools: Read, Write, Edit, Bash, Glob
 
 # atris-design
 
-Prevents ai-generated frontend from looking generic (inter fonts, purple gradients, no animation).
+Part of the ATRIS policy system. Prevents ai-generated frontend from looking generic.
 
-## When to Use
+## ATRIS Integration
 
-- Building any frontend (landing pages, dashboards, components)
-- Reviewing UI code
-- User asks for design feedback
+This skill uses the ATRIS workflow:
+1. Check `atris/MAP.md` for existing patterns before building
+2. Reference `atris/policies/atris-design.md` for full guidance
+3. After building, run `atris review` to validate against this policy
 
 ## Quick Reference
 
@@ -26,14 +27,26 @@ Prevents ai-generated frontend from looking generic (inter fonts, purple gradien
 
 **Backgrounds:** add depth. gradients, patterns, mesh effects. flat = boring.
 
-## Before Shipping
+## Before Shipping Checklist
 
+Run through `atris/policies/atris-design.md` "before shipping" section:
 - can you name the aesthetic in 2-3 words?
 - distinctive font, not default?
 - at least one intentional animation?
 - background has depth?
 - would a designer clock this as ai-generated?
 
-## Full Policy
+## ATRIS Commands
 
-Read `atris/policies/atris-design.md` for complete guidance.
+```bash
+atris            # load workspace context
+atris plan       # break down frontend task
+atris do         # build with step-by-step validation
+atris review     # validate against this policy
+```
+
+## Learn More
+
+- Full policy: `atris/policies/atris-design.md`
+- Navigation: `atris/MAP.md`
+- Workflow: `atris/PERSONA.md`
