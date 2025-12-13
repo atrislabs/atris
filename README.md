@@ -57,4 +57,4 @@ See [releases](https://github.com/atrislabs/atris.md/releases) for full changelo
 
 ---
 
-**License:** MIT | **Repo:** [github.com/atrislabs/atris.md](https://github.com/atrislabs/atris.md.git)
+**License:** MIT | **Repo:** [github.com/atrislabs/atris.md](https://github.com/atrislabs/atris.git)
