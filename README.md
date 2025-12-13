@@ -1,6 +1,6 @@
-# atrisDev
+# atris
 
-**atrisDev (atris dev)** is a CLI for building with AI coding agents. Works with Claude Code, Cursor, Windsurf, and any coding assistant. One command to make your codebase AI-navigable.
+**atris** is a self improving context layer for your agent. Works with coding agents like Claude Code and Cursor.
 
 ## For Coding Agents
 
