@@ -23,8 +23,10 @@ function syncAtris() {
 
   const filesToSync = [
     { source: 'atris.md', target: 'atris.md' },
+    { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
+    { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
     { source: 'atris/agent_team/navigator.md', target: 'agent_team/navigator.md' },
     { source: 'atris/agent_team/executor.md', target: 'agent_team/executor.md' },
     { source: 'atris/agent_team/validator.md', target: 'agent_team/validator.md' },

@@ -327,13 +327,12 @@ function initAtris() {
 ## Backlog
 
 - **T1:** Generate MAP.md — scan codebase, create navigation index with file:line refs
-- **T2:** First build — pick something from inbox or brainstorm ideas
 
 ---
 
 ## Notes
 
-**Bootstrap:** Just say "atris next" to start. The system will guide you.
+**Bootstrap:** Say "atris next" to start. After MAP.md is generated, system will brainstorm ideas for your first build.
 
 ---
 
