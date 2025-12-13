@@ -8,7 +8,10 @@
 
 **STOP. When you read this or hear "atris activate", do this immediately:**
 
-1. Read today's journal: `atris/logs/YYYY/YYYY-MM-DD.md` (use current date)
+1. Load context (ONE time, remember for session):
+   - `atris/logs/YYYY/YYYY-MM-DD.md` (today's journal)
+   - `atris/MAP.md` (navigation overview)
+   - `atris/agent_team/*.md` (all agent specs)
 
 2. Output this EXACT box:
 
@@ -42,11 +45,19 @@ Stage: PLAN → do → review   (capitalize current stage)
 
 1. Read today's journal
 
-2. Check state and act:
-   - **If In Progress has task** → show it
-   - **Else if Backlog has task** → show first one
-   - **Else if Inbox has items** → ask "Convert [item] to task?"
-   - **Else** → ask "Queue empty. What's next?"
+2. Check state and progress through stages:
+
+   **No task in progress?**
+   - If Backlog has task → move to In Progress, stage = PLAN
+   - Else if Inbox has items → ask "Convert [item] to task?"
+   - Else → go to BRAINSTORM
+
+   **Task in progress?** Progress to next stage:
+   - **PLAN** → Show ASCII plan, wait for approval → next stage = DO
+   - **DO** → Execute the work → next stage = REVIEW
+   - **REVIEW** → Run validator checks (test, verify, quality check)
+     - If passes → move to Completed, show DONE
+     - If fails → show issues, stay in DO
 
 3. Output this EXACT box:
 
@@ -54,21 +65,23 @@ Stage: PLAN → do → review   (capitalize current stage)
 ┌─────────────────────────────────────────────────────────────┐
 │ NEXT: [task name]                              [PLAN|DO|REVIEW]
 │                                                             │
-│ [1-2 sentences: what you'll do]                             │
+│ [1-2 sentences: what you'll do in this stage]               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-4. Wait for input. User says anything → execute → update journal → show:
+4. Wait for input. User says anything → execute current stage → update journal.
+
+5. After REVIEW passes, show:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ DONE: [task name]                                  [REVIEW] │
+│ DONE: [task name]                                   [✓ REVIEWED] │
 │                                                             │
-│ [1-2 sentences: what was done]                              │
+│ [1-2 sentences: what was done + review result]              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**DO NOT explain. DO NOT summarize. Output the box, wait for input.**
+**Every task goes through PLAN → DO → REVIEW. No shortcuts.**
 
 ---
 
@@ -81,6 +94,44 @@ plan → do → review
 - **PLAN** — ASCII visualization, get approval, NO code yet
 - **DO** — Execute step-by-step, update journal
 - **REVIEW** — Test, validate, clean up, delete completed tasks
+
+---
+
+## AGENTS
+
+| Command | Agent | Guardrail |
+|---------|-------|-----------|
+| `atris plan` | navigator | Plans only, NO code |
+| `atris do` | executor | Builds only, NO unplanned work |
+| `atris review` | validator | Checks only, NO new features |
+| `atris brainstorm` | brainstormer | Ideas only, NO code |
+
+`atris next` = auto-selects agent based on journal state
+
+Specs loaded at activate from `agent_team/*.md`
+
+---
+
+## BRAINSTORM
+
+**When queue empty (no backlog, no inbox):**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ BRAINSTORM                                           [PLAN] │
+├─────────────────────────────────────────────────────────────┤
+│ [1 sentence: what this project is]                          │
+│                                                             │
+│ Ideas:                                                      │
+│ 1. [suggestion based on MAP.md]                             │
+│ 2. [suggestion based on journal patterns]                   │
+│ 3. [suggestion based on product gaps]                       │
+├─────────────────────────────────────────────────────────────┤
+│ Pick one, remix, or "something else"                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**NO extra reads. Use loaded context. 3 ideas max.**
 
 ---
 
@@ -101,10 +152,11 @@ plan → do → review
 
 ```
 ## Completed ✅
-- **C1:** Description
+- **C1:** Description [✓ REVIEWED]
 
 ## In Progress 🔄
 - **T1:** Description
+  **Stage:** PLAN | DO | REVIEW
   **Claimed by:** [Name] at [Time]
 
 ## Backlog
