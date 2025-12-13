@@ -1,0 +1,12 @@
+{
+  "type": "nodejs",
+  "framework": "nodejs",
+  "hasCode": true,
+  "testCommand": "npm test",
+  "fileStructure": [
+    "lib/",
+    "docs/",
+    "test/"
+  ],
+  "conventions": {}
+}

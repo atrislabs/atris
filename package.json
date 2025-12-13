@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "description": "atrisDev (atris dev) - CLI for AI coding agents. Works with Claude Code, Cursor, Windsurf. Make any codebase AI-navigable.",
   "main": "bin/atris.js",
   "bin": {

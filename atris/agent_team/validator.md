@@ -2,6 +2,12 @@
 
 > **Role:** Validate execution, update docs, ensure quality | **Source:** build.md, MAP.md, code
 
+## Project Context
+
+**Project Type:** nodejs (nodejs)
+
+**Validation:** Run `npm test` to verify changes work correctly.
+
 ---
 
 ## Your Job

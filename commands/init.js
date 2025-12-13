@@ -277,18 +277,19 @@ function initAtris() {
     fs.writeFileSync(todoFile, `# TODO.md
 
 > Working task queue for this project. Target state = 0.
+> Note: Daily tasks live in \`atris/logs/YYYY/YYYY-MM-DD.md\`
 
 ---
 
 ## Backlog
 
-(Empty)
+(See today's journal)
 
 ---
 
 ## In Progress
 
-(Empty)
+(See today's journal)
 
 ---
 
@@ -299,6 +300,47 @@ function initAtris() {
 ---
 `);
     console.log('✓ Created TODO.md placeholder');
+  }
+
+  // Create logs directory and today's journal with bootstrap tasks
+  const logsDir = path.join(targetDir, 'logs');
+  const yearDir = path.join(logsDir, new Date().getFullYear().toString());
+  const today = new Date().toISOString().split('T')[0];
+  const journalFile = path.join(yearDir, `${today}.md`);
+
+  if (!fs.existsSync(yearDir)) {
+    fs.mkdirSync(yearDir, { recursive: true });
+    console.log(`✓ Created logs/${new Date().getFullYear()}/ folder`);
+  }
+
+  if (!fs.existsSync(journalFile)) {
+    fs.writeFileSync(journalFile, `# Log — ${today}
+
+## Completed ✅
+
+---
+
+## In Progress 🔄
+
+---
+
+## Backlog
+
+- **T1:** Generate MAP.md — scan codebase, create navigation index with file:line refs
+- **T2:** First build — pick something from inbox or brainstorm ideas
+
+---
+
+## Notes
+
+**Bootstrap:** Just say "atris next" to start. The system will guide you.
+
+---
+
+## Inbox
+
+`);
+    console.log(`✓ Created today's journal with bootstrap tasks`);
   }
 
   // Create features directory and README
