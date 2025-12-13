@@ -15,11 +15,14 @@
     "atris.md",
     "GETTING_STARTED.md",
     "PERSONA.md",
+    "atris/CLAUDE.md",
+    "atris/GEMINI.md",
     "atris/agent_team/",
+    "atris/features/_templates/",
     "atris/policies/"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [
     "atrisdev",

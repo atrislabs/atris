@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
+const { getLogPath, ensureLogDirectory, createLogFile, addInboxIdea } = require('../lib/file-ops');
 
 function logAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -41,8 +41,7 @@ function logAtris() {
     }
 
     if (input) {
-      const entry = `- ${input}\n`;
-      fs.appendFileSync(logFile, entry);
+      addInboxIdea(logFile, input);
     }
 
     rl.prompt();

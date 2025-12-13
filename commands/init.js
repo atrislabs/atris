@@ -274,14 +274,30 @@ function initAtris() {
   }
 
   if (!fs.existsSync(todoFile)) {
-    fs.writeFileSync(
-      todoFile,
-      '# TODO.md\n\n' +
-      '> Working TODO list for this project.\n' +
-      '> Use this file as the current working context (tasks, links to features, etc.).\n' +
-      '\n' +
-      'Your AI agent can auto-populate this file after reading atris.md.\n'
-    );
+    fs.writeFileSync(todoFile, `# TODO.md
+
+> Working task queue for this project. Target state = 0.
+
+---
+
+## Backlog
+
+(Empty)
+
+---
+
+## In Progress
+
+(Empty)
+
+---
+
+## Completed
+
+(Validator deletes after verification)
+
+---
+`);
     console.log('✓ Created TODO.md placeholder');
   }
 
@@ -296,22 +312,42 @@ function initAtris() {
     console.log('✓ Created features/ directory with README');
   }
 
-  // Create _templates/validate.md.template if not exists
+  // Create feature templates (idea/build/validate)
   if (!fs.existsSync(templatesDir)) {
     fs.mkdirSync(templatesDir, { recursive: true });
   }
-  const validateTemplateSource = path.join(__dirname, '..', 'atris', 'features', '_templates', 'validate.md.template');
-  const validateTemplateTarget = path.join(templatesDir, 'validate.md.template');
-  
-  if (fs.existsSync(validateTemplateSource)) {
-    fs.copyFileSync(validateTemplateSource, validateTemplateTarget);
-    console.log('✓ Created features/_templates/validate.md.template');
-  } else {
-    // Fallback if source not found (for safety)
-    const fallbackContent = `# Validation — [Feature Name]\n\n> **Role:** System Validation Script\n> **Executor:** Validator Agent\n> **Instructions:** Run these steps sequentially. If ANY step fails, the feature is broken.\n\n---\n\n## 1. Environment Check\n- [ ] **Pre-flight:**\n  - Command: \`npm run type-check\` (or relevant)\n  - Expect: No errors\n\n## 2. Simulation Steps (The "Real" Test)\n\n### Step 1: [Name]\n- **Action:** [Exact command]\n- **Expect:** [Exact output regex]\n\n---\n\n**Status:** [Pending | Verified]\n`;
-    fs.writeFileSync(validateTemplateTarget, fallbackContent);
-    console.log('✓ Created features/_templates/validate.md.template (fallback)');
-  }
+
+  const templateSpecs = [
+    {
+      name: 'idea.md.template',
+      fallback: `# [Feature Name]\n\n> **Status:** planning | in-progress | complete\n> **Created:** YYYY-MM-DD\n> **Last Updated:** YYYY-MM-DD\n\n---\n\n## Problem Statement\n\n(2-3 sentences)\n\n---\n\n## Solution Design\n\n(3-4 sentences)\n\n---\n\n## ASCII Visualization\n\n\`\`\`\n[diagram]\n\`\`\`\n\n---\n\n## Success Criteria\n\n- [ ] Criterion 1\n- [ ] Criterion 2\n`,
+    },
+    {
+      name: 'build.md.template',
+      fallback: `# [Feature Name] — Build Plan\n\n> **For Executor Agent** — Follow these steps exactly.\n\n---\n\n## Overview\n\n(1-2 sentences)\n\n---\n\n## Files Touched\n\n**Created:**\n- \`path/to/new/file\` — Why\n\n**Modified:**\n- \`path/to/existing/file\` — What changes\n\n---\n\n## Build Steps\n\n### Step 1: [Action]\n\n**File:** \`path/to/file\`\n\n**What to do:**\n- Specific instruction\n\n**Validation:**\n- How to verify\n`,
+    },
+    {
+      name: 'validate.md.template',
+      fallback: `# Validation — [Feature Name]\n\n> **Role:** System Validation Script\n> **Executor:** Validator Agent\n> **Instructions:** Run these steps sequentially. If ANY step fails, the feature is broken.\n\n---\n\n## 1. Environment Check\n- [ ] **Pre-flight:**\n  - Command: \`npm test\` (or relevant)\n  - Expect: No errors\n\n## 2. Simulation Steps (The \"Real\" Test)\n\n### Step 1: [Name]\n- **Action:** [Exact command]\n- **Expect:** [Exact output regex]\n\n---\n\n**Status:** [Pending | Verified]\n`,
+    },
+  ];
+
+  templateSpecs.forEach(({ name, fallback }) => {
+    const target = path.join(templatesDir, name);
+    if (fs.existsSync(target)) {
+      return;
+    }
+
+    const source = path.join(__dirname, '..', 'atris', 'features', '_templates', name);
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, target);
+      console.log(`✓ Created features/_templates/${name}`);
+      return;
+    }
+
+    fs.writeFileSync(target, fallback);
+    console.log(`✓ Created features/_templates/${name} (fallback)`);
+  });
 
 
   const navigatorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'navigator.md');
@@ -483,23 +519,7 @@ Key behaviors:
   if (fs.existsSync(sourceFile)) {
     fs.copyFileSync(sourceFile, targetFile);
     console.log('✓ Copied atris.md to atris/ folder');
-    console.log('\n✨ ATRIS initialized! Full structure created:');
-    console.log('   atris/');
-    console.log('   ├── GETTING_STARTED.md (read this first!)');
-    console.log('   ├── PERSONA.md (agent personality)');
-    console.log('   ├── atris.md (AI agent instructions)');
-    console.log('   ├── MAP.md (placeholder)');
-    console.log('   ├── TODO.md (placeholder)');
-    console.log('   └── agent_team/');
-    console.log('       ├── brainstormer.md (vision shaper)');
-    console.log('       ├── navigator.md (planner)');
-    console.log('       ├── executor.md (builder)');
-    console.log('       ├── validator.md (reviewer)');
-    console.log('       └── launcher.md (closer)');
-    console.log('\nNext steps:');
-    console.log('1. Read atris/GETTING_STARTED.md for the full guide');
-    console.log('2. Open atris/atris.md and paste it to your AI agent');
-    console.log('3. Your agent will populate all placeholder files in ~10 mins');
+    console.log('\n✓ ATRIS initialized.');
   } else {
     console.error('✗ Error: atris.md not found in package');
     process.exit(1);

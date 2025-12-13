@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working on the 
 
 ## What ATRIS Is
 
-ATRIS is a Node.js CLI package (v2.0.0) that transforms codebases into AI-navigable workspaces. Instead of "where is the auth logic?" you get exact file:line answers in seconds.
+ATRIS is a Node.js CLI package (see `package.json` for version) that transforms codebases into AI-navigable workspaces. Instead of "where is the auth logic?" you get exact file:line answers in seconds.
 
 **The system works like this:**
 - Users run `atris init` → creates `atris/` folder with templates
@@ -39,15 +39,9 @@ ATRIS is a Node.js CLI package (v2.0.0) that transforms codebases into AI-naviga
 
 ### Core Files You'll Touch
 
-**bin/atris.js** (3,314 lines) — The entire CLI lives here. All commands route through this file:
-- `initAtris()` — Creates atris/ folder structure in user projects
-- `logAtris()` — Interactive session to append daily notes
-- `visualizeAtris()` — Shows ideas as 3-4 sentences + ASCII before planning
-- `brainstormAtris()` — Generates conversation starters for Claude Code
-- `planAtris()`, `doAtris()`, `reviewAtris()` — Activate navigator/executor/validator agents
-- `statusAtris()` — Shows unclaimed tasks, in-progress work, inbox, recent completions
-- `analyticsAtris()` — Parses journal markdown to show productivity metrics
-- Auth functions — `loginAtris()`, `logoutAtris()`, token refresh, credential storage
+**bin/atris.js** — CLI entrypoint + routing + natural-language entry.
+- Most command implementations live in `commands/` (`init`, `sync`/`update`, `activate`, `log`, `status`, `analytics`, `workflow`).
+- Some interactive cloud flows still live in `bin/atris.js` (`agent`, `chat`).
 
 **atris.md** (master spec in root) — The blueprint. Copied to user projects as `atris/atris.md`. Defines:
 - Phase 1: MAP.md generation rules
@@ -364,8 +358,8 @@ These are anti-patterns. Don't do them:
 - **atris/GETTING_STARTED.md** — User onboarding guide
 - **atris/MAP.md** — Navigation guide with file:line references
 - **atris/agent_team/*.md** — Agent specs (navigator, executor, validator)
-- **package.json** — Version (2.0.0), bin config, no external dependencies
-- **bin/atris.js** — Complete CLI (all commands, 3,314 lines)
+- **package.json** — Package metadata, version, bin config
+- **bin/atris.js** — CLI entrypoint and router
 
 ---
 

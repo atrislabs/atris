@@ -1,0 +1,38 @@
+# Validation — [Feature Name]
+
+> **Role:** System Validation Script
+> **Executor:** Validator Agent
+> **Rule:** If ANY step fails, the feature is broken.
+
+---
+
+## 1. Environment Check
+
+- [ ] **Pre-flight**
+  - Command: `npm test` (or relevant)
+  - Expect: No errors
+
+---
+
+## 2. Simulation Steps (The "Real" Test)
+
+### Step 1: [Happy Path]
+
+- **Action:** [Exact command / click path]
+- **Expect:** [Exact output / UI state]
+
+### Step 2: [Edge Case]
+
+- **Action:** [Exact command / input]
+- **Expect:** [Exact error handling]
+
+---
+
+## 3. Regression Check
+
+- [ ] Verify no related flows broke (list the 1-3 most likely).
+
+---
+
+**Status:** Pending | Verified
+

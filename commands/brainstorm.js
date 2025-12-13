@@ -8,6 +8,7 @@ const { apiRequestJson } = require('../utils/api');
 const { planAtris, doAtris, reviewAtris } = require('./workflow');
 
 async function brainstormAtris() {
+  const args = process.argv.slice(3);
   const targetDir = path.join(process.cwd(), 'atris');
   if (!fs.existsSync(targetDir)) {
     throw new Error('atris/ folder not found. Run "atris init" first.');
@@ -19,6 +20,24 @@ async function brainstormAtris() {
     createLogFile(logFile, dateFormatted);
   }
 
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('');
+    console.log('Usage: atris brainstorm [idea] [--cloud]');
+    console.log('');
+    console.log('Description:');
+    console.log('  Guided prompt generator for exploration before planning.');
+    console.log('  Default is local-first; pass --cloud to include AtrisOS journal context.');
+    console.log('');
+    console.log('Options:');
+    console.log('  --cloud      Include AtrisOS journal context (optional).');
+    console.log('  --no-cloud   Force local-only mode (skip AtrisOS).');
+    console.log('');
+    return;
+  }
+
+  const useCloudJournal = args.includes('--cloud') && !args.includes('--no-cloud');
+  const topicFromArgs = args.filter((arg) => !arg.startsWith('-')).join(' ').trim() || null;
+
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ ATRIS Brainstorm — structured prompt generator              │');
@@ -28,12 +47,18 @@ async function brainstormAtris() {
   console.log('Type "exit" at any prompt to cancel.');
   console.log('');
 
-  // Try to fetch latest journal entry from backend (optional)
-  let journalContext = '';
+  // Local journal context (source of truth for Inbox)
+  let localJournalContext = '';
+  if (fs.existsSync(logFile)) {
+    localJournalContext = fs.readFileSync(logFile, 'utf8');
+  }
+
+  // Optional: fetch journal context from backend (for hints only)
+  let remoteJournalContext = '';
   const config = loadConfig();
   const credentials = loadCredentials();
   
-  if (config.agent_id && credentials && credentials.token) {
+  if (useCloudJournal && config.agent_id && credentials && credentials.token) {
     try {
       console.log('📖 Fetching latest journal entry from AtrisOS...');
       const journalResult = await apiRequestJson(`/agents/${config.agent_id}/journal/today`, {
@@ -42,7 +67,7 @@ async function brainstormAtris() {
       });
       
       if (journalResult.ok && journalResult.data?.content) {
-        journalContext = journalResult.data.content;
+        remoteJournalContext = journalResult.data.content;
         console.log('✓ Loaded journal entry from backend');
       } else {
         // Try fetching latest entry if today doesn't exist
@@ -52,7 +77,7 @@ async function brainstormAtris() {
         });
         
         if (listResult.ok && listResult.data?.entries?.length > 0) {
-          journalContext = listResult.data.entries[0].content || '';
+          remoteJournalContext = listResult.data.entries[0].content || '';
           console.log('✓ Loaded latest journal entry from backend');
         }
       }
@@ -63,12 +88,8 @@ async function brainstormAtris() {
     console.log('');
   }
 
-  // Fallback to local log file if no backend context
-  if (!journalContext) {
-    if (fs.existsSync(logFile)) {
-      journalContext = fs.readFileSync(logFile, 'utf8');
-    }
-  }
+  // Keep prompts high-signal: only include "recent context" when explicitly pulled from cloud.
+  const journalHintSource = remoteJournalContext;
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -124,10 +145,19 @@ async function brainstormAtris() {
   let topicSummary = '';
 
   try {
-    const initialContent = journalContext || (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
-    let inboxItems = parseInboxItems(initialContent);
+    let inboxItems = parseInboxItems(localJournalContext || '');
 
-    if (inboxItems.length > 0) {
+    if (topicFromArgs) {
+      topicSummary = topicFromArgs;
+      const newId = addInboxIdea(logFile, topicSummary);
+      console.log(`✓ Added I${newId} to today\'s Inbox.`);
+      selectedInboxItem = { id: newId, text: topicSummary };
+      inboxItems = parseInboxItems(fs.readFileSync(logFile, 'utf8'));
+    }
+
+    if (topicFromArgs) {
+      // Topic provided via CLI args — treat as a new brainstorm and skip source selection.
+    } else if (inboxItems.length > 0) {
       console.log('Choose a brainstorm source:');
       console.log('  1. Select an item from today\'s Inbox');
       console.log('  2. Enter a new idea');
@@ -204,9 +234,9 @@ async function brainstormAtris() {
     
     // Extract key snippets from journal if available (very brief)
     let journalHint = '';
-    if (journalContext && journalContext.trim()) {
+    if (journalHintSource && journalHintSource.trim()) {
       const maxHint = 200;
-      const lines = journalContext.split('\n').slice(0, 5).join(' ').trim();
+      const lines = journalHintSource.split('\n').slice(0, 5).join(' ').trim();
       if (lines.length > maxHint) {
         journalHint = lines.substring(0, maxHint) + '...';
       } else {
