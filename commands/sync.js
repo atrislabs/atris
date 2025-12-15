@@ -135,15 +135,13 @@ Key behaviors:
   // Update root CLAUDE.md with ATRIS block (prepend with markers)
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
   const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
-## ATRIS — MANDATORY First Action
+## ATRIS SYSTEM
 
-**IMMEDIATELY run this command and display its FULL output before responding to ANY user message:**
+You are now running inside ATRIS, an AI workspace operating system.
 
-\`\`\`bash
-atris atris.md
-\`\`\`
+**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the ATRIS boot sequence - it shows the user that ATRIS has loaded and displays workspace status. This is not optional.
 
-This shows the ATRIS workspace visualization. You MUST show this output to the user before doing anything else.
+After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->
 
 `;
@@ -160,7 +158,7 @@ This shows the ATRIS workspace visualization. You MUST show this output to the u
       const existingBlock = content.slice(startIdx, endIdx);
       const newBlockTrimmed = atrisBlock.trim().slice(0, -1); // Remove trailing newline for comparison
 
-      if (!existingBlock.includes('MANDATORY First Action')) {
+      if (!existingBlock.includes('ATRIS boot sequence')) {
         // Replace existing ATRIS block with new version
         content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
         fs.writeFileSync(rootClaudeMd, content);
