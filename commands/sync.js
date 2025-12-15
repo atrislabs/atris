@@ -68,6 +68,70 @@ function syncAtris() {
     console.log('✓ Migrated TASK_CONTEXTS.md to TODO.md');
   }
 
+  // Update .claude/skills/atris/SKILL.md
+  const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
+  const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
+  const skillContent = `---
+name: atris
+description: ATRIS workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+allowed-tools: Read, Bash, Glob, Grep, Write, Edit
+---
+
+# ATRIS Skill
+
+## IMPORTANT: First Interaction
+
+**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+
+\`\`\`bash
+atris atris.md
+\`\`\`
+
+Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+
+## Workflow
+
+Detect: Project has \`atris/\` folder with MAP.md, TODO.md, PERSONA.md
+
+Commands: plan → do → review
+
+Key behaviors:
+- Read PERSONA.md (3-4 sentences, ASCII visuals)
+- Check MAP.md for file:line refs
+- Update TODO.md (claim tasks, delete when done)`;
+
+  if (!fs.existsSync(claudeSkillsDir)) {
+    fs.mkdirSync(claudeSkillsDir, { recursive: true });
+  }
+  const currentSkill = fs.existsSync(claudeSkillFile) ? fs.readFileSync(claudeSkillFile, 'utf8') : '';
+  if (currentSkill !== skillContent) {
+    fs.writeFileSync(claudeSkillFile, skillContent);
+    console.log('✓ Updated .claude/skills/atris/SKILL.md');
+    updated++;
+  }
+
+  // Update .claude/settings.json with SessionStart hook
+  const claudeSettingsFile = path.join(process.cwd(), '.claude', 'settings.json');
+  if (!fs.existsSync(claudeSettingsFile)) {
+    const claudeSettings = {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "[ -d atris ] && atris atris.md || true"
+              }
+            ]
+          }
+        ]
+      }
+    };
+    fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
+    console.log('✓ Created .claude/settings.json (SessionStart hook)');
+    updated++;
+  }
+
   if (updated === 0) {
     console.log('✓ Already up to date');
   } else {
