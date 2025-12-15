@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atris</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --border: #2a2a2a;
+      --text-primary: #fafafa;
+      --text-secondary: #a0a0a0;
+      --text-muted: #606060;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #eab308;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      -webkit-app-region: drag;
+    }
+
+    /* Titlebar */
+    .titlebar {
+      height: 52px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      padding-left: 80px; /* Space for traffic lights */
+    }
+
+    .logo {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    .logo span {
+      color: var(--text-primary);
+    }
+
+    /* Main layout */
+    .container {
+      display: flex;
+      height: calc(100vh - 52px);
+      -webkit-app-region: no-drag;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .nav-section {
+      margin-bottom: 24px;
+    }
+
+    .nav-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .nav-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .nav-btn.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .nav-btn .icon {
+      width: 18px;
+      height: 18px;
+      opacity: 0.7;
+    }
+
+    .nav-btn.active .icon {
+      opacity: 1;
+    }
+
+    /* Stage indicator */
+    .stage-indicator {
+      margin-top: auto;
+      padding: 16px;
+      background: var(--bg-tertiary);
+      border-radius: 12px;
+    }
+
+    .stage-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .stage-flow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .stage {
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: var(--text-muted);
+    }
+
+    .stage.active {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+
+    .stage-arrow {
+      color: var(--text-muted);
+    }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    /* Output area */
+    .output-container {
+      flex: 1;
+      overflow: auto;
+      padding: 24px 32px;
+    }
+
+    .output {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--text-secondary);
+    }
+
+    .output.has-content {
+      color: var(--text-primary);
+    }
+
+    /* Action bar */
+    .action-bar {
+      padding: 16px 32px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+      display: flex;
+      gap: 12px;
+    }
+
+    .action-btn {
+      padding: 10px 20px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-primary);
+      border-color: var(--text-muted);
+    }
+
+    .action-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .action-btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+    }
+
+    .status-badge.running {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent);
+    }
+
+    .status-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-badge.running .dot {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <div class="logo"><span>Atris</span> Desktop</div>
+  </div>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="nav-section">
+        <div class="nav-label">Workspace</div>
+        <button class="nav-btn active" data-view="dashboard" onclick="switchView('dashboard')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          Dashboard
+        </button>
+        <button class="nav-btn" data-view="journal" onclick="switchView('journal')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          Journal
+        </button>
+        <button class="nav-btn" data-view="map" onclick="switchView('map')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+            <line x1="8" y1="2" x2="8" y2="18"/>
+            <line x1="16" y1="6" x2="16" y2="22"/>
+          </svg>
+          Map
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Actions</div>
+        <button class="nav-btn" onclick="runCommand('plan')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+          Plan
+        </button>
+        <button class="nav-btn" onclick="runCommand('do')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Execute
+        </button>
+        <button class="nav-btn" onclick="runCommand('review')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 11 12 14 22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Review
+        </button>
+      </div>
+
+      <div class="stage-indicator">
+        <div class="stage-label">Current Stage</div>
+        <div class="stage-flow">
+          <span class="stage active" id="stage-plan">PLAN</span>
+          <span class="stage-arrow">→</span>
+          <span class="stage" id="stage-do">DO</span>
+          <span class="stage-arrow">→</span>
+          <span class="stage" id="stage-review">REVIEW</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h1 id="view-title">Dashboard</h1>
+            <p id="view-subtitle">Workspace overview</p>
+          </div>
+          <div class="status-badge" id="status-badge">
+            <span class="dot"></span>
+            <span id="status-text">Ready</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="output-container">
+        <pre class="output" id="output">Loading workspace...</pre>
+      </div>
+
+      <div class="action-bar">
+        <button class="action-btn" onclick="runCommand('status')">Refresh Status</button>
+        <button class="action-btn" onclick="runCommand('log')">View Log</button>
+        <button class="action-btn primary" onclick="runCommand('next')">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const output = document.getElementById('output');
+    const statusBadge = document.getElementById('status-badge');
+    const statusText = document.getElementById('status-text');
+    const viewTitle = document.getElementById('view-title');
+    const viewSubtitle = document.getElementById('view-subtitle');
+
+    let isRunning = false;
+
+    // View configurations
+    const views = {
+      dashboard: { title: 'Dashboard', subtitle: 'Workspace overview', command: 'status' },
+      journal: { title: 'Journal', subtitle: "Today's log", command: 'log' },
+      map: { title: 'Map', subtitle: 'Codebase navigation', command: null }
+    };
+
+    function switchView(view) {
+      // Update active nav button
+      document.querySelectorAll('.nav-btn[data-view]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === view);
+      });
+
+      // Update header
+      viewTitle.textContent = views[view].title;
+      viewSubtitle.textContent = views[view].subtitle;
+
+      // Run associated command
+      if (views[view].command) {
+        runCommand(views[view].command);
+      }
+    }
+
+    async function runCommand(cmd) {
+      if (isRunning) return;
+
+      isRunning = true;
+      output.textContent = '';
+      output.classList.remove('has-content');
+
+      statusBadge.classList.add('running');
+      statusText.textContent = `Running ${cmd}...`;
+
+      try {
+        const result = await window.atris.run(cmd);
+        output.textContent = result.stdout || result.stderr || 'Done.';
+        output.classList.add('has-content');
+      } catch (err) {
+        output.textContent = `Error: ${err.message}`;
+      } finally {
+        isRunning = false;
+        statusBadge.classList.remove('running');
+        statusText.textContent = 'Ready';
+      }
+    }
+
+    // Listen for streaming output
+    window.atris.onOutput((data) => {
+      output.textContent += data;
+      output.classList.add('has-content');
+      // Auto-scroll
+      output.parentElement.scrollTop = output.parentElement.scrollHeight;
+    });
+
+    // Initial load
+    runCommand('status');
+  </script>
+</body>
+</html>

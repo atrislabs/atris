@@ -430,8 +430,12 @@ function showWelcomeVisualization() {
     // Check TODO.md
     const todoPath = path.join(atrisDir, 'TODO.md');
     if (fs.existsSync(todoPath)) {
-      tasksInBacklog = getBacklogTasks(atrisDir).length;
-      tasksInProgress = getInProgressTasks(atrisDir).length;
+      try {
+        tasksInBacklog = getBacklogTasks(atrisDir).length;
+        tasksInProgress = getInProgressTasks(atrisDir).length;
+      } catch {
+        // Silently fail - show 0 tasks if parsing fails
+      }
     }
 
     // Count journal entries today
@@ -465,7 +469,7 @@ function showWelcomeVisualization() {
     console.log('');
     console.log('    ┌─ READY TO INITIALIZE ────────────────────┐');
     console.log('    │                                          │');
-    console.log(`    │   📍 Project: ${projectName.padEnd(25)}│`);
+    console.log(`    │   📍 Project: ${projectName.substring(0, 25).padEnd(25)}│`);
     console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
     console.log('    │                                          │');
     console.log('    │   Run "atris init" to create workspace   │');
@@ -485,7 +489,8 @@ function showWelcomeVisualization() {
     console.log('    │   ┌──────────────────────────────────┐   │');
     console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
     console.log('    │   │     ↓                            │   │');
-    console.log(`    │   │  TODO.md ←── ${tasksInBacklog} tasks waiting${' '.repeat(6)}│   │`);
+    const taskText = `${tasksInBacklog} tasks waiting`;
+    console.log(`    │   │  TODO.md ←── ${taskText.padEnd(17)}│   │`);
     console.log('    │   │     ↓                            │   │');
     console.log('    │   │  navigator → executor → validator│   │');
     console.log('    │   └──────────────────────────────────┘   │');
