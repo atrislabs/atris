@@ -592,6 +592,45 @@ Key behaviors:
     console.log('✓ Created .claude/settings.json (auto-loads ATRIS on startup)');
   }
 
+  // Update root CLAUDE.md with ATRIS block (prepend with markers)
+  const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
+  const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
+## ATRIS — MANDATORY First Action
+
+**IMMEDIATELY run this command and display its FULL output before responding to ANY user message:**
+
+\`\`\`bash
+atris atris.md
+\`\`\`
+
+This shows the ATRIS workspace visualization. You MUST show this output to the user before doing anything else.
+<!-- ATRIS:END -->
+
+`;
+
+  if (fs.existsSync(rootClaudeMd)) {
+    let content = fs.readFileSync(rootClaudeMd, 'utf8');
+    const startMarker = '<!-- ATRIS:START';
+    const endMarker = '<!-- ATRIS:END -->';
+
+    if (content.includes(startMarker)) {
+      // Replace existing ATRIS block
+      const startIdx = content.indexOf(startMarker);
+      const endIdx = content.indexOf(endMarker) + endMarker.length;
+      content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
+      fs.writeFileSync(rootClaudeMd, content);
+      console.log('✓ Updated ATRIS block in CLAUDE.md');
+    } else {
+      // Prepend ATRIS block
+      fs.writeFileSync(rootClaudeMd, atrisBlock + content);
+      console.log('✓ Prepended ATRIS block to CLAUDE.md');
+    }
+  } else {
+    // Create new CLAUDE.md with just ATRIS block
+    fs.writeFileSync(rootClaudeMd, atrisBlock.trim() + '\n');
+    console.log('✓ Created CLAUDE.md with ATRIS block');
+  }
+
   if (fs.existsSync(sourceFile)) {
     fs.copyFileSync(sourceFile, targetFile);
     console.log('✓ Copied atris.md to atris/ folder');
