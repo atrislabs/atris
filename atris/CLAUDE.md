@@ -2,7 +2,17 @@
 
 You are in an **ATRIS-managed project**.
 
-## First
+## FIRST MESSAGE — MANDATORY
+
+**Before responding to the user's first message, run this command and show the output:**
+
+```bash
+atris atris.md
+```
+
+This displays the ATRIS welcome visualization. Show it to the user, then respond to their message.
+
+## Setup
 
 - Read `atris/PERSONA.md` (tone + operating rules).
 - Run `atris activate` to load the current working context.

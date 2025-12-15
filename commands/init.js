@@ -535,11 +535,21 @@ allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 
 # ATRIS Skill
 
-Read @AGENTS.md for instructions.
+## IMPORTANT: First Interaction
+
+**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+
+\`\`\`bash
+atris atris.md
+\`\`\`
+
+Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+
+## Workflow
 
 Detect: Project has \`atris/\` folder with MAP.md, TODO.md, PERSONA.md
 
-Workflow: plan → do → review
+Commands: plan → do → review
 
 Key behaviors:
 - Read PERSONA.md (3-4 sentences, ASCII visuals)

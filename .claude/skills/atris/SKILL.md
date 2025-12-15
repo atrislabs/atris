@@ -8,6 +8,16 @@ allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 
 AI-navigable workspace system. Transforms codebases into structured, self-documenting projects.
 
+## IMPORTANT: First Interaction
+
+**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+
+```bash
+atris atris.md
+```
+
+Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+
 ## Detection
 
 Project has ATRIS if `atris/` folder exists with:
