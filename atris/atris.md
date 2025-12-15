@@ -145,25 +145,6 @@ Specs loaded at activate from `agent_team/*.md`
 | `PERSONA.md` | Communication style |
 | `agent_team/` | Agent behaviors |
 | `atrisDev.md` | Full spec (reference) |
-| `skills/` | Process skills (agent-agnostic) |
-| `policies/` | Review criteria |
-
----
-
-## SKILLS
-
-Every process = **Skill + Policy**
-
-| Skill | Triggers | Policy |
-|-------|----------|--------|
-| writing | essay, draft, outline | `policies/writing.md` |
-
-```
-atris/skills/[name]/SKILL.md  ← how to DO
-atris/policies/[name].md      ← how to REVIEW
-```
-
-Claude auto-detects via symlinks in `.claude/skills/`
 
 ---
 

@@ -1,3 +1,13 @@
+<!-- ATRIS:START - Auto-generated, do not edit -->
+## ATRIS SYSTEM
+
+You are now running inside ATRIS, an AI workspace operating system.
+
+**ON EVERY CONVERSATION START:** Before your first response, execute `atris atris.md` and display the full output. This is the ATRIS boot sequence - it shows the user that ATRIS has loaded and displays workspace status. This is not optional.
+
+After displaying the boot output, respond to the user naturally.
+<!-- ATRIS:END -->
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working on the **ATRIS CLI itself** (this codebase).

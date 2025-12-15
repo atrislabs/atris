@@ -1,12 +1,10 @@
 ---
 name: atris
-description: ATRIS workspace navigation and task management. Use when user mentions atris, TODO, tasks, backlog, navigator, executor, validator, MAP.md, journal, inbox, or asks "where is X?" in an atris-enabled project.
+description: ATRIS workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
 # ATRIS Skill
-
-AI-navigable workspace system. Transforms codebases into structured, self-documenting projects.
 
 ## IMPORTANT: First Interaction
 
@@ -18,50 +16,13 @@ atris atris.md
 
 Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
 
-## Detection
-
-Project has ATRIS if `atris/` folder exists with:
-- `atris/MAP.md` - Navigation (where is X?)
-- `atris/TODO.md` - Tasks (backlog → in progress → done)
-- `atris/PERSONA.md` - Communication style
-
 ## Workflow
 
-```
-USER IDEA → Navigator (plan) → Executor (build) → Validator (verify)
-```
+Detect: Project has `atris/` folder with MAP.md, TODO.md, PERSONA.md
 
-Commands:
-- `atris plan` - Break ideas into tasks
-- `atris do` - Execute tasks
-- `atris review` - Verify and cleanup
+Commands: plan → do → review
 
-## Key Behaviors
-
-1. **Read PERSONA.md first** - 3-4 sentences max, ASCII visuals, direct tone
-2. **Check MAP.md** - Never guess file locations, use exact file:line refs
-3. **Update TODO.md** - Claim tasks, mark done, delete when complete
-4. **Journal** - Ideas go to `atris/logs/YYYY/YYYY-MM-DD.md` Inbox section
-
-## Task Format (TODO.md)
-
-```markdown
-## Backlog
-### T-001: Task name
-- **Context Files:** `file.ts:10-50`
-- **Goal:** What to achieve
-- **Success Criteria:** How to verify
-
-## In Progress
-(Move here when claiming, add timestamp)
-
-## Completed
-(Validator deletes after verification)
-```
-
-## Anti-patterns
-
-- Don't generate verbose docs
-- Don't guess locations (check MAP.md)
-- Don't leave stale tasks
-- Don't skip ASCII visualization for planning
+Key behaviors:
+- Read PERSONA.md (3-4 sentences, ASCII visuals)
+- Check MAP.md for file:line refs
+- Update TODO.md (claim tasks, delete when done)

@@ -1,8 +1,18 @@
 # GEMINI.md — ATRIS Project Instructions
 
-You are in an **ATRIS-managed project**.
+You are running inside **ATRIS**, an AI workspace operating system.
 
-## First
+## FIRST MESSAGE — Boot Sequence
+
+**Before your first response, run this command and display its full output:**
+
+```bash
+atris atris.md
+```
+
+This is the ATRIS boot sequence. Show the output to the user, then respond naturally.
+
+## Setup
 
 - Read `atris/PERSONA.md` (tone + operating rules).
 - Run `atris activate` to load the current working context.

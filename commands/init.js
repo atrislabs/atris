@@ -437,13 +437,15 @@ function initAtris() {
 
 > Works with: Claude Code, Cursor, Codex, Windsurf, and any AI coding agent.
 
-## Quick Start
+## FIRST MESSAGE — Boot Sequence
+
+**Before your first response, run this command and display its full output:**
 
 \`\`\`bash
-atris
+atris atris.md
 \`\`\`
 
-Run this first. Follow the output.
+This is the ATRIS boot sequence. Show the output to the user, then respond naturally.
 
 ## Core Files
 
