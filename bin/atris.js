@@ -230,6 +230,17 @@ const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'version', 'help', 'next', 'atris'];
 
+// Check if command is an atris.md spec file - triggers welcome visualization
+function isSpecFile(cmd) {
+  if (!cmd) return false;
+  return cmd === 'atris.md' || cmd.endsWith('/atris.md') || cmd.endsWith('\\atris.md');
+}
+
+if (isSpecFile(command)) {
+  showWelcomeVisualization();
+  process.exit(0);
+}
+
 // If no command OR command is not recognized, treat as natural language
 if (!command || !knownCommands.includes(command)) {
   const userInput = process.argv.slice(2).join(' ');
@@ -388,6 +399,102 @@ async function interactiveEntry(userInput) {
   }
 
   await planCmd(request);
+}
+
+// ASCII Welcome Visualization
+function showWelcomeVisualization() {
+  const { getBacklogTasks, getInProgressTasks } = require('../lib/state-detection');
+  const cwd = process.cwd();
+  const atrisDir = path.join(cwd, 'atris');
+  const projectName = path.basename(cwd);
+
+  // Gather workspace stats
+  let filesIndexed = 0;
+  let tasksInBacklog = 0;
+  let tasksInProgress = 0;
+  let journalEntries = 0;
+  let hasMap = false;
+  let isInitialized = fs.existsSync(atrisDir);
+
+  if (isInitialized) {
+    // Check MAP.md
+    const mapPath = path.join(atrisDir, 'MAP.md');
+    if (fs.existsSync(mapPath)) {
+      hasMap = true;
+      const mapContent = fs.readFileSync(mapPath, 'utf8');
+      // Count file references (lines with file paths)
+      const fileRefs = mapContent.match(/`[^`]+\.(js|ts|py|go|rs|md|json|yaml|yml)`/g);
+      filesIndexed = fileRefs ? fileRefs.length : 0;
+    }
+
+    // Check TODO.md
+    const todoPath = path.join(atrisDir, 'TODO.md');
+    if (fs.existsSync(todoPath)) {
+      tasksInBacklog = getBacklogTasks(atrisDir).length;
+      tasksInProgress = getInProgressTasks(atrisDir).length;
+    }
+
+    // Count journal entries today
+    const today = new Date();
+    const year = today.getFullYear();
+    const dateStr = today.toISOString().split('T')[0];
+    const journalPath = path.join(atrisDir, 'logs', String(year), `${dateStr}.md`);
+    if (fs.existsSync(journalPath)) {
+      const journalContent = fs.readFileSync(journalPath, 'utf8');
+      const inboxItems = journalContent.match(/- \*\*I\d+:/g);
+      const completedItems = journalContent.match(/- \*\*C\d+:/g);
+      journalEntries = (inboxItems ? inboxItems.length : 0) + (completedItems ? completedItems.length : 0);
+    }
+  }
+
+  console.log('');
+  console.log('    ╭──────────────────────────────────────────╮');
+  console.log('    │                                          │');
+  console.log('    │      █████╗ ████████╗██████╗ ██╗███████╗ │');
+  console.log('    │     ██╔══██╗╚══██╔══╝██╔══██╗██║██╔════╝ │');
+  console.log('    │     ███████║   ██║   ██████╔╝██║███████╗ │');
+  console.log('    │     ██╔══██║   ██║   ██╔══██╗██║╚════██║ │');
+  console.log('    │     ██║  ██║   ██║   ██║  ██║██║███████║ │');
+  console.log('    │     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝ │');
+  console.log('    │                                          │');
+  console.log('    ╰──────────────────────────────────────────╯');
+  console.log('');
+
+  if (!isInitialized) {
+    console.log('    ⚡ Spec detected. No workspace found.');
+    console.log('');
+    console.log('    ┌─ READY TO INITIALIZE ────────────────────┐');
+    console.log('    │                                          │');
+    console.log(`    │   📍 Project: ${projectName.padEnd(25)}│`);
+    console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
+    console.log('    │                                          │');
+    console.log('    │   Run "atris init" to create workspace   │');
+    console.log('    │                                          │');
+    console.log('    └──────────────────────────────────────────┘');
+  } else {
+    console.log('    ⚡ Scanning spec...');
+    console.log('');
+    console.log('    ┌─ WORKSPACE DETECTED ─────────────────────┐');
+    console.log('    │                                          │');
+    console.log(`    │   📍 Project: ${projectName.substring(0, 25).padEnd(25)}│`);
+    console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
+    console.log(`    │   🗺️  Map:    ${hasMap ? (filesIndexed + ' files indexed').padEnd(26) : 'not generated yet'.padEnd(26)}│`);
+    console.log(`    │   📋 Tasks:   ${(tasksInBacklog + ' backlog, ' + tasksInProgress + ' active').padEnd(26)}│`);
+    console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
+    console.log('    │                                          │');
+    console.log('    │   ┌──────────────────────────────────┐   │');
+    console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
+    console.log('    │   │     ↓                            │   │');
+    console.log(`    │   │  TODO.md ←── ${tasksInBacklog} tasks waiting${' '.repeat(6)}│   │`);
+    console.log('    │   │     ↓                            │   │');
+    console.log('    │   │  navigator → executor → validator│   │');
+    console.log('    │   └──────────────────────────────────┘   │');
+    console.log('    │                                          │');
+    console.log('    └──────────────────────────────────────────┘');
+  }
+  console.log('');
+  console.log(`    Ready. Run 'atris plan' to start.`);
+  console.log('');
 }
 
 if (command === 'init') {
