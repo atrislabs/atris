@@ -557,6 +557,31 @@ Key behaviors:
     console.log('✓ Created atris/CLAUDE.md (for Claude Code)');
   }
 
+  // .claude/settings.json with SessionStart hook for auto-loading ATRIS
+  const claudeSettingsDir = path.join(process.cwd(), '.claude');
+  const claudeSettingsFile = path.join(claudeSettingsDir, 'settings.json');
+  if (!fs.existsSync(claudeSettingsFile)) {
+    if (!fs.existsSync(claudeSettingsDir)) {
+      fs.mkdirSync(claudeSettingsDir, { recursive: true });
+    }
+    const claudeSettings = {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "[ -d atris ] && atris atris.md || true"
+              }
+            ]
+          }
+        ]
+      }
+    };
+    fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
+    console.log('✓ Created .claude/settings.json (auto-loads ATRIS on startup)');
+  }
+
   if (fs.existsSync(sourceFile)) {
     fs.copyFileSync(sourceFile, targetFile);
     console.log('✓ Copied atris.md to atris/ folder');
