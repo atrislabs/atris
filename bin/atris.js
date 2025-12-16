@@ -119,6 +119,8 @@ function showHelp() {
   console.log('  activate   - Load ATRIS context');
   console.log('  status     - See active work and completions');
   console.log('  analytics  - Show recent productivity from journals');
+  console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
+  console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('');
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
@@ -225,10 +227,13 @@ const { brainstormAtris: brainstormCmd, autopilotAtris: autopilotCmd } = require
 const { activateAtris: activateCmd } = require('../commands/activate');
 const { statusAtris: statusCmd } = require('../commands/status');
 const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
+const { cleanAtris: cleanCmd } = require('../commands/clean');
+const { verifyAtris: verifyCmd } = require('../commands/verify');
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'version', 'help', 'next', 'atris'];
+                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'version', 'help', 'next', 'atris',
+                       'clean', 'verify'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -623,6 +628,12 @@ if (command === 'init') {
   statusCmd(isQuick);
 } else if (command === 'analytics') {
   analyticsCmd();
+} else if (command === 'clean') {
+  const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
+  cleanCmd({ dryRun });
+} else if (command === 'verify') {
+  const taskId = process.argv[3] || null;
+  verifyCmd(taskId);
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');

@@ -41,7 +41,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
 - **Entry point:** `bin/atris.js:138-158` (main routing logic)
-- **Handler:** `bin/atris.js:3138-3282` (atrisDevEntry function)
+- **Handler:** `bin/atris.js:2246-3282` (atrisDevEntry function)
 - **How it works:**
   - No args → Cold start (shows context, waits for input)
   - With args → Hot start (treats input as task description)
@@ -146,7 +146,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: System Status (`atris status`)
 **Purpose:** Quick visibility into system state - supports parallel work
 
-- **Entry point:** `bin/atris.js:4107-4254` (statusAtris function)
+- **Entry point:** `bin/atris.js:228-4254` (statusAtris function)
 - **Reads:**
   - TASK_CONTEXTS.md Backlog (unclaimed tasks)
   - TASK_CONTEXTS.md In Progress (claimed tasks with ownership)
@@ -162,10 +162,48 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "statusAtris" bin/atris.js`
 
+### Feature: Workspace Cleanup (`atris clean`)
+**Purpose:** Housekeeping - find stale tasks, archive old journals, detect broken refs
+
+- **Entry point:** `commands/clean.js:11-97` (cleanAtris function)
+- **Helpers:**
+  - `findStaleTasks()` (lines 103-147): Find tasks claimed >3 days ago
+  - `findBrokenMapRefs()` (lines 153-199): Validate MAP.md file:line refs
+  - `archiveOldJournals()` (lines 205-247): Move journals >30 days to archive/
+  - `cleanEmptySections()` (lines 253-282): Remove placeholder sections
+- **Output:**
+  - Stale task warnings
+  - Broken MAP.md ref list
+  - Archive count
+  - Cleaned section count
+- **Flags:** `--dry-run` / `-n` to preview without changes
+- **Value:** Keep workspace clean, trust in MAP.md
+
+**Search:** `rg "cleanAtris" commands/clean.js`
+
+### Feature: Work Verification (`atris verify`)
+**Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
+
+- **Entry point:** `commands/verify.js:14-47` (verifyAtris function)
+- **Modes:**
+  - `atris verify` — Verify entire workspace health
+  - `atris verify [task]` — Verify specific task completion
+- **Checks:**
+  - MAP.md has real content (not placeholder)
+  - Tests pass (auto-detects npm test, pytest, etc.)
+  - Recent git changes are documented in MAP.md
+  - Task-specific: claimed files exist, symbols defined
+- **Output:**
+  - Verification status per check
+  - VERIFIED ✓ or issue count
+- **Value:** Confidence before marking work complete
+
+**Search:** `rg "verifyAtris" commands/verify.js`
+
 ### Feature: Analytics (`atris analytics`)
 **Purpose:** Productivity insights from existing journal data
 
-- **Entry point:** `bin/atris.js:4256-4414` (analyticsAtris function)
+- **Entry point:** `bin/atris.js:229-4414` (analyticsAtris function)
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
   - Completions: `- **C#: description**` pattern
@@ -228,22 +266,22 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Commands:**
 1. **`atris plan`** - Navigator mode
-   - Entry: `bin/atris.js:3282-3500` (planAtris function)
+   - Entry: `bin/atris.js:224-3500` (planAtris function)
    - Outputs: navigator.md spec + Inbox context + TASK_CONTEXTS.md
    - Purpose: Brainstorm and create tasks from inbox
 
 2. **`atris do`** - Executor mode
-   - Entry: `bin/atris.js:3502-3786` (doAtris function)
+   - Entry: `bin/atris.js:224-3786` (doAtris function)
    - Outputs: executor.md spec + TASK_CONTEXTS.md + MAP.md
    - Purpose: Build tasks with step-by-step confirmation
 
 3. **`atris review`** - Validator mode
-   - Entry: `bin/atris.js:3788-4006` (reviewAtris function)
+   - Entry: `bin/atris.js:224-4006` (reviewAtris function)
    - Outputs: validator.md spec + TASK_CONTEXTS.md + MAP.md + journal
    - Purpose: Ultrathink validation, test, clean docs
 
 4. **`atris launch`** - Launcher mode (DEPRECATED)
-   - Entry: `bin/atris.js:4008-4105` (launchAtris function)
+   - Entry: `bin/atris.js:2376-4105` (launchAtris function)
    - Purpose: Cross-team integration and deployment
 
 **Flow:** `atris → plan → do → review → loop`
