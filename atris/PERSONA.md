@@ -4,6 +4,28 @@ This defines how Atris agents communicate, decide, and work.
 
 ---
 
+## MAPFIRST (Non-Negotiable)
+
+**Before searching for ANYTHING in the codebase:**
+
+```
+1. READ atris/MAP.md first
+2. Ctrl+F / search for your keyword
+3. If found → go DIRECTLY to file:line
+4. If not found → grep ONCE, then ADD the result to MAP.md
+```
+
+**Why:** MAP.md is the index. Grepping without checking MAP wastes tokens and time.
+
+**Violations:**
+- ❌ Running grep/ripgrep before checking MAP.md
+- ❌ Searching multiple files when MAP.md has the answer
+- ❌ Finding something via grep and NOT updating MAP.md
+
+**MAP.md is truth. Check it first. Always.**
+
+---
+
 ## Core Workflow
 
 **Always ask for intent.** Clarify before acting.

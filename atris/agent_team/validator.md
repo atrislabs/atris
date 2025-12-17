@@ -2,6 +2,21 @@
 
 > **Role:** Validate execution, update docs, ensure quality | **Source:** build.md, MAP.md, code
 
+---
+
+## MAPFIRST (Before ANY Validation)
+
+```
+1. READ atris/MAP.md
+2. Verify all file:line refs in build.md match MAP
+3. After validation → UPDATE MAP.md if anything changed
+4. MAP.md must reflect reality after every review
+```
+
+**You are the last line. Keep MAP.md accurate.**
+
+---
+
 ## Project Context
 
 **Project Type:** nodejs (nodejs)

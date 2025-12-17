@@ -10,12 +10,12 @@
 ```bash
 # Core CLI logic
 rg "function atrisDevEntry" bin/atris.js    # Main entry point (atris command)
-rg "function brainstormAtris" bin/atris.js  # Brainstorm command (v2.0.0)
-rg "function planAtris" bin/atris.js        # Plan command
-rg "function doAtris" bin/atris.js          # Do command
-rg "function reviewAtris" bin/atris.js      # Review command
-rg "function statusAtris" bin/atris.js      # Status command
-rg "function analyticsAtris" bin/atris.js   # Analytics command
+rg "function brainstormAtris" commands/brainstorm.js  # Brainstorm command (line 10)
+rg "function planAtris" commands/workflow.js   # Plan command (line 5)
+rg "function doAtris" commands/workflow.js     # Do command (line 297)
+rg "function reviewAtris" commands/workflow.js  # Review command (line 667)
+rg "function statusAtris" commands/status.js     # Status command (line 5)
+rg "function analyticsAtris" commands/analytics.js  # Analytics command (line 4)
 
 # Modular commands
 rg "initAtris" commands/init.js             # Init command
@@ -59,9 +59,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Project Initialization (`atris init`)
 **Purpose:** Creates atris/ folder structure with placeholders + auto-detects project type
 
-- **Entry point:** `commands/init.js:230-406` (initAtris function)
-- **Project Detection:** `commands/init.js:4-149` (detectProjectContext)
-- **Pattern Injection:** `commands/init.js:151-228` (injectProjectPatterns)
+- **Entry point:** `commands/init.js:230-644` (initAtris function)
+- **Project Detection:** `commands/init.js:9-154` (detectProjectContext)
+- **Pattern Injection:** `commands/init.js:156-228` (injectProjectPatterns)
 - **Creates:**
   - `atris/` folder
   - `atris/agent_team/` subfolder with agent specs
@@ -123,10 +123,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Brainstorm Mode (`atris brainstorm`) — v2.0.0
 **Purpose:** Conversational exploration before planning - supportive, one question at a time
 
-- **Entry point:** `bin/atris.js:209-215` (command routing)
-- **Handler:** `bin/atris.js:1891-2147` (brainstormAtris function)
-- **Conversational instructions:** `bin/atris.js:2122-2147`
-- **Uncertainty detection:** `bin/atris.js:3360-3375` (suggests brainstorm in plan command)
+- **Entry point:** `bin/atris.js:574` (command routing)
+- **Handler:** `commands/brainstorm.js:10-344` (brainstormAtris function)
+- **Autopilot:** `commands/brainstorm.js:466-1081` (autopilotAtris function)
 - **How it works:**
   - Interactive session with supportive questioning
   - 3-4 sentences max per response
@@ -146,7 +145,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: System Status (`atris status`)
 **Purpose:** Quick visibility into system state - supports parallel work
 
-- **Entry point:** `bin/atris.js:228-4254` (statusAtris function)
+- **Entry point:** `commands/status.js:5-156` (statusAtris function)
 - **Reads:**
   - TASK_CONTEXTS.md Backlog (unclaimed tasks)
   - TASK_CONTEXTS.md In Progress (claimed tasks with ownership)
@@ -203,7 +202,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Analytics (`atris analytics`)
 **Purpose:** Productivity insights from existing journal data
 
-- **Entry point:** `bin/atris.js:229-4414` (analyticsAtris function)
+- **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
   - Completions: `- **C#: description**` pattern
@@ -222,7 +221,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Visualize Ideas (`atris visualize`)
 **Purpose:** Break down inbox ideas with ASCII diagram - approval gate for agents
 
-- **Entry point:** `bin/atris.js:1818-1882` (visualizeAtris function)
+- **Entry point:** `commands/visualize.js:5-72` (visualizeAtris function)
 - **Input:** Reads `## Inbox` from today's journal
 - **Process:**
   - Extracts inbox items (format: `- **I#: Description**`)
@@ -231,26 +230,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Purpose:** Confirms understanding before building
 - **Value:** Prevents wasted work on misunderstood tasks
 
-**Search:** `rg "visualizeAtris" bin/atris.js`
-
-### Feature: Brainstorm (`atris brainstorm`)
-**Purpose:** Conversational idea exploration with brainstormer agent
-
-- **Entry point:** `bin/atris.js:1884-2168` (brainstormAtris function, DEPRECATED - now uses atris command)
-- **Flow:**
-  - Pick inbox idea or fresh topic
-  - Capture goal, key points, context, constraints
-  - Generate conversation starter prompt
-  - Optionally log session + archive idea
-- **Output:** Prompt ready to paste + journal entry
-- **Value:** Creative support before task creation
-
-**Search:** `rg "brainstormAtris" bin/atris.js`
+**Search:** `rg "visualizeAtris" commands/visualize.js`
 
 ### Feature: Autopilot (`atris autopilot`)
 **Purpose:** Guided loop - plan → do → review with success criteria
 
-- **Entry point:** `bin/atris.js:2286-2901` (autopilotAtris function, DEPRECATED)
+- **Entry point:** `commands/brainstorm.js:466-1081` (autopilotAtris function)
 - **Flow:**
   - Vision phase: Define problem, success criteria, risks
   - Iteration loop: Plan → execute → validate
@@ -259,25 +244,25 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Journal logging:** Records vision + iterations in Notes section
 - **Value:** Structured guidance for complex multi-step work
 
-**Search:** `rg "autopilotAtris" bin/atris.js`
+**Search:** `rg "autopilotAtris" commands/brainstorm.js`
 
 ### Feature: Agent Activation Commands
 **Purpose:** Direct activation of navigator/executor/validator modes
 
 **Commands:**
 1. **`atris plan`** - Navigator mode
-   - Entry: `bin/atris.js:224-3500` (planAtris function)
-   - Outputs: navigator.md spec + Inbox context + TASK_CONTEXTS.md
+   - Entry: `commands/workflow.js:5-295` (planAtris function)
+   - Outputs: navigator.md spec + Inbox context + TODO.md
    - Purpose: Brainstorm and create tasks from inbox
 
 2. **`atris do`** - Executor mode
-   - Entry: `bin/atris.js:224-3786` (doAtris function)
-   - Outputs: executor.md spec + TASK_CONTEXTS.md + MAP.md
+   - Entry: `commands/workflow.js:297-665` (doAtris function)
+   - Outputs: executor.md spec + TODO.md + MAP.md
    - Purpose: Build tasks with step-by-step confirmation
 
 3. **`atris review`** - Validator mode
-   - Entry: `bin/atris.js:224-4006` (reviewAtris function)
-   - Outputs: validator.md spec + TASK_CONTEXTS.md + MAP.md + journal
+   - Entry: `commands/workflow.js:667-1005` (reviewAtris function)
+   - Outputs: validator.md spec + TODO.md + MAP.md + journal
    - Purpose: Ultrathink validation, test, clean docs
 
 4. **`atris launch`** - Launcher mode (DEPRECATED)
@@ -292,9 +277,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Optional cloud features - auth with Atris backend
 
 - **Entry point:** `commands/auth.js:4-134`
-  - `loginAtris` (lines 4-94): Google OAuth flow
-  - `logoutAtris` (lines 96-108): Delete credentials
-  - `whoamiAtris` (lines 110-134): Show auth status
+  - `loginAtris` (lines 4-103): Google OAuth flow
+  - `logoutAtris` (lines 105-116): Delete credentials
+  - `whoamiAtris` (lines 118-132): Show auth status
 - **Credentials storage:** `~/.atris/credentials.json`
 - **Flow:**
   - Opens browser for Google OAuth
@@ -310,7 +295,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `commands/version.js:4-16` (showVersion function)
 - **Reads:** `package.json` version field
-- **Output:** `atris v1.9.6`
+- **Output:** `atris v2.0.20`
 
 **Search:** `rg "showVersion" commands/version.js`
 
@@ -331,7 +316,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Agent Selection (`atris agent`)
 **Purpose:** Select which cloud agent persona to use
 
-- **Entry point:** `bin/atris.js:1596-1678` (agentAtris function)
+- **Entry point:** `bin/atris.js:2065-2146` (agentAtris function)
 - **Requires:** Valid credentials
 - **Logic:**
   - Fetches available agents from backend
@@ -344,7 +329,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 ### Feature: Interactive Chat (`atris chat`)
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:1680-1816` (chatAtris function)
+- **Entry point:** `bin/atris.js:2149-2182` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
   - One-shot: `atris chat "message"`
@@ -375,8 +360,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Concern: Package Distribution
 **Files:**
-- `package.json` (37 lines) — npm metadata, version 1.9.6, bin config
-- `bin/atris.js` (4,546 lines) — CLI entry point, executable
+- `package.json` (37 lines) — npm metadata, version 2.0.20, bin config
+- `bin/atris.js` (2,628 lines) — CLI entry point, executable
 
 **Dependencies:** None (vanilla Node.js)
 
@@ -477,16 +462,20 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ## Critical Files (⭐ High-Impact)
 
-### ⭐ `bin/atris.js` (4,546 lines, 175.9KB)
-**Why critical:** Core CLI logic, 80+ functions
+### ⭐ `bin/atris.js` (2,628 lines, 93KB)
+**Why critical:** Core CLI routing + entry point
 
-**Key functions:**
-- `atrisDevEntry()` (lines 3138-3282): Main entry point
-- `planAtris()` (lines 3282-3500): Navigator mode
-- `doAtris()` (lines 3502-3786): Executor mode
-- `reviewAtris()` (lines 3788-4006): Validator mode
-- `statusAtris()` (lines 4107-4254): Status display
-- `analyticsAtris()` (lines 4256-4414): Productivity insights
+**Key functions (in bin/atris.js):**
+- Command routing (lines 234-700)
+- `atrisDevEntry()` — Natural language entry
+
+**Modular commands (in commands/):**
+- `planAtris()` → `commands/workflow.js:5-295`
+- `doAtris()` → `commands/workflow.js:297-665`
+- `reviewAtris()` → `commands/workflow.js:667-1005`
+- `statusAtris()` → `commands/status.js:5-156`
+- `analyticsAtris()` → `commands/analytics.js:4-147`
+- `brainstormAtris()` → `commands/brainstorm.js:10-344`
 
 **Risk:** Breaking changes affect all users
 
@@ -505,7 +494,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Phase 5 (lines 260-467): Daily workflow + journal protocol
 - Phase 5.2 (lines 469+): atrisDev protocol (visualize → approve → build)
 
-**Version:** v1.9.6
+**Version:** v2.0.20
 
 **Impact:** Changes propagate to all users on `atris update`
 
@@ -516,7 +505,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Key fields:**
 - `name`: "atris"
-- `version`: "1.9.6"
+- `version`: "2.0.20"
 - `bin.atris`: "./bin/atris.js"
 - `files`: Whitelist for npm publish
 
@@ -524,13 +513,13 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `cat package.json`
 
-### ⭐ `commands/init.js` (402 lines, 15.3KB)
+### ⭐ `commands/init.js` (644 lines)
 **Why critical:** First-run experience, project detection
 
 **Key functions:**
-- `detectProjectContext()` (lines 4-149): Auto-detect project type
-- `injectProjectPatterns()` (lines 151-228): Inject project-native instructions
-- `initAtris()` (lines 230-406): Create folder structure
+- `detectProjectContext()` (lines 9-154): Auto-detect project type
+- `injectProjectPatterns()` (lines 156-228): Inject project-native instructions
+- `initAtris()` (lines 230-644): Create folder structure
 
 **Impact:** Onboarding UX, sets user expectations
 
@@ -709,12 +698,12 @@ CLI: Updates sync state in ~/.atris/.log_sync_state.json
 
 ## Project Stats
 
-**Total files:** 15 JS files + docs
+**Total files:** 24 JS files + docs
 **Critical files:** 5 (bin/atris.js, atris.md, package.json, commands/init.js, utils/auth.js)
-**Lines of code:** 7,271 (4,546 in bin/atris.js)
+**Lines of code:** 9,875 (2,628 in bin/atris.js)
 **Dependencies:** 0 external
 **Commands:** 14 (init, update, log, status, analytics, plan, do, review, login, logout, whoami, agent, chat, version)
-**Version:** 1.9.6
+**Version:** 2.0.20
 
 **Architecture:** Modular commands + monolithic core + zero dependencies
 

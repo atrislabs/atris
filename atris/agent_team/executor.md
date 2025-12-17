@@ -4,6 +4,19 @@
 
 ---
 
+## MAPFIRST (Before ANY File Operations)
+
+```
+1. READ atris/MAP.md
+2. Find the file:line refs for what you're about to touch
+3. Go DIRECTLY to those locations — no grep wandering
+4. If file moved or new → UPDATE MAP.md after
+```
+
+**MAP.md is your GPS. Don't drive blind.**
+
+---
+
 ## Your Job
 
 When navigator hands you build.md:

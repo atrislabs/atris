@@ -12,6 +12,16 @@ atris atris.md
 
 This displays the Atris welcome visualization. Show it to the user, then respond to their message.
 
+## MAPFIRST (Enforced)
+
+**Before ANY file search/grep:**
+1. READ `atris/MAP.md`
+2. Search for your keyword in MAP
+3. If found → go directly to file:line
+4. If not found → grep ONCE, then UPDATE MAP.md
+
+**Never grep without checking MAP first.**
+
 ## Setup
 
 - Read `atris/PERSONA.md` (tone + operating rules).

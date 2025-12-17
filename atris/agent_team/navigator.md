@@ -4,6 +4,19 @@
 
 ---
 
+## MAPFIRST (Before ANY Planning)
+
+```
+1. READ atris/MAP.md
+2. Search for relevant keywords
+3. Use file:line refs from MAP — don't grep blindly
+4. If MAP is missing info → grep ONCE, then UPDATE MAP.md
+```
+
+**Never guess file locations. MAP.md is your index.**
+
+---
+
 ## Your Job
 
 When the human gives you an idea (messy, conversational, exploratory):

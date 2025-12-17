@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { getLogPath } = require('../lib/journal');
+const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 
 function statusAtris(isQuick = false) {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -22,6 +22,44 @@ function statusAtris(isQuick = false) {
   if (taskFilePath && fs.existsSync(taskFilePath)) {
     const taskContent = fs.readFileSync(taskFilePath, 'utf8');
 
+    function parseTodoBulletBlocks(sectionText) {
+      const tasks = [];
+      const lines = String(sectionText || '').split('\n');
+      let current = null;
+
+      const flush = () => {
+        if (!current) return;
+        tasks.push(current);
+        current = null;
+      };
+
+      for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
+        const startMatch = line.match(/^- \*\*([A-Z]\d+):\*\*\s*(.+)$/);
+        if (startMatch) {
+          flush();
+          current = {
+            id: startMatch[1],
+            title: startMatch[2].trim(),
+            claimed: null,
+          };
+          continue;
+        }
+
+        if (!current) continue;
+
+        if (!line.startsWith('  ')) continue;
+
+        const claimMatch = line.match(/\*\*Claimed by:\*\*\s*(.+)$/) || line.match(/Claimed by:\s*(.+)$/);
+        if (claimMatch && !current.claimed) {
+          current.claimed = claimMatch[1].trim();
+        }
+      }
+
+      flush();
+      return tasks.filter(t => t && t.title);
+    }
+
     // Extract Backlog
     const backlogMatch = taskContent.match(/## Backlog\n([\s\S]*?)(?=\n##|$)/);
     if (backlogMatch && backlogMatch[1].trim() && !backlogMatch[1].includes('(No active tasks)')) {
@@ -30,6 +68,13 @@ function statusAtris(isQuick = false) {
         const match = t.match(/Task:\s*(.+)/);
         return match ? match[1].substring(0, 60) : null;
       }).filter(Boolean);
+
+      // Newer TODO.md format: bullet tasks (e.g., "- **T1:** ...").
+      if (backlogTasks.length === 0) {
+        backlogTasks = parseTodoBulletBlocks(backlogMatch[1])
+          .map(t => t.title.substring(0, 60))
+          .filter(Boolean);
+      }
     }
 
     // Extract In Progress
@@ -46,6 +91,14 @@ function statusAtris(isQuick = false) {
         }
         return null;
       }).filter(Boolean);
+
+      // Newer TODO.md format: bullet tasks (e.g., "- **T1:** ...").
+      if (inProgressTasks.length === 0) {
+        inProgressTasks = parseTodoBulletBlocks(inProgressMatch[1]).map(t => {
+          const claimed = t.claimed ? t.claimed.substring(0, 20) : 'Unknown';
+          return { title: t.title.substring(0, 40), claimed };
+        });
+      }
     }
   }
 
@@ -53,6 +106,12 @@ function statusAtris(isQuick = false) {
   const { logFile, dateFormatted } = getLogPath();
   let inboxItems = [];
   let completions = [];
+
+  // Ensure today's journal exists so status doesn't show an empty slate on day rollover.
+  ensureLogDirectory();
+  if (!fs.existsSync(logFile)) {
+    createLogFile(logFile, dateFormatted);
+  }
 
   if (fs.existsSync(logFile)) {
     const logContent = fs.readFileSync(logFile, 'utf8');
