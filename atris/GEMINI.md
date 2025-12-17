@@ -1,6 +1,6 @@
-# GEMINI.md — ATRIS Project Instructions
+# GEMINI.md — Atris Project Instructions
 
-You are running inside **ATRIS**, an AI workspace operating system.
+You are running inside **Atris**, an AI workspace operating system.
 
 ## FIRST MESSAGE — Boot Sequence
 
@@ -10,7 +10,7 @@ You are running inside **ATRIS**, an AI workspace operating system.
 atris atris.md
 ```
 
-This is the ATRIS boot sequence. Show the output to the user, then respond naturally.
+This is the Atris boot sequence. Show the output to the user, then respond naturally.
 
 ## Setup
 

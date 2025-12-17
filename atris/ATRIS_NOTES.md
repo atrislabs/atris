@@ -1,4 +1,4 @@
-# ATRIS Roadmap Notes
+# Atris Roadmap Notes
 
 > Working notes for the phases referenced in `atris.md` (Phase 6). This file is intentionally lightweight and is meant for humans + agents to skim, not a full spec.
 
@@ -54,10 +54,10 @@ entry_workflow:
 
 ## Implementation Notes
 
-- These phases are **roadmap**, not hard requirements for using ATRIS today.
+- These phases are **roadmap**, not hard requirements for using Atris today.
 - The current CLI (`init`, `log`, `status`, `plan`, `do`, `review`, `analytics`, `update`, etc.) is stable even if these features evolve.
 - When a roadmap item lands, it should:
-  - Update `atris.md` + `ATRIS_NOTES.md` in the package.
+  - Update `atris.md` + `Atris_NOTES.md` in the package.
   - Add or adjust the minimal number of CLI commands (no feature bloat).
   - Keep MAP/TASK_CONTEXTS/journal formats backward compatible wherever possible.
 

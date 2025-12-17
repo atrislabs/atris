@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Tracks active tasks for ATRIS CLI development. Target state = 0.
+Tracks active tasks for Atris CLI development. Target state = 0.
 
 ---
 

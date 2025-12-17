@@ -1,9 +1,9 @@
 ---
-description: Activate ATRIS context - loads TODO.md, journal, and persona
+description: Activate Atris context - loads TODO.md, journal, and persona
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
-# ATRIS Activate
+# Atris Activate
 
 Load workspace context for AI-navigable development.
 

@@ -21,7 +21,7 @@ function verifyAtris(taskId = null) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS VERIFY                                                │');
+  console.log('│ Atris Verify                                                │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

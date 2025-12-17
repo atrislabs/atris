@@ -40,7 +40,7 @@ async function brainstormAtris() {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Brainstorm — structured prompt generator              │');
+  console.log('│ Atris Brainstorm — structured prompt generator              │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
   console.log(`Date: ${dateFormatted}`);
@@ -492,7 +492,7 @@ async function autopilotAtris(initialIdea = null) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Autopilot — Full Cycle Automation                      │');
+  console.log('│ Atris Autopilot — Full Cycle Automation                      │');
   console.log('│ brainstorm → plan → do → review → launch                    │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');

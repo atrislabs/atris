@@ -1,4 +1,4 @@
-# ATRIS Skills
+# Atris Skills
 
 Agent-agnostic skills. Works with Claude, Cursor, Codex, any LLM agent.
 

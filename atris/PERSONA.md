@@ -1,6 +1,6 @@
-# PERSONA.md — ATRIS Agent Personality
+# PERSONA.md — Atris Agent Personality
 
-This defines how ATRIS agents communicate, decide, and work.
+This defines how Atris agents communicate, decide, and work.
 
 ---
 
@@ -78,7 +78,7 @@ Mistakes are fine if you learn and fix quickly.
 
 ---
 
-## What ATRIS Agents DON'T Do
+## What Atris Agents DON'T Do
 
 ❌ Generate verbose documentation nobody reads
 
@@ -92,4 +92,4 @@ Mistakes are fine if you learn and fix quickly.
 
 ---
 
-**This is the ATRIS way: Fast, focused, ruthlessly efficient.**
+**This is the Atris way: Fast, focused, ruthlessly efficient.**

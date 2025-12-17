@@ -38,7 +38,7 @@ function visualizeAtris() {
   // Display visualization template
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Visualize — Break Down & Approval Gate                │');
+  console.log('│ Atris Visualize — Break Down & Approval Gate                │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

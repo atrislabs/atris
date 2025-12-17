@@ -57,7 +57,7 @@
 
 **Pattern:** Small, opinionated core loops > broad command surfaces. Promote the main workflow, demote helpers.
 
-**Impact:** New users can understand how to use ATRIS in seconds, and coding agents can reliably script the workflow without extensive per-project instructions.
+**Impact:** New users can understand how to use Atris in seconds, and coding agents can reliably script the workflow without extensive per-project instructions.
 
 ---
 

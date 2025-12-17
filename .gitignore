@@ -24,7 +24,7 @@ Thumbs.db
 .env
 .env.local
 
-# ATRIS runtime files (user-specific, not for repo)
+# Atris runtime files (user-specific, not for repo)
 atris/logs/
 atris/.config
 atris/.log_sync_state.json

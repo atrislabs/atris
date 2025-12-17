@@ -27,7 +27,7 @@ INBOX → OUTLINE → PANEL → WRITE → PASSES
 - AI structures and polishes, human provides voice
 - Review against `atris/policies/writing.md`
 
-## ATRIS Commands
+## Atris Commands
 
 ```bash
 atris review     # validate against writing policy

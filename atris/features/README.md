@@ -1,6 +1,6 @@
 # Features
 
-This directory contains feature documentation for the ATRIS project.
+This directory contains feature documentation for the Atris project.
 
 ---
 

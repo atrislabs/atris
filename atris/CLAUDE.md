@@ -1,6 +1,6 @@
-# CLAUDE.md — ATRIS Project Instructions
+# CLAUDE.md — Atris Project Instructions
 
-You are in an **ATRIS-managed project**.
+You are in an **Atris-managed project**.
 
 ## FIRST MESSAGE — MANDATORY
 
@@ -10,7 +10,7 @@ You are in an **ATRIS-managed project**.
 atris atris.md
 ```
 
-This displays the ATRIS welcome visualization. Show it to the user, then respond to their message.
+This displays the Atris welcome visualization. Show it to the user, then respond to their message.
 
 ## Setup
 

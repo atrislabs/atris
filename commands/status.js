@@ -96,7 +96,7 @@ function statusAtris(isQuick = false) {
   // Full display status
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ ATRIS Status — ${dateFormatted}${' '.repeat(39 - dateFormatted.length)}│`);
+  console.log(`│ Atris Status — ${dateFormatted}${' '.repeat(40 - dateFormatted.length)}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

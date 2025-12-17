@@ -2,9 +2,9 @@
 
 This file provides guidance to any coding agent (Claude Code, Cursor, Windsurf, etc) when working with code in this repository.
 
-## Using ATRIS (If atris/ folder exists)
+## Using Atris (If atris/ folder exists)
 
-**You are in an ATRIS-managed project.**
+**You are in an Atris-managed project.**
 
 **FIRST:** Read `atris/PERSONA.md` and adopt that personality.
 

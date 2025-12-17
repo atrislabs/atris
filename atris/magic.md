@@ -4,10 +4,10 @@
 
 ---
 
-### Autonomous worker boots from ATRIS protocol (not a separate spec)
+### Autonomous worker boots from Atris protocol (not a separate spec)
 
 - **Behavior**
-  - Realized autonomous mode should boot from the **ATRIS protocol** instead of a separate “Vibelana spec”.
+  - Realized autonomous mode should boot from the **Atris protocol** instead of a separate "Vibelana spec".
   - The autonomous worker reads:
     - `MAP.md` — system navigation
     - `TODO.md` (formerly `TASK_CONTEXTS.md`) — current work queue
@@ -16,7 +16,7 @@
     - Plan from Inbox / TODO
     - Execute tasks
     - Validate + update docs
-  - The worker becomes part of the **ATRIS crew**, not a separate autonomy system:
+  - The worker becomes part of the **Atris crew**, not a separate autonomy system:
     - Same protocol
     - Same artifacts
     - Same handoffs

@@ -1,20 +1,20 @@
 ---
 name: atris
-description: ATRIS workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
-# ATRIS Skill
+# Atris Skill
 
 ## IMPORTANT: First Interaction
 
-**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+**On your FIRST message in any Atris project, IMMEDIATELY run:**
 
 ```bash
 atris atris.md
 ```
 
-Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+Show the full ASCII output to the user. This displays the Atris welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
 
 ## Workflow
 

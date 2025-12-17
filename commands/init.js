@@ -445,7 +445,7 @@ function initAtris() {
 atris atris.md
 \`\`\`
 
-This is the ATRIS boot sequence. Show the output to the user, then respond naturally.
+This is the Atris boot sequence. Show the output to the user, then respond naturally.
 
 ## Core Files
 
@@ -511,7 +511,7 @@ CHECK → atris review (verify + cleanup)
   if (!fs.existsSync(claudeCommandFile)) {
     fs.mkdirSync(claudeCommandsDir, { recursive: true });
     const claudeCommand = `---
-description: Activate ATRIS context - loads TODO.md, journal, and persona
+description: Activate Atris context - loads TODO.md, journal, and persona
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
@@ -531,21 +531,21 @@ Rules: 3-4 sentences max, ASCII visuals, check MAP.md first.`;
     fs.mkdirSync(claudeSkillsDir, { recursive: true });
     const claudeSkill = `---
 name: atris
-description: ATRIS workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
-# ATRIS Skill
+# Atris Skill
 
 ## IMPORTANT: First Interaction
 
-**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+**On your FIRST message in any Atris project, IMMEDIATELY run:**
 
 \`\`\`bash
 atris atris.md
 \`\`\`
 
-Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+Show the full ASCII output to the user. This displays the Atris welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
 
 ## Workflow
 
@@ -569,7 +569,7 @@ Key behaviors:
     console.log('✓ Created atris/CLAUDE.md (for Claude Code)');
   }
 
-  // .claude/settings.json with SessionStart hook for auto-loading ATRIS
+  // .claude/settings.json with SessionStart hook for auto-loading Atris
   const claudeSettingsDir = path.join(process.cwd(), '.claude');
   const claudeSettingsFile = path.join(claudeSettingsDir, 'settings.json');
   if (!fs.existsSync(claudeSettingsFile)) {
@@ -591,17 +591,17 @@ Key behaviors:
       }
     };
     fs.writeFileSync(claudeSettingsFile, JSON.stringify(claudeSettings, null, 2));
-    console.log('✓ Created .claude/settings.json (auto-loads ATRIS on startup)');
+    console.log('✓ Created .claude/settings.json (auto-loads Atris on startup)');
   }
 
-  // Update root CLAUDE.md with ATRIS block (prepend with markers)
+  // Update root CLAUDE.md with Atris block (prepend with markers)
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
   const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
-## ATRIS SYSTEM
+## Atris System
 
-You are now running inside ATRIS, an AI workspace operating system.
+You are now running inside Atris, an AI workspace operating system.
 
-**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the ATRIS boot sequence - it shows the user that ATRIS has loaded and displays workspace status. This is not optional.
+**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->
@@ -614,27 +614,27 @@ After displaying the boot output, respond to the user naturally.
     const endMarker = '<!-- ATRIS:END -->';
 
     if (content.includes(startMarker)) {
-      // Replace existing ATRIS block
+      // Replace existing Atris block
       const startIdx = content.indexOf(startMarker);
       const endIdx = content.indexOf(endMarker) + endMarker.length;
       content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
       fs.writeFileSync(rootClaudeMd, content);
-      console.log('✓ Updated ATRIS block in CLAUDE.md');
+      console.log('✓ Updated Atris block in CLAUDE.md');
     } else {
-      // Prepend ATRIS block
+      // Prepend Atris block
       fs.writeFileSync(rootClaudeMd, atrisBlock + content);
-      console.log('✓ Prepended ATRIS block to CLAUDE.md');
+      console.log('✓ Prepended Atris block to CLAUDE.md');
     }
   } else {
-    // Create new CLAUDE.md with just ATRIS block
+    // Create new CLAUDE.md with just Atris block
     fs.writeFileSync(rootClaudeMd, atrisBlock.trim() + '\n');
-    console.log('✓ Created CLAUDE.md with ATRIS block');
+    console.log('✓ Created CLAUDE.md with Atris block');
   }
 
   if (fs.existsSync(sourceFile)) {
     fs.copyFileSync(sourceFile, targetFile);
     console.log('✓ Copied atris.md to atris/ folder');
-    console.log('\n✓ ATRIS initialized.');
+    console.log('\n✓ Atris initialized.');
   } else {
     console.error('✗ Error: atris.md not found in package');
     process.exit(1);

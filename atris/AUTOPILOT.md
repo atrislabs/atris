@@ -1,4 +1,4 @@
-# ATRIS Autopilot Loop
+# Atris Autopilot Loop
 
 Autopilot runs the navigator → executor → validator cycle until the agreed success criteria are satisfied. It keeps humans in the loop by recording the vision, pausing for confirmation at each stage, and appending outcomes back to the daily journal.
 

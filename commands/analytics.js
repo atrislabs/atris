@@ -105,7 +105,7 @@ function analyticsAtris() {
   const dateFormatted = `${year}-${month}-${day}`;
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ ATRIS Analytics — ${dateFormatted}${' '.repeat(33 - dateFormatted.length)}│`);
+  console.log(`│ Atris Analytics — ${dateFormatted}${' '.repeat(34 - dateFormatted.length)}│`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

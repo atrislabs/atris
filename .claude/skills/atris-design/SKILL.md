@@ -6,11 +6,11 @@ allowed-tools: Read, Write, Edit, Bash, Glob
 
 # atris-design
 
-Part of the ATRIS policy system. Prevents ai-generated frontend from looking generic.
+Part of the Atris policy system. Prevents ai-generated frontend from looking generic.
 
-## ATRIS Integration
+## Atris Integration
 
-This skill uses the ATRIS workflow:
+This skill uses the Atris workflow:
 1. Check `atris/MAP.md` for existing patterns before building
 2. Reference `atris/policies/atris-design.md` for full guidance
 3. After building, run `atris review` to validate against this policy
@@ -36,7 +36,7 @@ Run through `atris/policies/atris-design.md` "before shipping" section:
 - background has depth?
 - would a designer clock this as ai-generated?
 
-## ATRIS Commands
+## Atris Commands
 
 ```bash
 atris            # load workspace context

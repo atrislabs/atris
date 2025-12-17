@@ -64,7 +64,7 @@ This spec defines how to transform any system (codebase, product, sales process,
 
 ## Phase 2: Foundational Agent Templates
 
-ATRIS ships with pre-built agent templates in `/atris/agent_team/` (copied during `atris init`). These templates provide battle-tested specs that work out of the box. Each agent has explicit guardrails.
+Atris ships with pre-built agent templates in `/atris/agent_team/` (copied during `atris init`). These templates provide battle-tested specs that work out of the box. Each agent has explicit guardrails.
 
 **Templates included:**
 
@@ -275,7 +275,7 @@ After MAP.md generation, agents receive project context injection (framework, ke
 
 ## Phase 5.1: Journal Protocol v1.0
 
-**The ATRIS Journal is a standardized markdown format that enables:**
+**The Atris Journal is a standardized markdown format that enables:**
 - **Human → Agent coordination** (brain dumps → structured tasks)
 - **Multi-agent coordination** (agents communicate via journal sections)
 - **Markdown → UI rendering** (structured data for kanban, charts, progress bars)
@@ -594,7 +594,7 @@ Contents:
 
 ## Phase 5.3: Claude Code Integration
 
-Auto-inject ATRIS context into Claude Code sessions via skills and commands.
+Auto-inject Atris context into Claude Code sessions via skills and commands.
 
 ### Slash Command Setup
 
@@ -602,11 +602,11 @@ Create `.claude/commands/atris.md`:
 
 ```markdown
 ---
-description: Activate ATRIS context - loads TODO.md, journal, and persona
+description: Activate Atris context - loads TODO.md, journal, and persona
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
-# ATRIS Activate
+# Atris Activate
 
 Load these files:
 1. @atris/PERSONA.md (communication style)
@@ -624,11 +624,11 @@ Create `.claude/skills/atris/SKILL.md`:
 ```markdown
 ---
 name: atris
-description: ATRIS workspace navigation. Use when user mentions atris, TODO, tasks, MAP.md, or asks "where is X?"
+description: Atris workspace navigation. Use when user mentions atris, TODO, tasks, MAP.md, or asks "where is X?"
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
-# ATRIS Skill
+# Atris Skill
 
 Detect: Project has `atris/` folder with MAP.md, TODO.md, PERSONA.md
 
@@ -653,7 +653,7 @@ Key behaviors:
 
 ## Phase 6: Future Roadmap (Vision)
 
-**See [`ATRIS_NOTES.md`](./ATRIS_NOTES.md) for full roadmap. Preview:**
+**See [`Atris_NOTES.md`](./ATRIS_NOTES.md) for full roadmap. Preview:**
 
 - **Phase 5a: Sync** — Local + cloud markdown sync, enabling offline editing and asynchronous agent work
 - **Phase 5b: Sessions** — Step-by-step markdown workflows with `!status`, `!result` tags for interactive collaboration

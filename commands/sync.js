@@ -73,21 +73,21 @@ function syncAtris() {
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
   const skillContent = `---
 name: atris
-description: ATRIS workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
-# ATRIS Skill
+# Atris Skill
 
 ## IMPORTANT: First Interaction
 
-**On your FIRST message in any ATRIS project, IMMEDIATELY run:**
+**On your FIRST message in any Atris project, IMMEDIATELY run:**
 
 \`\`\`bash
 atris atris.md
 \`\`\`
 
-Show the full ASCII output to the user. This displays the ATRIS welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
+Show the full ASCII output to the user. This displays the Atris welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
 
 ## Workflow
 
@@ -132,14 +132,14 @@ Key behaviors:
     updated++;
   }
 
-  // Update root CLAUDE.md with ATRIS block (prepend with markers)
+  // Update root CLAUDE.md with Atris block (prepend with markers)
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
   const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
-## ATRIS SYSTEM
+## Atris System
 
-You are now running inside ATRIS, an AI workspace operating system.
+You are now running inside Atris, an AI workspace operating system.
 
-**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the ATRIS boot sequence - it shows the user that ATRIS has loaded and displays workspace status. This is not optional.
+**ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->
@@ -158,23 +158,23 @@ After displaying the boot output, respond to the user naturally.
       const existingBlock = content.slice(startIdx, endIdx);
       const newBlockTrimmed = atrisBlock.trim().slice(0, -1); // Remove trailing newline for comparison
 
-      if (!existingBlock.includes('ATRIS boot sequence')) {
-        // Replace existing ATRIS block with new version
+      if (!existingBlock.includes('Atris boot sequence')) {
+        // Replace existing Atris block with new version
         content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
         fs.writeFileSync(rootClaudeMd, content);
-        console.log('✓ Updated ATRIS block in CLAUDE.md');
+        console.log('✓ Updated Atris block in CLAUDE.md');
         updated++;
       }
     } else {
-      // Prepend ATRIS block
+      // Prepend Atris block
       fs.writeFileSync(rootClaudeMd, atrisBlock + content);
-      console.log('✓ Prepended ATRIS block to CLAUDE.md');
+      console.log('✓ Prepended Atris block to CLAUDE.md');
       updated++;
     }
   } else {
-    // Create new CLAUDE.md with just ATRIS block
+    // Create new CLAUDE.md with just Atris block
     fs.writeFileSync(rootClaudeMd, atrisBlock.trim() + '\n');
-    console.log('✓ Created CLAUDE.md with ATRIS block');
+    console.log('✓ Created CLAUDE.md with Atris block');
     updated++;
   }
 

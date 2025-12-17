@@ -1,6 +1,6 @@
-# ATRIS Documentation
+# Atris Documentation
 
-Documentation for the ATRIS system: idea → build → ship.
+Documentation for the Atris system: idea → build → ship.
 
 ---
 
@@ -34,7 +34,7 @@ atris/
 
 ---
 
-## The ATRIS Bridge: idea.md → build.md
+## The Atris Bridge: idea.md → build.md
 
 **idea.md** (Human Layer)
 - Messy, conversational thinking

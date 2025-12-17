@@ -86,7 +86,7 @@ test('activate prints core file paths', () => {
 
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ATRIS Activate — Context Loaded/);
+    assert.match(res.stdout, /Atris Activate — Context Loaded/);
     assert.match(res.stdout, /atris[\\/]+TODO\.md/);
   } finally {
     cleanupTempDir(dir);
@@ -117,7 +117,7 @@ test('default entry auto-advances to plan when inbox has items', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ATRIS Plan — Navigator Agent Activated/);
+    assert.match(res.stdout, /Atris Plan — Navigator Agent Activated/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -152,7 +152,7 @@ test('default entry auto-advances to do when backlog tasks exist', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ATRIS Do — Executor Agent Activated/);
+    assert.match(res.stdout, /Atris Do — Executor Agent Activated/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -173,7 +173,7 @@ test('default entry auto-advances to review when completed tasks exist', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /ATRIS Review — Validator Agent Activated/);
+    assert.match(res.stdout, /Atris Review — Validator Agent Activated/);
   } finally {
     cleanupTempDir(dir);
   }

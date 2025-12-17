@@ -20,7 +20,7 @@ function cleanAtris(options = {}) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS CLEAN                                                 │');
+  console.log('│ Atris Clean                                                 │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 

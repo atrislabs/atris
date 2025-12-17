@@ -143,9 +143,9 @@ Once the files are populated, you can interact with your agents:
 @validator check if the recent auth changes are safe to merge
 ```
 
-## Keeping ATRIS Updated
+## Keeping Atris Updated
 
-When the ATRIS package updates with new features:
+When the Atris package updates with new features:
 
 ```bash
 cd /path/to/your/project

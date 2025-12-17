@@ -6,11 +6,11 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 # atris-backend
 
-Part of the ATRIS policy system. Prevents ai-generated backend from being over-engineered.
+Part of the Atris policy system. Prevents ai-generated backend from being over-engineered.
 
-## ATRIS Integration
+## Atris Integration
 
-This skill uses the ATRIS workflow:
+This skill uses the Atris workflow:
 1. Check `atris/MAP.md` for existing patterns before building
 2. Reference `atris/policies/atris-backend.md` for full guidance
 3. After building, run `atris review` to validate against this policy
@@ -35,7 +35,7 @@ Run through `atris/policies/atris-backend.md` "before shipping" section:
 - do error messages help debugging?
 - anything "just in case" you could delete?
 
-## ATRIS Commands
+## Atris Commands
 
 ```bash
 atris            # load workspace context

@@ -106,7 +106,7 @@ function showHelp() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('Setup:');
-  console.log('  init       - Initialize ATRIS in current project');
+  console.log('  init       - Initialize Atris in current project');
   console.log('  update     - Update local files to latest version');
   console.log('');
   console.log('Core workflow:');
@@ -116,7 +116,7 @@ function showHelp() {
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
-  console.log('  activate   - Load ATRIS context');
+  console.log('  activate   - Load Atris context');
   console.log('  status     - See active work and completions');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
@@ -139,7 +139,7 @@ function showHelp() {
   console.log('  whoami     - Show auth status');
   console.log('');
   console.log('Other:');
-  console.log('  version    - Show ATRIS version');
+  console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
   console.log('');
   console.log('💡 Tip: Just run "atris" to get started');
@@ -321,7 +321,7 @@ async function interactiveEntry(userInput) {
     console.log('│ BOOTSTRAP REQUIRED                                          │');
     console.log('└─────────────────────────────────────────────────────────────┘');
     console.log('');
-    console.log('🗺️  ATRIS needs a real `atris/MAP.md` (navigation index with file:line refs).');
+    console.log('🗺️  Atris needs a real `atris/MAP.md` (navigation index with file:line refs).');
     console.log('');
     console.log('Copy/paste into your coding agent:');
     console.log('─────────────────────────────────────────────────────────────');
@@ -740,7 +740,7 @@ function initAtris() {
   if (fs.existsSync(sourceFile)) {
     fs.copyFileSync(sourceFile, targetFile);
     console.log('✓ Copied atris.md to atris/ folder');
-    console.log('\nATRIS initialized. Structure created:');
+    console.log('\nAtris initialized. Structure created:');
     console.log('   atris/');
     console.log('   ├── GETTING_STARTED.md (read this first!)');
     console.log('   ├── PERSONA.md (agent personality)');
@@ -2170,7 +2170,7 @@ async function chatInteractive(config, credentials) {
     const conversationId = `cli-${Date.now()}`;
 
     console.log('┌────────────────────────────────────────────────────────────┐');
-    console.log(`│ ATRIS Chat — ${agentName.padEnd(43)} │`);
+    console.log(`│ Atris Chat — ${agentName.padEnd(44)} │`);
     console.log('├────────────────────────────────────────────────────────────┤');
     console.log('│ Type your message and press Enter                          │');
     console.log('│ Type "exit" to quit                                        │');
@@ -2248,10 +2248,10 @@ async function atrisDevEntry(userInput = null) {
   // userInput: optional task description for hot start
   const targetDir = path.join(process.cwd(), 'atris');
 
-  // Check if ATRIS is initialized
+  // Check if Atris is initialized
   if (!fs.existsSync(targetDir)) {
     console.log('');
-    console.log('🚀 Welcome to ATRIS\n');
+    console.log('🚀 Welcome to Atris\n');
     console.log('Not initialized yet. Let\'s get started:\n');
     console.log('  → atris init        Set up your workspace');
     console.log('  → atris help        See all commands\n');
@@ -2282,7 +2282,7 @@ async function atrisDevEntry(userInput = null) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS MODE                                                  │');
+  console.log('│ Atris Mode                                                  │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
   console.log(`📅 ${dateFormatted}`);
@@ -2402,7 +2402,7 @@ function launchAtris() {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Launch — Launcher Agent Activated                     │');
+  console.log('│ Atris Launch — Launcher Agent Activated                     │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
   console.log('📋 AGENT SPEC:');

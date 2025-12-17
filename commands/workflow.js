@@ -82,7 +82,7 @@ async function planAtris(userInput = null) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Plan — Navigator Agent Activated                      │');
+  console.log('│ Atris Plan — Navigator Agent Activated                      │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
@@ -454,7 +454,7 @@ async function doAtris() {
   // Prompt-mode output (keep concise by default)
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Do — Executor Agent Activated                         │');
+  console.log('│ Atris Do — Executor Agent Activated                         │');
   console.log(`│ Context: ${context}                                           │`);
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
@@ -798,7 +798,7 @@ async function reviewAtris() {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ ATRIS Review — Validator Agent Activated                    │');
+  console.log('│ Atris Review — Validator Agent Activated                    │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
 
