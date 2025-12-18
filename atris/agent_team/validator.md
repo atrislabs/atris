@@ -23,12 +23,6 @@
 
 **Validation:** Run `npm test` to verify changes work correctly.
 
-## Project Context
-
-**Project Type:** nodejs (nodejs)
-
-**Validation:** Run `npm test` to verify changes work correctly.
-
 ---
 
 ## Your Job

@@ -458,6 +458,18 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "## Phase" atris.md | rg "anti-pattern|⚠️  APPROVAL" atris/PERSONA.md bin/atris.js`
 
+### Concern: Output Quality Policies
+**Files:**
+- `policies/ANTISLOP.md` — Anti-slop checklist (language kill list, complexity matching)
+- `atris/policies/ANTISLOP.md` — Template copy for user projects
+- `atris/policies/atris-design.md` — Frontend aesthetics policy
+- `atris/policies/atris-backend.md` — Backend architecture policy
+- `atris/policies/writing.md` — Essay writing skill
+
+**Purpose:** Enforce quality standards and prevent generic AI output.
+
+**Search:** `rg "slop|kill list" policies/`
+
 ---
 
 ## Critical Files (⭐ High-Impact)
