@@ -1,0 +1,21 @@
+{
+  "name": "atris",
+  "metadata": {
+    "description": "Agent operating system. MAPFIRST navigation, PLAN-DO-REVIEW workflow, decision traces, skill factory.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "atris",
+      "description": "Core agent OS: MAPFIRST, PLAN-DO-REVIEW, ASCII viz, journaling, decision traces",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./atris/skills/atris",
+        "./atris/skills/writing",
+        "./atris/skills/backend",
+        "./atris/skills/design"
+      ]
+    }
+  ]
+}

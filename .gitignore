@@ -1,5 +1,5 @@
-# Personal documentation (not for public repo)
-personal_docs/
+# Local files (not for public repo)
+.local/
 
 # Dependencies
 node_modules/

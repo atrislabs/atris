@@ -26,6 +26,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 - [x] Define Atris system skill (autopilot/validated outputs)
 - [x] Simulate atris skill behavior + publish distro
+- [x] Run atris skill behavior smoke test
 - [x] Validate atris skill behavior
 
 ---
