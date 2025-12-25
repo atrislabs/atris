@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2025-11-26
+> **Last updated:** 2025-12-24
 
 ---
 
@@ -24,6 +24,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Completed
 
-(Validator deletes after verification)
+- [x] Define Atris system skill (autopilot/validated outputs)
+- [x] Simulate atris skill behavior + publish distro
+- [x] Validate atris skill behavior
 
 ---

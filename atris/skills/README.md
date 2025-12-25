@@ -23,6 +23,7 @@ atris/skills/writing/SKILL.md     ← source of truth
 
 | Skill | Description | Policy |
 |-------|-------------|--------|
+| atris | Atris workflow enforcement + plan/do/review | `policies/ANTISLOP.md` |
 | writing | Essay process with approval gates | `policies/writing.md` |
 
 ## Creating Skills

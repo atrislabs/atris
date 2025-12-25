@@ -458,10 +458,21 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "## Phase" atris.md | rg "anti-pattern|⚠️  APPROVAL" atris/PERSONA.md bin/atris.js`
 
+### Concern: Skills
+**Files:**
+- `atris/skills/atris/SKILL.md` — Atris workflow skill
+- `atris/skills/writing/SKILL.md` — Writing skill
+- `atris/skills/README.md` — Skills pattern + Claude symlink instructions
+
+**Use:** Codex skills for Atris workflow and writing guidance; Claude integration uses `.claude/skills` symlinks (see `atris/skills/README.md`).
+
+**Search:** `rg --files -g "SKILL.md" atris/skills`
+
 ### Concern: Output Quality Policies
 **Files:**
 - `policies/ANTISLOP.md` — Anti-slop checklist (language kill list, complexity matching)
 - `atris/policies/ANTISLOP.md` — Template copy for user projects
+- `atris/policies/LESSONS.md` — Short lessons after REVIEW misses
 - `atris/policies/atris-design.md` — Frontend aesthetics policy
 - `atris/policies/atris-backend.md` — Backend architecture policy
 - `atris/policies/writing.md` — Essay writing skill
@@ -469,6 +480,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Enforce quality standards and prevent generic AI output.
 
 **Search:** `rg "slop|kill list" policies/`
+
+---
+
+### Concern: Skill Creation (external tools)
+**Scripts:**
+- `/Users/keshavrao/.codex/skills/.system/skill-creator/scripts/init_skill.py`
+- `/Users/keshavrao/.codex/skills/.system/skill-creator/scripts/package_skill.py`
+
+**Use:** Initialize and package Codex skills.
 
 ---
 
