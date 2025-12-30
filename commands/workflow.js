@@ -997,6 +997,28 @@ async function reviewAtris() {
     }
   }
   // Prompt mode continues with existing output (already logged above)
+
+  // Handoff prompt: suggest writing handoff if completions exist today
+  if (fs.existsSync(logFile)) {
+    const journalContent = fs.readFileSync(logFile, 'utf8');
+    const hasCompletions = /## Completed ✅[\s\S]*?- \*\*C\d+:/.test(journalContent);
+    const hasHandoff = /## Handoff[\s\S]*?\*\*Context:\*\*/.test(journalContent);
+
+    if (hasCompletions && !hasHandoff) {
+      console.log('');
+      console.log('┌─────────────────────────────────────────────────────────────┐');
+      console.log('│ 📝 SESSION HANDOFF                                          │');
+      console.log('├─────────────────────────────────────────────────────────────┤');
+      console.log('│ You have completions today. Write a handoff for next session│');
+      console.log('│                                                             │');
+      console.log('│ Add to ## Handoff section in today\'s journal:               │');
+      console.log('│   **Context:** [2 lines - what was accomplished]            │');
+      console.log('│   **Blockers:** [any issues hit, or "none"]                 │');
+      console.log('│   **Next:** [1 clear action for next session]               │');
+      console.log('└─────────────────────────────────────────────────────────────┘');
+      console.log('');
+    }
+  }
 }
 
 

@@ -18,7 +18,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-(Empty)
+- [ ] Install atris skill into Codex skills
+- [ ] Run end-to-end atris feature test
 
 ---
 

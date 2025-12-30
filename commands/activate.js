@@ -27,6 +27,16 @@ function activateAtris() {
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
 
+  // Check for handoff from previous session
+  let handoffContent = null;
+  if (fs.existsSync(logFile)) {
+    const journalContent = fs.readFileSync(logFile, 'utf8');
+    const handoffMatch = journalContent.match(/## Handoff\n([\s\S]*?)(?=\n---|\n## |$)/);
+    if (handoffMatch && handoffMatch[1].trim() && handoffMatch[1].includes('**Context:**')) {
+      handoffContent = handoffMatch[1].trim();
+    }
+  }
+
   const rel = (p) => path.relative(workspaceDir, p);
   const taskFilePath = fs.existsSync(todoFile)
     ? todoFile
@@ -42,6 +52,21 @@ function activateAtris() {
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ Atris Activate — Context Loaded                             │');
   console.log('└─────────────────────────────────────────────────────────────┘');
+
+  // Display handoff prominently if present
+  if (handoffContent) {
+    console.log('');
+    console.log('┌─────────────────────────────────────────────────────────────┐');
+    console.log('│ 📋 HANDOFF FROM LAST SESSION                                │');
+    console.log('├─────────────────────────────────────────────────────────────┤');
+    const lines = handoffContent.split('\n').slice(0, 5); // Max 5 lines
+    lines.forEach(line => {
+      const padded = line.substring(0, 59).padEnd(59);
+      console.log(`│ ${padded} │`);
+    });
+    console.log('└─────────────────────────────────────────────────────────────┘');
+  }
+
   console.log('');
   console.log(`📅 ${dateFormatted}  •  State: ${state.state}`);
   console.log(`   ${summaryLine}`);
