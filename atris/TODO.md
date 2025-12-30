@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2025-12-24
+> **Last updated:** 2025-12-30
 
 ---
 
@@ -12,7 +12,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
-(Empty)
+- [ ] Add "Learned" field to Handoff prompt (commands/workflow.js)
 
 ---
 
