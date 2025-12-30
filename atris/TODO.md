@@ -16,6 +16,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 - [ ] Surface last 3 completions at activate (commands/activate.js)
 - [ ] Validator prompts "Any learnings?" at review end (commands/workflow.js)
 - [ ] INTUITION.md template at init (Tripwires/Preferences/Dead Ends)
+- [ ] atris search <keyword> - grep across journal history
 
 ---
 
