@@ -14,6 +14,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 - [ ] Add "Learned" field to Handoff prompt (commands/workflow.js)
 - [ ] Surface last 3 completions at activate (commands/activate.js)
+- [ ] Validator prompts "Any learnings?" at review end (commands/workflow.js)
 
 ---
 
