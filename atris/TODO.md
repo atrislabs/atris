@@ -13,6 +13,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 ## Backlog
 
 - [ ] Add "Learned" field to Handoff prompt (commands/workflow.js)
+- [ ] Surface last 3 completions at activate (commands/activate.js)
 
 ---
 
