@@ -99,6 +99,11 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
   };
 
   fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
+  try {
+    fs.chmodSync(credentialsPath, 0o600);
+  } catch {
+    // Best effort: permissions may be unsupported on this platform.
+  }
 }
 
 function loadCredentials() {
@@ -129,39 +134,6 @@ function deleteCredentials() {
   if (fs.existsSync(credentialsPath)) {
     fs.unlinkSync(credentialsPath);
   }
-}
-
-function openBrowser(url) {
-  const platform = os.platform();
-  let command;
-
-  if (platform === 'darwin') {
-    command = `open "${url}"`;
-  } else if (platform === 'win32') {
-    command = `start "${url}"`;
-  } else {
-    command = `xdg-open "${url}"`;
-  }
-
-  exec(command, (error) => {
-    if (error) {
-      console.log(`\nCouldn't open browser automatically. Please visit:\n${url}`);
-    }
-  });
-}
-
-function promptUser(question) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
 }
 
 // Token validation and refresh

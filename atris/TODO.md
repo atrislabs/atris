@@ -33,5 +33,6 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 - [x] Simulate atris skill behavior + publish distro
 - [x] Run atris skill behavior smoke test
 - [x] Validate atris skill behavior
+- [x] Tighten auth utils: chmod credentials, dedupe helpers, add request timeout
 
 ---

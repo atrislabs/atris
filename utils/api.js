@@ -41,6 +41,7 @@ function httpRequest(urlString, options) {
     const parsed = new URL(urlString);
     const isHttps = parsed.protocol === 'https:';
     const transport = isHttps ? https : http;
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 10000;
 
     const requestOptions = {
       method: options.method || 'GET',
@@ -63,6 +64,11 @@ function httpRequest(urlString, options) {
     });
 
     req.on('error', reject);
+    if (timeoutMs > 0) {
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error('Request timeout'));
+      });
+    }
 
     if (options.body) {
       if (!req.hasHeader('Content-Length')) {
