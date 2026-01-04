@@ -175,6 +175,7 @@ Specs loaded at activate from `agent_team/*.md`
 - Check MAP.md before touching code
 - Update journal after completing work
 - Delete tasks when done (target: 0)
+- **Grep before acting:** `grep -i "<keywords>" atris/logs/**/*.md` — surface relevant history first
 
 ---
 
