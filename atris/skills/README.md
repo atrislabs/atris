@@ -24,6 +24,9 @@ atris/skills/writing/SKILL.md     ← source of truth
 | Skill | Description | Policy |
 |-------|-------------|--------|
 | atris | Atris workflow enforcement + plan/do/review | `policies/ANTISLOP.md` |
+| meta | Metacognition for agents - how to think about thinking | `policies/LESSONS.md` |
+| design | Frontend aesthetics - avoid generic AI look | `policies/atris-design.md` |
+| backend | Backend architecture - prevent over-engineering | `policies/atris-backend.md` |
 | writing | Essay process with approval gates | `policies/writing.md` |
 
 ## Creating Skills
