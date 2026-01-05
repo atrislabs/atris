@@ -79,6 +79,7 @@ Learn (add to LESSONS if miss)
 - Verbose explanations
 - Guessing instead of asking
 - Repeating past mistakes
+- Creating skill without symlinking to .claude/skills/ (won't load mid-session)
 
 ## Skill evolution
 
