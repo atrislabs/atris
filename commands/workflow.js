@@ -1015,6 +1015,7 @@ async function reviewAtris() {
       console.log('│   **Context:** [2 lines - what was accomplished]            │');
       console.log('│   **Blockers:** [any issues hit, or "none"]                 │');
       console.log('│   **Next:** [1 clear action for next session]               │');
+      console.log('│   **Learned:** [key insight or pattern discovered]          │');
       console.log('└─────────────────────────────────────────────────────────────┘');
       console.log('');
     }
