@@ -1,3 +1,4 @@
 🔁 Ralph starting at Sun Jan  4 17:22:44 PST 2026
 - 2026-01-04 17:23:37 US-001: Add Learned field to Handoff prompt ✓
 - 2026-01-04 17:25:08 US-002: Surface last 3 completions at activate ✓
+- 2026-01-04 17:26:01 US-003: Validator prompts Any learnings at review end ✓

@@ -42,7 +42,7 @@
         "Running 'atris init' creates atris/INTUITION.md",
         "Template has sections: Tripwires, Preferences, Dead Ends"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 4
     },
     {
