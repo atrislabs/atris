@@ -31,7 +31,7 @@
         "After review completes, prompt asks 'Any learnings?'",
         "Response gets logged to journal ## Notes section"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 3
     },
     {

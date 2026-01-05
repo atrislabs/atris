@@ -1020,6 +1020,49 @@ async function reviewAtris() {
       console.log('');
     }
   }
+
+  // Prompt for learnings
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│ 💡 Any learnings?                                           │');
+  console.log('│ (Enter insight, or press Enter to skip)                     │');
+  console.log('└─────────────────────────────────────────────────────────────┘');
+
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question('> ', (answer) => {
+      rl.close();
+
+      if (answer && answer.trim()) {
+        // Log to journal ## Notes section
+        const { logFile } = getLogPath();
+        if (fs.existsSync(logFile)) {
+          let journalContent = fs.readFileSync(logFile, 'utf8');
+          const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+          const learning = `- ${timestamp} — ${answer.trim()}`;
+
+          // Find or create ## Notes section
+          if (journalContent.includes('## Notes')) {
+            journalContent = journalContent.replace(/## Notes\n/, `## Notes\n${learning}\n`);
+          } else {
+            journalContent += `\n## Notes\n${learning}\n`;
+          }
+
+          fs.writeFileSync(logFile, journalContent);
+          console.log('');
+          console.log(`✓ Logged to journal: ${learning}`);
+        }
+      }
+
+      console.log('');
+      resolve();
+    });
+  });
 }
 
 
