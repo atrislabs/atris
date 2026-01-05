@@ -9,4 +9,4 @@ Purpose: Capture short, actionable lessons after REVIEW misses.
 - Promote repeated lessons (2-3 times) into the relevant policy, then delete.
 
 ## Entries
-- (Promoted to meta skill: symlink lesson)
+- 2026-01-04 | meta | JSON edits break easily on quote boundaries → use Read tool to verify after Edit on .json files
