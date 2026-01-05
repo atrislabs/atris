@@ -91,6 +91,62 @@ function shouldRefreshToken(token, bufferSeconds = TOKEN_REFRESH_BUFFER_SECONDS)
   return exp <= nowSeconds + bufferSeconds;
 }
 
+function searchJournal(keyword) {
+  if (!keyword) {
+    console.log('Usage: atris search <keyword>');
+    console.log('Example: atris search auth');
+    process.exit(1);
+  }
+
+  const logsDir = path.join(process.cwd(), 'atris', 'logs');
+  if (!fs.existsSync(logsDir)) {
+    console.log('No atris/logs/ directory found. Run "atris init" first.');
+    process.exit(1);
+  }
+
+  console.log(`Searching for "${keyword}" in atris/logs/**/*.md...\n`);
+
+  const results = [];
+  const keywordLower = keyword.toLowerCase();
+
+  // Recursively find all .md files in logs directory
+  function walkDir(dir) {
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+      const filePath = path.join(dir, file);
+      const stat = fs.statSync(filePath);
+      if (stat.isDirectory()) {
+        walkDir(filePath);
+      } else if (file.endsWith('.md')) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (line.toLowerCase().includes(keywordLower)) {
+            results.push({
+              file: path.relative(process.cwd(), filePath),
+              line: idx + 1,
+              content: line.trim()
+            });
+          }
+        });
+      }
+    }
+  }
+
+  walkDir(logsDir);
+
+  if (results.length === 0) {
+    console.log('No matches found.');
+  } else {
+    console.log(`Found ${results.length} match${results.length > 1 ? 'es' : ''}:\n`);
+    results.forEach(r => {
+      console.log(`${r.file}:${r.line}`);
+      console.log(`  ${r.content.substring(0, 100)}${r.content.length > 100 ? '...' : ''}`);
+      console.log('');
+    });
+  }
+}
+
 function showHelp() {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -119,6 +175,7 @@ function showHelp() {
   console.log('  activate   - Load Atris context');
   console.log('  status     - See active work and completions');
   console.log('  analytics  - Show recent productivity from journals');
+  console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('');
@@ -233,7 +290,7 @@ const { verifyAtris: verifyCmd } = require('../commands/verify');
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify'];
+                       'clean', 'verify', 'search'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -645,6 +702,9 @@ if (command === 'init') {
 } else if (command === 'verify') {
   const taskId = process.argv[3] || null;
   verifyCmd(taskId);
+} else if (command === 'search') {
+  const keyword = process.argv.slice(3).join(' ');
+  searchJournal(keyword);
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
