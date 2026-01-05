@@ -524,41 +524,77 @@ Rules: 3-4 sentences max, ASCII visuals, check MAP.md first.`;
     console.log('✓ Created .claude/commands/atris.md (for Claude Code)');
   }
 
-  // .claude/skills/atris/SKILL.md for Claude Code
-  const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
-  const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
-  if (!fs.existsSync(claudeSkillFile)) {
+  // Copy skills from package to atris/skills/ and symlink to .claude/skills/
+  const skillsSourceDir = path.join(__dirname, '..', 'atris', 'skills');
+  const skillsTargetDir = path.join(targetDir, 'skills');
+  const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills');
+
+  // Copy skills directory from package if it exists
+  if (fs.existsSync(skillsSourceDir)) {
+    if (!fs.existsSync(skillsTargetDir)) {
+      fs.mkdirSync(skillsTargetDir, { recursive: true });
+    }
+
+    // Copy each skill folder
+    const skillFolders = fs.readdirSync(skillsSourceDir).filter(f => {
+      const skillPath = path.join(skillsSourceDir, f);
+      return fs.statSync(skillPath).isDirectory();
+    });
+
+    for (const skill of skillFolders) {
+      const srcSkillDir = path.join(skillsSourceDir, skill);
+      const destSkillDir = path.join(skillsTargetDir, skill);
+
+      if (!fs.existsSync(destSkillDir)) {
+        fs.mkdirSync(destSkillDir, { recursive: true });
+        // Copy all files in skill folder
+        const files = fs.readdirSync(srcSkillDir);
+        for (const file of files) {
+          fs.copyFileSync(path.join(srcSkillDir, file), path.join(destSkillDir, file));
+        }
+        console.log(`✓ Copied skill: ${skill}`);
+      }
+    }
+
+    // Copy README.md if exists
+    const skillsReadme = path.join(skillsSourceDir, 'README.md');
+    const skillsReadmeTarget = path.join(skillsTargetDir, 'README.md');
+    if (fs.existsSync(skillsReadme) && !fs.existsSync(skillsReadmeTarget)) {
+      fs.copyFileSync(skillsReadme, skillsReadmeTarget);
+    }
+  }
+
+  // Create .claude/skills/ symlinks to atris/skills/
+  if (!fs.existsSync(claudeSkillsDir)) {
     fs.mkdirSync(claudeSkillsDir, { recursive: true });
-    const claudeSkill = `---
-name: atris
-description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
-allowed-tools: Read, Bash, Glob, Grep, Write, Edit
----
+  }
 
-# Atris Skill
+  if (fs.existsSync(skillsTargetDir)) {
+    const skills = fs.readdirSync(skillsTargetDir).filter(f => {
+      const skillPath = path.join(skillsTargetDir, f);
+      return fs.statSync(skillPath).isDirectory();
+    });
 
-## IMPORTANT: First Interaction
+    for (const skill of skills) {
+      const symlinkPath = path.join(claudeSkillsDir, skill);
+      const targetPath = path.join('..', '..', 'atris', 'skills', skill);
 
-**On your FIRST message in any Atris project, IMMEDIATELY run:**
-
-\`\`\`bash
-atris atris.md
-\`\`\`
-
-Show the full ASCII output to the user. This displays the Atris welcome visualization with workspace stats. Do this BEFORE responding to whatever the user said.
-
-## Workflow
-
-Detect: Project has \`atris/\` folder with MAP.md, TODO.md, PERSONA.md
-
-Commands: plan → do → review
-
-Key behaviors:
-- Read PERSONA.md (3-4 sentences, ASCII visuals)
-- Check MAP.md for file:line refs
-- Update TODO.md (claim tasks, delete when done)`;
-    fs.writeFileSync(claudeSkillFile, claudeSkill);
-    console.log('✓ Created .claude/skills/atris/SKILL.md (for Claude Code)');
+      if (!fs.existsSync(symlinkPath)) {
+        try {
+          fs.symlinkSync(targetPath, symlinkPath);
+          console.log(`✓ Linked .claude/skills/${skill} → atris/skills/${skill}`);
+        } catch (e) {
+          // Fallback: copy instead of symlink (Windows compatibility)
+          const srcDir = path.join(skillsTargetDir, skill);
+          fs.mkdirSync(symlinkPath, { recursive: true });
+          const files = fs.readdirSync(srcDir);
+          for (const file of files) {
+            fs.copyFileSync(path.join(srcDir, file), path.join(symlinkPath, file));
+          }
+          console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
+        }
+      }
+    }
   }
 
   // CLAUDE.md for Claude Code (copy from atris/)
