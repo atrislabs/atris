@@ -20,7 +20,7 @@
         "Running 'atris activate' shows 3 most recent C# items from journal",
         "Works even if fewer than 3 completions exist"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 2
     },
     {

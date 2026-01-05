@@ -1,1 +1,2 @@
 🔁 Ralph starting at Sun Jan  4 17:22:44 PST 2026
+- 2026-01-04 17:23:37 US-001: Add Learned field to Handoff prompt ✓

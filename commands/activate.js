@@ -37,6 +37,37 @@ function activateAtris() {
     }
   }
 
+  // Get last 3 completions from journal logs
+  let recentCompletions = [];
+  const logsDir = path.join(targetDir, 'logs');
+  if (fs.existsSync(logsDir)) {
+    const allLogs = [];
+    const yearDirs = fs.readdirSync(logsDir).filter(d => /^\d{4}$/.test(d));
+    for (const year of yearDirs) {
+      const yearPath = path.join(logsDir, year);
+      if (fs.statSync(yearPath).isDirectory()) {
+        const files = fs.readdirSync(yearPath).filter(f => f.endsWith('.md'));
+        files.forEach(f => allLogs.push(path.join(yearPath, f)));
+      }
+    }
+    // Sort descending (most recent first)
+    allLogs.sort().reverse();
+
+    // Extract C# items from logs until we have 3
+    for (const logPath of allLogs) {
+      if (recentCompletions.length >= 3) break;
+      const content = fs.readFileSync(logPath, 'utf8');
+      const completedSection = content.match(/## Completed ✅\n([\s\S]*?)(?=\n## |$)/);
+      if (completedSection) {
+        const matches = completedSection[1].matchAll(/- \*\*C(\d+):\*?\*?\s*(.+?)(?:\s*\[.*\])?$/gm);
+        for (const match of matches) {
+          if (recentCompletions.length >= 3) break;
+          recentCompletions.push({ id: `C${match[1]}`, desc: match[2], file: path.basename(logPath) });
+        }
+      }
+    }
+  }
+
   const rel = (p) => path.relative(workspaceDir, p);
   const taskFilePath = fs.existsSync(todoFile)
     ? todoFile
@@ -61,6 +92,20 @@ function activateAtris() {
     console.log('├─────────────────────────────────────────────────────────────┤');
     const lines = handoffContent.split('\n').slice(0, 5); // Max 5 lines
     lines.forEach(line => {
+      const padded = line.substring(0, 59).padEnd(59);
+      console.log(`│ ${padded} │`);
+    });
+    console.log('└─────────────────────────────────────────────────────────────┘');
+  }
+
+  // Display recent completions if any
+  if (recentCompletions.length > 0) {
+    console.log('');
+    console.log('┌─────────────────────────────────────────────────────────────┐');
+    console.log('│ ✅ RECENT COMPLETIONS                                       │');
+    console.log('├─────────────────────────────────────────────────────────────┤');
+    recentCompletions.forEach(c => {
+      const line = `${c.id}: ${c.desc}`;
       const padded = line.substring(0, 59).padEnd(59);
       console.log(`│ ${padded} │`);
     });
