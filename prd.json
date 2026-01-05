@@ -1,60 +1,19 @@
 {
-  "project": "atris",
+  "project": "atris_team",
+  "type": "feature",
   "stories": [
     {
-      "id": "US-001",
-      "title": "Add Learned field to Handoff prompt",
-      "file": "commands/workflow.js",
+      "id": "FEAT-001",
+      "title": "test",
+      "file": "(auto-detect from MAP.md)",
       "acceptance": [
-        "Handoff prompt includes 'Learned:' field after 'Next:'",
-        "Running 'atris review' shows the new field in output"
+        "Feature implemented and working as described",
+        "Tests pass (if test suite exists)",
+        "Build passes: npm run build (or equivalent)",
+        "Code follows project patterns (check MAP.md)"
       ],
-      "passes": true,
+      "passes": false,
       "priority": 1
-    },
-    {
-      "id": "US-002",
-      "title": "Surface last 3 completions at activate",
-      "file": "commands/activate.js",
-      "acceptance": [
-        "Running 'atris activate' shows 3 most recent C# items from journal",
-        "Works even if fewer than 3 completions exist"
-      ],
-      "passes": true,
-      "priority": 2
-    },
-    {
-      "id": "US-003",
-      "title": "Validator prompts Any learnings at review end",
-      "file": "commands/workflow.js",
-      "acceptance": [
-        "After review completes, prompt asks 'Any learnings?'",
-        "Response gets logged to journal ## Notes section"
-      ],
-      "passes": true,
-      "priority": 3
-    },
-    {
-      "id": "US-004",
-      "title": "INTUITION.md template at init",
-      "file": "commands/init.js",
-      "acceptance": [
-        "Running 'atris init' creates atris/INTUITION.md",
-        "Template has sections: Tripwires, Preferences, Dead Ends"
-      ],
-      "passes": true,
-      "priority": 4
-    },
-    {
-      "id": "US-005",
-      "title": "atris search command",
-      "file": "bin/atris.js",
-      "acceptance": [
-        "Running 'atris search <keyword>' greps atris/logs/**/*.md",
-        "Output shows matching lines with file:line references"
-      ],
-      "passes": true,
-      "priority": 5
     }
   ]
 }

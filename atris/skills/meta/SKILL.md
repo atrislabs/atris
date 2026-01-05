@@ -80,6 +80,15 @@ Learn (add to LESSONS if miss)
 - Guessing instead of asking
 - Repeating past mistakes
 
+## Skill evolution
+
+Skills improve from your mistakes:
+1. After REVIEW, log learnings to `LESSONS.md` (format: `date | skill | lesson`)
+2. Repeated lessons (2-3x) get promoted into the relevant skill
+3. Next agent loads the improved skill
+
+You're training future agents. Leave the codebase smarter than you found it.
+
 ## One-liner
 
 Think before you act. Check yourself. Use the system.

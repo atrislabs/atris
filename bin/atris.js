@@ -253,16 +253,29 @@ function showReviewHelp() {
 
 function showAutopilotHelp() {
   console.log('');
-  console.log('Usage: atris autopilot [idea]');
+  console.log('Usage: atris autopilot "description" [options]');
+  console.log('       atris autopilot --from-todo [options]');
   console.log('');
   console.log('Description:');
-  console.log('  Run a guided plan → do → review loop around a single idea or current TODOs.');
-  console.log('  In auto mode, it will:');
-  console.log('    - Add the idea to today\'s Inbox');
-  console.log('    - Define success criteria');
-  console.log('    - Generate .atris-workflow.json');
-  console.log('    - Walk through Navigator, Executor, and Validator prompts');
-  console.log('    - Finish with a launch summary for you to review.');
+  console.log('  PRD-driven autonomous execution using claude -p.');
+  console.log('  Runs plan → do → review cycles until acceptance criteria are met.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --bug            Treat as bug fix (different acceptance criteria)');
+  console.log('  --from-todo      Pick next item from TODO.md backlog');
+  console.log('  --iterations=N   Max iterations before stopping (default: 5)');
+  console.log('  --verbose, -v    Show detailed claude output');
+  console.log('  --dry-run        Generate PRD without executing');
+  console.log('');
+  console.log('Examples:');
+  console.log('  atris autopilot "Add dark mode toggle"');
+  console.log('  atris autopilot --bug "Login fails on Safari"');
+  console.log('  atris autopilot --from-todo --iterations=3');
+  console.log('');
+  console.log('Output:');
+  console.log('  - prd.json: PRD with acceptance criteria');
+  console.log('  - progress.txt: Execution log');
+  console.log('  - Journal: Completion logged to today\'s journal');
   console.log('');
 }
 
@@ -280,7 +293,8 @@ const { loginAtris: loginCmd, logoutAtris: logoutCmd, whoamiAtris: whoamiCmd } =
 const { showVersion: versionCmd } = require('../commands/version');
 const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('../commands/workflow');
 const { visualizeAtris: visualizeCmd } = require('../commands/visualize');
-const { brainstormAtris: brainstormCmd, autopilotAtris: autopilotCmd } = require('../commands/brainstorm');
+const { brainstormAtris: brainstormCmd } = require('../commands/brainstorm');
+const { autopilotAtris: autopilotCmd, autopilotFromTodo: autopilotFromTodoCmd } = require('../commands/autopilot');
 const { activateAtris: activateCmd } = require('../commands/activate');
 const { statusAtris: statusCmd } = require('../commands/status');
 const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
@@ -628,14 +642,41 @@ if (command === 'init') {
     showAutopilotHelp();
     process.exit(0);
   }
-  const initialIdea = args.join(' ').trim() || null;
-  autopilotCmd(initialIdea)
+
+  // Parse options
+  const isBug = args.includes('--bug');
+  const fromTodo = args.includes('--from-todo');
+  const verbose = args.includes('--verbose') || args.includes('-v');
+  const dryRun = args.includes('--dry-run');
+  const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
+  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : 5;
+
+  // Get description (non-flag args)
+  const description = args.filter(a => !a.startsWith('-')).join(' ').trim();
+
+  const options = {
+    type: isBug ? 'bug' : 'feature',
+    maxIterations,
+    verbose,
+    dryRun
+  };
+
+  let promise;
+  if (fromTodo) {
+    promise = autopilotFromTodoCmd(options);
+  } else if (description) {
+    promise = autopilotCmd(description, options);
+  } else {
+    console.log('Usage: atris autopilot "description" [--bug] [--verbose] [--iterations=N]');
+    console.log('       atris autopilot --from-todo');
+    console.log('');
+    console.log('Run `atris autopilot --help` for more options.');
+    process.exit(1);
+  }
+
+  promise
     .then(() => process.exit(0))
     .catch((error) => {
-      if (error && error.__autopilotAbort) {
-        console.log('\nAutopilot cancelled.');
-        process.exit(0);
-      }
       console.error(`✗ Autopilot failed: ${error.message || error}`);
       process.exit(1);
     });
