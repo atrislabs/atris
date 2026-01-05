@@ -7,6 +7,8 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { planAtris, doAtris, reviewAtris } = require('./workflow');
 
+const pkg = require('../package.json');
+
 async function brainstormAtris() {
   const args = process.argv.slice(3);
   const targetDir = path.join(process.cwd(), 'atris');
@@ -492,7 +494,7 @@ async function autopilotAtris(initialIdea = null) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Autopilot — Full Cycle Automation                      │');
+  console.log(`│ Atris Autopilot v${pkg.version} — Full Cycle Automation               │`);
   console.log('│ brainstorm → plan → do → review → launch                    │');
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
