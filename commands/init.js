@@ -229,7 +229,8 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 
 function initAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'team');
+  const teamDir = path.join(targetDir, 'team');
+  const legacyAgentTeamDir = path.join(targetDir, 'agent_team');
   const sourceFile = path.join(__dirname, '..', 'atris.md');
   const targetFile = path.join(targetDir, 'atris.md');
 
@@ -240,8 +241,39 @@ function initAtris() {
     console.log('✓ atris/ folder already exists');
   }
 
-  if (!fs.existsSync(agentTeamDir)) {
-    fs.mkdirSync(agentTeamDir, { recursive: true });
+  // MIGRATION: agent_team/ → team/ (v2.0.x → v2.1.0)
+  if (fs.existsSync(legacyAgentTeamDir)) {
+    console.log('');
+    console.log('📦 Migrating agent_team/ → team/ (v2.1.0 update)');
+
+    // Create team/ if it doesn't exist
+    if (!fs.existsSync(teamDir)) {
+      fs.mkdirSync(teamDir, { recursive: true });
+    }
+
+    // Copy any custom files from agent_team/ to team/
+    const legacyFiles = fs.readdirSync(legacyAgentTeamDir);
+    for (const file of legacyFiles) {
+      const srcPath = path.join(legacyAgentTeamDir, file);
+      const destPath = path.join(teamDir, file);
+
+      // Only copy if destination doesn't exist (preserve any customizations)
+      if (!fs.existsSync(destPath)) {
+        if (fs.statSync(srcPath).isFile()) {
+          fs.copyFileSync(srcPath, destPath);
+          console.log(`  ✓ Migrated ${file}`);
+        }
+      }
+    }
+
+    // Remove old agent_team/ folder
+    fs.rmSync(legacyAgentTeamDir, { recursive: true, force: true });
+    console.log('  ✓ Removed old agent_team/ folder');
+    console.log('');
+  }
+
+  if (!fs.existsSync(teamDir)) {
+    fs.mkdirSync(teamDir, { recursive: true });
     console.log('✓ Created atris/team/ folder');
   }
 
@@ -249,11 +281,11 @@ function initAtris() {
   const personaFile = path.join(targetDir, 'PERSONA.md');
   const mapFile = path.join(targetDir, 'MAP.md');
   const todoFile = path.join(targetDir, 'TODO.md');
-  const navigatorFile = path.join(agentTeamDir, 'navigator.md');
-  const executorFile = path.join(agentTeamDir, 'executor.md');
-  const validatorFile = path.join(agentTeamDir, 'validator.md');
-  const launcherFile = path.join(agentTeamDir, 'launcher.md');
-  const brainstormerFile = path.join(agentTeamDir, 'brainstormer.md');
+  const navigatorFile = path.join(teamDir, 'navigator.md');
+  const executorFile = path.join(teamDir, 'executor.md');
+  const validatorFile = path.join(teamDir, 'validator.md');
+  const launcherFile = path.join(teamDir, 'launcher.md');
+  const brainstormerFile = path.join(teamDir, 'brainstormer.md');
 
   const gettingStartedSource = path.join(__dirname, '..', 'GETTING_STARTED.md');
   const personaSource = path.join(__dirname, '..', 'PERSONA.md');
@@ -465,7 +497,7 @@ function initAtris() {
   console.log(`✓ Generated .project-profile.json (detected: ${profile.type}${profile.framework !== 'none' ? '/' + profile.framework : ''})`);
 
   // Inject project patterns into agent specs
-  injectProjectPatterns(agentTeamDir, profile);
+  injectProjectPatterns(teamDir, profile);
   console.log('✓ Injected project patterns into team specs');
 
   // Create agent instruction files for different tools

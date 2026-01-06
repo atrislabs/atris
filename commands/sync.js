@@ -3,15 +3,47 @@ const path = require('path');
 
 function syncAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'team');
+  const teamDir = path.join(targetDir, 'team');
+  const legacyAgentTeamDir = path.join(targetDir, 'agent_team');
 
   if (!fs.existsSync(targetDir)) {
     console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
     process.exit(1);
   }
 
-  if (!fs.existsSync(agentTeamDir)) {
-    fs.mkdirSync(agentTeamDir, { recursive: true });
+  // MIGRATION: agent_team/ → team/ (v2.0.x → v2.1.0)
+  if (fs.existsSync(legacyAgentTeamDir)) {
+    console.log('');
+    console.log('📦 Migrating agent_team/ → team/ (v2.1.0 update)');
+
+    // Create team/ if it doesn't exist
+    if (!fs.existsSync(teamDir)) {
+      fs.mkdirSync(teamDir, { recursive: true });
+    }
+
+    // Copy any custom files from agent_team/ to team/
+    const legacyFiles = fs.readdirSync(legacyAgentTeamDir);
+    for (const file of legacyFiles) {
+      const srcPath = path.join(legacyAgentTeamDir, file);
+      const destPath = path.join(teamDir, file);
+
+      // Only copy if destination doesn't exist (preserve any customizations)
+      if (!fs.existsSync(destPath)) {
+        if (fs.statSync(srcPath).isFile()) {
+          fs.copyFileSync(srcPath, destPath);
+          console.log(`  ✓ Migrated ${file}`);
+        }
+      }
+    }
+
+    // Remove old agent_team/ folder
+    fs.rmSync(legacyAgentTeamDir, { recursive: true, force: true });
+    console.log('  ✓ Removed old agent_team/ folder');
+    console.log('');
+  }
+
+  if (!fs.existsSync(teamDir)) {
+    fs.mkdirSync(teamDir, { recursive: true });
   }
 
   // Ensure policies folder exists
