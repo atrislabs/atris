@@ -354,10 +354,10 @@ function generateWorkflowFile(workflowFile, metadata) {
   const targetDir = path.join(process.cwd(), 'atris');
   
   // Load all context needed for agents
-  const navigatorFile = path.join(targetDir, 'agent_team', 'navigator.md');
-  const executorFile = path.join(targetDir, 'agent_team', 'executor.md');
-  const validatorFile = path.join(targetDir, 'agent_team', 'validator.md');
-  const launcherFile = path.join(targetDir, 'agent_team', 'launcher.md');
+  const navigatorFile = path.join(targetDir, 'team', 'navigator.md');
+  const executorFile = path.join(targetDir, 'team', 'executor.md');
+  const validatorFile = path.join(targetDir, 'team', 'validator.md');
+  const launcherFile = path.join(targetDir, 'team', 'launcher.md');
   const personaFile = path.join(targetDir, 'PERSONA.md');
   const mapFile = path.join(targetDir, 'MAP.md');
   const todoFile = path.join(targetDir, 'TODO.md');
@@ -471,10 +471,10 @@ async function autopilotAtris(initialIdea = null) {
     throw new Error('atris/ folder not found. Run "atris init" first.');
   }
 
-  const navigatorFile = path.join(targetDir, 'agent_team', 'navigator.md');
-  const executorFile = path.join(targetDir, 'agent_team', 'executor.md');
-  const validatorFile = path.join(targetDir, 'agent_team', 'validator.md');
-  const launcherFile = path.join(targetDir, 'agent_team', 'launcher.md');
+  const navigatorFile = path.join(targetDir, 'team', 'navigator.md');
+  const executorFile = path.join(targetDir, 'team', 'executor.md');
+  const validatorFile = path.join(targetDir, 'team', 'validator.md');
+  const launcherFile = path.join(targetDir, 'team', 'launcher.md');
 
   const missingSpecs = [];
   if (!fs.existsSync(navigatorFile)) missingSpecs.push('navigator.md');

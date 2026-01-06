@@ -3,7 +3,7 @@ const path = require('path');
 
 function syncAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'agent_team');
+  const agentTeamDir = path.join(targetDir, 'team');
 
   if (!fs.existsSync(targetDir)) {
     console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
@@ -27,11 +27,11 @@ function syncAtris() {
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
     { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
-    { source: 'atris/agent_team/navigator.md', target: 'agent_team/navigator.md' },
-    { source: 'atris/agent_team/executor.md', target: 'agent_team/executor.md' },
-    { source: 'atris/agent_team/validator.md', target: 'agent_team/validator.md' },
-    { source: 'atris/agent_team/launcher.md', target: 'agent_team/launcher.md' },
-    { source: 'atris/agent_team/brainstormer.md', target: 'agent_team/brainstormer.md' },
+    { source: 'atris/team/navigator.md', target: 'team/navigator.md' },
+    { source: 'atris/team/executor.md', target: 'team/executor.md' },
+    { source: 'atris/team/validator.md', target: 'team/validator.md' },
+    { source: 'atris/team/launcher.md', target: 'team/launcher.md' },
+    { source: 'atris/team/brainstormer.md', target: 'team/brainstormer.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 

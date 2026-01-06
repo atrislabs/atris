@@ -164,6 +164,7 @@ function showHelp() {
   console.log('Setup:');
   console.log('  init       - Initialize Atris in current project');
   console.log('  update     - Update local files to latest version');
+  console.log('  upgrade    - Install latest Atris from npm');
   console.log('');
   console.log('Core workflow:');
   console.log('  plan       - Create build spec with visualization');
@@ -303,7 +304,7 @@ const { verifyAtris: verifyCmd } = require('../commands/verify');
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'version', 'help', 'next', 'atris',
+                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -616,6 +617,8 @@ if (command === 'init') {
   activateCmd();
 } else if (command === 'update') {
   syncCmd();
+} else if (command === 'upgrade') {
+  upgradeAtris();
 } else if (command === 'chat') {
   chatAtris()
     .then(() => process.exit(0))
@@ -754,7 +757,7 @@ if (command === 'init') {
 
 function initAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'agent_team');
+  const teamDir = path.join(targetDir, 'team');
   const sourceFile = path.join(__dirname, '..', 'atris.md');
   const targetFile = path.join(targetDir, 'atris.md');
 
@@ -766,10 +769,10 @@ function initAtris() {
     console.log('✓ atris/ folder already exists');
   }
 
-  // Create agent_team/ subfolder
-  if (!fs.existsSync(agentTeamDir)) {
-    fs.mkdirSync(agentTeamDir, { recursive: true });
-    console.log('✓ Created atris/agent_team/ folder');
+  // Create team/ subfolder
+  if (!fs.existsSync(teamDir)) {
+    fs.mkdirSync(teamDir, { recursive: true });
+    console.log('✓ Created atris/team/ folder');
   }
 
   // Create policies/ subfolder
@@ -784,10 +787,10 @@ function initAtris() {
   const personaFile = path.join(targetDir, 'PERSONA.md');
   const mapFile = path.join(targetDir, 'MAP.md');
   const taskContextsFile = path.join(targetDir, 'TASK_CONTEXTS.md');
-  const navigatorFile = path.join(agentTeamDir, 'navigator.md');
-  const executorFile = path.join(agentTeamDir, 'executor.md');
-  const validatorFile = path.join(agentTeamDir, 'validator.md');
-  const launcherFile = path.join(agentTeamDir, 'launcher.md');
+  const navigatorFile = path.join(teamDir, 'navigator.md');
+  const executorFile = path.join(teamDir, 'executor.md');
+  const validatorFile = path.join(teamDir, 'validator.md');
+  const launcherFile = path.join(teamDir, 'launcher.md');
 
   const gettingStartedSource = path.join(__dirname, '..', 'GETTING_STARTED.md');
   const personaSource = path.join(__dirname, '..', 'PERSONA.md');
@@ -815,29 +818,29 @@ function initAtris() {
   }
 
   // Copy agent templates from package
-  const navigatorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'navigator.md');
-  const executorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'executor.md');
-  const validatorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'validator.md');
-  const launcherSource = path.join(__dirname, '..', 'atris', 'agent_team', 'launcher.md');
+  const navigatorSource = path.join(__dirname, '..', 'atris', 'team', 'navigator.md');
+  const executorSource = path.join(__dirname, '..', 'atris', 'team', 'executor.md');
+  const validatorSource = path.join(__dirname, '..', 'atris', 'team', 'validator.md');
+  const launcherSource = path.join(__dirname, '..', 'atris', 'team', 'launcher.md');
 
   if (!fs.existsSync(navigatorFile) && fs.existsSync(navigatorSource)) {
     fs.copyFileSync(navigatorSource, navigatorFile);
-    console.log('✓ Created agent_team/navigator.md');
+    console.log('✓ Created team/navigator.md');
   }
 
   if (!fs.existsSync(executorFile) && fs.existsSync(executorSource)) {
     fs.copyFileSync(executorSource, executorFile);
-    console.log('✓ Created agent_team/executor.md');
+    console.log('✓ Created team/executor.md');
   }
 
   if (!fs.existsSync(validatorFile) && fs.existsSync(validatorSource)) {
     fs.copyFileSync(validatorSource, validatorFile);
-    console.log('✓ Created agent_team/validator.md');
+    console.log('✓ Created team/validator.md');
   }
 
   if (!fs.existsSync(launcherFile) && fs.existsSync(launcherSource)) {
     fs.copyFileSync(launcherSource, launcherFile);
-    console.log('✓ Created agent_team/launcher.md');
+    console.log('✓ Created team/launcher.md');
   }
 
   // Copy policies from package
@@ -859,7 +862,7 @@ function initAtris() {
     console.log('   ├── atris.md (AI agent instructions)');
     console.log('   ├── MAP.md (placeholder)');
     console.log('   ├── TASK_CONTEXTS.md (placeholder)');
-    console.log('   ├── agent_team/');
+    console.log('   ├── team/');
     console.log('   │   ├── navigator.md');
     console.log('   │   ├── executor.md');
     console.log('   │   ├── validator.md');
@@ -878,7 +881,7 @@ function initAtris() {
 
 function syncAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'agent_team');
+  const teamDir = path.join(targetDir, 'team');
 
   // Check if atris/ folder exists
   if (!fs.existsSync(targetDir)) {
@@ -886,9 +889,9 @@ function syncAtris() {
     process.exit(1);
   }
 
-  // Ensure agent_team folder exists
-  if (!fs.existsSync(agentTeamDir)) {
-    fs.mkdirSync(agentTeamDir, { recursive: true });
+  // Ensure team folder exists
+  if (!fs.existsSync(teamDir)) {
+    fs.mkdirSync(teamDir, { recursive: true });
   }
 
   // Ensure policies folder exists
@@ -904,10 +907,10 @@ function syncAtris() {
     { source: 'atrisDev.md', target: 'atrisDev.md' },
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
-    { source: 'atris/agent_team/navigator.md', target: 'agent_team/navigator.md' },
-    { source: 'atris/agent_team/executor.md', target: 'agent_team/executor.md' },
-    { source: 'atris/agent_team/validator.md', target: 'agent_team/validator.md' },
-    { source: 'atris/agent_team/launcher.md', target: 'agent_team/launcher.md' },
+    { source: 'atris/team/navigator.md', target: 'team/navigator.md' },
+    { source: 'atris/team/executor.md', target: 'team/executor.md' },
+    { source: 'atris/team/validator.md', target: 'team/validator.md' },
+    { source: 'atris/team/launcher.md', target: 'team/launcher.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 
@@ -941,6 +944,55 @@ function syncAtris() {
   } else {
     console.log(`\n✓ Updated ${updated} file(s), ${skipped} unchanged`);
     console.log('\nRun your AI agent again to use the latest specs and agent templates.');
+  }
+}
+
+async function upgradeAtris() {
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│ Atris Upgrade                                               │');
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log(`Current version: ${CLI_VERSION}`);
+  console.log('');
+  console.log('Checking for updates...');
+
+  // Force check npm for latest version
+  const updateInfo = await checkForUpdates(true);
+
+  if (!updateInfo || !updateInfo.needsUpdate) {
+    console.log('');
+    console.log('✓ You are on the latest version!');
+    console.log('');
+    return;
+  }
+
+  console.log('');
+  console.log(`📦 Update available: ${updateInfo.installed} → ${updateInfo.latest}`);
+  console.log('');
+  console.log('Installing update...');
+  console.log('');
+
+  // Run npm update -g atris
+  const result = spawnSync('npm', ['update', '-g', 'atris'], {
+    stdio: 'inherit',
+    shell: true
+  });
+
+  if (result.status === 0) {
+    console.log('');
+    console.log('✓ Atris upgraded successfully!');
+    console.log('');
+    console.log('Run `atris update` in your projects to sync local files.');
+    console.log('');
+  } else {
+    console.log('');
+    console.log('✗ Upgrade failed. Try running manually:');
+    console.log('  npm update -g atris');
+    console.log('');
+    console.log('If you see permission errors, try:');
+    console.log('  sudo npm update -g atris');
+    console.log('');
   }
 }
 
@@ -2528,7 +2580,7 @@ async function atrisDevEntry(userInput = null) {
 
 function launchAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const launcherFile = path.join(targetDir, 'agent_team', 'launcher.md');
+  const launcherFile = path.join(targetDir, 'team', 'launcher.md');
 
   if (!fs.existsSync(launcherFile)) {
     console.log('✗ launcher.md not found. Run "atris init" first.');

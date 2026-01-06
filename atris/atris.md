@@ -11,7 +11,7 @@
 1. Load context (ONE time, remember for session):
    - `atris/logs/YYYY/YYYY-MM-DD.md` (today's journal)
    - `atris/MAP.md` (navigation overview)
-   - `atris/agent_team/*.md` (all agent specs)
+   - `atris/team/*.md` (all agent specs)
 
 2. Output this EXACT box:
 
@@ -108,7 +108,7 @@ plan → do → review
 
 `atris next` = auto-selects agent based on journal state
 
-Specs loaded at activate from `agent_team/*.md`
+Specs loaded at activate from `team/*.md`
 
 ---
 
@@ -143,7 +143,7 @@ Specs loaded at activate from `agent_team/*.md`
 | `TODO.md` | Task queue (target: 0) |
 | `logs/YYYY/MM-DD.md` | Journal (daily) |
 | `PERSONA.md` | Communication style |
-| `agent_team/` | Agent behaviors |
+| `team/` | Agent behaviors |
 | `atrisDev.md` | Full spec (reference) |
 
 ---

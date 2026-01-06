@@ -12,7 +12,7 @@ atris/
 ├── atris.md (atrisDev protocol + specs)
 ├── CLAUDE.md (tells agents to follow atrisDev)
 ├── MAP.md (navigation - AI will generate)
-└── agent_team/ (agent specs)
+└── team/ (agent specs)
 ```
 
 ## Quick Start (2 Steps)
@@ -91,7 +91,7 @@ Your system's navigation guide. Contains:
 
 **Use it:** When you need to find something fast or onboard new people
 
-### agent_team/navigator.md
+### team/navigator.md
 Your "where is X?" expert. Ask it questions like:
 - "Where is the authentication logic?"
 - "Show me all API endpoints"
@@ -99,7 +99,7 @@ Your "where is X?" expert. Ask it questions like:
 
 Always cites MAP.md with exact file:line references.
 
-### agent_team/executor.md
+### team/executor.md
 Your task runner. Give it work like:
 - "Add authentication to the upload endpoint"
 - "Fix the bug in user registration"
@@ -107,7 +107,7 @@ Your task runner. Give it work like:
 
 Reads MAP.md, plans execution with file:line references, executes step-by-step.
 
-### agent_team/validator.md
+### team/validator.md
 Your quality gatekeeper. Runs after changes to:
 - Check for breaking changes
 - Update MAP.md if structure changed

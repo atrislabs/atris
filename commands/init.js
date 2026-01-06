@@ -150,7 +150,7 @@ function detectProjectContext(projectRoot = process.cwd()) {
 
 /**
  * Inject project-specific patterns into agent specs
- * @param {string} agentTeamDir - Directory containing agent_team specs
+ * @param {string} agentTeamDir - Directory containing team specs
  * @param {Object} profile - Project profile from detectProjectContext()
  */
 function injectProjectPatterns(agentTeamDir, profile) {
@@ -229,7 +229,7 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 
 function initAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
-  const agentTeamDir = path.join(targetDir, 'agent_team');
+  const agentTeamDir = path.join(targetDir, 'team');
   const sourceFile = path.join(__dirname, '..', 'atris.md');
   const targetFile = path.join(targetDir, 'atris.md');
 
@@ -242,7 +242,7 @@ function initAtris() {
 
   if (!fs.existsSync(agentTeamDir)) {
     fs.mkdirSync(agentTeamDir, { recursive: true });
-    console.log('✓ Created atris/agent_team/ folder');
+    console.log('✓ Created atris/team/ folder');
   }
 
   const gettingStartedFile = path.join(targetDir, 'GETTING_STARTED.md');
@@ -427,35 +427,35 @@ function initAtris() {
   });
 
 
-  const navigatorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'navigator.md');
-  const executorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'executor.md');
-  const validatorSource = path.join(__dirname, '..', 'atris', 'agent_team', 'validator.md');
-  const launcherSource = path.join(__dirname, '..', 'atris', 'agent_team', 'launcher.md');
-  const brainstormerSource = path.join(__dirname, '..', 'atris', 'agent_team', 'brainstormer.md');
+  const navigatorSource = path.join(__dirname, '..', 'atris', 'team', 'navigator.md');
+  const executorSource = path.join(__dirname, '..', 'atris', 'team', 'executor.md');
+  const validatorSource = path.join(__dirname, '..', 'atris', 'team', 'validator.md');
+  const launcherSource = path.join(__dirname, '..', 'atris', 'team', 'launcher.md');
+  const brainstormerSource = path.join(__dirname, '..', 'atris', 'team', 'brainstormer.md');
 
   if (!fs.existsSync(navigatorFile) && fs.existsSync(navigatorSource)) {
     fs.copyFileSync(navigatorSource, navigatorFile);
-    console.log('✓ Created agent_team/navigator.md');
+    console.log('✓ Created team/navigator.md');
   }
 
   if (!fs.existsSync(executorFile) && fs.existsSync(executorSource)) {
     fs.copyFileSync(executorSource, executorFile);
-    console.log('✓ Created agent_team/executor.md');
+    console.log('✓ Created team/executor.md');
   }
 
   if (!fs.existsSync(validatorFile) && fs.existsSync(validatorSource)) {
     fs.copyFileSync(validatorSource, validatorFile);
-    console.log('✓ Created agent_team/validator.md');
+    console.log('✓ Created team/validator.md');
   }
 
   if (!fs.existsSync(launcherFile) && fs.existsSync(launcherSource)) {
     fs.copyFileSync(launcherSource, launcherFile);
-    console.log('✓ Created agent_team/launcher.md');
+    console.log('✓ Created team/launcher.md');
   }
 
   if (!fs.existsSync(brainstormerFile) && fs.existsSync(brainstormerSource)) {
     fs.copyFileSync(brainstormerSource, brainstormerFile);
-    console.log('✓ Created agent_team/brainstormer.md');
+    console.log('✓ Created team/brainstormer.md');
   }
 
   // Detect project context and generate profile
@@ -466,7 +466,7 @@ function initAtris() {
 
   // Inject project patterns into agent specs
   injectProjectPatterns(agentTeamDir, profile);
-  console.log('✓ Injected project patterns into agent_team specs');
+  console.log('✓ Injected project patterns into team specs');
 
   // Create agent instruction files for different tools
   const agentInstructions = `# AGENTS.md — Universal Agent Instructions

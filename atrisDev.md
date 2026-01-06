@@ -2,7 +2,7 @@
 
 > **Drop this markdown file anywhere. Scaffold and operate an AI agent team.**
 
-This spec defines how to transform any system (codebase, product, sales process, research) into a self-documenting, AI-navigable workspace. Standard structure: `atris/` folder with MAP.md, agent_team/, and TODO.md.
+This spec defines how to transform any system (codebase, product, sales process, research) into a self-documenting, AI-navigable workspace. Standard structure: `atris/` folder with MAP.md, team/, and TODO.md.
 
 **Workflow:** Daily logs → Navigator plans → Executor builds → Validator reviews.
 
@@ -64,11 +64,11 @@ This spec defines how to transform any system (codebase, product, sales process,
 
 ## Phase 2: Foundational Agent Templates
 
-Atris ships with pre-built agent templates in `/atris/agent_team/` (copied during `atris init`). These templates provide battle-tested specs that work out of the box. Each agent has explicit guardrails.
+Atris ships with pre-built agent templates in `/atris/team/` (copied during `atris init`). These templates provide battle-tested specs that work out of the box. Each agent has explicit guardrails.
 
 **Templates included:**
 
-### Agent 1: **navigator.md** (in `/atris/agent_team/`)
+### Agent 1: **navigator.md** (in `/atris/team/`)
 
 - **Role:** System Navigator & Architecture Expert
 - **Activation Prompt:**
@@ -91,7 +91,7 @@ Atris ships with pre-built agent templates in `/atris/agent_team/` (copied durin
 - **Knowledge Base:** MAP.md, architecture docs, specs, design docs
 - **Success Metric:** Every question answered with exact references, zero guesses
 
-### Agent 2: **executor.md** (in `/atris/agent_team/`)
+### Agent 2: **executor.md** (in `/atris/team/`)
 
 - **Role:** Context-Aware Task Executor
 - **Activation Prompt:**
@@ -119,7 +119,7 @@ Atris ships with pre-built agent templates in `/atris/agent_team/` (copied durin
 - **Knowledge Base:** MAP.md, TODO.md (generated), test suite, type definitions
 - **Success Metric:** Tasks completed 95% first-try with zero regressions
 
-### Agent 3: **validator.md** (in `/atris/agent_team/`)
+### Agent 3: **validator.md** (in `/atris/team/`)
 
 - **Role:** Quality Gatekeeper
 - **Activation Prompt:**
@@ -229,9 +229,9 @@ Atris ships with pre-built agent templates in `/atris/agent_team/` (copied durin
 - ✅ `atris.md` (this spec)
 - ✅ `PERSONA.md` (agent communication style)
 - ✅ `GETTING_STARTED.md` (user guide)
-- ✅ `agent_team/navigator.md` (pre-built template)
-- ✅ `agent_team/executor.md` (pre-built template)
-- ✅ `agent_team/validator.md` (pre-built template)
+- ✅ `team/navigator.md` (pre-built template)
+- ✅ `team/executor.md` (pre-built template)
+- ✅ `team/validator.md` (pre-built template)
 - ⏳ `MAP.md` (AI agent generates from codebase)
 - ⏳ `TODO.md` (AI agent generates from MAP)
 
@@ -698,7 +698,7 @@ atris init
 # Hand atris/atris.md to your AI agent with this prompt:
 # "Read atris/atris.md. Execute Phase 1-4 to scaffold this system."
 
-# Agent generates MAP.md, agent_team/, and TODO.md in atris/
+# Agent generates MAP.md, team/, and TODO.md in atris/
 # Your system is now fully instrumented for AI collaboration
 
 # Keep atris.md updated

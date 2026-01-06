@@ -20,7 +20,7 @@ This file provides guidance to any coding agent (Claude Code, Cursor, Windsurf, 
 - `atris/PERSONA.md` - How to communicate and work (READ THIS FIRST)
 - `atris/MAP.md` - Navigation guide (where is X?)
 - `atris/TODO.md` - Active tasks (delete when done)
-- `atris/agent_team/*.md` - Agent specs for reference
+- `atris/team/*.md` - Agent specs for reference
 
 ---
 
