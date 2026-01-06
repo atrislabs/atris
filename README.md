@@ -44,8 +44,8 @@ Works with: Claude Code, Cursor, Windsurf, GitHub Copilot, any agent.
 ## Update
 
 ```bash
-npm update -g atris
-atris update
+atris upgrade     # Install latest from npm
+atris update      # Sync local files to new version
 ```
 
 ---
