@@ -68,7 +68,68 @@ function syncAtris() {
     console.log('✓ Migrated TASK_CONTEXTS.md to TODO.md');
   }
 
-  // Update .claude/skills/atris/SKILL.md
+  // Sync all skills from package to user's project
+  const packageSkillsDir = path.join(__dirname, '..', 'atris', 'skills');
+  const userSkillsDir = path.join(targetDir, 'skills');
+  const claudeSkillsBaseDir = path.join(process.cwd(), '.claude', 'skills');
+
+  if (fs.existsSync(packageSkillsDir)) {
+    // Ensure directories exist
+    if (!fs.existsSync(userSkillsDir)) {
+      fs.mkdirSync(userSkillsDir, { recursive: true });
+    }
+    if (!fs.existsSync(claudeSkillsBaseDir)) {
+      fs.mkdirSync(claudeSkillsBaseDir, { recursive: true });
+    }
+
+    // Get all skill folders from package
+    const skillFolders = fs.readdirSync(packageSkillsDir).filter(f => {
+      const skillPath = path.join(packageSkillsDir, f);
+      return fs.statSync(skillPath).isDirectory();
+    });
+
+    for (const skill of skillFolders) {
+      const srcSkillDir = path.join(packageSkillsDir, skill);
+      const destSkillDir = path.join(userSkillsDir, skill);
+      const symlinkPath = path.join(claudeSkillsBaseDir, skill);
+
+      // Copy skill folder if doesn't exist or update SKILL.md
+      if (!fs.existsSync(destSkillDir)) {
+        fs.mkdirSync(destSkillDir, { recursive: true });
+      }
+
+      // Copy/update SKILL.md
+      const srcSkillFile = path.join(srcSkillDir, 'SKILL.md');
+      const destSkillFile = path.join(destSkillDir, 'SKILL.md');
+      if (fs.existsSync(srcSkillFile)) {
+        const srcContent = fs.readFileSync(srcSkillFile, 'utf8');
+        const destContent = fs.existsSync(destSkillFile) ? fs.readFileSync(destSkillFile, 'utf8') : '';
+        if (srcContent !== destContent) {
+          fs.writeFileSync(destSkillFile, srcContent);
+          console.log(`✓ Updated atris/skills/${skill}/SKILL.md`);
+          updated++;
+        }
+      }
+
+      // Create symlink if doesn't exist
+      if (!fs.existsSync(symlinkPath)) {
+        const relativePath = path.join('..', '..', 'atris', 'skills', skill);
+        try {
+          fs.symlinkSync(relativePath, symlinkPath);
+          console.log(`✓ Linked .claude/skills/${skill}`);
+        } catch (e) {
+          // Fallback: copy instead of symlink
+          fs.mkdirSync(symlinkPath, { recursive: true });
+          if (fs.existsSync(destSkillFile)) {
+            fs.copyFileSync(destSkillFile, path.join(symlinkPath, 'SKILL.md'));
+          }
+          console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
+        }
+      }
+    }
+  }
+
+  // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
   const skillContent = `---
