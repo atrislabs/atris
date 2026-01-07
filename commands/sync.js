@@ -125,23 +125,36 @@ function syncAtris() {
       const destSkillDir = path.join(userSkillsDir, skill);
       const symlinkPath = path.join(claudeSkillsBaseDir, skill);
 
-      // Copy skill folder if doesn't exist or update SKILL.md
-      if (!fs.existsSync(destSkillDir)) {
-        fs.mkdirSync(destSkillDir, { recursive: true });
-      }
-
-      // Copy/update SKILL.md
-      const srcSkillFile = path.join(srcSkillDir, 'SKILL.md');
-      const destSkillFile = path.join(destSkillDir, 'SKILL.md');
-      if (fs.existsSync(srcSkillFile)) {
-        const srcContent = fs.readFileSync(srcSkillFile, 'utf8');
-        const destContent = fs.existsSync(destSkillFile) ? fs.readFileSync(destSkillFile, 'utf8') : '';
-        if (srcContent !== destContent) {
-          fs.writeFileSync(destSkillFile, srcContent);
-          console.log(`✓ Updated atris/skills/${skill}/SKILL.md`);
-          updated++;
+      // Recursive sync function for skills (handles subdirs like hooks/)
+      const syncRecursive = (src, dest, skillName, basePath = '') => {
+        if (!fs.existsSync(dest)) {
+          fs.mkdirSync(dest, { recursive: true });
         }
-      }
+        const entries = fs.readdirSync(src);
+        for (const entry of entries) {
+          const srcPath = path.join(src, entry);
+          const destPath = path.join(dest, entry);
+          const relPath = basePath ? `${basePath}/${entry}` : entry;
+
+          if (fs.statSync(srcPath).isDirectory()) {
+            syncRecursive(srcPath, destPath, skillName, relPath);
+          } else {
+            const srcContent = fs.readFileSync(srcPath, 'utf8');
+            const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
+            if (srcContent !== destContent) {
+              fs.writeFileSync(destPath, srcContent);
+              // Preserve executable permission for shell scripts
+              if (entry.endsWith('.sh')) {
+                fs.chmodSync(destPath, 0o755);
+              }
+              console.log(`✓ Updated atris/skills/${skillName}/${relPath}`);
+              updated++;
+            }
+          }
+        }
+      };
+
+      syncRecursive(srcSkillDir, destSkillDir, skill);
 
       // Create symlink if doesn't exist
       if (!fs.existsSync(symlinkPath)) {
