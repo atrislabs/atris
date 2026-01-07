@@ -592,6 +592,62 @@ Rules: 3-4 sentences max, ASCII visuals, check MAP.md first.`;
     console.log('✓ Created .claude/commands/atris.md (for Claude Code)');
   }
 
+  // .claude/commands/atris-autopilot.md for autonomous loops
+  const autopilotCommandFile = path.join(claudeCommandsDir, 'atris-autopilot.md');
+  if (!fs.existsSync(autopilotCommandFile)) {
+    fs.mkdirSync(claudeCommandsDir, { recursive: true });
+    const autopilotCommand = `---
+description: PRD-driven autonomous execution - give it a task, it loops until done
+arguments:
+  - name: task
+    description: What to build (e.g., "Add dark mode toggle")
+    required: true
+  - name: max-iterations
+    description: Max loops before stopping (default 10)
+    required: false
+---
+
+# Atris Autopilot
+
+Autonomous mode. Loop until task complete or max iterations.
+
+## Setup State
+
+\`\`\`bash
+mkdir -p .claude
+cat > .claude/atris-autopilot.state.md << 'STATEEOF'
+---
+iteration: 1
+max_iterations: \${2:-10}
+completion_promise: <promise>COMPLETE</promise>
+---
+
+$1
+STATEEOF
+\`\`\`
+
+## Task: $1
+
+## Process (each iteration)
+
+1. **PLAN** — Read MAP.md, identify ONE thing to do
+2. **DO** — Implement it, commit
+3. **REVIEW** — Check acceptance criteria
+
+## Rules
+
+- ONE thing per iteration
+- Check MAP.md before touching code
+- Search before assuming not implemented
+- When done: \`<promise>COMPLETE</promise>\`
+
+## Start
+
+Read atris/MAP.md. Begin iteration 1.`;
+    fs.writeFileSync(autopilotCommandFile, autopilotCommand);
+    console.log('✓ Created .claude/commands/atris-autopilot.md (autonomous loops)');
+  }
+
   // Copy skills from package to atris/skills/ and symlink to .claude/skills/
   const skillsSourceDir = path.join(__dirname, '..', 'atris', 'skills');
   const skillsTargetDir = path.join(targetDir, 'skills');
@@ -614,12 +670,21 @@ Rules: 3-4 sentences max, ASCII visuals, check MAP.md first.`;
       const destSkillDir = path.join(skillsTargetDir, skill);
 
       if (!fs.existsSync(destSkillDir)) {
-        fs.mkdirSync(destSkillDir, { recursive: true });
-        // Copy all files in skill folder
-        const files = fs.readdirSync(srcSkillDir);
-        for (const file of files) {
-          fs.copyFileSync(path.join(srcSkillDir, file), path.join(destSkillDir, file));
-        }
+        // Recursive copy function for skills (handles subdirs like hooks/)
+        const copyRecursive = (src, dest) => {
+          fs.mkdirSync(dest, { recursive: true });
+          const entries = fs.readdirSync(src);
+          for (const entry of entries) {
+            const srcPath = path.join(src, entry);
+            const destPath = path.join(dest, entry);
+            if (fs.statSync(srcPath).isDirectory()) {
+              copyRecursive(srcPath, destPath);
+            } else {
+              fs.copyFileSync(srcPath, destPath);
+            }
+          }
+        };
+        copyRecursive(srcSkillDir, destSkillDir);
         console.log(`✓ Copied skill: ${skill}`);
       }
     }
@@ -688,6 +753,16 @@ Rules: 3-4 sentences max, ASCII visuals, check MAP.md first.`;
               {
                 type: "command",
                 command: "[ -d atris ] && atris atris.md || true"
+              }
+            ]
+          }
+        ],
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "atris/skills/autopilot/hooks/stop-hook.sh"
               }
             ]
           }
