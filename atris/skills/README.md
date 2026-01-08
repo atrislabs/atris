@@ -25,6 +25,7 @@ atris/skills/writing/SKILL.md     ← source of truth
 |-------|-------------|--------|
 | atris | Atris workflow enforcement + plan/do/review | `policies/ANTISLOP.md` |
 | autopilot | PRD-driven autonomous execution - loops until done | — |
+| email-agent | Gmail integration via AtrisOS - read, send, archive emails | — |
 | meta | Metacognition for agents - how to think about thinking | `policies/LESSONS.md` |
 | design | Frontend aesthetics - avoid generic AI look | `policies/atris-design.md` |
 | backend | Backend architecture - prevent over-engineering | `policies/atris-backend.md` |
