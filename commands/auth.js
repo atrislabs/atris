@@ -1,13 +1,33 @@
 const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 
-async function loginAtris() {
-  
+async function loginAtris(options = {}) {
+  // Support: atris login --token <token> --force
+  const args = process.argv.slice(3);
+  const forceFlag = args.includes('--force') || args.includes('-f') || options.force;
+  const tokenIndex = args.indexOf('--token');
+  const directToken = tokenIndex !== -1 ? args[tokenIndex + 1] : options.token;
+
   try {
     console.log('🔐 Login to AtrisOS\n');
 
     const existing = loadCredentials();
-    if (existing) {
+
+    // Direct token mode (non-interactive)
+    if (directToken) {
+      const trimmed = directToken.trim();
+      saveCredentials(trimmed, null, existing?.email || null, existing?.user_id || null, existing?.provider || 'manual');
+      console.log('Token saved. Validating…\n');
+      const summary = await displayAccountSummary(apiRequestJson);
+      if (summary.error) {
+        console.log('\n⚠️ Token saved, but validation failed.');
+        process.exit(1);
+      }
+      console.log('\n✓ Logged in successfully.');
+      process.exit(0);
+    }
+
+    if (existing && !forceFlag) {
       const label = existing.email || existing.user_id || 'unknown user';
       console.log(`Already logged in as: ${label}`);
       const confirm = await promptUser('Do you want to login again? (y/N): ');

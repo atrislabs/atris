@@ -18,10 +18,13 @@ fi
 
 # 2. Check if logged in to AtrisOS
 if [ ! -f ~/.atris/credentials.json ]; then
-  echo "Not logged in. Starting login flow..."
-  atris login
-  echo "After login completes, run your email command again."
-  exit 0
+  echo "Not logged in to AtrisOS."
+  echo ""
+  echo "Option 1 (interactive): Run 'atris login' and follow prompts"
+  echo "Option 2 (non-interactive): Get token from https://app.atris.ai/settings/api"
+  echo "                           Then run: atris login --token YOUR_TOKEN"
+  echo ""
+  exit 1
 fi
 
 # 3. Extract token (try node first, then python3, then jq)
@@ -36,9 +39,17 @@ else
   exit 1
 fi
 
-# 4. Check Gmail connection status
+# 4. Check Gmail connection status (also validates token)
 STATUS=$(curl -s "https://api.atris.ai/api/integrations/gmail/status" \
   -H "Authorization: Bearer $TOKEN")
+
+# Check for token expiry
+if echo "$STATUS" | grep -q "Token expired\|Not authenticated"; then
+  echo "Token expired. Please re-authenticate:"
+  echo "  Run: atris login --force"
+  echo "  Or get new token from: https://app.atris.ai/settings/api"
+  exit 1
+fi
 
 # Parse connected status
 if command -v node &> /dev/null; then

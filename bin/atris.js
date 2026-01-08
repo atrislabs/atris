@@ -192,7 +192,7 @@ function showHelp() {
   console.log('Cloud & agents:');
   console.log('  agent      - Select which Atris agent to use');
   console.log('  chat       - Chat with the selected Atris agent');
-  console.log('  login      - Authenticate with Atris cloud (optional)');
+  console.log('  login      - Authenticate (use --token <t> for non-interactive)');
   console.log('  logout     - Remove credentials');
   console.log('  whoami     - Show auth status');
   console.log('');
