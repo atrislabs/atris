@@ -21,7 +21,7 @@ if [ ! -f ~/.atris/credentials.json ]; then
   echo "Not logged in to AtrisOS."
   echo ""
   echo "Option 1 (interactive): Run 'atris login' and follow prompts"
-  echo "Option 2 (non-interactive): Get token from https://app.atris.ai/settings/api"
+  echo "Option 2 (non-interactive): Get token from https://atris.ai/auth/cli"
   echo "                           Then run: atris login --token YOUR_TOKEN"
   echo ""
   exit 1
@@ -47,7 +47,7 @@ STATUS=$(curl -s "https://api.atris.ai/api/integrations/gmail/status" \
 if echo "$STATUS" | grep -q "Token expired\|Not authenticated"; then
   echo "Token expired. Please re-authenticate:"
   echo "  Run: atris login --force"
-  echo "  Or get new token from: https://app.atris.ai/settings/api"
+  echo "  Or get new token from: https://atris.ai/auth/cli"
   exit 1
 fi
 

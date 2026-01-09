@@ -1936,7 +1936,7 @@ async function loginAtris() {
       process.exit(0);
     } else if (choice === '2') {
       console.log('\n📋 Manual Token Entry');
-      console.log('Get your token from: https://app.atris.ai/settings/api\n');
+      console.log('Get your token from: https://atris.ai/auth/cli\n');
 
       const tokenInput = await promptUser('Paste your API token: ');
 
@@ -2261,7 +2261,7 @@ async function agentAtris() {
   const agents = result.data?.my_agents || [];
 
   if (agents.length === 0) {
-    console.log('No agents found. Create one at https://app.atris.ai');
+    console.log('No agents found. Create one at https://atris.ai');
     process.exit(0);
   }
 
