@@ -23,7 +23,40 @@ function openBrowser(url) {
   });
 }
 
+// Shared readline for piped input
+let sharedRl = null;
+let inputLines = [];
+let inputIndex = 0;
+
 function promptUser(question) {
+  // If stdin is not a TTY (piped input), read all lines upfront
+  if (!process.stdin.isTTY && inputLines.length === 0 && !sharedRl) {
+    return new Promise((resolve) => {
+      let data = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', chunk => data += chunk);
+      process.stdin.on('end', () => {
+        inputLines = data.trim().split('\n');
+        process.stdout.write(question);
+        const answer = inputLines[inputIndex++] || '';
+        console.log(answer);
+        resolve(answer.trim());
+      });
+      process.stdin.resume();
+    });
+  }
+
+  // If we already have buffered lines from piped input
+  if (inputLines.length > 0 && inputIndex < inputLines.length) {
+    return new Promise((resolve) => {
+      process.stdout.write(question);
+      const answer = inputLines[inputIndex++] || '';
+      console.log(answer);
+      resolve(answer.trim());
+    });
+  }
+
+  // Interactive TTY mode - create readline per prompt
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
