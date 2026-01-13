@@ -1,3 +1,8 @@
+---
+name: memory
+description: Search and reason over Atris journal history. Use when user asks about past work, decisions, history, or patterns. Uses RLM pattern (grep first, reason second).
+---
+
 # Atris Memory Skill
 
 Search and reason over Atris journal history using the RLM pattern (grep first, reason second).
