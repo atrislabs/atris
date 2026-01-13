@@ -15,7 +15,7 @@ Load workspace context for AI-navigable development.
 
 ## Check today's journal:
 
-!`ls -la atris/logs/2025/ 2>/dev/null | tail -3`
+!`ls -la atris/logs/2026/ 2>/dev/null | tail -3`
 
 ## Your workflow:
 
