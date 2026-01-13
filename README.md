@@ -48,13 +48,21 @@ atris upgrade     # Install latest from npm
 atris update      # Sync local files to new version
 ```
 
+## Skills
+
+Atris includes agent-agnostic skills that work with Claude, Cursor, Codex, any LLM:
+
+| Skill | Purpose |
+|-------|---------|
+| atris | Workflow enforcement + plan/do/review |
+| autopilot | PRD-driven autonomous execution |
+| backend | Backend architecture anti-patterns |
+| design | Frontend aesthetics policy |
+| meta | Metacognition for agents |
+| writing | Essay process with approval gates |
+
+Install to Codex: `cp -r atris/skills/[name] ~/.codex/skills/`
+
 ---
 
-## Latest Updates
-
-
-See [releases](https://github.com/atrislabs/atris.md/releases) for full changelog.
-
----
-
-**License:** MIT | **Repo:** [github.com/atrislabs/atris.md](https://github.com/atrislabs/atris.git)
+**License:** MIT | **Repo:** [github.com/atrislabs/atris](https://github.com/atrislabs/atris.git)
