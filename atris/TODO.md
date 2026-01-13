@@ -18,13 +18,15 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- [ ] Run end-to-end atris feature test
+(Clean)
 
 ---
 
 ## Completed
 
-- [x] Install atris skill into Codex skills (8 skills → ~/.codex/skills/)
+- [x] Install all skills to Codex (8 skills → ~/.codex/skills/)
+- [x] Add frontmatter to email-agent, memory, autopilot skills
+- [x] Clean up stale files, duplicate folders, gitignore
 - [x] FEAT-001: CLI version in autopilot banner
 - [x] Define Atris system skill
 - [x] Publish skill distro + smoke test
