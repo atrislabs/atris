@@ -12,6 +12,14 @@ atris atris.md
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
 
+## MAPFIRST (Enforced)
+
+**Before ANY file search/grep:**
+1. READ `atris/MAP.md`
+2. Search for your keyword in MAP
+3. If found → go directly to file:line
+4. If not found → grep ONCE, then UPDATE MAP.md
+
 ## Setup
 
 - Read `atris/PERSONA.md` (tone + operating rules).
