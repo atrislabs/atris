@@ -44,6 +44,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/atrislabs/atris.md.git"
+    "url": "git+https://github.com/atrislabs/atris.git"
   }
 }
