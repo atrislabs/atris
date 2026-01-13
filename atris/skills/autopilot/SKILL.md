@@ -1,4 +1,5 @@
 ---
+name: autopilot
 description: PRD-driven autonomous execution - give it a task, it loops until done
 triggers: [autopilot, autonomous, "get it done", "finish this", "ship it"]
 ---
