@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2025-12-30
+> **Last updated:** 2026-01-13
 
 ---
 
@@ -12,7 +12,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
-(Clean! All items implemented.)
+(Clean!)
 
 ---
 
@@ -24,29 +24,15 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Completed
 
-- [x] Install atris skill into Codex skills (all 8 skills installed to ~/.codex/skills/)
-
----
-
-## FEAT-001: Add CLI version to autopilot banner [DONE]
-
-Already implemented:
-- `commands/autopilot.js:227` — Shows `Atris Autopilot v${pkg.version}`
-- `commands/brainstorm.js:497` — Shows `Atris Autopilot v${pkg.version}`
-
----
-
-## Completed
-
-- [x] Define Atris system skill (autopilot/validated outputs)
-- [x] Simulate atris skill behavior + publish distro
-- [x] Run atris skill behavior smoke test
-- [x] Validate atris skill behavior
-- [x] Tighten auth utils: chmod credentials, dedupe helpers, add request timeout
-- [x] atris search <keyword> - grep across journal history (already implemented)
-- [x] INTUITION.md template at init (already implemented in init.js:308-342)
-- [x] Surface last 3 completions at activate (already implemented in activate.js:40-113)
-- [x] Add "Learned" field to Handoff prompt (already implemented in workflow.js:1018)
-- [x] Validator prompts "Any learnings?" at review end (already implemented in workflow.js:1024-1058)
+- [x] Install atris skill into Codex skills (8 skills → ~/.codex/skills/)
+- [x] FEAT-001: CLI version in autopilot banner
+- [x] Define Atris system skill
+- [x] Publish skill distro + smoke test
+- [x] Auth utils: chmod, dedupe, timeout
+- [x] `atris search` command
+- [x] INTUITION.md template
+- [x] Last 3 completions at activate
+- [x] "Learned" field in Handoff
+- [x] "Any learnings?" validator prompt
 
 ---
