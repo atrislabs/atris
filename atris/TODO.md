@@ -12,11 +12,7 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
-- [ ] Add "Learned" field to Handoff prompt (commands/workflow.js)
-- [ ] Surface last 3 completions at activate (commands/activate.js)
-- [ ] Validator prompts "Any learnings?" at review end (commands/workflow.js)
-- [ ] INTUITION.md template at init (Tripwires/Preferences/Dead Ends)
-- [ ] atris search <keyword> - grep across journal history
+(Clean! All items implemented.)
 
 ---
 
@@ -42,5 +38,10 @@ Already implemented:
 - [x] Run atris skill behavior smoke test
 - [x] Validate atris skill behavior
 - [x] Tighten auth utils: chmod credentials, dedupe helpers, add request timeout
+- [x] atris search <keyword> - grep across journal history (already implemented)
+- [x] INTUITION.md template at init (already implemented in init.js:308-342)
+- [x] Surface last 3 completions at activate (already implemented in activate.js:40-113)
+- [x] Add "Learned" field to Handoff prompt (already implemented in workflow.js:1018)
+- [x] Validator prompts "Any learnings?" at review end (already implemented in workflow.js:1024-1058)
 
 ---
