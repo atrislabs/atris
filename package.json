@@ -12,6 +12,8 @@
     "utils/",
     "lib/",
     "README.md",
+    "AGENT.md",
+    "AGENTS.md",
     "atris.md",
     "GETTING_STARTED.md",
     "PERSONA.md",
