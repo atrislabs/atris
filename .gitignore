@@ -38,3 +38,7 @@ atris/features/*
 !atris/features/README.md
 # Legacy location (deprecated)
 docs/features/
+
+# Autopilot temp files
+prd.json
+progress.txt
