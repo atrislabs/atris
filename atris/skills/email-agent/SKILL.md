@@ -1,3 +1,8 @@
+---
+name: email-agent
+description: Gmail integration via AtrisOS API. Read, send, archive emails. Use when user asks about email, inbox, or wants to send/check messages.
+---
+
 # Email Agent
 
 > Drop this in `~/.claude/skills/email-agent/SKILL.md` and Claude Code becomes your email assistant.
