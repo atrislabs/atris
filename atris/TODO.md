@@ -18,8 +18,13 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- [ ] Install atris skill into Codex skills
 - [ ] Run end-to-end atris feature test
+
+---
+
+## Completed
+
+- [x] Install atris skill into Codex skills (all 8 skills installed to ~/.codex/skills/)
 
 ---
 
