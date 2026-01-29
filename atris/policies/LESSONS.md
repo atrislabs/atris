@@ -10,3 +10,4 @@ Purpose: Capture short, actionable lessons after REVIEW misses.
 
 ## Entries
 - 2026-01-04 | meta | JSON edits break easily on quote boundaries → use Read tool to verify after Edit on .json files
+- 2026-01-28 | init | Meta-frameworks must be detected before base frameworks → Next.js check before React check (tests caught this)

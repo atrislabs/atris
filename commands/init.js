@@ -46,10 +46,13 @@ function detectProjectContext(projectRoot = process.cwd()) {
       try {
         const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
         const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        // Check meta-frameworks first (they include base frameworks as deps)
+        if (deps.next) return 'next';
+        if (deps.nuxt) return 'nuxt';
+        if (deps.angular || deps['@angular/core']) return 'angular';
+        // Then base frameworks
         if (deps.react || deps['react-dom']) return 'react';
         if (deps.vue) return 'vue';
-        if (deps.angular || deps['@angular/core']) return 'angular';
-        if (deps.next) return 'next';
         if (deps['express']) return 'express';
         if (deps['fastify']) return 'fastify';
         return 'nodejs';
