@@ -33,6 +33,7 @@ cp -r atris/skills/[name] ~/.codex/skills/
 | memory | Context and memory management | — |
 | meta | Metacognition for agents | `policies/LESSONS.md` |
 | writing | Essay process with gates | `policies/writing.md` |
+| copy-editor | Detects and fixes AI writing patterns | - |
 
 ## Creating Skills
 
