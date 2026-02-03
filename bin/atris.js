@@ -196,6 +196,13 @@ function showHelp() {
   console.log('  logout     - Remove credentials');
   console.log('  whoami     - Show auth status');
   console.log('');
+  console.log('Integrations:');
+  console.log('  gmail      - Email commands (inbox, read)');
+  console.log('  calendar   - Calendar commands (today, week)');
+  console.log('  twitter    - Twitter commands (post)');
+  console.log('  slack      - Slack commands (channels)');
+  console.log('  integrations - Show integration status');
+  console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
@@ -305,7 +312,8 @@ const { verifyAtris: verifyCmd } = require('../commands/verify');
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search'];
+                       'clean', 'verify', 'search',
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -749,6 +757,39 @@ if (command === 'init') {
 } else if (command === 'search') {
   const keyword = process.argv.slice(3).join(' ');
   searchJournal(keyword);
+} else if (command === 'gmail') {
+  const { gmailCommand } = require('../commands/integrations');
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  gmailCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err.message); process.exit(1); });
+} else if (command === 'calendar') {
+  const { calendarCommand } = require('../commands/integrations');
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  calendarCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err.message); process.exit(1); });
+} else if (command === 'twitter') {
+  const { twitterCommand } = require('../commands/integrations');
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  twitterCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err.message); process.exit(1); });
+} else if (command === 'slack') {
+  const { slackCommand } = require('../commands/integrations');
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  slackCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err.message); process.exit(1); });
+} else if (command === 'integrations') {
+  const { integrationsStatus } = require('../commands/integrations');
+  integrationsStatus()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(err.message); process.exit(1); });
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
