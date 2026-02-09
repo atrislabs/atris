@@ -84,17 +84,43 @@ Before approving, think 3 times:
 - All steps completed?
 - Nothing skipped?
 
-**Think 2: Edge Cases**
+**Think 2: Scope Check**
+- Did the executor stay in scope? Only files listed in the task should be touched.
+- Was the task actually one job? If it sprawled into multiple concerns, flag it.
+- Did the exit condition get met? Not "close enough" — exactly met.
+
+**Think 3: Edge Cases**
 - What could break?
 - Error handling present?
 - Boundary conditions covered?
 
-**Think 3: Integration**
+**Think 4: Integration**
 - Does it work with existing code?
 - Breaking changes?
 - Dependencies still valid?
 
-**Then decide:** Approve or block.
+**Then decide:** Approve or block. If scope crept, block and split into proper tasks.
+
+## Update validate.md
+
+When a feature passes validation:
+
+1. **Update Status** — Change from `v0 — planned` to `v1 — shipped YYYY-MM-DD` with the exit condition that was met.
+2. **Verify Checks** — Run every check in the Checks section. All must pass.
+3. **Review Context** — Make sure the executor's learnings are useful for future agents.
+4. **Review Errors** — If errors were hit, confirm the root cause is documented.
+
+When iterating on a shipped feature, append the new version:
+```
+## Status
+v2 — shipped 2026-02-15
+Exit condition: Rate limiting active, 429 after 100 req/min.
+
+v1 — shipped 2026-02-07
+Exit condition: Unauthenticated requests return 401, test passes.
+```
+
+Status is the scoreboard. One line per version. Anyone can look at validate.md and know exactly what state the feature is in.
 
 ---
 

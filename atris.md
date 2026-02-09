@@ -88,12 +88,31 @@ Stage: PLAN → do → review   (capitalize current stage)
 ## WORKFLOW
 
 ```
-plan → do → review
+scout → plan → do → review
 ```
 
+- **SCOUT** — Read relevant files first. Understand before you act. Report what you found.
 - **PLAN** — ASCII visualization, get approval, NO code yet
 - **DO** — Execute step-by-step, update journal
 - **REVIEW** — Test, validate, clean up, delete completed tasks
+
+---
+
+## TASK RULES
+
+Every task must follow these rules. No exceptions.
+
+**One job per task.** If a task touches more than 2-3 files, break it down. If you can't describe "done" in one sentence, it's too big.
+
+**Clear exit condition.** Every task states what "done" looks like. Not "improve auth" — instead: "Add session check to upload handler. Done when: unauthenticated requests return 401 and test passes."
+
+**Tag every task:**
+- `[explore]` — Ambiguous. Needs reading, research, judgment. Output is understanding.
+- `[execute]` — Precise. Route is clear. Just do it. Output is code or artifact.
+
+**Explore before execute.** When starting a new area of work, the first tasks should be `[explore]`. Read the files. Map the space. Report what you found. Then plan `[execute]` tasks based on what you learned.
+
+**Sequence matters.** Order tasks so each one builds context for the next. Early tasks should teach you about the problem. Later tasks use that knowledge.
 
 ---
 

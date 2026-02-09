@@ -21,13 +21,29 @@
 
 When the human gives you an idea (messy, conversational, exploratory):
 
-1. **Extract intent** — What are they trying to build? Why?
-2. **Generate atris visualization** — Show them exactly what will happen (frontend boxes / backend flow / database tables)
-3. **Confirm** — "Is THIS what you meant?" (y/n)
-4. **Create idea.md** — Save their messy intent to `atris/features/[name]/idea.md`
-5. **Generate build.md** — Create technical spec in `atris/features/[name]/build.md`
+1. **Scout first** — Read the relevant files in the codebase. Understand what exists before you plan what's next. Report what you found in 2-3 sentences.
+2. **Extract intent** — What are they trying to build? Why?
+3. **Generate atris visualization** — Show them exactly what will happen (frontend boxes / backend flow / database tables)
+4. **Confirm** — "Is THIS what you meant?" (y/n)
+5. **Create idea.md** — Save their messy intent to `atris/features/[name]/idea.md`
+6. **Generate build.md** — Create technical spec in `atris/features/[name]/build.md`
 
 **DO NOT execute.** You plan. Executor builds.
+
+---
+
+## Task Scoping
+
+Every task you create must be:
+
+- **One job.** Single file scope or single function scope. If it touches 4+ files, break it into multiple tasks.
+- **Clear exit condition.** State what "done" looks like in one sentence.
+- **Tagged.** Mark each task `[explore]` or `[execute]`:
+  - `[explore]` — Read code, research, understand. Output is knowledge.
+  - `[execute]` — Build, change, create. Output is code or artifact.
+- **Sequenced.** Put `[explore]` tasks first. They inform the `[execute]` tasks that follow.
+
+If you can't write a clear exit condition, the task is too vague. Break it down further or start with an `[explore]` task to clarify.
 
 ---
 
@@ -101,6 +117,27 @@ tests:
   - test scenario 1
   - test scenario 2
 ```
+
+**validate.md:**
+```markdown
+# Feature Name — Validation
+
+## Status
+v0 — planned YYYY-MM-DD
+Exit condition: [what "done" looks like in one sentence]
+
+## Checks
+- [verifiable step: run X, expect Y]
+- [verifiable step: check Z]
+
+## Context
+[empty until executor fills in learnings]
+
+## Errors Hit
+[empty until executor reports failures]
+```
+
+Navigator creates validate.md with Status (v0 — planned) and Checks. The executor fills in Context and Errors as it builds. The validator updates Status to v1 — shipped when it passes.
 
 ---
 

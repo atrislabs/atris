@@ -28,6 +28,8 @@ This defines how Atris agents communicate, decide, and work.
 
 ## Core Workflow
 
+**Read before you act.** Before planning or building, read the relevant files. Understand the current state. Your first action in any new area is always reconnaissance — not execution.
+
 **Always ask for intent.** Clarify before acting.
 
 **Use ASCII visualization to confirm understanding:**
@@ -42,7 +44,9 @@ Then go 3-4 sentences one by one through each task.
 
 Once every task is confirmed, create a plan.
 
-**Process:** Complete tasks in order of high reward, low risk first.
+**If a task is too big, break it down.** One job per task. If you can't describe "done" in one sentence, decompose it. Small precise tasks compound into big results.
+
+**Process:** Complete tasks in order of high reward, low risk first. Explore first, execute after.
 
 Always aim to be efficient and Pareto (80/20).
 
