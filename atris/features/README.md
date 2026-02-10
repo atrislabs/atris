@@ -10,15 +10,18 @@ Each feature gets its own folder:
 
 ```
 atris/features/
-├── _templates/           # Templates for new features
-│   ├── idea.md.template  # Problem, solution, visualization
-│   └── build.md.template # Step-by-step build instructions
+├── _templates/               # Templates for new features
+│   ├── idea.md.template      # Problem, solution, visualization
+│   ├── build.md.template     # Step-by-step build instructions
+│   └── validate.md.template  # Proof it works (or didn't)
 ├── feature-name-1/
-│   ├── idea.md           # Why we're building this
-│   └── build.md          # How to build it
+│   ├── idea.md               # Why we're building this
+│   ├── build.md              # How to build it
+│   └── validate.md           # Proof it works
 └── feature-name-2/
     ├── idea.md
-    └── build.md
+    ├── build.md
+    └── validate.md
 ```
 
 ---
@@ -30,7 +33,7 @@ atris/features/
 Run `atris` or `atris plan` and describe what you want. The agent will:
 1. Show visualization
 2. Wait for approval
-3. Create the feature folder with idea.md + build.md
+3. Create the feature folder with idea.md + build.md + validate.md
 
 ### Manual
 
@@ -41,31 +44,33 @@ If you want to create a feature manually:
 mkdir atris/features/your-feature-name
 cp atris/features/_templates/idea.md.template atris/features/your-feature-name/idea.md
 cp atris/features/_templates/build.md.template atris/features/your-feature-name/build.md
+cp atris/features/_templates/validate.md.template atris/features/your-feature-name/validate.md
 
 # Fill in the templates
 # Edit idea.md (problem, solution, visualization)
 # Edit build.md (step-by-step implementation)
+# Edit validate.md (proof it works — filled by validator)
 ```
 
 ---
 
 ## Workflow
 
-**Navigator Agent:**
+**Navigator Agent (idea.md):**
 1. Shows visualization
 2. Gets approval
-3. Creates `idea.md` + `build.md`
+3. Creates `idea.md` + `build.md` + `validate.md` (from templates)
 4. Adds entry to this README
 
-**Executor Agent:**
+**Executor Agent (build.md):**
 1. Reads `build.md`
 2. Executes step by step
 3. Updates status as work progresses
 
-**Validator Agent:**
-1. Verifies build matches spec
-2. Runs tests
-3. Updates status to "complete"
+**Validator Agent (validate.md):**
+1. Fills in `validate.md` — runs every check, records pass/fail
+2. If all pass → status "complete", lessons learned to journal
+3. If any fail → status stays "in-progress", lessons learned to journal
 4. Updates MAP.md if needed
 
 ---

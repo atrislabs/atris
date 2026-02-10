@@ -2605,13 +2605,14 @@ async function atrisDevEntry(userInput = null) {
   if (existingFeatures.length > 0) {
     console.log('   Existing: ' + existingFeatures.join(', '));
   }
-  console.log('   NEW feature → atris/features/[name]/idea.md + build.md');
+  console.log('   NEW feature → atris/features/[name]/idea.md + build.md + validate.md');
   console.log('   EXISTING → Update that feature\'s docs');
   console.log('   SIMPLE → TODO.md only');
   console.log('');
   console.log('STEP 3: Create/update docs');
   console.log('   idea.md = intent (any format)');
   console.log('   build.md = technical spec');
+  console.log('   validate.md = proof it works (from _templates/validate.md.template)');
   console.log('');
   console.log('⛔ DO NOT execute — that\'s for "atris do"');
   console.log('');
