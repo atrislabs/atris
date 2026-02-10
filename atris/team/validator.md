@@ -146,15 +146,15 @@ One-line description
 
 ## Harvest Lessons
 
-After every validation (pass or fail), append to `atris/lessons.md`:
+After validation, ask yourself: **did anything surprise me?** Something broke unexpectedly, worked differently than planned, or revealed a pattern worth remembering.
+
+If yes, append to `atris/lessons.md`:
 
 ```
 - **[YYYY-MM-DD] [feature-name]** — (pass|fail) — One-line lesson
 ```
 
-The lesson should capture what surprised you, what broke, or what worked better than expected. If nothing surprised you, write that — "clean build, no surprises" is still a data point.
-
-**This is not optional.** Every feature produces a lesson. The navigator reads these before planning the next feature.
+If nothing surprised you, don't write anything. A clean build with no surprises isn't a lesson — it's the system working. Only capture what's genuinely useful for the next navigator reading this file.
 
 ---
 
