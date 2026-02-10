@@ -2613,6 +2613,7 @@ async function atrisDevEntry(userInput = null) {
   console.log('   idea.md = intent (any format)');
   console.log('   build.md = technical spec');
   console.log('   validate.md = proof it works (from _templates/validate.md.template)');
+  console.log('   lessons.md = read past lessons before planning, write new ones after validating');
   console.log('');
   console.log('⛔ DO NOT execute — that\'s for "atris do"');
   console.log('');

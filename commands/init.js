@@ -373,6 +373,19 @@ function initAtris() {
     console.log('✓ Created TODO.md placeholder');
   }
 
+  // Create lessons.md (feedback loop for learning across features)
+  const lessonsFile = path.join(targetDir, 'lessons.md');
+  if (!fs.existsSync(lessonsFile)) {
+    fs.writeFileSync(lessonsFile, `# lessons.md — What We Learned
+
+> Append-only. One line per lesson. Harvested by validator after every feature.
+
+---
+
+`);
+    console.log('✓ Created lessons.md');
+  }
+
   // Create logs directory and today's journal with bootstrap tasks
   const logsDir = path.join(targetDir, 'logs');
   const yearDir = path.join(logsDir, new Date().getFullYear().toString());
