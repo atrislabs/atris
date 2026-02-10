@@ -495,7 +495,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - ⭐ `GETTING_STARTED.md` (140 lines) — User guide
 - ⭐ `PERSONA.md` (155 lines) — Communication style & anti-slop patterns
 - ⭐ `atris/features/README.md` — Feature documentation guide
-- ⭐ `atris/features/_templates/` — idea.md & build.md templates
+- ⭐ `atris/features/_templates/` — idea.md, build.md & validate.md templates
+- ⭐ `atris/lessons.md` — Append-only learnings harvested by validator, read by navigator
 - `README.md` (17 lines) — Project overview
 - `docs/README.md` — Legacy docs (deprecated, points to atris/features/)
 

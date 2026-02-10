@@ -141,6 +141,7 @@ Specs loaded at activate from `team/*.md`
 |------|---------|
 | `MAP.md` | Where is X? (navigation) |
 | `TODO.md` | Task queue (target: 0) |
+| `lessons.md` | What we learned (append-only, read by navigator, written by validator) |
 | `logs/YYYY/MM-DD.md` | Journal (daily) |
 | `PERSONA.md` | Communication style |
 | `team/` | Agent behaviors |
