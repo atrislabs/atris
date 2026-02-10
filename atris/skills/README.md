@@ -35,8 +35,22 @@ cp -r atris/skills/[name] ~/.codex/skills/
 | writing | Essay process with gates | `policies/writing.md` |
 | copy-editor | Detects and fixes AI writing patterns | - |
 
+## ClawHub (External Distribution)
+
+Skills we publish to OpenClaw's ClawHub marketplace. These have YAML frontmatter and are formatted for external agents.
+
+| Skill | Description | Status |
+|-------|-------------|--------|
+| clawhub/atris | Codebase intelligence — MAP.md navigation for any agent | Ready to publish |
+
+```bash
+# Publish to ClawHub
+clawhub publish atris/skills/clawhub/atris --slug atris --name "Atris" --version 1.0.0
+```
+
 ## Creating Skills
 
 1. Create `atris/skills/[name]/SKILL.md`
 2. Create `atris/policies/[name].md` (optional)
 3. Install to your agent (see Integration above)
+4. For external distribution, put in `atris/skills/clawhub/[name]/`
