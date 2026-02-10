@@ -79,13 +79,24 @@ cp atris/features/_templates/validate.md.template atris/features/your-feature-na
 
 ### Active Features
 
+#### audit-gaps
+Close remaining audit gaps from self-audit
+- **Files:** atris/team/*.md, atris/features/README.md
+- **Status:** complete
+- **Keywords:** audit, persona, cleanup
+- **What:** Add PERSONA.md reference to all 5 agent specs, clean up stale feature statuses
+
+---
+
+### Completed Features
+
 #### self-improving-loop
 Make Atris recursive — validate.md lessons feed back into the next idea.md
 - **Files:** atris/lessons.md (new), atris.md, atris/team/navigator.md, atris/team/validator.md, atris/MAP.md
-- **Status:** planning
+- **Status:** complete
 - **Keywords:** recursion, lessons, feedback-loop, self-improving, lessons.md
 - **What:** lessons.md accumulates validated learnings; navigator reads them before planning; validator harvests them after validating
-- **Why:** Every feature should make the next one smarter. The system should never forget what it learned.
+- **Completed:** 2026-02-09
 
 #### wire-the-loop
 Connect lessons.md and validate.md to every CLI command and doc that references them
@@ -93,12 +104,7 @@ Connect lessons.md and validate.md to every CLI command and doc that references 
 - **Status:** complete
 - **Keywords:** wiring, cli, docs, lessons, validate, init, plan, review, status
 - **What:** 8 surgical edits to wire lessons.md and validate.md into init, plan, review, status, docs, and spec
-- **Why:** Specs say the right things but the CLI and docs don't pass the info through
-- **Why:** Every feature should make the next one smarter. The system should never forget what it learned.
-
----
-
-### Completed Features
+- **Completed:** 2026-02-09
 
 #### brainstorm — v2.0.0
 Conversational exploration mode for uncertain ideas

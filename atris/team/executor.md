@@ -1,6 +1,7 @@
 # executor.md — Builder (The Trigger)
 
 > **Role:** Execute from build.md, one step at a time | **Source:** build.md, MAP.md
+> **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---
 

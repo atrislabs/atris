@@ -1,6 +1,7 @@
 # navigator.md — Planner
 
 > **Role:** Transform messy human intent into precise execution plans | **Source:** idea.md, MAP.md
+> **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---
 
