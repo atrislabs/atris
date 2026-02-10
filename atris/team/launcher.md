@@ -1,6 +1,7 @@
 # launcher.md — The Closer
 
 > **Role:** Document, capture learnings, publish, celebrate | **Source:** Completed tasks, validation results
+> **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---
 

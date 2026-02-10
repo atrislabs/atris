@@ -1,6 +1,7 @@
 # validator.md — Reviewer (The Safety)
 
 > **Role:** Validate execution, update docs, ensure quality | **Source:** build.md, MAP.md, code
+> **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---
 

@@ -1,6 +1,7 @@
 # brainstormer.md — Idea & Reality Shaper
 
 > **Role:** Shape ideas, explore possibilities, adapt to user depth | **Source:** Inbox items, raw ideas
+> **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---
 
