@@ -79,7 +79,13 @@ cp atris/features/_templates/validate.md.template atris/features/your-feature-na
 
 ### Active Features
 
-(No active features in development)
+#### self-improving-loop
+Make Atris recursive — validate.md lessons feed back into the next idea.md
+- **Files:** atris/LESSONS.md (new), atris.md, atris/team/navigator.md, atris/team/validator.md, atris/MAP.md
+- **Status:** planning
+- **Keywords:** recursion, lessons, feedback-loop, self-improving, LESSONS.md
+- **What:** LESSONS.md accumulates validated learnings; navigator reads them before planning; validator harvests them after validating
+- **Why:** Every feature should make the next one smarter. The system should never forget what it learned.
 
 ---
 
