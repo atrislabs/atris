@@ -146,9 +146,17 @@ function statusAtris(isQuick = false) {
     }
   }
 
+  // Read lessons count
+  let lessonsCount = 0;
+  const lessonsFile = path.join(targetDir, 'lessons.md');
+  if (fs.existsSync(lessonsFile)) {
+    const lessonsContent = fs.readFileSync(lessonsFile, 'utf8');
+    lessonsCount = (lessonsContent.match(/^- \*\*/gm) || []).length;
+  }
+
   // Quick mode: one-line summary
   if (isQuick) {
-    console.log(`📥 ${inboxItems.length} | 📋 ${backlogTasks.length} | 🔨 ${inProgressTasks.length} | ✅ ${completions.length}`);
+    console.log(`📥 ${inboxItems.length} | 📋 ${backlogTasks.length} | 🔨 ${inProgressTasks.length} | ✅ ${completions.length} | 📚 ${lessonsCount}`);
     return;
   }
 

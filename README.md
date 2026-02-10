@@ -33,9 +33,9 @@ Then describe what you want to build. The agent will:
 0. (Optional) Explore with `atris brainstorm` if uncertain
 1. Show you a visualization
 2. Wait for approval
-3. Create `atris/features/[name]/idea.md` + `build.md`
+3. Create `atris/features/[name]/idea.md` + `build.md` + `validate.md`
 4. Execute step by step
-5. Review and update docs (2-pass)
+5. Validate (fill in validate.md, harvest lessons if anything surprised you)
 
 Commands: `brainstorm` (optional) → `plan` → `do` → `review`
 

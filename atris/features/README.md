@@ -87,6 +87,15 @@ Make Atris recursive — validate.md lessons feed back into the next idea.md
 - **What:** lessons.md accumulates validated learnings; navigator reads them before planning; validator harvests them after validating
 - **Why:** Every feature should make the next one smarter. The system should never forget what it learned.
 
+#### wire-the-loop
+Connect lessons.md and validate.md to every CLI command and doc that references them
+- **Files:** commands/init.js, commands/workflow.js, commands/status.js, bin/atris.js, GETTING_STARTED.md, README.md, atris/atris.md
+- **Status:** in-progress
+- **Keywords:** wiring, cli, docs, lessons, validate, init, plan, review, status
+- **What:** 8 surgical edits to wire lessons.md and validate.md into init, plan, review, status, docs, and spec
+- **Why:** Specs say the right things but the CLI and docs don't pass the info through
+- **Why:** Every feature should make the next one smarter. The system should never forget what it learned.
+
 ---
 
 ### Completed Features

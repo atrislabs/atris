@@ -91,9 +91,9 @@ Stage: PLAN → do → review   (capitalize current stage)
 plan → do → review
 ```
 
-- **PLAN** — ASCII visualization, get approval, NO code yet
-- **DO** — Execute step-by-step, update journal
-- **REVIEW** — Test, validate, clean up, delete completed tasks
+- **PLAN** — ASCII visualization, get approval, NO code yet. Create `atris/features/[name]/idea.md` + `build.md` + `validate.md` for substantial work.
+- **DO** — Execute build.md step-by-step, update journal
+- **REVIEW** — Fill in validate.md, test, clean up. If anything surprised you, append to `atris/lessons.md`.
 
 ---
 

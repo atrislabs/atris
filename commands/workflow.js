@@ -116,6 +116,9 @@ async function planAtris(userInput = null) {
   console.log(`- MAP: ${mapDisplay}`);
   console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
   console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+  const lessonsPath = path.join(targetDir, 'lessons.md');
+  const lessonsRef = fs.existsSync(lessonsPath) ? path.relative(process.cwd(), lessonsPath) : null;
+  console.log(`- Lessons: ${lessonsRef || 'atris/lessons.md (none yet)'}`);
   console.log(`- Journal (today): ${journalPath}`);
   console.log('');
   console.log(`📥 Inbox items: ${inboxCount}`);
@@ -148,6 +151,7 @@ async function planAtris(userInput = null) {
   if (mapFileRef) console.log(`- ${mapFileRef}`);
   if (taskSourcePath) console.log(`- ${taskSourcePath}`);
   if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
+  if (lessonsRef) console.log(`- ${lessonsRef}`);
   console.log(`- ${journalPath}`);
   console.log('');
   if (!mapFileRef || mapIsPlaceholder) {
@@ -847,6 +851,8 @@ async function reviewAtris() {
   console.log('1) Run the project test suite (follow TESTING_GUIDE if present).');
   console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
   console.log('3) Update TODO.md + today\'s journal with results; propose tool upgrades if drift repeats.');
+  console.log('4) If anything surprised you (broke, worked unexpectedly), append to atris/lessons.md:');
+  console.log('   - **[YYYY-MM-DD] [feature-name]** — (pass|fail) — One-line lesson');
   console.log('');
   console.log('Done when: ✅ All good. Ready for human testing.');
   console.log('');
@@ -938,6 +944,7 @@ async function reviewAtris() {
     userPrompt += `  • Update docs if needed (MAP.md, TODO.md)\n`;
     userPrompt += `  • Clean TODO.md (move completed tasks to Completed section, then delete)\n`;
     userPrompt += `  • Extract learnings for journal\n`;
+    userPrompt += `  • If anything surprised you, append to atris/lessons.md\n`;
     userPrompt += `  • EVOLUTION: If you see drift in the logs, propose a tool upgrade.\n\n`;
     userPrompt += `The cycle: do → review → [issues] → do → review → ✅ Ready\n`;
     userPrompt += `Start validating now. Read files, run tests, verify implementation.`;
