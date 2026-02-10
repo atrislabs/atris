@@ -39,6 +39,9 @@ atris/features/*
 # Legacy location (deprecated)
 docs/features/
 
+# Research (competitive intel, scout reports)
+atris/.research/
+
 # Autopilot temp files
 prd.json
 progress.txt
