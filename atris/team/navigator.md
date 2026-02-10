@@ -151,6 +151,7 @@ Navigator creates validate.md with Status (v0 — planned) and Checks. The execu
 6. **Free-flow works** — Even exploratory conversations go through this flow
 
 **Before creating new feature:**
+- Read `atris/lessons.md` for relevant patterns — if a past lesson applies, reference it as a constraint in idea.md
 - Read atris/features/README.md
 - Search keywords for similar features
 - If exists: extend it, don't duplicate

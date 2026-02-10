@@ -6,29 +6,29 @@
 
 ## Overview
 
-Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md inputs. Three touchpoints: the file itself, the navigator pre-flight, and the validator post-flight.
+Wire up lessons.md as the feedback loop between validate.md outputs and idea.md inputs. Three touchpoints: the file itself, the navigator pre-flight, and the validator post-flight.
 
 ---
 
 ## Files Touched
 
 **Created:**
-- `atris/LESSONS.md` — Append-only lessons index
+- `atris/lessons.md` — Append-only lessons index
 
 **Modified:**
-- `atris/atris.md` — Add LESSONS.md to the spec (Phase 1 artifacts + agent behaviors)
-- `atris/team/navigator.md` — Add "read LESSONS.md" to pre-flight checklist
+- `atris/atris.md` — Add lessons.md to the spec (Phase 1 artifacts + agent behaviors)
+- `atris/team/navigator.md` — Add "read lessons.md" to pre-flight checklist
 - `atris/team/validator.md` — Add "harvest lessons" to post-validate step
 - `atris/features/README.md` — Reference the loop in workflow section
-- `atris/MAP.md` — Add LESSONS.md entry
+- `atris/MAP.md` — Add lessons.md entry
 
 ---
 
 ## Build Steps
 
-### Step 1: Create LESSONS.md
+### Step 1: Create lessons.md
 
-**File:** `atris/LESSONS.md`
+**File:** `atris/lessons.md`
 
 **What to do:**
 - Create the file with a header explaining the format
@@ -45,11 +45,11 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 **File:** `atris/team/navigator.md`
 
 **What to do:**
-- Add to the navigator's pre-flight: "Read atris/LESSONS.md for relevant patterns before writing idea.md"
+- Add to the navigator's pre-flight: "Read atris/lessons.md for relevant patterns before writing idea.md"
 - If any lessons are relevant, reference them as constraints in the new idea.md
 
 **Validation:**
-- Navigator spec mentions LESSONS.md
+- Navigator spec mentions lessons.md
 
 ---
 
@@ -58,7 +58,7 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 **File:** `atris/team/validator.md`
 
 **What to do:**
-- After filling validate.md, add a step: "Extract 1-2 lessons and append to atris/LESSONS.md"
+- After filling validate.md, add a step: "Extract 1-2 lessons and append to atris/lessons.md"
 - Format matches the established pattern
 - Lessons should be extracted whether the feature passed or failed
 
@@ -72,12 +72,12 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 **File:** `atris/atris.md`
 
 **What to do:**
-- Add LESSONS.md to the list of system artifacts
+- Add lessons.md to the list of system artifacts
 - Describe it as append-only, harvested by validator, read by navigator
 - Reference it in the plan → do → review loop description
 
 **Validation:**
-- Spec mentions LESSONS.md in artifact list and workflow
+- Spec mentions lessons.md in artifact list and workflow
 
 ---
 
@@ -86,11 +86,11 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 **File:** `atris/MAP.md`
 
 **What to do:**
-- Add LESSONS.md to the file index with description
+- Add lessons.md to the file index with description
 - Mark it with the appropriate section
 
 **Validation:**
-- MAP.md has a LESSONS.md entry
+- MAP.md has a lessons.md entry
 
 ---
 
@@ -98,16 +98,16 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 
 ### Manual Testing
 
-1. After build, verify LESSONS.md exists with seed entry
+1. After build, verify lessons.md exists with seed entry
 2. Run `atris plan` on a test feature — verify navigator mentions checking lessons
 3. Run `atris review` — verify validator attempts to harvest lessons
-4. Check that the harvested lesson appears in LESSONS.md
+4. Check that the harvested lesson appears in lessons.md
 
 ---
 
 ## Error Cases
 
-**Error:** LESSONS.md doesn't exist when navigator reads it
+**Error:** lessons.md doesn't exist when navigator reads it
 **Handling:** Navigator skips gracefully — no lessons yet is fine
 
 **Error:** Validator can't extract a clear lesson
@@ -124,7 +124,7 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 
 ## Rollback Plan
 
-1. Delete atris/LESSONS.md
+1. Delete atris/lessons.md
 2. Revert changes to navigator.md, validator.md, atris.md
 3. System works exactly as before — no dependencies broken
 
@@ -132,6 +132,6 @@ Wire up LESSONS.md as the feedback loop between validate.md outputs and idea.md 
 
 ## Notes for Executor
 
-- Keep LESSONS.md dead simple. One line per lesson. No categories.
+- Keep lessons.md dead simple. One line per lesson. No categories.
 - The power is in the accumulation, not the organization.
 - This feature should validate itself — its own validate.md should produce the first real harvested lesson.

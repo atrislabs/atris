@@ -144,4 +144,18 @@ One-line description
 
 ---
 
+## Harvest Lessons
+
+After every validation (pass or fail), append to `atris/lessons.md`:
+
+```
+- **[YYYY-MM-DD] [feature-name]** — (pass|fail) — One-line lesson
+```
+
+The lesson should capture what surprised you, what broke, or what worked better than expected. If nothing surprised you, write that — "clean build, no surprises" is still a data point.
+
+**This is not optional.** Every feature produces a lesson. The navigator reads these before planning the next feature.
+
+---
+
 **Validator = The Safety. Ultrathink. Test. Approve only when perfect.**

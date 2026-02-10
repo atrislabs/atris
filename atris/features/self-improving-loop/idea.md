@@ -17,9 +17,9 @@ Atris generates lessons learned in validate.md and journals — but nobody reads
 Make Atris eat its own cooking. Before planning any new feature, the agent reads past validate.md files and journal entries for patterns — what worked, what broke, what took too long. Those lessons feed directly into the next idea.md, build.md, and validate.md. The system gets smarter with every cycle without anyone having to remember anything.
 
 Three pieces:
-1. **Lessons index** — A living file (`atris/LESSONS.md`) that accumulates validated learnings from completed features. Each entry is tagged by source feature and date.
-2. **Pre-flight in the navigator** — Before writing idea.md, the navigator checks LESSONS.md for relevant patterns. "Last time we touched auth, X broke" becomes a constraint in the new idea.
-3. **Post-validate harvesting** — After validator fills in validate.md, it extracts lessons (pass or fail) and appends them to LESSONS.md. The loop closes.
+1. **Lessons index** — A living file (`atris/lessons.md`) that accumulates validated learnings from completed features. Each entry is tagged by source feature and date.
+2. **Pre-flight in the navigator** — Before writing idea.md, the navigator checks lessons.md for relevant patterns. "Last time we touched auth, X broke" becomes a constraint in the new idea.
+3. **Post-validate harvesting** — After validator fills in validate.md, it extracts lessons (pass or fail) and appends them to lessons.md. The loop closes.
 
 ---
 
@@ -36,7 +36,7 @@ Three pieces:
   └────▲─────┘     └──────────┘     └──────┬──────┘
        │                                    │
        │         ┌──────────────┐           │
-       └─────────│  LESSONS.md  │◀──────────┘
+       └─────────│  lessons.md  │◀──────────┘
                  │              │
                  │  - pattern 1 │
                  │  - pattern 2 │
@@ -58,11 +58,11 @@ Three pieces:
 
 ## Success Criteria
 
-- [ ] LESSONS.md exists and has a clear append-only format
-- [ ] Navigator reads LESSONS.md before writing any new idea.md
-- [ ] Validator extracts lessons from validate.md and appends to LESSONS.md
+- [ ] lessons.md exists and has a clear append-only format
+- [ ] Navigator reads lessons.md before writing any new idea.md
+- [ ] Validator extracts lessons from validate.md and appends to lessons.md
 - [ ] A completed feature's lessons show up in the next feature's idea.md constraints
-- [ ] The loop works on itself — this very feature's validate.md feeds LESSONS.md
+- [ ] The loop works on itself — this very feature's validate.md feeds lessons.md
 
 ---
 
@@ -74,7 +74,7 @@ Every feature you build makes the next one faster and safer. You stop repeating 
 
 ## Technical Notes
 
-- LESSONS.md is append-only to avoid merge conflicts and keep history intact
+- lessons.md is append-only to avoid merge conflicts and keep history intact
 - Each lesson entry has: source feature, date, pass/fail, one-line takeaway
 - Keep it flat — no categories, no hierarchy. Just a growing list. Agents can grep it.
-- This is the project's long-term memory. The journal is daily. LESSONS.md is forever.
+- This is the project's long-term memory. The journal is daily. lessons.md is forever.
