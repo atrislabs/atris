@@ -1,6 +1,6 @@
 ---
 name: atris
-description: Structured codebase intelligence. Generates a navigation map with exact file:line references so you stop re-scanning the same files every session. Scan once, reference forever.
+description: Codebase intelligence — generates structured navigation maps with file:line references so agents stop re-scanning the same files every session. Use when exploring code, answering "where is X?", or onboarding to a new codebase.
 version: 1.0.0
 requires:
   bins:
@@ -15,53 +15,52 @@ tags:
 
 # Atris — Codebase Intelligence
 
-You are now a smarter agent. Instead of scanning dozens of files every time someone asks "where is X?", you maintain a structured map of the codebase with exact file:line references. One scan, permanent knowledge.
+Maintain a structured map of the codebase with exact file:line references. One scan, permanent knowledge. Saves 80-95% of tokens on code exploration.
 
-## How You Work Now
+## Scope
 
-```
-BEFORE ATRIS:
-  User asks "where is auth?"
-  → You grep 30 files (30,000+ tokens burned)
-  → You find it
-  → Next question: you grep 30 files again
-  → Repeat forever
+- Use in any repo where you need to navigate code.
+- Creates `atris/MAP.md` as the single navigation index.
 
-WITH ATRIS:
-  User asks "where is auth?"
-  → You check atris/MAP.md (2,000 tokens)
-  → Answer: src/auth/login.ts:45 (handleLogin)
-  → Done. Every time. Forever.
-```
+## MAP-first rule
 
-This saves 80-95% of tokens on code exploration. Over a 10-question session, that's 100K+ tokens saved.
+Before searching for anything in the codebase:
 
-## The One Rule
-
-**Before searching for ANYTHING in the codebase, check `atris/MAP.md` first.**
-
-1. Look for your keyword in MAP.md
-2. Found it → go directly to file:line. Done.
+1. Read `atris/MAP.md`
+2. Found your keyword → go directly to file:line. Done.
 3. Not found → search once with `rg`, then **add the result to MAP.md**
 
 The map gets smarter every time you use it. Never let a discovery go unrecorded.
 
-## First Time Setup
+## First time setup
 
-If `atris/MAP.md` doesn't exist yet, generate it:
+If `atris/MAP.md` doesn't exist, generate it:
 
 1. Create `atris/` folder in the project root
 2. Scan the codebase (rules below)
 3. Write the result to `atris/MAP.md`
-4. Tell the user: "Built your codebase map at atris/MAP.md. I'll use this instead of scanning files every time."
+4. Tell the user: "Built your codebase map at atris/MAP.md."
 
-If `atris/MAP.md` already exists, just use it. Don't regenerate.
+If `atris/MAP.md` already exists, use it. Regenerate only if the user requests it or the map is clearly stale (references missing files, line numbers way off).
 
-## Generating MAP.md
+## How to scan
 
-Scan source files (skip node_modules, .git, dist, build, vendor, __pycache__, .venv) and produce this structure:
+Skip: `node_modules`, `.git`, `dist`, `build`, `vendor`, `__pycache__`, `.venv`, `.env*`, `*.key`, `*.pem`, `credentials*`, `secrets*`
 
-### Quick Reference
+Use ripgrep to extract structure:
+
+```bash
+# Key definitions
+rg "^(export|function|class|const|def |async def |router\.|app\.|@app\.)" --line-number -g "!node_modules" -g "!.git" -g "!dist" -g "!.env*"
+
+# Route definitions
+rg "(get|post|put|delete|patch)\s*\(" --line-number -g "*.ts" -g "*.js" -g "*.py"
+
+# Entry points
+rg "listen|createServer|app\.start|if __name__" --line-number
+```
+
+## MAP.md structure
 
 ```markdown
 # MAP.md — [Project Name] Navigation Guide
@@ -78,11 +77,9 @@ Extract the top 15-25 most important symbols: entry points, exports, route handl
 
 ### By-Feature Map
 
-Group code by WHAT IT DOES:
+Group code by what it does. Every reference includes exact file path and line numbers.
 
 ```markdown
-## By-Feature Map
-
 ### Feature: User Authentication
 **Purpose:** Login, registration, token management
 - **Entry:** `src/auth/login.ts:45-89` (handleLogin)
@@ -91,79 +88,34 @@ Group code by WHAT IT DOES:
 - **Routes:** `src/routes/auth.ts:5-28` (POST /login, POST /register)
 ```
 
-Every reference includes exact file path and line numbers. No exceptions.
-
 ### By-Concern Map
 
-Group by cross-cutting patterns:
-
-```markdown
-## By-Concern Map
-
-### Concern: Error Handling
-- `src/middleware/error.ts` (45 lines) — Global error handler
-- `src/utils/errors.ts` (89 lines) — Custom error classes
-```
+Group by cross-cutting patterns (error handling, logging, auth middleware, etc).
 
 ### Critical Files
 
-Flag high-impact files:
-
-```markdown
-## Critical Files
-
-### ⭐ `src/index.ts` (234 lines)
-**Why critical:** App entry point, all middleware registered here
-**Key functions:** createApp() (line 12), registerRoutes() (line 89)
-```
+Flag high-impact files with why they matter and key functions with line numbers.
 
 ### Entry Points
 
-How execution flows:
+How execution flows — dev server startup, request lifecycle, build pipeline.
 
-```markdown
-## Entry Points
+## Keeping it fresh
 
-### Development
-npm run dev → src/index.ts → createApp() → listen :3000
+Update MAP.md surgically when the codebase changes:
 
-### API Request
-Client → routes → controller → service → database → response
-```
-
-## How to Scan
-
-Use ripgrep to extract structure:
-
-```bash
-# Find all key definitions
-rg "^(export|function|class|const|def |async def |router\.|app\.|@app\.)" --line-number -g "!node_modules" -g "!.git" -g "!dist"
-
-# Find route definitions
-rg "(get|post|put|delete|patch)\s*\(" --line-number -g "*.ts" -g "*.js" -g "*.py"
-
-# Find entry points
-rg "listen|createServer|app\.start|if __name__" --line-number
-```
-
-## Keeping It Fresh
-
-When you change the codebase, update MAP.md surgically:
-
-- **New file** → add to relevant feature/concern section
-- **Moved/renamed file** → update all references
+- **New file** → add to relevant section
+- **Moved/renamed** → update all references
 - **New important function** → add to Quick Reference
 - **Deleted file** → remove from map
 - **Major refactor** → regenerate affected sections
 
 Small updates, not full regeneration. The map evolves with the code.
 
-## What You Tell the User
+## Anti-patterns
 
-When you generate or use the map, be casual:
-
-- First time: "Built your codebase map at atris/MAP.md. I'll use this instead of scanning files every time."
-- Using it: just go directly to the file:line. No need to announce it.
-- Updating it: "Updated the map with the new auth module."
-
-Don't over-explain. The map works quietly, making you faster.
+- Searching without checking MAP first
+- Letting discoveries go unrecorded
+- Regenerating the full map when a surgical update would do
+- Including secrets, credentials, or .env files in the map
+- Guessing file locations instead of using the index
