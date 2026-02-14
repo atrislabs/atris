@@ -1,13 +1,12 @@
 ---
 name: copy-editor
-description: Detects AI writing patterns and fixes them. Use when reviewing any written output, including docs, READMEs, messages, PRDs. Based on Wikipedia's AI Cleanup patterns.
-triggers:
-  - copy edit
-  - review writing
-  - humanize
-  - deslopper
-  - ai patterns
-  - make it sound human
+description: Detects AI writing patterns and fixes them. Use when reviewing any written output, including docs, READMEs, messages, PRDs. Based on Wikipedia's AI Cleanup patterns. Triggers on "copy edit", "review writing", "humanize", "deslopper", "ai patterns", "make it sound human".
+version: 1.0.0
+tags:
+  - copy-editor
+  - writing
+  - anti-slop
+  - quality
 ---
 
 # Copy Editor: Remove AI Writing Patterns

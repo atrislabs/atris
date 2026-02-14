@@ -1,7 +1,11 @@
 ---
-name: atris-design
+name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
+version: 1.0.0
 allowed-tools: Read, Write, Edit, Bash, Glob
+tags:
+  - design
+  - frontend
 ---
 
 # atris-design

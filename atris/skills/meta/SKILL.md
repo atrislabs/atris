@@ -1,6 +1,10 @@
 ---
 name: meta
 description: Metacognition skill for AI agents. Use when starting work, feeling stuck, output feels off, or before complex tasks. Teaches how to think about thinking.
+version: 1.0.0
+tags:
+  - meta
+  - metacognition
 ---
 
 # Meta Skill
