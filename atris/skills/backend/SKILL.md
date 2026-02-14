@@ -1,7 +1,12 @@
 ---
-name: atris-backend
+name: backend
 description: Backend architecture policy. Use when building APIs, services, data access, or any backend work. Prevents over-engineering.
+version: 1.0.0
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+tags:
+  - backend
+  - architecture
+  - anti-patterns
 ---
 
 # atris-backend

@@ -1,7 +1,11 @@
 ---
 name: autopilot
-description: PRD-driven autonomous execution - give it a task, it loops until done
-triggers: [autopilot, autonomous, "get it done", "finish this", "ship it"]
+description: PRD-driven autonomous execution - give it a task, it loops until done Triggers on "autopilot", "autonomous", "get it done", "finish this", "ship it".
+version: 1.0.0
+tags:
+  - autopilot
+  - workflow
+  - automation
 ---
 
 # Autopilot Skill
@@ -42,7 +46,7 @@ Autonomous task execution. Plan → Do → Review loop until acceptance criteria
 │     │ REVIEW: Validator checks             │          │
 │     │   - Check acceptance criteria        │          │
 │     │   - If fail: [REVIEW_FAILED] reason  │          │
-│     │   - If pass: <promise>COMPLETE</promise>        │
+│     │   - If pass: [COMPLETE]        │
 │     └──────────────────────────────────────┘          │
 │                                                       │
 │  3. OUTPUT                                            │
@@ -84,7 +88,7 @@ atris autopilot "Add feature" --iterations=3 --verbose
 
 ## Stop Conditions
 
-1. `<promise>COMPLETE</promise>` — All acceptance criteria met
+1. `[COMPLETE]` — All acceptance criteria met
 2. Max iterations reached (default: 5)
 3. Error that can't be recovered
 

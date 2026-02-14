@@ -1,6 +1,13 @@
 ---
 name: atris
 description: Atris workflow enforcement for repos using atris/ (MAP, TODO, journal, features, plan-do-review, anti-slop). Use when the user asks to follow the Atris system or mentions atris, MAP.md, TODO.md, journal/logs, features, plan/do/review, or anti-slop policies.
+version: 1.0.0
+tags:
+  - atris
+  - workflow
+  - memory
+  - navigation
+  - anti-slop
 ---
 
 # Atris Skill
