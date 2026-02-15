@@ -160,7 +160,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/slack/me/dm" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "U0123USER",
+    "slack_user_id": "U0123USER",
     "text": "Hey, quick question about the project..."
   }'
 ```
