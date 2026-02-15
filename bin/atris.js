@@ -197,6 +197,8 @@ function showHelp() {
   console.log('  login      - Authenticate (use --token <t> for non-interactive)');
   console.log('  logout     - Remove credentials');
   console.log('  whoami     - Show auth status');
+  console.log('  switch     - Switch account (atris switch <name>)');
+  console.log('  accounts   - List saved accounts');
   console.log('');
   console.log('Integrations:');
   console.log('  gmail      - Email commands (inbox, read)');
@@ -304,7 +306,7 @@ const { initAtris: initCmd } = require('../commands/init');
 const { syncAtris: syncCmd } = require('../commands/sync');
 const { logAtris: logCmd } = require('../commands/log');
 const { logSyncAtris: logSyncCmd } = require('../commands/log-sync');
-const { loginAtris: loginCmd, logoutAtris: logoutCmd, whoamiAtris: whoamiCmd } = require('../commands/auth');
+const { loginAtris: loginCmd, logoutAtris: logoutCmd, whoamiAtris: whoamiCmd, switchAccount: switchCmd, listAccountsCmd: accountsCmd } = require('../commands/auth');
 const { showVersion: versionCmd } = require('../commands/version');
 const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('../commands/workflow');
 const { visualizeAtris: visualizeCmd } = require('../commands/visualize');
@@ -319,7 +321,7 @@ const { skillCommand: skillCmd } = require('../commands/skill');
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
@@ -650,6 +652,10 @@ if (command === 'init') {
   logoutCmd();
 } else if (command === 'whoami') {
   whoamiCmd();
+} else if (command === 'switch') {
+  switchCmd();
+} else if (command === 'accounts') {
+  accountsCmd();
 } else if (command === 'visualize') {
   console.log('ℹ️  "atris visualize" is a legacy helper. Visualization is now built into "atris plan".');
   console.log('   Prefer: atris plan');
