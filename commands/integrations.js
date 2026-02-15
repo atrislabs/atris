@@ -13,13 +13,17 @@
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
-async function getAuthToken() {
+function getAuth() {
   const creds = loadCredentials();
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
     process.exit(1);
   }
-  return creds.token;
+  return { token: creds.token, email: creds.email || 'unknown' };
+}
+
+async function getAuthToken() {
+  return getAuth().token;
 }
 
 // ============================================================================
@@ -27,7 +31,7 @@ async function getAuthToken() {
 // ============================================================================
 
 async function gmailInbox(options = {}) {
-  const token = await getAuthToken();
+  const { token, email } = getAuth();
   const limit = options.limit || 10;
 
   console.log('📬 Fetching inbox...\n');
@@ -38,8 +42,10 @@ async function gmailInbox(options = {}) {
   });
 
   if (!result.ok) {
-    if (result.status === 401) {
-      console.error('Gmail not connected. Connect at: https://atris.ai/dashboard/settings');
+    if (result.status === 400 || result.status === 401) {
+      console.error(`Gmail not connected for ${email}.`);
+      console.error('Connect at: https://atris.ai/dashboard/settings');
+      console.error(`Make sure you're signed in as ${email} on the web.`);
     } else {
       console.error(`Error: ${result.error || 'Failed to fetch inbox'}`);
     }
@@ -123,7 +129,7 @@ async function gmailCommand(subcommand, ...args) {
 // ============================================================================
 
 async function calendarToday() {
-  const token = await getAuthToken();
+  const { token, email } = getAuth();
 
   console.log('📅 Today\'s events:\n');
 
@@ -133,8 +139,10 @@ async function calendarToday() {
   });
 
   if (!result.ok) {
-    if (result.status === 401) {
-      console.error('Calendar not connected. Connect at: https://atris.ai/dashboard/settings');
+    if (result.status === 400 || result.status === 401) {
+      console.error(`Calendar not connected for ${email}.`);
+      console.error('Connect at: https://atris.ai/dashboard/settings');
+      console.error(`Make sure you're signed in as ${email} on the web.`);
     } else {
       console.error(`Error: ${result.error || 'Failed to fetch events'}`);
     }
@@ -215,8 +223,11 @@ async function twitterPost(text) {
   });
 
   if (!result.ok) {
-    if (result.status === 401) {
-      console.error('Twitter not connected. Connect at: https://atris.ai/dashboard/settings');
+    if (result.status === 400 || result.status === 401) {
+      const { email } = getAuth();
+      console.error(`Twitter not connected for ${email}.`);
+      console.error('Connect at: https://atris.ai/dashboard/settings');
+      console.error(`Make sure you're signed in as ${email} on the web.`);
     } else {
       console.error(`Error: ${result.error || 'Failed to post tweet'}`);
     }
@@ -256,8 +267,11 @@ async function slackChannels() {
   });
 
   if (!result.ok) {
-    if (result.status === 401) {
-      console.error('Slack not connected. Connect at: https://atris.ai/dashboard/settings');
+    if (result.status === 400 || result.status === 401) {
+      const { email } = getAuth();
+      console.error(`Slack not connected for ${email}.`);
+      console.error('Connect at: https://atris.ai/dashboard/settings');
+      console.error(`Make sure you're signed in as ${email} on the web.`);
     } else {
       console.error(`Error: ${result.error || 'Failed to fetch channels'}`);
     }
