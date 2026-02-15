@@ -1,7 +1,7 @@
 ---
 name: email-agent
 description: Gmail integration via AtrisOS API. Read, send, archive emails. Use when user asks about email, inbox, or wants to send/check messages.
-version: 1.0.0
+version: 1.1.0
 tags:
   - email-agent
   - backend
@@ -171,6 +171,58 @@ curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   }'
 ```
 
+### Drafts
+
+**List drafts:**
+```bash
+curl -s "https://api.atris.ai/api/integrations/gmail/drafts?max_results=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Read a draft:**
+```bash
+curl -s "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Create a draft:**
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "recipient@example.com",
+    "subject": "Subject line",
+    "body": "Draft body text"
+  }'
+```
+
+Supports same fields as send: `cc`, `bcc`, `attachments`, plus `thread_id` to attach to an existing thread.
+
+**Update a draft:**
+```bash
+curl -s -X PUT "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "recipient@example.com",
+    "subject": "Updated subject",
+    "body": "Updated body"
+  }'
+```
+
+**Send a draft:**
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}/send" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Delete a draft:**
+```bash
+curl -s -X DELETE "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ### Archive Email
 ```bash
 # Single message
@@ -218,6 +270,25 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/gmail" \
 3. Identify archivable emails (see rules below)
 4. **Show user what will be archived, get approval**
 5. Batch archive: `POST /batch-archive`
+
+### "Show my drafts"
+1. Run bootstrap
+2. List drafts: `GET /gmail/drafts?max_results=20`
+3. Display: to, subject, snippet for each
+
+### "Draft an email to X about Y"
+1. Run bootstrap
+2. Compose email content
+3. **Show user the draft for review**
+4. On approval: `POST /gmail/drafts` with `{to, subject, body}`
+5. Confirm: "Draft saved! You can find it in Gmail."
+
+### "Send draft about X"
+1. Run bootstrap
+2. List drafts: `GET /gmail/drafts`
+3. Find matching draft by subject/recipient
+4. **Show user the draft content, confirm they want to send it**
+5. Send: `POST /gmail/drafts/{draft_id}/send`
 
 ### "Archive all from [sender]"
 1. Run bootstrap
@@ -290,4 +361,16 @@ curl -s "https://api.atris.ai/api/integrations/gmail/messages?query=in:inbox&max
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"to":"email@example.com","subject":"Hi","body":"Hello!"}'
+
+# List drafts
+curl -s "https://api.atris.ai/api/integrations/gmail/drafts" -H "Authorization: Bearer $TOKEN"
+
+# Create draft
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"to":"email@example.com","subject":"Hi","body":"Draft text"}'
+
+# Send a draft
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}/send" \
+  -H "Authorization: Bearer $TOKEN"
 ```
