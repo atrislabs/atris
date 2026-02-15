@@ -29,6 +29,8 @@ cp -r atris/skills/[name] ~/.codex/skills/
 | autopilot | PRD-driven autonomous execution | — |
 | backend | Backend architecture anti-patterns | `policies/atris-backend.md` |
 | design | Frontend aesthetics policy | `policies/atris-design.md` |
+| calendar | Google Calendar integration via AtrisOS | — |
+| drive | Google Drive + Sheets integration via AtrisOS | — |
 | email-agent | Gmail integration via AtrisOS | — |
 | memory | Context and memory management | — |
 | meta | Metacognition for agents | `policies/LESSONS.md` |
