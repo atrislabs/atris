@@ -186,6 +186,17 @@ function autoUpdate(updateInfo) {
   try {
     execSync('npm update -g atris', { stdio: 'pipe', timeout: 30000 });
     console.log(`✅ Updated to ${updateInfo.latest}`);
+
+    // Auto-sync skills into current project if atris/skills/ exists
+    try {
+      if (fs.existsSync(path.join(process.cwd(), 'atris', 'skills'))) {
+        execSync('atris sync', { stdio: 'pipe', timeout: 10000 });
+        console.log(`✅ Skills synced`);
+      }
+    } catch (e) {
+      // Sync failed — not critical
+    }
+
     console.log('');
     return true;
   } catch (error) {
