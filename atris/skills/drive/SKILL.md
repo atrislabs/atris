@@ -1,7 +1,7 @@
 ---
 name: drive
 description: Google Drive integration via AtrisOS API. Browse, search, read, upload files and work with Google Sheets. Use when user asks about Drive, files, docs, sheets, or spreadsheets.
-version: 1.0.0
+version: 1.1.0
 tags:
   - drive
   - backend
@@ -108,6 +108,14 @@ All requests require: `-H "Authorization: Bearer $TOKEN"`
 TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 ```
 
+### List Shared Drives
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-drive/shared-drives" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns all shared/team drives the user has access to with `id` and `name`.
+
 ### List Files
 ```bash
 curl -s "https://api.atris.ai/api/integrations/google-drive/files?page_size=20" \
@@ -119,6 +127,14 @@ curl -s "https://api.atris.ai/api/integrations/google-drive/files?page_size=20" 
 curl -s "https://api.atris.ai/api/integrations/google-drive/files?folder_id=FOLDER_ID&page_size=20" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+**List files in a shared drive:**
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-drive/files?shared_drive_id=DRIVE_ID&page_size=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**NOTE:** All file operations (list, search, get, download, export) automatically include shared drive files. Use `shared_drive_id` only to scope results to a specific shared drive.
 
 ### Search Files
 ```bash
@@ -266,6 +282,17 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 4. **Show user what will be appended, get approval**
 5. Append: `POST /google-drive/sheets/{id}/append`
 
+### "Browse a shared drive"
+1. Run bootstrap
+2. List shared drives: `GET /google-drive/shared-drives`
+3. Display drive names and IDs
+4. List files in chosen drive: `GET /google-drive/files?shared_drive_id=DRIVE_ID`
+
+### "Find a file across all drives"
+1. Run bootstrap
+2. Search: `GET /google-drive/search?q=QUERY` (automatically searches My Drive + all shared drives)
+3. Display results
+
 ### "Upload a file to Drive"
 1. Run bootstrap
 2. Read the local file content
@@ -309,7 +336,10 @@ TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 # Check connection
 curl -s "https://api.atris.ai/api/integrations/google-drive/status" -H "Authorization: Bearer $TOKEN"
 
-# List files
+# List shared drives
+curl -s "https://api.atris.ai/api/integrations/google-drive/shared-drives" -H "Authorization: Bearer $TOKEN"
+
+# List files (includes shared drive files)
 curl -s "https://api.atris.ai/api/integrations/google-drive/files" -H "Authorization: Bearer $TOKEN"
 
 # Search files
