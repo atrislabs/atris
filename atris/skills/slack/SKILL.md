@@ -72,7 +72,7 @@ if [ "$CONNECTED" != "true" ] && [ "$CONNECTED" != "True" ]; then
   AUTH=$(curl -s -X POST "https://api.atris.ai/api/integrations/slack/start" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"redirect_uri":"https://api.atris.ai/api/integrations/slack/callback"}')
+    -d '{"mode":"personal"}')
 
   if command -v node &> /dev/null; then
     URL=$(node -e "try{console.log(JSON.parse('$AUTH').auth_url||'')}catch(e){console.log('')}")
