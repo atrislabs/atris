@@ -175,8 +175,30 @@ function showUpdateNotification(updateInfo) {
   console.log('');
 }
 
+function autoUpdate(updateInfo) {
+  if (!updateInfo || !updateInfo.needsUpdate) return false;
+
+  const { execSync } = require('child_process');
+
+  console.log('');
+  console.log(`⬆️  Updating atris ${updateInfo.installed} → ${updateInfo.latest}...`);
+
+  try {
+    execSync('npm update -g atris', { stdio: 'pipe', timeout: 30000 });
+    console.log(`✅ Updated to ${updateInfo.latest}`);
+    console.log('');
+    return true;
+  } catch (error) {
+    // npm update failed (permissions, network, etc) — fall back to notification
+    console.log(`⚠️  Auto-update failed. Run manually: npm update -g atris`);
+    console.log('');
+    return false;
+  }
+}
+
 module.exports = {
   checkForUpdates,
   showUpdateNotification,
+  autoUpdate,
 };
 
