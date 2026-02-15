@@ -109,15 +109,74 @@ function shouldRefreshToken(token, bufferSeconds = TOKEN_REFRESH_BUFFER_SECONDS)
 }
 
 // Credentials management
-function getCredentialsPath() {
+function getAtrisDir() {
   const homeDir = os.homedir();
   const atrisDir = path.join(homeDir, '.atris');
-
   if (!fs.existsSync(atrisDir)) {
     fs.mkdirSync(atrisDir, { recursive: true });
   }
+  return atrisDir;
+}
 
-  return path.join(atrisDir, 'credentials.json');
+function getCredentialsPath() {
+  return path.join(getAtrisDir(), 'credentials.json');
+}
+
+function getProfilesDir() {
+  const dir = path.join(getAtrisDir(), 'profiles');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function profileNameFromEmail(email) {
+  if (!email) return null;
+  // "keshav@atrislabs.com" → "keshav"
+  return email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+}
+
+function saveProfile(name, credentials) {
+  const profilePath = path.join(getProfilesDir(), `${name}.json`);
+  fs.writeFileSync(profilePath, JSON.stringify(credentials, null, 2));
+  try { fs.chmodSync(profilePath, 0o600); } catch {}
+}
+
+function loadProfile(name) {
+  const profilePath = path.join(getProfilesDir(), `${name}.json`);
+  if (!fs.existsSync(profilePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listProfiles() {
+  const dir = getProfilesDir();
+  try {
+    return fs.readdirSync(dir)
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.replace('.json', ''));
+  } catch {
+    return [];
+  }
+}
+
+function deleteProfile(name) {
+  const profilePath = path.join(getProfilesDir(), `${name}.json`);
+  if (fs.existsSync(profilePath)) {
+    fs.unlinkSync(profilePath);
+    return true;
+  }
+  return false;
+}
+
+function autoSaveProfile(credentials) {
+  const name = profileNameFromEmail(credentials?.email);
+  if (name) {
+    saveProfile(name, credentials);
+  }
 }
 
 function saveCredentials(token, refreshToken, email, userId, provider) {
@@ -137,6 +196,9 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
   } catch {
     // Best effort: permissions may be unsupported on this platform.
   }
+
+  // Auto-save as named profile
+  autoSaveProfile(credentials);
 }
 
 function loadCredentials() {
@@ -384,4 +446,11 @@ module.exports = {
   ensureValidCredentials,
   fetchMyAgents,
   displayAccountSummary,
+  // Profile switching
+  saveProfile,
+  loadProfile,
+  listProfiles,
+  deleteProfile,
+  profileNameFromEmail,
+  autoSaveProfile,
 };
