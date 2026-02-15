@@ -111,13 +111,69 @@ All requests require: `-H "Authorization: Bearer $TOKEN"`
 TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 ```
 
+### List Events
+```bash
+# Next 7 days (default)
+curl -s "https://api.atris.ai/api/integrations/google-calendar/events" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Next N days
+curl -s "https://api.atris.ai/api/integrations/google-calendar/events?days=14" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Custom date range (ISO 8601)
+curl -s "https://api.atris.ai/api/integrations/google-calendar/events?time_min=2026-02-15T00:00:00Z&time_max=2026-02-16T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ### Get Today's Events
 ```bash
 curl -s "https://api.atris.ai/api/integrations/google-calendar/events/today" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Returns an array of events with: `summary`, `start`, `end`, `location`, `description`, `attendees`, `htmlLink`.
+### Get Single Event
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-calendar/events/{event_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Create Event
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-calendar/events" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Meeting with Sushanth",
+    "start": "2026-02-15T14:00:00-08:00",
+    "end": "2026-02-15T15:00:00-08:00",
+    "description": "Discuss AI transformation roadmap",
+    "location": "Zoom",
+    "attendees": ["sushanth@pallet.com"],
+    "timezone": "America/Los_Angeles"
+  }'
+```
+
+**IMPORTANT:** Use `POST` to create events. Do NOT use `PUT` — that is for updating existing events.
+
+### Update Event
+```bash
+curl -s -X PUT "https://api.atris.ai/api/integrations/google-calendar/events/{event_id}" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Updated meeting title",
+    "start": "2026-02-15T15:00:00-08:00",
+    "end": "2026-02-15T16:00:00-08:00",
+    "timezone": "America/Los_Angeles"
+  }'
+```
+
+### Delete Event
+```bash
+curl -s -X DELETE "https://api.atris.ai/api/integrations/google-calendar/events/{event_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ### Check Connection Status
 ```bash
@@ -141,6 +197,16 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/google-calendar" \
 3. Display events sorted by start time: time, title, location
 4. If no events: "Your calendar is clear today."
 
+### "What's my schedule this week?"
+1. Run bootstrap
+2. Get events: `GET /google-calendar/events?days=7`
+3. Group by day, display each day's events
+
+### "Schedule a meeting with X"
+1. Run bootstrap
+2. Create event: `POST /google-calendar/events` with summary, start, end, attendees
+3. Confirm: "Meeting created! [link]"
+
 ### "Do I have any meetings this afternoon?"
 1. Run bootstrap
 2. Get events: `GET /google-calendar/events/today`
@@ -152,6 +218,13 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/google-calendar" \
 2. Get events: `GET /google-calendar/events/today`
 3. Find the next event after current time
 4. Display: "Your next meeting is [title] at [time]" or "No more meetings today."
+
+### "Cancel my 3pm meeting"
+1. Run bootstrap
+2. List events: `GET /google-calendar/events/today`
+3. Find event at 3pm
+4. **Confirm with user** before deleting
+5. Delete: `DELETE /google-calendar/events/{event_id}`
 
 ---
 
