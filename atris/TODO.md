@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-01-13
+> **Last updated:** 2026-02-10
 
 ---
 
@@ -12,7 +12,19 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
-(Clean!)
+- **T1:** Remove dead `launchAtris()` function from bin/atris.js [execute]
+  - Function defined at `bin/atris.js:2624` but has NO command routing (not in knownCommands, no `else if` branch)
+  - ~250+ lines of unreachable code
+  - MAP.md previously documented it as DEPRECATED; now marked as DEAD CODE
+  - **Done when:** Function deleted from bin/atris.js, MAP.md launch entry removed, file still runs without errors
+
+- **T2:** Verify and fix remaining stale line refs in MAP.md for commands/workflow.js, commands/init.js [execute]
+  - `planAtris` range claimed 5-295 (may have shifted)
+  - `doAtris` range claimed 297-665
+  - `reviewAtris` range claimed 667-1005
+  - `initAtris` range claimed 230-644
+  - These were not verified in the 2026-02-10 audit (only routing lines and new entries were fixed)
+  - **Done when:** All function ranges match actual source, verified with grep
 
 ---
 
