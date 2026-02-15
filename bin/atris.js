@@ -25,7 +25,7 @@ const DEFAULT_CLIENT_ID = `AtrisCLI/${CLI_VERSION}`;
 const DEFAULT_USER_AGENT = `${DEFAULT_CLIENT_ID} (node ${process.version}; ${os.platform()} ${os.release()} ${os.arch()})`;
 
 // Update check utility
-const { checkForUpdates, showUpdateNotification } = require('../utils/update-check');
+const { checkForUpdates, showUpdateNotification, autoUpdate } = require('../utils/update-check');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -39,9 +39,11 @@ if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'u
     .then((updateInfo) => {
       // Show notification if update available (after command completes)
       if (updateInfo) {
-        // Wait a bit for command output to finish, then show notification
+        // Auto-update in background, fall back to notification if it fails
         setTimeout(() => {
-          showUpdateNotification(updateInfo);
+          if (!autoUpdate(updateInfo)) {
+            showUpdateNotification(updateInfo);
+          }
         }, 100);
       }
       return updateInfo;
