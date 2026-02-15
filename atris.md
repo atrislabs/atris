@@ -187,6 +187,22 @@ Specs loaded at activate from `team/*.md`
 
 ---
 
+## PERSISTENCE
+
+Context window = cache. Disk = truth. Route discoveries as they happen.
+
+| You discover...     | Write to...          | Format               |
+|---------------------|----------------------|----------------------|
+| Code location       | MAP.md               | file:line reference  |
+| New task            | TODO.md              | Task + exit condition |
+| Decision / tradeoff | Journal → Notes      | Timestamped line     |
+| Something learned   | lessons.md           | One-line lesson      |
+| Work finished       | Journal → Completed  | C#: description      |
+
+Don't batch. Don't wait for session end. Nothing important should live only in-context.
+
+---
+
 ## RULES
 
 - 3-4 sentences max
@@ -194,6 +210,7 @@ Specs loaded at activate from `team/*.md`
 - Check MAP.md before touching code
 - Update journal after completing work
 - Delete tasks when done (target: 0)
+- Persist as you go (see PERSISTENCE)
 
 ---
 
