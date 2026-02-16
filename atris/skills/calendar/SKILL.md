@@ -144,12 +144,12 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-calendar/events" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "summary": "Meeting with Sushanth",
+    "summary": "Meeting with Hugo",
     "start": "2026-02-15T14:00:00-08:00",
     "end": "2026-02-15T15:00:00-08:00",
-    "description": "Discuss AI transformation roadmap",
+    "description": "Discuss project roadmap",
     "location": "Zoom",
-    "attendees": ["sushanth@pallet.com"],
+    "attendees": ["hugo@atrismail.com"],
     "timezone": "America/Los_Angeles"
   }'
 ```
