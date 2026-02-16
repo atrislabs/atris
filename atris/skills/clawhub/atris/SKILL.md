@@ -1,6 +1,6 @@
 ---
 name: atris
-description: Codebase intelligence — generates structured navigation maps with file:line references so agents stop re-scanning the same files every session. Use when exploring code, answering "where is X?", or onboarding to a new codebase.
+description: "Codebase intelligence — generates structured navigation maps with file:line references so agents stop re-scanning the same files every session. Use when exploring code, answering 'where is X?', or onboarding to a new codebase."
 version: 1.1.0
 requires:
   bins:
