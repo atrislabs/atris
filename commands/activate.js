@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
+const { syncSkills } = require('./sync');
 
 function activateAtris() {
   const workspaceDir = process.cwd();
@@ -121,7 +122,17 @@ function activateAtris() {
   console.log(`- ${fs.existsSync(mapFile) ? rel(mapFile) : 'atris/MAP.md (missing)'}`);
   console.log(`- ${taskFilePath ? rel(taskFilePath) : 'atris/TODO.md (missing)'}`);
   console.log(`- ${rel(logFile)}`);
-  console.log('');
+  // Auto-sync skills from package (silent unless something changed)
+  try {
+    const skillsUpdated = syncSkills({ silent: true });
+    if (skillsUpdated > 0) {
+      console.log(`⬆️  ${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated to latest version`);
+      console.log('');
+    }
+  } catch (e) {
+    // Non-critical — don't block activate
+  }
+
   console.log('Next: atris plan → do → review (or atris log)');
   console.log('');
 }

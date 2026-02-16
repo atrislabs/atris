@@ -1,7 +1,7 @@
 ---
 name: email-agent
 description: Gmail integration via AtrisOS API. Read, send, archive emails. Use when user asks about email, inbox, or wants to send/check messages.
-version: 1.1.0
+version: 1.2.0
 tags:
   - email-agent
   - backend
@@ -158,6 +158,33 @@ curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   }'
 ```
 
+**Reply in thread (IMPORTANT — use this for all replies):**
+
+To reply within an existing email thread, you MUST pass `thread_id` and `reply_to_message_id`. Without these, Gmail creates a new thread.
+
+```bash
+# 1. First, get the message you're replying to (extract thread_id and id)
+curl -s "https://api.atris.ai/api/integrations/gmail/messages/{message_id}" \
+  -H "Authorization: Bearer $TOKEN"
+# Response includes: id, thread_id, subject, from, etc.
+
+# 2. Send reply in the same thread
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "original-sender@example.com",
+    "subject": "Re: Original Subject",
+    "body": "Your reply text here",
+    "thread_id": "THREAD_ID_FROM_STEP_1",
+    "reply_to_message_id": "MESSAGE_ID_FROM_STEP_1"
+  }'
+```
+
+- `thread_id` — The thread ID from the original message. Tells Gmail which thread to add this to.
+- `reply_to_message_id` — The message ID you're replying to. The backend uses this to set `In-Reply-To` and `References` headers so Gmail threads it correctly.
+- `subject` — Must match the original subject with "Re: " prefix.
+
 **With attachments:**
 ```bash
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
@@ -264,6 +291,14 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/gmail" \
 4. On approval: `POST /send` with `{to, subject, body}`
 5. Confirm: "Email sent!"
 
+### "Reply to this email"
+1. Run bootstrap
+2. Read the message: `GET /messages/{message_id}` — extract `id`, `thread_id`, `from`, `subject`
+3. Draft reply content
+4. **Show user the reply for approval**
+5. On approval: `POST /send` with `{to, subject: "Re: ...", body, thread_id, reply_to_message_id}`
+6. Verify: response `thread_id` matches original thread_id (if it doesn't, something went wrong)
+
 ### "Clean up my inbox"
 1. Run bootstrap
 2. List: `GET /messages?query=in:inbox&max_results=50`
@@ -357,10 +392,15 @@ curl -s "https://api.atris.ai/api/integrations/gmail/status" -H "Authorization: 
 # List inbox
 curl -s "https://api.atris.ai/api/integrations/gmail/messages?query=in:inbox&max_results=10" -H "Authorization: Bearer $TOKEN"
 
-# Send email
+# Send new email
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"to":"email@example.com","subject":"Hi","body":"Hello!"}'
+
+# Reply in thread (pass thread_id + reply_to_message_id)
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/send" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"to":"sender@example.com","subject":"Re: Original","body":"Reply text","thread_id":"THREAD_ID","reply_to_message_id":"MSG_ID"}'
 
 # List drafts
 curl -s "https://api.atris.ai/api/integrations/gmail/drafts" -H "Authorization: Bearer $TOKEN"
