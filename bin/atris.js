@@ -212,6 +212,10 @@ function showHelp() {
   console.log('  skill audit [name]  - Validate skill against Anthropic guide');
   console.log('  skill fix [name]    - Auto-fix common compliance issues');
   console.log('');
+  console.log('Plugin:');
+  console.log('  plugin build        - Package skills as .plugin for Cowork');
+  console.log('  plugin info         - Preview what will be included');
+  console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
@@ -318,11 +322,12 @@ const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
 const { cleanAtris: cleanCmd } = require('../commands/clean');
 const { verifyAtris: verifyCmd } = require('../commands/verify');
 const { skillCommand: skillCmd } = require('../commands/skill');
+const { pluginCommand: pluginCmd } = require('../commands/plugin');
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill',
+                       'clean', 'verify', 'search', 'skill', 'plugin',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -808,6 +813,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   skillCmd(subcommand, ...args);
+} else if (command === 'plugin') {
+  const subcommand = process.argv[3] || 'build';
+  const args = process.argv.slice(4);
+  pluginCmd(subcommand, ...args);
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
