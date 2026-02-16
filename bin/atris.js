@@ -56,6 +56,17 @@ if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'u
 
 const command = process.argv[2];
 
+// Auto-sync skills on every command (fast — just file diffs, no network)
+try {
+  const { syncSkills } = require('../commands/sync');
+  const skillsUpdated = syncSkills({ silent: true });
+  if (skillsUpdated > 0) {
+    console.log(`⬆️  ${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
+  }
+} catch (e) {
+  // Non-critical
+}
+
 const TOKEN_REFRESH_BUFFER_SECONDS = 300; // Refresh ~5 minutes before expiry
 
 function decodeJwtClaims(token) {
