@@ -291,11 +291,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Outputs: validator.md spec + TODO.md + MAP.md + journal
 - Purpose: Ultrathink validation, test, clean docs
 
-4. **`atris launch`** - Launcher mode (DEAD CODE - no routing)
-
-- Entry: `bin/atris.js:2624` (launchAtris function exists but NO command routing)
-- Not in knownCommands array, never called
-- Purpose: Was cross-team integration and deployment
+4. **`atris launch`** - REMOVED (was dead code, deleted)
 
 **Flow:** `atris → plan → do → review → loop`
 
@@ -670,13 +666,11 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `upgradeAtris()` — npm upgrade (line 991)
 - `agentAtris()` — Agent selection (line 2270)
 - `chatAtris()` — Interactive chat (line 2354)
-- `launchAtris()` — DEAD CODE, no routing (line 2624)
-
 **Modular commands (in commands/):**
 
-- `planAtris()` → `commands/workflow.js:5-295`
-- `doAtris()` → `commands/workflow.js:297-665`
-- `reviewAtris()` → `commands/workflow.js:667-1005`
+- `planAtris()` → `commands/workflow.js:5-299`
+- `doAtris()` → `commands/workflow.js:301-669`
+- `reviewAtris()` → `commands/workflow.js:671-1073`
 - `statusAtris()` → `commands/status.js:5-156`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
@@ -734,7 +728,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - `detectProjectContext()` (lines 9-154): Auto-detect project type
 - `injectProjectPatterns()` (lines 156-228): Inject project-native instructions
-- `initAtris()` (lines 230-644): Create folder structure
+- `initAtris()` (lines 233-837): Create folder structure
 
 **Impact:** Onboarding UX, sets user expectations
 
