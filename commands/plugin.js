@@ -307,6 +307,118 @@ function showPluginInfo() {
   console.log('');
 }
 
+// --- PUBLISH subcommand ---
+
+function publishPlugin(...args) {
+  const projectDir = process.cwd();
+  const skillsDir = path.join(projectDir, 'atris', 'skills');
+
+  if (!fs.existsSync(skillsDir)) {
+    console.error('✗ atris/skills/ not found. Run "atris init" first.');
+    process.exit(1);
+  }
+
+  // Find the marketplace repo — check sibling dir or --repo flag
+  let marketplaceDir = null;
+  for (const arg of args) {
+    if (typeof arg === 'string' && arg.startsWith('--repo=')) {
+      marketplaceDir = path.resolve(arg.split('=')[1]);
+    }
+  }
+  if (!marketplaceDir) {
+    // Default: look for atris-plugins as a sibling directory
+    const siblingDir = path.join(path.dirname(projectDir), 'atris-plugins');
+    if (fs.existsSync(siblingDir)) {
+      marketplaceDir = siblingDir;
+    }
+  }
+  if (!marketplaceDir || !fs.existsSync(marketplaceDir)) {
+    console.error('✗ Marketplace repo not found.');
+    console.error('  Expected at: ../atris-plugins/');
+    console.error('  Or specify:  atris plugin publish --repo=/path/to/atris-plugins');
+    process.exit(1);
+  }
+
+  const pluginDir = path.join(marketplaceDir, 'plugins', 'atris-workspace');
+  const destSkillsDir = path.join(pluginDir, 'skills');
+  const destCommandsDir = path.join(pluginDir, 'commands');
+
+  console.log(`\n📡 Publishing to ${path.basename(marketplaceDir)}...\n`);
+
+  // 1. Clear old skills and re-copy
+  if (fs.existsSync(destSkillsDir)) {
+    fs.rmSync(destSkillsDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(destSkillsDir, { recursive: true });
+
+  const allSkills = findAllSkills(skillsDir);
+  for (const skill of allSkills) {
+    const skillFolder = skill.folder || path.basename(skill.dir || skill.path || '');
+    if (!skillFolder) continue;
+    const srcPath = path.join(skillsDir, skillFolder);
+    const destPath = path.join(destSkillsDir, skillFolder);
+    if (fs.existsSync(srcPath) && fs.statSync(srcPath).isDirectory()) {
+      copyRecursive(srcPath, destPath);
+      const fm = skill.frontmatter || {};
+      console.log(`  ✓ ${fm.name || skillFolder}`);
+    }
+  }
+
+  // 2. Update commands
+  fs.mkdirSync(destCommandsDir, { recursive: true });
+  fs.writeFileSync(path.join(destCommandsDir, 'atris-setup.md'), generateSetupCommand());
+  console.log('  ✓ /atris-setup command');
+
+  // 3. Update plugin.json version
+  let pkg = {};
+  const pkgPath = path.join(projectDir, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  }
+  const pluginJsonPath = path.join(pluginDir, '.claude-plugin', 'plugin.json');
+  if (fs.existsSync(pluginJsonPath)) {
+    const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+    pluginJson.version = pkg.version || pluginJson.version;
+    fs.writeFileSync(pluginJsonPath, JSON.stringify(pluginJson, null, 2) + '\n');
+  }
+
+  // 4. Update marketplace.json version
+  const marketplaceJsonPath = path.join(marketplaceDir, '.claude-plugin', 'marketplace.json');
+  if (fs.existsSync(marketplaceJsonPath)) {
+    const mkt = JSON.parse(fs.readFileSync(marketplaceJsonPath, 'utf8'));
+    const entry = (mkt.plugins || []).find(p => p.name === 'atris-workspace');
+    if (entry) {
+      entry.version = pkg.version || entry.version;
+    }
+    fs.writeFileSync(marketplaceJsonPath, JSON.stringify(mkt, null, 2) + '\n');
+  }
+
+  // 5. Update README
+  fs.writeFileSync(path.join(pluginDir, 'README.md'), generateREADME(allSkills));
+  console.log('  ✓ README.md');
+
+  // 6. Git commit + push
+  console.log('');
+  const version = pkg.version || 'latest';
+  try {
+    execSync('git add -A', { cwd: marketplaceDir, stdio: 'pipe' });
+    const status = execSync('git status --porcelain', { cwd: marketplaceDir, encoding: 'utf8' }).trim();
+    if (!status) {
+      console.log('✓ No changes — marketplace already up to date.');
+      return;
+    }
+    execSync(`git commit -m "chore: Update atris-workspace plugin to v${version}"`, {
+      cwd: marketplaceDir, stdio: 'pipe'
+    });
+    execSync('git push', { cwd: marketplaceDir, stdio: 'pipe' });
+    console.log(`✓ Published v${version} (${allSkills.length} skills) → pushed to remote`);
+  } catch (e) {
+    console.error('⚠ Skills synced but git push failed. Commit manually:');
+    console.error(`  cd ${marketplaceDir} && git add -A && git commit -m "update" && git push`);
+  }
+  console.log('');
+}
+
 // --- Main Dispatcher ---
 
 function pluginCommand(subcommand, ...args) {
@@ -318,12 +430,17 @@ function pluginCommand(subcommand, ...args) {
     case 'preview':
       showPluginInfo();
       break;
+    case 'publish':
+    case 'sync':
+      publishPlugin(...args);
+      break;
     default:
       console.log('');
       console.log('Usage: atris plugin <subcommand>');
       console.log('');
       console.log('Subcommands:');
       console.log('  build [--output=path]  - Package skills into .plugin for Cowork');
+      console.log('  publish [--repo=path]  - Sync skills to marketplace repo and push');
       console.log('  info                   - Preview what will be included');
       console.log('');
       break;

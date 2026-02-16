@@ -214,6 +214,7 @@ function showHelp() {
   console.log('');
   console.log('Plugin:');
   console.log('  plugin build        - Package skills as .plugin for Cowork');
+  console.log('  plugin publish      - Sync skills to marketplace repo and push');
   console.log('  plugin info         - Preview what will be included');
   console.log('');
   console.log('Other:');
