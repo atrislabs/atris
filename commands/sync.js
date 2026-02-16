@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 function syncAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -293,83 +294,114 @@ After displaying the boot output, respond to the user naturally.
 }
 
 /**
- * Lightweight skill-only sync. Compares package skills against project skills
- * and updates any that differ. Called automatically from `atris activate`.
+ * Recursively sync files from src to dest. Returns count of files updated.
+ */
+function syncRecursiveCount(src, dest, label, silent) {
+  let count = 0;
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  const entries = fs.readdirSync(src);
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+
+    if (fs.statSync(srcPath).isDirectory()) {
+      count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent);
+    } else {
+      const srcContent = fs.readFileSync(srcPath, 'utf8');
+      const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
+      if (srcContent !== destContent) {
+        fs.writeFileSync(destPath, srcContent);
+        if (entry.endsWith('.sh')) {
+          fs.chmodSync(destPath, 0o755);
+        }
+        if (!silent) {
+          console.log(`✓ Updated ${label}/${entry}`);
+        }
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * Lightweight skill-only sync. Syncs skills from the npm package to:
+ *   1. Global skill dirs (~/.claude/skills/, ~/.codex/skills/) — always, if they exist
+ *   2. Project-level (atris/skills/ + .claude/skills/ symlinks) — if in a project
+ *
+ * Global = baseline truth. Project = optional override.
  * Returns number of files updated (0 = already current).
  */
 function syncSkills({ silent = false } = {}) {
-  const targetDir = path.join(process.cwd(), 'atris');
   const packageSkillsDir = path.join(__dirname, '..', 'atris', 'skills');
-  const userSkillsDir = path.join(targetDir, 'skills');
-  const claudeSkillsBaseDir = path.join(process.cwd(), '.claude', 'skills');
-
-  if (!fs.existsSync(targetDir) || !fs.existsSync(packageSkillsDir)) {
+  if (!fs.existsSync(packageSkillsDir)) {
     return 0;
   }
 
-  if (!fs.existsSync(userSkillsDir)) {
-    fs.mkdirSync(userSkillsDir, { recursive: true });
-  }
-  if (!fs.existsSync(claudeSkillsBaseDir)) {
-    fs.mkdirSync(claudeSkillsBaseDir, { recursive: true });
-  }
-
   let updated = 0;
+  const homeDir = os.homedir();
 
   const skillFolders = fs.readdirSync(packageSkillsDir).filter(f =>
     fs.statSync(path.join(packageSkillsDir, f)).isDirectory()
   );
 
-  for (const skill of skillFolders) {
-    const srcSkillDir = path.join(packageSkillsDir, skill);
-    const destSkillDir = path.join(userSkillsDir, skill);
-    const symlinkPath = path.join(claudeSkillsBaseDir, skill);
+  // --- 1. Global skill directories (sync if they exist) ---
+  const globalSkillDirs = [
+    path.join(homeDir, '.claude', 'skills'),
+    path.join(homeDir, '.codex', 'skills'),
+  ];
 
-    const syncRecursive = (src, dest, skillName, basePath = '') => {
-      if (!fs.existsSync(dest)) {
-        fs.mkdirSync(dest, { recursive: true });
+  for (const globalDir of globalSkillDirs) {
+    if (!fs.existsSync(globalDir)) continue;
+    const dirName = path.basename(path.dirname(globalDir)); // .claude or .codex
+
+    for (const skill of skillFolders) {
+      const srcSkillDir = path.join(packageSkillsDir, skill);
+      const destSkillDir = path.join(globalDir, skill);
+
+      if (fs.existsSync(destSkillDir) || fs.existsSync(globalDir)) {
+        updated += syncRecursiveCount(srcSkillDir, destSkillDir, `~/${dirName}/skills/${skill}`, silent);
       }
-      const entries = fs.readdirSync(src);
-      for (const entry of entries) {
-        const srcPath = path.join(src, entry);
-        const destPath = path.join(dest, entry);
-        const relPath = basePath ? `${basePath}/${entry}` : entry;
+    }
+  }
 
-        if (fs.statSync(srcPath).isDirectory()) {
-          syncRecursive(srcPath, destPath, skillName, relPath);
-        } else {
-          const srcContent = fs.readFileSync(srcPath, 'utf8');
-          const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-          if (srcContent !== destContent) {
-            fs.writeFileSync(destPath, srcContent);
-            if (entry.endsWith('.sh')) {
-              fs.chmodSync(destPath, 0o755);
-            }
-            if (!silent) {
-              console.log(`✓ Updated atris/skills/${skillName}/${relPath}`);
-            }
-            updated++;
+  // --- 2. Project-level (only if inside an atris project) ---
+  const targetDir = path.join(process.cwd(), 'atris');
+  if (fs.existsSync(targetDir)) {
+    const userSkillsDir = path.join(targetDir, 'skills');
+    const claudeSkillsBaseDir = path.join(process.cwd(), '.claude', 'skills');
+
+    if (!fs.existsSync(userSkillsDir)) {
+      fs.mkdirSync(userSkillsDir, { recursive: true });
+    }
+    if (!fs.existsSync(claudeSkillsBaseDir)) {
+      fs.mkdirSync(claudeSkillsBaseDir, { recursive: true });
+    }
+
+    for (const skill of skillFolders) {
+      const srcSkillDir = path.join(packageSkillsDir, skill);
+      const destSkillDir = path.join(userSkillsDir, skill);
+      const symlinkPath = path.join(claudeSkillsBaseDir, skill);
+
+      updated += syncRecursiveCount(srcSkillDir, destSkillDir, `atris/skills/${skill}`, silent);
+
+      // Create symlink if doesn't exist
+      if (!fs.existsSync(symlinkPath)) {
+        const relativePath = path.join('..', '..', 'atris', 'skills', skill);
+        try {
+          fs.symlinkSync(relativePath, symlinkPath);
+          if (!silent) {
+            console.log(`✓ Linked .claude/skills/${skill}`);
           }
-        }
-      }
-    };
-
-    syncRecursive(srcSkillDir, destSkillDir, skill);
-
-    // Create symlink if doesn't exist
-    if (!fs.existsSync(symlinkPath)) {
-      const relativePath = path.join('..', '..', 'atris', 'skills', skill);
-      try {
-        fs.symlinkSync(relativePath, symlinkPath);
-        if (!silent) {
-          console.log(`✓ Linked .claude/skills/${skill}`);
-        }
-      } catch (e) {
-        // Fallback: copy instead of symlink
-        fs.mkdirSync(symlinkPath, { recursive: true });
-        const skillFile = path.join(destSkillDir, 'SKILL.md');
-        if (fs.existsSync(skillFile)) {
-          fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+        } catch (e) {
+          // Fallback: copy instead of symlink
+          fs.mkdirSync(symlinkPath, { recursive: true });
+          const skillFile = path.join(destSkillDir, 'SKILL.md');
+          if (fs.existsSync(skillFile)) {
+            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+          }
         }
       }
     }
