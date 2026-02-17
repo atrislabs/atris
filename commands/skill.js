@@ -771,6 +771,76 @@ function skillLink(name, ...flags) {
   }
 }
 
+// --- DELETE subcommand ---
+
+function skillDelete(name) {
+  if (!name) {
+    console.error('Usage: atris skill delete <name>');
+    process.exit(1);
+  }
+
+  const home = require('os').homedir();
+  const removed = [];
+
+  // Remove from atris/skills/
+  const skillDir = path.join(process.cwd(), 'atris', 'skills', name);
+  if (fs.existsSync(skillDir)) {
+    fs.rmSync(skillDir, { recursive: true, force: true });
+    removed.push(`atris/skills/${name}`);
+  }
+
+  // Remove from atris/customers/ (check all customers)
+  const customersDir = path.join(process.cwd(), 'atris', 'customers');
+  if (fs.existsSync(customersDir)) {
+    const customers = fs.readdirSync(customersDir);
+    for (const customer of customers) {
+      const custSkillDir = path.join(customersDir, customer, 'skills', name);
+      if (fs.existsSync(custSkillDir)) {
+        fs.rmSync(custSkillDir, { recursive: true, force: true });
+        removed.push(`atris/customers/${customer}/skills/${name}`);
+      }
+    }
+  }
+
+  // Remove symlinks — use unlinkSync for symlinks, rmSync for directories
+  function removeLink(linkPath, label) {
+    try {
+      const stat = fs.lstatSync(linkPath);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(linkPath);
+      } else {
+        fs.rmSync(linkPath, { recursive: true, force: true });
+      }
+      removed.push(label);
+    } catch (e) { /* doesn't exist */ }
+  }
+
+  // Project-level
+  removeLink(path.join(process.cwd(), '.claude', 'skills', name), `.claude/skills/${name}`);
+
+  // System-level — all tool directories
+  const toolDirs = [
+    { dir: path.join(home, '.claude', 'skills', name), label: '~/.claude' },
+    { dir: path.join(home, '.codex', 'skills', name), label: '~/.codex' },
+    { dir: path.join(home, '.cursor', 'skills', name), label: '~/.cursor' },
+  ];
+
+  for (const { dir, label } of toolDirs) {
+    removeLink(dir, `${label}/skills/${name}`);
+  }
+
+  if (removed.length === 0) {
+    console.error(`✗ Skill "${name}" not found anywhere.`);
+    process.exit(1);
+  }
+
+  console.log('');
+  for (const r of removed) {
+    console.log(`✓ Removed ${r}`);
+  }
+  console.log('');
+}
+
 // --- Main Dispatcher ---
 
 function skillCommand(subcommand, ...args) {
@@ -787,12 +857,17 @@ function skillCommand(subcommand, ...args) {
       return skillCreate(args[0], ...args.slice(1));
     case 'link':
       return skillLink(args[0] || '--all', ...args.slice(1));
+    case 'delete':
+    case 'rm':
+    case 'remove':
+      return skillDelete(args[0]);
     default:
       console.log('');
       console.log('Usage: atris skill <subcommand> [name]');
       console.log('');
       console.log('Subcommands:');
       console.log('  create <name>       Scaffold a new skill with SKILL.md template');
+      console.log('  delete <name>       Remove a skill and all its symlinks');
       console.log('  link [name|--all]   Symlink skills to ~/.claude/skills/ (system-level)');
       console.log('  list                Show all skills with compliance status');
       console.log('  audit [name|--all]  Validate skill against Anthropic guide');
