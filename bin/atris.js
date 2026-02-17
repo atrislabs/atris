@@ -900,7 +900,7 @@ function initAtris() {
   }
 
   // Copy agent templates from package (MEMBER.md directory format)
-  const members = ['navigator', 'executor', 'validator', 'launcher'];
+  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer'];
   members.forEach(name => {
     const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
     const memberDir = path.join(teamDir, name);
@@ -984,6 +984,7 @@ function syncAtris() {
     { source: 'atris/team/executor/MEMBER.md', target: 'team/executor/MEMBER.md' },
     { source: 'atris/team/validator/MEMBER.md', target: 'team/validator/MEMBER.md' },
     { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
+    { source: 'atris/team/brainstormer/MEMBER.md', target: 'team/brainstormer/MEMBER.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 
@@ -1007,6 +1008,7 @@ function syncAtris() {
       return;
     }
 
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
     fs.copyFileSync(sourceFile, targetFile);
     console.log(`✓ Updated ${target}`);
     updated++;
