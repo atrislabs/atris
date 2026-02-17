@@ -1,5 +1,5 @@
 ---
-name: member-creator
+name: create-member
 description: "Create and manage AI team members using the MEMBER.md format. Use when the user wants to define a new AI role, set up a team member, create an agent persona, or work with team/MEMBER.md files."
 version: 1.0.0
 tags:
