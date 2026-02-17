@@ -470,6 +470,283 @@ function skillFix(name) {
   console.log('');
 }
 
+// --- Skill Scaffold Template ---
+
+function generateSkillTemplate(name, description) {
+  return `---
+name: ${name}
+description: ${description || `Custom skill for ${name}. Use when user asks about ${name}-related tasks.`}
+version: 1.0.0
+tags:
+  - ${name}
+---
+
+# ${name}
+
+## What This Skill Does
+
+Describe what this skill does in 2-3 sentences.
+
+## Workflows
+
+### "Example trigger phrase"
+
+1. Step one
+2. Step two
+3. Step three
+
+## Rules
+
+- Always confirm before taking destructive actions
+- Never skip the approval gate on sends/deletes
+`;
+}
+
+function generateIntegrationSkillTemplate(name, description) {
+  return `---
+name: ${name}
+description: ${description || `Integration skill for ${name}. Use when user asks about ${name}-related tasks.`}
+version: 1.0.0
+tags:
+  - ${name}
+  - integration
+---
+
+# ${name}
+
+## Bootstrap (ALWAYS Run First)
+
+Before any operation, run this bootstrap to ensure everything is set up:
+
+\`\`\`bash
+#!/bin/bash
+set -e
+
+# 1. Check if logged in to AtrisOS
+if [ ! -f ~/.atris/credentials.json ]; then
+  echo "Not logged in to AtrisOS."
+  echo "Run: atris login"
+  exit 1
+fi
+
+# 2. Extract token
+TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
+
+# 3. Check connection status
+STATUS=$(curl -s "https://api.atris.ai/api/integrations/YOUR_INTEGRATION/status" \\
+  -H "Authorization: Bearer $TOKEN")
+
+echo "$STATUS"
+export ATRIS_TOKEN="$TOKEN"
+\`\`\`
+
+## API Reference
+
+Base: \`https://api.atris.ai/api/integrations/YOUR_INTEGRATION\`
+
+All requests require: \`-H "Authorization: Bearer $TOKEN"\`
+
+### Get Token (after bootstrap)
+\`\`\`bash
+TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
+\`\`\`
+
+### List Items
+\`\`\`bash
+curl -s "https://api.atris.ai/api/integrations/YOUR_INTEGRATION/items" \\
+  -H "Authorization: Bearer $TOKEN"
+\`\`\`
+
+## Workflows
+
+### "Example trigger phrase"
+
+1. Run bootstrap
+2. Call the API
+3. Display results
+4. **Confirm with user before any write action**
+
+## Error Handling
+
+| Error | Meaning | Solution |
+|-------|---------|----------|
+| \`Token expired\` | AtrisOS session expired | Run \`atris login\` |
+| \`401 Unauthorized\` | Invalid/expired token | Run \`atris login\` |
+| \`429 Rate limited\` | Too many requests | Wait 60s, retry |
+
+## Security Model
+
+1. **Local token** (\`~/.atris/credentials.json\`): Stored locally with 600 permissions.
+2. **Integration credentials**: Stored server-side in AtrisOS encrypted vault. Never local.
+3. **HTTPS only**: All API communication encrypted in transit.
+`;
+}
+
+// --- CREATE subcommand ---
+
+function skillCreate(nameArg, ...flags) {
+  if (!nameArg) {
+    console.error('Usage: atris skill create <name> [--integration] [--description="..."] [--system]');
+    console.error('');
+    console.error('Examples:');
+    console.error('  atris skill create daily-standup');
+    console.error('  atris skill create email-outreach --integration');
+    console.error('  atris skill create pallet/bol-processor --integration');
+    console.error('  atris skill create my-skill --system');
+    process.exit(1);
+  }
+
+  const isIntegration = flags.includes('--integration');
+  const isSystem = flags.includes('--system');
+  const descFlag = flags.find(f => f.startsWith('--description='));
+  const description = descFlag ? descFlag.split('=').slice(1).join('=').replace(/^["']|["']$/g, '') : '';
+
+  // Parse name — supports "customer/skill-name" format
+  let skillDir, skillName, customerName;
+  if (nameArg.includes('/')) {
+    const parts = nameArg.split('/');
+    customerName = parts[0];
+    skillName = parts[1];
+    const customersDir = path.join(process.cwd(), 'atris', 'customers', customerName, 'skills');
+    skillDir = path.join(customersDir, skillName);
+  } else {
+    skillName = nameArg;
+    skillDir = path.join(process.cwd(), 'atris', 'skills', skillName);
+  }
+
+  // Check if already exists
+  if (fs.existsSync(skillDir)) {
+    console.error(`✗ Skill "${nameArg}" already exists at ${skillDir}`);
+    process.exit(1);
+  }
+
+  // Generate content
+  const content = isIntegration
+    ? generateIntegrationSkillTemplate(skillName, description)
+    : generateSkillTemplate(skillName, description);
+
+  // Create skill directory and SKILL.md
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content);
+
+  console.log('');
+  if (customerName) {
+    console.log(`✓ Created atris/customers/${customerName}/skills/${skillName}/SKILL.md`);
+  } else {
+    console.log(`✓ Created atris/skills/${skillName}/SKILL.md`);
+  }
+
+  // Symlink to project-level .claude/skills/
+  const projectClaudeSkills = path.join(process.cwd(), '.claude', 'skills');
+  if (fs.existsSync(path.join(process.cwd(), '.claude'))) {
+    fs.mkdirSync(projectClaudeSkills, { recursive: true });
+    const projectLink = path.join(projectClaudeSkills, skillName);
+    if (!fs.existsSync(projectLink)) {
+      try {
+        const relTarget = path.relative(projectClaudeSkills, skillDir);
+        fs.symlinkSync(relTarget, projectLink);
+        console.log(`✓ Linked .claude/skills/${skillName} (project-level)`);
+      } catch (e) {
+        // Copy fallback
+        fs.mkdirSync(projectLink, { recursive: true });
+        fs.copyFileSync(path.join(skillDir, 'SKILL.md'), path.join(projectLink, 'SKILL.md'));
+        console.log(`✓ Copied to .claude/skills/${skillName} (project-level)`);
+      }
+    }
+  }
+
+  // Symlink to system-level ~/.claude/skills/ (accessible from all projects + Cowork + Cursor)
+  if (isSystem || flags.includes('--global')) {
+    const homeClaudeSkills = path.join(require('os').homedir(), '.claude', 'skills');
+    fs.mkdirSync(homeClaudeSkills, { recursive: true });
+    const systemLink = path.join(homeClaudeSkills, skillName);
+    if (!fs.existsSync(systemLink)) {
+      try {
+        fs.symlinkSync(skillDir, systemLink);
+        console.log(`✓ Linked ~/.claude/skills/${skillName} (system-level — all tools)`);
+      } catch (e) {
+        fs.mkdirSync(systemLink, { recursive: true });
+        fs.copyFileSync(path.join(skillDir, 'SKILL.md'), path.join(systemLink, 'SKILL.md'));
+        console.log(`✓ Copied to ~/.claude/skills/${skillName} (system-level)`);
+      }
+    }
+  }
+
+  // Summary
+  console.log('');
+  if (isIntegration) {
+    console.log('  Template: integration (bootstrap + API reference + error handling)');
+  } else {
+    console.log('  Template: standard (workflows + rules)');
+  }
+  console.log(`  Edit: ${path.join(skillDir, 'SKILL.md')}`);
+  if (!isSystem && !flags.includes('--global')) {
+    console.log('  Tip: add --system to also link to ~/.claude/skills/ (all tools)');
+  }
+  console.log('');
+}
+
+// --- LINK subcommand (system-level symlink for existing skills) ---
+
+function skillLink(name, ...flags) {
+  const isSystem = flags.includes('--system') || flags.includes('--global');
+  const isAll = name === '--all';
+
+  const skillsDir = path.join(process.cwd(), 'atris', 'skills');
+  const allSkills = findAllSkills(skillsDir);
+
+  if (allSkills.length === 0) {
+    console.error('No skills found in atris/skills/.');
+    process.exit(1);
+  }
+
+  const targets = isAll
+    ? allSkills
+    : allSkills.filter(s => s.folder === name || s.leafFolder === name);
+
+  if (targets.length === 0) {
+    console.error(`Skill "${name}" not found. Run "atris skill list".`);
+    process.exit(1);
+  }
+
+  const homeClaudeSkills = path.join(require('os').homedir(), '.claude', 'skills');
+  fs.mkdirSync(homeClaudeSkills, { recursive: true });
+
+  let linked = 0;
+  for (const skill of targets) {
+    const srcDir = path.dirname(skill.path);
+    const linkName = skill.leafFolder;
+    const linkPath = path.join(homeClaudeSkills, linkName);
+
+    if (fs.existsSync(linkPath)) {
+      // Check if it's already pointing to the right place
+      try {
+        const existing = fs.readlinkSync(linkPath);
+        if (existing === srcDir || path.resolve(linkPath, '..', existing) === srcDir) {
+          continue; // Already linked correctly
+        }
+      } catch (e) {
+        // Not a symlink, skip
+        continue;
+      }
+    }
+
+    try {
+      fs.symlinkSync(srcDir, linkPath);
+      console.log(`✓ ~/.claude/skills/${linkName} → ${path.relative(process.cwd(), srcDir)}`);
+      linked++;
+    } catch (e) {
+      console.error(`✗ Failed to link ${linkName}: ${e.message}`);
+    }
+  }
+
+  if (linked === 0) {
+    console.log('All skills already linked at system level.');
+  } else {
+    console.log(`\n${linked} skill(s) linked to ~/.claude/skills/ (available in all tools).`);
+  }
+}
+
 // --- Main Dispatcher ---
 
 function skillCommand(subcommand, ...args) {
@@ -481,14 +758,32 @@ function skillCommand(subcommand, ...args) {
       return skillAudit(args[0] || '--all');
     case 'fix':
       return skillFix(args[0] || '--all');
+    case 'create':
+    case 'new':
+      return skillCreate(args[0], ...args.slice(1));
+    case 'link':
+      return skillLink(args[0] || '--all', ...args.slice(1));
     default:
       console.log('');
       console.log('Usage: atris skill <subcommand> [name]');
       console.log('');
       console.log('Subcommands:');
-      console.log('  list              Show all skills with compliance status');
+      console.log('  create <name>       Scaffold a new skill with SKILL.md template');
+      console.log('  link [name|--all]   Symlink skills to ~/.claude/skills/ (system-level)');
+      console.log('  list                Show all skills with compliance status');
       console.log('  audit [name|--all]  Validate skill against Anthropic guide');
       console.log('  fix [name|--all]    Auto-fix common compliance issues');
+      console.log('');
+      console.log('Create flags:');
+      console.log('  --integration       Use integration template (bootstrap + API)');
+      console.log('  --system            Also symlink to ~/.claude/skills/ (all tools)');
+      console.log('  --description="..."  Set the skill description');
+      console.log('');
+      console.log('Examples:');
+      console.log('  atris skill create daily-standup');
+      console.log('  atris skill create email-outreach --integration --system');
+      console.log('  atris skill create pallet/bol-processor --integration');
+      console.log('  atris skill link --all');
       console.log('');
   }
 }
