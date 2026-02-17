@@ -1,7 +1,7 @@
 ---
 name: slack
 description: Slack integration via AtrisOS API. Read messages, send as yourself, search conversations, manage DMs. Use when user asks about Slack, messages, channels, or team communication.
-version: 1.1.0
+version: 1.0.0
 tags:
   - slack
   - backend
@@ -187,14 +187,6 @@ curl -s "https://api.atris.ai/api/integrations/slack/users" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Search Users
-```bash
-curl -s "https://api.atris.ai/api/integrations/slack/users/search?q=justin" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-Searches by name, display name, or email. Much faster than pulling the full user list.
-
 ### Send as Bot
 ```bash
 curl -s -X POST "https://api.atris.ai/api/integrations/slack/test-send" \
@@ -231,9 +223,9 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/slack" \
 
 ### "Send a message to someone"
 1. Run bootstrap
-2. Find the user: `GET /slack/users/search?q=NAME`
+2. Find the user: `GET /slack/users` (search by name/email)
 3. **Show user the draft for approval**
-4. Send DM: `POST /slack/me/dm` with `{slack_user_id, text}`
+4. Send DM: `POST /slack/me/dm` with `{user_id, text}`
 5. Confirm: "Message sent!"
 
 ### "Reply in a channel"
@@ -251,7 +243,7 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/slack" \
 
 ### "What did [person] say to me?"
 1. Run bootstrap
-2. Find user: `GET /slack/users/search?q=NAME` (get user ID)
+2. List users: `GET /slack/users` (find user ID)
 3. List DMs: `GET /slack/me/dms` (find DM channel with that user)
 4. Read messages: `GET /slack/me/messages/{channel_id}`
 5. Display conversation
@@ -325,7 +317,4 @@ curl -s "https://api.atris.ai/api/integrations/slack/me/search?q=project+update"
 
 # List workspace users
 curl -s "https://api.atris.ai/api/integrations/slack/users" -H "Authorization: Bearer $TOKEN"
-
-# Search users by name
-curl -s "https://api.atris.ai/api/integrations/slack/users/search?q=justin" -H "Authorization: Bearer $TOKEN"
 ```

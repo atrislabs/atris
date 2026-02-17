@@ -60,11 +60,11 @@ function syncAtris() {
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
     { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
-    { source: 'atris/team/navigator.md', target: 'team/navigator.md' },
-    { source: 'atris/team/executor.md', target: 'team/executor.md' },
-    { source: 'atris/team/validator.md', target: 'team/validator.md' },
-    { source: 'atris/team/launcher.md', target: 'team/launcher.md' },
-    { source: 'atris/team/brainstormer.md', target: 'team/brainstormer.md' },
+    { source: 'atris/team/navigator/MEMBER.md', target: 'team/navigator/MEMBER.md' },
+    { source: 'atris/team/executor/MEMBER.md', target: 'team/executor/MEMBER.md' },
+    { source: 'atris/team/validator/MEMBER.md', target: 'team/validator/MEMBER.md' },
+    { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
+    { source: 'atris/team/brainstormer/MEMBER.md', target: 'team/brainstormer/MEMBER.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 

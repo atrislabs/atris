@@ -1,7 +1,7 @@
 ---
 name: drive
 description: Google Drive integration via AtrisOS API. Browse, search, read, upload files and work with Google Sheets. Use when user asks about Drive, files, docs, sheets, or spreadsheets.
-version: 1.2.0
+version: 1.1.0
 tags:
   - drive
   - backend
@@ -199,29 +199,6 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
   }'
 ```
 
-### Update Existing File
-```bash
-curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Updated file content here",
-    "mime_type": "text/plain"
-  }'
-```
-
-**Update content and rename:**
-```bash
-curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "New content",
-    "mime_type": "text/plain",
-    "name": "renamed-file.txt"
-  }'
-```
-
 ---
 
 ## Google Sheets
@@ -322,14 +299,6 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 3. **Confirm with user**: "Upload {filename} to Drive?"
 4. Upload: `POST /google-drive/files` with `{name, content, mime_type}`
 
-### "Edit a file on Drive"
-1. Run bootstrap
-2. Find the file: `GET /google-drive/search?q=FILENAME`
-3. Read current content: `GET /google-drive/files/{id}/export?mime_type=text/plain`
-4. Make edits
-5. **Show user the changes for approval**
-6. Update: `PUT /google-drive/files/{id}` with `{content, mime_type}`
-
 ---
 
 ## Error Handling
@@ -387,13 +356,8 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{id}/
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"range":"Sheet1","values":[["Alice",95]]}'
 
-# Upload a new file
+# Upload a file
 curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"notes.txt","content":"Hello world","mime_type":"text/plain"}'
-
-# Update an existing file
-curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"content":"Updated content","mime_type":"text/plain"}'
 ```
