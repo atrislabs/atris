@@ -655,20 +655,33 @@ function skillCreate(nameArg, ...flags) {
     }
   }
 
-  // Symlink to system-level ~/.claude/skills/ (always, unless --local)
+  // Symlink to all AI tool skill directories (always, unless --local)
   if (!isLocal) {
-    const homeClaudeSkills = path.join(require('os').homedir(), '.claude', 'skills');
-    fs.mkdirSync(homeClaudeSkills, { recursive: true });
-    const systemLink = path.join(homeClaudeSkills, skillName);
-    if (!fs.existsSync(systemLink)) {
-      try {
-        fs.symlinkSync(skillDir, systemLink);
-        console.log(`✓ Linked ~/.claude/skills/${skillName} (system-level — all tools)`);
-      } catch (e) {
-        fs.mkdirSync(systemLink, { recursive: true });
-        fs.copyFileSync(path.join(skillDir, 'SKILL.md'), path.join(systemLink, 'SKILL.md'));
-        console.log(`✓ Copied to ~/.claude/skills/${skillName} (system-level)`);
+    const home = require('os').homedir();
+    const toolDirs = [
+      { dir: path.join(home, '.claude', 'skills'), label: 'Claude' },
+      { dir: path.join(home, '.codex', 'skills'), label: 'Codex' },
+      { dir: path.join(home, '.cursor', 'skills'), label: 'Cursor' },
+    ];
+
+    const linked = [];
+    for (const { dir, label } of toolDirs) {
+      fs.mkdirSync(dir, { recursive: true });
+      const linkPath = path.join(dir, skillName);
+      if (!fs.existsSync(linkPath)) {
+        try {
+          fs.symlinkSync(skillDir, linkPath);
+          linked.push(label);
+        } catch (e) {
+          // Copy fallback
+          fs.mkdirSync(linkPath, { recursive: true });
+          fs.copyFileSync(path.join(skillDir, 'SKILL.md'), path.join(linkPath, 'SKILL.md'));
+          linked.push(label);
+        }
       }
+    }
+    if (linked.length > 0) {
+      console.log(`✓ Linked to ${linked.join(', ')} (system-level — all tools)`);
     }
   }
 
@@ -686,7 +699,6 @@ function skillCreate(nameArg, ...flags) {
 // --- LINK subcommand (system-level symlink for existing skills) ---
 
 function skillLink(name, ...flags) {
-  const isSystem = flags.includes('--system') || flags.includes('--global');
   const isAll = name === '--all';
 
   const skillsDir = path.join(process.cwd(), 'atris', 'skills');
@@ -706,34 +718,49 @@ function skillLink(name, ...flags) {
     process.exit(1);
   }
 
-  const homeClaudeSkills = path.join(require('os').homedir(), '.claude', 'skills');
-  fs.mkdirSync(homeClaudeSkills, { recursive: true });
+  const home = require('os').homedir();
+  const toolDirs = [
+    { dir: path.join(home, '.claude', 'skills'), label: 'Claude' },
+    { dir: path.join(home, '.codex', 'skills'), label: 'Codex' },
+    { dir: path.join(home, '.cursor', 'skills'), label: 'Cursor' },
+  ];
+
+  // Ensure all tool directories exist
+  for (const { dir } of toolDirs) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 
   let linked = 0;
   for (const skill of targets) {
     const srcDir = path.dirname(skill.path);
     const linkName = skill.leafFolder;
-    const linkPath = path.join(homeClaudeSkills, linkName);
+    const toolsLinked = [];
 
-    if (fs.existsSync(linkPath)) {
-      // Check if it's already pointing to the right place
-      try {
-        const existing = fs.readlinkSync(linkPath);
-        if (existing === srcDir || path.resolve(linkPath, '..', existing) === srcDir) {
-          continue; // Already linked correctly
+    for (const { dir, label } of toolDirs) {
+      const linkPath = path.join(dir, linkName);
+
+      if (fs.existsSync(linkPath)) {
+        try {
+          const existing = fs.readlinkSync(linkPath);
+          if (existing === srcDir || path.resolve(linkPath, '..', existing) === srcDir) {
+            continue; // Already linked correctly
+          }
+        } catch (e) {
+          continue; // Not a symlink, skip
         }
+      }
+
+      try {
+        fs.symlinkSync(srcDir, linkPath);
+        toolsLinked.push(label);
       } catch (e) {
-        // Not a symlink, skip
-        continue;
+        // silent fail per tool
       }
     }
 
-    try {
-      fs.symlinkSync(srcDir, linkPath);
-      console.log(`✓ ~/.claude/skills/${linkName} → ${path.relative(process.cwd(), srcDir)}`);
+    if (toolsLinked.length > 0) {
+      console.log(`✓ ${linkName} → ${toolsLinked.join(', ')}`);
       linked++;
-    } catch (e) {
-      console.error(`✗ Failed to link ${linkName}: ${e.message}`);
     }
   }
 
