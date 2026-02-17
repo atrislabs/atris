@@ -219,6 +219,8 @@ function showHelp() {
   console.log('  integrations - Show integration status');
   console.log('');
   console.log('Skills:');
+  console.log('  skill create <name> - Scaffold a new skill (--integration, --system)');
+  console.log('  skill link [--all]  - Symlink skills to ~/.claude/skills/ (system-level)');
   console.log('  skill list          - Show all skills with compliance status');
   console.log('  skill audit [name]  - Validate skill against Anthropic guide');
   console.log('  skill fix [name]    - Auto-fix common compliance issues');
