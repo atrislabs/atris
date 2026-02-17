@@ -88,6 +88,7 @@ function syncAtris() {
       return;
     }
 
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
     fs.copyFileSync(sourceFile, targetFile);
     console.log(`✓ Updated ${target}`);
     updated++;

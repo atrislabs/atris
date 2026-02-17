@@ -222,9 +222,11 @@ project/
 │   │       ├── 2025-10-23.md (daily journals)
 │   │       └── 2025-10-24.md
 │   └── team/
-│       ├── navigator.md      (AI generates from spec)
-│       ├── executor.md
-│       └── validator.md
+│       ├── navigator/MEMBER.md  (planner agent)
+│       ├── executor/MEMBER.md   (builder agent)
+│       ├── validator/MEMBER.md  (reviewer agent)
+│       ├── brainstormer/MEMBER.md (idea shaper)
+│       └── launcher/MEMBER.md   (closer agent)
 ├── bin/atris.js              (CLI entry point)
 ├── package.json              (metadata, version)
 ├── README.md                 (user-facing description)
