@@ -597,7 +597,7 @@ function skillCreate(nameArg, ...flags) {
   }
 
   const isIntegration = flags.includes('--integration');
-  const isSystem = flags.includes('--system');
+  const isLocal = flags.includes('--local');
   const descFlag = flags.find(f => f.startsWith('--description='));
   const description = descFlag ? descFlag.split('=').slice(1).join('=').replace(/^["']|["']$/g, '') : '';
 
@@ -655,8 +655,8 @@ function skillCreate(nameArg, ...flags) {
     }
   }
 
-  // Symlink to system-level ~/.claude/skills/ (accessible from all projects + Cowork + Cursor)
-  if (isSystem || flags.includes('--global')) {
+  // Symlink to system-level ~/.claude/skills/ (always, unless --local)
+  if (!isLocal) {
     const homeClaudeSkills = path.join(require('os').homedir(), '.claude', 'skills');
     fs.mkdirSync(homeClaudeSkills, { recursive: true });
     const systemLink = path.join(homeClaudeSkills, skillName);
@@ -680,9 +680,6 @@ function skillCreate(nameArg, ...flags) {
     console.log('  Template: standard (workflows + rules)');
   }
   console.log(`  Edit: ${path.join(skillDir, 'SKILL.md')}`);
-  if (!isSystem && !flags.includes('--global')) {
-    console.log('  Tip: add --system to also link to ~/.claude/skills/ (all tools)');
-  }
   console.log('');
 }
 
@@ -776,12 +773,12 @@ function skillCommand(subcommand, ...args) {
       console.log('');
       console.log('Create flags:');
       console.log('  --integration       Use integration template (bootstrap + API)');
-      console.log('  --system            Also symlink to ~/.claude/skills/ (all tools)');
+      console.log('  --local             Only link to this project (skip system-level)');
       console.log('  --description="..."  Set the skill description');
       console.log('');
       console.log('Examples:');
       console.log('  atris skill create daily-standup');
-      console.log('  atris skill create email-outreach --integration --system');
+      console.log('  atris skill create email-outreach --integration');
       console.log('  atris skill create pallet/bol-processor --integration');
       console.log('  atris skill link --all');
       console.log('');
