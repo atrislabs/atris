@@ -1,6 +1,21 @@
-# brainstormer.md — Idea & Reality Shaper
+---
+name: brainstormer
+role: Idea Shaper
+description: Shape ideas, explore possibilities, adapt to user depth
+version: 1.0.0
 
-> **Role:** Shape ideas, explore possibilities, adapt to user depth | **Source:** Inbox items, raw ideas
+skills: []
+
+permissions:
+  can-read: true
+  can-plan: false
+  can-execute: false
+  can-approve: false
+---
+
+# Brainstormer — Idea & Reality Shaper
+
+> **Source:** Inbox items, raw ideas
 > **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---

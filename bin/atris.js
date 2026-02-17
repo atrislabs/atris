@@ -899,31 +899,22 @@ function initAtris() {
     console.log('✓ Created TASK_CONTEXTS.md placeholder');
   }
 
-  // Copy agent templates from package
-  const navigatorSource = path.join(__dirname, '..', 'atris', 'team', 'navigator.md');
-  const executorSource = path.join(__dirname, '..', 'atris', 'team', 'executor.md');
-  const validatorSource = path.join(__dirname, '..', 'atris', 'team', 'validator.md');
-  const launcherSource = path.join(__dirname, '..', 'atris', 'team', 'launcher.md');
+  // Copy agent templates from package (MEMBER.md directory format)
+  const members = ['navigator', 'executor', 'validator', 'launcher'];
+  members.forEach(name => {
+    const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
+    const memberDir = path.join(teamDir, name);
+    const targetFile = path.join(memberDir, 'MEMBER.md');
+    const legacyFile = path.join(teamDir, `${name}.md`);
 
-  if (!fs.existsSync(navigatorFile) && fs.existsSync(navigatorSource)) {
-    fs.copyFileSync(navigatorSource, navigatorFile);
-    console.log('✓ Created team/navigator.md');
-  }
+    if (fs.existsSync(targetFile) || fs.existsSync(legacyFile)) return;
 
-  if (!fs.existsSync(executorFile) && fs.existsSync(executorSource)) {
-    fs.copyFileSync(executorSource, executorFile);
-    console.log('✓ Created team/executor.md');
-  }
-
-  if (!fs.existsSync(validatorFile) && fs.existsSync(validatorSource)) {
-    fs.copyFileSync(validatorSource, validatorFile);
-    console.log('✓ Created team/validator.md');
-  }
-
-  if (!fs.existsSync(launcherFile) && fs.existsSync(launcherSource)) {
-    fs.copyFileSync(launcherSource, launcherFile);
-    console.log('✓ Created team/launcher.md');
-  }
+    if (fs.existsSync(sourceFile)) {
+      fs.mkdirSync(memberDir, { recursive: true });
+      fs.copyFileSync(sourceFile, targetFile);
+      console.log(`✓ Created team/${name}/MEMBER.md`);
+    }
+  });
 
   // Copy policies from package
   const antislopSource = path.join(__dirname, '..', 'atris', 'policies', 'ANTISLOP.md');
@@ -989,10 +980,10 @@ function syncAtris() {
     { source: 'atrisDev.md', target: 'atrisDev.md' },
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
-    { source: 'atris/team/navigator.md', target: 'team/navigator.md' },
-    { source: 'atris/team/executor.md', target: 'team/executor.md' },
-    { source: 'atris/team/validator.md', target: 'team/validator.md' },
-    { source: 'atris/team/launcher.md', target: 'team/launcher.md' },
+    { source: 'atris/team/navigator/MEMBER.md', target: 'team/navigator/MEMBER.md' },
+    { source: 'atris/team/executor/MEMBER.md', target: 'team/executor/MEMBER.md' },
+    { source: 'atris/team/validator/MEMBER.md', target: 'team/validator/MEMBER.md' },
+    { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 

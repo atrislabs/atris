@@ -1,6 +1,21 @@
-# executor.md — Builder (The Trigger)
+---
+name: executor
+role: Builder
+description: Execute from build specs, one step at a time
+version: 1.0.0
 
-> **Role:** Execute from build.md, one step at a time | **Source:** build.md, MAP.md
+skills: []
+
+permissions:
+  can-read: true
+  can-plan: false
+  can-execute: true
+  can-approve: false
+---
+
+# Executor — Builder
+
+> **Source:** build.md, MAP.md
 > **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---

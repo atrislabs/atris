@@ -1,6 +1,22 @@
-# validator.md — Reviewer (The Safety)
+---
+name: validator
+role: Reviewer
+description: Validate execution, run tests, ensure quality before shipping
+version: 1.0.0
 
-> **Role:** Validate execution, update docs, ensure quality | **Source:** build.md, MAP.md, code
+skills: []
+
+permissions:
+  can-read: true
+  can-plan: false
+  can-execute: false
+  can-approve: true
+  can-ship: true
+---
+
+# Validator — Reviewer
+
+> **Source:** build.md, MAP.md, code
 > **Style:** Read `atris/PERSONA.md` for communication style.
 
 ---

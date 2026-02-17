@@ -475,36 +475,23 @@ function initAtris() {
   });
 
 
-  const navigatorSource = path.join(__dirname, '..', 'atris', 'team', 'navigator.md');
-  const executorSource = path.join(__dirname, '..', 'atris', 'team', 'executor.md');
-  const validatorSource = path.join(__dirname, '..', 'atris', 'team', 'validator.md');
-  const launcherSource = path.join(__dirname, '..', 'atris', 'team', 'launcher.md');
-  const brainstormerSource = path.join(__dirname, '..', 'atris', 'team', 'brainstormer.md');
+  // Copy team members (MEMBER.md format — directory per member)
+  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer'];
+  members.forEach(name => {
+    const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
+    const targetDir = path.join(teamDir, name);
+    const targetFile = path.join(targetDir, 'MEMBER.md');
+    const legacyFile = path.join(teamDir, `${name}.md`);
 
-  if (!fs.existsSync(navigatorFile) && fs.existsSync(navigatorSource)) {
-    fs.copyFileSync(navigatorSource, navigatorFile);
-    console.log('✓ Created team/navigator.md');
-  }
+    // Skip if already exists (either format)
+    if (fs.existsSync(targetFile) || fs.existsSync(legacyFile)) return;
 
-  if (!fs.existsSync(executorFile) && fs.existsSync(executorSource)) {
-    fs.copyFileSync(executorSource, executorFile);
-    console.log('✓ Created team/executor.md');
-  }
-
-  if (!fs.existsSync(validatorFile) && fs.existsSync(validatorSource)) {
-    fs.copyFileSync(validatorSource, validatorFile);
-    console.log('✓ Created team/validator.md');
-  }
-
-  if (!fs.existsSync(launcherFile) && fs.existsSync(launcherSource)) {
-    fs.copyFileSync(launcherSource, launcherFile);
-    console.log('✓ Created team/launcher.md');
-  }
-
-  if (!fs.existsSync(brainstormerFile) && fs.existsSync(brainstormerSource)) {
-    fs.copyFileSync(brainstormerSource, brainstormerFile);
-    console.log('✓ Created team/brainstormer.md');
-  }
+    if (fs.existsSync(sourceFile)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.copyFileSync(sourceFile, targetFile);
+      console.log(`✓ Created team/${name}/MEMBER.md`);
+    }
+  });
 
   // Detect project context and generate profile
   const profile = detectProjectContext(process.cwd());
