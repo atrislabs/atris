@@ -225,6 +225,12 @@ function showHelp() {
   console.log('  skill audit [name]  - Validate skill against Anthropic guide');
   console.log('  skill fix [name]    - Auto-fix common compliance issues');
   console.log('');
+  console.log('Team:');
+  console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
+  console.log('  member list          - Show all team members');
+  console.log('  member activate <n>  - Activate a member (link skills, show context)');
+  console.log('  member upgrade <n>   - Convert flat file to directory format');
+  console.log('');
   console.log('Plugin:');
   console.log('  plugin build        - Package skills as .plugin for Cowork');
   console.log('  plugin publish      - Sync skills to marketplace repo and push');
@@ -336,12 +342,13 @@ const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
 const { cleanAtris: cleanCmd } = require('../commands/clean');
 const { verifyAtris: verifyCmd } = require('../commands/verify');
 const { skillCommand: skillCmd } = require('../commands/skill');
+const { memberCommand: memberCmd } = require('../commands/member');
 const { pluginCommand: pluginCmd } = require('../commands/plugin');
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'plugin',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -827,6 +834,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   skillCmd(subcommand, ...args);
+} else if (command === 'member') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  memberCmd(subcommand, ...args);
 } else if (command === 'plugin') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);

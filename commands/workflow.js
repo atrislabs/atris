@@ -14,7 +14,9 @@ async function planAtris(userInput = null) {
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
   
   const targetDir = path.join(process.cwd(), 'atris');
-  const navigatorFile = path.join(targetDir, 'team', 'navigator.md');
+  const navigatorFile = fs.existsSync(path.join(targetDir, 'team', 'navigator', 'MEMBER.md'))
+    ? path.join(targetDir, 'team', 'navigator', 'MEMBER.md')
+    : path.join(targetDir, 'team', 'navigator.md');
   const personaPath = path.join(targetDir, 'PERSONA.md');
   const mapFilePath = path.join(targetDir, 'MAP.md');
   const featuresReadmePath = path.join(targetDir, 'features', 'README.md');
@@ -311,7 +313,9 @@ async function doAtris() {
   
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
-  const executorFile = path.join(targetDir, 'team', 'executor.md');
+  const executorFile = fs.existsSync(path.join(targetDir, 'team', 'executor', 'MEMBER.md'))
+    ? path.join(targetDir, 'team', 'executor', 'MEMBER.md')
+    : path.join(targetDir, 'team', 'executor.md');
 
   if (!fs.existsSync(executorFile)) {
     console.log('✗ executor.md not found. Run "atris init" first.');
@@ -680,7 +684,9 @@ async function reviewAtris() {
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
   
   const targetDir = path.join(process.cwd(), 'atris');
-  const validatorFile = path.join(targetDir, 'team', 'validator.md');
+  const validatorFile = fs.existsSync(path.join(targetDir, 'team', 'validator', 'MEMBER.md'))
+    ? path.join(targetDir, 'team', 'validator', 'MEMBER.md')
+    : path.join(targetDir, 'team', 'validator.md');
 
   if (!fs.existsSync(validatorFile)) {
     console.log('✗ validator.md not found. Run "atris init" first.');

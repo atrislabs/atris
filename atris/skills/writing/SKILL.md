@@ -1,6 +1,6 @@
 ---
 name: writing
-description: Essay writing skill. Triggers on: essay, draft, write, outline
+description: "Essay writing skill. Triggers on: essay, draft, write, outline"
 version: 1.0.0
 allowed-tools: Read, Write, Edit, Glob, Grep
 tags:
