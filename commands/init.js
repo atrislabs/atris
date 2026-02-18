@@ -157,9 +157,9 @@ function detectProjectContext(projectRoot = process.cwd()) {
  * @param {Object} profile - Project profile from detectProjectContext()
  */
 function injectProjectPatterns(agentTeamDir, profile) {
-  const executorFile = path.join(agentTeamDir, 'executor.md');
-  const navigatorFile = path.join(agentTeamDir, 'navigator.md');
-  const validatorFile = path.join(agentTeamDir, 'validator.md');
+  const executorFile = path.join(agentTeamDir, 'executor', 'MEMBER.md');
+  const navigatorFile = path.join(agentTeamDir, 'navigator', 'MEMBER.md');
+  const validatorFile = path.join(agentTeamDir, 'validator', 'MEMBER.md');
 
   // Inject into executor.md
   if (fs.existsSync(executorFile)) {
@@ -798,8 +798,14 @@ After displaying the boot output, respond to the user naturally.
     if (content.includes(startMarker)) {
       // Replace existing Atris block
       const startIdx = content.indexOf(startMarker);
-      const endIdx = content.indexOf(endMarker) + endMarker.length;
-      content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
+      const endRaw = content.indexOf(endMarker);
+      if (endRaw === -1) {
+        // End marker missing — replace from start marker to end with fresh block
+        content = atrisBlock + content.slice(0, startIdx);
+      } else {
+        const endIdx = endRaw + endMarker.length;
+        content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
+      }
       fs.writeFileSync(rootClaudeMd, content);
       console.log('✓ Updated Atris block in CLAUDE.md');
     } else {

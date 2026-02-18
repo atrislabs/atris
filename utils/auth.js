@@ -6,14 +6,16 @@ const readline = require('readline');
 
 function openBrowser(url) {
   const platform = os.platform();
+  // Sanitize URL to prevent shell injection — only allow valid URL characters
+  const sanitizedUrl = url.replace(/[^a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]/g, '');
   let command;
 
   if (platform === 'darwin') {
-    command = `open "${url}"`;
+    command = `open "${sanitizedUrl}"`;
   } else if (platform === 'win32') {
-    command = `start "${url}"`;
+    command = `start "" "${sanitizedUrl}"`;
   } else {
-    command = `xdg-open "${url}"`;
+    command = `xdg-open "${sanitizedUrl}"`;
   }
 
   exec(command, (error) => {
@@ -133,7 +135,8 @@ function getProfilesDir() {
 function profileNameFromEmail(email) {
   if (!email) return null;
   // "keshav@atrislabs.com" → "keshav"
-  return email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  const name = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  return name || null; // Guard against emails like "@domain.com"
 }
 
 function saveProfile(name, credentials) {
