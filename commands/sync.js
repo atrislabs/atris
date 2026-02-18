@@ -168,8 +168,9 @@ function syncAtris() {
         } catch (e) {
           // Fallback: copy instead of symlink
           fs.mkdirSync(symlinkPath, { recursive: true });
-          if (fs.existsSync(destSkillFile)) {
-            fs.copyFileSync(destSkillFile, path.join(symlinkPath, 'SKILL.md'));
+          const skillFile = path.join(destSkillDir, 'SKILL.md');
+          if (fs.existsSync(skillFile)) {
+            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
           }
           console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
         }
@@ -263,16 +264,24 @@ After displaying the boot output, respond to the user naturally.
     if (content.includes(startMarker)) {
       // Check if update needed
       const startIdx = content.indexOf(startMarker);
-      const endIdx = content.indexOf(endMarker) + endMarker.length;
-      const existingBlock = content.slice(startIdx, endIdx);
-      const newBlockTrimmed = atrisBlock.trim().slice(0, -1); // Remove trailing newline for comparison
-
-      if (!existingBlock.includes('Atris boot sequence')) {
-        // Replace existing Atris block with new version
-        content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
+      const endRaw = content.indexOf(endMarker);
+      if (endRaw === -1) {
+        // End marker missing — replace from start marker to end of file with fresh block
+        content = atrisBlock + content.slice(0, startIdx);
         fs.writeFileSync(rootClaudeMd, content);
-        console.log('✓ Updated Atris block in CLAUDE.md');
+        console.log('✓ Repaired Atris block in CLAUDE.md (missing end marker)');
         updated++;
+      } else {
+        const endIdx = endRaw + endMarker.length;
+        const existingBlock = content.slice(startIdx, endIdx);
+
+        if (!existingBlock.includes('Atris boot sequence')) {
+          // Replace existing Atris block with new version
+          content = atrisBlock + content.slice(0, startIdx) + content.slice(endIdx).replace(/^\n+/, '');
+          fs.writeFileSync(rootClaudeMd, content);
+          console.log('✓ Updated Atris block in CLAUDE.md');
+          updated++;
+        }
       }
     } else {
       // Prepend Atris block

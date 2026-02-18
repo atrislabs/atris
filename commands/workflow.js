@@ -381,46 +381,8 @@ async function doAtris() {
     taskSource = 'atris/TODO.md';
   }
   
-  // Extract tasks from TODO.md (no tag filtering - all tasks available)
-  const taskTag = '';
-  let filteredTasks = '';
-  if (taskTag && tasksContent) {
-    const taskLines = tasksContent.split('\n');
-    let inTasksSection = false;
-    let currentTask = [];
-    for (const line of taskLines) {
-      if (line.includes('<tasks>')) {
-        inTasksSection = true;
-        continue;
-      }
-      if (line.includes('</tasks>')) {
-        inTasksSection = false;
-        if (currentTask.length > 0) {
-          filteredTasks += currentTask.join('\n') + '\n\n';
-        }
-        currentTask = [];
-        continue;
-      }
-      if (inTasksSection && line.trim()) {
-        if (line.includes(taskTag)) {
-          currentTask = [line];
-        } else if (currentTask.length > 0) {
-          currentTask.push(line);
-        }
-      }
-    }
-    if (currentTask.length > 0) {
-      filteredTasks += currentTask.join('\n') + '\n';
-    }
-  } else {
-    filteredTasks = tasksContent;
-  }
-  
-  // Load TODO.md content (using existing task file variable)
-  let taskContexts = '';
-  if (taskFilePath && fs.existsSync(taskFilePath)) {
-    taskContexts = fs.readFileSync(taskFilePath, 'utf8');
-  }
+  // All tasks available (no tag filtering)
+  const filteredTasks = tasksContent;
 
   const executorPath = path.relative(process.cwd(), executorFile);
   const personaFileRef = fs.existsSync(personaFile) ? path.relative(process.cwd(), personaFile) : null;

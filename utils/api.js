@@ -221,12 +221,36 @@ function streamProChat(url, token, body, showTools = false) {
       });
 
       res.on('end', () => {
+        // Flush any remaining buffered data
+        if (buffer.trim()) {
+          const line = buffer.trim();
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data && data !== '[DONE]') {
+              try {
+                const msg = JSON.parse(data);
+                if (msg.chunk) {
+                  process.stdout.write(msg.chunk);
+                } else if (msg.type === 'result' && msg.result) {
+                  process.stdout.write(msg.result);
+                }
+              } catch (e) {
+                // Ignore parse errors on final flush
+              }
+            }
+          }
+        }
         resolve();
       });
 
       res.on('error', (err) => {
         reject(err);
       });
+    });
+
+    // Timeout after 2 minutes of no response
+    req.setTimeout(120000, () => {
+      req.destroy(new Error('SSE stream timed out after 120s'));
     });
 
     req.on('error', (err) => {
