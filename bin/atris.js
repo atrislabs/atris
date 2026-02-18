@@ -219,11 +219,12 @@ function showHelp() {
   console.log('  integrations - Show integration status');
   console.log('');
   console.log('Skills:');
-  console.log('  skill create <name> - Scaffold a new skill (--integration, --system)');
+  console.log('  skill create <name> - Scaffold a new skill (--integration, --local)');
   console.log('  skill link [--all]  - Symlink skills to ~/.claude/skills/ (system-level)');
   console.log('  skill list          - Show all skills with compliance status');
   console.log('  skill audit [name]  - Validate skill against Anthropic guide');
   console.log('  skill fix [name]    - Auto-fix common compliance issues');
+  console.log('  skill delete <name> - Delete a skill and its symlinks');
   console.log('');
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
@@ -365,6 +366,12 @@ if (isSpecFile(command)) {
 // If no command OR command is not recognized, treat as natural language
 if (!command || !knownCommands.includes(command)) {
   const userInput = process.argv.slice(2).join(' ');
+
+  // Warn if this looks like a mistyped single-word command (no spaces)
+  if (command && !userInput.includes(' ')) {
+    console.log(`⚠ Unknown command: "${command}". Run "atris help" for available commands.`);
+    console.log('  Treating as natural language input...\n');
+  }
 
   // Launch interactive entry (the "Performance")
   interactiveEntry(userInput)
@@ -848,6 +855,10 @@ if (command === 'init') {
   process.exit(1);
 }
 
+// NOTE: initAtris, syncAtris, logAtris, appendLog, logSyncAtris, showTodayLog, showRecentLogs
+// are legacy inline implementations. Routing now uses require('../commands/...') instead.
+// The journal utilities (getLogPath, ensureLogDirectory, createLogFile) are still used by
+// top-level code at lines ~393 and ~2553 via hoisting — do not remove without migrating those.
 function initAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
   const teamDir = path.join(targetDir, 'team');
@@ -1262,7 +1273,7 @@ async function logSyncAtris() {
     console.log(`Created local log template for ${dateFormatted}. Fill it in before syncing.`);
   }
 
-  const localContent = fs.readFileSync(logFile, 'utf8');
+  let localContent = fs.readFileSync(logFile, 'utf8');
   const localHash = computeContentHash(localContent);
 
   // Ensure agent selected
@@ -2437,7 +2448,7 @@ async function chatOnce(config, credentials, message) {
   console.log('');
 
   const agentId = config.agent_id;
-  const apiUrl = 'https://api.atris.ai';
+  const apiUrl = getApiBaseUrl().replace(/\/api$/, '');
   const endpoint = `${apiUrl}/api/agent/${agentId}/pro-chat`;
 
   const body = JSON.stringify({
@@ -2494,7 +2505,7 @@ async function chatInteractive(config, credentials) {
 
       // Send to pro-chat
       console.log('');
-      const apiUrl = 'https://api.atris.ai';
+      const apiUrl = getApiBaseUrl().replace(/\/api$/, '');
       const endpoint = `${apiUrl}/api/agent/${agentId}/pro-chat`;
 
       const body = JSON.stringify({

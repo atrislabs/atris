@@ -250,6 +250,17 @@ curl -s -X DELETE "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}
   -H "Authorization: Bearer $TOKEN"
 ```
 
+### Mark as Read / Unread
+```bash
+# Mark as read
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_id}/read" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Mark as unread
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_id}/unread" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ### Archive Email
 ```bash
 # Single message
@@ -258,6 +269,19 @@ curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_i
 
 # Batch archive
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/batch-archive" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message_ids": ["id1", "id2", "id3"]}'
+```
+
+### Trash Email
+```bash
+# Single message
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_id}/trash" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Batch trash
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/batch-trash" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message_ids": ["id1", "id2", "id3"]}'
@@ -409,6 +433,12 @@ curl -s "https://api.atris.ai/api/integrations/gmail/drafts" -H "Authorization: 
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"to":"email@example.com","subject":"Hi","body":"Draft text"}'
+
+# Mark as read
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_id}/read" -H "Authorization: Bearer $TOKEN"
+
+# Trash an email
+curl -s -X POST "https://api.atris.ai/api/integrations/gmail/messages/{message_id}/trash" -H "Authorization: Bearer $TOKEN"
 
 # Send a draft
 curl -s -X POST "https://api.atris.ai/api/integrations/gmail/drafts/{draft_id}/send" \

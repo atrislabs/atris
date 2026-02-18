@@ -122,7 +122,7 @@ async function executePhase(phase, prd, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = `claude -p "$(cat ${tmpFile})" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
     const output = execSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -134,7 +134,7 @@ async function executePhase(phase, prd, options = {}) {
     // Clean up
     try { fs.unlinkSync(tmpFile); } catch {}
 
-    const result = verbose ? '' : output;
+    const result = output || '';
 
     if (phase === 'plan') {
       console.log('✓ Planning complete');
@@ -308,6 +308,10 @@ async function autopilotAtris(description, options = {}) {
         console.log('✓ Logged to journal');
         console.log('');
 
+        // Clean up temp files on success
+        try { fs.unlinkSync(path.join(process.cwd(), 'prd.json')); } catch {}
+        try { fs.unlinkSync(path.join(process.cwd(), 'progress.txt')); } catch {}
+
         return { success: true, iterations: iteration };
       }
 
@@ -360,7 +364,11 @@ async function autopilotFromTodo(options = {}) {
     return;
   }
 
-  const backlogLines = backlogMatch[1].split('\n').filter(line => line.trim().startsWith('- [ ]'));
+  // Support both formats: "- [ ] Task" (checkbox) and "- **T1:** Task" (Atris standard)
+  const backlogLines = backlogMatch[1].split('\n').filter(line => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('- [ ]') || trimmed.match(/^- \*\*T\d+:\*\*\s/);
+  });
 
   if (backlogLines.length === 0) {
     console.log('No unchecked items in backlog. TODO.md is at target state (0 tasks).');
@@ -368,8 +376,9 @@ async function autopilotFromTodo(options = {}) {
   }
 
   // Pick first item
-  const firstItem = backlogLines[0];
-  const itemMatch = firstItem.match(/- \[ \] (.+)/);
+  const firstItem = backlogLines[0].trim();
+  // Try checkbox format first, then Atris standard format
+  const itemMatch = firstItem.match(/- \[ \] (.+)/) || firstItem.match(/- \*\*T\d+:\*\*\s*(.+)/);
 
   if (!itemMatch) {
     throw new Error('Could not parse backlog item');
