@@ -189,8 +189,10 @@ function runAuditChecks(skill) {
     message: hasReadme ? 'README.md found (should not exist in skill folder)' : 'clean'
   });
 
-  // 11. under 5000 words
-  const wordCount = skill.content.split(/\s+/).length;
+  // 11. under 5000 words (body only, excluding frontmatter)
+  const bodyStart = skill.content.indexOf('---', skill.content.indexOf('---') + 3);
+  const bodyContent = bodyStart >= 0 ? skill.content.slice(bodyStart + 3) : skill.content;
+  const wordCount = bodyContent.split(/\s+/).filter(Boolean).length;
   checks.push({
     id: 'word-count',
     severity: 'INFO',
@@ -475,7 +477,7 @@ function skillFix(name) {
 function generateSkillTemplate(name, description) {
   return `---
 name: ${name}
-description: ${description || `Custom skill for ${name}. Use when user asks about ${name}-related tasks.`}
+description: "${(description || `Custom skill for ${name}. Use when user asks about ${name}-related tasks.`).replace(/"/g, '\\"')}"
 version: 1.0.0
 tags:
   - ${name}
@@ -586,13 +588,13 @@ curl -s "https://api.atris.ai/api/integrations/YOUR_INTEGRATION/items" \\
 
 function skillCreate(nameArg, ...flags) {
   if (!nameArg) {
-    console.error('Usage: atris skill create <name> [--integration] [--description="..."] [--system]');
+    console.error('Usage: atris skill create <name> [--integration] [--description="..."] [--local]');
     console.error('');
     console.error('Examples:');
     console.error('  atris skill create daily-standup');
     console.error('  atris skill create email-outreach --integration');
     console.error('  atris skill create pallet/bol-processor --integration');
-    console.error('  atris skill create my-skill --system');
+    console.error('  atris skill create my-skill --local     # project only, skip system dirs');
     process.exit(1);
   }
 

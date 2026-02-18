@@ -240,7 +240,7 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
   // Apply replacements
   if (!dryRun && replacements.length > 0) {
     for (const r of replacements) {
-      mapContent = mapContent.replace(r.old, r.new);
+      mapContent = mapContent.split(r.old).join(r.new);
     }
     fs.writeFileSync(mapFile, mapContent);
   }
