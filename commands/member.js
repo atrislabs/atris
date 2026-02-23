@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { loadCredentials } = require('../utils/auth');
+const { apiRequestJson } = require('../utils/api');
 
 // --- YAML Frontmatter Parser (shared with skill.js) ---
 
@@ -183,17 +185,20 @@ function memberList() {
 
 // --- CREATE subcommand ---
 
-function memberCreate(name, ...flags) {
+async function memberCreate(name, ...flags) {
   if (!name) {
-    console.error('Usage: atris member create <name> [--role="Title"]');
+    console.error('Usage: atris member create <name> [--role="Title"] [--push]');
     process.exit(1);
   }
 
   // Parse flags
   let role = name.charAt(0).toUpperCase() + name.slice(1).replace(/-/g, ' ');
   let description = '';
+  let shouldPush = false;
 
   for (const flag of flags) {
+    if (flag === '--push') { shouldPush = true; continue; }
+
     const roleMatch = flag.match(/^--role=["']?(.+?)["']?$/);
     if (roleMatch) role = roleMatch[1];
 
@@ -222,6 +227,7 @@ function memberCreate(name, ...flags) {
   fs.mkdirSync(path.join(memberDir, 'skills'), { recursive: true });
   fs.mkdirSync(path.join(memberDir, 'tools'), { recursive: true });
   fs.mkdirSync(path.join(memberDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'journal'), { recursive: true });
 
   const content = `---
 name: ${name}
@@ -233,6 +239,9 @@ skills: []
 
 permissions:
   can-read: true
+  approval-required: []
+
+tools: []
 ---
 
 # ${role}
@@ -260,10 +269,18 @@ permissions:
   console.log(`✓ Created team/${name}/skills/`);
   console.log(`✓ Created team/${name}/tools/`);
   console.log(`✓ Created team/${name}/context/`);
-  console.log('');
-  console.log(`Next: edit team/${name}/MEMBER.md to define persona, workflow, and permissions.`);
-  console.log(`      add skills to team/${name}/skills/<skill-name>/SKILL.md`);
-  console.log(`      add context docs to team/${name}/context/`);
+  console.log(`✓ Created team/${name}/journal/`);
+
+  if (shouldPush) {
+    console.log('');
+    await memberPush(name);
+  } else {
+    console.log('');
+    console.log(`Next: edit team/${name}/MEMBER.md to define persona, workflow, and permissions.`);
+    console.log(`      add skills to team/${name}/skills/<skill-name>/SKILL.md`);
+    console.log(`      add context docs to team/${name}/context/`);
+    console.log(`      run "atris member push ${name}" to create a cloud agent`);
+  }
 }
 
 // --- ACTIVATE subcommand ---
@@ -415,10 +432,170 @@ function memberUpgrade(name) {
   fs.mkdirSync(path.join(memberDir, 'skills'), { recursive: true });
   fs.mkdirSync(path.join(memberDir, 'tools'), { recursive: true });
   fs.mkdirSync(path.join(memberDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'journal'), { recursive: true });
   fs.renameSync(legacyFile, memberFile);
 
   console.log(`✓ Upgraded team/${name}.md → team/${name}/MEMBER.md`);
-  console.log(`✓ Created skills/, tools/, context/ directories`);
+  console.log(`✓ Created skills/, tools/, context/, journal/ directories`);
+}
+
+// --- PUSH subcommand ---
+
+async function memberPush(name) {
+  if (!name) {
+    console.error('Usage: atris member push <name>');
+    process.exit(1);
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  const teamDir = path.join(process.cwd(), 'atris', 'team');
+  const memberFile = path.join(teamDir, name, 'MEMBER.md');
+
+  if (!fs.existsSync(memberFile)) {
+    console.error(`Member "${name}" not found at atris/team/${name}/MEMBER.md`);
+    process.exit(1);
+  }
+
+  const content = fs.readFileSync(memberFile, 'utf8');
+  const fm = parseFrontmatter(content);
+  const existingAgentId = fm && fm['agent-id'];
+
+  if (existingAgentId) {
+    console.log(`Pushing member "${name}" to cloud (updating agent ${existingAgentId})...`);
+  } else {
+    console.log(`Pushing member "${name}" to cloud (creating new agent)...`);
+  }
+
+  const result = await apiRequestJson('/agent/import-member', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/markdown' },
+    body: content,
+    token: creds.token,
+  });
+
+  if (!result.ok) {
+    console.error(`Push failed: ${result.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+
+  const agentId = result.data?.agent_id || result.data?.id || '(unknown)';
+
+  // Write agent-id back into frontmatter if this was a new agent
+  if (!existingAgentId && agentId && agentId !== '(unknown)') {
+    const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---)/);
+    if (fmMatch) {
+      const updatedContent = fmMatch[1] + fmMatch[2] + `\nagent-id: ${agentId}` + fmMatch[3] + content.slice(fmMatch[0].length);
+      fs.writeFileSync(memberFile, updatedContent);
+      console.log(`Linked: agent-id ${agentId} written to MEMBER.md`);
+    }
+  }
+
+  const action = existingAgentId ? 'Updated' : 'Created';
+  console.log(`${action} successfully. Agent ID: ${agentId}`);
+}
+
+// --- PULL subcommand ---
+
+async function memberPull(nameOrAgentId) {
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  let agentId = nameOrAgentId;
+
+  // If arg looks like a member name (not a UUID), check local MEMBER.md for agent-id
+  if (nameOrAgentId && !nameOrAgentId.includes('-')) {
+    const teamDir = path.join(process.cwd(), 'atris', 'team');
+    const localFile = path.join(teamDir, nameOrAgentId, 'MEMBER.md');
+    if (fs.existsSync(localFile)) {
+      const localContent = fs.readFileSync(localFile, 'utf8');
+      const fm = parseFrontmatter(localContent);
+      if (fm && fm['agent-id']) {
+        agentId = fm['agent-id'];
+        console.log(`Found agent-id ${agentId} in local MEMBER.md`);
+      } else {
+        console.error(`Member "${nameOrAgentId}" has no agent-id. Push it first: atris member push ${nameOrAgentId}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  if (!agentId) {
+    console.error('Usage: atris member pull <name|agent_id>');
+    process.exit(1);
+  }
+
+  console.log(`Pulling agent "${agentId}" from cloud...`);
+
+  const result = await apiRequestJson(`/agent/${agentId}/export-member`, {
+    method: 'GET',
+    token: creds.token,
+  });
+
+  if (!result.ok) {
+    console.error(`Pull failed: ${result.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+
+  // The response body is the MEMBER.md content (may be returned as text or in data)
+  const content = result.text || (result.data && typeof result.data === 'string' ? result.data : null);
+
+  if (!content) {
+    console.error('Pull failed: empty response from server');
+    process.exit(1);
+  }
+
+  // Parse the name from frontmatter
+  const fm = parseFrontmatter(content);
+  const memberName = (fm && fm.name) || nameOrAgentId;
+
+  const teamDir = path.join(process.cwd(), 'atris', 'team');
+  const memberDir = path.join(teamDir, memberName);
+  const memberFile = path.join(memberDir, 'MEMBER.md');
+
+  // Create directory structure
+  fs.mkdirSync(memberDir, { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'tools'), { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(memberDir, 'journal'), { recursive: true });
+
+  fs.writeFileSync(memberFile, content);
+  console.log(`Saved to atris/team/${memberName}/MEMBER.md`);
+
+  // Sync journal entries
+  const journalResult = await apiRequestJson(`/agent/${agentId}/export-journal`, {
+    method: 'GET',
+    token: creds.token,
+  });
+
+  if (journalResult.ok && journalResult.data && journalResult.data.files) {
+    const journalFiles = journalResult.data.files;
+    let synced = 0;
+
+    for (const file of journalFiles) {
+      if (!file.path || !file.content) continue;
+      const localPath = path.join(memberDir, file.path);
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, file.content);
+      synced++;
+    }
+
+    if (synced > 0) {
+      console.log(`Synced ${synced} journal ${synced === 1 ? 'entry' : 'entries'}`);
+    } else {
+      console.log('No journal entries yet');
+    }
+  } else {
+    console.log('No journal entries yet');
+  }
 }
 
 // --- Command Dispatcher ---
@@ -435,25 +612,34 @@ function memberCommand(subcommand, ...args) {
       return memberActivate(args[0]);
     case 'upgrade':
       return memberUpgrade(args[0]);
+    case 'push':
+      return memberPush(args[0]);
+    case 'pull':
+      return memberPull(args[0]);
     default:
       console.log('');
       console.log('Usage: atris member <subcommand> [name]');
       console.log('');
       console.log('Subcommands:');
-      console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs)');
+      console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  list                Show all team members');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
+      console.log('  push <name>         Push a local team member to the cloud');
+      console.log('  pull <name|id>      Pull a cloud agent as a local team member');
       console.log('');
       console.log('Create flags:');
       console.log('  --role="Title"         Set the member role');
       console.log('  --description="..."    Set the member description');
+      console.log('  --push                 Also create a cloud agent after scaffolding');
       console.log('');
       console.log('Examples:');
       console.log('  atris member create sdr --role="Sales Development Rep"');
       console.log('  atris member list');
       console.log('  atris member activate navigator');
       console.log('  atris member upgrade executor');
+      console.log('  atris member push navigator');
+      console.log('  atris member pull navigator           (reads agent-id from local MEMBER.md)');
       console.log('');
   }
 }
