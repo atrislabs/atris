@@ -18,12 +18,13 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-(Clean)
+- [ ] Audit recent runtime/CLI regressions (workflow doAtris path, auth browser launch, command crashes)
 
 ---
 
 ## Completed
 
+- [x] Audit journal/log merge behavior (lib/journal.js + commands/log-sync.js)
 - [x] Install all skills to Codex (8 skills → ~/.codex/skills/)
 - [x] Add frontmatter to email-agent, memory, autopilot skills
 - [x] Clean up stale files, duplicate folders, gitignore
