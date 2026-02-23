@@ -5,7 +5,6 @@
   "testCommand": "npm test",
   "fileStructure": [
     "lib/",
-    "docs/",
     "test/"
   ],
   "conventions": {}

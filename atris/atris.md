@@ -88,12 +88,31 @@ Stage: PLAN → do → review   (capitalize current stage)
 ## WORKFLOW
 
 ```
-plan → do → review
+scout → plan → do → review
 ```
 
-- **PLAN** — ASCII visualization, get approval, NO code yet. Create `atris/features/[name]/idea.md` + `build.md` + `validate.md` for substantial work.
-- **DO** — Execute build.md step-by-step, update journal
-- **REVIEW** — Fill in validate.md, test, clean up. If anything surprised you, append to `atris/lessons.md`.
+- **SCOUT** — Read relevant files first. Understand before you act. Report what you found.
+- **PLAN** — ASCII visualization, get approval, NO code yet
+- **DO** — Execute step-by-step, update journal
+- **REVIEW** — Test, validate, clean up, delete completed tasks
+
+---
+
+## TASK RULES
+
+Every task must follow these rules. No exceptions.
+
+**One job per task.** If a task touches more than 2-3 files, break it down. If you can't describe "done" in one sentence, it's too big.
+
+**Clear exit condition.** Every task states what "done" looks like. Not "improve auth" — instead: "Add session check to upload handler. Done when: unauthenticated requests return 401 and test passes."
+
+**Tag every task:**
+- `[explore]` — Ambiguous. Needs reading, research, judgment. Output is understanding.
+- `[execute]` — Precise. Route is clear. Just do it. Output is code or artifact.
+
+**Explore before execute.** When starting a new area of work, the first tasks should be `[explore]`. Read the files. Map the space. Report what you found. Then plan `[execute]` tasks based on what you learned.
+
+**Sequence matters.** Order tasks so each one builds context for the next. Early tasks should teach you about the problem. Later tasks use that knowledge.
 
 ---
 
@@ -141,7 +160,6 @@ Specs loaded at activate from `team/*.md`
 |------|---------|
 | `MAP.md` | Where is X? (navigation) |
 | `TODO.md` | Task queue (target: 0) |
-| `lessons.md` | What we learned (append-only, read by navigator, written by validator) |
 | `logs/YYYY/MM-DD.md` | Journal (daily) |
 | `PERSONA.md` | Communication style |
 | `team/` | Agent behaviors |
@@ -169,6 +187,22 @@ Specs loaded at activate from `team/*.md`
 
 ---
 
+## PERSISTENCE
+
+Context window = cache. Disk = truth. Route discoveries as they happen.
+
+| You discover...     | Write to...          | Format               |
+|---------------------|----------------------|----------------------|
+| Code location       | MAP.md               | file:line reference  |
+| New task            | TODO.md              | Task + exit condition |
+| Decision / tradeoff | Journal → Notes      | Timestamped line     |
+| Something learned   | lessons.md           | One-line lesson      |
+| Work finished       | Journal → Completed  | C#: description      |
+
+Don't batch. Don't wait for session end. Nothing important should live only in-context.
+
+---
+
 ## RULES
 
 - 3-4 sentences max
@@ -176,7 +210,7 @@ Specs loaded at activate from `team/*.md`
 - Check MAP.md before touching code
 - Update journal after completing work
 - Delete tasks when done (target: 0)
-- **Grep before acting:** `grep -i "<keywords>" atris/logs/**/*.md` — surface relevant history first
+- Persist as you go (see PERSISTENCE)
 
 ---
 

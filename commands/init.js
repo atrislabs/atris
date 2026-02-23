@@ -476,7 +476,7 @@ function initAtris() {
 
 
   // Copy team members (MEMBER.md format — directory per member)
-  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer'];
+  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer', 'researcher'];
   members.forEach(name => {
     const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
     const targetDir = path.join(teamDir, name);
