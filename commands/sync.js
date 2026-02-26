@@ -320,10 +320,10 @@ function syncRecursiveCount(src, dest, label, silent) {
     if (fs.statSync(srcPath).isDirectory()) {
       count += syncRecursiveCount(srcPath, destPath, `${label}/${entry}`, silent);
     } else {
-      const srcContent = fs.readFileSync(srcPath, 'utf8');
-      const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-      if (srcContent !== destContent) {
-        fs.writeFileSync(destPath, srcContent);
+      const srcBuf = fs.readFileSync(srcPath);
+      const destBuf = fs.existsSync(destPath) ? fs.readFileSync(destPath) : Buffer.alloc(0);
+      if (!srcBuf.equals(destBuf)) {
+        fs.writeFileSync(destPath, srcBuf);
         if (entry.endsWith('.sh')) {
           fs.chmodSync(destPath, 0o755);
         }
