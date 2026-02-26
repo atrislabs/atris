@@ -510,12 +510,6 @@ async function doAtris() {
       console.log('');
     }
 
-    if (taskContexts && taskContexts.trim()) {
-      console.log('📝 TODO.md (full):');
-      console.log('─────────────────────────────────────────────────────────────');
-      console.log(taskContexts);
-      console.log('');
-    }
   }
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -560,10 +554,6 @@ async function doAtris() {
       userPrompt += `## TASKS TO EXECUTE (from ${taskSource}):\n${filteredTasks}\n\n`;
     } else {
       userPrompt += `## TASKS TO EXECUTE:\n(No tasks found - check TODO.md)\n\n`;
-    }
-    
-    if (taskContexts) {
-      userPrompt += `## TODO.md (Additional Context):\n${taskContexts}\n\n`;
     }
     
     userPrompt += `Your process (EXECUTE these steps):\n`;

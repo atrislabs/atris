@@ -1012,6 +1012,7 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
   };
 
   fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
+  try { fs.chmodSync(credentialsPath, 0o600); } catch { /* best effort */ }
 }
 
 function loadCredentials() {
@@ -1362,25 +1363,6 @@ async function displayAccountSummary() {
   return { credentials, user };
 }
 
-function openBrowser(url) {
-  const platform = os.platform();
-  let command;
-
-  if (platform === 'darwin') {
-    command = `open "${url}"`;
-  } else if (platform === 'win32') {
-    command = `start "${url}"`;
-  } else {
-    command = `xdg-open "${url}"`;
-  }
-
-  exec(command, (error) => {
-    if (error) {
-      console.log(`\nCouldn't open browser automatically. Please visit:\n${url}`);
-    }
-  });
-}
-
 function promptUser(question) {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -1393,133 +1375,6 @@ function promptUser(question) {
       resolve(answer.trim());
     });
   });
-}
-
-async function loginAtris() {
-  try {
-    console.log('🔐 Login to AtrisOS\n');
-
-    const existing = loadCredentials();
-    if (existing) {
-      const label = existing.email || existing.user_id || 'unknown user';
-      console.log(`Already logged in as: ${label}`);
-      const confirm = await promptUser('Do you want to login again? (y/N): ');
-      if (confirm.toLowerCase() !== 'y') {
-        console.log('Login cancelled.');
-        process.exit(0);
-      }
-    }
-
-    console.log('Choose login method:');
-    console.log('  1. Browser OAuth (recommended)');
-    console.log('  2. Paste existing API token');
-    console.log('  3. Cancel');
-
-    const choice = await promptUser('\nEnter choice (1-3): ');
-
-    if (choice === '1') {
-      const loginUrl = `${getAppBaseUrl()}/auth/cli`;
-      console.log('\n🌐 Opening browser for OAuth login…');
-      console.log('If it does not open automatically, visit:');
-      console.log(loginUrl);
-      console.log('\nAfter signing in, copy the CLI code shown in the browser and paste it below.');
-      console.log('Codes expire after five minutes.\n');
-
-      openBrowser(loginUrl);
-
-      const code = await promptUser('Paste the CLI code here: ');
-      if (!code) {
-        console.error('✗ Error: Code is required');
-        process.exit(1);
-      }
-
-      const exchange = await apiRequestJson('/auth/cli/exchange', {
-        method: 'POST',
-        body: { code: code.trim() },
-      });
-
-      if (!exchange.ok || !exchange.data) {
-        console.error(`✗ Error: ${exchange.error || 'Invalid or expired code'}`);
-        process.exit(1);
-      }
-
-      const payload = exchange.data;
-      const token = payload.token;
-      const refreshToken = payload.refresh_token;
-
-      if (!token || !refreshToken) {
-        console.error('✗ Error: Backend did not return tokens. Please try again.');
-        process.exit(1);
-      }
-
-      const email = payload.email || existing?.email || null;
-      const userId = payload.user_id || existing?.user_id || null;
-      const provider = payload.provider || 'atris';
-
-      saveCredentials(token, refreshToken, email, userId, provider);
-      console.log('\n✓ Successfully logged in!');
-      await displayAccountSummary();
-      console.log('\nYou can now use cloud features with atris commands.');
-      process.exit(0);
-    } else if (choice === '2') {
-      console.log('\n📋 Manual Token Entry');
-      console.log('Get your token from: https://atris.ai/auth/cli\n');
-
-      const tokenInput = await promptUser('Paste your API token: ');
-
-      if (!tokenInput) {
-        console.error('✗ Error: Token is required');
-        process.exit(1);
-      }
-
-      const trimmed = tokenInput.trim();
-      saveCredentials(trimmed, null, existing?.email || null, existing?.user_id || null, existing?.provider || 'manual');
-      console.log('\nAttempting to validate token…\n');
-
-      const summary = await displayAccountSummary();
-      if (summary.error) {
-        console.log('\n⚠️ Token saved, but validation failed. You may need to relogin.');
-      } else {
-        console.log('\n✓ Token validated successfully.');
-      }
-
-      console.log('\nYou can now use cloud features with atris commands.');
-      process.exit(0);
-    } else {
-      console.log('Login cancelled.');
-      process.exit(0);
-    }
-  } catch (error) {
-    console.error(`\n✗ Login failed: ${error.message || error}`);
-    process.exit(1);
-  }
-}
-
-function logoutAtris() {
-  const credentials = loadCredentials();
-
-  if (!credentials) {
-    console.log('Not currently logged in.');
-    process.exit(0);
-  }
-
-  deleteCredentials();
-  console.log('✓ Successfully logged out');
-  console.log(`✓ Removed credentials from ${getCredentialsPath()}`);
-}
-
-async function whoamiAtris() {
-  try {
-    const summary = await displayAccountSummary();
-    if (summary.error) {
-      console.log('\nRun "atris login" to authenticate with AtrisOS.');
-      process.exit(1);
-    }
-    process.exit(0);
-  } catch (error) {
-    console.error(`✗ Failed to fetch account details: ${error.message || error}`);
-    process.exit(1);
-  }
 }
 
 function showVersion() {

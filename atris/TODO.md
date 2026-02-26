@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-02-10
+> **Last updated:** 2026-02-25
 
 ---
 
@@ -18,12 +18,13 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- [ ] Audit recent runtime/CLI regressions (workflow doAtris path, auth browser launch, command crashes)
+(Clean)
 
 ---
 
 ## Completed
 
+- [x] Audit runtime/CLI regressions — fixed `taskContexts` ReferenceError crash in doAtris (workflow.js:513,565), cataloged dead auth code in bin/atris.js
 - [x] Audit journal/log merge behavior (lib/journal.js + commands/log-sync.js)
 - [x] Install all skills to Codex (8 skills → ~/.codex/skills/)
 - [x] Add frontmatter to email-agent, memory, autopilot skills
