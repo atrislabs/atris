@@ -1,0 +1,11 @@
+# Changelog — [Feature Name]
+
+Use this file only when useful (customer-visible changes, bug fixes, regressions, release notes).
+
+## [YYYY-MM-DD]
+
+- type: feature | bug | refactor | security
+- summary: One-line description of what changed
+- gates: PASS | FAIL
+- ref: PR/commit/link
+- rollback: One-line rollback note

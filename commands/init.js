@@ -475,24 +475,52 @@ function initAtris() {
   });
 
 
-  // Copy team members (MEMBER.md format — directory per member)
+  // Copy team members (MEMBER.md format — directory per member with skills/tools/context)
   const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer', 'researcher'];
   members.forEach(name => {
     const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
-    const targetDir = path.join(teamDir, name);
-    const targetFile = path.join(targetDir, 'MEMBER.md');
+    const targetMemberDir = path.join(teamDir, name);
+    const targetFile = path.join(targetMemberDir, 'MEMBER.md');
     const legacyFile = path.join(teamDir, `${name}.md`);
 
     // Skip if already exists (either format)
     if (fs.existsSync(targetFile) || fs.existsSync(legacyFile)) return;
 
     if (fs.existsSync(sourceFile)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+      fs.mkdirSync(targetMemberDir, { recursive: true });
+      fs.mkdirSync(path.join(targetMemberDir, 'skills'), { recursive: true });
+      fs.mkdirSync(path.join(targetMemberDir, 'tools'), { recursive: true });
+      fs.mkdirSync(path.join(targetMemberDir, 'context'), { recursive: true });
       fs.copyFileSync(sourceFile, targetFile);
-      fs.mkdirSync(path.join(targetDir, 'journal'), { recursive: true });
-      console.log(`✓ Created team/${name}/MEMBER.md`);
+      console.log(`✓ Created team/${name}/ (MEMBER.md + skills/ + tools/ + context/)`);
     }
   });
+
+  // Copy MEMBER.md template for creating custom members
+  const templateSourceDir = path.join(__dirname, '..', 'atris', 'team', '_template');
+  const templateTargetDir = path.join(teamDir, '_template');
+  if (!fs.existsSync(templateTargetDir)) {
+    fs.mkdirSync(templateTargetDir, { recursive: true });
+    const templateContent = `---
+name: template-member
+role: Replace with role title
+description: Replace with one-line description of what this member does.
+version: 1.0.0
+
+skills: []
+
+permissions:
+  can-read: true
+  approval-required: []
+
+tools: []
+---
+
+# Insert persona, workflow, and rules below
+`;
+    fs.writeFileSync(path.join(templateTargetDir, 'MEMBER.md'), templateContent);
+    console.log('✓ Created team/_template/MEMBER.md');
+  }
 
   // Detect project context and generate profile
   const profile = detectProjectContext(process.cwd());
