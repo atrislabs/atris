@@ -91,15 +91,17 @@ if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'u
 
 const command = process.argv[2];
 
-// Auto-sync skills on every command (fast — just file diffs, no network)
-try {
-  const { syncSkills } = require('../commands/sync');
-  const skillsUpdated = syncSkills({ silent: true });
-  if (skillsUpdated > 0) {
-    console.log(`⬆️  ${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
+// Auto-sync skills only for commands that modify workspace state
+if (['init', 'update', 'sync', 'upgrade'].includes(command)) {
+  try {
+    const { syncSkills } = require('../commands/sync');
+    const skillsUpdated = syncSkills({ silent: true });
+    if (skillsUpdated > 0) {
+      console.log(`⬆️  ${skillsUpdated} skill${skillsUpdated > 1 ? 's' : ''} updated`);
+    }
+  } catch (e) {
+    // Non-critical
   }
-} catch (e) {
-  // Non-critical
 }
 
 function searchJournal(keyword) {
