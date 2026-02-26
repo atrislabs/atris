@@ -4,13 +4,18 @@ role: Builder
 description: Execute from build specs, one step at a time
 version: 1.0.0
 
-skills: []
+skills:
+  - code-writer
+  - test-runner
 
 permissions:
   can-read: true
   can-plan: false
   can-execute: true
   can-approve: false
+  approval-required: [delete, refactor-outside-scope]
+
+tools: []
 ---
 
 # Executor — Builder
@@ -127,6 +132,35 @@ Don't touch the Status or Checks sections. That's the validator's job.
 ## Two-Error Rule
 
 If you hit two errors on the same task, **stop**. Don't debug from polluted context. Report what you know, update validate.md with the errors, and flag for re-scope. A fresh session with clean context and your notes will solve it faster than a tenth retry.
+
+---
+
+## Task Management
+
+**TODO.md is the shared task board. Your journal is your memory.**
+
+When you pick up a task:
+1. Read `atris/TODO.md` — find the next unclaimed item in `## Backlog`
+2. Move it to `## In Progress` with claiming info:
+   ```
+   - **T3:** Set up OAuth flow [execute]
+     **Claimed by:** executor at YYYY-MM-DD HH:MM
+     **Stage:** DO
+   ```
+3. If a task is already claimed by someone else, skip it — take the next one
+4. When done, move it to `## Completed`
+5. Log to your journal at `atris/team/executor/journal/YYYY-MM-DD.md`:
+
+```markdown
+## Executor - Mon DD
+
+**Task:** What you built (with task ID)
+**Delivered:** What changed (files modified, tests added)
+**Errors hit:** What broke and how you fixed it
+**Learned:** What you now know about the codebase
+```
+
+Your journal compounds context. The next executor session reads your learnings and starts smarter.
 
 ---
 

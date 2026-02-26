@@ -1,6 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
+const { parseTodo, getTeamActivity } = require('../lib/todo');
+
+// Box drawing helpers
+const W = 64; // inner width
+const line = (char = '─') => char.repeat(W);
+const pad = (str, w = W) => {
+  const visible = str.replace(/[\u{1F4CB}\u{1F528}\u{2705}\u{1F4E5}\u{1F4DA}\u{26A1}\u{1F916}\u{1F4DD}]/gu, 'XX'); // emoji = ~2 chars
+  const len = visible.length;
+  return len >= w ? str : str + ' '.repeat(w - len);
+};
 
 function statusAtris(isQuick = false) {
   const targetDir = path.join(process.cwd(), 'atris');
@@ -10,104 +20,15 @@ function statusAtris(isQuick = false) {
     process.exit(1);
   }
 
-  // Read TODO.md (or legacy TASK_CONTEXTS.md) for backlog and in-progress tasks
+  // Parse TODO.md
   const todoFile = path.join(targetDir, 'TODO.md');
-  const legacyTaskContextsFile = path.join(targetDir, 'TASK_CONTEXTS.md');
-  let backlogTasks = [];
-  let inProgressTasks = [];
-  const taskFilePath = fs.existsSync(todoFile)
-    ? todoFile
-    : (fs.existsSync(legacyTaskContextsFile) ? legacyTaskContextsFile : null);
-
-  if (taskFilePath && fs.existsSync(taskFilePath)) {
-    const taskContent = fs.readFileSync(taskFilePath, 'utf8');
-
-    function parseTodoBulletBlocks(sectionText) {
-      const tasks = [];
-      const lines = String(sectionText || '').split('\n');
-      let current = null;
-
-      const flush = () => {
-        if (!current) return;
-        tasks.push(current);
-        current = null;
-      };
-
-      for (const rawLine of lines) {
-        const line = rawLine.trimEnd();
-        const startMatch = line.match(/^- \*\*([A-Z]\d+):\*\*\s*(.+)$/);
-        if (startMatch) {
-          flush();
-          current = {
-            id: startMatch[1],
-            title: startMatch[2].trim(),
-            claimed: null,
-          };
-          continue;
-        }
-
-        if (!current) continue;
-
-        if (!line.startsWith('  ')) continue;
-
-        const claimMatch = line.match(/\*\*Claimed by:\*\*\s*(.+)$/) || line.match(/Claimed by:\s*(.+)$/);
-        if (claimMatch && !current.claimed) {
-          current.claimed = claimMatch[1].trim();
-        }
-      }
-
-      flush();
-      return tasks.filter(t => t && t.title);
-    }
-
-    // Extract Backlog
-    const backlogMatch = taskContent.match(/## Backlog\n([\s\S]*?)(?=\n##|$)/);
-    if (backlogMatch && backlogMatch[1].trim() && !backlogMatch[1].includes('(No active tasks)')) {
-      const tasks = backlogMatch[1].trim().split('\n### ').filter(t => t.trim());
-      backlogTasks = tasks.map(t => {
-        const match = t.match(/Task:\s*(.+)/);
-        return match ? match[1].substring(0, 60) : null;
-      }).filter(Boolean);
-
-      // Newer TODO.md format: bullet tasks (e.g., "- **T1:** ...").
-      if (backlogTasks.length === 0) {
-        backlogTasks = parseTodoBulletBlocks(backlogMatch[1])
-          .map(t => t.title.substring(0, 60))
-          .filter(Boolean);
-      }
-    }
-
-    // Extract In Progress
-    const inProgressMatch = taskContent.match(/## In Progress\n([\s\S]*?)(?=\n##|$)/);
-    if (inProgressMatch && inProgressMatch[1].trim() && !inProgressMatch[1].includes('Format:')) {
-      const tasks = inProgressMatch[1].trim().split('\n### ').filter(t => t.trim() && !t.startsWith('(Tasks') && !t.startsWith('Format:'));
-      inProgressTasks = tasks.map(t => {
-        const titleMatch = t.match(/Task:\s*(.+)/);
-        const claimMatch = t.match(/\*\*Claimed by:\*\*\s*(.+)/);
-        if (titleMatch) {
-          const title = titleMatch[1].substring(0, 40);
-          const claimed = claimMatch ? claimMatch[1].substring(0, 20) : 'Unknown';
-          return { title, claimed };
-        }
-        return null;
-      }).filter(Boolean);
-
-      // Newer TODO.md format: bullet tasks (e.g., "- **T1:** ...").
-      if (inProgressTasks.length === 0) {
-        inProgressTasks = parseTodoBulletBlocks(inProgressMatch[1]).map(t => {
-          const claimed = t.claimed ? t.claimed.substring(0, 20) : 'Unknown';
-          return { title: t.title.substring(0, 40), claimed };
-        });
-      }
-    }
-  }
+  const todo = parseTodo(todoFile);
 
   // Read journal for inbox and completions
   const { logFile, dateFormatted } = getLogPath();
   let inboxItems = [];
   let completions = [];
 
-  // Ensure today's journal exists so status doesn't show an empty slate on day rollover.
   ensureLogDirectory();
   if (!fs.existsSync(logFile)) {
     createLogFile(logFile, dateFormatted);
@@ -116,12 +37,9 @@ function statusAtris(isQuick = false) {
   if (fs.existsSync(logFile)) {
     const logContent = fs.readFileSync(logFile, 'utf8');
 
-    // Extract inbox
     const inboxMatch = logContent.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
-      inboxItems = inboxMatch[1]
-        .trim()
-        .split('\n')
+      inboxItems = inboxMatch[1].trim().split('\n')
         .filter(l => l.match(/^- \*\*I\d+:/))
         .map(l => {
           const match = l.match(/^- \*\*I(\d+):\s+(.+)$|^- \*\*I(\d+):\*\*\s*(.+)$/);
@@ -130,12 +48,9 @@ function statusAtris(isQuick = false) {
         .filter(Boolean);
     }
 
-    // Extract recent completions
     const completedMatch = logContent.match(/## Completed ✅\n([\s\S]*?)(?=\n##|---)/);
     if (completedMatch && completedMatch[1].trim()) {
-      completions = completedMatch[1]
-        .trim()
-        .split('\n')
+      completions = completedMatch[1].trim().split('\n')
         .filter(l => l.match(/^- \*\*C\d+:/))
         .slice(-3)
         .map(l => {
@@ -146,80 +61,122 @@ function statusAtris(isQuick = false) {
     }
   }
 
-  // Read lessons count
-  let lessonsCount = 0;
-  const lessonsFile = path.join(targetDir, 'lessons.md');
-  if (fs.existsSync(lessonsFile)) {
-    const lessonsContent = fs.readFileSync(lessonsFile, 'utf8');
-    lessonsCount = (lessonsContent.match(/^- \*\*/gm) || []).length;
-  }
+  // Get team activity
+  const teamActivity = getTeamActivity(targetDir);
 
-  // Quick mode: one-line summary
+  // Quick mode
   if (isQuick) {
-    console.log(`📥 ${inboxItems.length} | 📋 ${backlogTasks.length} | 🔨 ${inProgressTasks.length} | ✅ ${completions.length} | 📚 ${lessonsCount}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length}`);
     return;
   }
 
-  // Full display status
-  console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ Atris Status — ${dateFormatted}${' '.repeat(40 - dateFormatted.length)}│`);
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
+  // ─── FULL VISUAL STATUS ────────────────────────────────────
+  const o = (s) => console.log(s);
 
-  // Backlog tasks
-  console.log(`📋 Backlog (unclaimed): ${backlogTasks.length}`);
-  if (backlogTasks.length > 0) {
-    backlogTasks.forEach(t => {
-      console.log(`   • ${t}${t.length > 60 ? '...' : ''}`);
-    });
-  } else {
-    console.log('   (No backlog tasks)');
-  }
-  console.log('');
+  o('');
+  o(`┌─${'─'.repeat(W)}─┐`);
+  o(`│ ${pad(`TASK BOARD — ${dateFormatted}`)} │`);
+  o(`├─${'─'.repeat(W)}─┤`);
 
-  // In Progress tasks
-  console.log(`🔨 In Progress (claimed): ${inProgressTasks.length}`);
-  if (inProgressTasks.length > 0) {
-    inProgressTasks.forEach(t => {
-      console.log(`   • ${t.title}${t.title.length > 40 ? '...' : ''}`);
-      console.log(`     Claimed by: ${t.claimed}`);
+  // Backlog
+  o(`│ ${pad('')} │`);
+  o(`│ ${pad(`  📋 Backlog (${todo.backlog.length})`)} │`);
+  if (todo.backlog.length > 0) {
+    todo.backlog.slice(0, 5).forEach((t, i) => {
+      const id = t.id ? `${t.id}: ` : '';
+      const tag = t.tag ? ` [${t.tag}]` : '';
+      const full = `${id}${t.title}${tag}`;
+      const maxLen = W - 8;
+      const label = full.length > maxLen ? full.substring(0, maxLen - 3) + '...' : full;
+      const branch = (i === todo.backlog.length - 1 || i === 4) ? '└─' : '├─';
+      o(`│ ${pad(`  ${branch} ${label}`)} │`);
     });
-  } else {
-    console.log('   (No tasks being worked on)');
-  }
-  console.log('');
-
-  // Inbox
-  console.log(`📥 Inbox Items: ${inboxItems.length}`);
-  if (inboxItems.length > 0) {
-    inboxItems.slice(0, 3).forEach(i => {
-      console.log(`   • I${i.id}: ${i.title.substring(0, 50)}${i.title.length > 50 ? '...' : ''}`);
-    });
-    if (inboxItems.length > 3) {
-      console.log(`   ... and ${inboxItems.length - 3} more`);
+    if (todo.backlog.length > 5) {
+      o(`│ ${pad(`  └─ ... +${todo.backlog.length - 5} more`)} │`);
     }
   } else {
-    console.log('   (No items in inbox)');
+    o(`│ ${pad('  (none)')} │`);
   }
-  console.log('');
 
-  // Recent completions
-  console.log(`✅ Recent Completions: ${completions.length}`);
-  if (completions.length > 0) {
-    completions.forEach(c => {
-      console.log(`   • C${c.id}: ${c.title.substring(0, 50)}${c.title.length > 50 ? '...' : ''}`);
+  // In Progress
+  o(`│ ${pad('')} │`);
+  o(`│ ${pad(`  🔨 In Progress (${todo.inProgress.length})`)} │`);
+  if (todo.inProgress.length > 0) {
+    todo.inProgress.forEach((t, i) => {
+      const id = t.id ? `${t.id}: ` : '';
+      const full = `${id}${t.title}`;
+      const maxLen = W - 8;
+      const label = full.length > maxLen ? full.substring(0, maxLen - 3) + '...' : full;
+      const isLast = i === todo.inProgress.length - 1;
+      o(`│ ${pad(`  ${isLast ? '└─' : '├─'} ${label}`)} │`);
+      const agent = t.claimed || 'unclaimed';
+      const stage = t.stage || '';
+      const detail = stage ? `${agent} · ${stage}` : agent;
+      o(`│ ${pad(`  ${isLast ? ' ' : '│'}  └─ ${detail}`)} │`);
     });
   } else {
-    console.log('   (No completions yet)');
+    o(`│ ${pad('  (none)')} │`);
   }
-  console.log('');
 
-  console.log('─────────────────────────────────────────────────────────────');
-  console.log('Next: atris plan → do → review (or atris log to add ideas)');
-  console.log('');
+  // Completed (target = 0)
+  o(`│ ${pad('')} │`);
+  const doneLabel = todo.completed.length === 0
+    ? '  ✅ Done (0)  ← target state'
+    : `  ✅ Done (${todo.completed.length})  ← clean these up`;
+  o(`│ ${pad(doneLabel)} │`);
+
+  // Inbox
+  if (inboxItems.length > 0) {
+    o(`│ ${pad('')} │`);
+    o(`│ ${pad(`  📥 Inbox (${inboxItems.length})`)} │`);
+    inboxItems.slice(0, 3).forEach(i => {
+      o(`│ ${pad(`  ├─ I${i.id}: ${i.title.substring(0, W - 14)}`)} │`);
+    });
+    if (inboxItems.length > 3) {
+      o(`│ ${pad(`  └─ ... +${inboxItems.length - 3} more`)} │`);
+    }
+  }
+
+  // Team Activity
+  o(`│ ${pad('')} │`);
+  o(`├─${'─'.repeat(W)}─┤`);
+  o(`│ ${pad('TEAM')} │`);
+  o(`│ ${pad('')} │`);
+
+  if (teamActivity.length > 0) {
+    teamActivity.forEach(a => {
+      const name = a.member.padEnd(12);
+      const dateShort = formatDateShort(a.date);
+      // Show the most interesting field: pattern > learned > delivered > task
+      const insight = a.pattern || a.learned || a.delivered || a.task || '';
+      const maxLen = W - 22;
+      const truncated = insight.length > maxLen ? insight.substring(0, maxLen - 3) + '...' : insight;
+      o(`│ ${pad(`  ${name} · ${dateShort}`)} │`);
+      if (insight) {
+        o(`│ ${pad(`  ${' '.repeat(12)}   "${truncated}"`)} │`);
+      }
+    });
+  } else {
+    o(`│ ${pad('  (no journal entries yet)')} │`);
+  }
+
+  o(`│ ${pad('')} │`);
+  o(`└─${'─'.repeat(W)}─┘`);
+  o('');
+  o('  plan → do → review    (or: atris log to add ideas)');
+  o('');
 }
 
+function formatDateShort(dateStr) {
+  // "2026-02-25" → "Feb 25"
+  try {
+    const [, month, day] = dateStr.match(/(\d{2})-(\d{2})$/);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
+  } catch {
+    return dateStr;
+  }
+}
 
 module.exports = {
   statusAtris
