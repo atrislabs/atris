@@ -353,25 +353,15 @@ if (command === 'help' || command === '--help' || command === '-h') {
   process.exit(0);
 }
 
-// Command handlers - must load BEFORE interactiveEntry() is called (TDZ issue)
+// Core command handlers — loaded eagerly (used by interactiveEntry default path)
 const { initAtris: initCmd } = require('../commands/init');
 const { syncAtris: syncCmd } = require('../commands/sync');
 const { logAtris: logCmd } = require('../commands/log');
-const { logSyncAtris: logSyncCmd } = require('../commands/log-sync');
-const { loginAtris: loginCmd, logoutAtris: logoutCmd, whoamiAtris: whoamiCmd, switchAccount: switchCmd, listAccountsCmd: accountsCmd } = require('../commands/auth');
-const { showVersion: versionCmd } = require('../commands/version');
-const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('../commands/workflow');
-const { visualizeAtris: visualizeCmd } = require('../commands/visualize');
-const { brainstormAtris: brainstormCmd } = require('../commands/brainstorm');
-const { autopilotAtris: autopilotCmd, autopilotFromTodo: autopilotFromTodoCmd } = require('../commands/autopilot');
 const { activateAtris: activateCmd } = require('../commands/activate');
 const { statusAtris: statusCmd } = require('../commands/status');
-const { analyticsAtris: analyticsCmd } = require('../commands/analytics');
-const { cleanAtris: cleanCmd } = require('../commands/clean');
-const { verifyAtris: verifyCmd } = require('../commands/verify');
-const { skillCommand: skillCmd } = require('../commands/skill');
-const { memberCommand: memberCmd } = require('../commands/member');
-const { pluginCommand: pluginCmd } = require('../commands/plugin');
+const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('../commands/workflow');
+
+// All other commands are lazy-loaded inline (require() only when invoked)
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
@@ -682,7 +672,7 @@ if (command === 'init') {
 } else if (command === 'log') {
   const subcommand = process.argv[3];
   if (subcommand === 'sync') {
-    logSyncCmd()
+    require('../commands/log-sync').logSyncAtris()
       .then(() => process.exit(0))
       .catch((error) => {
         console.error(`✗ Log sync failed: ${error.message || error}`);
@@ -707,22 +697,22 @@ if (command === 'init') {
 } else if (command === 'console') {
   consoleCmd();
 } else if (command === 'version') {
-  versionCmd();
+  require('../commands/version').showVersion();
 } else if (command === 'login') {
-  loginCmd();
+  require('../commands/auth').loginAtris();
 } else if (command === 'logout') {
-  logoutCmd();
+  require('../commands/auth').logoutAtris();
 } else if (command === 'whoami') {
-  whoamiCmd();
+  require('../commands/auth').whoamiAtris();
 } else if (command === 'switch') {
-  switchCmd();
+  require('../commands/auth').switchAccount();
 } else if (command === 'accounts') {
-  accountsCmd();
+  require('../commands/auth').listAccountsCmd();
 } else if (command === 'visualize') {
   console.log('ℹ️  "atris visualize" is a legacy helper. Visualization is now built into "atris plan".');
   console.log('   Prefer: atris plan');
   console.log('');
-  visualizeCmd();
+  require('../commands/visualize').visualizeAtris();
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h')) {
@@ -750,9 +740,9 @@ if (command === 'init') {
 
   let promise;
   if (fromTodo) {
-    promise = autopilotFromTodoCmd(options);
+    promise = require('../commands/autopilot').autopilotFromTodo(options);
   } else if (description) {
-    promise = autopilotCmd(description, options);
+    promise = require('../commands/autopilot').autopilotAtris(description, options);
   } else {
     console.log('Usage: atris autopilot "description" [--bug] [--verbose] [--iterations=N]');
     console.log('       atris autopilot --from-todo');
@@ -768,7 +758,7 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'brainstorm') {
-  brainstormCmd()
+  require('../commands/brainstorm').brainstormAtris()
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`✗ Brainstorm failed: ${error.message || error}`);
@@ -823,13 +813,13 @@ if (command === 'init') {
   const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
   statusCmd(isQuick);
 } else if (command === 'analytics') {
-  analyticsCmd();
+  require('../commands/analytics').analyticsAtris();
 } else if (command === 'clean') {
   const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
-  cleanCmd({ dryRun });
+  require('../commands/clean').cleanAtris({ dryRun });
 } else if (command === 'verify') {
   const taskId = process.argv[3] || null;
-  verifyCmd(taskId);
+  require('../commands/verify').verifyAtris(taskId);
 } else if (command === 'search') {
   const keyword = process.argv.slice(3).join(' ');
   searchJournal(keyword);
@@ -869,15 +859,15 @@ if (command === 'init') {
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  skillCmd(subcommand, ...args);
+  require('../commands/skill').skillCommand(subcommand, ...args);
 } else if (command === 'member') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  memberCmd(subcommand, ...args);
+  require('../commands/member').memberCommand(subcommand, ...args);
 } else if (command === 'plugin') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);
-  pluginCmd(subcommand, ...args);
+  require('../commands/plugin').pluginCommand(subcommand, ...args);
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
