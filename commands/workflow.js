@@ -997,7 +997,9 @@ async function reviewAtris() {
     }
   }
 
-  // Prompt for learnings
+  // Prompt for learnings (skip if stdin is not a TTY)
+  if (!process.stdin.isTTY) return;
+
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
   console.log('│ 💡 Any learnings?                                           │');

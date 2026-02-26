@@ -171,6 +171,20 @@ test('analytics counts completions in journal', () => {
   }
 });
 
+test('analytics counts inbox items when Inbox is last section', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    // Inbox at the end with no ## or --- after it (regression test)
+    writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n---\n\n## Inbox\n\n- **I1:** Fix auth\n- **I2:** Add tests\n');
+    const res = runCli(['analytics'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Inbox items:\s+2/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ============================================
 // visualize
 // ============================================

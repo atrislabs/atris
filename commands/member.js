@@ -54,6 +54,9 @@ function findAllMembers(teamDir) {
   const entries = fs.readdirSync(teamDir);
 
   for (const entry of entries) {
+    // Skip template directory and hidden files
+    if (entry === '_template' || entry.startsWith('.')) continue;
+
     const fullPath = path.join(teamDir, entry);
     const stat = fs.statSync(fullPath);
 
