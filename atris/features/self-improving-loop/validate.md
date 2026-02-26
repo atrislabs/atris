@@ -23,12 +23,12 @@
 
 ### Step 2: Navigator reads lessons
 
-- **Action:** Check atris/team/navigator.md for lessons.md reference
+- **Action:** Check atris/team/navigator/MEMBER.md for lessons.md reference
 - **Expect:** Pre-flight checklist includes reading lessons.md
 
 ### Step 3: Validator harvests lessons
 
-- **Action:** Check atris/team/validator.md for lesson harvesting step
+- **Action:** Check atris/team/validator/MEMBER.md for lesson harvesting step
 - **Expect:** Post-validate includes appending to lessons.md
 
 ### Step 4: Spec includes lessons.md
@@ -51,4 +51,4 @@
 
 ---
 
-**Status:** Pending
+**Status:** Verified
