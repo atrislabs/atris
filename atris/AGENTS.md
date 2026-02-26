@@ -21,5 +21,4 @@ Instructions for coding agents working inside this repository.
 ## Notes
 
 - `TODO.md` is the current task file; `TASK_CONTEXTS.md` is legacy (fallback only).
-- Feature templates live in `atris/features/_templates/`.
-
+- Feature templates live in `atris/features/_templates/` (`idea`, `build`, `validate`, optional `changelog`).
