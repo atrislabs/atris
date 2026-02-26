@@ -208,11 +208,11 @@ test('status --quick reflects inbox count', () => {
 
     let res = runCli(['status', '--quick'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /📥\s+\d+\s+\|\s+📋\s+\d+\s+\|\s+🔨\s+\d+\s+\|\s+✅\s+\d+/);
+    assert.match(res.stdout, /📋\s+\d+\s+\|\s+🔨\s+\d+\s+\|\s+✅\s+\d+\s+\|\s+📥\s+\d+/);
 
     runCli(['log'], { cwd: dir, input: 'Idea one\nexit\n' });
     res = runCli(['status', '--quick'], { cwd: dir });
-    assert.match(res.stdout, /📥\s+1\s+\|/);
+    assert.match(res.stdout, /📥\s+1/);
   } finally {
     cleanupTempDir(dir);
   }
