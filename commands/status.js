@@ -48,7 +48,7 @@ function statusAtris(isQuick = false) {
         .filter(Boolean);
     }
 
-    const completedMatch = logContent.match(/## Completed ✅\n([\s\S]*?)(?=\n##|---)/);
+    const completedMatch = logContent.match(/## Completed ✅\n([\s\S]*?)(?=\n##|---|$)/);
     if (completedMatch && completedMatch[1].trim()) {
       completions = completedMatch[1].trim().split('\n')
         .filter(l => l.match(/^- \*\*C\d+:/))
@@ -58,6 +58,22 @@ function statusAtris(isQuick = false) {
           return match ? { id: match[1] || match[3], title: match[2] || match[4] } : null;
         })
         .filter(Boolean);
+    }
+  }
+
+  // Fallback: check journal for backlog tasks if TODO.md has none
+  if (todo.backlog.length === 0 && fs.existsSync(logFile)) {
+    const journalContent = fs.readFileSync(logFile, 'utf8');
+    const backlogMatch = journalContent.match(/## Backlog\n([\s\S]*?)(?=\n##|---|$)/);
+    if (backlogMatch && backlogMatch[1].trim()) {
+      const journalTasks = backlogMatch[1].trim().split('\n')
+        .filter(l => /^-\s+/.test(l) && !/\(empty|\(see /i.test(l));
+      if (journalTasks.length > 0) {
+        todo.backlog = journalTasks.map(l => ({
+          id: (l.match(/\*\*([A-Z]\d+):/)?.[1]) || '?',
+          title: l.replace(/^-\s*\*\*[A-Z]\d+:\*?\*?\s*/, '').trim(),
+        }));
+      }
     }
   }
 

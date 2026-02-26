@@ -113,6 +113,25 @@ test('default entry auto-advances to plan when inbox has items', () => {
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+    // Clear the bootstrap backlog task so only inbox items remain
+    const logDir = path.join(dir, 'atris', 'logs');
+    const yearDirs = fs.readdirSync(logDir).filter(d => /^\d{4}$/.test(d));
+    if (yearDirs.length > 0) {
+      const yearDir = path.join(logDir, yearDirs[0]);
+      const logFiles = fs.readdirSync(yearDir).filter(f => f.endsWith('.md'));
+      if (logFiles.length > 0) {
+        let content = fs.readFileSync(path.join(yearDir, logFiles[0]), 'utf8');
+        content = content.replace(/## Backlog\n[\s\S]*?(?=\n---|\n##)/, '## Backlog\n\n');
+        fs.writeFileSync(path.join(yearDir, logFiles[0]), content, 'utf8');
+      }
+    }
+    // Also clear TODO.md backlog
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    if (fs.existsSync(todoPath)) {
+      let todo = fs.readFileSync(todoPath, 'utf8');
+      todo = todo.replace(/## Backlog\n[\s\S]*?(?=\n---|\n##)/, '## Backlog\n\n(Empty)\n\n');
+      fs.writeFileSync(todoPath, todo, 'utf8');
+    }
     runCli(['log'], { cwd: dir, input: 'Idea one\nexit\n' });
 
     const res = runCli([], { cwd: dir });
