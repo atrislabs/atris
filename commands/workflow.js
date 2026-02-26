@@ -167,8 +167,11 @@ async function planAtris(userInput = null) {
   }
   console.log('Workflow:');
   console.log('1) ASCII visualize + wait for approval');
-  console.log('2) Write plan artifacts: feature idea/build (+ validate) OR TODO Backlog');
-  console.log('3) Stop. Do NOT execute (run `atris do` to build).');
+  console.log('2) Write tasks to atris/TODO.md under ## Backlog');
+  console.log('   Format: - **T#:** Description [explore|execute]');
+  console.log('3) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
+  console.log('   (Task, Delivered, User reaction, Pattern)');
+  console.log('4) Stop. Do NOT execute (run `atris do` to build).');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('💡 After planning: Run "atris do" to execute the build');
@@ -231,14 +234,15 @@ async function planAtris(userInput = null) {
     userPrompt += `   - Include file:line references from MAP.md\n`;
     userPrompt += `   - List dependencies between tasks\n`;
     userPrompt += `   - Add acceptance criteria for each task\n\n`;
-    userPrompt += `STEP 3: Write tasks to TODO.md\n`;
-    userPrompt += `   - Add tasks to Backlog section\n`;
-    userPrompt += `   - Format: Task number, description, file refs, acceptance criteria\n`;
-    userPrompt += `   - Quality over speed - tasks must be perfect for systems player execution\n\n`;
-    userPrompt += `STEP 4: Create Validation Artifact (validate.md)\n`;
-    userPrompt += `   - You MUST create a validate.md file for the feature.\n`;
-    userPrompt += `   - This file acts as the executable simulation script for the Validator.\n`;
-    userPrompt += `   - Include verifiable steps (e.g., 'Run curl...', 'Check DB...').\n\n`;
+    userPrompt += `STEP 3: Write tasks to atris/TODO.md\n`;
+    userPrompt += `   - Add to ## Backlog section\n`;
+    userPrompt += `   - Format: - **T#:** Description [explore|execute]\n`;
+    userPrompt += `   - Each task: one job, clear exit condition\n`;
+    userPrompt += `   - Include file:line references from MAP.md\n\n`;
+    userPrompt += `STEP 4: Log to your journal\n`;
+    userPrompt += `   - Write to atris/team/navigator/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `   - Include: Task, Delivered, User reaction, Pattern\n`;
+    userPrompt += `   - Your journal is how you learn — record what worked\n\n`;
     userPrompt += `Start planning now. Read MAP.md for file references.`;
 
     console.log('');
@@ -478,9 +482,12 @@ async function doAtris() {
     console.log('');
   }
   console.log('Workflow:');
-  console.log('1) If a feature has `build.md`, execute it step-by-step (no redesign).');
-  console.log('2) Otherwise, pull the next item from TODO Backlog → In Progress → Completed.');
-  console.log('3) Run tests as you go; stop when tasks are done.');
+  console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
+  console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
+  console.log('2) Execute step-by-step. Run tests as you go.');
+  console.log('3) When done, move task to ## Completed');
+  console.log('4) Log to atris/team/executor/journal/YYYY-MM-DD.md');
+  console.log('   (Task, Delivered, Errors hit, Learned)');
   console.log('');
   console.log('⛔ Do NOT plan — just execute what\'s written.');
   console.log('');
@@ -560,8 +567,9 @@ async function doAtris() {
     userPrompt += `1. Read tasks from TODO.md (shown above)\n`;
     userPrompt += `2. For each task: Show ASCII visualization first (especially complex changes)\n`;
     userPrompt += `3. Execute task: Use file edit tools, terminal commands, etc.\n`;
-    userPrompt += `4. After completion: Move task to TODO.md <completed> section\n`;
-    userPrompt += `5. Follow PERSONA.md for communication style\n`;
+    userPrompt += `4. Move task to ## Completed in TODO.md\n`;
+    userPrompt += `5. Log to atris/team/executor/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `   (Task, Delivered, Errors hit, Learned)\n`;
     userPrompt += `6. Use MAP.md to navigate codebase\n\n`;
     userPrompt += `DO NOT just describe what you would do - actually edit files and execute commands!\n`;
     userPrompt += `Context: ${context}\n`;
@@ -808,11 +816,13 @@ async function reviewAtris() {
   console.log('Workflow:');
   console.log('1) Run the project test suite (follow TESTING_GUIDE if present).');
   console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
-  console.log('3) Update TODO.md + today\'s journal with results; propose tool upgrades if drift repeats.');
-  console.log('4) If anything surprised you (broke, worked unexpectedly), append to atris/lessons.md:');
-  console.log('   - **[YYYY-MM-DD] [feature-name]** — (pass|fail) — One-line lesson');
+  console.log('3) Clean TODO.md: delete completed tasks. Target state = 0.');
+  console.log('   If a task fails validation, move back to ## Backlog with note.');
+  console.log('4) Log to atris/team/validator/journal/YYYY-MM-DD.md');
+  console.log('   (Task, Result, Issues found, Learned)');
+  console.log('5) If anything surprised you, append to atris/lessons.md.');
   console.log('');
-  console.log('Done when: ✅ All good. Ready for human testing.');
+  console.log('Done when: ✅ All good. TODO.md clean. Ready for human testing.');
   console.log('');
 
   if (showFull) {
@@ -899,9 +909,10 @@ async function reviewAtris() {
     userPrompt += `Your job:\n`;
     userPrompt += `  • Verify everything works\n`;
     userPrompt += `  • Test thoroughly (unless user says no)\n`;
-    userPrompt += `  • Update docs if needed (MAP.md, TODO.md)\n`;
-    userPrompt += `  • Clean TODO.md (move completed tasks to Completed section, then delete)\n`;
-    userPrompt += `  • Extract learnings for journal\n`;
+    userPrompt += `  • Clean TODO.md — DELETE completed tasks. Target state = 0.\n`;
+    userPrompt += `    If a task fails, move it back to ## Backlog with a note.\n`;
+    userPrompt += `  • Log to atris/team/validator/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `    (Task, Result, Issues found, Learned)\n`;
     userPrompt += `  • If anything surprised you, append to atris/lessons.md\n`;
     userPrompt += `  • EVOLUTION: If you see drift in the logs, propose a tool upgrade.\n\n`;
     userPrompt += `The cycle: do → review → [issues] → do → review → ✅ Ready\n`;

@@ -4,7 +4,9 @@ role: Reviewer
 description: Validate execution, run tests, ensure quality before shipping
 version: 1.0.0
 
-skills: []
+skills:
+  - test-runner
+  - doc-updater
 
 permissions:
   can-read: true
@@ -12,6 +14,9 @@ permissions:
   can-execute: false
   can-approve: true
   can-ship: true
+  approval-required: []
+
+tools: []
 ---
 
 # Validator — Reviewer
@@ -37,14 +42,6 @@ permissions:
 ```
 
 **You are the last line. Keep MAP.md accurate.**
-
----
-
-## Project Context
-
-**Project Type:** nodejs (nodejs)
-
-**Validation:** Run `npm test` to verify changes work correctly.
 
 ---
 
@@ -178,6 +175,29 @@ If yes, append to `atris/lessons.md`:
 ```
 
 If nothing surprised you, don't write anything. A clean build with no surprises isn't a lesson — it's the system working. Only capture what's genuinely useful for the next navigator reading this file.
+
+---
+
+## Task Management
+
+**TODO.md is the shared task board. Your journal is your memory. Target state = 0.**
+
+After validation:
+1. Read `atris/TODO.md` — find tasks in `## Completed`
+2. **Delete them.** Remove the task line entirely. Target state = 0 tasks remaining.
+3. If a task failed validation, move it back to `## Backlog` with a note: `(returned: reason)`
+4. Log to your journal at `atris/team/validator/journal/YYYY-MM-DD.md`:
+
+```markdown
+## Validator - Mon DD
+
+**Task:** What you validated (with task ID)
+**Result:** pass or fail
+**Issues found:** What broke, what was out of spec
+**Learned:** Patterns worth remembering for next review
+```
+
+You are the last line. When you're done, TODO.md should be clean — Backlog empty, In Progress empty, Completed empty. That's the target state.
 
 ---
 
