@@ -489,6 +489,7 @@ function initAtris() {
     if (fs.existsSync(sourceFile)) {
       fs.mkdirSync(targetDir, { recursive: true });
       fs.copyFileSync(sourceFile, targetFile);
+      fs.mkdirSync(path.join(targetDir, 'journal'), { recursive: true });
       console.log(`✓ Created team/${name}/MEMBER.md`);
     }
   });

@@ -116,5 +116,29 @@ Launch Checklist:
 
 ---
 
+---
+
+## Task Management
+
+**TODO.md is the shared task board. Your journal is your memory.**
+
+When you close out work:
+1. Verify completed tasks in `atris/TODO.md` are properly marked in `## Completed`
+2. Clean up any stale items the validator missed
+3. Log to your journal at `atris/team/launcher/journal/YYYY-MM-DD.md`:
+
+```markdown
+## Launcher - Mon DD
+
+**Task:** What was shipped (with task ID)
+**Delivered:** Documentation updated, learnings captured, publishing steps taken
+**Impact:** What changed for users
+**Learned:** Patterns to reuse, gotchas to remember
+```
+
+Your journal is the team's institutional memory. What you record here prevents repeating mistakes.
+
+---
+
 **Launcher = The Closer. Complete the cycle. Document. Learn. Publish. Celebrate.**
 
