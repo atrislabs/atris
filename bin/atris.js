@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+// Catch-all for uncaught async errors — prevents silent crashes
+process.on('unhandledRejection', (err) => {
+  console.error(`\n✗ Unexpected error: ${err?.message || err}`);
+  process.exit(1);
+});
+
 const fs = require('fs');
 const path = require('path');
 const { exec, spawnSync } = require('child_process');
@@ -24,6 +30,10 @@ const { checkForUpdates, showUpdateNotification, autoUpdate } = require('../util
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
+
+// Journal & config utilities (canonical modules)
+const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
+const { getConfigPath, loadConfig, saveConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
 
 // Auth & API (canonical modules — eliminates duplicate inline code)
 const {
@@ -60,12 +70,16 @@ if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'u
     .then((updateInfo) => {
       // Show notification if update available (after command completes)
       if (updateInfo) {
-        // Auto-update in background, fall back to notification if it fails
-        setTimeout(() => {
-          if (!autoUpdate(updateInfo)) {
-            showUpdateNotification(updateInfo);
-          }
-        }, 100);
+        // Notify only — never auto-update mid-session (opt-in via ATRIS_AUTO_UPDATE=1)
+        if (process.env.ATRIS_AUTO_UPDATE === '1') {
+          setTimeout(() => {
+            if (!autoUpdate(updateInfo)) {
+              showUpdateNotification(updateInfo);
+            }
+          }, 100);
+        } else {
+          showUpdateNotification(updateInfo);
+        }
       }
       return updateInfo;
     })
@@ -108,25 +122,28 @@ function searchJournal(keyword) {
 
   // Recursively find all .md files in logs directory
   function walkDir(dir) {
-    const files = fs.readdirSync(dir);
+    let files;
+    try { files = fs.readdirSync(dir); } catch { return; }
     for (const file of files) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
-        walkDir(filePath);
-      } else if (file.endsWith('.md')) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const lines = content.split('\n');
-        lines.forEach((line, idx) => {
-          if (line.toLowerCase().includes(keywordLower)) {
-            results.push({
-              file: path.relative(process.cwd(), filePath),
-              line: idx + 1,
-              content: line.trim()
-            });
-          }
-        });
-      }
+      try {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          walkDir(filePath);
+        } else if (file.endsWith('.md')) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          const lines = content.split('\n');
+          lines.forEach((line, idx) => {
+            if (line.toLowerCase().includes(keywordLower)) {
+              results.push({
+                file: path.relative(process.cwd(), filePath),
+                line: idx + 1,
+                content: line.trim()
+              });
+            }
+          });
+        }
+      } catch { /* skip unreadable files */ }
     }
   }
 
@@ -359,7 +376,7 @@ const { pluginCommand: pluginCmd } = require('../commands/plugin');
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -661,7 +678,7 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'agent') {
-  agentAtris();
+  agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'log') {
   const subcommand = process.argv[3];
   if (subcommand === 'sync') {
@@ -676,10 +693,10 @@ if (command === 'init') {
   }
 } else if (command === 'activate') {
   activateCmd();
-} else if (command === 'update') {
+} else if (command === 'update' || command === 'sync') {
   syncCmd();
 } else if (command === 'upgrade') {
-  upgradeAtris();
+  upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat') {
   chatAtris()
     .then(() => process.exit(0))
@@ -822,33 +839,33 @@ if (command === 'init') {
   const args = process.argv.slice(4);
   gmailCommand(subcommand, ...args)
     .then(() => process.exit(0))
-    .catch((err) => { console.error(err.message); process.exit(1); });
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'calendar') {
   const { calendarCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   calendarCommand(subcommand, ...args)
     .then(() => process.exit(0))
-    .catch((err) => { console.error(err.message); process.exit(1); });
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'twitter') {
   const { twitterCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   twitterCommand(subcommand, ...args)
     .then(() => process.exit(0))
-    .catch((err) => { console.error(err.message); process.exit(1); });
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'slack') {
   const { slackCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   slackCommand(subcommand, ...args)
     .then(() => process.exit(0))
-    .catch((err) => { console.error(err.message); process.exit(1); });
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'integrations') {
   const { integrationsStatus } = require('../commands/integrations');
   integrationsStatus()
     .then(() => process.exit(0))
-    .catch((err) => { console.error(err.message); process.exit(1); });
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
@@ -865,196 +882,6 @@ if (command === 'init') {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
   process.exit(1);
-}
-
-// NOTE: initAtris, syncAtris, logAtris, appendLog, logSyncAtris, showTodayLog, showRecentLogs
-// are legacy inline implementations. Routing now uses require('../commands/...') instead.
-// The journal utilities (getLogPath, ensureLogDirectory, createLogFile) are still used by
-// top-level code at lines ~393 and ~2553 via hoisting — do not remove without migrating those.
-function initAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
-  const teamDir = path.join(targetDir, 'team');
-  const sourceFile = path.join(__dirname, '..', 'atris.md');
-  const targetFile = path.join(targetDir, 'atris.md');
-
-  // Create atris/ folder structure
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
-    console.log('✓ Created atris/ folder');
-  } else {
-    console.log('✓ atris/ folder already exists');
-  }
-
-  // Create team/ subfolder
-  if (!fs.existsSync(teamDir)) {
-    fs.mkdirSync(teamDir, { recursive: true });
-    console.log('✓ Created atris/team/ folder');
-  }
-
-  // Create policies/ subfolder
-  const policiesDir = path.join(targetDir, 'policies');
-  if (!fs.existsSync(policiesDir)) {
-    fs.mkdirSync(policiesDir, { recursive: true });
-    console.log('✓ Created atris/policies/ folder');
-  }
-
-  // Create placeholder files
-  const gettingStartedFile = path.join(targetDir, 'GETTING_STARTED.md');
-  const personaFile = path.join(targetDir, 'PERSONA.md');
-  const mapFile = path.join(targetDir, 'MAP.md');
-  const taskContextsFile = path.join(targetDir, 'TASK_CONTEXTS.md');
-  const navigatorFile = path.join(teamDir, 'navigator.md');
-  const executorFile = path.join(teamDir, 'executor.md');
-  const validatorFile = path.join(teamDir, 'validator.md');
-  const launcherFile = path.join(teamDir, 'launcher.md');
-
-  const gettingStartedSource = path.join(__dirname, '..', 'GETTING_STARTED.md');
-  const personaSource = path.join(__dirname, '..', 'PERSONA.md');
-
-  // Copy GETTING_STARTED.md
-  if (!fs.existsSync(gettingStartedFile) && fs.existsSync(gettingStartedSource)) {
-    fs.copyFileSync(gettingStartedSource, gettingStartedFile);
-    console.log('✓ Created GETTING_STARTED.md');
-  }
-
-  // Copy PERSONA.md
-  if (!fs.existsSync(personaFile) && fs.existsSync(personaSource)) {
-    fs.copyFileSync(personaSource, personaFile);
-    console.log('✓ Created PERSONA.md');
-  }
-
-  if (!fs.existsSync(mapFile)) {
-    fs.writeFileSync(mapFile, '# MAP.md\n\n> Generated by your AI agent after reading atris.md\n\nRun your AI agent with atris.md to populate this file.\n');
-    console.log('✓ Created MAP.md placeholder');
-  }
-
-  if (!fs.existsSync(taskContextsFile)) {
-    fs.writeFileSync(taskContextsFile, '# TASK_CONTEXTS.md\n\n> Generated by your AI agent after reading atris.md\n\nRun your AI agent with atris.md to populate this file.\n');
-    console.log('✓ Created TASK_CONTEXTS.md placeholder');
-  }
-
-  // Copy agent templates from package (MEMBER.md directory format)
-  const members = ['navigator', 'executor', 'validator', 'launcher', 'brainstormer', 'researcher'];
-  members.forEach(name => {
-    const sourceFile = path.join(__dirname, '..', 'atris', 'team', name, 'MEMBER.md');
-    const memberDir = path.join(teamDir, name);
-    const targetFile = path.join(memberDir, 'MEMBER.md');
-    const legacyFile = path.join(teamDir, `${name}.md`);
-
-    if (fs.existsSync(targetFile) || fs.existsSync(legacyFile)) return;
-
-    if (fs.existsSync(sourceFile)) {
-      fs.mkdirSync(memberDir, { recursive: true });
-      fs.copyFileSync(sourceFile, targetFile);
-      console.log(`✓ Created team/${name}/MEMBER.md`);
-    }
-  });
-
-  // Copy policies from package
-  const antislopSource = path.join(__dirname, '..', 'atris', 'policies', 'ANTISLOP.md');
-  const antislopFile = path.join(policiesDir, 'ANTISLOP.md');
-  if (!fs.existsSync(antislopFile) && fs.existsSync(antislopSource)) {
-    fs.copyFileSync(antislopSource, antislopFile);
-    console.log('✓ Created policies/ANTISLOP.md');
-  }
-
-  // Copy atris.md to the folder
-  if (fs.existsSync(sourceFile)) {
-    fs.copyFileSync(sourceFile, targetFile);
-    console.log('✓ Copied atris.md to atris/ folder');
-    console.log('\nAtris initialized. Structure created:');
-    console.log('   atris/');
-    console.log('   ├── GETTING_STARTED.md (read this first!)');
-    console.log('   ├── PERSONA.md (agent personality)');
-    console.log('   ├── atris.md (AI agent instructions)');
-    console.log('   ├── MAP.md (placeholder)');
-    console.log('   ├── TASK_CONTEXTS.md (placeholder)');
-    console.log('   ├── team/');
-    console.log('   │   ├── navigator.md');
-    console.log('   │   ├── executor.md');
-    console.log('   │   ├── validator.md');
-    console.log('   │   └── launcher.md');
-    console.log('   └── policies/');
-    console.log('       └── ANTISLOP.md (output quality checklist)');
-    console.log('\nNext steps:');
-    console.log('1. Read atris/GETTING_STARTED.md for the full guide');
-    console.log('2. Open atris/atris.md and paste it to your AI agent');
-    console.log('3. Your agent will populate all placeholder files in ~10 mins');
-  } else {
-    console.error('✗ Error: atris.md not found in package');
-    process.exit(1);
-  }
-}
-
-function syncAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
-  const teamDir = path.join(targetDir, 'team');
-
-  // Check if atris/ folder exists
-  if (!fs.existsSync(targetDir)) {
-    console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
-    process.exit(1);
-  }
-
-  // Ensure team folder exists
-  if (!fs.existsSync(teamDir)) {
-    fs.mkdirSync(teamDir, { recursive: true });
-  }
-
-  // Ensure policies folder exists
-  const policiesDir = path.join(targetDir, 'policies');
-  if (!fs.existsSync(policiesDir)) {
-    fs.mkdirSync(policiesDir, { recursive: true });
-    console.log('✓ Created atris/policies/ folder');
-  }
-
-  // Files to sync
-  const filesToSync = [
-    { source: 'atris.md', target: 'atris.md' },
-    { source: 'atrisDev.md', target: 'atrisDev.md' },
-    { source: 'PERSONA.md', target: 'PERSONA.md' },
-    { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
-    { source: 'atris/team/navigator/MEMBER.md', target: 'team/navigator/MEMBER.md' },
-    { source: 'atris/team/executor/MEMBER.md', target: 'team/executor/MEMBER.md' },
-    { source: 'atris/team/validator/MEMBER.md', target: 'team/validator/MEMBER.md' },
-    { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
-    { source: 'atris/team/brainstormer/MEMBER.md', target: 'team/brainstormer/MEMBER.md' },
-    { source: 'atris/team/researcher/MEMBER.md', target: 'team/researcher/MEMBER.md' },
-    { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
-  ];
-
-  let updated = 0;
-  let skipped = 0;
-
-  filesToSync.forEach(({ source, target }) => {
-    const sourceFile = path.join(__dirname, '..', source);
-    const targetFile = path.join(targetDir, target);
-
-    if (!fs.existsSync(sourceFile)) {
-      console.log(`⚠ Skipping ${source} (not found in package)`);
-      return;
-    }
-
-    const currentContent = fs.existsSync(targetFile) ? fs.readFileSync(targetFile, 'utf8') : '';
-    const newContent = fs.readFileSync(sourceFile, 'utf8');
-
-    if (currentContent === newContent) {
-      skipped++;
-      return;
-    }
-
-    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-    fs.copyFileSync(sourceFile, targetFile);
-    console.log(`✓ Updated ${target}`);
-    updated++;
-  });
-
-  if (updated === 0) {
-    console.log('✓ Already up to date');
-  } else {
-    console.log(`\n✓ Updated ${updated} file(s), ${skipped} unchanged`);
-    console.log('\nRun your AI agent again to use the latest specs and agent templates.');
-  }
 }
 
 async function upgradeAtris() {
@@ -1106,469 +933,6 @@ async function upgradeAtris() {
   }
 }
 
-// ============================================
-// Log System
-// ============================================
-
-function getLogPath(dateStr) {
-  const targetDir = path.join(process.cwd(), 'atris');
-  const date = dateStr ? new Date(dateStr) : new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const dateFormatted = `${year}-${month}-${day}`; // YYYY-MM-DD in local time
-
-  const logsDir = path.join(targetDir, 'logs');
-  const yearDir = path.join(logsDir, year.toString());
-  const logFile = path.join(yearDir, `${dateFormatted}.md`);
-
-  return { logsDir, yearDir, logFile, dateFormatted };
-}
-
-function ensureLogDirectory() {
-  const { logsDir, yearDir } = getLogPath();
-
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
-
-  if (!fs.existsSync(yearDir)) {
-    fs.mkdirSync(yearDir, { recursive: true });
-  }
-}
-
-function createLogFile(logFile, dateFormatted) {
-  let carryInProgress = '';
-  let carryBacklog = '';
-  let carryInbox = '';
-
-  try {
-    const [y, m, d] = String(dateFormatted).split('-').map(Number);
-    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
-      const prev = new Date(y, m - 1, d);
-      prev.setDate(prev.getDate() - 1);
-
-      const prevYear = prev.getFullYear();
-      const prevMonth = String(prev.getMonth() + 1).padStart(2, '0');
-      const prevDay = String(prev.getDate()).padStart(2, '0');
-      const prevDateFormatted = `${prevYear}-${prevMonth}-${prevDay}`;
-      const prevLogFile = path.join(process.cwd(), 'atris', 'logs', prevYear.toString(), `${prevDateFormatted}.md`);
-
-      if (fs.existsSync(prevLogFile)) {
-        const prevContent = fs.readFileSync(prevLogFile, 'utf8');
-
-        const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const sectionBody = (headingLine) => {
-          const regex = new RegExp(
-            `## ${escapeRegExp(headingLine)}\\n([\\s\\S]*?)(?=\\n---|\\n## |$)`
-          );
-          const match = prevContent.match(regex);
-          return match ? match[1].trim() : '';
-        };
-
-        carryInProgress = sectionBody('In Progress 🔄');
-        carryBacklog = sectionBody('Backlog');
-        carryInbox = sectionBody('Inbox');
-      }
-    }
-  } catch {
-    // Best-effort carry-forward; never block journal creation.
-  }
-
-  const inProgressBody = carryInProgress ? `${carryInProgress}\n\n` : '';
-  const backlogBody = carryBacklog ? `${carryBacklog}\n\n` : '';
-  const inboxBody = carryInbox ? `${carryInbox}\n\n` : '';
-
-  const initialContent = `# Log — ${dateFormatted}\n\n## Completed ✅\n\n---\n\n## In Progress 🔄\n\n${inProgressBody}---\n\n## Backlog\n\n${backlogBody}---\n\n## Notes\n\n---\n\n## Inbox\n\n${inboxBody}\n`;
-  fs.writeFileSync(logFile, initialContent);
-}
-
-function logAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
-
-  // Check if atris/ folder exists
-  if (!fs.existsSync(targetDir)) {
-    console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
-    process.exit(1);
-  }
-
-  // Ensure log directory exists
-  ensureLogDirectory();
-  const { logFile, dateFormatted } = getLogPath();
-
-  // Create log file if doesn't exist
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-  }
-
-  // Start interactive logging session
-  console.log(`┌─────────────────────────────────────────────────────────┐`);
-  console.log(`│ Daily Log — ${dateFormatted}              [type "exit" to quit] │`);
-  console.log(`└─────────────────────────────────────────────────────────┘`);
-  console.log('');
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: '> '
-  });
-
-  rl.prompt();
-
-  rl.on('line', (line) => {
-    const input = line.trim();
-
-    if (input.toLowerCase() === 'exit') {
-      console.log('\n✓ Log saved');
-      rl.close();
-      process.exit(0);
-    }
-
-    if (input) {
-      const entry = `- ${input}\n`;
-      fs.appendFileSync(logFile, entry);
-    }
-
-    rl.prompt();
-  });
-
-  rl.on('close', () => {
-    process.exit(0);
-  });
-}
-
-function appendLog(message) {
-  ensureLogDirectory();
-  const { logFile, dateFormatted } = getLogPath();
-
-  // Create log file if doesn't exist
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-    console.log(`✓ Created log for ${dateFormatted}`);
-  }
-
-  // Append message with timestamp
-  const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-  const entry = `**${timestamp}** — ${message}\n\n`;
-
-  fs.appendFileSync(logFile, entry);
-  console.log(`✓ Added to ${dateFormatted} log`);
-}
-
-async function logSyncAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
-
-  if (!fs.existsSync(targetDir)) {
-    throw new Error('atris/ folder not found. Run "atris init" first.');
-  }
-
-  // Determine date (today by default, allow optional 4th arg or --date=)
-  let dateArg = process.argv[4];
-  if (dateArg && dateArg.startsWith('--date=')) {
-    dateArg = dateArg.split('=')[1];
-  }
-
-  let { logsDir, yearDir, logFile, dateFormatted } = getLogPath(dateArg);
-  if (Number.isNaN(new Date(dateFormatted).getTime())) {
-    throw new Error(`Invalid date provided: ${dateArg}`);
-  }
-
-  // Ensure log directory and file exist
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
-  if (!fs.existsSync(yearDir)) {
-    fs.mkdirSync(yearDir, { recursive: true });
-  }
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-    console.log(`Created local log template for ${dateFormatted}. Fill it in before syncing.`);
-  }
-
-  let localContent = fs.readFileSync(logFile, 'utf8');
-  const localHash = computeContentHash(localContent);
-
-  // Ensure agent selected
-  const config = loadConfig();
-  if (!config.agent_id) {
-    throw new Error('No agent selected. Run "atris agent" first.');
-  }
-
-  // Ensure credentials
-  const ensured = await ensureValidCredentials();
-  if (ensured.error) {
-    if (ensured.error === 'not_logged_in') {
-      throw new Error('Not logged in. Run "atris login" first.');
-    }
-    if (ensured.detail && ensured.detail.toLowerCase().includes('enotfound')) {
-      throw new Error('Unable to reach Atris API. Check your network connection.');
-    }
-    throw new Error(ensured.detail || ensured.error || 'Authentication failed');
-  }
-
-  const credentials = ensured.credentials;
-  const agentId = config.agent_id;
-  const agentLabel = config.agent_name || agentId;
-
-  console.log(`🔄 Syncing log for ${dateFormatted} with agent "${agentLabel}"`);
-
-  // Check existing remote entry (best effort)
-  const syncState = loadLogSyncState();
-  const knownRemoteUpdate = syncState[dateFormatted]?.updated_at || null;
-  const knownRemoteHash = syncState[dateFormatted]?.hash || null;
-
-  let remoteExists = false;
-  let remoteUpdatedAt = null;
-  let remoteContent = null;
-  let remoteHash = null;
-  const existing = await apiRequestJson(`/agents/${agentId}/journal/${dateFormatted}`, {
-    method: 'GET',
-    token: credentials.token,
-  });
-
-  if (existing.ok) {
-    remoteExists = true;
-    remoteUpdatedAt = existing.data?.updated_at || existing.data?.created_at || null;
-    remoteContent = typeof existing.data?.content === 'string' ? existing.data.content : null;
-    remoteHash = remoteContent ? computeContentHash(remoteContent) : null;
-
-    // Bidirectional sync: check if remote is newer
-    if (remoteUpdatedAt) {
-      const localStats = fs.statSync(logFile);
-      const localModified = localStats.mtime.toISOString();
-      const remoteTime = new Date(remoteUpdatedAt).getTime();
-      const localTime = new Date(localModified).getTime();
-
-      const remoteMatchesKnown = (knownRemoteUpdate && isSameTimestamp(remoteUpdatedAt, knownRemoteUpdate))
-        || (remoteHash && knownRemoteHash && remoteHash === knownRemoteHash);
-
-      if (remoteTime > localTime && !remoteMatchesKnown) {
-        const normalizedRemote = remoteContent ? remoteContent.replace(/\r\n/g, '\n') : null;
-        const normalizedLocal = localContent.replace(/\r\n/g, '\n');
-        if (normalizedRemote !== null && normalizedRemote.trim() === normalizedLocal.trim()) {
-          const remoteDate = new Date(remoteUpdatedAt);
-          if (!Number.isNaN(remoteDate.getTime())) {
-            fs.utimesSync(logFile, remoteDate, remoteDate);
-            const state = loadLogSyncState();
-            state[dateFormatted] = {
-              updated_at: remoteUpdatedAt,
-              hash: remoteHash || knownRemoteHash || computeContentHash(remoteContent || ''),
-            };
-            saveLogSyncState(state);
-          }
-          console.log('✓ Already synced (timestamps aligned with web)');
-          return;
-        }
-
-        // Try section-based merge
-        try {
-          const localSections = parseJournalSections(normalizedLocal);
-          const remoteSections = parseJournalSections(normalizedRemote || '');
-          const { merged, conflicts } = mergeSections(localSections, remoteSections, knownRemoteHash);
-
-          if (conflicts.length === 0) {
-            // Clean merge - auto-merge and continue
-            const mergedContent = reconstructJournal(merged);
-            fs.writeFileSync(logFile, mergedContent, 'utf8');
-            console.log('✓ Auto-merged web and local changes');
-            console.log(`   Merged sections: ${Object.keys(merged).filter(k => k !== '__header__').join(', ')}`);
-            // Update local content for push
-            localContent = mergedContent;
-          } else {
-            // Conflicts detected - prompt user
-            console.log('⚠️  Conflicting changes in same section(s)');
-            console.log(`   Conflicts: ${conflicts.join(', ')}`);
-            console.log(`   Remote updated: ${remoteUpdatedAt}`);
-            console.log(`   Local modified: ${localModified}`);
-            console.log('   Type "y" to replace local with web version, or "n" to keep local changes.');
-            console.log('');
-
-            if (typeof remoteContent === 'string') {
-              showLogDiff(logFile, remoteContent);
-            }
-
-            const answer = await promptUser('Overwrite local with web version? (y/n): ');
-
-            if (answer && answer.toLowerCase() === 'y') {
-              // Pull remote content
-              const pulledContent = existing.data?.content || '';
-              fs.writeFileSync(logFile, pulledContent, 'utf8');
-              remoteHash = computeContentHash(pulledContent);
-              console.log('✓ Local journal updated from web');
-              console.log(`🗒️  File: ${path.relative(process.cwd(), logFile)}`);
-              if (remoteUpdatedAt) {
-                const remoteDate = new Date(remoteUpdatedAt);
-                if (!Number.isNaN(remoteDate.getTime())) {
-                  fs.utimesSync(logFile, remoteDate, remoteDate);
-                }
-                const state = loadLogSyncState();
-                state[dateFormatted] = {
-                  updated_at: remoteUpdatedAt,
-                  hash: remoteHash || computeContentHash(pulledContent),
-                };
-                saveLogSyncState(state);
-              }
-              return;
-            } else {
-              console.log('⏩ Keeping local version, will push to web');
-            }
-          }
-        } catch (parseError) {
-          // Fallback to old prompt behavior if parsing fails
-          console.log('⚠️  Web version is newer than local version');
-          console.log(`   Remote updated: ${remoteUpdatedAt}`);
-          console.log(`   Local modified: ${localModified}`);
-          console.log('   Type "y" to replace your local file with the web version, or "n" to keep local changes and push them to the web.');
-          console.log('');
-
-          if (typeof remoteContent === 'string') {
-            showLogDiff(logFile, remoteContent);
-          }
-
-          const answer = await promptUser('Overwrite local with web version? (y/n): ');
-
-          if (answer && answer.toLowerCase() === 'y') {
-            // Pull remote content
-            const pulledContent = existing.data?.content || '';
-            fs.writeFileSync(logFile, pulledContent, 'utf8');
-            remoteHash = computeContentHash(pulledContent);
-            console.log('✓ Local journal updated from web');
-            console.log(`🗒️  File: ${path.relative(process.cwd(), logFile)}`);
-            if (remoteUpdatedAt) {
-              const remoteDate = new Date(remoteUpdatedAt);
-              if (!Number.isNaN(remoteDate.getTime())) {
-                fs.utimesSync(logFile, remoteDate, remoteDate);
-              }
-              const state = loadLogSyncState();
-              state[dateFormatted] = {
-                updated_at: remoteUpdatedAt,
-                hash: remoteHash || computeContentHash(pulledContent),
-              };
-              saveLogSyncState(state);
-            }
-            return;
-          } else {
-            console.log('⏩ Keeping local version, will push to web');
-          }
-        }
-      } else if (remoteTime > localTime && remoteMatchesKnown) {
-        console.log('⚠️  Web timestamp ahead due to clock skew (matches last sync); pushing local changes.');
-      } else if (remoteTime === localTime) {
-        console.log('✓ Already synced (local and web are identical)');
-        if (remoteUpdatedAt) {
-          const state = loadLogSyncState();
-          state[dateFormatted] = {
-            updated_at: remoteUpdatedAt,
-            hash: remoteHash || knownRemoteHash || computeContentHash(remoteContent || ''),
-          };
-          saveLogSyncState(state);
-        }
-        return;
-      }
-    }
-  } else if (!existing.status) {
-    throw new Error('Unable to reach Atris API. Check your network connection.');
-  } else if (existing.status && existing.status !== 404) {
-    throw new Error(existing.error || 'Failed to check existing journal entry');
-  }
-
-  const payload = {
-    content: localContent,
-    metadata: {
-      source: 'cli',
-      local_path: `logs/${dateFormatted}.md`,
-    },
-  };
-
-  const result = await apiRequestJson(`/agents/${agentId}/journal/${dateFormatted}`, {
-    method: 'PUT',
-    token: credentials.token,
-    body: payload,
-  });
-
-  if (!result.ok) {
-    if (!result.status) {
-      throw new Error('Unable to reach Atris API. Check your network connection.');
-    }
-    throw new Error(result.error || 'Failed to sync journal entry');
-  }
-
-  const data = result.data || {};
-  const updatedAt = data.updated_at || new Date().toISOString();
-
-  if (remoteExists) {
-    console.log(`✓ Updated journal entry (previous update: ${remoteUpdatedAt || 'unknown'})`);
-  } else {
-    console.log('✓ Created journal entry in Atris');
-  }
-
-  console.log(`🗒️  Local file: ${path.relative(process.cwd(), logFile)}`);
-  console.log(`🕒 Updated at: ${updatedAt}`);
-  const updatedDate = new Date(updatedAt);
-  if (!Number.isNaN(updatedDate.getTime())) {
-    fs.utimesSync(logFile, updatedDate, updatedDate);
-  }
-  const finalContent = fs.readFileSync(logFile, 'utf8');
-  const finalHash = computeContentHash(finalContent);
-  const finalState = loadLogSyncState();
-  finalState[dateFormatted] = {
-    updated_at: updatedAt,
-    hash: finalHash,
-  };
-  saveLogSyncState(finalState);
-}
-
-function showTodayLog() {
-  const { logFile, dateFormatted } = getLogPath();
-
-  if (!fs.existsSync(logFile)) {
-    console.log(`No log for today (${dateFormatted})`);
-    console.log('\nCreate one with: atris log "your message"');
-    process.exit(0);
-  }
-
-  const content = fs.readFileSync(logFile, 'utf8');
-  console.log(content);
-}
-
-function showRecentLogs() {
-  const { logsDir, yearDir } = getLogPath();
-
-  if (!fs.existsSync(logsDir) || !fs.existsSync(yearDir)) {
-    console.log('No logs found');
-    console.log('\nCreate one with: atris log "your message"');
-    process.exit(0);
-  }
-
-  // Get all log files in current year directory
-  const files = fs.readdirSync(yearDir)
-    .filter(f => f.endsWith('.md'))
-    .sort()
-    .reverse()
-    .slice(0, 3); // Last 3 days
-
-  if (files.length === 0) {
-    console.log('No logs found');
-    process.exit(0);
-  }
-
-  console.log(`\n📋 Last ${files.length} day(s) of logs:\n`);
-  console.log('='.repeat(60) + '\n');
-
-  files.reverse().forEach((file, index) => {
-    const filePath = path.join(yearDir, file);
-    const content = fs.readFileSync(filePath, 'utf8');
-    console.log(content);
-
-    // Add separator between days
-    if (index < files.length - 1) {
-      console.log('─'.repeat(60) + '\n');
-    }
-  });
-}
-
-// (Auth/API/credential functions consolidated into utils/auth.js + utils/api.js)
-
 function showVersion() {
   try {
     const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
@@ -1579,223 +943,6 @@ function showVersion() {
   }
 }
 
-// ============================================
-// Config Management
-// ============================================
-
-function getConfigPath() {
-  const targetDir = path.join(process.cwd(), 'atris');
-  return path.join(targetDir, '.config');
-}
-
-function loadConfig() {
-  const configPath = getConfigPath();
-
-  if (!fs.existsSync(configPath)) {
-    return {};
-  }
-
-  try {
-    const data = fs.readFileSync(configPath, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return {};
-  }
-}
-
-function saveConfig(config) {
-  const configPath = getConfigPath();
-  const targetDir = path.dirname(configPath);
-
-  if (!fs.existsSync(targetDir)) {
-    console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
-    process.exit(1);
-  }
-
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-}
-
-function getLogSyncStatePath() {
-  const targetDir = path.join(process.cwd(), 'atris');
-  return path.join(targetDir, '.log_sync_state.json');
-}
-
-function loadLogSyncState() {
-  const statePath = getLogSyncStatePath();
-  if (!fs.existsSync(statePath)) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveLogSyncState(state) {
-  const statePath = getLogSyncStatePath();
-  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
-}
-
-function isSameTimestamp(a, b) {
-  if (!a || !b) return false;
-  const ta = new Date(a).getTime();
-  const tb = new Date(b).getTime();
-  if (Number.isNaN(ta) || Number.isNaN(tb)) return false;
-  return Math.abs(ta - tb) < 5;
-}
-
-function computeContentHash(content) {
-  if (typeof content !== 'string') {
-    return null;
-  }
-
-  const normalized = content.replace(/\r\n/g, '\n');
-  return crypto.createHash('sha256').update(normalized).digest('hex');
-}
-
-function parseJournalSections(content) {
-  const sections = {};
-  const lines = content.split('\n');
-  let currentSection = '__header__';
-  let currentContent = [];
-
-  for (const line of lines) {
-    if (line.startsWith('## ')) {
-      // Save previous section
-      if (currentContent.length > 0 || currentSection === '__header__') {
-        sections[currentSection] = currentContent.join('\n');
-      }
-      // Start new section
-      currentSection = line.substring(3).trim();
-      currentContent = [line];
-    } else {
-      currentContent.push(line);
-    }
-  }
-
-  // Save last section
-  if (currentContent.length > 0) {
-    sections[currentSection] = currentContent.join('\n');
-  }
-
-  return sections;
-}
-
-function mergeSections(localSections, remoteSections, knownRemoteHash) {
-  const merged = {};
-  const conflicts = [];
-
-  // Get all unique section names
-  const allSections = new Set([...Object.keys(localSections), ...Object.keys(remoteSections)]);
-
-  for (const section of allSections) {
-    const localContent = localSections[section] || '';
-    const remoteContent = remoteSections[section] || '';
-
-    if (localContent === remoteContent) {
-      // Same content, use either
-      merged[section] = localContent;
-    } else if (!remoteContent) {
-      // Only in local, keep local
-      merged[section] = localContent;
-    } else if (!localContent) {
-      // Only in remote, keep remote
-      merged[section] = remoteContent;
-    } else {
-      // Both exist but differ - check if remote matches known state
-      const remoteHash = computeContentHash(remoteContent);
-      if (knownRemoteHash && remoteHash === knownRemoteHash) {
-        // Remote hasn't changed since last sync, prefer local
-        merged[section] = localContent;
-      } else {
-        // Real conflict - mark for user review
-        conflicts.push(section);
-        merged[section] = localContent; // Default to local
-      }
-    }
-  }
-
-  return { merged, conflicts };
-}
-
-function reconstructJournal(sections) {
-  const parts = [];
-
-  // Header first
-  if (sections['__header__']) {
-    parts.push(sections['__header__']);
-  }
-
-  // Then all other sections in order (preserve original order where possible)
-  const sectionOrder = ['Completed ✅', 'In Progress 🔄', 'Backlog', 'Notes', 'Inbox', 'Timestamps', 'Lessons Learned'];
-
-  for (const section of sectionOrder) {
-    if (sections[section]) {
-      parts.push(sections[section]);
-    }
-  }
-
-  // Add any remaining sections not in the standard order
-  for (const [section, content] of Object.entries(sections)) {
-    if (section !== '__header__' && !sectionOrder.includes(section)) {
-      parts.push(content);
-    }
-  }
-
-  return parts.join('\n');
-}
-
-function showLogDiff(localPath, remoteContent) {
-  let tmpDir;
-  try {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-diff-'));
-    const remotePath = path.join(tmpDir, 'remote.md');
-    fs.writeFileSync(remotePath, remoteContent, 'utf8');
-
-    const diffCommands = [
-      { cmd: 'git', args: ['--no-pager', 'diff', '--no-index', '--color=always', '--', localPath, remotePath] },
-      { cmd: 'diff', args: ['-u', localPath, remotePath] },
-    ];
-
-    let shown = false;
-    for (const { cmd, args } of diffCommands) {
-      const result = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      if (result.error || result.status === 127) {
-        continue;
-      }
-
-      const output = `${result.stdout || ''}${result.stderr || ''}`.trimEnd();
-      if (output) {
-        console.log('─────────────────────────────────────────────────────────────');
-        console.log('Diff (web -> local):');
-        process.stdout.write(output.endsWith('\n') ? output : `${output}\n`);
-        console.log('─────────────────────────────────────────────────────────────');
-        shown = true;
-        break;
-      }
-    }
-
-    if (!shown) {
-      console.log('─────────────────────────────────────────────────────────────');
-      console.log('Diff: (no textual diff available; files may be identical or differ only in whitespace)');
-      console.log('─────────────────────────────────────────────────────────────');
-    }
-  } catch (error) {
-    console.log('─────────────────────────────────────────────────────────────');
-    console.log(`Unable to show diff automatically (${error.message || error}).`);
-    console.log('─────────────────────────────────────────────────────────────');
-  } finally {
-    if (tmpDir) {
-      try {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-      } catch (_) {
-        // ignore cleanup errors
-      }
-    }
-  }
-}
 // ============================================
 // Agent Selection
 // ============================================
