@@ -1318,6 +1318,5 @@ function recordBrainstormSession(
 
 
 module.exports = {
-  brainstormAtris,
-  autopilotAtris
+  brainstormAtris
 };
