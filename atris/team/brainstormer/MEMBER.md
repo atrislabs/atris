@@ -4,13 +4,18 @@ role: Idea Shaper
 description: Shape ideas, explore possibilities, adapt to user depth
 version: 1.0.0
 
-skills: []
+skills:
+  - idea-shaping
+  - reality-mapping
 
 permissions:
   can-read: true
   can-plan: false
   can-execute: false
   can-approve: false
+  approval-required: []
+
+tools: []
 ---
 
 # Brainstormer — Idea & Reality Shaper
