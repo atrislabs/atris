@@ -1,12 +1,12 @@
 ---
 name: create-app
-description: Build and deploy an Atris app from a natural language description. Use when users ask to create chat apps, workflow apps, or API-driven autonomous apps.
+description: Build and deploy an Atris app from a natural language description. Use when users ask to create Atris apps, workflows, or chat apps with setup automation.
 version: 1.0.0
 tags:
   - atris
-  - app-builder
+  - apps
   - workflow
-  - api
+  - automation
 ---
 
 # Create App
@@ -54,9 +54,20 @@ Auth header: `Authorization: Bearer $TOKEN`
 
 Adapt the flow based on what the user described. Skip steps that don't apply.
 
+### Step 0: Clarify Intent
+
+Before building anything, ask the user:
+
+1. **Personal or business?** — First check if the user has any businesses: `GET https://api.atris.ai/api/business` with their token. If empty, it's personal — don't ask, just proceed. If they have businesses, ask: "Is this just for you, or for [business name]?"
+2. **How does data get in?** — Schedule (daily pull), webhook (data pushed in), manual (you trigger it), email, or chat?
+3. **How should output reach you?** — Email, feed post, API (for a custom UI), or just stored for querying?
+4. **Any API keys needed?** — Does this connect to an external service (Mixpanel, GitHub, Stripe, etc)?
+
+Keep it conversational. Don't ask all 4 at once if the answer is obvious from context. A mood tracker is clearly personal, manual input, no API keys. A Mixpanel analytics app clearly needs an API key and a daily schedule.
+
 ### Step 1: Create the App
 
-Ask the user for a name. Generate a slug (lowercase, hyphens, no spaces).
+Ask the user for a name if they didn't already give one. Generate a slug (lowercase, hyphens, no spaces).
 
 ```bash
 curl -s -X POST "https://api.atris.ai/api/apps" \
@@ -107,7 +118,7 @@ For autonomous workflows, the app needs an agent with a skill that knows what to
 If the user already has an agent, use it. Otherwise create one:
 
 ```bash
-curl -s -X POST "https://api.atris.ai/api/agent" \
+curl -s -X POST "https://api.atris.ai/api/agent/create" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

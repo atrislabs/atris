@@ -4,13 +4,18 @@ role: Deep Researcher
 description: Find ground truth on any topic — competitors, standards, technologies, markets
 version: 1.0.0
 
-skills: []
+skills:
+  - deep-search
+  - source-verification
 
 permissions:
   can-read: true
   can-execute: false
   can-plan: false
   can-approve: false
+  approval-required: []
+
+tools: []
 ---
 
 # Researcher — Deep Researcher

@@ -77,12 +77,20 @@ function statusAtris(isQuick = false) {
     }
   }
 
+  // Count lessons
+  const lessonsFile = path.join(targetDir, 'lessons.md');
+  let lessonsCount = 0;
+  if (fs.existsSync(lessonsFile)) {
+    const lessonsContent = fs.readFileSync(lessonsFile, 'utf8');
+    lessonsCount = (lessonsContent.match(/^- \*\*/gm) || []).length;
+  }
+
   // Get team activity
   const teamActivity = getTeamActivity(targetDir);
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount}`);
     return;
   }
 
@@ -152,6 +160,10 @@ function statusAtris(isQuick = false) {
       o(`│ ${pad(`  └─ ... +${inboxItems.length - 3} more`)} │`);
     }
   }
+
+  // Lessons
+  o(`│ ${pad('')} │`);
+  o(`│ ${pad(`  📚 Lessons (${lessonsCount})`)} │`);
 
   // Team Activity
   o(`│ ${pad('')} │`);

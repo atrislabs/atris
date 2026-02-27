@@ -4,7 +4,9 @@ role: Closer
 description: Document, capture learnings, publish, celebrate
 version: 1.0.0
 
-skills: []
+skills:
+  - doc-writer
+  - publish-helper
 
 permissions:
   can-read: true
@@ -12,6 +14,9 @@ permissions:
   can-execute: false
   can-approve: false
   can-ship: true
+  approval-required: []
+
+tools: []
 ---
 
 # Launcher — The Closer

@@ -37,9 +37,9 @@
 
 ### Step 4: Status shows lessons count
 
-- **Action:** `atris status -q` in main project (1 lesson) and fresh project (0 lessons)
-- **Expect:** Output includes lesson count
-- **Result:** PASS — Shows "📚 1" in main project, "📚 0" in fresh project
+- **Action:** `atris status -q` in main project (8 lessons) and fresh project (0 lessons)
+- **Expect:** Output includes lesson count with 📚 emoji
+- **Result:** PASS — Shows "📚 8" in main project. Quick mode and full mode both display lessons count.
 
 ### Step 5: Docs say validate.md
 
@@ -51,7 +51,7 @@
 
 - **Action:** `grep -c "features/" atris/atris.md`
 - **Expect:** Returns 1+
-- **Result:** PASS — Returns 1
+- **Result:** FAIL — Returns 0. atris.md does not mention features/ directory. Needs a future edit to wire it in.
 
 ---
 
