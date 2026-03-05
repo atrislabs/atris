@@ -54,20 +54,9 @@ Auth header: `Authorization: Bearer $TOKEN`
 
 Adapt the flow based on what the user described. Skip steps that don't apply.
 
-### Step 0: Clarify Intent
-
-Before building anything, ask the user:
-
-1. **Personal or business?** — First check if the user has any businesses: `GET https://api.atris.ai/api/business` with their token. If empty, it's personal — don't ask, just proceed. If they have businesses, ask: "Is this just for you, or for [business name]?"
-2. **How does data get in?** — Schedule (daily pull), webhook (data pushed in), manual (you trigger it), email, or chat?
-3. **How should output reach you?** — Email, feed post, API (for a custom UI), or just stored for querying?
-4. **Any API keys needed?** — Does this connect to an external service (Mixpanel, GitHub, Stripe, etc)?
-
-Keep it conversational. Don't ask all 4 at once if the answer is obvious from context. A mood tracker is clearly personal, manual input, no API keys. A Mixpanel analytics app clearly needs an API key and a daily schedule.
-
 ### Step 1: Create the App
 
-Ask the user for a name if they didn't already give one. Generate a slug (lowercase, hyphens, no spaces).
+Ask the user for a name. Generate a slug (lowercase, hyphens, no spaces).
 
 ```bash
 curl -s -X POST "https://api.atris.ai/api/apps" \
@@ -96,7 +85,33 @@ Save the returned `id` as `APP_ID` and `share_token` as `SLUG`.
 
 Only if the workflow needs external API access (Mixpanel, GitHub, Stripe, etc).
 
-Ask the user for each key. Store one at a time:
+Ask the user for each key. **Default to local storage** (keys stay on their machine).
+
+**Option A: Local storage (default, recommended)**
+
+Keys are saved to `~/.atris/secrets/{SLUG}/` on the user's machine. They never leave the machine when using the CLI agent. If using the AI Computer, they're transmitted over TLS but never persisted on Atris infrastructure.
+
+```bash
+mkdir -p ~/.atris/secrets/SLUG
+```
+
+For each key:
+```bash
+read -s -p "Enter KEY_NAME: " secret_val
+printf '%s' "$secret_val" > ~/.atris/secrets/SLUG/KEY_NAME
+chmod 600 ~/.atris/secrets/SLUG/KEY_NAME
+unset secret_val
+echo "Saved locally."
+```
+
+Verify (key names only, never values):
+```bash
+ls ~/.atris/secrets/SLUG/
+```
+
+**Option B: Cloud storage (cross-device access)**
+
+If the user needs secrets accessible from any device or the web UI, store in the encrypted cloud vault:
 
 ```bash
 curl -s -X PUT "https://api.atris.ai/api/apps/SLUG/secrets/KEY_NAME" \
@@ -106,6 +121,8 @@ curl -s -X PUT "https://api.atris.ai/api/apps/SLUG/secrets/KEY_NAME" \
 ```
 
 Never log or display the secret value after storing it.
+
+**Always ask the user which storage tier they prefer before storing keys.** Explain: "Local means keys stay on your machine. Cloud means they're encrypted and available from any device."
 
 **Skip this step** if the app doesn't need external API keys (chat apps, simple forms).
 
