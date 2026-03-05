@@ -316,6 +316,26 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 2. Search: `GET /google-drive/search?q=QUERY` (automatically searches My Drive + all shared drives)
 3. Display results
 
+### "Create a Google Doc"
+1. Run bootstrap
+2. Upload with Google Docs mime type — Drive auto-converts:
+   ```bash
+   curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "My Document",
+       "content": "Document content here",
+       "mime_type": "application/vnd.google-apps.document"
+     }'
+   ```
+3. Returns file ID — the doc is now editable in Google Docs
+
+**Native Google mime types for creation:**
+- `application/vnd.google-apps.document` — Google Doc
+- `application/vnd.google-apps.spreadsheet` — Google Sheet (content as CSV)
+- `application/vnd.google-apps.presentation` — Google Slides
+
 ### "Upload a file to Drive"
 1. Run bootstrap
 2. Read the local file content
