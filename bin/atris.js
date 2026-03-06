@@ -230,6 +230,9 @@ function showHelp() {
   console.log('  atris      - Load context and start (natural language)');
   console.log('  next       - Auto-advance to next step');
   console.log('');
+  console.log('Sync:');
+  console.log('  pull       - Pull journals + member data from cloud');
+  console.log('');
   console.log('Cloud & agents:');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  agent      - Select which Atris agent to use');
@@ -368,7 +371,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'pull', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -866,6 +869,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/member').memberCommand(subcommand, ...args);
+} else if (command === 'pull') {
+  require('../commands/pull').pullAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'plugin') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);
