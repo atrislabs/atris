@@ -91,9 +91,12 @@ Ask the user for each key. **Default to local storage** (keys stay on their mach
 
 Keys are saved to `~/.atris/secrets/{SLUG}/` on the user's machine. They never leave the machine when using the CLI agent. If using the AI Computer, they're transmitted over TLS but never persisted on Atris infrastructure.
 
-**macOS/Linux:**
 ```bash
 mkdir -p ~/.atris/secrets/SLUG
+```
+
+For each key:
+```bash
 read -s -p "Enter KEY_NAME: " secret_val
 printf '%s' "$secret_val" > ~/.atris/secrets/SLUG/KEY_NAME
 chmod 600 ~/.atris/secrets/SLUG/KEY_NAME
@@ -101,22 +104,15 @@ unset secret_val
 echo "Saved locally."
 ```
 
-**Windows (PowerShell):**
-```powershell
-$dir = "$env:USERPROFILE\.atris\secrets\SLUG"
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$val = Read-Host -Prompt "Enter KEY_NAME" -AsSecureString
-$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($val))
-Set-Content -Path "$dir\KEY_NAME" -Value $plain -NoNewline
-icacls "$dir\KEY_NAME" /inheritance:r /grant:r "${env:USERNAME}:(R,W)" | Out-Null
-Remove-Variable plain, val
-Write-Host "Saved locally."
+Register the key in the web UI (manifest only — no value sent):
+```bash
+curl -s -X POST "https://api.atris.ai/api/apps/SLUG/secrets/KEY_NAME/register-local" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Verify (key names only, never values):
 ```bash
-ls ~/.atris/secrets/SLUG/           # macOS/Linux
-dir $env:USERPROFILE\.atris\secrets\SLUG  # Windows
+ls ~/.atris/secrets/SLUG/
 ```
 
 **Option B: Cloud storage (cross-device access)**
