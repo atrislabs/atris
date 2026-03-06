@@ -222,11 +222,208 @@ curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_i
   }'
 ```
 
+### Delete / Trash File
+```bash
+# Move to trash (recoverable)
+curl -s -X DELETE "https://api.atris.ai/api/integrations/google-drive/files/{file_id}?trash=true" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Permanently delete (irreversible)
+curl -s -X DELETE "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Copy File
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/copy" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Copy of Document", "folder_id": "OPTIONAL_FOLDER_ID"}'
+```
+
+Works with Docs, Sheets, Slides — creates a full copy.
+
+### Share File
+```bash
+# Share with a specific user
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/share" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "role": "writer", "notify": true}'
+
+# Share with anyone who has the link
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/share" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"anyone": true, "role": "reader"}'
+```
+
+Roles: `reader`, `writer`, `commenter`
+
+### Create Folder
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/folders" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Project Files", "parent_id": "OPTIONAL_PARENT_FOLDER_ID"}'
+```
+
+### Move File
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/move" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"new_parent_id": "TARGET_FOLDER_ID"}'
+```
+
+### Pagination
+
+List and search endpoints return `next_page_token` when there are more results. Pass it to get the next page:
+
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-drive/files?page_size=20&page_token=NEXT_PAGE_TOKEN" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Works on: `/files`, `/search`, `/shared-drives`
+
+---
+
+## Google Docs
+
+Native Google Docs creation and editing. Uses the same Drive OAuth connection.
+
+### List Google Docs
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-docs/documents?page_size=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Create a New Google Doc
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Q1 2026 Report"}'
+```
+
+Returns `documentId` and `url` (direct link to edit in browser).
+
+### Read a Google Doc
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns full document structure (body, paragraphs, text runs, styles).
+
+### Insert Text into a Doc
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/batch-update" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "insertText": {
+          "location": {"index": 1},
+          "text": "Hello, this is the first paragraph.\n\nSecond paragraph here.\n"
+        }
+      }
+    ]
+  }'
+```
+
+**Text is inserted at a character index.** Index 1 = start of document body. Newlines create paragraphs.
+
+### Replace Placeholders in a Doc Template
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/batch-update" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "replaceAllText": {
+          "containsText": {"text": "{{client_name}}", "matchCase": true},
+          "replaceText": "Acme Corp"
+        }
+      },
+      {
+        "replaceAllText": {
+          "containsText": {"text": "{{date}}", "matchCase": true},
+          "replaceText": "March 5, 2026"
+        }
+      }
+    ]
+  }'
+```
+
+### Format Text (Bold, Italic, Font Size, Color)
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/batch-update" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "updateTextStyle": {
+          "range": {"startIndex": 1, "endIndex": 20},
+          "textStyle": {"bold": true, "fontSize": {"magnitude": 18, "unit": "PT"}},
+          "fields": "bold,fontSize"
+        }
+      }
+    ]
+  }'
+```
+
+### Insert a Table
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/batch-update" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "insertTable": {
+          "rows": 3,
+          "columns": 2,
+          "location": {"index": 1}
+        }
+      }
+    ]
+  }'
+```
+
+### Export Doc as PDF
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/export" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns base64-encoded PDF.
+
+### Export Doc as Plain Text
+```bash
+curl -s "https://api.atris.ai/api/integrations/google-docs/documents/{document_id}/text" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ---
 
 ## Google Sheets
 
 Full read/write access to Google Sheets.
+
+### Create a Spreadsheet
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Q1 Revenue Tracker"}'
+```
+
+Returns `spreadsheetId` and `url` (direct link to edit in browser).
 
 ### Get Spreadsheet Info
 ```bash
@@ -280,6 +477,19 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 
 ## Workflows
 
+### "Create a Google Doc with content"
+1. Run bootstrap
+2. Create doc: `POST /google-docs/documents` with `{"title": "..."}`
+3. Insert text: `POST /google-docs/documents/{id}/batch-update` with `insertText` requests
+4. Return the edit URL to user
+
+### "Fill a doc template"
+1. Run bootstrap
+2. Copy template: `POST /files/{template_id}/copy` with `{"name": "Client Proposal"}`
+3. Replace placeholders: `POST /google-docs/documents/{new_id}/batch-update` with `replaceAllText` requests
+4. Share if needed: `POST /files/{id}/share`
+5. Return URL
+
 ### "Find a file in my Drive"
 1. Run bootstrap
 2. Search: `GET /google-drive/search?q=QUERY`
@@ -315,26 +525,6 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 1. Run bootstrap
 2. Search: `GET /google-drive/search?q=QUERY` (automatically searches My Drive + all shared drives)
 3. Display results
-
-### "Create a Google Doc"
-1. Run bootstrap
-2. Upload with Google Docs mime type — Drive auto-converts:
-   ```bash
-   curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "My Document",
-       "content": "Document content here",
-       "mime_type": "application/vnd.google-apps.document"
-     }'
-   ```
-3. Returns file ID — the doc is now editable in Google Docs
-
-**Native Google mime types for creation:**
-- `application/vnd.google-apps.document` — Google Doc
-- `application/vnd.google-apps.spreadsheet` — Google Sheet (content as CSV)
-- `application/vnd.google-apps.presentation` — Google Slides
 
 ### "Upload a file to Drive"
 1. Run bootstrap
@@ -416,4 +606,14 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
 curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"content":"Updated content","mime_type":"text/plain"}'
+
+# Create a Google Doc
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"New Doc"}'
+
+# Insert text into a Doc
+curl -s -X POST "https://api.atris.ai/api/integrations/google-docs/documents/DOC_ID/batch-update" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"requests":[{"insertText":{"location":{"index":1},"text":"Hello world\n"}}]}'
 ```
