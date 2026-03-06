@@ -1,7 +1,7 @@
 ---
 name: drive
-description: Google Drive integration via AtrisOS API. Browse, search, read, upload files and work with Google Sheets. Use when user asks about Drive, files, docs, sheets, or spreadsheets.
-version: 1.2.0
+description: Google Drive integration via AtrisOS API. Full file management (upload, copy, share, move, delete), Google Docs (create, edit, format, templates), Google Sheets (read, write, format, charts). Use when user asks about Drive, files, docs, sheets, or spreadsheets.
+version: 2.0.0
 tags:
   - drive
   - backend
@@ -473,6 +473,48 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
   }'
 ```
 
+### Format Cells (batchUpdate)
+
+Apply formatting, merges, conditional formatting, charts, and other structural changes.
+
+```bash
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spreadsheet_id}/batchUpdate" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "repeatCell": {
+          "range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1},
+          "cell": {
+            "userEnteredFormat": {
+              "textFormat": {"bold": true},
+              "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}
+            }
+          },
+          "fields": "userEnteredFormat(textFormat,backgroundColor)"
+        }
+      }
+    ]
+  }'
+```
+
+**Common request types:**
+- `repeatCell` — format a range (bold, colors, font size, alignment)
+- `mergeCells` — merge a range into one cell
+- `updateBorders` — add borders to cells
+- `autoResizeDimensions` — auto-fit column widths
+- `addConditionalFormatRule` — highlight cells based on rules
+- `addChart` — embed a chart
+- `addSheet` / `deleteSheet` — manage sheets/tabs
+- `sortRange` — sort rows by a column
+
+**Range format:** `{"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3}` — sheetId 0 = first tab, indices are 0-based.
+
+**Color format:** RGB floats 0-1, e.g. `{"red": 0.2, "green": 0.6, "blue": 1.0}`
+
+You can send multiple requests in one call — they execute in order.
+
 ---
 
 ## Workflows
@@ -525,6 +567,45 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{spre
 1. Run bootstrap
 2. Search: `GET /google-drive/search?q=QUERY` (automatically searches My Drive + all shared drives)
 3. Display results
+
+### "Format a spreadsheet"
+1. Run bootstrap
+2. Find the sheet, get its `spreadsheetId`
+3. Build requests array — bold headers, colors, borders, auto-resize, etc.
+4. **Show user what formatting will be applied, get approval**
+5. Apply: `POST /google-drive/sheets/{id}/batchUpdate` with `{"requests": [...]}`
+
+### "Create a spreadsheet with data"
+1. Run bootstrap
+2. Create: `POST /google-drive/sheets` with `{"title": "..."}`
+3. Write headers + data: `PUT /google-drive/sheets/{id}/values` with range + values
+4. Format headers: `POST /google-drive/sheets/{id}/batchUpdate` (bold, background color)
+5. Return the URL
+
+### "Share a file"
+1. Run bootstrap
+2. Find the file
+3. **Ask user**: share with specific email or anyone with link?
+4. Share: `POST /google-drive/files/{id}/share`
+
+### "Organize files into folders"
+1. Run bootstrap
+2. Create folder: `POST /google-drive/folders` with `{"name": "..."}`
+3. Move files: `POST /google-drive/files/{id}/move` with `{"new_parent_id": "FOLDER_ID"}`
+
+### "Copy a template"
+1. Run bootstrap
+2. Find the template file
+3. Copy: `POST /google-drive/files/{id}/copy` with `{"name": "New Name"}`
+4. If it's a Doc, replace placeholders via `/google-docs/documents/{new_id}/batch-update`
+5. Share if needed
+
+### "Delete files"
+1. Run bootstrap
+2. Find the files
+3. **Confirm with user** — show file names
+4. Trash (recoverable): `DELETE /google-drive/files/{id}?trash=true`
+5. Or permanent delete: `DELETE /google-drive/files/{id}`
 
 ### "Upload a file to Drive"
 1. Run bootstrap
@@ -601,6 +682,40 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{id}/
 curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"notes.txt","content":"Hello world","mime_type":"text/plain"}'
+
+# Create a folder
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/folders" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Project Files"}'
+
+# Copy a file
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/copy" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Copy of Doc"}'
+
+# Share with email
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/share" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","role":"writer"}'
+
+# Move file to folder
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/files/{file_id}/move" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"new_parent_id":"FOLDER_ID"}'
+
+# Trash a file
+curl -s -X DELETE "https://api.atris.ai/api/integrations/google-drive/files/{file_id}?trash=true" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Create a spreadsheet
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"New Sheet"}'
+
+# Format cells (bold header row)
+curl -s -X POST "https://api.atris.ai/api/integrations/google-drive/sheets/{id}/batchUpdate" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"requests":[{"repeatCell":{"range":{"sheetId":0,"startRowIndex":0,"endRowIndex":1},"cell":{"userEnteredFormat":{"textFormat":{"bold":true}}},"fields":"userEnteredFormat.textFormat.bold"}}]}'
 
 # Update an existing file
 curl -s -X PUT "https://api.atris.ai/api/integrations/google-drive/files/{file_id}" \
