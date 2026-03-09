@@ -155,7 +155,10 @@ atris visualize
 # Generate a brainstorm conversation starter
 atris brainstorm
 
-# Run the full plan → do → review loop
+# Autonomous plan → do → review loop (uses claude -p subprocesses)
+atris run
+
+# Autonomous plan → do → review with PRD + acceptance criteria
 atris autopilot
 
 # View auth status (for cloud features)
@@ -195,7 +198,8 @@ Commands fall into a few categories:
 - `review` (validator) — Verify, test, clean docs
 
 **Guided Loops:**
-- `autopilot` — Plan → do → review with success criteria
+- `run` — Autonomous plan → do → review loop (no human in the loop)
+- `autopilot` — PRD-driven plan → do → review with acceptance criteria
 - `analytics` — Show productivity from journal data
 
 **Cloud Features (optional):**
@@ -303,6 +307,46 @@ This is how the system is meant to be used:
    └─ All sections in TODO.md empty (tasks deleted)
    └─ Inbox items moved to Completed
    └─ Journal updated with lessons learned
+```
+
+---
+
+## Autonomous Run Loop (`atris run`)
+
+Automates the plan → do → review loop end-to-end using `claude -p` subprocesses. No human in the loop — it reads inbox/backlog, plans tasks, builds them, reviews, then loops until work is done or max cycles hit.
+
+**Implementation:** `commands/run.js` (see MAP.md lines 275-308 for full breakdown)
+
+**When to use `atris run` vs manual `plan`/`do`/`review`:**
+- Use `atris run` for autonomous batch processing — you have inbox items or backlog tasks and want them executed without intervention
+- Use manual `atris plan` → `atris do` → `atris review` when you want control at each step (review the plan before building, inspect code before reviewing)
+
+**Flags:**
+
+```bash
+atris run                  # Up to 5 cycles (default)
+atris run --once           # Single plan→do→review cycle
+atris run --cycles=3       # Max 3 cycles
+atris run --verbose        # Show claude -p output in real-time
+atris run --dry-run        # Preview context paths without executing
+atris run --no-push        # Skip auto-push after each cycle
+```
+
+**Post-cycle behavior:**
+- **Self-heal:** Runs `cleanAtris()` after each REVIEW phase to auto-fix drifted MAP.md file:line references
+- **Auto-push:** Runs `git push` after each successful cycle (disable with `--no-push`)
+- **Journal logging:** Appends run stats (cycles, duration) to today's journal `## Notes`
+
+**Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
+
+**Flow per cycle:**
+```
+1. hasWork() — check inbox + backlog, stop if empty
+2. PLAN — navigator creates tasks from inbox
+3. DO — executor builds first backlog task
+4. REVIEW — validator verifies + cleans up
+5. CLEAN — self-heal MAP.md refs
+6. PUSH — git push (unless --no-push)
 ```
 
 ---
