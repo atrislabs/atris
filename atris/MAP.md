@@ -49,7 +49,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
 - **Entry point:** `bin/atris.js:644-852` (main routing logic)
-- **Handler:** `bin/atris.js:1833-2114` (atrisDevEntry function)
+- **Handler:** `bin/atris.js:1171-1301` (atrisDevEntry function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -68,9 +68,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Creates atris/ folder structure with placeholders + auto-detects project type
 
-- **Entry point:** `commands/init.js:230-644` (initAtris function)
+- **Entry point:** `commands/init.js:233-859` (initAtris function)
 - **Project Detection:** `commands/init.js:9-154` (detectProjectContext)
-- **Pattern Injection:** `commands/init.js:156-228` (injectProjectPatterns)
+- **Pattern Injection:** `commands/init.js:159-231` (injectProjectPatterns)
 - **Creates:**
 - `atris/` folder
 - `atris/team/` subfolder with agent specs
@@ -158,19 +158,19 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Quick visibility into system state - supports parallel work
 
-- **Entry point:** `commands/status.js:15-183` (statusAtris function)
+- **Entry point:** `commands/status.js:15-207` (statusAtris function)
+- **Signature:** `statusAtris(isQuick = false, jsonMode = false)`
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
 - Today's journal Inbox (pending ideas, first 3)
 - Today's journal Completed (recent completions, last 3)
 - **Output:**
-- Backlog count + list
-- In Progress count + list with claims
-- Inbox preview
-- Recent completions
-- Next suggested command
-- **Value:** Parallel work visibility - see who's working on what
+- Default: Visual box-drawing status board
+- `--quick` / `-q`: One-line emoji summary
+- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
+- **Routing:** `bin/atris.js:848-851` (parses `--quick`, `--json` flags)
+- **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris" bin/atris.js`
 
@@ -178,12 +178,16 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Housekeeping - find stale tasks, archive old journals, detect broken refs
 
-- **Entry point:** `commands/clean.js:12-413` (cleanAtris function)
+- **Entry point:** `commands/clean.js:12-117` (cleanAtris function)
 - **Helpers:**
-- `findStaleTasks()` (lines 122-167): Find tasks claimed >3 days ago
-- `healBrokenMapRefs()` (lines 168-253): Validate + auto-fix MAP.md file:line refs
-- `archiveOldJournals()` (lines 332-375): Move journals >30 days to archive/
-- `cleanEmptySections()` (lines 376-413): Remove placeholder sections
+- `findStaleTasks()` (lines 122-162): Find tasks claimed >3 days ago
+- `healBrokenMapRefs()` (lines 169-265): Validate + auto-fix MAP.md file:line refs (range + drift detection)
+- `symbolAtLine()` (lines 272-282): Check symbol near referenced line
+- `findFunctionEnd()` (lines 289-303): Brace-depth tracking for range end detection
+- `extractSymbol()` (lines 310-341): Extract identifier from MAP.md context text
+- `findSymbolLine()` (lines 343-366): Find symbol definition (strict patterns only)
+- `archiveOldJournals()` (lines 375-418): Move journals >30 days to archive/
+- `cleanEmptySections()` (lines 419-449): Remove placeholder sections
 - **Output:**
 - Stale task warnings
 - Broken MAP.md ref list
@@ -254,7 +258,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** PRD-driven autonomous execution using claude -p
 
 - **Entry point:** `commands/autopilot.js:205-392` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:346-392` (autopilotFromTodo function)
+- **From-todo mode:** `commands/autopilot.js:350-400` (autopilotFromTodo function)
 - **PRD generator:** `commands/autopilot.js:21-62` (generatePRD function)
 - **Routing:** `bin/atris.js:650-693`
 - **Flow:**
@@ -313,8 +317,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
   1. Browser OAuth: opens `{APP_BASE}/auth/cli`, user pastes code, CLI exchanges via `POST /auth/cli/exchange`
   2. Manual token: user pastes raw token, saved + validated
   3. Non-interactive: `--token <t>` flag for CI/scripts
-- **Token refresh:** `utils/auth.js:198-250` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata
-- **Credential guard:** `utils/auth.js:252-304` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
+- **Token refresh:** `utils/auth.js:263-315` (`performTokenRefresh`) — saves new access token, optionally rotates refresh token, re-validates, updates user metadata
+- **Credential guard:** `utils/auth.js:317-369` (`ensureValidCredentials`) — proactive refresh if within 5-min buffer, validate, fallback refresh
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
@@ -341,7 +345,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:950-997` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:886-933` (upgradeAtris function)
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -370,7 +374,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Select which cloud agent persona to use
 
-- **Entry point:** `bin/atris.js:2065-2146` (agentAtris function)
+- **Entry point:** `bin/atris.js:949-1030` (agentAtris function)
 - **Requires:** Valid credentials
 - **Logic:**
 - Fetches available agents from backend
@@ -384,7 +388,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2149-2182` (chatAtris function)
+- **Entry point:** `bin/atris.js:1033-1066` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -412,7 +416,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Search journal history for keywords across all log files
 
-- **Entry point:** `bin/atris.js:94-148` (searchJournal function)
+- **Entry point:** `bin/atris.js:107-164` (searchJournal function)
 - **Routing:** `bin/atris.js:757`
 - **Logic:**
 - Recursively walks `atris/logs/` directory
@@ -678,7 +682,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
 - `autopilotAtris()` → `commands/autopilot.js:205-392`
 - `activateAtris()` → `commands/activate.js:6-129`
-- `cleanAtris()` → `commands/clean.js:11-97`
+- `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:14-47`
 - `gmailCommand()` etc. → `commands/integrations.js`
 
