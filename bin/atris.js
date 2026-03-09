@@ -733,6 +733,7 @@ if (command === 'init') {
     console.log('  --once        Single plan→do→review cycle');
     console.log('  --verbose     Show claude -p output');
     console.log('  --dry-run     Preview without executing');
+    console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
     process.exit(0);
@@ -741,11 +742,11 @@ if (command === 'init') {
   const verbose = args.includes('--verbose') || args.includes('-v');
   const dryRun = args.includes('--dry-run');
   const once = args.includes('--once');
-  const noPush = args.includes('--no-push');
+  const push = !args.includes('--no-push');
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
   const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
 
-  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, noPush })
+  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push })
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`\u2717 Run failed: ${error.message || error}`);

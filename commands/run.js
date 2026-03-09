@@ -195,7 +195,7 @@ async function runAtris(options = {}) {
     verbose = false,
     dryRun = false,
     once = false,
-    noPush = false
+    push = true
   } = options;
 
   const cycles = once ? 1 : maxCycles;
@@ -293,7 +293,7 @@ async function runAtris(options = {}) {
       }
 
       // Auto-push if not disabled
-      if (!noPush) {
+      if (push) {
         console.log('\n[+] PUSH — pushing to remote...');
         try {
           execSync('git push', { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
