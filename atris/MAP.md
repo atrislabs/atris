@@ -282,6 +282,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:168-187` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
 - **Post-cycle clean:** `commands/run.js:287-292` — calls `cleanAtris()` after review to self-heal MAP.md refs
+- **Post-cycle push:** `commands/run.js:295-303` — runs `git push` after clean (disabled with `--no-push`)
 - **Routing:** `bin/atris.js:722-751` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:214`
 - **Known commands:** `bin/atris.js:373` (in knownCommands array)
@@ -291,6 +292,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - `--verbose` / `-v` — Show claude -p output (stdio: inherit)
   - `--dry-run` — Preview context without executing
   - `--cycles=N` — Max cycles (default: 5)
+  - `--no-push` — Skip auto-push after each cycle
 - **Flow:**
   1. Validate atris/ folder + claude CLI exist
   2. Build context paths (MAP, TODO, PERSONA, lessons, journal)
