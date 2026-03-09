@@ -162,7 +162,8 @@ function findStaleTasks(atrisDir) {
 }
 
 /**
- * Find and heal broken MAP.md references
+ * Find and heal broken MAP.md references (single-line AND range refs)
+ * Detects both out-of-bounds AND drift (symbol moved to different line)
  * Returns { healed: number, unhealable: array }
  */
 function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
@@ -173,68 +174,85 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
   const unhealable = [];
   let healed = 0;
 
-  // Match patterns like `file.js:123` with surrounding context
-  // Capture: full match, file path, extension, line number, and context after
-  const refPattern = /(`?)([a-zA-Z0-9_\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(`?)(\s*[\(\[—\-]?\s*([^)\]\n]+))?/g;
+  // Match both `file.js:123` and `file.js:123-456` with surrounding context
+  // [^\S\n] = horizontal whitespace only (no newlines)
+  // Required delimiter [(,[,—,-] prevents bleeding into adjacent refs on same line
+  const refPattern = /(`?)([a-zA-Z0-9_\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[—\-][^\S\n]*([^)\]\n]+))?/g;
+
+  // Cache file reads
+  const fileCache = {};
+  function readFileCached(filePath) {
+    if (!fileCache[filePath]) {
+      const fullPath = path.join(cwd, filePath);
+      if (!fs.existsSync(fullPath)) return null;
+      try {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        fileCache[filePath] = { content, lines: content.split('\n') };
+      } catch { return null; }
+    }
+    return fileCache[filePath];
+  }
 
   const replacements = [];
   let match;
 
   while ((match = refPattern.exec(mapContent)) !== null) {
-    const fullMatch = match[0];
     const backtickBefore = match[1] || '';
     const filePath = match[2];
-    const ext = match[3];
-    const lineNum = parseInt(match[4], 10);
-    const backtickAfter = match[5] || '';
-    const contextPart = match[7] || '';
+    const startLine = parseInt(match[4], 10);
+    const endLine = match[5] ? parseInt(match[5], 10) : null;
+    const backtickAfter = match[6] || '';
+    const contextPart = match[8] || '';
 
-    const fullPath = path.join(cwd, filePath);
-
-    // Check if file exists
-    if (!fs.existsSync(fullPath)) {
-      unhealable.push({ file: filePath, line: lineNum, reason: 'File not found' });
+    const file = readFileCached(filePath);
+    if (!file) {
+      unhealable.push({ file: filePath, line: startLine, reason: 'File not found' });
       continue;
     }
 
-    // Read file and check line number
-    let fileContent;
-    try {
-      fileContent = fs.readFileSync(fullPath, 'utf8');
-    } catch (err) {
-      unhealable.push({ file: filePath, line: lineNum, reason: `Cannot read: ${err.message}` });
-      continue;
-    }
-
-    const lines = fileContent.split('\n');
-
-    // If line number is valid, skip
-    if (lineNum <= lines.length) {
-      continue;
-    }
-
-    // Line number is broken - try to heal
     const symbol = extractSymbol(contextPart);
 
+    // Check if reference is still accurate
+    const outOfBounds = startLine > file.lines.length || (endLine && endLine > file.lines.length);
+    const drifted = symbol && startLine <= file.lines.length && !symbolAtLine(file.content, symbol, startLine);
+
+    if (!outOfBounds && !drifted) continue;
+
     if (!symbol) {
-      unhealable.push({ file: filePath, line: lineNum, reason: 'No symbol to search for' });
+      unhealable.push({ file: filePath, line: startLine, reason: 'No symbol to search for' });
       continue;
     }
 
-    // Search for the symbol in the file
-    const newLine = findSymbolLine(fileContent, symbol);
-
-    if (!newLine) {
-      unhealable.push({ file: filePath, line: lineNum, reason: `Symbol "${symbol}" not found` });
+    // Find where the symbol actually is now
+    const newStart = findSymbolLine(file.content, symbol);
+    if (!newStart) {
+      unhealable.push({ file: filePath, line: startLine, reason: `Symbol "${symbol}" not found` });
       continue;
     }
 
-    // Record the replacement
-    const oldRef = `${backtickBefore}${filePath}:${lineNum}${backtickAfter}`;
-    const newRef = `${backtickBefore}${filePath}:${newLine}${backtickAfter}`;
+    if (endLine) {
+      // Range ref: find new end by scanning for function end
+      const originalSpan = endLine - startLine;
+      const newEnd = findFunctionEnd(file.lines, newStart) || (newStart + originalSpan);
+      const clampedEnd = Math.min(newEnd, file.lines.length);
 
-    replacements.push({ old: oldRef, new: newRef, symbol });
-    healed++;
+      const oldRef = `${backtickBefore}${filePath}:${startLine}-${endLine}${backtickAfter}`;
+      const newRef = `${backtickBefore}${filePath}:${newStart}-${clampedEnd}${backtickAfter}`;
+
+      if (oldRef !== newRef) {
+        replacements.push({ old: oldRef, new: newRef, symbol });
+        healed++;
+      }
+    } else {
+      // Single-line ref
+      const oldRef = `${backtickBefore}${filePath}:${startLine}${backtickAfter}`;
+      const newRef = `${backtickBefore}${filePath}:${newStart}${backtickAfter}`;
+
+      if (oldRef !== newRef) {
+        replacements.push({ old: oldRef, new: newRef, symbol });
+        healed++;
+      }
+    }
   }
 
   // Apply replacements
@@ -245,7 +263,45 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
     fs.writeFileSync(mapFile, mapContent);
   }
 
-  return { healed, unhealable };
+  return { healed, unhealable, replacements: dryRun ? replacements : [] };
+}
+
+/**
+ * Check if a symbol is actually defined at or near a given line
+ */
+function symbolAtLine(fileContent, symbol, lineNum) {
+  const lines = fileContent.split('\n');
+  // Check a 5-line window around the referenced line
+  const start = Math.max(0, lineNum - 3);
+  const end = Math.min(lines.length, lineNum + 2);
+  const escaped = escapeRegExp(symbol);
+  const re = new RegExp(`\\b${escaped}\\b`);
+  for (let i = start; i < end; i++) {
+    if (re.test(lines[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * Find the end line of a function starting at startLine (1-indexed)
+ * Tracks brace depth to find the matching closing brace
+ */
+function findFunctionEnd(lines, startLine) {
+  let depth = 0;
+  let foundOpen = false;
+
+  for (let i = startLine - 1; i < lines.length; i++) {
+    const line = lines[i];
+    for (const ch of line) {
+      if (ch === '{') { depth++; foundOpen = true; }
+      if (ch === '}') { depth--; }
+    }
+    if (foundOpen && depth === 0) {
+      return i + 1; // 1-indexed
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -256,6 +312,7 @@ function extractSymbol(context) {
 
   // Clean up the context
   const cleaned = context.trim()
+    .replace(/`/g, '')                // Strip backticks
     .replace(/^[\(\[—\-:]+\s*/, '')  // Remove leading punctuation
     .replace(/[\)\]]+$/, '')          // Remove trailing brackets
     .trim();
@@ -280,42 +337,28 @@ function extractSymbol(context) {
 }
 
 /**
- * Find the line number where a symbol is defined
+ * Find the line number where a symbol is defined (strict patterns only)
+ * Returns null if only loose matches found — prevents healing to wrong locations
  */
 function findSymbolLine(fileContent, symbol) {
   const lines = fileContent.split('\n');
+  const esc = escapeRegExp(symbol);
 
-  // Patterns to match symbol definitions
+  // Strict definition patterns only — no loose fallback
   const patterns = [
-    // function name(
-    new RegExp(`^\\s*(async\\s+)?function\\s+${escapeRegExp(symbol)}\\s*\\(`),
-    // const/let/var name =
-    new RegExp(`^\\s*(const|let|var)\\s+${escapeRegExp(symbol)}\\s*=`),
-    // class name
-    new RegExp(`^\\s*class\\s+${escapeRegExp(symbol)}\\b`),
-    // name: function or name() {
-    new RegExp(`^\\s*${escapeRegExp(symbol)}\\s*[:(]`),
-    // exports.name or module.exports.name
-    new RegExp(`exports\\.${escapeRegExp(symbol)}\\s*=`),
-    // def name( for Python
-    new RegExp(`^\\s*def\\s+${escapeRegExp(symbol)}\\s*\\(`),
-    // Just the symbol on a line (loose match)
-    new RegExp(`\\b${escapeRegExp(symbol)}\\b`)
+    new RegExp(`^\\s*(async\\s+)?function\\s+${esc}\\s*\\(`),  // function name(
+    new RegExp(`^\\s*(const|let|var)\\s+${esc}\\s*=`),          // const/let/var name =
+    new RegExp(`^\\s*class\\s+${esc}\\b`),                      // class name
+    new RegExp(`^\\s*${esc}\\s*[:(]`),                           // name: or name(
+    new RegExp(`exports\\.${esc}\\s*=`),                         // exports.name =
+    new RegExp(`^\\s*def\\s+${esc}\\s*\\(`),                     // def name( (Python)
   ];
 
-  // Try strict patterns first
-  for (let i = 0; i < patterns.length - 1; i++) {
+  for (const pattern of patterns) {
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      if (patterns[i].test(lines[lineIdx])) {
-        return lineIdx + 1; // 1-indexed
+      if (pattern.test(lines[lineIdx])) {
+        return lineIdx + 1;
       }
-    }
-  }
-
-  // Fallback: loose match (just contains the symbol)
-  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    if (patterns[patterns.length - 1].test(lines[lineIdx])) {
-      return lineIdx + 1;
     }
   }
 
