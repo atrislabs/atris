@@ -276,11 +276,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Auto-chain plan → do → review cycles autonomously using `claude -p` subprocesses
 
-- **Entry point:** `commands/run.js:191-303` (runAtris function)
-- **Prompt builder:** `commands/run.js:24-102` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
-- **Phase executor:** `commands/run.js:107-139` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
-- **Work detector:** `commands/run.js:144-162` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
-- **Journal logger:** `commands/run.js:167-186` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
+- **Entry point:** `commands/run.js:192-313` (runAtris function)
+- **Prompt builder:** `commands/run.js:25-103` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
+- **Phase executor:** `commands/run.js:108-140` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
+- **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
+- **Journal logger:** `commands/run.js:168-187` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
+- **Post-cycle clean:** `commands/run.js:287-292` — calls `cleanAtris()` after review to self-heal MAP.md refs
 - **Routing:** `bin/atris.js:722-751` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:214`
 - **Known commands:** `bin/atris.js:373` (in knownCommands array)
