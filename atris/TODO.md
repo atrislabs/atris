@@ -16,8 +16,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- **T1:** Add `atris run` section to CLAUDE.md — document purpose (autonomous plan→do→review loop), flags (`--once`, `--cycles=N`, `--verbose`, `--no-push`, `--dry-run`), when to use it vs manual plan/do/review, and the auto-push + self-heal behavior. Reference `commands/run.js` and MAP.md lines 275-308. [execute]
-  - **Claimed by:** Executor at 2026-03-09T12:51:28.937Z
+- **T1:** Add explicit `--push` flag to `atris run` (defaults to true), keep `--no-push` as opposite. Update help text in `bin/atris.js:726-737` and flag parsing at `bin/atris.js:741-746`. Add `--push` to `commands/run.js:198` options. [execute]
+  - **Claimed by:** Executor at 2026-03-09T12:55:25.964Z
 
 ---
 

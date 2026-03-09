@@ -283,7 +283,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Journal logger:** `commands/run.js:168-187` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
 - **Post-cycle clean:** `commands/run.js:287-292` — calls `cleanAtris()` after review to self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:295-303` — runs `git push` after clean (disabled with `--no-push`)
-- **Routing:** `bin/atris.js:722-751` (command dispatch + flag parsing)
+- **Routing:** `bin/atris.js:722-754` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:214`
 - **Known commands:** `bin/atris.js:373` (in knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
@@ -292,6 +292,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - `--verbose` / `-v` — Show claude -p output (stdio: inherit)
   - `--dry-run` — Preview context without executing
   - `--cycles=N` — Max cycles (default: 5)
+  - `--push` — Auto-push after each cycle (default: true)
   - `--no-push` — Skip auto-push after each cycle
 - **Flow:**
   1. Validate atris/ folder + claude CLI exist
