@@ -211,7 +211,7 @@ function showHelp() {
   console.log('  plan       - Create build spec with visualization');
   console.log('  do         - Execute tasks');
   console.log('  review     - Validate work (tests, safety checks, docs)');
-  console.log('  run        - Auto-chain plan→do→review (autonomous loop)');
+  console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
@@ -733,6 +733,7 @@ if (command === 'init') {
     console.log('  --once        Single plan→do→review cycle');
     console.log('  --verbose     Show claude -p output');
     console.log('  --dry-run     Preview without executing');
+    console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
     process.exit(0);
   }
@@ -740,10 +741,11 @@ if (command === 'init') {
   const verbose = args.includes('--verbose') || args.includes('-v');
   const dryRun = args.includes('--dry-run');
   const once = args.includes('--once');
+  const noPush = args.includes('--no-push');
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
   const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
 
-  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once })
+  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, noPush })
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`\u2717 Run failed: ${error.message || error}`);

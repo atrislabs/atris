@@ -194,7 +194,8 @@ async function runAtris(options = {}) {
     maxCycles = DEFAULT_MAX_CYCLES,
     verbose = false,
     dryRun = false,
-    once = false
+    once = false,
+    noPush = false
   } = options;
 
   const cycles = once ? 1 : maxCycles;
@@ -289,6 +290,17 @@ async function runAtris(options = {}) {
         cleanAtris({ dryRun: false });
       } catch (cleanErr) {
         console.log(`⚠ Clean failed: ${cleanErr.message}`);
+      }
+
+      // Auto-push if not disabled
+      if (!noPush) {
+        console.log('\n[+] PUSH — pushing to remote...');
+        try {
+          execSync('git push', { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
+          console.log('✓ Pushed to remote');
+        } catch (pushErr) {
+          console.log(`⚠ Push failed: ${pushErr.message.split('\n')[0]}`);
+        }
       }
 
       console.log(`\n✓ Cycle ${cycle} done`);

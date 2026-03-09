@@ -16,6 +16,9 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
+- **T1:** Add auto-push (`git push`) after each successful `atris run` cycle — run push after REVIEW+CLEAN in `commands/run.js`, add `--no-push` flag to disable, update help text in `bin/atris.js:214` [execute]
+  - **Claimed by:** Executor at 2026-03-09T12:45:02.044Z
+
 ---
 
 ## Completed
