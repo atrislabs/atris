@@ -16,8 +16,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- **T1:** Add `--json` flag to `atris status` — parse flag in `bin/atris.js` routing, refactor `commands/status.js:statusAtris` to collect data into an object, output `JSON.stringify` when flag is set, keep existing formatted output as default [execute]
-  - **Claimed by:** Executor at 2026-03-09T08:40:10.846Z
+- **T1:** Add `atris run` feature entry to MAP.md — document `commands/run.js` with file:line refs for `runAtris` (line 191), `buildRunPrompt` (line 24), `executePhase` (line 107), `hasWork` (line 144), `logRunCompletion` (line 167). Include routing from `bin/atris.js`, flags (`--once`, `--verbose`, `--dry-run`, `--cycles=N`), and flow description. [execute]
+  - **Claimed by:** Executor at 2026-03-09T08:47:59.029Z
 
 ---
 

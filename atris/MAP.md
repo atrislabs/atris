@@ -27,6 +27,7 @@ rg "loginAtris" commands/auth.js            # Auth commands
 rg "activateAtris" commands/activate.js     # Activate command
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "cleanAtris" commands/clean.js           # Clean command
+rg "runAtris" commands/run.js               # Run command (autonomous loop)
 rg "verifyAtris" commands/verify.js         # Verify command
 rg "searchJournal" bin/atris.js             # Search command (inline)
 rg "gmailCommand" commands/integrations.js  # Integration commands
@@ -270,6 +271,38 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Autonomous multi-step execution with acceptance criteria
 
 **Search:** `rg "autopilotAtris" commands/autopilot.js`
+
+### Feature: Autonomous Run Loop (`atris run`)
+
+**Purpose:** Auto-chain plan → do → review cycles autonomously using `claude -p` subprocesses
+
+- **Entry point:** `commands/run.js:191-303` (runAtris function)
+- **Prompt builder:** `commands/run.js:24-102` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
+- **Phase executor:** `commands/run.js:107-139` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
+- **Work detector:** `commands/run.js:144-162` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
+- **Journal logger:** `commands/run.js:167-186` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
+- **Routing:** `bin/atris.js:722-751` (command dispatch + flag parsing)
+- **Help text:** `bin/atris.js:214`
+- **Known commands:** `bin/atris.js:373` (in knownCommands array)
+- **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
+- **Flags:**
+  - `--once` — Single plan→do→review cycle
+  - `--verbose` / `-v` — Show claude -p output (stdio: inherit)
+  - `--dry-run` — Preview context without executing
+  - `--cycles=N` — Max cycles (default: 5)
+- **Flow:**
+  1. Validate atris/ folder + claude CLI exist
+  2. Build context paths (MAP, TODO, PERSONA, lessons, journal)
+  3. Loop up to N cycles:
+     - Check `hasWork()` — stop if inbox + backlog empty
+     - PLAN phase: navigator creates tasks from inbox
+     - DO phase: executor builds first backlog task
+     - REVIEW phase: validator verifies + cleans up
+  4. Log run stats to journal
+- **Dependencies:** `lib/journal.js` (log paths), `lib/todo.js` (parseTodo)
+- **Value:** Fully autonomous work loop — no human in the loop between cycles
+
+**Search:** `rg "runAtris" commands/run.js`
 
 ### Feature: Agent Activation Commands
 
@@ -939,7 +972,7 @@ CLI: Updates sync state in ~/.atris/.log_sync_state.json
 **Critical files:** 5 (bin/atris.js, atris.md, package.json, commands/init.js, utils/auth.js)
 **Lines of code:** ~13,400 (2,114 in bin/atris.js)
 **Dependencies:** 0 external
-**Commands:** 28 (init, update, upgrade, log, log sync, status, analytics, plan, do, review, login, logout, whoami, agent, chat, version, activate, search, next, brainstorm, autopilot, visualize, clean, verify, gmail, calendar, twitter, slack, integrations)
+**Commands:** 29 (init, update, upgrade, log, log sync, status, analytics, plan, do, review, run, login, logout, whoami, agent, chat, version, activate, search, next, brainstorm, autopilot, visualize, clean, verify, gmail, calendar, twitter, slack, integrations)
 **Version:** 2.4.1
 
 **Architecture:** Modular commands + monolithic core + zero dependencies
