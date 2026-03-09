@@ -16,9 +16,6 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- **T1:** Add `cleanAtris()` call after REVIEW phase in `commands/run.js` run loop to self-heal MAP.md after each cycle — import from `commands/clean.js`, call at ~line 270 after review completes [execute]
-  **Claimed by:** Executor at 2026-03-09T11:52:19.691Z
-
 ---
 
 ## Completed
