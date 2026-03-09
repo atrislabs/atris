@@ -50,7 +50,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
 - **Entry point:** `bin/atris.js:644-852` (main routing logic)
-- **Handler:** `bin/atris.js:1171-1301` (atrisDevEntry function)
+- **Handler:** `bin/atris.js:1205-1335` (atrisDevEntry function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -381,7 +381,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:886-933` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:920-967` (upgradeAtris function)
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -410,7 +410,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Select which cloud agent persona to use
 
-- **Entry point:** `bin/atris.js:949-1030` (agentAtris function)
+- **Entry point:** `bin/atris.js:983-1064` (agentAtris function)
 - **Requires:** Valid credentials
 - **Logic:**
 - Fetches available agents from backend
@@ -424,7 +424,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:1033-1066` (chatAtris function)
+- **Entry point:** `bin/atris.js:1067-1100` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -514,7 +514,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Files:**
 
-- `package.json` (37 lines) — npm metadata, version 2.4.1, bin config
+- `package.json` (37 lines) — npm metadata, version 2.5.4, bin config
 - `bin/atris.js` (2,876 lines) — CLI entry point, executable
 
 **Dependencies:** None (vanilla Node.js)
@@ -741,7 +741,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Phase 5 (lines 260-467): Daily workflow + journal protocol
 - Phase 5.2 (lines 469+): atrisDev protocol (visualize → approve → build)
 
-**Version:** v2.4.1
+**Version:** v2.5.4
 
 **Impact:** Changes propagate to all users on `atris update`
 
@@ -754,7 +754,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Key fields:**
 
 - `name`: "atris"
-- `version`: "2.4.1"
+- `version`: "2.5.4"
 - `bin.atris`: "./bin/atris.js"
 - `files`: Whitelist for npm publish
 
@@ -976,7 +976,7 @@ CLI: Updates sync state in ~/.atris/.log_sync_state.json
 **Lines of code:** ~13,400 (2,114 in bin/atris.js)
 **Dependencies:** 0 external
 **Commands:** 29 (init, update, upgrade, log, log sync, status, analytics, plan, do, review, run, login, logout, whoami, agent, chat, version, activate, search, next, brainstorm, autopilot, visualize, clean, verify, gmail, calendar, twitter, slack, integrations)
-**Version:** 2.4.1
+**Version:** 2.5.4
 
 **Architecture:** Modular commands + monolithic core + zero dependencies
 
