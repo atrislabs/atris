@@ -211,11 +211,12 @@ function showHelp() {
   console.log('  plan       - Create build spec with visualization');
   console.log('  do         - Execute tasks');
   console.log('  review     - Validate work (tests, safety checks, docs)');
+  console.log('  run        - Auto-chain plan→do→review (autonomous loop)');
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
   console.log('  activate   - Load Atris context');
-  console.log('  status     - See active work and completions');
+  console.log('  status     - See active work and completions (--json for machine output)');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
@@ -369,7 +370,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // All other commands are lazy-loaded inline (require() only when invoked)
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'plan', 'do', 'review',
+const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'pull', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
@@ -718,6 +719,36 @@ if (command === 'init') {
   console.log('   Prefer: atris plan');
   console.log('');
   require('../commands/visualize').visualizeAtris();
+} else if (command === 'run') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('');
+    console.log('Usage: atris run [options]');
+    console.log('');
+    console.log('Auto-chain plan → do → review cycles autonomously.');
+    console.log('Reads inbox ideas, creates tasks, builds them, validates, repeats.');
+    console.log('');
+    console.log('Options:');
+    console.log('  --cycles=N    Max cycles (default: 5)');
+    console.log('  --once        Single plan→do→review cycle');
+    console.log('  --verbose     Show claude -p output');
+    console.log('  --dry-run     Preview without executing');
+    console.log('');
+    process.exit(0);
+  }
+
+  const verbose = args.includes('--verbose') || args.includes('-v');
+  const dryRun = args.includes('--dry-run');
+  const once = args.includes('--once');
+  const cyclesArg = args.find(a => a.startsWith('--cycles='));
+  const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
+
+  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once })
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`\u2717 Run failed: ${error.message || error}`);
+      process.exit(1);
+    });
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h')) {
@@ -816,7 +847,8 @@ if (command === 'init') {
     });
 } else if (command === 'status') {
   const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
-  statusCmd(isQuick);
+  const isJson = process.argv.includes('--json');
+  statusCmd(isQuick, isJson);
 } else if (command === 'analytics') {
   require('../commands/analytics').analyticsAtris();
 } else if (command === 'clean') {

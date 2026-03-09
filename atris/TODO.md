@@ -12,13 +12,12 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
-(Clean)
-
 ---
 
 ## In Progress
 
-(Clean)
+- **T1:** Add `--json` flag to `atris status` — parse flag in `bin/atris.js` routing, refactor `commands/status.js:statusAtris` to collect data into an object, output `JSON.stringify` when flag is set, keep existing formatted output as default [execute]
+  - **Claimed by:** Executor at 2026-03-09T08:40:10.846Z
 
 ---
 

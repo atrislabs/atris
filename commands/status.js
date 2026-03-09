@@ -12,10 +12,14 @@ const pad = (str, w = W) => {
   return len >= w ? str : str + ' '.repeat(w - len);
 };
 
-function statusAtris(isQuick = false) {
+function statusAtris(isQuick = false, jsonMode = false) {
   const targetDir = path.join(process.cwd(), 'atris');
 
   if (!fs.existsSync(targetDir)) {
+    if (jsonMode) {
+      console.log(JSON.stringify({ error: 'atris/ folder not found' }));
+      process.exit(1);
+    }
     console.log('✗ atris/ folder not found. Run "atris init" first.');
     process.exit(1);
   }
@@ -87,6 +91,22 @@ function statusAtris(isQuick = false) {
 
   // Get team activity
   const teamActivity = getTeamActivity(targetDir);
+
+  // JSON mode — structured output for scripting
+  if (jsonMode) {
+    const output = {
+      date: dateFormatted,
+      backlog: todo.backlog,
+      inProgress: todo.inProgress,
+      completed: todo.completed,
+      inbox: inboxItems,
+      completions,
+      lessons: lessonsCount,
+      team: teamActivity,
+    };
+    console.log(JSON.stringify(output, null, 2));
+    return;
+  }
 
   // Quick mode
   if (isQuick) {
