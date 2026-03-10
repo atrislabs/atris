@@ -50,7 +50,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
 - **Entry point:** `bin/atris.js:644-852` (main routing logic)
-- **Handler:** `bin/atris.js:1205-1335` (atrisDevEntry function)
+- **Handler:** `bin/atris.js:1209-1339` (atrisDevEntry function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -276,13 +276,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Auto-chain plan → do → review cycles autonomously using `claude -p` subprocesses
 
-- **Entry point:** `commands/run.js:192-313` (runAtris function)
+- **Entry point:** `commands/run.js:201-364` (runAtris function)
 - **Prompt builder:** `commands/run.js:25-103` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:108-140` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
 - **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
-- **Journal logger:** `commands/run.js:168-187` (logRunCompletion function) — appends run summary (cycles, duration) to journal ## Notes
-- **Post-cycle clean:** `commands/run.js:287-292` — calls `cleanAtris()` after review to self-heal MAP.md refs
-- **Post-cycle push:** `commands/run.js:295-303` — runs `git push` after clean (disabled with `--no-push`)
+- **Journal logger:** `commands/run.js:168-196` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
+- **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
+- **Summary table:** `commands/run.js:349-360` — prints per-cycle phase duration table at end of run
+- **Post-cycle clean:** `commands/run.js:313-319` — calls `cleanAtris()` after review to self-heal MAP.md refs
+- **Post-cycle push:** `commands/run.js:322-330` — runs `git push` after clean (disabled with `--no-push`)
 - **Routing:** `bin/atris.js:722-754` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:214`
 - **Known commands:** `bin/atris.js:373` (in knownCommands array)
@@ -383,7 +385,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:920-967` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:924-971` (upgradeAtris function)
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -412,7 +414,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Select which cloud agent persona to use
 
-- **Entry point:** `bin/atris.js:983-1064` (agentAtris function)
+- **Entry point:** `bin/atris.js:987-1068` (agentAtris function)
 - **Requires:** Valid credentials
 - **Logic:**
 - Fetches available agents from backend
@@ -426,7 +428,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:1067-1100` (chatAtris function)
+- **Entry point:** `bin/atris.js:1071-1104` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`

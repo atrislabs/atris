@@ -165,7 +165,7 @@ function hasWork(atrisDir) {
 /**
  * Log completion to journal
  */
-function logRunCompletion(cycles, startTime) {
+function logRunCompletion(cycles, startTime, cycleTimings = []) {
   ensureLogDirectory();
   const { logFile, dateFormatted } = getLogPath();
 
@@ -175,7 +175,16 @@ function logRunCompletion(cycles, startTime) {
 
   let content = fs.readFileSync(logFile, 'utf8');
   const duration = Math.round((Date.now() - startTime) / 1000);
-  const entry = `\n### Atris Run — ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s\n`;
+
+  let timingLines = '';
+  if (cycleTimings.length > 0) {
+    timingLines = cycleTimings.map((t, i) =>
+      `- Cycle ${i + 1}: plan ${Math.round(t.plan / 1000)}s, do ${Math.round(t.do / 1000)}s, review ${Math.round(t.review / 1000)}s`
+    ).join('\n');
+    timingLines = '\n' + timingLines;
+  }
+
+  const entry = `\n### Atris Run — ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s${timingLines}\n`;
 
   if (content.includes('## Notes')) {
     content = content.replace(/(## Notes[^\n]*\n)/, `$1${entry}\n`);
@@ -242,6 +251,8 @@ async function runAtris(options = {}) {
   }
 
   const startTime = Date.now();
+  const cycleTimings = [];
+  let completedCycles = 0;
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
     console.log(`\n${'━'.repeat(60)}`);
@@ -254,16 +265,20 @@ async function runAtris(options = {}) {
       break;
     }
 
+    const timing = { plan: 0, do: 0, review: 0 };
+
     try {
       // PLAN
       console.log('\n[1/3] PLAN — reading inbox, creating tasks...');
+      let phaseStart = Date.now();
       const planOutput = executePhase('plan', context, { verbose, timeout });
+      timing.plan = Date.now() - phaseStart;
 
       if (planOutput.includes('[NOTHING_TO_DO]')) {
         console.log('Nothing to do. Stopping.');
         break;
       }
-      console.log('✓ Plan complete');
+      console.log(`✓ Plan complete (${Math.round(timing.plan / 1000)}s)`);
 
       // Check if plan created tasks
       if (!hasWork(atrisDir)) {
@@ -273,18 +288,27 @@ async function runAtris(options = {}) {
 
       // DO
       console.log('\n[2/3] DO — building task...');
+      phaseStart = Date.now();
       executePhase('do', context, { verbose, timeout });
-      console.log('✓ Build complete');
+      timing.do = Date.now() - phaseStart;
+      console.log(`✓ Build complete (${Math.round(timing.do / 1000)}s)`);
 
       // REVIEW
       console.log('\n[3/3] REVIEW — validating...');
+      phaseStart = Date.now();
       const reviewOutput = executePhase('review', context, { verbose, timeout });
+      timing.review = Date.now() - phaseStart;
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
         console.log('⚠ Review found issues. Stopping for manual check.');
+        cycleTimings.push(timing);
+        completedCycles++;
         break;
       }
-      console.log('✓ Review complete');
+      console.log(`✓ Review complete (${Math.round(timing.review / 1000)}s)`);
+
+      cycleTimings.push(timing);
+      completedCycles++;
 
       // Self-heal MAP.md refs after each cycle
       console.log('\n[+] CLEAN — healing MAP.md refs...');
@@ -316,11 +340,25 @@ async function runAtris(options = {}) {
   const elapsed = Math.round((Date.now() - startTime) / 1000);
 
   // Log to journal
-  logRunCompletion(cycles, startTime);
+  logRunCompletion(completedCycles, startTime, cycleTimings);
 
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`Run complete. ${elapsed}s elapsed.`);
+
+  // Print phase duration summary table
+  if (cycleTimings.length > 0) {
+    console.log('');
+    console.log('  Cycle  │  Plan   │   Do    │ Review');
+    console.log('  ───────┼─────────┼─────────┼────────');
+    cycleTimings.forEach((t, i) => {
+      const p = `${Math.round(t.plan / 1000)}s`.padStart(5);
+      const d = `${Math.round(t.do / 1000)}s`.padStart(5);
+      const r = `${Math.round(t.review / 1000)}s`.padStart(5);
+      console.log(`    ${String(i + 1).padStart(2)}   │ ${p}   │ ${d}   │ ${r}`);
+    });
+  }
+
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 }
