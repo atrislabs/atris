@@ -328,6 +328,7 @@ atris run                  # Up to 5 cycles (default)
 atris run --once           # Single plan→do→review cycle
 atris run --cycles=3       # Max 3 cycles
 atris run --verbose        # Show claude -p output in real-time
+atris run --timeout=300    # Set phase timeout to 300 seconds
 atris run --dry-run        # Preview context paths without executing
 atris run --no-push        # Skip auto-push after each cycle
 ```

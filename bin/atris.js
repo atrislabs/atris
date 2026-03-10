@@ -733,6 +733,7 @@ if (command === 'init') {
     console.log('  --once        Single plan→do→review cycle');
     console.log('  --verbose     Show claude -p output');
     console.log('  --dry-run     Preview without executing');
+    console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
@@ -745,8 +746,10 @@ if (command === 'init') {
   const push = !args.includes('--no-push');
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
   const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
+  const timeoutArg = args.find(a => a.startsWith('--timeout='));
+  const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
 
-  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push })
+  require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`\u2717 Run failed: ${error.message || error}`);

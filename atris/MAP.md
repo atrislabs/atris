@@ -292,6 +292,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - `--verbose` / `-v` — Show claude -p output (stdio: inherit)
   - `--dry-run` — Preview context without executing
   - `--cycles=N` — Max cycles (default: 5)
+  - `--timeout=N` — Phase timeout in seconds (default: 600)
   - `--push` — Auto-push after each cycle (default: true)
   - `--no-push` — Skip auto-push after each cycle
 - **Flow:**

@@ -195,7 +195,8 @@ async function runAtris(options = {}) {
     verbose = false,
     dryRun = false,
     once = false,
-    push = true
+    push = true,
+    timeout = PHASE_TIMEOUT
   } = options;
 
   const cycles = once ? 1 : maxCycles;
@@ -220,6 +221,7 @@ async function runAtris(options = {}) {
   console.log('└─────────────────────────────────────────────────────────────┘');
   console.log('');
   console.log(`Max cycles: ${cycles}`);
+  console.log(`Phase timeout: ${timeout / 1000}s`);
   console.log(`Verbose: ${verbose}`);
   console.log('');
 
@@ -255,7 +257,7 @@ async function runAtris(options = {}) {
     try {
       // PLAN
       console.log('\n[1/3] PLAN — reading inbox, creating tasks...');
-      const planOutput = executePhase('plan', context, { verbose });
+      const planOutput = executePhase('plan', context, { verbose, timeout });
 
       if (planOutput.includes('[NOTHING_TO_DO]')) {
         console.log('Nothing to do. Stopping.');
@@ -271,12 +273,12 @@ async function runAtris(options = {}) {
 
       // DO
       console.log('\n[2/3] DO — building task...');
-      executePhase('do', context, { verbose });
+      executePhase('do', context, { verbose, timeout });
       console.log('✓ Build complete');
 
       // REVIEW
       console.log('\n[3/3] REVIEW — validating...');
-      const reviewOutput = executePhase('review', context, { verbose });
+      const reviewOutput = executePhase('review', context, { verbose, timeout });
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
         console.log('⚠ Review found issues. Stopping for manual check.');

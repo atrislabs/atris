@@ -12,12 +12,14 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
+- **T2:** Add per-phase duration tracking to `atris run` — collect `{plan, do, review}` times (ms) per cycle in the loop at `commands/run.js:255-285`, store in array. Update `logRunCompletion()` at line 168 to accept and log the breakdown. Print summary table after run at lines 319-323 showing each cycle's phase durations (plan Xs, do Xs, review Xs). [execute]
+
 ---
 
 ## In Progress
 
-- **T1:** Add explicit `--push` flag to `atris run` (defaults to true), keep `--no-push` as opposite. Update help text in `bin/atris.js:726-737` and flag parsing at `bin/atris.js:741-746`. Add `--push` to `commands/run.js:198` options. [execute]
-  - **Claimed by:** Executor at 2026-03-09T12:55:25.964Z
+- **T1:** Add `--timeout=N` flag to `atris run` — parse in `bin/atris.js:722-754`, pass as `timeout` option to `runAtris()` in `commands/run.js:192`, multiply by 1000 for ms, flows through to `executePhase()` line 108 which already accepts it. Update help text at `bin/atris.js:214`. Default stays 600s. [execute]
+  **Claimed by:** Executor at 2026-03-10T00:18:48.095Z
 
 ---
 
