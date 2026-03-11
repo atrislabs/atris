@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { ensureExperimentsFramework } = require('./experiments');
 
 /**
  * Detect project context by scanning project structure
@@ -473,6 +474,9 @@ function initAtris() {
     fs.writeFileSync(target, fallback);
     console.log(`✓ Created features/_templates/${name} (fallback)`);
   });
+
+  // Create experiments directory and packaged validation harness
+  ensureExperimentsFramework(process.cwd(), { silent: false });
 
 
   // Copy team members (MEMBER.md format — directory per member with skills/tools/context)

@@ -164,6 +164,14 @@ function searchJournal(keyword) {
 }
 
 function consoleCmd() {
+  const extractedCommand = path.join(__dirname, '..', 'commands', 'console.js');
+  if (fs.existsSync(extractedCommand)) {
+    const loaded = require('../commands/console');
+    if (loaded && typeof loaded.consoleCommand === 'function') {
+      return loaded.consoleCommand();
+    }
+  }
+
   const workspace = process.cwd();
   const daemonScript = path.join(workspace, 'cli', 'atrisd.sh');
 
@@ -226,6 +234,11 @@ function showHelp() {
   console.log('  brainstorm - Explore ideas conversationally before planning');
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
   console.log('  visualize  - Legacy visualization helper (prefer "atris plan")');
+  console.log('');
+  console.log('Experiments:');
+  console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
+  console.log('  experiments validate        - Validate experiment packs');
+  console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
   console.log('');
   console.log('Quick commands:');
   console.log('  atris      - Load context and start (natural language)');
@@ -372,7 +385,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'pull', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -915,6 +928,10 @@ if (command === 'init') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);
   require('../commands/plugin').pluginCommand(subcommand, ...args);
+} else if (command === 'experiments') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/experiments').experimentsCommand(subcommand, ...args);
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
@@ -1337,4 +1354,3 @@ async function atrisDevEntry(userInput = null) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 }
-

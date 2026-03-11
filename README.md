@@ -41,6 +41,16 @@ Commands: `brainstorm` (optional) → `plan` → `do` → `review`
 
 Works with: Claude Code, Cursor, Windsurf, GitHub Copilot, any agent.
 
+## Experiments
+
+Atris also supports Karpathy-style keep/revert loops inside `atris/experiments/`.
+
+```bash
+atris experiments init self-heal
+atris experiments validate
+atris experiments benchmark
+```
+
 ## Update
 
 ```bash
