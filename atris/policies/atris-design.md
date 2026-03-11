@@ -52,9 +52,40 @@ dark backgrounds are easier to make look good. steal from places you like — li
 
 **avoid:** static pages with nothing moving, or the opposite — bouncing everything
 
+**specific anti-patterns:**
+- cursor-following lines or elements
+- meteor/particle effects shooting across screen
+- buttons that follow the cursor (harder to click, not clever)
+- FAQ/content that breaks if you scroll past before the fade-in finishes
+- animations that swap styles endlessly without purpose (rotating shapes, morphing buttons)
+
 **the move:** one well-timed animation beats ten scattered ones. page load with staggered reveals (animation-delay) creates more impact than hover effects on every button.
 
 css transitions: 200-300ms, ease-out. that's it.
+
+---
+
+## hover states
+
+**avoid:**
+- elements that fade out or disappear on hover
+- nav items that shift position or slide horizontally on hover
+- arrows/icons that move backwards or vertically on hover
+- hiding critical info or functionality behind hover (hover doesn't exist on mobile)
+
+**the move:** hover should make elements feel "lickable" — inviting to click. slightly brighten, scale up (1.02-1.05), or add a subtle glow. the user should feel pulled toward clicking, not confused about what happened.
+
+test every hover on mobile. if something only works on hover, it's broken for half your users.
+
+---
+
+## scroll behavior
+
+**avoid:** scrolljacking — never override native browser scroll with custom scroll logic. it feels like "moving through molasses" and users hate it.
+
+**the move:** let the browser handle scrolling. if you want scroll-triggered effects, use intersection observer to trigger animations as sections enter the viewport — but don't mess with scroll speed or direction.
+
+use the "peeking" technique: let a few pixels of the next section peek above the fold instead of full-screen heroes with "scroll down" arrows. this naturally signals more content below.
 
 ---
 
@@ -82,12 +113,47 @@ vary your choices. alternate themes. try different directions between projects.
 
 ---
 
+## information hierarchy
+
+**avoid:** mixing 4-5 competing text styles on one page. labels, headers, subheaders, badges, and body text all fighting for attention.
+
+**the move:** pick 2-3 levels max. one dominant style, one supporting, one accent. if you add a new style, ask: does this earn its place or is it clutter?
+
+---
+
+## hero section (the H1 test)
+
+your hero must answer four questions in seconds:
+1. **what is it?** — clear product description
+2. **who is it for?** — the target user
+3. **to what end?** — why should they care
+4. **what's the CTA?** — one clear next step
+
+if a stranger can't answer all four in 5 seconds of looking at your hero, rewrite it.
+
+---
+
+## assets
+
+**avoid:**
+- blurry or low-res screenshots
+- "fake dashboard" mockups with Fisher-Price primary colors (red/yellow/green/blue)
+- non-system emojis used as decoration (lazy AI tell)
+
+**the move:** real product screenshots at high resolution. if you don't have a product yet, use a well-designed mockup — but make it sharp and believable.
+
+---
+
 ## before shipping
 
 - can you name the aesthetic in 2-3 words?
 - did you pick a real font, not a default?
 - is there at least one intentional animation?
 - does the background have depth?
+- do hover states feel inviting, not confusing?
+- does scrolling feel native?
+- does the hero pass the H1 test (what/who/why/CTA)?
+- are all screenshots/assets crisp?
 - would a designer immediately clock this as ai-generated?
 
 if the last answer is yes, you're not done.

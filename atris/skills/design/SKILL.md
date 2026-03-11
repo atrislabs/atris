@@ -27,9 +27,19 @@ This skill uses the Atris workflow:
 
 **Layout:** break the hero + 3 cards + footer template. asymmetry is interesting. dramatic whitespace.
 
-**Motion:** one well-timed animation beats ten scattered ones. 200-300ms ease-out.
+**Motion:** one well-timed animation beats ten scattered ones. 200-300ms ease-out. no cursor-following lines, no meteor effects, no buttons that chase the cursor.
+
+**Hover:** make elements feel inviting on hover (brighten, subtle scale). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile.
+
+**Scroll:** never override native scroll. use "peeking" (show a few px of next section) instead of full-screen hero + scroll arrow.
+
+**Hero (H1 test):** must answer in 5 seconds — what is it, who is it for, why care, what's the CTA.
+
+**Assets:** high-res screenshots only. no fake dashboards with primary colors. no decorative non-system emojis.
 
 **Backgrounds:** add depth. gradients, patterns, mesh effects. flat = boring.
+
+**Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
 ## Before Shipping Checklist
 
@@ -38,6 +48,10 @@ Run through `atris/policies/atris-design.md` "before shipping" section:
 - distinctive font, not default?
 - at least one intentional animation?
 - background has depth?
+- hover states feel inviting, not confusing?
+- scrolling feels native?
+- hero passes H1 test (what/who/why/CTA)?
+- all assets crisp?
 - would a designer clock this as ai-generated?
 
 ## Atris Commands

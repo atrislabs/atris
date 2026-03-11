@@ -1,0 +1,52 @@
+<svg width="980" height="260" viewBox="0 0 980 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="980" height="260" fill="#F7F5EF"/>
+  <text x="40" y="42" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#111111">Smoke Keep/Revert</text>
+  <text x="40" y="68" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#4B5563">One bounded target. One hard metric. Reject the loser. Keep the winner.</text>
+
+  <rect x="40" y="110" width="150" height="88" rx="16" fill="#FFF7ED" stroke="#C2410C" stroke-width="2"/>
+  <text x="115" y="140" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#9A3412">Broken Target</text>
+  <text x="115" y="166" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7C2D12">candidate.py</text>
+  <text x="115" y="186" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7C2D12">buggy on purpose</text>
+
+  <rect x="220" y="110" width="150" height="88" rx="16" fill="#EFF6FF" stroke="#1D4ED8" stroke-width="2"/>
+  <text x="295" y="140" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#1E3A8A">Measure</text>
+  <text x="295" y="166" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1D4ED8">score = 0.2</text>
+  <text x="295" y="186" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1D4ED8">baseline truth</text>
+
+  <rect x="400" y="38" width="160" height="72" rx="16" fill="#FEF2F2" stroke="#DC2626" stroke-width="2"/>
+  <text x="480" y="66" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#991B1B">Bad Patch</text>
+  <text x="480" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#B91C1C">score falls to 0.0</text>
+
+  <rect x="400" y="150" width="160" height="72" rx="16" fill="#ECFDF5" stroke="#059669" stroke-width="2"/>
+  <text x="480" y="178" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#065F46">Good Patch</text>
+  <text x="480" y="204" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#047857">score rises to 1.0</text>
+
+  <rect x="610" y="38" width="150" height="72" rx="16" fill="#FEE2E2" stroke="#DC2626" stroke-width="2"/>
+  <text x="685" y="66" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#991B1B">REVERT</text>
+  <text x="685" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#B91C1C">reject loser</text>
+
+  <rect x="610" y="150" width="150" height="72" rx="16" fill="#DCFCE7" stroke="#16A34A" stroke-width="2"/>
+  <text x="685" y="178" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#166534">KEEP</text>
+  <text x="685" y="204" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#15803D">accept winner</text>
+
+  <rect x="800" y="110" width="140" height="88" rx="16" fill="#F0FDF4" stroke="#16A34A" stroke-width="2"/>
+  <text x="870" y="140" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#166534">Final State</text>
+  <text x="870" y="166" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#15803D">fixed target</text>
+  <text x="870" y="186" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#15803D">score = 1.0</text>
+
+  <path d="M190 154H220" stroke="#6B7280" stroke-width="3"/>
+  <path d="M365 154H385" stroke="#6B7280" stroke-width="3"/>
+  <path d="M560 74H600" stroke="#DC2626" stroke-width="3"/>
+  <path d="M560 186H600" stroke="#16A34A" stroke-width="3"/>
+  <path d="M760 154H790" stroke="#6B7280" stroke-width="3"/>
+
+  <path d="M480 110V138" stroke="#6B7280" stroke-width="3" stroke-dasharray="8 8"/>
+  <path d="M295 154C340 154 350 74 400 74" stroke="#DC2626" stroke-width="3" fill="none"/>
+  <path d="M295 154C340 154 350 186 400 186" stroke="#16A34A" stroke-width="3" fill="none"/>
+
+  <polygon points="220,154 210,148 210,160" fill="#6B7280"/>
+  <polygon points="385,154 375,148 375,160" fill="#6B7280"/>
+  <polygon points="600,74 590,68 590,80" fill="#DC2626"/>
+  <polygon points="600,186 590,180 590,192" fill="#16A34A"/>
+  <polygon points="790,154 780,148 780,160" fill="#6B7280"/>
+</svg>

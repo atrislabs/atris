@@ -21,6 +21,7 @@
     "atris/CLAUDE.md",
     "atris/GEMINI.md",
     "atris/team/",
+    "atris/experiments/",
     "atris/features/_templates/",
     "atris/policies/",
     "atris/skills/"

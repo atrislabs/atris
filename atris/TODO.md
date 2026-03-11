@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-03-09
+> **Last updated:** 2026-03-11
 
 ---
 
@@ -23,6 +23,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Completed
 
+- [x] Fix experiments CLI review findings — console fallback + single-pack validate
+- [x] Add `atris experiments` to CLI — scaffold, validate, benchmark
 - [x] Audit runtime/CLI regressions — fixed `taskContexts` ReferenceError crash in doAtris (workflow.js:513,565), cataloged dead auth code in bin/atris.js
 - [x] Audit journal/log merge behavior (lib/journal.js + commands/log-sync.js)
 - [x] Install all skills to Codex (8 skills → ~/.codex/skills/)
