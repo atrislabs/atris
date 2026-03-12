@@ -27,6 +27,7 @@ cp -r atris/skills/[name] ~/.codex/skills/
 |-------|-------------|--------|
 | atris | Workflow enforcement + plan/do/review | `policies/ANTISLOP.md` |
 | autopilot | PRD-driven autonomous execution | — |
+| autoresearch | Bounded keep/revert experiment loops via `atris/experiments/` | — |
 | backend | Backend architecture anti-patterns | `policies/atris-backend.md` |
 | design | Frontend aesthetics policy | `policies/atris-design.md` |
 | calendar | Google Calendar integration via AtrisOS | — |
