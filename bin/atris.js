@@ -251,11 +251,12 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  agent      - Select which Atris agent to use');
   console.log('  chat       - Chat with the selected Atris agent');
-  console.log('  login      - Authenticate (use --token <t> for non-interactive)');
-  console.log('  logout     - Remove credentials');
-  console.log('  whoami     - Show auth status');
-  console.log('  switch     - Switch account (atris switch <name>)');
-  console.log('  accounts   - List saved accounts');
+  console.log('  login      - Sign in or add another account');
+  console.log('  logout     - Sign out of current account');
+  console.log('  whoami     - Show active account');
+  console.log('  switch     - Switch account globally (atris switch <name>)');
+  console.log('  use        - Set account for this terminal only (atris use <name>)');
+  console.log('  accounts   - Manage accounts (list, add, remove)');
   console.log('');
   console.log('Integrations:');
   console.log('  gmail      - Email commands (inbox, read)');
@@ -384,8 +385,8 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'accounts', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'sync',
+                       'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -725,8 +726,18 @@ if (command === 'init') {
   require('../commands/auth').whoamiAtris();
 } else if (command === 'switch') {
   require('../commands/auth').switchAccount();
+} else if (command === 'use') {
+  require('../commands/auth').useAccount();
 } else if (command === 'accounts') {
-  require('../commands/auth').listAccountsCmd();
+  require('../commands/auth').accountsCmd();
+} else if (command === '_resolve') {
+  // Hidden: resolve a profile name query → print exact profile name
+  require('../commands/auth').resolveProfile();
+} else if (command === '_profile-email') {
+  // Hidden: print email for a profile name
+  require('../commands/auth').profileEmail();
+} else if (command === 'shell-init') {
+  require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
   console.log('ℹ️  "atris visualize" is a legacy helper. Visualization is now built into "atris plan".');
   console.log('   Prefer: atris plan');
@@ -922,6 +933,16 @@ if (command === 'init') {
   require('../commands/member').memberCommand(subcommand, ...args);
 } else if (command === 'pull') {
   require('../commands/pull').pullAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'push') {
+  require('../commands/push').pushAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'business') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/business').businessCommand(subcommand, ...args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'plugin') {

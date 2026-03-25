@@ -124,6 +124,101 @@ function getCredentialsPath() {
   return path.join(getAtrisDir(), 'credentials.json');
 }
 
+function getSessionsDir() {
+  const dir = path.join(getAtrisDir(), 'sessions');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function getTerminalSessionId() {
+  // Unique per terminal window/tab — works across macOS terminals, tmux, VS Code, Ghostty
+  const envId = process.env.TERM_SESSION_ID     // macOS Terminal.app
+    || process.env.ITERM_SESSION_ID              // iTerm2
+    || process.env.TMUX_PANE                     // tmux pane
+    || process.env.WT_SESSION                    // Windows Terminal
+    || process.env.WEZTERM_PANE;                 // WezTerm
+  if (envId) return envId;
+
+  // Universal fallback: TTY device name (unique per terminal tab on macOS/Linux)
+  // Each Ghostty/iTerm/Terminal tab gets a unique /dev/ttysNNN
+  try {
+    // Method 1: check if stdin is a TTY and resolve its path
+    if (process.stdin.isTTY) {
+      const resolved = fs.realpathSync('/dev/stdin');
+      if (resolved && resolved.startsWith('/dev/tty')) return resolved;
+    }
+  } catch {}
+
+  try {
+    // Method 2: shell out to tty command
+    const { execSync } = require('child_process');
+    const tty = execSync('tty', { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] }).trim();
+    if (tty && tty !== 'not a tty' && tty.startsWith('/dev/')) return tty;
+  } catch {}
+
+  return null;
+}
+
+function sanitizeSessionId(id) {
+  // Make filesystem-safe: replace non-alphanumeric with dashes, truncate
+  return id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+}
+
+function getSessionFilePath() {
+  const sessionId = getTerminalSessionId();
+  if (!sessionId) return null;
+  return path.join(getSessionsDir(), `${sanitizeSessionId(sessionId)}.json`);
+}
+
+function setSessionProfile(profileName) {
+  const sessionPath = getSessionFilePath();
+  if (!sessionPath) {
+    // No terminal session ID — fall back to global switch
+    return false;
+  }
+  fs.writeFileSync(sessionPath, JSON.stringify({
+    profile: profileName,
+    set_at: new Date().toISOString(),
+  }));
+  return true;
+}
+
+function getSessionProfile() {
+  const sessionPath = getSessionFilePath();
+  if (!sessionPath || !fs.existsSync(sessionPath)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+    return data.profile || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearSessionProfile() {
+  const sessionPath = getSessionFilePath();
+  if (sessionPath && fs.existsSync(sessionPath)) {
+    fs.unlinkSync(sessionPath);
+  }
+}
+
+function cleanStaleSessions() {
+  // Remove session files older than 7 days
+  const dir = path.join(getAtrisDir(), 'sessions');
+  if (!fs.existsSync(dir)) return;
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      const fp = path.join(dir, f);
+      try {
+        const stat = fs.statSync(fp);
+        if (stat.mtimeMs < cutoff) fs.unlinkSync(fp);
+      } catch {}
+    }
+  } catch {}
+}
+
 function getProfilesDir() {
   const dir = path.join(getAtrisDir(), 'profiles');
   if (!fs.existsSync(dir)) {
@@ -205,6 +300,32 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
 }
 
 function loadCredentials() {
+  // Priority: ATRIS_PROFILE env var → per-terminal session file → global credentials.json
+
+  // 1. Explicit env var override
+  const profileOverride = process.env.ATRIS_PROFILE;
+  if (profileOverride) {
+    const profile = loadProfile(profileOverride);
+    if (profile) return profile;
+    const profiles = listProfiles();
+    const q = profileOverride.toLowerCase();
+    const match = profiles.find(p => p.toLowerCase() === q)
+      || profiles.find(p => p.toLowerCase().startsWith(q))
+      || profiles.find(p => p.toLowerCase().includes(q));
+    if (match) {
+      const matched = loadProfile(match);
+      if (matched) return matched;
+    }
+  }
+
+  // 2. Per-terminal session override (set by atris switch)
+  const sessionProfile = getSessionProfile();
+  if (sessionProfile) {
+    const profile = loadProfile(sessionProfile);
+    if (profile) return profile;
+  }
+
+  // 3. Global credentials.json
   const credentialsPath = getCredentialsPath();
 
   if (!fs.existsSync(credentialsPath)) {
@@ -456,4 +577,10 @@ module.exports = {
   deleteProfile,
   profileNameFromEmail,
   autoSaveProfile,
+  // Per-terminal sessions
+  getTerminalSessionId,
+  setSessionProfile,
+  getSessionProfile,
+  clearSessionProfile,
+  cleanStaleSessions,
 };
