@@ -6,8 +6,17 @@ const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
+const { loadBusinesses } = require('./business');
 
 async function pullAtris() {
+  const arg = process.argv[3];
+
+  // If a business name is given, do a business pull
+  if (arg && arg !== '--help') {
+    return pullBusiness(arg);
+  }
+
+  // Otherwise, do the existing journal pull
   const targetDir = path.join(process.cwd(), 'atris');
 
   if (!fs.existsSync(targetDir)) {
@@ -59,6 +68,143 @@ async function pullAtris() {
     console.log('Everything up to date.');
   }
 }
+
+
+async function pullBusiness(slug) {
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  // Determine output directory
+  const intoIdx = process.argv.indexOf('--into');
+  let outputDir;
+  if (intoIdx !== -1 && process.argv[intoIdx + 1]) {
+    outputDir = path.resolve(process.argv[intoIdx + 1]);
+  } else {
+    // Default: atris/{slug}/ in current directory, or just {slug}/ if no atris/ folder
+    const atrisDir = path.join(process.cwd(), 'atris');
+    if (fs.existsSync(atrisDir)) {
+      outputDir = path.join(atrisDir, slug);
+    } else {
+      outputDir = path.join(process.cwd(), slug);
+    }
+  }
+
+  // Resolve business ID — check local config first, then API
+  let businessId, workspaceId, businessName;
+  const businesses = loadBusinesses();
+
+  if (businesses[slug]) {
+    businessId = businesses[slug].business_id;
+    workspaceId = businesses[slug].workspace_id;
+    businessName = businesses[slug].name || slug;
+  } else {
+    // Try to find by slug via API
+    const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+    if (!listResult.ok) {
+      console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.status}`);
+      process.exit(1);
+    }
+    const match = (listResult.data || []).find(
+      b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase()
+    );
+    if (!match) {
+      console.error(`Business "${slug}" not found.`);
+      process.exit(1);
+    }
+    businessId = match.id;
+    workspaceId = match.workspace_id;
+    businessName = match.name;
+
+    // Auto-save for next time
+    businesses[slug] = {
+      business_id: businessId,
+      workspace_id: workspaceId,
+      name: businessName,
+      slug: match.slug,
+      added_at: new Date().toISOString(),
+    };
+    const { saveBusinesses } = require('./business');
+    saveBusinesses(businesses);
+  }
+
+  if (!workspaceId) {
+    console.error(`Business "${slug}" has no workspace. Set one up first.`);
+    process.exit(1);
+  }
+
+  console.log('');
+  console.log(`Pulling ${businessName}...`);
+
+  // Snapshot — one API call gets everything
+  const result = await apiRequestJson(
+    `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
+    { method: 'GET', token: creds.token }
+  );
+
+  if (!result.ok) {
+    const msg = result.errorMessage || `HTTP ${result.status}`;
+    if (result.status === 409) {
+      console.error(`\nComputer is sleeping. Wake it first, then pull again.`);
+    } else if (result.status === 403) {
+      console.error(`\nAccess denied. You're not a member of "${slug}".`);
+    } else if (result.status === 404) {
+      console.error(`\nBusiness "${slug}" not found.`);
+    } else {
+      console.error(`\nPull failed: ${msg}`);
+    }
+    process.exit(1);
+  }
+
+  const files = result.data.files || [];
+  if (files.length === 0) {
+    console.log('  Workspace is empty.');
+    return;
+  }
+
+  // Write files to local directory
+  let written = 0;
+  let skipped = 0;
+
+  for (const file of files) {
+    if (!file.path || file.content === null || file.content === undefined) {
+      skipped++;
+      continue;
+    }
+    if (file.binary) {
+      skipped++;
+      continue;
+    }
+
+    const localPath = path.join(outputDir, file.path.replace(/^\//, ''));
+    const localDir = path.dirname(localPath);
+
+    // Check if unchanged
+    if (fs.existsSync(localPath)) {
+      const existing = fs.readFileSync(localPath, 'utf8');
+      if (existing === file.content) {
+        skipped++;
+        continue;
+      }
+    }
+
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(localPath, file.content);
+    written++;
+  }
+
+  console.log('');
+  if (written > 0) {
+    console.log(`  ${written} file${written > 1 ? 's' : ''} pulled to ${outputDir}`);
+  }
+  if (skipped > 0) {
+    console.log(`  ${skipped} unchanged`);
+  }
+  console.log(`\n  Total: ${files.length} files (${result.data.total_size} bytes)`);
+}
+
 
 async function pullGeneralJournal(token, agentId) {
   // Pull today's journal and recent days
