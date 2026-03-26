@@ -190,11 +190,12 @@ async function pullBusiness(slug) {
     process.stdout.write(`\r  Fetching workspace... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
   }, 250);
 
-  // Get remote snapshot (large workspaces can take 60s+)
-  const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
-    { method: 'GET', token: creds.token, timeoutMs }
-  );
+  // Get remote snapshot — pass --only prefixes to server for faster response
+  let snapshotUrl = `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`;
+  if (onlyPrefixes) {
+    snapshotUrl += `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}`;
+  }
+  const result = await apiRequestJson(snapshotUrl, { method: 'GET', token: creds.token, timeoutMs });
 
   clearInterval(loading);
   const totalSec = Math.floor((Date.now() - startTime) / 1000);
