@@ -100,9 +100,9 @@ async function pullBusiness(slug) {
       }).filter(Boolean)
     : null;
 
-  // Parse --timeout flag: override default 120s timeout
+  // Parse --timeout flag: override default 300s timeout
   // Supports both --timeout=60 and --timeout 60
-  let timeoutSec = 120;
+  let timeoutSec = 300;
   const timeoutEqArg = process.argv.find(a => a.startsWith('--timeout='));
   if (timeoutEqArg) {
     timeoutSec = parseInt(timeoutEqArg.slice('--timeout='.length), 10);
@@ -180,7 +180,15 @@ async function pullBusiness(slug) {
 
   console.log('');
   console.log(`Pulling ${businessName}...` + (timeSince ? `  (last synced ${timeSince})` : ''));
-  console.log('  Fetching workspace...');
+
+  // Loading indicator with elapsed time
+  const startTime = Date.now();
+  const spinner = ['|', '/', '-', '\\'];
+  let spinIdx = 0;
+  const loading = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    process.stdout.write(`\r  Fetching workspace... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
+  }, 250);
 
   // Get remote snapshot (large workspaces can take 60s+)
   const result = await apiRequestJson(
@@ -188,10 +196,14 @@ async function pullBusiness(slug) {
     { method: 'GET', token: creds.token, timeoutMs }
   );
 
+  clearInterval(loading);
+  const totalSec = Math.floor((Date.now() - startTime) / 1000);
+  process.stdout.write(`\r  Fetched in ${totalSec}s.${' '.repeat(20)}\n`);
+
   if (!result.ok) {
     const msg = result.errorMessage || result.error || `HTTP ${result.status}`;
     if (result.status === 0 || (typeof msg === 'string' && msg.toLowerCase().includes('timeout'))) {
-      console.error(`\n  Workspace is taking too long to respond. Try: atris pull ${slug} --timeout=120`);
+      console.error(`\n  Workspace timed out (large workspaces can take 60s+). Try: atris pull ${slug} --timeout=600`);
     } else if (result.status === 409) {
       console.error(`\n  Computer is sleeping. Wake it first, then pull again.`);
     } else if (result.status === 403) {

@@ -115,11 +115,23 @@ async function pushAtris() {
   console.log('');
   console.log(`Pushing to ${businessName}...`);
 
-  // Get snapshot with content to compute reliable hashes (server hash may differ)
+  // Loading indicator
+  const startTime = Date.now();
+  const spinner = ['|', '/', '-', '\\'];
+  let spinIdx = 0;
+  const loading = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    process.stdout.write(`\r  Comparing with remote... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
+  }, 250);
+
   const snapshotResult = await apiRequestJson(
     `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
-    { method: 'GET', token: creds.token, timeoutMs: 120000 }
+    { method: 'GET', token: creds.token, timeoutMs: 300000 }
   );
+
+  clearInterval(loading);
+  const totalSec = Math.floor((Date.now() - startTime) / 1000);
+  process.stdout.write(`\r  Compared in ${totalSec}s.${' '.repeat(20)}\n`);
 
   let remoteFiles = {};
   const remoteContent = {};  // for section merge
