@@ -39,6 +39,25 @@ async function pushAtris() {
 
   const force = process.argv.includes('--force');
 
+  // Parse --only flag: filter which files to push
+  let onlyRaw = null;
+  const onlyEqArg = process.argv.find(a => a.startsWith('--only='));
+  if (onlyEqArg) {
+    onlyRaw = onlyEqArg.slice('--only='.length);
+  } else {
+    const onlyIdx = process.argv.indexOf('--only');
+    if (onlyIdx !== -1 && process.argv[onlyIdx + 1] && !process.argv[onlyIdx + 1].startsWith('-')) {
+      onlyRaw = process.argv[onlyIdx + 1];
+    }
+  }
+  const onlyPrefixes = onlyRaw
+    ? onlyRaw.split(',').map(p => {
+        let norm = p.replace(/^\//, '');
+        if (norm && !norm.endsWith('/') && !norm.includes('.')) norm += '/';
+        return '/' + norm;
+      }).filter(Boolean)
+    : null;
+
   const creds = loadCredentials();
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
@@ -172,8 +191,15 @@ async function pushAtris() {
   // Determine what to push
   const filesToPush = [];
 
+  // Apply --only filter
+  const matchesOnly = (filePath) => {
+    if (!onlyPrefixes) return true;
+    return onlyPrefixes.some(prefix => filePath.startsWith(prefix));
+  };
+
   // Files we changed that remote didn't
   for (const p of [...diff.toPush, ...diff.newLocal]) {
+    if (!matchesOnly(p)) continue;
     const localPath = path.join(sourceDir, p.replace(/^\//, ''));
     try {
       const content = fs.readFileSync(localPath, 'utf8');
