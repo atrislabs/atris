@@ -41,7 +41,7 @@ function httpRequest(urlString, options) {
     const parsed = new URL(urlString);
     const isHttps = parsed.protocol === 'https:';
     const transport = isHttps ? https : http;
-    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 10000;
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 30000;
 
     const requestOptions = {
       method: options.method || 'GET',
@@ -52,6 +52,13 @@ function httpRequest(urlString, options) {
     };
 
     const req = transport.request(requestOptions, (res) => {
+      // Follow redirects (301, 302, 307, 308)
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, urlString).toString();
+        resolve(httpRequest(redirectUrl, options));
+        return;
+      }
+
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -111,6 +118,7 @@ async function apiRequestJson(pathname, options = {}) {
       method: options.method || 'GET',
       headers,
       body: bodyPayload,
+      timeoutMs: options.timeoutMs,
     });
 
     const text = result.body.toString('utf8');

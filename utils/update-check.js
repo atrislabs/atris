@@ -4,8 +4,9 @@ const path = require('path');
 const os = require('os');
 
 const PACKAGE_NAME = 'atris';
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_FILE = path.join(os.homedir(), '.atris-update-check.json');
+const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const ATRIS_DIR = path.join(os.homedir(), '.atris');
+const CACHE_FILE = path.join(ATRIS_DIR, '.update-check');
 
 function getInstalledVersion() {
   try {
@@ -34,6 +35,10 @@ function getCacheData() {
 
 function saveCacheData(latestVersion) {
   try {
+    // Ensure ~/.atris/ exists
+    if (!fs.existsSync(ATRIS_DIR)) {
+      fs.mkdirSync(ATRIS_DIR, { recursive: true });
+    }
     const data = {
       lastCheck: new Date().toISOString(),
       latestVersion: latestVersion,
@@ -164,15 +169,10 @@ async function checkForUpdates(force = false) {
 function showUpdateNotification(updateInfo) {
   if (!updateInfo || !updateInfo.needsUpdate) return;
 
-  console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`📦 Update available: ${updateInfo.installed} → ${updateInfo.latest}`);
-  console.log(`   Run: npm update -g atris`);
-  if (updateInfo.fromCache) {
-    console.log(`   (checking npm registry...)`);
-  }
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
+  // Single yellow warning line — non-intrusive
+  const yellow = '\x1b[33m';
+  const reset = '\x1b[0m';
+  console.log(`${yellow}Update available: ${updateInfo.installed} → ${updateInfo.latest}. Run: npm install -g atris${reset}`);
 }
 
 function autoUpdate(updateInfo) {
