@@ -7,21 +7,33 @@ const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocal
 const { sectionMerge } = require('../lib/section-merge');
 
 async function pushAtris() {
-  const slug = process.argv[3];
+  let slug = process.argv[3];
+
+  // Auto-detect business from .atris/business.json in current dir
+  if (!slug || slug.startsWith('-')) {
+    const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+    if (fs.existsSync(bizFile)) {
+      try {
+        const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+        slug = biz.slug || biz.name;
+      } catch {}
+    }
+  }
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push <business-slug> [--from <path>] [--force]');
+    console.log('Usage: atris push [business-slug] [--from <path>] [--force]');
     console.log('');
     console.log('Push local files to a Business Computer.');
+    console.log('If run inside a pulled folder, business is auto-detected.');
     console.log('');
     console.log('Options:');
     console.log('  --from <path>   Push from a custom directory');
     console.log('  --force         Push everything, overwrite conflicts');
     console.log('');
     console.log('Examples:');
+    console.log('  atris push                           Auto-detect from current folder');
     console.log('  atris push pallet                    Push from atris/pallet/ or ./pallet/');
     console.log('  atris push pallet --from ./my-dir/   Push from a custom directory');
-    console.log('  atris push pallet --force             Override conflicts');
     process.exit(0);
   }
 
@@ -38,6 +50,9 @@ async function pushAtris() {
   let sourceDir;
   if (fromIdx !== -1 && process.argv[fromIdx + 1]) {
     sourceDir = path.resolve(process.argv[fromIdx + 1]);
+  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    // Inside a pulled folder — push from here
+    sourceDir = process.cwd();
   } else {
     const atrisDir = path.join(process.cwd(), 'atris', slug);
     const cwdDir = path.join(process.cwd(), slug);

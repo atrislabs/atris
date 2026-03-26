@@ -10,7 +10,20 @@ const { loadBusinesses } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 
 async function pullAtris() {
-  const arg = process.argv[3];
+  let arg = process.argv[3];
+
+  // Auto-detect business from .atris/business.json in current dir
+  if (!arg || arg.startsWith('--')) {
+    const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+    if (fs.existsSync(bizFile)) {
+      try {
+        const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+        if (biz.slug || biz.name) {
+          return pullBusiness(biz.slug || biz.name);
+        }
+      } catch {}
+    }
+  }
 
   // If a business name is given, do a business pull
   if (arg && arg !== '--help' && !arg.startsWith('--')) {
@@ -348,6 +361,16 @@ async function pullBusiness(slug) {
   }
   const newManifest = buildManifest(manifestFiles, commitHash);
   saveManifest(resolvedSlug || slug, newManifest);
+
+  // Save business config in the output dir so push/status work without args
+  const atrisDir = path.join(outputDir, '.atris');
+  fs.mkdirSync(atrisDir, { recursive: true });
+  fs.writeFileSync(path.join(atrisDir, 'business.json'), JSON.stringify({
+    slug: resolvedSlug || slug,
+    business_id: businessId,
+    workspace_id: workspaceId,
+    name: businessName,
+  }, null, 2));
 }
 
 
