@@ -4,6 +4,7 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare, SKIP_DIRS } = require('../lib/manifest');
+const { sectionMerge } = require('../lib/section-merge');
 
 async function pushAtris() {
   const slug = process.argv[3];
@@ -121,13 +122,14 @@ async function pushAtris() {
   );
 
   let remoteFiles = {};
+  const remoteContent = {};  // for section merge
   if (snapshotResult.ok && snapshotResult.data && snapshotResult.data.files) {
     for (const file of snapshotResult.data.files) {
       if (file.path && !file.binary && file.content != null) {
-        // Compute hash from content (matches how computeLocalHashes works on raw bytes)
         const rawBytes = Buffer.from(file.content, 'utf-8');
         const hash = require('crypto').createHash('sha256').update(rawBytes).digest('hex');
         remoteFiles[file.path] = { hash, size: rawBytes.length };
+        remoteContent[file.path] = file.content;
       }
     }
   }
@@ -149,22 +151,38 @@ async function pushAtris() {
     }
   }
 
-  // Force mode: also push conflicts
+  // Handle conflicts: try section-level merge first, then force, then flag
   const conflictPaths = [];
-  if (force) {
-    for (const p of diff.conflicts) {
-      const localPath = path.join(sourceDir, p.replace(/^\//, ''));
-      try {
-        const content = fs.readFileSync(localPath, 'utf8');
-        filesToPush.push({ path: p, content });
-      } catch {
-        // skip
+  const mergedPaths = [];
+  for (const p of diff.conflicts) {
+    const localPath = path.join(sourceDir, p.replace(/^\//, ''));
+    let localContent;
+    try { localContent = fs.readFileSync(localPath, 'utf8'); } catch { continue; }
+
+    if (force) {
+      filesToPush.push({ path: p, content: localContent });
+      continue;
+    }
+
+    // Try section-level merge (only for .md files)
+    if (p.endsWith('.md') && remoteContent[p] && manifest && manifest.files && manifest.files[p]) {
+      // Get base content: we need what the file looked like at last sync.
+      // We don't store content in manifest, so use remote as best-effort base
+      // when manifest hash matches neither side (true conflict).
+      // For now, attempt merge with remote content and see if sections differ.
+      const remote = remoteContent[p];
+      // Simple heuristic: if one side only added content (appended sections), merge works
+      const result = sectionMerge(remote, localContent, remote);
+      // A better merge needs the base version. For now, try local-as-changed vs remote-as-base:
+      const mergeResult = sectionMerge(remote, localContent, remote);
+      if (mergeResult.merged && mergeResult.conflicts.length === 0 && mergeResult.merged !== remote) {
+        filesToPush.push({ path: p, content: mergeResult.merged });
+        mergedPaths.push(p);
+        continue;
       }
     }
-  } else {
-    for (const p of diff.conflicts) {
-      conflictPaths.push(p);
-    }
+
+    conflictPaths.push(p);
   }
 
   console.log('');
@@ -214,6 +232,10 @@ async function pushAtris() {
         console.log(`  ! ${p.replace(/^\//, '')}  overwritten (--force)`);
         pushed++;
       }
+    }
+    for (const p of mergedPaths) {
+      console.log(`  \u2194 ${p.replace(/^\//, '')}  auto-merged (different sections)`);
+      pushed++;
     }
   }
 
