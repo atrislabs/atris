@@ -243,8 +243,8 @@ async function pullBusiness(slug) {
   // Compute local file hashes
   const localFiles = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
 
-  // If output dir is empty (fresh clone), treat as first sync — ignore manifest
-  const effectiveManifest = Object.keys(localFiles).length === 0 ? null : manifest;
+  // If output dir is empty (fresh clone) or --force, treat as first sync — pull everything
+  const effectiveManifest = (Object.keys(localFiles).length === 0 || force) ? null : manifest;
 
   // Three-way compare
   const diff = threeWayCompare(localFiles, remoteFiles, effectiveManifest);
