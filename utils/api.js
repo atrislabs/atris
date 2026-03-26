@@ -71,11 +71,18 @@ function httpRequest(urlString, options) {
     });
 
     req.on('error', reject);
+    // Socket idle timeout (fires if no data received for this duration)
     if (timeoutMs > 0) {
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error('Request timeout'));
+        req.destroy(new Error(`Request timeout after ${Math.round(timeoutMs / 1000)}s — try --timeout=300`));
       });
     }
+    // Hard deadline — kill request after 2x the timeout regardless of activity
+    const hardDeadline = timeoutMs > 0
+      ? setTimeout(() => { req.destroy(new Error(`Hard deadline exceeded (${Math.round(timeoutMs * 2 / 1000)}s)`)); }, timeoutMs * 2)
+      : null;
+    // Clear hard deadline when response completes
+    req.on('close', () => { if (hardDeadline) clearTimeout(hardDeadline); });
 
     if (options.body) {
       if (!req.hasHeader('Content-Length')) {
