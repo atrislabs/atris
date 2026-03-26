@@ -18,6 +18,10 @@ async function pushAtris() {
         slug = biz.slug || biz.name;
       } catch {}
     }
+    // If still no slug (no .atris/business.json), need explicit name
+    if (!slug || slug.startsWith('-')) {
+      slug = null;
+    }
   }
 
   if (!slug || slug === '--help') {
