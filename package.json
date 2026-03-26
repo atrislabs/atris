@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "2.5.5",
+  "version": "2.6.3",
   "description": "atrisDev (atris dev) - CLI for AI coding agents. Works with Claude Code, Cursor, Windsurf. Make any codebase AI-navigable.",
   "main": "bin/atris.js",
   "bin": {
@@ -12,7 +12,6 @@
     "utils/",
     "lib/",
     "README.md",
-    "AGENT.md",
     "AGENTS.md",
     "atris.md",
     "GETTING_STARTED.md",
@@ -20,8 +19,14 @@
     "atris/atrisDev.md",
     "atris/CLAUDE.md",
     "atris/GEMINI.md",
-    "atris/team/",
-    "atris/experiments/",
+    "atris/GETTING_STARTED.md",
+    "atris/team/navigator/MEMBER.md",
+    "atris/team/executor/MEMBER.md",
+    "atris/team/validator/MEMBER.md",
+    "atris/team/brainstormer/MEMBER.md",
+    "atris/team/launcher/MEMBER.md",
+    "atris/team/researcher/MEMBER.md",
+    "atris/team/_template/MEMBER.md",
     "atris/features/_templates/",
     "atris/policies/",
     "atris/skills/"

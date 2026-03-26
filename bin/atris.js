@@ -211,6 +211,7 @@ function showHelp() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('Setup:');
+  console.log('  setup      - Guided first-time setup (login, pick business, pull)');
   console.log('  init       - Initialize Atris in current project');
   console.log('  update     - Update local files to latest version');
   console.log('  upgrade    - Install latest Atris from npm');
@@ -246,6 +247,14 @@ function showHelp() {
   console.log('');
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
+  console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
+  console.log('');
+  console.log('Business:');
+  console.log('  business add <slug>    - Connect a business');
+  console.log('  business list          - Show connected businesses');
+  console.log('  business remove <slug> - Disconnect a business');
+  console.log('  business health <slug> - Health report (members, workspace, issues)');
+  console.log('  business audit         - One-line health summary of all businesses');
   console.log('');
   console.log('Cloud & agents:');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -387,7 +396,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -698,6 +707,11 @@ if (command === 'init') {
         console.error(`✗ Log sync failed: ${error.message || error}`);
         process.exit(1);
       });
+  } else if (subcommand && subcommand !== '--help' && !subcommand.startsWith('-')) {
+    // Business log: atris log <business-slug>
+    require('../commands/context-sync').businessLog(subcommand)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     logCmd();
   }
@@ -876,9 +890,17 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'status') {
-  const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
-  const isJson = process.argv.includes('--json');
-  statusCmd(isQuick, isJson);
+  const subcommand = process.argv[3];
+  if (subcommand && !subcommand.startsWith('-')) {
+    // Business status: atris status <business-slug>
+    require('../commands/context-sync').businessStatus(subcommand)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  } else {
+    const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
+    const isJson = process.argv.includes('--json');
+    statusCmd(isQuick, isJson);
+  }
 } else if (command === 'analytics') {
   require('../commands/analytics').analyticsAtris();
 } else if (command === 'clean') {
@@ -945,6 +967,11 @@ if (command === 'init') {
   require('../commands/business').businessCommand(subcommand, ...args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'clean-workspace' || command === 'cw') {
+  const { cleanWorkspace } = require('../commands/workspace-clean');
+  cleanWorkspace()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'plugin') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);
@@ -953,6 +980,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
+} else if (command === 'setup') {
+  require('../commands/setup').setupAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');

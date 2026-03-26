@@ -3,20 +3,28 @@ const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
+const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare, SKIP_DIRS } = require('../lib/manifest');
 
 async function pushAtris() {
   const slug = process.argv[3];
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push <business-slug> [--from <path>]');
+    console.log('Usage: atris push <business-slug> [--from <path>] [--force]');
     console.log('');
     console.log('Push local files to a Business Computer.');
+    console.log('');
+    console.log('Options:');
+    console.log('  --from <path>   Push from a custom directory');
+    console.log('  --force         Push everything, overwrite conflicts');
     console.log('');
     console.log('Examples:');
     console.log('  atris push pallet                    Push from atris/pallet/ or ./pallet/');
     console.log('  atris push pallet --from ./my-dir/   Push from a custom directory');
+    console.log('  atris push pallet --force             Override conflicts');
     process.exit(0);
   }
+
+  const force = process.argv.includes('--force');
 
   const creds = loadCredentials();
   if (!creds || !creds.token) {
@@ -50,15 +58,15 @@ async function pushAtris() {
   }
 
   // Resolve business ID
-  let businessId, workspaceId, businessName;
+  let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
 
   if (businesses[slug]) {
     businessId = businesses[slug].business_id;
     workspaceId = businesses[slug].workspace_id;
     businessName = businesses[slug].name || slug;
+    resolvedSlug = businesses[slug].slug || slug;
   } else {
-    // Try to find by slug via API
     const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
     if (!listResult.ok) {
       console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.status}`);
@@ -74,8 +82,8 @@ async function pushAtris() {
     businessId = match.id;
     workspaceId = match.workspace_id;
     businessName = match.name;
+    resolvedSlug = match.slug;
 
-    // Auto-save
     businesses[slug] = {
       business_id: businessId,
       workspace_id: workspaceId,
@@ -91,80 +99,165 @@ async function pushAtris() {
     process.exit(1);
   }
 
-  // Walk local directory and collect files
-  const files = [];
-  const SKIP_DIRS = new Set(['node_modules', '__pycache__', '.git', 'venv', '.venv', 'lost+found', '.cache']);
+  // Load manifest (last sync state)
+  const manifest = loadManifest(resolvedSlug || slug);
 
-  function walkDir(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
-      const fullPath = path.join(dir, entry.name);
+  // Compute local file hashes
+  const localFiles = computeLocalHashes(sourceDir);
 
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walkDir(fullPath);
-      } else if (entry.isFile()) {
-        const relPath = '/' + path.relative(sourceDir, fullPath);
-        try {
-          const content = fs.readFileSync(fullPath, 'utf8');
-          files.push({ path: relPath, content });
-        } catch {
-          // Skip binary files
-        }
-      }
-    }
-  }
-
-  walkDir(sourceDir);
-
-  if (files.length === 0) {
+  if (Object.keys(localFiles).length === 0) {
     console.log(`\nNo files to push from ${sourceDir}`);
     return;
   }
 
+  // Get remote snapshot for three-way compare
   console.log('');
-  console.log(`Pushing ${files.length} files to ${businessName}...`);
+  console.log(`Pushing to ${businessName}...`);
 
-  // Sync — one API call pushes everything
-  const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
-    {
-      method: 'POST',
-      token: creds.token,
-      body: { files },
-    }
+  // Get snapshot with content to compute reliable hashes (server hash may differ)
+  const snapshotResult = await apiRequestJson(
+    `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
+    { method: 'GET', token: creds.token, timeoutMs: 120000 }
   );
 
-  if (!result.ok) {
-    const msg = result.errorMessage || `HTTP ${result.status}`;
-    if (result.status === 409) {
-      console.error(`\nComputer is sleeping. Wake it first, then push.`);
-    } else if (result.status === 403) {
-      console.error(`\nAccess denied: ${msg}`);
-    } else {
-      console.error(`\nPush failed: ${msg}`);
-    }
-    process.exit(1);
-  }
-
-  const data = result.data;
-  console.log('');
-  if (data.written > 0) {
-    console.log(`  ${data.written} file${data.written > 1 ? 's' : ''} written`);
-  }
-  if (data.unchanged > 0) {
-    console.log(`  ${data.unchanged} unchanged`);
-  }
-  if (data.errors > 0) {
-    console.log(`  ${data.errors} error${data.errors > 1 ? 's' : ''}`);
-    for (const r of (data.results || [])) {
-      if (r.status === 'error') {
-        console.log(`    ${r.path}: ${r.error}`);
+  let remoteFiles = {};
+  if (snapshotResult.ok && snapshotResult.data && snapshotResult.data.files) {
+    for (const file of snapshotResult.data.files) {
+      if (file.path && !file.binary && file.content != null) {
+        // Compute hash from content (matches how computeLocalHashes works on raw bytes)
+        const rawBytes = Buffer.from(file.content, 'utf-8');
+        const hash = require('crypto').createHash('sha256').update(rawBytes).digest('hex');
+        remoteFiles[file.path] = { hash, size: rawBytes.length };
       }
     }
   }
-  console.log(`\n  Synced to ${businessName}.`);
+
+  // Three-way compare
+  const diff = threeWayCompare(localFiles, remoteFiles, manifest);
+
+  // Determine what to push
+  const filesToPush = [];
+
+  // Files we changed that remote didn't
+  for (const p of [...diff.toPush, ...diff.newLocal]) {
+    const localPath = path.join(sourceDir, p.replace(/^\//, ''));
+    try {
+      const content = fs.readFileSync(localPath, 'utf8');
+      filesToPush.push({ path: p, content });
+    } catch {
+      // skip
+    }
+  }
+
+  // Force mode: also push conflicts
+  const conflictPaths = [];
+  if (force) {
+    for (const p of diff.conflicts) {
+      const localPath = path.join(sourceDir, p.replace(/^\//, ''));
+      try {
+        const content = fs.readFileSync(localPath, 'utf8');
+        filesToPush.push({ path: p, content });
+      } catch {
+        // skip
+      }
+    }
+  } else {
+    for (const p of diff.conflicts) {
+      conflictPaths.push(p);
+    }
+  }
+
+  console.log('');
+
+  if (filesToPush.length === 0 && conflictPaths.length === 0) {
+    console.log('  Already up to date.');
+    console.log('');
+    return;
+  }
+
+  // Push the files
+  let pushed = 0;
+  if (filesToPush.length > 0) {
+    const result = await apiRequestJson(
+      `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
+      {
+        method: 'POST',
+        token: creds.token,
+        body: { files: filesToPush },
+        headers: { 'X-Atris-Actor-Source': 'cli' },
+      }
+    );
+
+    if (!result.ok) {
+      const msg = result.errorMessage || `HTTP ${result.status}`;
+      if (result.status === 409) {
+        console.error(`  Computer is sleeping. Wake it first, then push.`);
+      } else if (result.status === 403) {
+        console.error(`  Access denied: ${msg}`);
+      } else {
+        console.error(`  Push failed: ${msg}`);
+      }
+      process.exit(1);
+    }
+
+    // Display results
+    for (const p of diff.toPush) {
+      console.log(`  \u2191 ${p.replace(/^\//, '')}  pushing your changes`);
+      pushed++;
+    }
+    for (const p of diff.newLocal) {
+      console.log(`  + ${p.replace(/^\//, '')}  new file`);
+      pushed++;
+    }
+    if (force) {
+      for (const p of diff.conflicts) {
+        console.log(`  ! ${p.replace(/^\//, '')}  overwritten (--force)`);
+        pushed++;
+      }
+    }
+  }
+
+  // Show conflicts
+  for (const p of conflictPaths) {
+    console.log(`  \u26A0 ${p.replace(/^\//, '')}  CONFLICT \u2014 skipped (use --force to override)`);
+  }
+
+  // Show unchanged
+  if (diff.unchanged.length > 0) {
+    // Don't list them all, just count
+  }
+
+  // Summary
+  console.log('');
+  const parts = [];
+  if (pushed > 0) parts.push(`${pushed} pushed`);
+  if (diff.unchanged.length > 0) parts.push(`${diff.unchanged.length} unchanged`);
+  if (conflictPaths.length > 0) parts.push(`${conflictPaths.length} conflict${conflictPaths.length > 1 ? 's' : ''}`);
+  if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
+
+  // Get commit hash after push
+  let commitHash = null;
+  try {
+    const headResult = await apiRequestJson(
+      `/businesses/${businessId}/workspaces/${workspaceId}/git/head`,
+      { method: 'GET', token: creds.token }
+    );
+    if (headResult.ok && headResult.data && headResult.data.commit) {
+      commitHash = headResult.data.commit;
+    }
+  } catch {
+    // Git might not be initialized yet
+  }
+
+  // Update manifest with new state (merge local + remote)
+  const mergedFiles = { ...remoteFiles };
+  for (const p of Object.keys(localFiles)) {
+    if (filesToPush.some(f => f.path === p)) {
+      mergedFiles[p] = localFiles[p]; // we pushed this, so our hash is now the truth
+    }
+  }
+  const newManifest = buildManifest(mergedFiles, commitHash);
+  saveManifest(resolvedSlug || slug, newManifest);
 }
 
 module.exports = { pushAtris };
