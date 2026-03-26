@@ -409,6 +409,12 @@ if (isSpecFile(command)) {
   process.exit(0);
 }
 
+// --version flag (works anywhere: atris --version, atris -v)
+if (command === '--version' || command === '-v' || process.argv.includes('--version')) {
+  console.log(`atris v${CLI_VERSION}`);
+  process.exit(0);
+}
+
 // If no command OR command is not recognized, treat as natural language
 if (!command || !knownCommands.includes(command)) {
   const userInput = process.argv.slice(2).join(' ');
