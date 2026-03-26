@@ -149,6 +149,11 @@ async function pushAtris() {
   // Three-way compare
   const diff = threeWayCompare(localFiles, remoteFiles, manifest);
 
+  // Check if user is a member (not owner) — if so, filter to allowed paths
+  // Members can only push to /team/{name}/ and /journal/
+  let skippedPermission = [];
+  const role = snapshotResult.data?._role; // not available from snapshot, so we try the push and handle 403
+
   // Determine what to push
   const filesToPush = [];
 
@@ -219,11 +224,38 @@ async function pushAtris() {
     );
 
     if (!result.ok) {
-      const msg = result.errorMessage || `HTTP ${result.status}`;
+      const msg = result.errorMessage || result.error || `HTTP ${result.status}`;
       if (result.status === 409) {
         console.error(`  Computer is sleeping. Wake it first, then push.`);
       } else if (result.status === 403) {
-        console.error(`  Access denied: ${msg}`);
+        // Member scoping — retry with only team/ and journal/ files
+        const memberFiles = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
+        const blockedFiles = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
+        if (memberFiles.length > 0 && blockedFiles.length > 0) {
+          console.log(`  You're a member — retrying with your team files only...`);
+          if (blockedFiles.length > 0) {
+            console.log(`  Skipped (no permission): ${blockedFiles.map(f => f.path.replace(/^\//, '')).join(', ')}`);
+          }
+          const retry = await apiRequestJson(
+            `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
+            { method: 'POST', token: creds.token, body: { files: memberFiles }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+          );
+          if (retry.ok) {
+            for (const f of memberFiles) {
+              console.log(`  \u2191 ${f.path.replace(/^\//, '')}  pushed`);
+              pushed++;
+            }
+          } else {
+            console.error(`  Push failed after retry: ${retry.errorMessage || retry.error || retry.status}`);
+            process.exit(1);
+          }
+        } else {
+          console.error(`  Access denied: you can only push to your own team/ folder.`);
+          if (blockedFiles.length > 0) {
+            console.error(`  Blocked: ${blockedFiles.map(f => f.path.replace(/^\//, '')).join(', ')}`);
+          }
+          process.exit(1);
+        }
       } else {
         console.error(`  Push failed: ${msg}`);
       }
