@@ -257,8 +257,9 @@ async function pullBusiness(slug) {
   const remoteContent = {};
   for (const file of files) {
     if (!file.path || file.binary || file.content === null || file.content === undefined) continue;
-    // Skip empty files (deleted files that were blanked out)
     if (file.content === '') continue;
+    // Skip atris/ framework files — infrastructure, not content
+    if (file.path.startsWith('/atris/') || file.path === '/atris') continue;
     // Compute hash from content bytes (matches computeLocalHashes raw byte hashing)
     const crypto = require('crypto');
     const rawBytes = Buffer.from(file.content, 'utf-8');
