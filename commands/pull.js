@@ -132,13 +132,12 @@ async function pullBusiness(slug) {
   let outputDir;
   if (intoIdx !== -1 && process.argv[intoIdx + 1]) {
     outputDir = path.resolve(process.argv[intoIdx + 1]);
+  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    // Inside a pulled workspace — pull into current dir (no nesting)
+    outputDir = process.cwd();
   } else {
-    const atrisDir = path.join(process.cwd(), 'atris');
-    if (fs.existsSync(atrisDir)) {
-      outputDir = path.join(atrisDir, slug);
-    } else {
-      outputDir = path.join(process.cwd(), slug);
-    }
+    // Default: ./{slug}/ in current directory
+    outputDir = path.join(process.cwd(), slug);
   }
 
   // Resolve business ID — always refresh from API to avoid stale workspace_id
@@ -258,8 +257,6 @@ async function pullBusiness(slug) {
   for (const file of files) {
     if (!file.path || file.binary || file.content === null || file.content === undefined) continue;
     if (file.content === '') continue;
-    // Skip atris/ framework files — infrastructure, not content
-    if (file.path.startsWith('/atris/') || file.path === '/atris') continue;
     // Compute hash from content bytes (matches computeLocalHashes raw byte hashing)
     const crypto = require('crypto');
     const rawBytes = Buffer.from(file.content, 'utf-8');
