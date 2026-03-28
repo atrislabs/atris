@@ -120,44 +120,49 @@ async function apiRequestJson(pathname, options = {}) {
     }
   }
 
-  try {
-    const result = await httpRequest(url, {
-      method: options.method || 'GET',
-      headers,
-      body: bodyPayload,
-      timeoutMs: options.timeoutMs,
-    });
+  const maxRetries = options.retries != null ? options.retries : 1;
+  const retryableStatus = new Set([0, 502, 503, 504]);
 
-    const text = result.body.toString('utf8');
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await httpRequest(url, {
+        method: options.method || 'GET',
+        headers,
+        body: bodyPayload,
+        timeoutMs: options.timeoutMs,
+      });
+
+      const text = result.body.toString('utf8');
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
       }
+
+      const ok = result.status >= 200 && result.status < 300;
+
+      // Retry on transient server errors
+      if (!ok && retryableStatus.has(result.status) && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+
+      const errorMessage = !ok
+        ? (data && typeof data === 'object' && (data.detail || data.error || data.message)) || text || 'Request failed'
+        : undefined;
+
+      return { ok, status: result.status, data, text, error: errorMessage };
+    } catch (error) {
+      // Retry on network errors (timeout, connection reset)
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return { ok: false, status: 0, data: null, text: '', error: error.message || 'Network error' };
     }
-
-    const ok = result.status >= 200 && result.status < 300;
-    const errorMessage = !ok
-      ? (data && typeof data === 'object' && (data.detail || data.error || data.message)) || text || 'Request failed'
-      : undefined;
-
-    return {
-      ok,
-      status: result.status,
-      data,
-      text,
-      error: errorMessage,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      text: '',
-      error: error.message || 'Network error',
-    };
   }
 }
 
