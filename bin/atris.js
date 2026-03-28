@@ -395,7 +395,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -971,6 +971,18 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'push') {
   require('../commands/push').pushAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'diff') {
+  let diffSlug = process.argv[3];
+  if (!diffSlug || diffSlug.startsWith('-')) {
+    const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
+    if (require('fs').existsSync(bizFile)) {
+      try { diffSlug = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
+    }
+  }
+  if (!diffSlug) { console.error('Usage: atris diff [business] [path]'); process.exit(1); }
+  require('../commands/context-sync').businessDiff(diffSlug)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'business') {
