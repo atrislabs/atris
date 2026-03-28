@@ -67,11 +67,13 @@ async function businessStatus(slug) {
   console.log(`${biz.name}` + (timeSince ? ` \u2014 last synced ${timeSince}` : ' \u2014 never synced'));
 
   // Determine local directory
-  const atrisDir = path.join(process.cwd(), 'atris', slug);
-  const cwdDir = path.join(process.cwd(), slug);
   let localDir = null;
-  if (fs.existsSync(atrisDir)) localDir = atrisDir;
-  else if (fs.existsSync(cwdDir)) localDir = cwdDir;
+  if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    localDir = process.cwd();
+  } else {
+    const cwdDir = path.join(process.cwd(), slug);
+    if (fs.existsSync(cwdDir)) localDir = cwdDir;
+  }
 
   // Get remote snapshot with content (needed for reliable hash computation)
   const result = await apiRequestJson(

@@ -896,9 +896,15 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'status') {
-  const subcommand = process.argv[3];
+  let subcommand = process.argv[3];
+  // Auto-detect business from .atris/business.json in cwd
+  if (!subcommand || subcommand.startsWith('-')) {
+    const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
+    if (require('fs').existsSync(bizFile)) {
+      try { subcommand = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
+    }
+  }
   if (subcommand && !subcommand.startsWith('-')) {
-    // Business status: atris status <business-slug>
     require('../commands/context-sync').businessStatus(subcommand)
       .then(() => process.exit(0))
       .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
