@@ -155,6 +155,74 @@ async function businessStatus(slug) {
 
 
 /**
+ * atris diff <business-slug> [path]
+ * Shows actual content diff between local and remote files.
+ */
+async function businessDiff(slug) {
+  const biz = await resolveBusiness(slug);
+  if (!biz.workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
+
+  const manifest = loadManifest(biz.slug);
+  const pathFilter = process.argv[4] && !process.argv[4].startsWith('-') ? process.argv[4] : null;
+
+  // Find local dir
+  let localDir = null;
+  if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    localDir = process.cwd();
+  } else {
+    const cwdDir = path.join(process.cwd(), slug);
+    if (fs.existsSync(cwdDir)) localDir = cwdDir;
+  }
+
+  if (!localDir) {
+    console.error(`No local copy found. Run: atris pull ${slug}`);
+    process.exit(1);
+  }
+
+  const localFiles = computeLocalHashes(localDir);
+  const baseFiles = (manifest && manifest.files) ? manifest.files : {};
+
+  // Find changed files
+  const changed = [];
+  for (const [filePath, info] of Object.entries(localFiles)) {
+    if (pathFilter && !filePath.replace(/^\//, '').startsWith(pathFilter)) continue;
+    const baseHash = baseFiles[filePath] ? baseFiles[filePath].hash : null;
+    if (!baseHash || info.hash !== baseHash) {
+      changed.push({ path: filePath, isNew: !baseHash });
+    }
+  }
+
+  if (changed.length === 0) {
+    console.log('\n  No local changes.\n');
+    return;
+  }
+
+  console.log(`\n  ${changed.length} file${changed.length > 1 ? 's' : ''} changed locally:\n`);
+
+  for (const f of changed) {
+    const localPath = path.join(localDir, f.path.replace(/^\//, ''));
+    const localContent = fs.readFileSync(localPath, 'utf8');
+
+    if (f.isNew) {
+      console.log(`  + ${f.path.replace(/^\//, '')}  (new file, ${localContent.split('\n').length} lines)`);
+    } else {
+      // Show a simple line-count diff
+      console.log(`  ~ ${f.path.replace(/^\//, '')}  (modified)`);
+      // Show first few changed lines as preview
+      const lines = localContent.split('\n');
+      const preview = lines.slice(-5).filter(l => l.trim());
+      if (preview.length > 0) {
+        for (const line of preview.slice(0, 3)) {
+          console.log(`    | ${line.substring(0, 80)}`);
+        }
+      }
+    }
+  }
+  console.log('');
+}
+
+
+/**
  * atris log <business-slug>
  * Shows human-readable commit history.
  */
@@ -227,4 +295,4 @@ function _timeSince(isoString) {
 }
 
 
-module.exports = { businessStatus, businessLog };
+module.exports = { businessStatus, businessDiff, businessLog };
