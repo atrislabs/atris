@@ -32,6 +32,7 @@ async function pushAtris() {
   }
 
   const force = process.argv.includes('--force');
+  const dryRun = process.argv.includes('--dry-run');
 
   // Parse --only
   let onlyRaw = null;
@@ -128,6 +129,17 @@ async function pushAtris() {
 
   if (filesToPush.length === 0) {
     console.log('\n  Already up to date.\n');
+    return;
+  }
+
+  // Dry run — show what would be pushed without pushing
+  if (dryRun) {
+    console.log('');
+    for (const f of filesToPush) {
+      const isNew = !baseFiles[f.path];
+      console.log(`  ${isNew ? '+' : '\u2191'} ${f.path.replace(/^\//, '')}  ${isNew ? 'new file' : 'updated'}  (dry run)`);
+    }
+    console.log(`\n  ${filesToPush.length} would be pushed, ${unchangedCount} unchanged. (--dry-run, nothing sent)\n`);
     return;
   }
 
