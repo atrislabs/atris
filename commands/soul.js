@@ -224,7 +224,16 @@ async function soul(args = []) {
       const s = snapshotSoul(atrisDir);
       const outPath = path.join(atrisDir, 'soul-snapshot.json');
       fs.writeFileSync(outPath, JSON.stringify(s, null, 2));
+      // Auto-add to .gitignore so it never gets committed
+      const gitignorePath = path.join(path.dirname(atrisDir), '.gitignore');
+      try {
+        const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : '';
+        if (!existing.includes('soul-snapshot.json')) {
+          fs.appendFileSync(gitignorePath, '\n# Atris soul — private, never commit\natris/soul-snapshot.json\n');
+        }
+      } catch {}
       console.log(`✓ Soul snapshot saved to ${outPath}`);
+      console.log(`  (auto-added to .gitignore — this stays private)`);
       break;
     }
     case 'fork': {
