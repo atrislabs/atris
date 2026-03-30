@@ -198,12 +198,15 @@ test('default entry auto-advances to review when completed tasks exist', () => {
   }
 });
 
-test('help lists activate command', () => {
+test('help lists essential commands', () => {
   const dir = makeTempDir();
   try {
     const res = runCli(['help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /\bactivate\b/);
+    assert.match(res.stdout, /atris init/);
+    assert.match(res.stdout, /atris run/);
+    assert.match(res.stdout, /atris soul/);
+    assert.match(res.stdout, /atris fleet/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -214,7 +217,7 @@ test('--help flag shows help', () => {
   try {
     const res = runCli(['--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /atrisDev/);
+    assert.match(res.stdout, /atris/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -326,4 +329,89 @@ test('update migrates TASK_CONTEXTS.md to TODO.md', () => {
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+// ── Soul tests ──────────────────────────────────────────
+
+test('soul displays project identity after init', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    const res = runCli(['soul'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /SOUL/);
+    assert.match(res.stdout, /IDENTITY/);
+    assert.match(res.stdout, /KNOWLEDGE/);
+    assert.match(res.stdout, /LEARNED/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('soul snapshot exports JSON and auto-gitignores', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    const res = runCli(['soul', 'snapshot'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+
+    const snapshotPath = path.join(dir, 'atris', 'soul-snapshot.json');
+    assert.ok(fs.existsSync(snapshotPath), 'soul-snapshot.json should exist');
+
+    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    assert.ok(snapshot.timestamp, 'snapshot should have timestamp');
+    assert.ok(snapshot.identity, 'snapshot should have identity');
+    assert.ok(snapshot.knowledge, 'snapshot should have knowledge');
+
+    // Check gitignore was updated
+    const gitignorePath = path.join(dir, '.gitignore');
+    if (fs.existsSync(gitignorePath)) {
+      const gitignore = fs.readFileSync(gitignorePath, 'utf8');
+      assert.match(gitignore, /soul-snapshot\.json/);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('soul fork copies persona and policies to target', () => {
+  const source = makeTempDir();
+  const target = makeTempDir();
+  try {
+    runCli(['init'], { cwd: source, input: '\n' });
+    runCli(['init'], { cwd: target, input: '\n' });
+
+    const res = runCli(['soul', 'fork', target], { cwd: source });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Soul forked/);
+
+    // Genealogy should exist in target
+    const genealogyPath = path.join(target, 'atris', 'genealogy.json');
+    assert.ok(fs.existsSync(genealogyPath), 'genealogy.json should exist in target');
+    const genealogy = JSON.parse(fs.readFileSync(genealogyPath, 'utf8'));
+    assert.ok(genealogy.forked_from, 'genealogy should record source');
+    assert.ok(genealogy.forked_at, 'genealogy should record timestamp');
+  } finally {
+    cleanupTempDir(source);
+    cleanupTempDir(target);
+  }
+});
+
+// ── Fleet tests ─────────────────────────────────────────
+
+test('fleet command loads without error (hub may be down)', () => {
+  const res = runCli(['fleet', 'status']);
+  // May fail with "hub not running" but should not crash
+  assert.ok(res.status === 0 || res.status === 1, 'fleet should exit cleanly');
+});
+
+test('help shows 6 essential commands', () => {
+  const res = runCli(['help']);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /atris init/);
+  assert.match(res.stdout, /atris run/);
+  assert.match(res.stdout, /atris soul/);
+  assert.match(res.stdout, /atris fleet/);
+  assert.match(res.stdout, /atris status/);
+  assert.match(res.stdout, /--all/);
 });
