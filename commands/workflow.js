@@ -1035,6 +1035,19 @@ async function reviewAtris() {
           console.log('');
           console.log(`✓ Logged to journal: ${learning}`);
         }
+
+        // Also log to structured learnings (if learnings module exists)
+        try {
+          const { addLearning } = require('../lib/learnings');
+          const insight = answer.trim();
+          // Auto-classify: starts with "don't" or "never" or "avoid" → pitfall, else pattern
+          const type = /^(don't|never|avoid|watch out|careful)/i.test(insight) ? 'pitfall' : 'pattern';
+          const key = insight.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 4).join('-');
+          addLearning({ type, key, insight, confidence: 7, source: 'review', files: [] });
+          console.log(`✓ Saved to learnings: [7/10] ${type}/${key}`);
+        } catch {
+          // learnings module not available — skip silently
+        }
       }
 
       console.log('');
