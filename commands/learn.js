@@ -1,0 +1,276 @@
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const {
+  TYPES,
+  SOURCES,
+  loadLearnings,
+  addLearning,
+  searchLearnings,
+  findPruneTargets,
+  removeLearning,
+  getStats,
+  exportMarkdown,
+} = require('../lib/learnings');
+
+function showRecent(limit = 20) {
+  const learnings = loadLearnings()
+    .filter(e => e._effectiveConfidence > 0 && e.insight !== '[REMOVED]')
+    .slice(0, limit);
+
+  if (learnings.length === 0) {
+    console.log('');
+    console.log('  No learnings yet.');
+    console.log('  As you work, use "atris learn add" to capture patterns and pitfalls.');
+    console.log('  Or let your agents capture them during review cycles.');
+    console.log('');
+    return;
+  }
+
+  // Group by type
+  const byType = {};
+  for (const e of learnings) {
+    if (!byType[e.type]) byType[e.type] = [];
+    byType[e.type].push(e);
+  }
+
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log(`│ Learnings — ${learnings.length} active${' '.repeat(Math.max(0, 44 - String(learnings.length).length))}│`);
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
+
+  for (const [type, entries] of Object.entries(byType)) {
+    console.log(`  ${type.toUpperCase()}S`);
+    for (const e of entries) {
+      const conf = e._effectiveConfidence;
+      const bar = conf >= 7 ? '●' : conf >= 4 ? '◐' : '○';
+      const date = (e.ts || '').split('T')[0];
+      console.log(`  ${bar} [${conf}/10] ${e.key} — ${e.insight}`);
+      if (e.files && e.files.length > 0) {
+        console.log(`         files: ${e.files.join(', ')}`);
+      }
+    }
+    console.log('');
+  }
+}
+
+function showSearch(query) {
+  if (!query) {
+    console.log('  Usage: atris learn search <query>');
+    return;
+  }
+
+  const results = searchLearnings(query);
+  if (results.length === 0) {
+    console.log(`  No learnings matching "${query}"`);
+    return;
+  }
+
+  console.log('');
+  console.log(`  Search: "${query}" — ${results.length} result(s)`);
+  console.log('');
+  for (const e of results) {
+    const conf = e._effectiveConfidence;
+    const bar = conf >= 7 ? '●' : conf >= 4 ? '◐' : '○';
+    console.log(`  ${bar} [${conf}/10] ${e.type}/${e.key} — ${e.insight}`);
+  }
+  console.log('');
+}
+
+function showStats() {
+  const stats = getStats();
+
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│ Learning Stats                                              │');
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log(`  Total:           ${stats.total}`);
+  console.log(`  Avg confidence:  ${stats.avgConfidence}/10`);
+  console.log(`  High (7+):       ${stats.high}`);
+  console.log(`  Medium (4-6):    ${stats.medium}`);
+  console.log(`  Low (1-3):       ${stats.low}`);
+  console.log('');
+
+  if (Object.keys(stats.byType).length > 0) {
+    console.log('  By type:');
+    for (const [type, count] of Object.entries(stats.byType)) {
+      console.log(`    ${type}: ${count}`);
+    }
+    console.log('');
+  }
+
+  if (Object.keys(stats.bySource).length > 0) {
+    console.log('  By source:');
+    for (const [source, count] of Object.entries(stats.bySource)) {
+      console.log(`    ${source}: ${count}`);
+    }
+    console.log('');
+  }
+}
+
+function showExport() {
+  const md = exportMarkdown();
+  console.log('');
+  console.log(md);
+  console.log('  — Copy the above into CLAUDE.md or save to a file.');
+  console.log('');
+}
+
+function showPrune() {
+  const { stale, contradictions } = findPruneTargets();
+
+  if (stale.length === 0 && contradictions.length === 0) {
+    console.log('');
+    console.log('  ✓ All learnings are healthy. No stale entries or contradictions.');
+    console.log('');
+    return;
+  }
+
+  console.log('');
+  if (stale.length > 0) {
+    console.log(`  STALE (${stale.length} — referenced files deleted):`);
+    for (const { entry, missingFiles } of stale) {
+      console.log(`  ⚠ ${entry.key} — missing: ${missingFiles.join(', ')}`);
+    }
+    console.log('');
+  }
+
+  if (contradictions.length > 0) {
+    console.log(`  CONFLICTS (${contradictions.length} — same key, different insight):`);
+    for (const { a, b } of contradictions) {
+      console.log(`  ⚠ ${a.key}: "${a.insight}" vs "${b.insight}"`);
+    }
+    console.log('');
+  }
+
+  console.log('  Run "atris learn add" to update entries, or manually edit atris/learnings.jsonl');
+  console.log('');
+}
+
+function interactiveAdd() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const ask = (q) => new Promise(resolve => rl.question(q, resolve));
+
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│ Add Learning                                                │');
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log(`  Types: ${TYPES.join(', ')}`);
+  console.log('');
+
+  (async () => {
+    try {
+      const type = (await ask('  Type: ')).trim().toLowerCase();
+      if (!TYPES.includes(type)) {
+        console.log(`  ✗ Invalid type. Must be one of: ${TYPES.join(', ')}`);
+        rl.close();
+        return;
+      }
+
+      const key = (await ask('  Key (2-5 words, kebab-case): ')).trim();
+      if (!key) {
+        console.log('  ✗ Key required.');
+        rl.close();
+        return;
+      }
+
+      const insight = (await ask('  Insight (one sentence): ')).trim();
+      if (!insight) {
+        console.log('  ✗ Insight required.');
+        rl.close();
+        return;
+      }
+
+      const confStr = (await ask('  Confidence (1-10): ')).trim();
+      const confidence = parseInt(confStr, 10);
+      if (isNaN(confidence) || confidence < 1 || confidence > 10) {
+        console.log('  ✗ Confidence must be 1-10.');
+        rl.close();
+        return;
+      }
+
+      const source = (await ask(`  Source (${SOURCES.join('/')}): `)).trim().toLowerCase();
+      if (!SOURCES.includes(source)) {
+        console.log(`  ✗ Invalid source. Must be one of: ${SOURCES.join(', ')}`);
+        rl.close();
+        return;
+      }
+
+      const filesStr = (await ask('  Related files (comma-separated, or empty): ')).trim();
+      const files = filesStr ? filesStr.split(',').map(f => f.trim()).filter(Boolean) : [];
+
+      // Quality gate
+      const worth = (await ask('\n  Would this save time in a future session? (y/n): ')).trim().toLowerCase();
+      if (worth !== 'y' && worth !== 'yes') {
+        console.log('  Skipped — only save learnings that compound.');
+        rl.close();
+        return;
+      }
+
+      const entry = addLearning({ type, key, insight, confidence, source, files });
+      console.log('');
+      console.log(`  ✓ Saved: [${entry.confidence}/10] ${entry.type}/${entry.key}`);
+      console.log(`    "${entry.insight}"`);
+      console.log('');
+      rl.close();
+    } catch (err) {
+      console.log(`  ✗ Error: ${err.message}`);
+      rl.close();
+    }
+  })();
+}
+
+/**
+ * Main entry point for `atris learn [subcommand] [args]`
+ */
+function learnAtris(subcommand, ...args) {
+  const atrisDir = path.join(process.cwd(), 'atris');
+  if (!fs.existsSync(atrisDir)) {
+    console.error('  ✗ atris/ folder not found. Run "atris init" first.');
+    process.exit(1);
+  }
+
+  switch (subcommand) {
+    case undefined:
+    case '':
+      showRecent();
+      break;
+    case 'add':
+      interactiveAdd();
+      break;
+    case 'search':
+      showSearch(args.join(' '));
+      break;
+    case 'prune':
+      showPrune();
+      break;
+    case 'stats':
+      showStats();
+      break;
+    case 'export':
+      showExport();
+      break;
+    default:
+      console.log('');
+      console.log('  Usage: atris learn [command]');
+      console.log('');
+      console.log('  Commands:');
+      console.log('    (none)     Show recent learnings');
+      console.log('    add        Add a learning interactively');
+      console.log('    search <q> Search learnings by keyword');
+      console.log('    prune      Check for stale/contradictory entries');
+      console.log('    stats      Show learning statistics');
+      console.log('    export     Export as markdown');
+      console.log('');
+      break;
+  }
+}
+
+module.exports = learnAtris;

@@ -230,6 +230,7 @@ function showHelp() {
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('');
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
@@ -395,7 +396,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -957,6 +958,10 @@ if (command === 'init') {
   integrationsStatus()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'learn') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/learn')(subcommand, ...args);
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
