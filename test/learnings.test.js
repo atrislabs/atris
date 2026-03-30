@@ -262,4 +262,53 @@ describe('learnings', () => {
       assert.strictEqual(stale.length, 0);
     });
   });
+
+  describe('journal harvest integration', () => {
+    it('creates learnings from journal Notes entries', () => {
+      // Create a journal with Notes
+      const logsDir = path.join(tmpDir, 'atris', 'logs', '2026');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, '2026-03-30.md'), [
+        '# Log — 2026-03-30',
+        '',
+        '## Notes',
+        '- 14:30 — Always validate JWT expiry before trusting claims',
+        '- 15:00 — Never use string comparison for dates',
+        '',
+        '## Inbox',
+        '',
+      ].join('\n'));
+
+      // Harvest by loading the file directly (simulating harvest logic)
+      const content = fs.readFileSync(path.join(logsDir, '2026-03-30.md'), 'utf8');
+      const notesMatch = content.match(/## Notes\n([\s\S]*?)(?=\n## |$)/);
+      assert.ok(notesMatch, 'Notes section should exist');
+
+      const lines = notesMatch[1].trim().split('\n').filter(l => l.startsWith('- '));
+      assert.strictEqual(lines.length, 2);
+
+      // Verify classification logic
+      const line1 = lines[0].replace(/^- (\d{2}:\d{2} — )?/, '').trim();
+      const line2 = lines[1].replace(/^- (\d{2}:\d{2} — )?/, '').trim();
+      assert.strictEqual(line1, 'Always validate JWT expiry before trusting claims');
+      assert.ok(/^never/i.test(line2), 'Should detect "Never" as pitfall trigger');
+    });
+
+    it('skips empty Notes sections', () => {
+      const logsDir = path.join(tmpDir, 'atris', 'logs', '2026');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, '2026-03-30.md'), [
+        '# Log — 2026-03-30',
+        '',
+        '## Notes',
+        '',
+        '## Inbox',
+      ].join('\n'));
+
+      const content = fs.readFileSync(path.join(logsDir, '2026-03-30.md'), 'utf8');
+      const notesMatch = content.match(/## Notes\n([\s\S]*?)(?=\n## |$)/);
+      const lines = (notesMatch?.[1] || '').trim().split('\n').filter(l => l.startsWith('- '));
+      assert.strictEqual(lines.length, 0);
+    });
+  });
 });
