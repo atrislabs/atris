@@ -254,6 +254,89 @@ function logDirect(jsonStr) {
 }
 
 /**
+ * Harvest learnings from journal Notes sections.
+ * Scans recent journals for lines that look like insights.
+ */
+function harvestFromJournals() {
+  const atrisDir = path.join(process.cwd(), 'atris');
+  const logsDir = path.join(atrisDir, 'logs');
+
+  if (!fs.existsSync(logsDir)) {
+    console.log('  No journals found.');
+    return;
+  }
+
+  // Find all journal files, newest first
+  const allLogs = [];
+  const yearDirs = fs.readdirSync(logsDir).filter(d => /^\d{4}$/.test(d));
+  for (const year of yearDirs) {
+    const yearPath = path.join(logsDir, year);
+    if (fs.statSync(yearPath).isDirectory()) {
+      const files = fs.readdirSync(yearPath).filter(f => f.endsWith('.md'));
+      files.forEach(f => allLogs.push(path.join(yearPath, f)));
+    }
+  }
+  allLogs.sort().reverse();
+
+  // Scan last 7 journals for Notes section entries
+  const candidates = [];
+  for (const logPath of allLogs.slice(0, 7)) {
+    const content = fs.readFileSync(logPath, 'utf8');
+    const notesMatch = content.match(/## Notes\n([\s\S]*?)(?=\n## |$)/);
+    if (notesMatch && notesMatch[1].trim()) {
+      const lines = notesMatch[1].trim().split('\n').filter(l => l.startsWith('- '));
+      for (const line of lines) {
+        // Strip bullet and optional timestamp prefix
+        const insight = line.replace(/^- (\d{2}:\d{2} — )?/, '').trim();
+        if (insight.length > 10) {
+          candidates.push({ insight, source: path.basename(logPath) });
+        }
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    console.log('');
+    console.log('  No harvestable notes found in recent journals.');
+    console.log('  Add notes during "atris review" or write to ## Notes in your journal.');
+    console.log('');
+    return;
+  }
+
+  // Check which are already in learnings
+  const existing = loadLearnings();
+  const existingInsights = new Set(existing.map(e => e.insight.toLowerCase()));
+  const fresh = candidates.filter(c => !existingInsights.has(c.insight.toLowerCase()));
+
+  if (fresh.length === 0) {
+    console.log('');
+    console.log(`  Scanned ${candidates.length} journal notes — all already captured.`);
+    console.log('');
+    return;
+  }
+
+  console.log('');
+  console.log(`  Found ${fresh.length} new note(s) to harvest:`);
+  console.log('');
+  for (let i = 0; i < fresh.length; i++) {
+    const c = fresh[i];
+    const isPitfall = /^(don't|never|avoid|watch out|careful)/i.test(c.insight);
+    const type = isPitfall ? 'pitfall' : 'pattern';
+    const key = c.insight.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 4).join('-');
+    console.log(`  ${i + 1}. [${type}] ${c.insight}`);
+    console.log(`     from: ${c.source}`);
+
+    try {
+      addLearning({ type, key, insight: c.insight, confidence: 6, source: 'review', files: [] });
+      console.log(`     ✓ saved [6/10]`);
+    } catch (err) {
+      console.log(`     ✗ ${err.message}`);
+    }
+  }
+  console.log('');
+}
+
+/**
  * Get learning count for integration with atris activate.
  */
 function getLearningCount() {
@@ -297,6 +380,9 @@ function learnAtris(subcommand, ...args) {
     case 'count':
       console.log(getLearningCount());
       break;
+    case 'harvest':
+      harvestFromJournals();
+      break;
     default:
       console.log('');
       console.log('  Usage: atris learn [command]');
@@ -306,6 +392,7 @@ function learnAtris(subcommand, ...args) {
       console.log('    add        Add a learning interactively');
       console.log('    log <json> Add programmatically (for agents)');
       console.log('    search <q> Search learnings by keyword');
+      console.log('    harvest    Extract learnings from journal Notes');
       console.log('    prune      Check for stale/contradictory entries');
       console.log('    stats      Show learning statistics');
       console.log('    export     Export as markdown');
