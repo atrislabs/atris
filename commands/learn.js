@@ -228,6 +228,40 @@ function interactiveAdd() {
 }
 
 /**
+ * Non-interactive log: `atris learn log '{"type":"pattern","key":"...","insight":"...","confidence":8,"source":"observed"}'`
+ * For agents and scripts — no prompts, no quality gate.
+ */
+function logDirect(jsonStr) {
+  if (!jsonStr) {
+    console.error('  ✗ Usage: atris learn log \'{"type":"...","key":"...","insight":"...","confidence":N,"source":"..."}\'');
+    process.exit(1);
+  }
+  try {
+    const data = JSON.parse(jsonStr);
+    const entry = addLearning({
+      type: data.type,
+      key: data.key,
+      insight: data.insight,
+      confidence: data.confidence || 5,
+      source: data.source || 'observed',
+      files: data.files || [],
+    });
+    console.log(`  ✓ [${entry.confidence}/10] ${entry.type}/${entry.key}`);
+  } catch (err) {
+    console.error(`  ✗ ${err.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Get learning count for integration with atris activate.
+ */
+function getLearningCount() {
+  const all = loadLearnings().filter(e => e._effectiveConfidence > 0 && e.insight !== '[REMOVED]');
+  return all.length;
+}
+
+/**
  * Main entry point for `atris learn [subcommand] [args]`
  */
 function learnAtris(subcommand, ...args) {
@@ -245,6 +279,9 @@ function learnAtris(subcommand, ...args) {
     case 'add':
       interactiveAdd();
       break;
+    case 'log':
+      logDirect(args[0]);
+      break;
     case 'search':
       showSearch(args.join(' '));
       break;
@@ -257,6 +294,9 @@ function learnAtris(subcommand, ...args) {
     case 'export':
       showExport();
       break;
+    case 'count':
+      console.log(getLearningCount());
+      break;
     default:
       console.log('');
       console.log('  Usage: atris learn [command]');
@@ -264,13 +304,17 @@ function learnAtris(subcommand, ...args) {
       console.log('  Commands:');
       console.log('    (none)     Show recent learnings');
       console.log('    add        Add a learning interactively');
+      console.log('    log <json> Add programmatically (for agents)');
       console.log('    search <q> Search learnings by keyword');
       console.log('    prune      Check for stale/contradictory entries');
       console.log('    stats      Show learning statistics');
       console.log('    export     Export as markdown');
+      console.log('    count      Print learning count (for integrations)');
       console.log('');
       break;
   }
 }
+
+learnAtris.getLearningCount = getLearningCount;
 
 module.exports = learnAtris;
