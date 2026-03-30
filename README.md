@@ -41,6 +41,24 @@ Commands: `brainstorm` (optional) → `plan` → `do` → `review`
 
 Works with: Claude Code, Cursor, Windsurf, GitHub Copilot, any agent.
 
+## Learnings
+
+Atris gets smarter over time. Every review captures patterns and pitfalls. Every plan surfaces prior knowledge. The system compounds.
+
+```bash
+atris learn              # show what atris knows about your codebase
+atris learn add          # add a learning interactively
+atris learn search auth  # search by keyword
+atris learn harvest      # extract learnings from journal notes
+atris learn prune        # find stale or contradictory entries
+atris learn stats        # see breakdown by type and confidence
+atris learn export       # markdown output for CLAUDE.md
+```
+
+Learnings have confidence scores (1-10) that decay over time. Old observations fade. Confirmed patterns stay strong. User preferences never decay.
+
+Stored in `atris/learnings.jsonl` — version-controlled, team-shared.
+
 ## Experiments
 
 Atris also supports Karpathy-style keep/revert loops inside `atris/experiments/`.
