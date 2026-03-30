@@ -122,6 +122,20 @@ async function planAtris(userInput = null) {
   const lessonsRef = fs.existsSync(lessonsPath) ? path.relative(process.cwd(), lessonsPath) : null;
   console.log(`- Lessons: ${lessonsRef || 'atris/lessons.md (none yet)'}`);
   console.log(`- Journal (today): ${journalPath}`);
+
+  // Show top learnings if available
+  try {
+    const { loadLearnings } = require('../lib/learnings');
+    const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
+    if (learnings.length > 0) {
+      console.log('');
+      console.log('🧠 Prior learnings (high confidence):');
+      for (const l of learnings) {
+        console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
+      }
+    }
+  } catch {}
+
   console.log('');
   console.log(`📥 Inbox items: ${inboxCount}`);
   console.log('');
