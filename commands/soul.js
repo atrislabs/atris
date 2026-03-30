@@ -201,6 +201,101 @@ function forkSoul(sourceDir, targetDir) {
   return { copied, genealogy };
 }
 
+// ── Distill ────────────────────────────────────────────
+
+function distillSoul(atrisDir) {
+  const personaPath = path.join(atrisDir, 'PERSONA.md');
+  const lessonsPath = path.join(atrisDir, 'lessons.md');
+  const policiesDir = path.join(atrisDir, 'policies');
+
+  // Gather learnings
+  const lessons = readFile(lessonsPath);
+  const persona = readFile(personaPath);
+
+  let policyRules = [];
+  if (fs.existsSync(policiesDir)) {
+    for (const f of fs.readdirSync(policiesDir).filter(f => f.endsWith('.md'))) {
+      const content = readFile(path.join(policiesDir, f));
+      if (content) {
+        // Extract bullet points as rules
+        const bullets = content.match(/^[-*]\s+.+$/gm) || [];
+        policyRules.push(...bullets.map(b => b.replace(/^[-*]\s+/, '').trim()));
+      }
+    }
+  }
+
+  // Extract lesson patterns
+  let lessonItems = [];
+  if (lessons) {
+    lessonItems = (lessons.match(/^[-*]\s+.+$/gm) || []).map(l => l.replace(/^[-*]\s+/, '').trim());
+  }
+
+  // Count journal entries for depth stat
+  const logsDir = path.join(atrisDir, 'logs');
+  let journalCount = 0;
+  if (fs.existsSync(logsDir)) {
+    journalCount = countFiles(logsDir);
+  }
+
+  // Build distilled section
+  const distilled = [];
+  if (lessonItems.length > 0) {
+    distilled.push('## Learned (distilled from lessons.md)');
+    distilled.push('');
+    // Deduplicate and take top 10 by recency (last in list = most recent)
+    const unique = [...new Set(lessonItems)].slice(-10);
+    for (const item of unique) {
+      distilled.push(`- ${item}`);
+    }
+    distilled.push('');
+  }
+
+  if (policyRules.length > 0) {
+    distilled.push('## Policies (distilled from policies/)');
+    distilled.push('');
+    const unique = [...new Set(policyRules)].slice(0, 10);
+    for (const rule of unique) {
+      distilled.push(`- ${rule}`);
+    }
+    distilled.push('');
+  }
+
+  if (distilled.length === 0) {
+    return { status: 'nothing', reason: 'No lessons or policies to distill' };
+  }
+
+  // Archive current persona
+  if (persona) {
+    const archiveDir = path.join(atrisDir, 'persona-history');
+    if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    fs.writeFileSync(path.join(archiveDir, `${ts}.md`), persona);
+  }
+
+  // Append distilled section to persona
+  const separator = '\n\n---\n\n';
+  const distilledBlock = `<!-- Distilled ${new Date().toISOString().slice(0, 10)} | ${journalCount} journal entries, ${lessonItems.length} lessons, ${policyRules.length} policy rules -->\n\n` + distilled.join('\n');
+
+  if (persona) {
+    // Check if already has a distilled section, replace it
+    if (persona.includes('<!-- Distilled')) {
+      const updated = persona.replace(/<!-- Distilled[\s\S]*$/, distilledBlock);
+      fs.writeFileSync(personaPath, updated);
+    } else {
+      fs.appendFileSync(personaPath, separator + distilledBlock);
+    }
+  } else {
+    fs.writeFileSync(personaPath, `# Persona\n\n${distilledBlock}`);
+  }
+
+  return {
+    status: 'distilled',
+    lessons: lessonItems.length,
+    policies: policyRules.length,
+    archived: !!persona,
+  };
+}
+
 // ── Main ───────────────────────────────────────────────
 
 async function soul(args = []) {
@@ -251,6 +346,18 @@ async function soul(args = []) {
       console.log(`✓ Soul forked: ${result.copied} files copied`);
       console.log(`  From: ${path.basename(path.dirname(atrisDir))}`);
       console.log(`  To:   ${path.basename(target)}`);
+      break;
+    }
+    case 'distill':
+    case 'compress': {
+      const result = distillSoul(atrisDir);
+      if (result.status === 'nothing') {
+        console.log(`✗ ${result.reason}`);
+      } else {
+        console.log(`✓ Soul distilled`);
+        console.log(`  ${result.lessons} lessons + ${result.policies} policy rules → PERSONA.md`);
+        if (result.archived) console.log(`  Previous persona archived to persona-history/`);
+      }
       break;
     }
     default:
