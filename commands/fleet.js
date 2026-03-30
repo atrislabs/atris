@@ -333,6 +333,22 @@ async function fleet(args = []) {
   const subcommand = (args[0] || 'status').toLowerCase();
   const rest = args.slice(1).join(' ');
 
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    console.log('');
+    console.log('  atris fleet — coordinate agent swarm via Swarlo');
+    console.log('');
+    console.log('  fleet              show board status');
+    console.log('  fleet post <msg>   post message to board');
+    console.log('  fleet task <prompt> create a task for agents');
+    console.log('  fleet claim <key>  claim a task');
+    console.log('  fleet done <key>   report task complete');
+    console.log('  fleet members      who is online');
+    console.log('  fleet prune [min]  remove stale members (default 60m)');
+    console.log('  fleet watch [sec]  live-tail the board (default 10s)');
+    console.log('');
+    return;
+  }
+
   const state = await ensureRegistered();
 
   switch (subcommand) {
