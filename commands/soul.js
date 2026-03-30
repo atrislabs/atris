@@ -307,6 +307,18 @@ async function soul(args = []) {
     process.exit(1);
   }
 
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    console.log('');
+    console.log('  atris soul — see what your project has learned');
+    console.log('');
+    console.log('  soul              show identity, knowledge, learnings');
+    console.log('  soul snapshot     export full soul to JSON (auto-gitignored)');
+    console.log('  soul distill      compress lessons + policies into PERSONA.md');
+    console.log('  soul fork <path>  copy persona + policies to another project');
+    console.log('');
+    return;
+  }
+
   switch (subcommand) {
     case 'status':
     case 'st': {
