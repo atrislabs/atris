@@ -456,6 +456,20 @@ async function doAtris() {
   console.log(`- MAP: ${mapDisplay}`);
   console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
   console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+
+  // Show top learnings during execution
+  try {
+    const { loadLearnings } = require('../lib/learnings');
+    const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
+    if (learnings.length > 0) {
+      console.log('');
+      console.log('🧠 Prior learnings (apply during build):');
+      for (const l of learnings) {
+        console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
+      }
+    }
+  } catch {}
+
   console.log('');
 
   const backlogCount = workspaceSummary && Array.isArray(workspaceSummary.backlogTasks)
