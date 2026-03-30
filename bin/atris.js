@@ -264,6 +264,7 @@ function showHelp() {
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');
   console.log('  integrations - Show integration status');
+  console.log('  fleet        - Manage agent swarm via Swarlo (status/post/task/claim/done)');
   console.log('');
   console.log('Skills:');
   console.log('  skill create <name> - Scaffold a new skill (--integration, --local)');
@@ -387,7 +388,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations'];
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'fleet', 'soul'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -953,6 +954,16 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
+} else if (command === 'fleet') {
+  const args = process.argv.slice(3);
+  require('../commands/fleet').fleet(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'soul') {
+  const args = process.argv.slice(3);
+  require('../commands/soul').soul(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
   console.log(`Unknown command: ${command}`);
   console.log('Run "atris help" to see available commands');
