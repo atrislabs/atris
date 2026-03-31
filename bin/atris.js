@@ -757,6 +757,9 @@ if (command === 'init') {
 } else if (command === '_profile-email') {
   // Hidden: print email for a profile name
   require('../commands/auth').profileEmail();
+} else if (command === '_activate') {
+  // Hidden: copy profile to credentials.json (used by shell-init wrapper)
+  require('../commands/auth').activateGlobal();
 } else if (command === 'shell-init') {
   require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
