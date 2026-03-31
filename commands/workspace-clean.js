@@ -63,7 +63,7 @@ async function cleanWorkspace() {
     workspaceId = businesses[slug].workspace_id;
     businessName = businesses[slug].name || slug;
   } else {
-    const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+    const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
     if (!listResult.ok) {
       console.error(`Failed to fetch businesses: ${listResult.error || listResult.status}`);
       process.exit(1);
@@ -100,7 +100,7 @@ async function cleanWorkspace() {
   console.log(`Scanning ${businessName}...`);
 
   const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false`,
+    `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false`,
     { method: 'GET', token: creds.token, timeoutMs: 60000 }
   );
 
@@ -220,7 +220,7 @@ async function cleanWorkspace() {
     const batch = filesToDelete.slice(i, i + BATCH_SIZE);
 
     const syncResult = await apiRequestJson(
-      `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
+      `/business/${businessId}/workspaces/${workspaceId}/sync`,
       {
         method: 'POST',
         token: creds.token,

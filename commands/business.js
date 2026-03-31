@@ -33,14 +33,14 @@ async function addBusiness(slug) {
   }
 
   // Resolve slug to business
-  const result = await apiRequestJson(`/businesses/by-slug/${slug}`, {
+  const result = await apiRequestJson(`/business/by-slug/${slug}`, {
     method: 'GET',
     token: creds.token,
   });
 
   if (!result.ok) {
     // Try listing all and matching
-    const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+    const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
     if (listResult.ok && Array.isArray(listResult.data)) {
       const match = listResult.data.find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
       if (match) {
@@ -122,7 +122,7 @@ async function resolveSlug(slug, creds) {
   }
 
   // Try by-slug endpoint
-  const result = await apiRequestJson(`/businesses/by-slug/${slug}/`, {
+  const result = await apiRequestJson(`/business/by-slug/${slug}/`, {
     method: 'GET',
     token: creds.token,
   });
@@ -131,7 +131,7 @@ async function resolveSlug(slug, creds) {
   }
 
   // Fallback: list all and match
-  const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (listResult.ok && Array.isArray(listResult.data)) {
     const match = listResult.data.find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
     if (match) {
@@ -189,9 +189,9 @@ async function businessHealth(slug) {
   // Fetch dashboard and workspace snapshot in parallel
   const fetchOpts = { method: 'GET', token: creds.token, timeoutMs: 120000 };
   const [dashResult, wsResult] = await Promise.all([
-    apiRequestJson(`/businesses/${bizId}/dashboard/`, fetchOpts),
+    apiRequestJson(`/business/${bizId}/dashboard/`, fetchOpts),
     wsId
-      ? apiRequestJson(`/businesses/${bizId}/workspaces/${wsId}/snapshot?include_content=false`, fetchOpts)
+      ? apiRequestJson(`/business/${bizId}/workspaces/${wsId}/snapshot?include_content=false`, fetchOpts)
       : Promise.resolve({ ok: false }),
   ]);
 
@@ -303,7 +303,7 @@ async function businessAudit() {
     process.exit(1);
   }
 
-  const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (!listResult.ok || !Array.isArray(listResult.data)) {
     console.error(`Failed to fetch businesses: ${listResult.error || 'unknown error'}`);
     process.exit(1);

@@ -26,7 +26,7 @@ async function resolveBusiness(slug) {
     };
   }
 
-  const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (!listResult.ok) {
     console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.status}`);
     process.exit(1);
@@ -77,7 +77,7 @@ async function businessStatus(slug) {
 
   // Get remote snapshot with content (needed for reliable hash computation)
   const result = await apiRequestJson(
-    `/businesses/${biz.businessId}/workspaces/${biz.workspaceId}/snapshot?include_content=true`,
+    `/business/${biz.businessId}/workspaces/${biz.workspaceId}/snapshot?include_content=true`,
     { method: 'GET', token: biz.token, timeoutMs: 120000 }
   );
 
@@ -239,7 +239,7 @@ async function businessLog(slug) {
 
   const params = `limit=${limit}` + (pathFilter ? `&path=${encodeURIComponent(pathFilter)}` : '');
   const result = await apiRequestJson(
-    `/businesses/${biz.businessId}/workspaces/${biz.workspaceId}/git/log?${params}`,
+    `/business/${biz.businessId}/workspaces/${biz.workspaceId}/git/log?${params}`,
     { method: 'GET', token: biz.token }
   );
 

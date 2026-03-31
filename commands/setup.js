@@ -68,7 +68,7 @@ async function setupAtris() {
   console.log('  [3/4] Fetching your businesses...');
   let businesses = [];
   try {
-    const result = await apiRequestJson('/businesses/', {
+    const result = await apiRequestJson('/business/', {
       method: 'GET',
       token: creds.token,
     });

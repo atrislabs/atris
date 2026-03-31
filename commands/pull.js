@@ -144,7 +144,7 @@ async function pullBusiness(slug) {
   let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
 
-  const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (!listResult.ok) {
     // Fall back to local cache if API fails
     if (businesses[slug]) {
@@ -202,21 +202,104 @@ async function pullBusiness(slug) {
     process.stdout.write(`\r  Fetching workspace... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
   }, 250);
 
-  // Get remote snapshot — pass --only prefixes to server for faster response
-  let snapshotUrl = `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`;
-  if (onlyPrefixes) {
-    snapshotUrl += `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}`;
-  }
-  const result = await apiRequestJson(snapshotUrl, { method: 'GET', token: creds.token, timeoutMs });
+  // Smart pull: if we have a manifest (not first sync), fetch hashes first, then only changed content
+  const hasManifest = manifest && manifest.files && Object.keys(manifest.files).length > 0 && !force;
+  let result;
 
-  clearInterval(loading);
-  const totalSec = Math.floor((Date.now() - startTime) / 1000);
-  process.stdout.write(`\r  Fetched in ${totalSec}s.${' '.repeat(20)}\n`);
+  const pathsParam = onlyPrefixes ? `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}` : '';
+
+  if (hasManifest) {
+    // Phase 1: fetch hashes only (fast — no file content transferred)
+    const hashUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false${pathsParam}`;
+    const hashResult = await apiRequestJson(hashUrl, { method: 'GET', token: creds.token, timeoutMs });
+
+    if (hashResult.ok && hashResult.data && hashResult.data.files) {
+      // Diff against manifest to find changed files
+      const remoteHashes = {};
+      for (const f of hashResult.data.files) {
+        if (f.path && f.hash) remoteHashes[f.path] = f.hash;
+      }
+      const changedPaths = [];
+      const manifestFiles = manifest.files || {};
+      for (const [p, hash] of Object.entries(remoteHashes)) {
+        const prev = manifestFiles[p];
+        if (!prev || prev.hash !== hash) changedPaths.push(p);
+      }
+
+      if (changedPaths.length === 0) {
+        clearInterval(loading);
+        process.stdout.write(`\r  Checked ${Object.keys(remoteHashes).length} files in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(10)}\n`);
+        // Still need full result for diff logic below — build it from hash-only data
+        result = { ok: true, data: { files: hashResult.data.files } };
+      } else {
+        // Phase 2: fetch ONLY changed files via batch endpoint (not full snapshot)
+        clearInterval(loading);
+        const checkSec = Math.floor((Date.now() - startTime) / 1000);
+        console.log(`\r  Checked in ${checkSec}s — ${changedPaths.length} changed, ${Object.keys(remoteHashes).length - changedPaths.length} unchanged.${' '.repeat(10)}`);
+
+        const startPhase2 = Date.now();
+        const loading2 = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - startPhase2) / 1000);
+          process.stdout.write(`\r  Fetching ${changedPaths.length} changed files... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
+        }, 250);
+
+        // Try batch file read first (fast — only changed files)
+        const batchUrl = `/business/${businessId}/workspaces/${workspaceId}/files/batch`;
+        const batchResult = await apiRequestJson(batchUrl, {
+          method: 'POST',
+          token: creds.token,
+          body: { paths: changedPaths },
+          timeoutMs,
+        });
+
+        clearInterval(loading2);
+        const phase2Sec = Math.floor((Date.now() - startPhase2) / 1000);
+
+        if (batchResult.ok && batchResult.data && batchResult.data.files) {
+          process.stdout.write(`\r  Fetched ${batchResult.data.files.length} files in ${phase2Sec}s.${' '.repeat(10)}\n`);
+          // Merge: hash-only results + content for changed files
+          const contentMap = {};
+          for (const f of batchResult.data.files) {
+            if (f.path) contentMap[f.path] = f;
+          }
+          // Build merged file list: all hash-only entries + inject content for changed ones
+          const mergedFiles = hashResult.data.files.map(f => {
+            const withContent = contentMap[f.path];
+            return withContent || f;
+          });
+          result = { ok: true, data: { files: mergedFiles } };
+        } else {
+          // Batch not available — fall back to full snapshot
+          process.stdout.write(`\r  Batch unavailable, fetching full snapshot...${' '.repeat(10)}\n`);
+          const contentUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+          result = await apiRequestJson(contentUrl, { method: 'GET', token: creds.token, timeoutMs });
+          const fullSec = Math.floor((Date.now() - startPhase2) / 1000);
+          process.stdout.write(`\r  Fetched in ${fullSec}s.${' '.repeat(20)}\n`);
+        }
+      }
+    } else {
+      // Hash-only fetch failed — fall back to full snapshot
+      const fullUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+      result = await apiRequestJson(fullUrl, { method: 'GET', token: creds.token, timeoutMs });
+      clearInterval(loading);
+      process.stdout.write(`\r  Fetched in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(20)}\n`);
+    }
+  } else {
+    // First sync or --force — full snapshot with content
+    const snapshotUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+    result = await apiRequestJson(snapshotUrl, { method: 'GET', token: creds.token, timeoutMs });
+    clearInterval(loading);
+    const totalSec = Math.floor((Date.now() - startTime) / 1000);
+    process.stdout.write(`\r  Fetched in ${totalSec}s.${' '.repeat(20)}\n`);
+  }
 
   if (!result.ok) {
     const msg = result.errorMessage || result.error || `HTTP ${result.status}`;
     if (result.status === 0 || (typeof msg === 'string' && msg.toLowerCase().includes('timeout'))) {
       console.error(`\n  Workspace timed out (large workspaces can take 60s+). Try: atris pull ${slug} --timeout=600`);
+    } else if (result.status === 502) {
+      console.error(`\n  Computer didn't respond in time. It may be waking up or the workspace is large.`);
+      console.error(`  Try again in 30s, or use: atris pull ${slug} --only=team/,context/`);
     } else if (result.status === 409) {
       console.error(`\n  Computer is sleeping. Wake it first, then pull again.`);
     } else if (result.status === 403) {
@@ -342,7 +425,7 @@ async function pullBusiness(slug) {
   let commitHash = null;
   try {
     const headResult = await apiRequestJson(
-      `/businesses/${businessId}/workspaces/${workspaceId}/git/head`,
+      `/business/${businessId}/workspaces/${workspaceId}/git/head`,
       { method: 'GET', token: creds.token }
     );
     if (headResult.ok && headResult.data && headResult.data.commit) {
