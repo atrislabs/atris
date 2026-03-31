@@ -133,6 +133,46 @@ async function computerCat(token, remotePath) {
   console.log(result.data.content || '');
 }
 
+async function computerPull(token, remotePath, localDir) {
+  const rPath = remotePath || 'soul';
+  const lDir = localDir || 'ec2_pull';
+  const fs = require('fs');
+  const path = require('path');
+
+  // List files
+  const listResult = await apiRequestJson(`/ai-computer/files?path=${encodeURIComponent(rPath)}`, {
+    method: 'GET', token,
+  });
+  if (!listResult.ok) {
+    console.error(`Failed to list: ${listResult.errorMessage || listResult.status}`);
+    return;
+  }
+  const files = (listResult.data.files || []).filter(f => f.type === 'file');
+  if (files.length === 0) {
+    console.log('  No files to pull.');
+    return;
+  }
+
+  // Create local dir
+  fs.mkdirSync(lDir, { recursive: true });
+  console.log(`Pulling ${files.length} files from ${rPath}/ → ${lDir}/`);
+
+  let pulled = 0;
+  for (const f of files) {
+    const fileResult = await apiRequestJson(
+      `/ai-computer/file?path=${encodeURIComponent(rPath + '/' + f.name)}`,
+      { method: 'GET', token, timeoutMs: 15000 }
+    );
+    if (fileResult.ok && fileResult.data.content) {
+      const localPath = path.join(lDir, f.name);
+      fs.writeFileSync(localPath, fileResult.data.content);
+      console.log(`  ${f.name} (${fileResult.data.content.length}b)`);
+      pulled++;
+    }
+  }
+  console.log(`\n  Pulled ${pulled} files.`);
+}
+
 async function computerExec(token, prompt) {
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
@@ -168,6 +208,7 @@ async function runComputer() {
     console.log('  ls [path]       List files');
     console.log('  cat <path>      Read a file');
     console.log('  exec "<prompt>" Run with LLM (Claude Code)');
+    console.log('  pull [path] [dir] Pull files from EC2 to local');
     console.log('');
     console.log('Examples:');
     console.log('  atris computer status');
@@ -191,6 +232,10 @@ async function runComputer() {
     case 'ls': return computerLs(token, rest || undefined);
     case 'cat': return computerCat(token, rest);
     case 'exec': return computerExec(token, rest);
+    case 'pull': {
+      const parts = rest.split(' ').filter(Boolean);
+      return computerPull(token, parts[0], parts[1]);
+    }
     default:
       console.error(`Unknown subcommand: ${sub}`);
       console.log('Run: atris computer --help');

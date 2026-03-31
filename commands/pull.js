@@ -138,10 +138,10 @@ async function pullBusiness(slug) {
   console.log('');
   console.log(`Pulling ${businessName}...`);
 
-  // Snapshot — one API call gets everything
+  // Snapshot — one API call gets everything (120s timeout for large workspaces)
   const result = await apiRequestJson(
     `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
-    { method: 'GET', token: creds.token }
+    { method: 'GET', token: creds.token, timeoutMs: 120000 }
   );
 
   if (!result.ok) {
