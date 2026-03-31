@@ -165,6 +165,23 @@ async function pushAtris() {
     }
   }
   console.log(`\n  Synced to ${businessName}.`);
+
+  // Auto-rebuild soul index if soul/ files were pushed
+  const hasSoulFiles = files.some(f => (f.path || '').includes('/soul/'));
+  if (hasSoulFiles) {
+    try {
+      const idxResult = await apiRequestJson(`/ai-computer/terminal`, {
+        method: 'POST',
+        token: creds.token,
+        body: { command: 'bash tools/rebuild_index.sh 2>/dev/null || true', business_id: businessId },
+      });
+      if (idxResult.ok && idxResult.data && idxResult.data.stdout) {
+        console.log(`  ${idxResult.data.stdout.trim()}`);
+      }
+    } catch {
+      // Index rebuild is best-effort
+    }
+  }
 }
 
 module.exports = { pushAtris };
