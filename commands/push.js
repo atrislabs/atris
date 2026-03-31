@@ -1,187 +1,216 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
+const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
 
 async function pushAtris() {
-  const slug = process.argv[3];
+  let slug = process.argv[3];
+
+  // Auto-detect business from .atris/business.json in current dir
+  if (!slug || slug.startsWith('-')) {
+    const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+    if (fs.existsSync(bizFile)) {
+      try {
+        const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+        slug = biz.slug || biz.name;
+      } catch {}
+    }
+    if (!slug || slug.startsWith('-')) slug = null;
+  }
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push <business-slug> [--from <path>]');
+    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force]');
     console.log('');
-    console.log('Push local files to a Business Computer.');
-    console.log('');
-    console.log('Examples:');
-    console.log('  atris push pallet                    Push from atris/pallet/ or ./pallet/');
-    console.log('  atris push pallet --from ./my-dir/   Push from a custom directory');
+    console.log('  atris push                   Push from current folder (auto-detect business)');
+    console.log('  atris push pallet            Push pallet/ or atris/pallet/');
+    console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
+    console.log('  atris push --force           Override conflicts');
     process.exit(0);
   }
 
-  const creds = loadCredentials();
-  if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
-    process.exit(1);
+  const force = process.argv.includes('--force');
+  const dryRun = process.argv.includes('--dry-run');
+
+  // Parse --only
+  let onlyRaw = null;
+  const onlyEq = process.argv.find(a => a.startsWith('--only='));
+  if (onlyEq) onlyRaw = onlyEq.slice(7);
+  else {
+    const oi = process.argv.indexOf('--only');
+    if (oi !== -1 && process.argv[oi + 1] && !process.argv[oi + 1].startsWith('-')) onlyRaw = process.argv[oi + 1];
   }
+  const onlyPrefixes = onlyRaw
+    ? onlyRaw.split(',').map(p => { let n = '/' + p.replace(/^\//, ''); if (!n.endsWith('/') && !n.includes('.')) n += '/'; return n; })
+    : null;
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) { console.error('Not logged in. Run: atris login'); process.exit(1); }
 
   // Determine source directory
   const fromIdx = process.argv.indexOf('--from');
   let sourceDir;
   if (fromIdx !== -1 && process.argv[fromIdx + 1]) {
     sourceDir = path.resolve(process.argv[fromIdx + 1]);
+  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    sourceDir = process.cwd();
   } else {
     const atrisDir = path.join(process.cwd(), 'atris', slug);
     const cwdDir = path.join(process.cwd(), slug);
-    if (fs.existsSync(atrisDir)) {
-      sourceDir = atrisDir;
-    } else if (fs.existsSync(cwdDir)) {
-      sourceDir = cwdDir;
-    } else {
+    if (fs.existsSync(atrisDir)) sourceDir = atrisDir;
+    else if (fs.existsSync(cwdDir)) sourceDir = cwdDir;
+    else {
       console.error(`No local folder found for "${slug}".`);
-      console.error(`Expected: atris/${slug}/ or ./${slug}/`);
-      console.error('Or specify: atris push pallet --from ./path/to/folder');
+      console.error('Run from inside a pulled folder, or: atris push pallet --from ./path');
       process.exit(1);
     }
   }
 
-  if (!fs.existsSync(sourceDir)) {
-    console.error(`Source directory not found: ${sourceDir}`);
-    process.exit(1);
-  }
+  if (!fs.existsSync(sourceDir)) { console.error(`Source not found: ${sourceDir}`); process.exit(1); }
 
-  // Resolve business ID
-  let businessId, workspaceId, businessName;
+  // Resolve business — always refresh from API
+  let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
-
-  if (businesses[slug]) {
-    businessId = businesses[slug].business_id;
-    workspaceId = businesses[slug].workspace_id;
-    businessName = businesses[slug].name || slug;
-  } else {
-    // Try to find by slug via API
-    const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
-    if (!listResult.ok) {
-      console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.status}`);
-      process.exit(1);
-    }
-    const match = (listResult.data || []).find(
-      b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase()
-    );
-    if (!match) {
-      console.error(`Business "${slug}" not found.`);
-      process.exit(1);
-    }
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
+  if (listResult.ok) {
+    const match = (listResult.data || []).find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
+    if (!match) { console.error(`Business "${slug}" not found.`); process.exit(1); }
     businessId = match.id;
     workspaceId = match.workspace_id;
     businessName = match.name;
-
-    // Auto-save
-    businesses[slug] = {
-      business_id: businessId,
-      workspace_id: workspaceId,
-      name: businessName,
-      slug: match.slug,
-      added_at: new Date().toISOString(),
-    };
+    resolvedSlug = match.slug;
+    businesses[slug] = { business_id: businessId, workspace_id: workspaceId, name: businessName, slug: match.slug, added_at: new Date().toISOString() };
     saveBusinesses(businesses);
-  }
-
-  if (!workspaceId) {
-    console.error(`Business "${slug}" has no workspace.`);
+  } else if (businesses[slug]) {
+    businessId = businesses[slug].business_id;
+    workspaceId = businesses[slug].workspace_id;
+    businessName = businesses[slug].name || slug;
+    resolvedSlug = businesses[slug].slug || slug;
+  } else {
+    console.error(`Failed to reach API and no cached business for "${slug}".`);
     process.exit(1);
   }
 
-  // Walk local directory and collect files
-  const files = [];
-  const SKIP_DIRS = new Set(['node_modules', '__pycache__', '.git', 'venv', '.venv', 'lost+found', '.cache']);
+  if (!workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
-  function walkDir(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
-      const fullPath = path.join(dir, entry.name);
+  // Load manifest and compute local hashes
+  const manifest = loadManifest(resolvedSlug || slug);
+  const localFiles = computeLocalHashes(sourceDir);
 
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walkDir(fullPath);
-      } else if (entry.isFile()) {
-        const relPath = '/' + path.relative(sourceDir, fullPath);
-        try {
-          const content = fs.readFileSync(fullPath, 'utf8');
-          files.push({ path: relPath, content });
-        } catch {
-          // Skip binary files
-        }
-      }
-    }
-  }
-
-  walkDir(sourceDir);
-
-  if (files.length === 0) {
+  if (Object.keys(localFiles).length === 0) {
     console.log(`\nNo files to push from ${sourceDir}`);
     return;
   }
 
   console.log('');
-  console.log(`Pushing ${files.length} files to ${businessName}...`);
+  console.log(`Pushing to ${businessName}...`);
 
-  // Sync — one API call pushes everything
-  const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
-    {
-      method: 'POST',
-      token: creds.token,
-      body: { files },
+  // Compare local hashes to manifest — NO server call needed
+  // Files where local hash differs from manifest = changed locally
+  const baseFiles = (manifest && manifest.files) ? manifest.files : {};
+  const filesToPush = [];
+
+  for (const [filePath, fileInfo] of Object.entries(localFiles)) {
+    if (onlyPrefixes && !onlyPrefixes.some(p => filePath.startsWith(p))) continue;
+    const baseHash = baseFiles[filePath] ? baseFiles[filePath].hash : null;
+    if (!baseHash || fileInfo.hash !== baseHash) {
+      // Changed or new — push it
+      const localPath = path.join(sourceDir, filePath.replace(/^\//, ''));
+      try {
+        const content = fs.readFileSync(localPath, 'utf8');
+        filesToPush.push({ path: filePath, content });
+      } catch {}
     }
+  }
+
+  const unchangedCount = Object.keys(localFiles).length - filesToPush.length;
+
+  if (filesToPush.length === 0) {
+    console.log('\n  Already up to date.\n');
+    return;
+  }
+
+  // Dry run — show what would be pushed without pushing
+  if (dryRun) {
+    console.log('');
+    for (const f of filesToPush) {
+      const isNew = !baseFiles[f.path];
+      console.log(`  ${isNew ? '+' : '\u2191'} ${f.path.replace(/^\//, '')}  ${isNew ? 'new file' : 'updated'}  (dry run)`);
+    }
+    console.log(`\n  ${filesToPush.length} would be pushed, ${unchangedCount} unchanged. (--dry-run, nothing sent)\n`);
+    return;
+  }
+
+  // Push files to server
+  const result = await apiRequestJson(
+    `/business/${businessId}/workspaces/${workspaceId}/sync`,
+    { method: 'POST', token: creds.token, body: { files: filesToPush }, headers: { 'X-Atris-Actor-Source': 'cli' } }
   );
 
+  let pushed = 0;
+  let skipped = [];
+
   if (!result.ok) {
-    const msg = result.errorMessage || `HTTP ${result.status}`;
-    if (result.status === 409) {
-      console.error(`\nComputer is sleeping. Wake it first, then push.`);
-    } else if (result.status === 403) {
-      console.error(`\nAccess denied: ${msg}`);
+    if (result.status === 403) {
+      // Permission denied — retry with only team/ and journal/ files
+      const allowed = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
+      skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
+
+      if (allowed.length > 0) {
+        const retry = await apiRequestJson(
+          `/business/${businessId}/workspaces/${workspaceId}/sync`,
+          { method: 'POST', token: creds.token, body: { files: allowed }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+        );
+        if (retry.ok) {
+          pushed = allowed.length;
+        } else {
+          console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
+          process.exit(1);
+        }
+      } else {
+        console.error('\n  Access denied: you can only push to your team/ folder.');
+        process.exit(1);
+      }
+    } else if (result.status === 409) {
+      console.error('\n  Computer is sleeping. Wake it first.');
+      process.exit(1);
     } else {
-      console.error(`\nPush failed: ${msg}`);
+      console.error(`\n  Push failed: ${result.errorMessage || result.error || result.status}`);
+      process.exit(1);
     }
-    process.exit(1);
+  } else {
+    pushed = filesToPush.length;
   }
 
-  const data = result.data;
+  // Display results
   console.log('');
-  if (data.written > 0) {
-    console.log(`  ${data.written} file${data.written > 1 ? 's' : ''} written`);
+  for (const f of filesToPush) {
+    if (skipped.includes(f)) continue;
+    const isNew = !baseFiles[f.path];
+    console.log(`  ${isNew ? '+' : '\u2191'} ${f.path.replace(/^\//, '')}  ${isNew ? 'new file' : 'updated'}`);
   }
-  if (data.unchanged > 0) {
-    console.log(`  ${data.unchanged} unchanged`);
+  for (const f of skipped) {
+    console.log(`  - ${f.path.replace(/^\//, '')}  skipped (no permission)`);
   }
-  if (data.errors > 0) {
-    console.log(`  ${data.errors} error${data.errors > 1 ? 's' : ''}`);
-    for (const r of (data.results || [])) {
-      if (r.status === 'error') {
-        console.log(`    ${r.path}: ${r.error}`);
-      }
-    }
-  }
-  console.log(`\n  Synced to ${businessName}.`);
 
-  // Auto-rebuild soul index if soul/ files were pushed
-  const hasSoulFiles = files.some(f => (f.path || '').includes('/soul/'));
-  if (hasSoulFiles) {
-    try {
-      const idxResult = await apiRequestJson(`/ai-computer/terminal`, {
-        method: 'POST',
-        token: creds.token,
-        body: { command: 'bash tools/rebuild_index.sh 2>/dev/null || true', business_id: businessId },
-      });
-      if (idxResult.ok && idxResult.data && idxResult.data.stdout) {
-        console.log(`  ${idxResult.data.stdout.trim()}`);
-      }
-    } catch {
-      // Index rebuild is best-effort
+  // Summary
+  console.log('');
+  const parts = [];
+  if (pushed > 0) parts.push(`${pushed} pushed`);
+  if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
+  if (skipped.length > 0) parts.push(`${skipped.length} skipped`);
+  console.log(`  ${parts.join(', ')}.`);
+
+  // Update manifest — mark pushed files with their new hash
+  const updatedFiles = { ...baseFiles };
+  for (const f of filesToPush) {
+    if (!skipped.includes(f)) {
+      updatedFiles[f.path] = localFiles[f.path];
     }
   }
+  saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null));
 }
 
 module.exports = { pushAtris };

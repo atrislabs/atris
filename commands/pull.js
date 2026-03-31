@@ -7,12 +7,26 @@ const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses } = require('./business');
+const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 
 async function pullAtris() {
-  const arg = process.argv[3];
+  let arg = process.argv[3];
+
+  // Auto-detect business from .atris/business.json in current dir
+  if (!arg || arg.startsWith('--')) {
+    const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+    if (fs.existsSync(bizFile)) {
+      try {
+        const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+        if (biz.slug || biz.name) {
+          return pullBusiness(biz.slug || biz.name);
+        }
+      } catch {}
+    }
+  }
 
   // If a business name is given, do a business pull
-  if (arg && arg !== '--help') {
+  if (arg && arg !== '--help' && !arg.startsWith('--')) {
     return pullBusiness(arg);
   }
 
@@ -77,36 +91,72 @@ async function pullBusiness(slug) {
     process.exit(1);
   }
 
+  const force = process.argv.includes('--force');
+
+  // Parse --only flag: comma-separated directory prefixes to filter
+  // Supports both --only=team/,context/ and --only team/,context/
+  let onlyRaw = null;
+  const onlyEqArg = process.argv.find(a => a.startsWith('--only='));
+  if (onlyEqArg) {
+    onlyRaw = onlyEqArg.slice('--only='.length);
+  } else {
+    const onlyIdx = process.argv.indexOf('--only');
+    if (onlyIdx !== -1 && process.argv[onlyIdx + 1] && !process.argv[onlyIdx + 1].startsWith('-')) {
+      onlyRaw = process.argv[onlyIdx + 1];
+    }
+  }
+  const onlyPrefixes = onlyRaw
+    ? onlyRaw.split(',').map(p => {
+        let norm = p.replace(/^\//, '');
+        if (norm && !norm.endsWith('/') && !norm.includes('.')) norm += '/';
+        return norm;
+      }).filter(Boolean)
+    : null;
+
+  // Parse --timeout flag: override default 300s timeout
+  // Supports both --timeout=60 and --timeout 60
+  let timeoutSec = 300;
+  const timeoutEqArg = process.argv.find(a => a.startsWith('--timeout='));
+  if (timeoutEqArg) {
+    timeoutSec = parseInt(timeoutEqArg.slice('--timeout='.length), 10);
+  } else {
+    const timeoutIdx = process.argv.indexOf('--timeout');
+    if (timeoutIdx !== -1 && process.argv[timeoutIdx + 1]) {
+      timeoutSec = parseInt(process.argv[timeoutIdx + 1], 10);
+    }
+  }
+  const timeoutMs = timeoutSec * 1000;
+
   // Determine output directory
   const intoIdx = process.argv.indexOf('--into');
   let outputDir;
   if (intoIdx !== -1 && process.argv[intoIdx + 1]) {
     outputDir = path.resolve(process.argv[intoIdx + 1]);
+  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
+    // Inside a pulled workspace — pull into current dir (no nesting)
+    outputDir = process.cwd();
   } else {
-    // Default: atris/{slug}/ in current directory, or just {slug}/ if no atris/ folder
-    const atrisDir = path.join(process.cwd(), 'atris');
-    if (fs.existsSync(atrisDir)) {
-      outputDir = path.join(atrisDir, slug);
-    } else {
-      outputDir = path.join(process.cwd(), slug);
-    }
+    // Default: ./{slug}/ in current directory
+    outputDir = path.join(process.cwd(), slug);
   }
 
-  // Resolve business ID — check local config first, then API
-  let businessId, workspaceId, businessName;
+  // Resolve business ID — always refresh from API to avoid stale workspace_id
+  let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
 
-  if (businesses[slug]) {
-    businessId = businesses[slug].business_id;
-    workspaceId = businesses[slug].workspace_id;
-    businessName = businesses[slug].name || slug;
-  } else {
-    // Try to find by slug via API
-    const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
-    if (!listResult.ok) {
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
+  if (!listResult.ok) {
+    // Fall back to local cache if API fails
+    if (businesses[slug]) {
+      businessId = businesses[slug].business_id;
+      workspaceId = businesses[slug].workspace_id;
+      businessName = businesses[slug].name || slug;
+      resolvedSlug = businesses[slug].slug || slug;
+    } else {
       console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.status}`);
       process.exit(1);
     }
+  } else {
     const match = (listResult.data || []).find(
       b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase()
     );
@@ -117,8 +167,9 @@ async function pullBusiness(slug) {
     businessId = match.id;
     workspaceId = match.workspace_id;
     businessName = match.name;
+    resolvedSlug = match.slug;
 
-    // Auto-save for next time
+    // Update local cache
     businesses[slug] = {
       business_id: businessId,
       workspace_id: workspaceId,
@@ -135,74 +186,285 @@ async function pullBusiness(slug) {
     process.exit(1);
   }
 
-  console.log('');
-  console.log(`Pulling ${businessName}...`);
+  // Load manifest (last sync state)
+  const manifest = loadManifest(resolvedSlug || slug);
+  const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
 
-  // Snapshot — one API call gets everything (120s timeout for large workspaces)
-  const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true`,
-    { method: 'GET', token: creds.token, timeoutMs: 120000 }
-  );
+  console.log('');
+  console.log(`Pulling ${businessName}...` + (timeSince ? `  (last synced ${timeSince})` : ''));
+
+  // Loading indicator with elapsed time
+  const startTime = Date.now();
+  const spinner = ['|', '/', '-', '\\'];
+  let spinIdx = 0;
+  const loading = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    process.stdout.write(`\r  Fetching workspace... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
+  }, 250);
+
+  // Smart pull: if we have a manifest (not first sync), fetch hashes first, then only changed content
+  const hasManifest = manifest && manifest.files && Object.keys(manifest.files).length > 0 && !force;
+  let result;
+
+  const pathsParam = onlyPrefixes ? `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}` : '';
+
+  if (hasManifest) {
+    // Phase 1: fetch hashes only (fast — no file content transferred)
+    const hashUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false${pathsParam}`;
+    const hashResult = await apiRequestJson(hashUrl, { method: 'GET', token: creds.token, timeoutMs });
+
+    if (hashResult.ok && hashResult.data && hashResult.data.files) {
+      // Diff against manifest to find changed files
+      const remoteHashes = {};
+      for (const f of hashResult.data.files) {
+        if (f.path && f.hash) remoteHashes[f.path] = f.hash;
+      }
+      const changedPaths = [];
+      const manifestFiles = manifest.files || {};
+      for (const [p, hash] of Object.entries(remoteHashes)) {
+        const prev = manifestFiles[p];
+        if (!prev || prev.hash !== hash) changedPaths.push(p);
+      }
+
+      if (changedPaths.length === 0) {
+        clearInterval(loading);
+        process.stdout.write(`\r  Checked ${Object.keys(remoteHashes).length} files in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(10)}\n`);
+        // Still need full result for diff logic below — build it from hash-only data
+        result = { ok: true, data: { files: hashResult.data.files } };
+      } else {
+        // Phase 2: fetch ONLY changed files via batch endpoint (not full snapshot)
+        clearInterval(loading);
+        const checkSec = Math.floor((Date.now() - startTime) / 1000);
+        console.log(`\r  Checked in ${checkSec}s — ${changedPaths.length} changed, ${Object.keys(remoteHashes).length - changedPaths.length} unchanged.${' '.repeat(10)}`);
+
+        const startPhase2 = Date.now();
+        const loading2 = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - startPhase2) / 1000);
+          process.stdout.write(`\r  Fetching ${changedPaths.length} changed files... ${spinner[spinIdx++ % 4]} ${elapsed}s`);
+        }, 250);
+
+        // Try batch file read first (fast — only changed files)
+        const batchUrl = `/business/${businessId}/workspaces/${workspaceId}/files/batch`;
+        const batchResult = await apiRequestJson(batchUrl, {
+          method: 'POST',
+          token: creds.token,
+          body: { paths: changedPaths },
+          timeoutMs,
+        });
+
+        clearInterval(loading2);
+        const phase2Sec = Math.floor((Date.now() - startPhase2) / 1000);
+
+        if (batchResult.ok && batchResult.data && batchResult.data.files) {
+          process.stdout.write(`\r  Fetched ${batchResult.data.files.length} files in ${phase2Sec}s.${' '.repeat(10)}\n`);
+          // Merge: hash-only results + content for changed files
+          const contentMap = {};
+          for (const f of batchResult.data.files) {
+            if (f.path) contentMap[f.path] = f;
+          }
+          // Build merged file list: all hash-only entries + inject content for changed ones
+          const mergedFiles = hashResult.data.files.map(f => {
+            const withContent = contentMap[f.path];
+            return withContent || f;
+          });
+          result = { ok: true, data: { files: mergedFiles } };
+        } else {
+          // Batch not available — fall back to full snapshot
+          process.stdout.write(`\r  Batch unavailable, fetching full snapshot...${' '.repeat(10)}\n`);
+          const contentUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+          result = await apiRequestJson(contentUrl, { method: 'GET', token: creds.token, timeoutMs });
+          const fullSec = Math.floor((Date.now() - startPhase2) / 1000);
+          process.stdout.write(`\r  Fetched in ${fullSec}s.${' '.repeat(20)}\n`);
+        }
+      }
+    } else {
+      // Hash-only fetch failed — fall back to full snapshot
+      const fullUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+      result = await apiRequestJson(fullUrl, { method: 'GET', token: creds.token, timeoutMs });
+      clearInterval(loading);
+      process.stdout.write(`\r  Fetched in ${Math.floor((Date.now() - startTime) / 1000)}s.${' '.repeat(20)}\n`);
+    }
+  } else {
+    // First sync or --force — full snapshot with content
+    const snapshotUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+    result = await apiRequestJson(snapshotUrl, { method: 'GET', token: creds.token, timeoutMs });
+    clearInterval(loading);
+    const totalSec = Math.floor((Date.now() - startTime) / 1000);
+    process.stdout.write(`\r  Fetched in ${totalSec}s.${' '.repeat(20)}\n`);
+  }
 
   if (!result.ok) {
-    const msg = result.errorMessage || `HTTP ${result.status}`;
-    if (result.status === 409) {
-      console.error(`\nComputer is sleeping. Wake it first, then pull again.`);
+    const msg = result.errorMessage || result.error || `HTTP ${result.status}`;
+    if (result.status === 0 || (typeof msg === 'string' && msg.toLowerCase().includes('timeout'))) {
+      console.error(`\n  Workspace timed out (large workspaces can take 60s+). Try: atris pull ${slug} --timeout=600`);
+    } else if (result.status === 502) {
+      console.error(`\n  Computer didn't respond in time. It may be waking up or the workspace is large.`);
+      console.error(`  Try again in 30s, or use: atris pull ${slug} --only=team/,context/`);
+    } else if (result.status === 409) {
+      console.error(`\n  Computer is sleeping. Wake it first, then pull again.`);
     } else if (result.status === 403) {
-      console.error(`\nAccess denied. You're not a member of "${slug}".`);
+      console.error(`\n  Access denied. You're not a member of "${slug}".`);
     } else if (result.status === 404) {
-      console.error(`\nBusiness "${slug}" not found.`);
+      console.error(`\n  Business "${slug}" not found.`);
     } else {
-      console.error(`\nPull failed: ${msg}`);
+      console.error(`\n  Pull failed: ${msg}`);
     }
     process.exit(1);
   }
 
-  const files = result.data.files || [];
+  let files = result.data.files || [];
   if (files.length === 0) {
     console.log('  Workspace is empty.');
     return;
   }
 
-  // Write files to local directory
-  let written = 0;
-  let skipped = 0;
+  console.log(`  Processing ${files.length} files...`);
 
-  for (const file of files) {
-    if (!file.path || file.content === null || file.content === undefined) {
-      skipped++;
-      continue;
+  // Apply --only filter if specified
+  if (onlyPrefixes) {
+    files = files.filter(file => {
+      if (!file.path) return false;
+      const rel = file.path.replace(/^\//, '');
+      return onlyPrefixes.some(prefix => rel.startsWith(prefix));
+    });
+    if (files.length === 0) {
+      console.log(`  No files matched --only filter: ${onlyPrefixes.join(', ')}`);
+      return;
     }
-    if (file.binary) {
-      skipped++;
-      continue;
-    }
-
-    const localPath = path.join(outputDir, file.path.replace(/^\//, ''));
-    const localDir = path.dirname(localPath);
-
-    // Check if unchanged
-    if (fs.existsSync(localPath)) {
-      const existing = fs.readFileSync(localPath, 'utf8');
-      if (existing === file.content) {
-        skipped++;
-        continue;
-      }
-    }
-
-    fs.mkdirSync(localDir, { recursive: true });
-    fs.writeFileSync(localPath, file.content);
-    written++;
+    console.log(`  Filtered to ${files.length} files matching: ${onlyPrefixes.join(', ')}`);
   }
+
+  // Build remote file map {path: {hash, size, content}}
+  const remoteFiles = {};
+  const remoteContent = {};
+  for (const file of files) {
+    if (!file.path || file.binary || file.content === null || file.content === undefined) continue;
+    if (file.content === '') continue;
+    // Compute hash from content bytes (matches computeLocalHashes raw byte hashing)
+    const crypto = require('crypto');
+    const rawBytes = Buffer.from(file.content, 'utf-8');
+    remoteFiles[file.path] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
+    remoteContent[file.path] = file.content;
+  }
+
+  // Compute local file hashes
+  const localFiles = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
+
+  // If output dir is empty (fresh clone) or --force, treat as first sync — pull everything
+  const effectiveManifest = (Object.keys(localFiles).length === 0 || force) ? null : manifest;
+
+  // Three-way compare
+  const diff = threeWayCompare(localFiles, remoteFiles, effectiveManifest);
+
+  // Apply changes
+  let pulled = 0;
+  let conflictCount = 0;
+  let unchangedCount = diff.unchanged.length;
 
   console.log('');
-  if (written > 0) {
-    console.log(`  ${written} file${written > 1 ? 's' : ''} pulled to ${outputDir}`);
+
+  // Pull files that changed remotely (and we didn't change locally)
+  for (const p of [...diff.toPull, ...diff.newRemote]) {
+    const content = remoteContent[p];
+    if (!content && content !== '') continue;
+    const localPath = path.join(outputDir, p.replace(/^\//, ''));
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    fs.writeFileSync(localPath, content);
+    const label = diff.newRemote.includes(p) ? 'new on computer' : 'updated on computer';
+    const icon = diff.newRemote.includes(p) ? '+' : '\u2193';
+    console.log(`  ${icon} ${p.replace(/^\//, '')}  ${label}`);
+    pulled++;
   }
-  if (skipped > 0) {
-    console.log(`  ${skipped} unchanged`);
+
+  // Handle conflicts
+  for (const p of diff.conflicts) {
+    if (force) {
+      // Force mode: pull remote version, overwrite local
+      const content = remoteContent[p];
+      if (!content && content !== '') continue;
+      const localPath = path.join(outputDir, p.replace(/^\//, ''));
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, content);
+      console.log(`  ! ${p.replace(/^\//, '')}  overwritten (--force)`);
+      pulled++;
+    } else {
+      // Save remote version alongside local
+      const content = remoteContent[p];
+      if (content || content === '') {
+        const localPath = path.join(outputDir, p.replace(/^\//, '') + '.remote');
+        fs.mkdirSync(path.dirname(localPath), { recursive: true });
+        fs.writeFileSync(localPath, content);
+      }
+      console.log(`  \u26A0 ${p.replace(/^\//, '')}  CONFLICT \u2014 both you and the computer changed this`);
+      console.log(`    \u2192 Remote version saved as ${p.replace(/^\//, '')}.remote`);
+      conflictCount++;
+    }
   }
-  console.log(`\n  Total: ${files.length} files (${result.data.total_size} bytes)`);
+
+  // Warn about remote deletions
+  for (const p of diff.deletedRemote) {
+    console.log(`  - ${p.replace(/^\//, '')}  deleted on computer`);
+  }
+
+  // Show unchanged
+  if (unchangedCount > 0 && pulled === 0 && conflictCount === 0 && diff.deletedRemote.length === 0) {
+    console.log('  Already up to date.');
+  }
+
+  // Summary
+  console.log('');
+  const parts = [];
+  if (pulled > 0) parts.push(`${pulled} pulled`);
+  if (diff.newRemote.length > 0 && !parts.some(p => p.includes('pulled'))) parts.push(`${diff.newRemote.length} new`);
+  if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
+  if (conflictCount > 0) parts.push(`${conflictCount} conflict${conflictCount > 1 ? 's' : ''}`);
+  if (diff.deletedRemote.length > 0) parts.push(`${diff.deletedRemote.length} deleted remotely`);
+  if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
+
+  // Get current commit hash from remote (for manifest)
+  let commitHash = null;
+  try {
+    const headResult = await apiRequestJson(
+      `/business/${businessId}/workspaces/${workspaceId}/git/head`,
+      { method: 'GET', token: creds.token }
+    );
+    if (headResult.ok && headResult.data && headResult.data.commit) {
+      commitHash = headResult.data.commit;
+    }
+  } catch {
+    // Git might not be initialized yet — that's fine
+  }
+
+  // Save manifest — when using --only, merge into existing manifest to avoid data loss
+  let manifestFiles = remoteFiles;
+  if (onlyPrefixes && manifest && manifest.files) {
+    manifestFiles = { ...manifest.files, ...remoteFiles };
+  }
+  const newManifest = buildManifest(manifestFiles, commitHash);
+  saveManifest(resolvedSlug || slug, newManifest);
+
+  // Save business config in the output dir so push/status work without args
+  const atrisDir = path.join(outputDir, '.atris');
+  fs.mkdirSync(atrisDir, { recursive: true });
+  fs.writeFileSync(path.join(atrisDir, 'business.json'), JSON.stringify({
+    slug: resolvedSlug || slug,
+    business_id: businessId,
+    workspace_id: workspaceId,
+    name: businessName,
+  }, null, 2));
+}
+
+
+function _timeSince(isoString) {
+  if (!isoString) return null;
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 
