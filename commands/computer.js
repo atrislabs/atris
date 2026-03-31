@@ -223,6 +223,39 @@ async function computerPull(token, remotePath, localDir) {
   console.log(`\n  Pulled ${pulled} files.`);
 }
 
+async function computerLearn(token) {
+  console.log('Starting learning cycle on EC2...');
+
+  // First check how many learnings exist
+  const countResult = await apiRequestJson('/ai-computer/terminal', {
+    method: 'POST', token,
+    body: { command: 'ls soul/learning-*.md 2>/dev/null | wc -l | tr -d " "' },
+  });
+  const count = parseInt((countResult.ok && countResult.data.stdout || '0').trim()) || 0;
+  const next = String(count + 1).padStart(3, '0');
+  console.log(`  Existing learnings: ${count}`);
+  console.log(`  Next: soul/learning-${next}.md`);
+
+  // Trigger LLM learning cycle
+  const prompt = `Self-improvement cycle. Read soul/INDEX.md to see what you know. ` +
+    `Check existing soul/learning-*.md files to avoid repeating topics. ` +
+    `Pick ONE new topic that would make the overnight agent better at earning money for the business owner. ` +
+    `Research it using the files and tools available. ` +
+    `Write your finding to soul/learning-${next}.md. Be specific and actionable. ` +
+    `Then run: bash tools/rebuild_index.sh`;
+
+  const result = await apiRequestJson('/ai-computer/execute', {
+    method: 'POST', token,
+    body: { prompt },
+  });
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.status}`);
+    return;
+  }
+  console.log(`  Learning cycle started: ${result.data.execution_id}`);
+  console.log(`  The computer is thinking... check back with: atris computer diff soul`);
+}
+
 async function computerExec(token, prompt) {
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
@@ -260,6 +293,7 @@ async function runComputer() {
     console.log('  exec "<prompt>" Run with LLM (Claude Code)');
     console.log('  pull [path] [dir] Pull files from EC2 to local');
     console.log('  diff [path]       Show what changed on EC2 since last pull');
+    console.log('  learn             Trigger autonomous learning cycle');
     console.log('');
     console.log('Examples:');
     console.log('  atris computer status');
@@ -288,6 +322,7 @@ async function runComputer() {
       return computerPull(token, parts[0], parts[1]);
     }
     case 'diff': return computerDiff(token, rest || undefined);
+    case 'learn': return computerLearn(token);
     default:
       console.error(`Unknown subcommand: ${sub}`);
       console.log('Run: atris computer --help');
