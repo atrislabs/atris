@@ -133,6 +133,56 @@ async function computerCat(token, remotePath) {
   console.log(result.data.content || '');
 }
 
+async function computerDiff(token, remotePath) {
+  const rPath = remotePath || 'soul';
+  const fs = require('fs');
+  const path = require('path');
+  const crypto = require('crypto');
+
+  // List remote files
+  const listResult = await apiRequestJson(`/ai-computer/files?path=${encodeURIComponent(rPath)}`, {
+    method: 'GET', token,
+  });
+  if (!listResult.ok) {
+    console.error(`Failed: ${listResult.errorMessage || listResult.status}`);
+    return;
+  }
+  const remoteFiles = (listResult.data.files || []).filter(f => f.type === 'file');
+
+  // Compare with local ec2_pull/
+  const localDir = 'experiments/computer/ec2_pull';
+  let added = 0, modified = 0, same = 0, deleted = 0;
+
+  for (const f of remoteFiles) {
+    const localPath = path.join(localDir, f.name);
+    if (!fs.existsSync(localPath)) {
+      console.log(`  + ${f.name} (${f.size}b) — new on EC2`);
+      added++;
+    } else {
+      const localSize = fs.statSync(localPath).size;
+      if (Math.abs(localSize - (f.size || 0)) > 10) {
+        console.log(`  ~ ${f.name} (local: ${localSize}b, EC2: ${f.size}b) — changed`);
+        modified++;
+      } else {
+        same++;
+      }
+    }
+  }
+
+  // Check for files deleted on EC2
+  if (fs.existsSync(localDir)) {
+    const remoteNames = new Set(remoteFiles.map(f => f.name));
+    for (const localFile of fs.readdirSync(localDir)) {
+      if (!remoteNames.has(localFile) && localFile.endsWith('.md')) {
+        console.log(`  - ${localFile} — deleted on EC2`);
+        deleted++;
+      }
+    }
+  }
+
+  console.log(`\n  ${added} new, ${modified} changed, ${deleted} deleted, ${same} unchanged`);
+}
+
 async function computerPull(token, remotePath, localDir) {
   const rPath = remotePath || 'soul';
   const lDir = localDir || 'ec2_pull';
@@ -209,6 +259,7 @@ async function runComputer() {
     console.log('  cat <path>      Read a file');
     console.log('  exec "<prompt>" Run with LLM (Claude Code)');
     console.log('  pull [path] [dir] Pull files from EC2 to local');
+    console.log('  diff [path]       Show what changed on EC2 since last pull');
     console.log('');
     console.log('Examples:');
     console.log('  atris computer status');
@@ -236,6 +287,7 @@ async function runComputer() {
       const parts = rest.split(' ').filter(Boolean);
       return computerPull(token, parts[0], parts[1]);
     }
+    case 'diff': return computerDiff(token, rest || undefined);
     default:
       console.error(`Unknown subcommand: ${sub}`);
       console.log('Run: atris computer --help');
