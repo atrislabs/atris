@@ -451,6 +451,19 @@ function profileEmail() {
   process.exit(1);
 }
 
+function activateGlobal() {
+  // Hidden command: atris _activate <name> → copy profile to credentials.json
+  // Called by the shell wrapper so `atris switch` persists across terminals.
+  const name = process.argv[3];
+  if (!name) { process.exit(1); }
+  const profile = loadProfile(name);
+  if (!profile || !profile.token) { process.exit(1); }
+  const credentialsPath = getCredentialsPath();
+  fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
+  try { fs.chmodSync(credentialsPath, 0o600); } catch {}
+  process.exit(0);
+}
+
 function shellInit() {
   // Output shell function for per-terminal account switching
   // Usage: eval "$(atris shell-init)"  (add to ~/.zshrc)
@@ -464,6 +477,7 @@ function shellInit() {
     '    _profile=$(command atris _resolve "$2" 2>/dev/null)',
     '    if [[ $? -eq 0 && -n "$_profile" ]]; then',
     '      export ATRIS_PROFILE="$_profile"',
+    '      command atris _activate "$_profile" 2>/dev/null',
     '      local _email',
     '      _email=$(command atris _profile-email "$_profile" 2>/dev/null)',
     '      echo "Switched to ${_email:-$_profile}"',
@@ -481,6 +495,7 @@ function shellInit() {
     '      _profile=$(command atris _resolve "$_pick" 2>/dev/null)',
     '      if [[ $? -eq 0 && -n "$_profile" ]]; then',
     '        export ATRIS_PROFILE="$_profile"',
+    '        command atris _activate "$_profile" 2>/dev/null',
     '        local _email',
     '        _email=$(command atris _profile-email "$_profile" 2>/dev/null)',
     '        echo "Switched to ${_email:-$_profile}"',
@@ -496,4 +511,4 @@ function shellInit() {
   console.log(lines.join('\n'));
 }
 
-module.exports = { loginAtris, logoutAtris, whoamiAtris, switchAccount, useAccount, accountsCmd, listAccountsCmd, resolveProfile, profileEmail, shellInit };
+module.exports = { loginAtris, logoutAtris, whoamiAtris, switchAccount, useAccount, accountsCmd, listAccountsCmd, resolveProfile, profileEmail, activateGlobal, shellInit };
