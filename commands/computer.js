@@ -33,9 +33,25 @@ async function computerStatus(token) {
     return;
   }
   const d = result.data;
-  console.log(`  Status:   ${d.status || 'unknown'}`);
-  console.log(`  Agent:    ${(d.agent_id || '?').slice(0, 12)}...`);
-  console.log(`  Endpoint: ${d.endpoint || 'off'}`);
+  const status = d.status || 'unknown';
+  const icon = status === 'running' ? '●' : '○';
+  console.log(`  ${icon} Computer: ${status}`);
+  console.log(`    Agent:    ${(d.agent_id || '?').slice(0, 12)}...`);
+  if (d.endpoint) console.log(`    Endpoint: ${d.endpoint}`);
+
+  // If running, show soul stats
+  if (status === 'running') {
+    try {
+      const filesResult = await apiRequestJson('/ai-computer/files?path=soul', { method: 'GET', token });
+      if (filesResult.ok) {
+        const files = filesResult.data.files || [];
+        const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
+        const learnings = files.filter(f => f.name && f.name.startsWith('learning-')).length;
+        console.log(`    Soul:     ${files.length} files, ${(totalSize / 1024).toFixed(1)}KB`);
+        console.log(`    Learnings: ${learnings} self-generated`);
+      }
+    } catch {}
+  }
 }
 
 async function computerWake(token) {
