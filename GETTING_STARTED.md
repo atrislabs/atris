@@ -164,8 +164,8 @@ This syncs your local `atris.md` and agent templates to the latest version. Re-r
 ## Need Help?
 
 - **Full spec:** Read `atris.md` for technical details
-- **Issues:** https://github.com/atrislabs/atris.md/issues
-- **Docs:** https://github.com/atrislabs/atris.md
+- **Issues:** https://github.com/atrislabs/atris/issues
+- **Docs:** https://github.com/atrislabs/atris
 
 ---
 

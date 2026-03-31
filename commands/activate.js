@@ -112,8 +112,20 @@ function activateAtris() {
     console.log('└─────────────────────────────────────────────────────────────┘');
   }
 
+  // Show learning count if learnings exist
+  let learningLine = '';
+  try {
+    const learningsPath = path.join(targetDir, 'learnings.jsonl');
+    if (fs.existsSync(learningsPath)) {
+      const lines = fs.readFileSync(learningsPath, 'utf8').trim().split('\n').filter(Boolean);
+      if (lines.length > 0) {
+        learningLine = `  •  🧠 ${lines.length} learnings`;
+      }
+    }
+  } catch {}
+
   console.log('');
-  console.log(`📅 ${dateFormatted}  •  State: ${state.state}`);
+  console.log(`📅 ${dateFormatted}  •  State: ${state.state}${learningLine}`);
   console.log(`   ${summaryLine}`);
   console.log('');
   console.log('Core files:');

@@ -41,7 +41,7 @@ function httpRequest(urlString, options) {
     const parsed = new URL(urlString);
     const isHttps = parsed.protocol === 'https:';
     const transport = isHttps ? https : http;
-    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 10000;
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 30000;
 
     const requestOptions = {
       method: options.method || 'GET',
@@ -52,6 +52,13 @@ function httpRequest(urlString, options) {
     };
 
     const req = transport.request(requestOptions, (res) => {
+      // Follow redirects (301, 302, 307, 308)
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, urlString).toString();
+        resolve(httpRequest(redirectUrl, options));
+        return;
+      }
+
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -64,11 +71,18 @@ function httpRequest(urlString, options) {
     });
 
     req.on('error', reject);
+    // Socket idle timeout (fires if no data received for this duration)
     if (timeoutMs > 0) {
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error('Request timeout'));
+        req.destroy(new Error(`Request timeout after ${Math.round(timeoutMs / 1000)}s — try --timeout=300`));
       });
     }
+    // Hard deadline — kill request after 2x the timeout regardless of activity
+    const hardDeadline = timeoutMs > 0
+      ? setTimeout(() => { req.destroy(new Error(`Hard deadline exceeded (${Math.round(timeoutMs * 2 / 1000)}s)`)); }, timeoutMs * 2)
+      : null;
+    // Clear hard deadline when response completes
+    req.on('close', () => { if (hardDeadline) clearTimeout(hardDeadline); });
 
     if (options.body) {
       if (!req.hasHeader('Content-Length')) {
@@ -106,43 +120,49 @@ async function apiRequestJson(pathname, options = {}) {
     }
   }
 
-  try {
-    const result = await httpRequest(url, {
-      method: options.method || 'GET',
-      headers,
-      body: bodyPayload,
-    });
+  const maxRetries = options.retries != null ? options.retries : 1;
+  const retryableStatus = new Set([0, 502, 503, 504]);
 
-    const text = result.body.toString('utf8');
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await httpRequest(url, {
+        method: options.method || 'GET',
+        headers,
+        body: bodyPayload,
+        timeoutMs: options.timeoutMs,
+      });
+
+      const text = result.body.toString('utf8');
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
       }
+
+      const ok = result.status >= 200 && result.status < 300;
+
+      // Retry on transient server errors
+      if (!ok && retryableStatus.has(result.status) && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+
+      const errorMessage = !ok
+        ? (data && typeof data === 'object' && (data.detail || data.error || data.message)) || text || 'Request failed'
+        : undefined;
+
+      return { ok, status: result.status, data, text, error: errorMessage };
+    } catch (error) {
+      // Retry on network errors (timeout, connection reset)
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return { ok: false, status: 0, data: null, text: '', error: error.message || 'Network error' };
     }
-
-    const ok = result.status >= 200 && result.status < 300;
-    const errorMessage = !ok
-      ? (data && typeof data === 'object' && (data.detail || data.error || data.message)) || text || 'Request failed'
-      : undefined;
-
-    return {
-      ok,
-      status: result.status,
-      data,
-      text,
-      error: errorMessage,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      text: '',
-      error: error.message || 'Network error',
-    };
   }
 }
 

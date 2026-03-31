@@ -122,6 +122,20 @@ async function planAtris(userInput = null) {
   const lessonsRef = fs.existsSync(lessonsPath) ? path.relative(process.cwd(), lessonsPath) : null;
   console.log(`- Lessons: ${lessonsRef || 'atris/lessons.md (none yet)'}`);
   console.log(`- Journal (today): ${journalPath}`);
+
+  // Show top learnings if available
+  try {
+    const { loadLearnings } = require('../lib/learnings');
+    const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
+    if (learnings.length > 0) {
+      console.log('');
+      console.log('🧠 Prior learnings (high confidence):');
+      for (const l of learnings) {
+        console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
+      }
+    }
+  } catch {}
+
   console.log('');
   console.log(`📥 Inbox items: ${inboxCount}`);
   console.log('');
@@ -442,6 +456,20 @@ async function doAtris() {
   console.log(`- MAP: ${mapDisplay}`);
   console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
   console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+
+  // Show top learnings during execution
+  try {
+    const { loadLearnings } = require('../lib/learnings');
+    const learnings = loadLearnings().filter(e => e._effectiveConfidence >= 7 && e.insight !== '[REMOVED]').slice(0, 3);
+    if (learnings.length > 0) {
+      console.log('');
+      console.log('🧠 Prior learnings (apply during build):');
+      for (const l of learnings) {
+        console.log(`  [${l._effectiveConfidence}/10] ${l.type}/${l.key}: ${l.insight}`);
+      }
+    }
+  } catch {}
+
   console.log('');
 
   const backlogCount = workspaceSummary && Array.isArray(workspaceSummary.backlogTasks)
@@ -1034,6 +1062,19 @@ async function reviewAtris() {
           fs.writeFileSync(logFile, journalContent);
           console.log('');
           console.log(`✓ Logged to journal: ${learning}`);
+        }
+
+        // Also log to structured learnings (if learnings module exists)
+        try {
+          const { addLearning } = require('../lib/learnings');
+          const insight = answer.trim();
+          // Auto-classify: starts with "don't" or "never" or "avoid" → pitfall, else pattern
+          const type = /^(don't|never|avoid|watch out|careful)/i.test(insight) ? 'pitfall' : 'pattern';
+          const key = insight.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 4).join('-');
+          addLearning({ type, key, insight, confidence: 7, source: 'review', files: [] });
+          console.log(`✓ Saved to learnings: [7/10] ${type}/${key}`);
+        } catch {
+          // learnings module not available — skip silently
         }
       }
 

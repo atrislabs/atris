@@ -197,70 +197,108 @@ function consoleCmd() {
 }
 
 function showHelp() {
-  const showAll = process.argv.includes('--all') || process.argv.includes('-a');
-
   console.log('');
-  console.log('  atris — self-improving context layer for AI agents');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('atrisDev — The new way to build with AI');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('  atris                 start building (loads context)');
-  console.log('  atris init            create atris/ in your project');
-  console.log('  atris run             autonomous plan → do → review loop');
-  console.log('  atris soul            see what your project has learned');
-  console.log('  atris fleet           coordinate agent swarm');
-  console.log('  atris status          current work + completions');
+  console.log('Quick Start:');
   console.log('');
-
-  if (!showAll) {
-    console.log('  Run "atris help --all" for all commands.');
-    console.log('');
-    return;
-  }
-
-  console.log('  ─── Workflow ─────────────────────────────────────');
-  console.log('  plan         create build spec with visualization');
-  console.log('  do           execute tasks');
-  console.log('  review       validate work');
-  console.log('  run          auto-chain plan→do→review');
-  console.log('  autopilot    guided autonomous loop');
-  console.log('  brainstorm   explore ideas before planning');
+  console.log('  1. atris                  Load context, start building');
+  console.log('  2. Describe what you want (in your editor or terminal)');
+  console.log('  3. Agent shows visualization, you approve, it builds');
   console.log('');
-  console.log('  ─── Context ──────────────────────────────────────');
-  console.log('  log          add ideas to inbox');
-  console.log('  status       see active work (--json)');
-  console.log('  analytics    productivity from journals');
-  console.log('  search       search journal history');
-  console.log('  clean        housekeeping');
-  console.log('  verify       validate tests + MAP');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('  ─── Soul & Fleet ─────────────────────────────────');
-  console.log('  soul         project identity snapshot');
-  console.log('  soul fork    copy soul to another project');
-  console.log('  fleet        swarlo board status');
-  console.log('  fleet post   post to coordination board');
-  console.log('  fleet watch  live-tail the board');
+  console.log('Setup:');
+  console.log('  setup      - Guided first-time setup (login, pick business, pull)');
+  console.log('  init       - Initialize Atris in current project');
+  console.log('  update     - Update local files to latest version');
+  console.log('  upgrade    - Install latest Atris from npm');
   console.log('');
-  console.log('  ─── Computer ─────────────────────────────────────');
-  console.log('  computer          EC2 AI Computer status');
-  console.log('  computer wake     start the computer');
-  console.log('  computer sleep    stop (files persist)');
-  console.log('  computer run      run bash on EC2 (free)');
-  console.log('  computer grep     search files on EC2');
-  console.log('  computer exec     run with LLM (Claude Code)');
+  console.log('Core workflow:');
+  console.log('  plan       - Create build spec with visualization');
+  console.log('  do         - Execute tasks');
+  console.log('  review     - Validate work (tests, safety checks, docs)');
+  console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
   console.log('');
-  console.log('  ─── Skills & Team ────────────────────────────────');
-  console.log('  skill list   show skills');
-  console.log('  skill create scaffold new skill');
-  console.log('  member list  show team members');
-  console.log('  member create scaffold new member');
+  console.log('Context & tracking:');
+  console.log('  log        - Add ideas to inbox');
+  console.log('  activate   - Load Atris context');
+  console.log('  status     - See active work and completions (--json for machine output)');
+  console.log('  analytics  - Show recent productivity from journals');
+  console.log('  search     - Search journal history (atris search <keyword>)');
+  console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
+  console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('');
-  console.log('  ─── Cloud ────────────────────────────────────────');
-  console.log('  login        sign in');
-  console.log('  console      always-on coding console');
-  console.log('  pull         sync from cloud');
-  console.log('  gmail        email commands');
-  console.log('  calendar     calendar commands');
-  console.log('  slack        slack commands');
-  console.log('  integrations show integration status');
+  console.log('Optional helpers:');
+  console.log('  brainstorm - Explore ideas conversationally before planning');
+  console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
+  console.log('  visualize  - Legacy visualization helper (prefer "atris plan")');
+  console.log('');
+  console.log('Experiments:');
+  console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
+  console.log('  experiments validate        - Validate experiment packs');
+  console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
+  console.log('');
+  console.log('Quick commands:');
+  console.log('  atris      - Load context and start (natural language)');
+  console.log('  next       - Auto-advance to next step');
+  console.log('');
+  console.log('Sync:');
+  console.log('  pull       - Pull journals + member data from cloud');
+  console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
+  console.log('');
+  console.log('Business:');
+  console.log('  business add <slug>    - Connect a business');
+  console.log('  business list          - Show connected businesses');
+  console.log('  business remove <slug> - Disconnect a business');
+  console.log('  business health <slug> - Health report (members, workspace, issues)');
+  console.log('  business audit         - One-line health summary of all businesses');
+  console.log('');
+  console.log('Cloud & agents:');
+  console.log('  console    - Start/attach always-on coding console (tmux daemon)');
+  console.log('  agent      - Select which Atris agent to use');
+  console.log('  chat       - Chat with the selected Atris agent');
+  console.log('  login      - Sign in or add another account');
+  console.log('  logout     - Sign out of current account');
+  console.log('  whoami     - Show active account');
+  console.log('  switch     - Switch account globally (atris switch <name>)');
+  console.log('  use        - Set account for this terminal only (atris use <name>)');
+  console.log('  accounts   - Manage accounts (list, add, remove)');
+  console.log('');
+  console.log('Integrations:');
+  console.log('  gmail      - Email commands (inbox, read)');
+  console.log('  calendar   - Calendar commands (today, week)');
+  console.log('  twitter    - Twitter commands (post)');
+  console.log('  slack      - Slack commands (channels)');
+  console.log('  integrations - Show integration status');
+  console.log('');
+  console.log('Skills:');
+  console.log('  skill create <name> - Scaffold a new skill (--integration, --local)');
+  console.log('  skill link [--all]  - Symlink skills to ~/.claude/skills/ (system-level)');
+  console.log('  skill list          - Show all skills with compliance status');
+  console.log('  skill audit [name]  - Validate skill against Anthropic guide');
+  console.log('  skill fix [name]    - Auto-fix common compliance issues');
+  console.log('  skill delete <name> - Delete a skill and its symlinks');
+  console.log('');
+  console.log('Team:');
+  console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
+  console.log('  member list          - Show all team members');
+  console.log('  member activate <n>  - Activate a member (link skills, show context)');
+  console.log('  member upgrade <n>   - Convert flat file to directory format');
+  console.log('');
+  console.log('Plugin:');
+  console.log('  plugin build        - Package skills as .plugin for Cowork');
+  console.log('  plugin publish      - Sync skills to marketplace repo and push');
+  console.log('  plugin info         - Preview what will be included');
+  console.log('');
+  console.log('Other:');
+  console.log('  version    - Show Atris version');
+  console.log('  help       - Show this help');
+  console.log('');
+  console.log('💡 Tip: Just run "atris" to get started');
   console.log('');
 }
 
@@ -358,8 +396,8 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'fleet', 'soul', 'computer'];
+                       'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -369,6 +407,12 @@ function isSpecFile(cmd) {
 
 if (isSpecFile(command)) {
   showWelcomeVisualization();
+  process.exit(0);
+}
+
+// --version flag (works anywhere: atris --version, atris -v)
+if (command === '--version' || command === '-v' || process.argv.includes('--version')) {
+  console.log(`atris v${CLI_VERSION}`);
   process.exit(0);
 }
 
@@ -670,6 +714,11 @@ if (command === 'init') {
         console.error(`✗ Log sync failed: ${error.message || error}`);
         process.exit(1);
       });
+  } else if (subcommand && subcommand !== '--help' && !subcommand.startsWith('-')) {
+    // Business log: atris log <business-slug>
+    require('../commands/context-sync').businessLog(subcommand)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
   } else {
     logCmd();
   }
@@ -708,6 +757,9 @@ if (command === 'init') {
 } else if (command === '_profile-email') {
   // Hidden: print email for a profile name
   require('../commands/auth').profileEmail();
+} else if (command === '_activate') {
+  // Hidden: copy profile to credentials.json (used by shell-init wrapper)
+  require('../commands/auth').activateGlobal();
 } else if (command === 'shell-init') {
   require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
@@ -848,9 +900,23 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'status') {
-  const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
-  const isJson = process.argv.includes('--json');
-  statusCmd(isQuick, isJson);
+  let subcommand = process.argv[3];
+  // Auto-detect business from .atris/business.json in cwd
+  if (!subcommand || subcommand.startsWith('-')) {
+    const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
+    if (require('fs').existsSync(bizFile)) {
+      try { subcommand = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
+    }
+  }
+  if (subcommand && !subcommand.startsWith('-')) {
+    require('../commands/context-sync').businessStatus(subcommand)
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  } else {
+    const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
+    const isJson = process.argv.includes('--json');
+    statusCmd(isQuick, isJson);
+  }
 } else if (command === 'analytics') {
   require('../commands/analytics').analyticsAtris();
 } else if (command === 'clean') {
@@ -895,6 +961,10 @@ if (command === 'init') {
   integrationsStatus()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'learn') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/learn')(subcommand, ...args);
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
@@ -911,10 +981,27 @@ if (command === 'init') {
   require('../commands/push').pushAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'diff') {
+  let diffSlug = process.argv[3];
+  if (!diffSlug || diffSlug.startsWith('-')) {
+    const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
+    if (require('fs').existsSync(bizFile)) {
+      try { diffSlug = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
+    }
+  }
+  if (!diffSlug) { console.error('Usage: atris diff [business] [path]'); process.exit(1); }
+  require('../commands/context-sync').businessDiff(diffSlug)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'business') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/business').businessCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'clean-workspace' || command === 'cw') {
+  const { cleanWorkspace } = require('../commands/workspace-clean');
+  cleanWorkspace()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'plugin') {
@@ -925,18 +1012,8 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
-} else if (command === 'fleet') {
-  const args = process.argv.slice(3);
-  require('../commands/fleet').fleet(args)
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-} else if (command === 'soul') {
-  const args = process.argv.slice(3);
-  require('../commands/soul').soul(args)
-    .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
-} else if (command === 'computer') {
-  require('../commands/computer').runComputer()
+} else if (command === 'setup') {
+  require('../commands/setup').setupAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
