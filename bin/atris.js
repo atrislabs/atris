@@ -239,6 +239,14 @@ function showHelp() {
   console.log('  fleet post   post to coordination board');
   console.log('  fleet watch  live-tail the board');
   console.log('');
+  console.log('  ─── Computer ─────────────────────────────────────');
+  console.log('  computer          EC2 AI Computer status');
+  console.log('  computer wake     start the computer');
+  console.log('  computer sleep    stop (files persist)');
+  console.log('  computer run      run bash on EC2 (free)');
+  console.log('  computer grep     search files on EC2');
+  console.log('  computer exec     run with LLM (Claude Code)');
+  console.log('');
   console.log('  ─── Skills & Team ────────────────────────────────');
   console.log('  skill list   show skills');
   console.log('  skill create scaffold new skill');
@@ -351,7 +359,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'plugin', 'experiments', 'pull', 'push', 'business', 'sync',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'fleet', 'soul'];
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'fleet', 'soul', 'computer'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -925,6 +933,10 @@ if (command === 'init') {
 } else if (command === 'soul') {
   const args = process.argv.slice(3);
   require('../commands/soul').soul(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'computer') {
+  require('../commands/computer').runComputer()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
