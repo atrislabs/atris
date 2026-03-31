@@ -73,7 +73,7 @@ async function pushAtris() {
   // Resolve business — always refresh from API
   let businessId, workspaceId, businessName, resolvedSlug;
   const businesses = loadBusinesses();
-  const listResult = await apiRequestJson('/businesses/', { method: 'GET', token: creds.token });
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (listResult.ok) {
     const match = (listResult.data || []).find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
     if (!match) { console.error(`Business "${slug}" not found.`); process.exit(1); }
@@ -145,7 +145,7 @@ async function pushAtris() {
 
   // Push files to server
   const result = await apiRequestJson(
-    `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
+    `/business/${businessId}/workspaces/${workspaceId}/sync`,
     { method: 'POST', token: creds.token, body: { files: filesToPush }, headers: { 'X-Atris-Actor-Source': 'cli' } }
   );
 
@@ -160,7 +160,7 @@ async function pushAtris() {
 
       if (allowed.length > 0) {
         const retry = await apiRequestJson(
-          `/businesses/${businessId}/workspaces/${workspaceId}/sync`,
+          `/business/${businessId}/workspaces/${workspaceId}/sync`,
           { method: 'POST', token: creds.token, body: { files: allowed }, headers: { 'X-Atris-Actor-Source': 'cli' } }
         );
         if (retry.ok) {
