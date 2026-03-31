@@ -223,6 +223,85 @@ async function computerPull(token, remotePath, localDir) {
   console.log(`\n  Pulled ${pulled} files.`);
 }
 
+async function computerOnboard(token, businessSlug) {
+  if (!businessSlug) {
+    console.error('Usage: atris computer onboard <business-slug>');
+    console.error('');
+    console.error('Sets up a new business computer with soul, tools, and first learning cycle.');
+    console.error('The business must already exist (atris business create).');
+    process.exit(1);
+  }
+
+  const fs = require('fs');
+  const path = require('path');
+
+  console.log(`\nOnboarding "${businessSlug}"...`);
+
+  // Step 1: Push soul template
+  console.log('\n  1. Pushing soul template...');
+  const soulTemplate = `# Soul — ${businessSlug}\n\n## Identity\nBusiness computer for ${businessSlug}. Self-improving context system.\n\n## Goals\n- Learn the business overnight\n- Accumulate context that makes the agent smarter\n- Track what works and what doesn't\n\n## Rules\n- No emails without approval\n- No destructive actions\n- Save everything to soul/\n`;
+
+  const templateResult = await apiRequestJson('/ai-computer/terminal', {
+    method: 'POST', token,
+    body: { command: `mkdir -p soul tools && echo '${soulTemplate.replace(/'/g, "'\\''")}' > soul/soul.md && echo "Soul created"` },
+  });
+  if (templateResult.ok) console.log('    Soul template created');
+
+  // Step 2: Push tools
+  console.log('  2. Pushing tools...');
+  const toolsResult = await apiRequestJson('/ai-computer/terminal', {
+    method: 'POST', token,
+    body: { command: [
+      'cat > tools/rebuild_index.sh << \'TOOLEOF\'',
+      '#!/bin/bash',
+      'echo "# Context Index" > soul/INDEX.md',
+      'echo "" >> soul/INDEX.md',
+      'echo "Last updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> soul/INDEX.md',
+      'echo "" >> soul/INDEX.md',
+      'COUNT=0; TOTAL_SIZE=0',
+      'for f in soul/*.md; do',
+      '  [ "$f" = "soul/INDEX.md" ] && continue',
+      '  NAME=$(basename $f .md)',
+      '  FIRST_LINE=$(head -1 $f | sed "s/^# //")',
+      '  SIZE=$(wc -c < $f | tr -d " ")',
+      '  echo "- [$NAME]($NAME.md) — $FIRST_LINE ($SIZE bytes)" >> soul/INDEX.md',
+      '  COUNT=$((COUNT + 1)); TOTAL_SIZE=$((TOTAL_SIZE + SIZE))',
+      'done',
+      'echo "" >> soul/INDEX.md',
+      'echo "**Total: $COUNT files, $TOTAL_SIZE bytes**" >> soul/INDEX.md',
+      'echo "Indexed $COUNT files ($TOTAL_SIZE bytes)"',
+      'TOOLEOF',
+      'chmod +x tools/rebuild_index.sh',
+      'bash tools/rebuild_index.sh',
+    ].join('\n') },
+  });
+  if (toolsResult.ok) console.log(`    Tools installed. ${(toolsResult.data.stdout || '').trim()}`);
+
+  // Step 3: Trigger first learning cycle
+  console.log('  3. Starting first learning cycle...');
+  const learnResult = await apiRequestJson('/ai-computer/execute', {
+    method: 'POST', token,
+    body: {
+      prompt: `You are a brand new AI computer for a business called "${businessSlug}". ` +
+        `Read your soul/soul.md to understand your identity. ` +
+        `Then write soul/learning-001.md with your first observation: ` +
+        `what information do you need to be useful? What should the business owner push to you first? ` +
+        `Be specific about what files/data would make you most helpful. ` +
+        `Then run: bash tools/rebuild_index.sh`,
+    },
+  });
+  if (learnResult.ok) {
+    console.log(`    Learning cycle started: ${learnResult.data.execution_id}`);
+  }
+
+  console.log(`\n  ✓ Computer onboarded for "${businessSlug}"`);
+  console.log('');
+  console.log('  Next steps:');
+  console.log(`    atris push ${businessSlug} --from <your-context-dir>   Push your business files`);
+  console.log(`    atris computer diff soul                              See what the computer learned`);
+  console.log(`    atris computer learn                                  Trigger another learning cycle`);
+}
+
 async function computerLearn(token) {
   console.log('Starting learning cycle on EC2...');
 
@@ -294,6 +373,7 @@ async function runComputer() {
     console.log('  pull [path] [dir] Pull files from EC2 to local');
     console.log('  diff [path]       Show what changed on EC2 since last pull');
     console.log('  learn             Trigger autonomous learning cycle');
+    console.log('  onboard <slug>    Set up a new business computer');
     console.log('');
     console.log('Examples:');
     console.log('  atris computer status');
@@ -323,6 +403,7 @@ async function runComputer() {
     }
     case 'diff': return computerDiff(token, rest || undefined);
     case 'learn': return computerLearn(token);
+    case 'onboard': return computerOnboard(token, rest);
     default:
       console.error(`Unknown subcommand: ${sub}`);
       console.log('Run: atris computer --help');
