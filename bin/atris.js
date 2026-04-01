@@ -403,9 +403,10 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw'];
+                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
+                       'fork', 'browse', 'publish', 'sleep', 'wake'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -766,8 +767,11 @@ if (command === 'init') {
   // Hidden: print email for a profile name
   require('../commands/auth').profileEmail();
 } else if (command === '_activate') {
-  // Hidden: copy profile to credentials.json (used by shell-init wrapper)
+  // Hidden: copy profile to credentials.json (global switch, legacy)
   require('../commands/auth').activateGlobal();
+} else if (command === '_switch-session') {
+  // Hidden: per-terminal switch — writes session file so each tab keeps its own account
+  require('../commands/auth').switchSession();
 } else if (command === 'shell-init') {
   require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
