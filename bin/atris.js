@@ -248,7 +248,15 @@ function showHelp() {
   console.log('');
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
+  console.log('  push       - Push workspace files to cloud');
   console.log('  clean-workspace <slug> - Analyze & remove junk files from a workspace (alias: cw)');
+  console.log('');
+  console.log('GitHub for Context:');
+  console.log('  browse [query]     - Discover workspace templates');
+  console.log('  fork <template>    - Clone a template into a new workspace');
+  console.log('  publish            - Share your workspace as a template');
+  console.log('  sleep [business]   - Pause workspace compute (context saved)');
+  console.log('  wake [business]    - Resume workspace (agents restart)');
   console.log('');
   console.log('Business:');
   console.log('  business add <slug>    - Connect a business');
@@ -1014,6 +1022,26 @@ if (command === 'init') {
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
 } else if (command === 'setup') {
   require('../commands/setup').setupAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'fork') {
+  require('../commands/fork').forkAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'browse') {
+  require('../commands/browse').browseAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'publish') {
+  require('../commands/publish').publishAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'sleep') {
+  require('../commands/lifecycle').sleepAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'wake') {
+  require('../commands/lifecycle').wakeAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
