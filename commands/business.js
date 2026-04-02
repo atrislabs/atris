@@ -609,6 +609,131 @@ async function setNotificationMode(mode, ...flags) {
 }
 
 
+async function deployBusiness(slug) {
+  if (!slug) {
+    console.error('Usage: atris business deploy <slug>');
+    console.error('  Pushes local atris/business/<slug>/ to the cloud business.');
+    process.exit(1);
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  // Find local business directory
+  const atrisDir = findAtrisDir();
+  if (!atrisDir) {
+    console.error('Not in an atris project. Run from a directory with atris/ folder.');
+    process.exit(1);
+  }
+
+  const bizDir = path.join(atrisDir, 'business', slug);
+  if (!fs.existsSync(bizDir)) {
+    console.error(`Local business not found: ${bizDir}`);
+    console.error(`Create with: atris business create "${slug}"`);
+    process.exit(1);
+  }
+
+  // Check if business exists in cloud
+  const businesses = loadBusinesses();
+  let bizConfig = businesses[slug];
+
+  if (!bizConfig) {
+    // Try to find by slug in cloud
+    const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
+    if (listResult.ok && Array.isArray(listResult.data)) {
+      const match = listResult.data.find(b => b.slug === slug);
+      if (match) {
+        bizConfig = { business_id: match.id, workspace_id: match.workspace_id, name: match.name, slug: match.slug };
+        businesses[slug] = { ...bizConfig, added_at: new Date().toISOString() };
+        saveBusinesses(businesses);
+      }
+    }
+  }
+
+  if (!bizConfig || !bizConfig.business_id) {
+    console.log(`  Business "${slug}" not in cloud. Creating...`);
+    const bizMd = path.join(bizDir, 'BUSINESS.md');
+    const name = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const createResult = await apiRequestJson('/business/', {
+      method: 'POST', token: creds.token,
+      body: { name },
+    });
+    if (!createResult.ok) {
+      console.error(`Failed to create: ${createResult.errorMessage || createResult.status}`);
+      process.exit(1);
+    }
+    bizConfig = {
+      business_id: createResult.data.id,
+      workspace_id: createResult.data.workspace_id,
+      name: createResult.data.name,
+      slug: createResult.data.slug,
+    };
+    businesses[slug] = { ...bizConfig, added_at: new Date().toISOString() };
+    saveBusinesses(businesses);
+    console.log(`  Created: ${bizConfig.name} (${bizConfig.business_id.slice(0, 12)}...)`);
+  }
+
+  // Upload workspace files
+  const workspaceDir = path.join(bizDir, 'workspace');
+  let uploadCount = 0;
+  if (fs.existsSync(workspaceDir)) {
+    const files = walkDir(workspaceDir);
+    for (const filePath of files) {
+      const relativePath = path.relative(workspaceDir, filePath);
+      if (relativePath.startsWith('.')) continue;
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const uploadResult = await apiRequestJson(
+          `/business/${bizConfig.business_id}/workspaces/${bizConfig.workspace_id}/file`,
+          { method: 'PUT', token: creds.token, body: { path: '/' + relativePath, content } }
+        );
+        if (uploadResult.ok) {
+          uploadCount++;
+          process.stdout.write(`  Uploaded: ${relativePath}\n`);
+        }
+      } catch (e) {
+        // Skip binary files or errors
+      }
+    }
+  }
+
+  // Upload BUSINESS.md as context
+  const bizMd = path.join(bizDir, 'BUSINESS.md');
+  if (fs.existsSync(bizMd)) {
+    try {
+      const content = fs.readFileSync(bizMd, 'utf8');
+      await apiRequestJson(
+        `/business/${bizConfig.business_id}/workspaces/${bizConfig.workspace_id}/file`,
+        { method: 'PUT', token: creds.token, body: { path: '/BUSINESS.md', content } }
+      );
+      uploadCount++;
+      console.log('  Uploaded: BUSINESS.md');
+    } catch {}
+  }
+
+  console.log(`\n  Deployed ${uploadCount} files to ${bizConfig.name}`);
+  console.log(`  Dashboard: https://atris.ai/dashboard/gm/${bizConfig.business_id}`);
+  console.log('');
+}
+
+
+function walkDir(dir) {
+  let results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results = results.concat(walkDir(full));
+    } else {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+
 function findAtrisDir() {
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
@@ -652,6 +777,10 @@ async function businessCommand(subcommand, ...args) {
     case 'notification':
       await setNotificationMode(args[0], ...args.slice(1));
       break;
+    case 'deploy':
+    case 'push':
+      await deployBusiness(args[0]);
+      break;
     default:
       console.log('Usage: atris business <command> [args]');
       console.log('');
@@ -663,6 +792,7 @@ async function businessCommand(subcommand, ...args) {
       console.log('  audit                Audit all businesses');
       console.log('  connect <service>    Connect a skill/integration');
       console.log('  notify <mode>        Set notification mode (digest/silent/push)');
+      console.log('  deploy <slug>        Push local business to cloud');
       console.log('  remove <slug>        Unregister locally');
   }
 }
