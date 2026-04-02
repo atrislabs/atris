@@ -347,10 +347,138 @@ async function businessAudit() {
   console.log('');
 }
 
+async function createBusiness(name, ...flags) {
+  if (!name) {
+    console.error('Usage: atris business create <name> [--description "..."]');
+    process.exit(1);
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  // Parse flags
+  let description = '';
+  for (let i = 0; i < flags.length; i++) {
+    if ((flags[i] === '--description' || flags[i] === '-d') && flags[i + 1]) {
+      description = flags[i + 1];
+      i++;
+    }
+  }
+
+  console.log(`Creating business: ${name}...`);
+
+  const result = await apiRequestJson('/business/', {
+    method: 'POST',
+    token: creds.token,
+    body: { name, description: description || undefined },
+  });
+
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.error || result.status}`);
+    process.exit(1);
+  }
+
+  const biz = result.data;
+
+  // Register locally
+  const businesses = loadBusinesses();
+  businesses[biz.slug] = {
+    business_id: biz.id,
+    workspace_id: biz.workspace_id,
+    name: biz.name,
+    slug: biz.slug,
+    agent_id: biz.agent_id,
+    added_at: new Date().toISOString(),
+  };
+  saveBusinesses(businesses);
+
+  // Scaffold local directory if in an atris project
+  const atrisDir = findAtrisDir();
+  if (atrisDir) {
+    const bizDir = path.join(atrisDir, 'business', biz.slug);
+    if (!fs.existsSync(bizDir)) {
+      fs.mkdirSync(path.join(bizDir, 'context'), { recursive: true });
+      fs.mkdirSync(path.join(bizDir, 'team'), { recursive: true });
+      fs.mkdirSync(path.join(bizDir, 'workspace'), { recursive: true });
+      fs.writeFileSync(path.join(bizDir, 'BUSINESS.md'), [
+        `# ${biz.name}`,
+        description ? `\n> ${description}\n` : '',
+        '\n## The Business\n\n[What problem does this solve?]\n',
+        '## Revenue Model\n\n[How does this make money?]\n',
+        `---\n*Created: ${new Date().toISOString().split('T')[0]}*\n`,
+      ].join(''));
+      console.log(`  Local scaffold: ${bizDir}/`);
+    }
+  }
+
+  console.log(`\n  Business created!`);
+  console.log(`  ID:        ${biz.id}`);
+  console.log(`  Slug:      ${biz.slug}`);
+  console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
+  console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
+  console.log('');
+}
+
+
+async function businessStatus(slug) {
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  const resolved = await resolveSlug(slug, creds);
+  if (!resolved) {
+    console.error('No business specified. Usage: atris business status <slug>');
+    process.exit(1);
+  }
+
+  const result = await apiRequestJson(`/business/${resolved.business_id}`, {
+    method: 'GET',
+    token: creds.token,
+  });
+
+  if (!result.ok) {
+    console.error(`Failed to fetch business: ${result.errorMessage || result.status}`);
+    return;
+  }
+
+  const biz = result.data;
+  const agents = biz.member_count || 0;
+  const apps = biz.app_count || 0;
+
+  // Quick status line
+  console.log(`\n  ${biz.name} (${biz.slug})`);
+  console.log(`  ${'─'.repeat(40)}`);
+  console.log(`  Agents:   ${agents}`);
+  console.log(`  Apps:     ${apps}`);
+  if (biz.workspace_id) console.log(`  Workspace: ${biz.workspace_id.slice(0, 12)}...`);
+  console.log(`  Created:  ${biz.created_at ? biz.created_at.split('T')[0] : '?'}`);
+  console.log('');
+}
+
+
+function findAtrisDir() {
+  let dir = process.cwd();
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'atris'))) return path.join(dir, 'atris');
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+
 async function businessCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'add':
       await addBusiness(args[0]);
+      break;
+    case 'create':
+    case 'new':
+      await createBusiness(args[0], ...args.slice(1));
       break;
     case 'list':
     case 'ls':
@@ -363,11 +491,22 @@ async function businessCommand(subcommand, ...args) {
     case 'health':
       await businessHealth(args[0]);
       break;
+    case 'status':
+      await businessStatus(args[0]);
+      break;
     case 'audit':
       await businessAudit();
       break;
     default:
-      console.log('Usage: atris business <add|list|remove|health|audit> [slug]');
+      console.log('Usage: atris business <create|add|list|status|health|audit|remove> [slug]');
+      console.log('');
+      console.log('  create <name>     Create a new business (cloud + local)');
+      console.log('  add <slug>        Register an existing cloud business');
+      console.log('  list              Show registered businesses');
+      console.log('  status <slug>     Quick status check');
+      console.log('  health [slug]     Full health dashboard');
+      console.log('  audit             Audit all businesses');
+      console.log('  remove <slug>     Unregister locally');
   }
 }
 
