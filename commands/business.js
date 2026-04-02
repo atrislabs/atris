@@ -549,6 +549,66 @@ async function connectService(connector, ...flags) {
 }
 
 
+async function setNotificationMode(mode, ...flags) {
+  const validModes = ['digest', 'silent', 'push'];
+  if (!mode || !validModes.includes(mode)) {
+    console.log('Usage: atris business notify <digest|silent|push> [--business <slug>]');
+    console.log('');
+    console.log('  digest   Batch all reports into morning briefing (1 email/day)');
+    console.log('  silent   Log only, never notify (check with `atris business status`)');
+    console.log('  push     Interrupt immediately on every action (default, noisy)');
+    return;
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  // Parse --business flag
+  let bizSlug = null;
+  for (let i = 0; i < flags.length; i++) {
+    if ((flags[i] === '--business' || flags[i] === '-b') && flags[i + 1]) {
+      bizSlug = flags[i + 1];
+      i++;
+    }
+  }
+
+  const resolved = await resolveSlug(bizSlug, creds);
+  if (!resolved) {
+    console.error('No business specified. Usage: atris business notify digest --business <slug>');
+    process.exit(1);
+  }
+
+  // Update business config with notification mode
+  const result = await apiRequestJson(`/business/${resolved.business_id}`, {
+    method: 'PUT',
+    token: creds.token,
+    body: {
+      config: { notification_mode: mode },
+    },
+  });
+
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.status}`);
+    process.exit(1);
+  }
+
+  const icons = { digest: '📬', silent: '🔇', push: '🔔' };
+  const descriptions = {
+    digest: 'Agents report in morning briefing only (1 email/day)',
+    silent: 'Everything logged, nothing notified',
+    push: 'Every action sends a notification',
+  };
+
+  console.log(`\n  ${icons[mode]} Notification mode: ${mode}`);
+  console.log(`  ${descriptions[mode]}`);
+  console.log(`  Business: ${resolved.name || resolved.slug}`);
+  console.log('');
+}
+
+
 function findAtrisDir() {
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
@@ -588,6 +648,10 @@ async function businessCommand(subcommand, ...args) {
     case 'connect':
       await connectService(args[0], ...args.slice(1));
       break;
+    case 'notify':
+    case 'notification':
+      await setNotificationMode(args[0], ...args.slice(1));
+      break;
     default:
       console.log('Usage: atris business <command> [args]');
       console.log('');
@@ -598,6 +662,7 @@ async function businessCommand(subcommand, ...args) {
       console.log('  health [slug]        Full health dashboard');
       console.log('  audit                Audit all businesses');
       console.log('  connect <service>    Connect a skill/integration');
+      console.log('  notify <mode>        Set notification mode (digest/silent/push)');
       console.log('  remove <slug>        Unregister locally');
   }
 }
