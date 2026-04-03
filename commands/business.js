@@ -414,6 +414,35 @@ async function createBusiness(name, ...flags) {
     }
   }
 
+  // Apply template if specified
+  let template = null;
+  for (let i = 0; i < flags.length; i++) {
+    if ((flags[i] === '--template' || flags[i] === '-t') && flags[i + 1]) {
+      template = flags[i + 1];
+      i++;
+    }
+  }
+
+  if (template) {
+    const templates = {
+      'saas': { agents: ['growth-hacker', 'product-analyst', 'support-agent'], desc: 'SaaS Startup' },
+      'agency': { agents: ['project-manager', 'researcher', 'outreach-agent'], desc: 'Agency / Consulting' },
+      'ecommerce': { agents: ['inventory-analyst', 'marketing-agent', 'support-agent'], desc: 'E-Commerce' },
+      'content': { agents: ['writer', 'researcher', 'social-media-agent'], desc: 'Content Creator' },
+      'restaurant': { agents: ['review-responder', 'social-media-agent', 'booking-agent'], desc: 'Restaurant / Local' },
+    };
+    const tpl = templates[template.toLowerCase()];
+    if (tpl) {
+      console.log(`  Template: ${tpl.desc} (${tpl.agents.length} agents)`);
+      for (const agentName of tpl.agents) {
+        console.log(`    + ${agentName}`);
+      }
+    } else {
+      console.log(`  Unknown template: ${template}`);
+      console.log(`  Available: ${Object.keys(templates).join(', ')}`);
+    }
+  }
+
   console.log(`\n  Business created!`);
   console.log(`  ID:        ${biz.id}`);
   console.log(`  Slug:      ${biz.slug}`);
