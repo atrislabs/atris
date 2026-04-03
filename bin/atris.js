@@ -264,6 +264,14 @@ function showHelp() {
   console.log('  business remove <slug> - Disconnect a business');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
   console.log('  business audit         - One-line health summary of all businesses');
+  console.log('  business create <name> - Create new business (cloud + local)');
+  console.log('  business connect <svc> - Wire a skill/integration');
+  console.log('  business notify <mode> - Set notification mode (digest/silent/push)');
+  console.log('  business deploy <slug> - Push local business to cloud');
+  console.log('');
+  console.log('Code Review:');
+  console.log('  code-review <file>     - Run 6-specialist code review (alias: cr)');
+  console.log('  cr --all               - Audit all backend services');
   console.log('');
   console.log('Cloud & agents:');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -406,7 +414,7 @@ const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brain
                        'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'code-review', 'cr'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -1009,6 +1017,11 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/business').businessCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'code-review' || command === 'cr') {
+  const args = process.argv.slice(3);
+  require('../commands/review').reviewCommand(...args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
