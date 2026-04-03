@@ -434,6 +434,44 @@ if (command === '--version' || command === '-v' || process.argv.includes('--vers
 }
 
 // If no command OR command is not recognized, treat as natural language
+// Voice-friendly aliases — natural language → command mapping
+// Solves speech-to-text issues (inspired by gstack v0.14.6 voice-triggers)
+const voiceTriggers = {
+  'review my code': 'code-review',
+  'check my code': 'code-review',
+  'run a review': 'code-review',
+  'audit': 'code-review',
+  'create a business': 'business',
+  'start a business': 'business',
+  'new business': 'business',
+  'show status': 'status',
+  'what happened': 'status',
+  'whats going on': 'status',
+  'run tests': 'verify',
+  'check health': 'status',
+  'deploy': 'business',
+  'show my businesses': 'business',
+  'pull latest': 'pull',
+  'push changes': 'push',
+  'show learnings': 'learn',
+  'what did i learn': 'learn',
+};
+
+if (!command || !knownCommands.includes(command)) {
+  // Check voice triggers before falling through to natural language
+  const fullInput = process.argv.slice(2).join(' ').toLowerCase().trim();
+  const triggered = voiceTriggers[fullInput];
+  if (triggered) {
+    command = triggered;
+    // Re-check — if it's now a known command, fall through to dispatch
+    if (knownCommands.includes(command)) {
+      // Rewrite argv so dispatch works
+      process.argv[2] = command;
+      // Don't return — let it fall through to the command dispatch below
+    }
+  }
+}
+
 if (!command || !knownCommands.includes(command)) {
   const userInput = process.argv.slice(2).join(' ');
 
