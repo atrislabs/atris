@@ -773,6 +773,34 @@ function findAtrisDir() {
 }
 
 
+async function quickstart() {
+  console.log(`
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Start a Business in 3 Commands
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Create:
+     atris business create "My Company" --template saas
+
+  2. Connect integrations:
+     atris business connect slack --business my-company
+     atris business connect github --business my-company
+
+  3. Deploy:
+     atris business deploy my-company
+
+  That's it. Your agents are live.
+
+  Optional:
+     atris business notify digest --business my-company
+     (get 1 email/day instead of every notification)
+
+  Templates: saas, agency, ecommerce, content, restaurant
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`);
+}
+
+
 async function businessCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'add':
@@ -810,8 +838,15 @@ async function businessCommand(subcommand, ...args) {
     case 'push':
       await deployBusiness(args[0]);
       break;
+    case 'quickstart':
+    case 'start':
+    case 'guide':
+      await quickstart();
+      break;
     default:
       console.log('Usage: atris business <command> [args]');
+      console.log('');
+      console.log('  quickstart           ← Start here! 3-command guide');
       console.log('');
       console.log('  create <name>        Create a new business (cloud + local)');
       console.log('  add <slug>           Register an existing cloud business');
