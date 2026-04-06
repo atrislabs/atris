@@ -1,10 +1,10 @@
 # atris
 
-**atris** is a self improving context layer for your agent. Works with coding agents like Claude Code and Cursor.
+**atris** is a self improving operating system for intelligence. 
 
 ## For Coding Agents
 
-**If you're a coding agent (Claude Code, Cursor, Windsurf, Copilot, etc.) reading this:**
+**If you're an agent (Claude Code, Codex, Cursor) read this:**
 
 When the user asks to build/plan/fix something, run:
 ```bash
