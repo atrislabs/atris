@@ -50,6 +50,10 @@ function cleanAtris(options = {}) {
   const cleaned = cleanEmptySections(atrisDir, options.dryRun);
   results.cleanedSections = cleaned;
 
+  // 5. Find stale wiki pages (source newer than last_compiled)
+  const stalePages = findStalePages(cwd, atrisDir);
+  results.stalePages = stalePages;
+
   // Report results
   console.log('Results:');
   console.log('');
@@ -99,7 +103,18 @@ function cleanAtris(options = {}) {
   console.log('');
   console.log('─────────────────────────────────────────────────────────────');
 
-  const hasIssues = staleTasks.length > 0 || unhealable.length > 0;
+  // Stale pages
+  if (stalePages.length > 0) {
+    console.log(`⚠ ${stalePages.length} stale page(s) (source changed since last compiled):`);
+    stalePages.forEach(sp => {
+      console.log(`   • ${path.relative(cwd, sp.page)} — stale source: ${sp.staleSource}`);
+    });
+    console.log('');
+  } else {
+    console.log('✓ No stale wiki pages');
+  }
+
+  const hasIssues = staleTasks.length > 0 || unhealable.length > 0 || stalePages.length > 0;
   if (hasIssues) {
     console.log('Manual action needed:');
     if (staleTasks.length > 0) {
@@ -107,6 +122,9 @@ function cleanAtris(options = {}) {
     }
     if (unhealable.length > 0) {
       console.log('  • Manually fix unhealable MAP.md refs');
+    }
+    if (stalePages.length > 0) {
+      console.log('  • Re-compile stale pages (re-read sources, update content + last_compiled)');
     }
   } else {
     console.log('Workspace is clean. Target state: 0 ✓');
@@ -370,6 +388,91 @@ function escapeRegExp(string) {
 }
 
 /**
+ * Find wiki pages whose sources have been modified after last_compiled.
+ * Scans all .md files under atris/ for frontmatter with last_compiled + sources.
+ */
+function findStalePages(cwd, atrisDir) {
+  const stalePages = [];
+
+  function scanDir(dir) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== 'archive' && entry.name !== 'node_modules') {
+        scanDir(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const result = checkPageStaleness(cwd, fullPath);
+        if (result) stalePages.push(result);
+      }
+    }
+  }
+
+  scanDir(atrisDir);
+  return stalePages;
+}
+
+/**
+ * Parse frontmatter from a markdown file and check if any source is newer than last_compiled.
+ * Returns { page, staleSource, compiledDate, sourceDate } or null if not stale.
+ */
+function checkPageStaleness(cwd, filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch { return null; }
+
+  // Check for YAML frontmatter
+  if (!content.startsWith('---')) return null;
+
+  const endIdx = content.indexOf('---', 3);
+  if (endIdx === -1) return null;
+
+  const frontmatter = content.substring(3, endIdx);
+
+  // Parse last_compiled
+  const compiledMatch = frontmatter.match(/last_compiled:\s*(\d{4}-\d{2}-\d{2})/);
+  if (!compiledMatch) return null;
+
+  const compiledDate = new Date(compiledMatch[1] + 'T23:59:59');
+
+  // Parse sources list
+  const sourcesMatch = frontmatter.match(/sources:\s*\n((?:\s+-\s+.+\n?)*)/);
+  if (!sourcesMatch) return null;
+
+  const sources = sourcesMatch[1]
+    .split('\n')
+    .map(line => line.replace(/^\s+-\s+/, '').trim())
+    .filter(Boolean);
+
+  // Check each source's mtime against last_compiled
+  for (const source of sources) {
+    const sourcePath = path.join(cwd, source);
+    try {
+      const stat = fs.statSync(sourcePath);
+      if (stat.mtime > compiledDate) {
+        return {
+          page: filePath,
+          staleSource: source,
+          compiledDate: compiledMatch[1],
+          sourceDate: stat.mtime.toISOString().split('T')[0]
+        };
+      }
+    } catch {
+      // Source file doesn't exist — that's also a staleness signal
+      return {
+        page: filePath,
+        staleSource: source + ' (missing)',
+        compiledDate: compiledMatch[1],
+        sourceDate: 'N/A'
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Archive journals older than 30 days
  */
 function archiveOldJournals(atrisDir, dryRun = false) {
@@ -452,5 +555,7 @@ module.exports = {
   findStaleTasks,
   healBrokenMapRefs,
   archiveOldJournals,
-  cleanEmptySections
+  cleanEmptySections,
+  findStalePages,
+  checkPageStaleness
 };

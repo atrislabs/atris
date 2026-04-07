@@ -20,6 +20,18 @@ function saveBusinesses(data) {
   fs.writeFileSync(getBusinessConfigPath(), JSON.stringify(data, null, 2));
 }
 
+function detectBusinessSlug(explicitSlug) {
+  if (explicitSlug) return explicitSlug;
+  const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+  if (!fs.existsSync(bizFile)) return null;
+  try {
+    const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+    return biz.slug || biz.name || null;
+  } catch {
+    return null;
+  }
+}
+
 async function addBusiness(slug) {
   if (!slug) {
     console.error('Usage: atris business add <slug>');
@@ -489,6 +501,100 @@ async function businessStatus(slug) {
   console.log('');
 }
 
+function describeAccess(member) {
+  const role = (member.role || '').toLowerCase();
+  if (role === 'owner') return 'full control';
+  if (role === 'admin') return 'admin access';
+  if (role === 'member') return 'standard access';
+  if (role === 'agent') return 'agent';
+  return role || 'unknown';
+}
+
+async function businessTeam(slug) {
+  const requestedSlug = detectBusinessSlug(slug);
+  if (!requestedSlug) {
+    console.error('No business specified. Usage: atris business team <slug>');
+    process.exit(1);
+  }
+
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  const resolved = await resolveSlug(requestedSlug, creds);
+  if (!resolved) {
+    console.error(`Business "${requestedSlug}" not found.`);
+    process.exit(1);
+  }
+
+  const result = await apiRequestJson(`/business/${resolved.business_id}`, {
+    method: 'GET',
+    token: creds.token,
+  });
+
+  if (!result.ok) {
+    console.error(`Failed to fetch business team: ${result.errorMessage || result.status}`);
+    process.exit(1);
+  }
+
+  const biz = result.data || {};
+  const members = Array.isArray(biz.members) ? [...biz.members] : [];
+  const roleOrder = { owner: 0, admin: 1, member: 2, agent: 3 };
+  members.sort((a, b) => {
+    const roleDelta = (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99);
+    if (roleDelta !== 0) return roleDelta;
+    const aName = (a.display_name || a.name || a.email || '').toLowerCase();
+    const bName = (b.display_name || b.name || b.email || '').toLowerCase();
+    return aName.localeCompare(bName);
+  });
+
+  const admins = members.filter(m => ['owner', 'admin'].includes((m.role || '').toLowerCase()));
+  const nonAdmins = members.filter(m => !['owner', 'admin'].includes((m.role || '').toLowerCase()));
+  const roleCounts = members.reduce((acc, member) => {
+    const role = member.role || 'unknown';
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
+  const roleSummary = Object.entries(roleCounts)
+    .sort((a, b) => (roleOrder[a[0]] ?? 99) - (roleOrder[b[0]] ?? 99))
+    .map(([role, count]) => `${count} ${role}${count === 1 ? '' : 's'}`)
+    .join(', ');
+
+  console.log('');
+  console.log(`Business Team: ${biz.name || resolved.name || requestedSlug} (${biz.slug || resolved.slug || requestedSlug})`);
+  console.log('━'.repeat(32 + (biz.name || resolved.name || requestedSlug).length));
+  console.log('');
+  console.log(`  Members: ${members.length}`);
+  console.log(`  Roles:   ${roleSummary || 'none'}`);
+  console.log(`  Admins:  ${admins.length}`);
+
+  if (admins.length > 0) {
+    console.log('');
+    console.log('  Admin Access:');
+    for (const member of admins) {
+      const name = member.display_name || member.name || member.email || 'Unknown';
+      const email = member.email || '(no email)';
+      const role = member.role || 'unknown';
+      console.log(`    ${name.padEnd(24)} ${role.padEnd(8)} ${describeAccess(member).padEnd(14)} ${email}`);
+    }
+  }
+
+  if (nonAdmins.length > 0) {
+    console.log('');
+    console.log('  Standard Access:');
+    for (const member of nonAdmins) {
+      const name = member.display_name || member.name || member.email || 'Unknown';
+      const email = member.email || '(no email)';
+      const role = member.role || 'unknown';
+      console.log(`    ${name.padEnd(24)} ${role.padEnd(8)} ${describeAccess(member).padEnd(14)} ${email}`);
+    }
+  }
+
+  console.log('');
+}
+
 
 async function connectService(connector, ...flags) {
   if (!connector) {
@@ -821,6 +927,11 @@ async function businessCommand(subcommand, ...args) {
     case 'health':
       await businessHealth(args[0]);
       break;
+    case 'team':
+    case 'members':
+    case 'roster':
+      await businessTeam(args[0]);
+      break;
     case 'status':
       await businessStatus(args[0]);
       break;
@@ -851,6 +962,7 @@ async function businessCommand(subcommand, ...args) {
       console.log('  create <name>        Create a new business (cloud + local)');
       console.log('  add <slug>           Register an existing cloud business');
       console.log('  list                 Show registered businesses');
+      console.log('  team [slug]          Show members, roles, and admin access');
       console.log('  status <slug>        Quick status check');
       console.log('  health [slug]        Full health dashboard');
       console.log('  audit                Audit all businesses');
@@ -861,4 +973,4 @@ async function businessCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { businessCommand, businessHealth, businessAudit, loadBusinesses, saveBusinesses, getBusinessConfigPath };
+module.exports = { businessCommand, businessHealth, businessAudit, businessTeam, loadBusinesses, saveBusinesses, getBusinessConfigPath };

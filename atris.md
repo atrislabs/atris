@@ -198,8 +198,40 @@ Context window = cache. Disk = truth. Route discoveries as they happen.
 | Decision / tradeoff | Journal → Notes      | Timestamped line     |
 | Something learned   | lessons.md           | One-line lesson      |
 | Work finished       | Journal → Completed  | C#: description      |
+| Source changed       | Re-check referencing pages | Frontmatter: last_compiled |
 
 Don't batch. Don't wait for session end. Nothing important should live only in-context.
+
+---
+
+## KNOWLEDGE COMPILATION
+
+The workspace is a knowledge compiler. Raw sources in, structured understanding out.
+
+**Every markdown page that summarizes or references other files MUST have frontmatter:**
+
+```yaml
+---
+last_compiled: YYYY-MM-DD
+sources:
+  - path/to/source1
+  - path/to/source2
+---
+```
+
+**Staleness rule:** If any source file was modified after `last_compiled`, the page is stale. On review, re-read the source and update the page. Update `last_compiled` when done.
+
+**What counts as a source:** Any file a page summarizes, references, or draws conclusions from. Code files for MAP.md. Documents for wiki pages. Meeting notes for decision pages.
+
+**Compounding:** When you answer a question that required synthesis across multiple pages, file the answer back as a new page (or update an existing one). Explorations accumulate — they don't disappear.
+
+**Activation:** On session start, if `atris/wiki/STATUS.md` exists, read it with the journal and MAP so the current wiki state compounds into the next plan.
+
+**Linting:** During `atris review`, check for:
+- Stale pages (source newer than last_compiled)
+- Orphan pages (no inbound references)
+- Contradictions between pages
+- Concepts mentioned but lacking their own page
 
 ---
 
@@ -211,6 +243,7 @@ Don't batch. Don't wait for session end. Nothing important should live only in-c
 - Update journal after completing work
 - Delete tasks when done (target: 0)
 - Persist as you go (see PERSISTENCE)
+- After any file change, flag wiki pages that reference it as stale
 
 ---
 

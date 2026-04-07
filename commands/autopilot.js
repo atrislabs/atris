@@ -1,172 +1,414 @@
 /**
- * Atris Autopilot - PRD-driven autonomous execution
+ * Atris Autopilot — Suggest, justify, execute. One task at a time.
  *
- * Uses claude -p to execute plan → do → review cycles autonomously.
- * Supports features and bugs with different acceptance criteria templates.
+ * Scans the workspace for signals (stale pages, broken refs, abandoned tasks,
+ * inbox items, backlog) and suggests the most important thing to do next.
+ * Human approves, skips, or cancels. In --auto mode, runs without asking.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { execSync } = require('child_process');
+const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
+const { parseTodo } = require('../lib/todo');
+const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 
 const pkg = require('../package.json');
 
-// Default max iterations before stopping
-const DEFAULT_MAX_ITERATIONS = 5;
+const PHASE_TIMEOUT = 600000; // 10 min per phase
 
 /**
- * Generate PRD from feature/bug description
+ * Scan workspace for the next thing worth doing.
+ * Returns { task, why, kind } or null.
  */
-function generatePRD(description, options = {}) {
-  const { type = 'feature', file = null } = options;
-  const id = type === 'bug' ? 'BUG-001' : 'FEAT-001';
+function suggestNextTask(cwd, skipped = new Set()) {
+  const atrisDir = path.join(cwd, 'atris');
+  const suggestions = [];
 
-  // Generate acceptance criteria based on type
-  let acceptance;
-  if (type === 'bug') {
-    acceptance = [
-      'Bug is fixed and no longer reproducible',
-      'Regression test added (if applicable)',
-      'Build passes: npm run build (or equivalent)',
-      'No new bugs introduced'
-    ];
-  } else {
-    acceptance = [
-      'Feature implemented and working as described',
-      'Tests pass (if test suite exists)',
-      'Build passes: npm run build (or equivalent)',
-      'Code follows project patterns (check MAP.md)'
-    ];
+  // --- Resume interrupted work first ---
+  const todoPath = path.join(atrisDir, 'TODO.md');
+  const todo = parseTodo(todoPath);
+
+  if (todo.inProgress.length > 0) {
+    const t = todo.inProgress[0];
+    if (!skipped.has(t.title)) {
+      suggestions.push({
+        task: t.title,
+        why: `This was already started${t.claimed ? ` by ${t.claimed}` : ''} but never finished.`,
+        kind: 'resume',
+        priority: 1
+      });
+    }
   }
 
-  const prd = {
-    project: path.basename(process.cwd()),
-    type,
-    stories: [
-      {
-        id,
-        title: description,
-        file: file || '(auto-detect from MAP.md)',
-        acceptance,
-        passes: false,
-        priority: 1
-      }
-    ]
-  };
+  // --- Stale wiki pages (knowledge rot) ---
+  const stalePages = findStalePages(cwd, atrisDir);
+  for (const sp of stalePages.slice(0, 2)) {
+    const pageName = path.relative(cwd, sp.page);
+    const key = `recompile:${pageName}`;
+    if (skipped.has(key)) continue;
+    suggestions.push({
+      task: `Re-read sources and update ${pageName}`,
+      why: `"${sp.staleSource}" changed on ${sp.sourceDate} but the page was last compiled ${sp.compiledDate}. The content may be wrong.`,
+      kind: 'staleness',
+      priority: 2
+    });
+    break;
+  }
 
-  return prd;
+  // --- Stale tasks (claimed but abandoned >3 days) ---
+  const staleTasks = findStaleTasks(atrisDir);
+  for (const st of staleTasks.slice(0, 1)) {
+    const key = `stale:${st.title}`;
+    if (skipped.has(key)) continue;
+    suggestions.push({
+      task: `Finish or remove stale task: ${st.title}`,
+      why: `Claimed ${st.daysSinceClaim} days ago and never completed. Either finish it or delete it — stale tasks add noise.`,
+      kind: 'cleanup',
+      priority: 3
+    });
+  }
+
+  // --- Broken MAP.md references ---
+  const { unhealable } = healBrokenMapRefs(cwd, atrisDir, true); // dry-run
+  if (unhealable.length > 0 && !skipped.has('fix-map-refs')) {
+    const sample = unhealable.slice(0, 3).map(r => `${r.file}:${r.line}`).join(', ');
+    suggestions.push({
+      task: `Fix ${unhealable.length} broken reference${unhealable.length > 1 ? 's' : ''} in MAP.md`,
+      why: `These file:line references point to code that moved or was deleted: ${sample}. MAP.md is the navigation — it needs to be accurate.`,
+      kind: 'docs',
+      priority: 4
+    });
+  }
+
+  // --- Backlog tasks ---
+  for (const t of todo.backlog.slice(0, 1)) {
+    if (skipped.has(t.title)) continue;
+    const remaining = todo.backlog.length;
+    suggestions.push({
+      task: t.title,
+      why: `Next in the backlog${t.tag ? ` (${t.tag})` : ''}. ${remaining} task${remaining > 1 ? 's' : ''} waiting.`,
+      kind: 'backlog',
+      priority: 5
+    });
+  }
+
+  // --- Unprocessed inbox items ---
+  const { logFile } = getLogPath();
+  if (fs.existsSync(logFile)) {
+    const content = fs.readFileSync(logFile, 'utf8');
+    const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
+    if (inboxMatch && inboxMatch[1].trim()) {
+      const items = inboxMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-'));
+      if (items.length > 0) {
+        const firstItem = items[0].replace(/^-\s*\*\*I\d+:\*\*\s*/, '').replace(/^-\s*/, '').trim();
+        if (!skipped.has(firstItem)) {
+          suggestions.push({
+            task: `Break down inbox idea: "${firstItem}"`,
+            why: `${items.length} raw idea${items.length > 1 ? 's' : ''} sitting in the inbox. Needs to become concrete tasks before anything can happen.`,
+            kind: 'inbox',
+            priority: 6
+          });
+        }
+      }
+    }
+  }
+
+  // --- Incomplete features (idea.md exists but no build.md or validate.md) ---
+  const featuresDir = path.join(atrisDir, 'features');
+  if (fs.existsSync(featuresDir) && !skipped.has('incomplete-features')) {
+    try {
+      const featureDirs = fs.readdirSync(featuresDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !d.name.startsWith('_') && !d.name.startsWith('.'));
+      for (const dir of featureDirs) {
+        const fp = path.join(featuresDir, dir.name);
+        const hasIdea = fs.existsSync(path.join(fp, 'idea.md'));
+        const hasBuild = fs.existsSync(path.join(fp, 'build.md'));
+        const hasValidate = fs.existsSync(path.join(fp, 'validate.md'));
+        if (hasIdea && (!hasBuild || !hasValidate)) {
+          const missing = [];
+          if (!hasBuild) missing.push('build.md');
+          if (!hasValidate) missing.push('validate.md');
+          const key = `feature:${dir.name}`;
+          if (!skipped.has(key)) {
+            suggestions.push({
+              task: `Complete feature spec for "${dir.name}" — missing ${missing.join(' and ')}`,
+              why: `idea.md exists but the feature is incomplete. Navigator needs to create ${missing.join(' and ')} so executor can build it.`,
+              kind: 'feature',
+              priority: 6.5
+            });
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // --- Periodic review (suggest when nothing else is urgent) ---
+  if (!skipped.has('review')) {
+    const mapPath = path.join(atrisDir, 'MAP.md');
+    if (fs.existsSync(mapPath)) {
+      const mapStat = fs.statSync(mapPath);
+      const daysSinceMapUpdate = (Date.now() - mapStat.mtime.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceMapUpdate > 7) {
+        suggestions.push({
+          task: 'Review and refresh MAP.md — it hasn\'t been updated in over a week',
+          why: `Last modified ${Math.floor(daysSinceMapUpdate)} days ago. Code may have drifted from the map. A quick review keeps navigation accurate.`,
+          kind: 'review',
+          priority: 7
+        });
+      }
+    }
+  }
+
+  // --- Lessons harvest (suggest if recent completions but no recent lessons) ---
+  if (!skipped.has('lessons')) {
+    const lessonsPath = path.join(atrisDir, 'lessons.md');
+    const { logFile } = getLogPath();
+    if (fs.existsSync(logFile)) {
+      const journalContent = fs.readFileSync(logFile, 'utf8');
+      const completions = (journalContent.match(/\*\*C\d+:/g) || []).length;
+      if (completions >= 3) {
+        const lessonsFresh = fs.existsSync(lessonsPath) &&
+          (Date.now() - fs.statSync(lessonsPath).mtime.getTime()) < 3 * 24 * 60 * 60 * 1000;
+        if (!lessonsFresh) {
+          suggestions.push({
+            task: 'Harvest lessons from recent work into lessons.md',
+            why: `${completions} tasks completed today but lessons.md hasn't been updated. Patterns worth remembering should be captured while they're fresh.`,
+            kind: 'lessons',
+            priority: 7.5
+          });
+        }
+      }
+    }
+  }
+
+  if (suggestions.length === 0) return null;
+
+  suggestions.sort((a, b) => a.priority - b.priority);
+  return suggestions[0];
 }
 
 /**
- * Build prompt for each phase (plan/do/review)
+ * Prompt for approval. Returns 'approve', 'skip', or 'quit'.
  */
-function buildPrompt(phase, prd) {
-  const prdJson = JSON.stringify(prd, null, 2);
+function askApproval() {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('  enter = go, s = skip, q = stop → ', (answer) => {
+      rl.close();
+      const a = (answer || '').trim().toLowerCase();
+      if (a === 'q' || a === 'quit' || a === 'exit') resolve('quit');
+      else if (a === 's' || a === 'skip') resolve('skip');
+      else resolve('approve');
+    });
+  });
+}
+
+/**
+ * Run a phase via claude -p subprocess.
+ */
+function executePhase(phase, context, options = {}) {
+  const { verbose = false, timeout = PHASE_TIMEOUT } = options;
+
+  const prompt = buildPrompt(phase, context);
+  const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+
+  try {
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    const output = execSync(cmd, {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      timeout,
+      stdio: verbose ? 'inherit' : 'pipe',
+      maxBuffer: 10 * 1024 * 1024,
+      env
+    });
+
+    try { fs.unlinkSync(tmpFile); } catch {}
+    return output || '';
+  } catch (err) {
+    try { fs.unlinkSync(tmpFile); } catch {}
+    if (err.killed) throw new Error(`${phase} timed out after ${timeout / 1000}s`);
+    if (err.stdout) return err.stdout;
+    throw err;
+  }
+}
+
+/**
+ * Build context-aware file list for prompts.
+ */
+function getContextFiles(phase) {
+  const cwd = process.cwd();
+  const agentSpec = {
+    plan: 'atris/team/navigator/MEMBER.md',
+    do: 'atris/team/executor/MEMBER.md',
+    review: 'atris/team/validator/MEMBER.md'
+  }[phase];
+
+  return [
+    agentSpec && fs.existsSync(path.join(cwd, agentSpec)) ? agentSpec : null,
+    'atris/PERSONA.md',
+    'atris/MAP.md',
+    'atris/TODO.md',
+    fs.existsSync(path.join(cwd, 'atris/lessons.md')) ? 'atris/lessons.md' : null,
+    (() => { const { logFile } = getLogPath(); return fs.existsSync(logFile) ? path.relative(cwd, logFile) : null; })(),
+  ].filter(Boolean).map(f => `- ${f}`).join('\n');
+}
+
+/**
+ * Build the right prompt for each phase, adapting to the kind of work.
+ */
+function buildPrompt(phase, context) {
+  const { task, kind } = context;
+  const readFiles = getContextFiles(phase);
 
   if (phase === 'plan') {
-    return `Navigator: Plan this PRD story.
+    const baseRules = `You are the navigator. Read your MEMBER.md spec first if available.
 
-PRD: ${prdJson}
+Rules:
+- You can read files and plan. You CANNOT write code or edit source files.
+- Check MAP.md before grepping. If MAP has the answer, use it.
+- Tasks must be small: one job, 1-2 files, clear exit condition.
+- Format: - **T#:** Description [execute] or [explore]
+- Read lessons.md to avoid repeating past mistakes.
 
-1. Read atris/MAP.md for file locations
-2. Identify files to change
-3. Create ASCII diagram of approach
-4. Add tasks to atris/TODO.md Backlog
+Read these files first:
+${readFiles}`;
 
-DO NOT write code. Planning only.
-Reply [PLAN_COMPLETE] when done.`;
+    if (kind === 'inbox') {
+      return `${baseRules}
+
+Convert this inbox idea into concrete tasks:
+${task}
+
+Break it down. Add tasks to atris/TODO.md under ## Backlog.
+If it's substantial (multi-file, needs design), create atris/features/<slug>/idea.md first.
+
+When done, reply: done.`;
+    }
+
+    if (kind === 'staleness' || kind === 'docs' || kind === 'review') {
+      return `${baseRules}
+
+Maintenance task: ${task}
+
+Figure out what needs to change and why. Create focused tasks in atris/TODO.md.
+For stale pages, read both the page and its sources to understand the drift.
+
+When done, reply: done.`;
+    }
+
+    if (kind === 'cleanup') {
+      return `${baseRules}
+
+Stale work: ${task}
+
+Check if this is actually done (grep for the implementation). If done, delete the task.
+If not done, either re-scope it into something actionable or remove it.
+
+When done, reply: done.`;
+    }
+
+    if (kind === 'feature') {
+      return `${baseRules}
+
+Incomplete feature: ${task}
+
+Read the existing idea.md in the feature directory.
+Create the missing specs (build.md and/or validate.md) following the templates in atris/features/.
+build.md should have: files_touched, steps with file:line refs, testing strategy.
+validate.md should have: verification checklist, checks to run.
+
+When done, reply: done.`;
+    }
+
+    if (kind === 'lessons') {
+      return `${baseRules}
+
+Task: ${task}
+
+Read today's journal completions and the git log from the past few days.
+Extract patterns worth remembering — things that surprised you, approaches that worked,
+mistakes that were caught. Append to atris/lessons.md. One line per lesson. Be specific.
+
+When done, reply: done.`;
+    }
+
+    return `${baseRules}
+
+Task: ${task}
+
+Understand the scope — what files need to change? Break into sub-tasks if needed.
+Add tasks to atris/TODO.md under ## Backlog.
+
+When done, reply: done.`;
   }
 
   if (phase === 'do') {
-    return `Executor: Build the PRD story.
+    return `You are the executor. Read your MEMBER.md spec first if available.
 
-PRD: ${prdJson}
+Rules:
+- You CAN read and write code. You CANNOT plan or create new tasks.
+- Execute ONE step at a time. Verify each step before moving on.
+- Check MAP.md for file locations before grepping.
+- If you hit two errors on the same step, stop and flag for re-scope.
+- Stay in scope. Don't touch files outside the task boundary.
 
-1. Read atris/TODO.md for tasks
-2. Implement each task
-3. Verify changes work
-4. Commit: git add -A && git commit -m "autopilot: [title]"
+Read these files first:
+${readFiles}
 
-Reply [DO_COMPLETE] when done.`;
+Task: ${task}
+
+1. Find the task in TODO.md, move to In Progress with: Claimed by: Executor at ${new Date().toISOString()}
+2. Read MAP.md for exact file:line locations
+3. Make the changes, verify they work
+4. Update MAP.md if file locations shifted
+5. If updating wiki pages, set last_compiled in frontmatter to today's date
+6. Commit: git add <specific-files> && git commit -m "description"
+
+When done, reply: done.`;
   }
 
   if (phase === 'review') {
-    return `Validator: Review the PRD story.
+    return `You are the validator. Read your MEMBER.md spec first if available.
 
-PRD: ${prdJson}
+Rules:
+- You check quality. You CAN fix issues but CANNOT add new features.
+- Ultrathink: spec match, scope check, edge cases, integration.
+- Run tests if they exist. Check MAP.md is still accurate.
+- If you learned something surprising, append ONE line to atris/lessons.md.
 
-1. Check acceptance criteria are met
-2. Verify the changes work
-3. If issues: reply [REVIEW_FAILED] reason
-4. If all good: update prd.json passes:true, reply <promise>COMPLETE</promise>
+Read these files first:
+${readFiles}
 
-Be thorough.`;
+Task: ${task}
+
+1. Does it actually work? Test if you can.
+2. Does it match existing patterns? Check MAP.md.
+3. Any bugs, edge cases, or security issues?
+4. Check for stale wiki pages (source changed since last_compiled).
+5. When satisfied:
+   - Delete the task from TODO.md (target state: 0)
+   - Add to Completed in today's journal: - **C#:** Description [reviewed]
+   - Append any lessons to lessons.md
+6. If something is wrong, fix it before signing off.
+
+When done, reply: done.
+If broken beyond quick fix, reply: failed — [reason].`;
   }
 
   return '';
 }
 
 /**
- * Execute a phase using claude -p
+ * Append a completion to today's journal.
  */
-async function executePhase(phase, prd, options = {}) {
-  const { verbose = false, timeout = 300000 } = options;
-
-  const prompt = buildPrompt(phase, prd);
-
-  console.log(`\n[${phase.toUpperCase()}] Executing...`);
-
-  // Write prompt to temp file to avoid shell escaping issues
-  const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
-
-  try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
-    const output = execSync(cmd, {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      timeout,
-      stdio: verbose ? 'inherit' : 'pipe',
-      maxBuffer: 10 * 1024 * 1024
-    });
-
-    // Clean up
-    try { fs.unlinkSync(tmpFile); } catch {}
-
-    const result = output || '';
-
-    if (phase === 'plan') {
-      console.log('✓ Planning complete');
-      return { success: true, output: result };
-    } else if (phase === 'do') {
-      console.log('✓ Execution complete');
-      return { success: true, output: result };
-    } else if (phase === 'review') {
-      if (result.includes('<promise>COMPLETE</promise>')) {
-        console.log('✓ Review passed - all criteria met');
-        return { success: true, complete: true, output: result };
-      } else if (result.includes('[REVIEW_FAILED]')) {
-        console.log('✗ Review failed - issues found');
-        return { success: true, complete: false, output: result };
-      } else {
-        return { success: true, complete: true, output: result };
-      }
-    }
-    return { success: true, output: result };
-  } catch (err) {
-    try { fs.unlinkSync(tmpFile); } catch {}
-    if (err.killed) {
-      throw new Error(`Phase timed out after ${timeout / 1000}s`);
-    }
-    throw err;
-  }
-}
-
-/**
- * Log completion to journal
- */
-function logToJournal(description, type) {
+function logCompletion(description) {
   ensureLogDirectory();
   const { logFile, dateFormatted } = getLogPath();
 
@@ -176,231 +418,214 @@ function logToJournal(description, type) {
 
   let content = fs.readFileSync(logFile, 'utf8');
 
-  // Find next completion ID
   const completionMatch = content.match(/\*\*C(\d+):/g);
   const nextId = completionMatch
     ? Math.max(...completionMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
     : 1;
 
-  const label = type === 'bug' ? 'fix' : 'feat';
-  const entry = `- **C${nextId}:** [${label}] ${description} [✓ REVIEWED]`;
+  const entry = `- **C${nextId}:** ${description} [reviewed]`;
 
-  // Add to Completed section
   if (content.includes('## Completed')) {
-    content = content.replace(
-      /(## Completed[^\n]*\n)/,
-      `$1\n${entry}\n`
-    );
+    content = content.replace(/(## Completed[^\n]*\n)/, `$1\n${entry}\n`);
   } else {
-    content += `\n## Completed ✅\n\n${entry}\n`;
+    content += `\n## Completed\n\n${entry}\n`;
   }
 
   fs.writeFileSync(logFile, content);
-  console.log(`✓ Logged to journal: ${entry}`);
 }
 
 /**
- * Main autopilot function
+ * Main loop. Suggest → justify → approve → execute, one at a time.
  */
+/**
+ * Parse duration string like "1h", "30m", "90m", "2h" into milliseconds.
+ */
+function parseDuration(str) {
+  if (!str) return null;
+  const match = str.match(/^(\d+)(h|m|s)?$/i);
+  if (!match) return null;
+  const val = parseInt(match[1], 10);
+  const unit = (match[2] || 'm').toLowerCase();
+  if (unit === 'h') return val * 60 * 60 * 1000;
+  if (unit === 'm') return val * 60 * 1000;
+  if (unit === 's') return val * 1000;
+  return null;
+}
+
 async function autopilotAtris(description, options = {}) {
   const {
-    type = 'feature',
-    maxIterations = DEFAULT_MAX_ITERATIONS,
+    maxIterations = 100,
     verbose = false,
-    dryRun = false
+    dryRun = false,
+    auto = false,
+    duration = null
   } = options;
 
-  const targetDir = path.join(process.cwd(), 'atris');
-  if (!fs.existsSync(targetDir)) {
-    throw new Error('atris/ folder not found. Run "atris init" first.');
+  const cwd = process.cwd();
+  const atrisDir = path.join(cwd, 'atris');
+
+  if (!fs.existsSync(atrisDir)) {
+    console.error('No atris/ folder. Run "atris init" first.');
+    process.exit(1);
   }
 
-  // Check if claude CLI is available
-  try {
-    execSync('which claude', { stdio: 'pipe' });
-  } catch {
-    throw new Error('claude CLI not found. Install Claude Code first.');
+  try { execSync('which claude', { stdio: 'pipe' }); } catch {
+    console.error('claude CLI not found. Install Claude Code first.');
+    process.exit(1);
   }
 
+  const durationMs = parseDuration(duration);
+  const durationLabel = duration ? duration : (maxIterations < 100 ? `${maxIterations} tasks` : 'until clean');
+
   console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ Atris Autopilot v${pkg.version} — PRD-driven autonomous execution  │`);
-  console.log('│ plan → do → review (powered by claude -p)                   │');
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
-  console.log(`Type: ${type}`);
-  console.log(`Description: ${description}`);
-  console.log(`Max iterations: ${maxIterations}`);
+  console.log('  atris autopilot v' + pkg.version);
+  console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
+  console.log('  scanning workspace for work...');
   console.log('');
 
-  // Generate PRD
-  const prd = generatePRD(description, { type });
-  const prdPath = path.join(process.cwd(), 'prd.json');
-  const progressPath = path.join(process.cwd(), 'progress.txt');
+  // Seed inbox if a description was given
+  if (description) {
+    ensureLogDirectory();
+    const { logFile, dateFormatted } = getLogPath();
+    if (!fs.existsSync(logFile)) createLogFile(logFile, dateFormatted);
 
-  fs.writeFileSync(prdPath, JSON.stringify(prd, null, 2));
-  fs.appendFileSync(progressPath, `\n🔁 Autopilot starting at ${new Date().toISOString()}\n`);
-  fs.appendFileSync(progressPath, `   Type: ${type}\n`);
-  fs.appendFileSync(progressPath, `   Description: ${description}\n`);
+    let content = fs.readFileSync(logFile, 'utf8');
+    const idMatch = content.match(/\*\*I(\d+):/g);
+    const nextId = idMatch
+      ? Math.max(...idMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
+      : 1;
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('PRD generated:');
-  console.log(JSON.stringify(prd, null, 2));
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-
-  if (dryRun) {
-    console.log('[DRY RUN] Would execute plan → do → review cycle');
-    console.log('[DRY RUN] PRD saved to prd.json');
-    return;
+    const entry = `- **I${nextId}:** ${description}`;
+    if (content.includes('## Inbox')) {
+      content = content.replace(/(## Inbox[^\n]*\n)/, `$1${entry}\n`);
+    } else {
+      content += `\n## Inbox\n${entry}\n`;
+    }
+    fs.writeFileSync(logFile, content);
+    console.log(`  added to inbox: "${description}"`);
+    console.log('');
   }
 
-  // Context for prompts
-  const context = {
-    mapPath: 'atris/MAP.md',
-    todoPath: 'atris/TODO.md',
-    journalPath: getLogPath().logFile,
-    personaPath: 'atris/PERSONA.md'
-  };
+  const startTime = Date.now();
+  let completed = 0;
+  const skipped = new Set();
 
-  // Main loop
-  for (let iteration = 1; iteration <= maxIterations; iteration++) {
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(`ITERATION ${iteration}/${maxIterations}`);
-    console.log(`${'═'.repeat(60)}`);
+  for (let i = 0; i < maxIterations; i++) {
+    // Check time budget
+    if (durationMs && (Date.now() - startTime) >= durationMs) {
+      const mins = Math.round((Date.now() - startTime) / 60000);
+      console.log(`  time's up (${mins}m elapsed). stopping.`);
+      break;
+    }
 
-    fs.appendFileSync(progressPath, `\n--- Iteration ${iteration} ---\n`);
+    const suggestion = suggestNextTask(cwd, skipped);
+
+    if (!suggestion) {
+      console.log('  nothing to do. workspace is clean.');
+      break;
+    }
+
+    // Present the suggestion
+    console.log(`  ── suggestion ${i + 1}/${maxIterations} ──────────────────────────────`);
+    console.log('');
+    console.log(`  ${suggestion.task}`);
+    console.log(`  why: ${suggestion.why}`);
+    console.log(`  kind: ${suggestion.kind}`);
+    console.log('');
+
+    if (dryRun) {
+      console.log('  (dry run — would execute this)');
+      console.log('');
+      // Track as skipped so dry-run shows variety
+      skipped.add(suggestion.task);
+      if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
+      if (suggestion.kind === 'review') skipped.add('review');
+      if (suggestion.kind === 'lessons') skipped.add('lessons');
+      if (suggestion.kind === 'feature') skipped.add('incomplete-features');
+      continue;
+    }
+
+    // Get approval
+    let decision;
+    if (auto) {
+      decision = 'approve';
+    } else {
+      decision = await askApproval();
+    }
+
+    if (decision === 'quit') {
+      console.log('  stopped.');
+      break;
+    }
+
+    if (decision === 'skip') {
+      skipped.add(suggestion.task);
+      if (suggestion.kind === 'staleness') skipped.add(`recompile:${suggestion.task}`);
+      if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
+      if (suggestion.kind === 'review') skipped.add('review');
+      if (suggestion.kind === 'lessons') skipped.add('lessons');
+      if (suggestion.kind === 'feature') skipped.add('incomplete-features');
+      console.log('  skipped.');
+      console.log('');
+      continue;
+    }
+
+    // Execute: plan → do → review
+    const context = { task: suggestion.task, kind: suggestion.kind };
 
     try {
-      // PLAN phase
-      console.log('\n[1/3] PLAN — Navigator creating tasks...');
-      await executePhase('plan', prd, { ...context, verbose });
-      fs.appendFileSync(progressPath, `[${new Date().toISOString()}] PLAN complete\n`);
+      console.log('');
+      console.log('  planning...');
+      let t0 = Date.now();
+      executePhase('plan', context, { verbose });
+      const planTime = Math.round((Date.now() - t0) / 1000);
+      console.log(`  planned (${planTime}s)`);
 
-      // DO phase
-      console.log('\n[2/3] DO — Executor building...');
-      await executePhase('do', prd, { ...context, verbose });
-      fs.appendFileSync(progressPath, `[${new Date().toISOString()}] DO complete\n`);
+      console.log('  building...');
+      t0 = Date.now();
+      executePhase('do', context, { verbose });
+      const doTime = Math.round((Date.now() - t0) / 1000);
+      console.log(`  built (${doTime}s)`);
 
-      // REVIEW phase
-      console.log('\n[3/3] REVIEW — Validator checking...');
-      const reviewResult = await executePhase('review', prd, { ...context, verbose });
-      fs.appendFileSync(progressPath, `[${new Date().toISOString()}] REVIEW complete\n`);
+      console.log('  reviewing...');
+      t0 = Date.now();
+      const reviewOutput = executePhase('review', context, { verbose });
+      const reviewTime = Math.round((Date.now() - t0) / 1000);
 
-      // Check if complete
-      if (reviewResult.complete) {
-        // Update PRD
-        prd.stories[0].passes = true;
-        fs.writeFileSync(prdPath, JSON.stringify(prd, null, 2));
-
-        // Log to journal
-        logToJournal(description, type);
-
-        fs.appendFileSync(progressPath, `\n🏁 Autopilot finished at ${new Date().toISOString()} - SUCCESS\n`);
-
-        console.log('');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('🎉 AUTOPILOT COMPLETE');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('');
-        console.log(`✓ ${type === 'bug' ? 'Bug fixed' : 'Feature implemented'}: ${description}`);
-        console.log('✓ All acceptance criteria passed');
-        console.log('✓ Logged to journal');
-        console.log('');
-
-        // Clean up temp files on success
-        try { fs.unlinkSync(path.join(process.cwd(), 'prd.json')); } catch {}
-        try { fs.unlinkSync(path.join(process.cwd(), 'progress.txt')); } catch {}
-
-        return { success: true, iterations: iteration };
+      if (reviewOutput.includes('failed')) {
+        console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
+        break;
       }
+      console.log(`  reviewed (${reviewTime}s)`);
 
-      console.log(`\n⚠️  Review found issues, continuing to iteration ${iteration + 1}...`);
+      completed++;
+      logCompletion(suggestion.task);
+      console.log(`  done. ${completed} task${completed > 1 ? 's' : ''} completed.`);
+      console.log('');
 
-    } catch (error) {
-      console.error(`\n❌ Error in iteration ${iteration}: ${error.message}`);
-      fs.appendFileSync(progressPath, `[${new Date().toISOString()}] ERROR: ${error.message}\n`);
-
-      if (iteration === maxIterations) {
-        throw error;
-      }
-
-      console.log('Continuing to next iteration...');
+    } catch (err) {
+      console.error(`  error: ${err.message}`);
+      break;
     }
   }
 
-  // Max iterations reached
-  fs.appendFileSync(progressPath, `\n⏰ Autopilot stopped at ${new Date().toISOString()} - max iterations\n`);
-
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
   console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('⏰ AUTOPILOT STOPPED — Max iterations reached');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-  console.log('Check progress.txt and prd.json for details.');
-  console.log('Run `atris autopilot` again to continue, or fix issues manually.');
+  console.log(`  autopilot finished. ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`);
   console.log('');
 
-  return { success: false, iterations: maxIterations };
+  return { success: completed > 0, completed };
 }
 
 /**
- * Pick next item from TODO.md backlog and run autopilot on it
+ * Entry point when called without a description.
  */
 async function autopilotFromTodo(options = {}) {
-  const targetDir = path.join(process.cwd(), 'atris');
-  const todoPath = path.join(targetDir, 'TODO.md');
-
-  if (!fs.existsSync(todoPath)) {
-    throw new Error('atris/TODO.md not found. Run "atris init" first.');
-  }
-
-  const content = fs.readFileSync(todoPath, 'utf8');
-
-  // Parse backlog items
-  const backlogMatch = content.match(/## Backlog\n([\s\S]*?)(?=\n##|$)/);
-  if (!backlogMatch) {
-    console.log('No backlog items found in TODO.md');
-    return;
-  }
-
-  // Support both formats: "- [ ] Task" (checkbox) and "- **T1:** Task" (Atris standard)
-  const backlogLines = backlogMatch[1].split('\n').filter(line => {
-    const trimmed = line.trim();
-    return trimmed.startsWith('- [ ]') || trimmed.match(/^- \*\*T\d+:\*\*\s/);
-  });
-
-  if (backlogLines.length === 0) {
-    console.log('No unchecked items in backlog. TODO.md is at target state (0 tasks).');
-    return;
-  }
-
-  // Pick first item
-  const firstItem = backlogLines[0].trim();
-  // Try checkbox format first, then Atris standard format
-  const itemMatch = firstItem.match(/- \[ \] (.+)/) || firstItem.match(/- \*\*T\d+:\*\*\s*(.+)/);
-
-  if (!itemMatch) {
-    throw new Error('Could not parse backlog item');
-  }
-
-  const description = itemMatch[1].trim();
-
-  // Detect if it's a bug
-  const isBug = /bug|fix|broken|error|issue|crash/i.test(description);
-
-  console.log(`\nPicked from backlog: "${description}"`);
-  console.log(`Detected type: ${isBug ? 'bug' : 'feature'}`);
-  console.log('');
-
-  return autopilotAtris(description, {
-    ...options,
-    type: isBug ? 'bug' : 'feature'
-  });
+  return autopilotAtris(null, options);
 }
 
 module.exports = {
   autopilotAtris,
   autopilotFromTodo,
-  generatePRD
+  suggestNextTask
 };

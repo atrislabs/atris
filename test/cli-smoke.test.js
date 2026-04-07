@@ -51,6 +51,12 @@ test('init creates structured TODO and feature templates', () => {
     assert.ok(fs.existsSync(path.join(templatesDir, 'idea.md.template')));
     assert.ok(fs.existsSync(path.join(templatesDir, 'build.md.template')));
     assert.ok(fs.existsSync(path.join(templatesDir, 'validate.md.template')));
+
+    const wikiDir = path.join(dir, 'atris', 'wiki');
+    assert.ok(fs.existsSync(path.join(wikiDir, 'wiki.md')));
+    assert.ok(fs.existsSync(path.join(wikiDir, 'index.md')));
+    assert.ok(fs.existsSync(path.join(wikiDir, 'log.md')));
+    assert.ok(fs.existsSync(path.join(wikiDir, 'STATUS.md')));
   } finally {
     cleanupTempDir(dir);
   }
@@ -88,6 +94,34 @@ test('activate prints core file paths', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Activate — Context Loaded/);
     assert.match(res.stdout, /atris[\\/]+TODO\.md/);
+    assert.match(res.stdout, /atris[\\/]+wiki[\\/]+STATUS\.md/);
+    assert.match(res.stdout, /Wiki:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('loop refreshes wiki STATUS and appends wiki log entries', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Temp Repo\n', 'utf8');
+    runCli(['init'], { cwd: dir, input: '\n' });
+
+    const res = runCli(['loop'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Wiki Loop/);
+    assert.match(res.stdout, /Health:/);
+    assert.match(res.stdout, /Next move:/);
+
+    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
+    const logPath = path.join(dir, 'atris', 'wiki', 'log.md');
+    const status = fs.readFileSync(statusPath, 'utf8');
+    const log = fs.readFileSync(logPath, 'utf8');
+
+    assert.match(status, /Last loop: \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+    assert.match(status, /Health:/);
+    assert.match(status, /Next move:/);
+    assert.match(log, /LOOP/);
   } finally {
     cleanupTempDir(dir);
   }

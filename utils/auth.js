@@ -579,6 +579,7 @@ module.exports = {
   autoSaveProfile,
   // Per-terminal sessions
   getTerminalSessionId,
+  getSessionsDir,
   setSessionProfile,
   getSessionProfile,
   clearSessionProfile,

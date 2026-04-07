@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-03-11
+> **Last updated:** 2026-04-07
 
 ---
 
@@ -16,13 +16,11 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- **T2:** Add per-phase duration tracking to `atris run` — collect `{plan, do, review}` times (ms) per cycle in the loop at `commands/run.js:255-285`, store in array. Update `logRunCompletion()` at line 168 to accept and log the breakdown. Print summary table after run at lines 319-323 showing each cycle's phase durations (plan Xs, do Xs, review Xs). [execute]
-  - **Claimed by:** Executor at 2026-03-10T00:22:49.323Z
-
 ---
 
 ## Completed
 
+- [x] Build wiki upkeep loop — `atris loop`, `/loop`, stale/orphan detection, status/log refresh, tests
 - [x] Fix experiments CLI review findings — console fallback + single-pack validate
 - [x] Add `atris experiments` to CLI — scaffold, validate, benchmark
 - [x] Audit runtime/CLI regressions — fixed `taskContexts` ReferenceError crash in doAtris (workflow.js:513,565), cataloged dead auth code in bin/atris.js

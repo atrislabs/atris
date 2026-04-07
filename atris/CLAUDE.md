@@ -26,21 +26,25 @@ This displays the Atris welcome visualization. Show it to the user, then respond
 
 - Read `atris/PERSONA.md` (tone + operating rules).
 - Run `atris activate` to load the current working context.
+- If `atris/wiki/STATUS.md` exists, treat it as the current memory snapshot for the project.
 
 ## Core Files
 
 - `atris/MAP.md` — navigation (use file:line references)
 - `atris/TODO.md` — current work queue (target state = 0)
 - `atris/logs/YYYY/YYYY-MM-DD.md` — journal (Inbox + Completed)
+- `atris/wiki/STATUS.md` — current wiki health and next ingest targets
+- `atris/wiki/index.md` — local knowledge index
 - `atris/atris.md` — protocol/spec
 
 ## Default Loop
 
 `atris plan` → `atris do` → `atris review`
 
+If the task produces durable project knowledge, update `atris/wiki/` or run the local wiki flow (`atris ingest`, `atris query`, `atris lint`).
+
 ## Rules (Non‑Negotiable)
 
 - Plan = ASCII visualization + approval gate. Do not execute during planning.
 - Execute step-by-step, verify as you go, update artifacts (`TODO.md`, `MAP.md`) when reality changes.
 - Delete completed tasks (validator cleans to target state = 0).
-

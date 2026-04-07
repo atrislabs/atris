@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
+const { readWikiStatus } = require('../lib/wiki');
 
 function activateAtris() {
   const workspaceDir = process.cwd();
@@ -26,6 +27,7 @@ function activateAtris() {
 
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
+  const wikiStatus = readWikiStatus(workspaceDir);
 
   // Check for handoff from previous session
   let handoffContent = null;
@@ -127,16 +129,28 @@ function activateAtris() {
   console.log('');
   console.log(`📅 ${dateFormatted}  •  State: ${state.state}${learningLine}`);
   console.log(`   ${summaryLine}`);
+  if (wikiStatus) {
+    const healthLine = wikiStatus.bullets.find((line) => line.startsWith('- Health:'));
+    const wikiSummary = (healthLine || wikiStatus.bullets[0] || '- wiki scaffold ready').replace(/^- /, '');
+    console.log(`   🧠 Wiki: ${wikiSummary}`);
+  }
   console.log('');
   console.log('Core files:');
   console.log(`- ${fs.existsSync(personaFile) ? rel(personaFile) : 'atris/PERSONA.md (missing)'}`);
   console.log(`- ${fs.existsSync(mapFile) ? rel(mapFile) : 'atris/MAP.md (missing)'}`);
   console.log(`- ${taskFilePath ? rel(taskFilePath) : 'atris/TODO.md (missing)'}`);
   console.log(`- ${rel(logFile)}`);
+  if (wikiStatus?.statusPath) {
+    console.log(`- ${rel(wikiStatus.statusPath)}`);
+  }
+  if (wikiStatus?.bullets?.length) {
+    console.log('');
+    console.log('Wiki:');
+    wikiStatus.bullets.forEach((line) => console.log(`- ${line.replace(/^- /, '')}`));
+  }
   console.log('');
   console.log('Next: atris plan → do → review (or atris log)');
   console.log('');
 }
 
 module.exports = { activateAtris };
-

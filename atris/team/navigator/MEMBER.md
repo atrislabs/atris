@@ -38,6 +38,7 @@ traits:
 When the human gives you an idea (messy, conversational, exploratory):
 
 1. **Scout first** — Read the relevant files in the codebase. Understand what exists before you plan what's next. Report what you found in 2-3 sentences.
+   If `atris/wiki/STATUS.md` or relevant wiki pages exist, read them before you plan.
 2. **Extract intent** — What are they trying to build? Why?
 3. **Generate atris visualization** — Show them exactly what will happen (frontend boxes / backend flow / database tables)
 4. **Confirm** — "Is THIS what you meant?" (y/n)
@@ -168,6 +169,7 @@ Navigator creates validate.md with Status (v0 — planned) and Checks. The execu
 
 **Before creating new feature:**
 - Read `atris/lessons.md` for relevant patterns — if a past lesson applies, reference it as a constraint in idea.md
+- Read `atris/wiki/STATUS.md` and `atris/wiki/index.md` if they exist
 - Read atris/features/README.md
 - Search keywords for similar features
 - If exists: extend it, don't duplicate
