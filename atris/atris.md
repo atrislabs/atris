@@ -11,6 +11,7 @@
 1. Load context (ONE time, remember for session):
    - `atris/logs/YYYY/YYYY-MM-DD.md` (today's journal)
    - `atris/MAP.md` (navigation overview)
+   - `atris/wiki/STATUS.md` (wiki health + next ingest targets, if present)
    - `atris/team/*.md` (all agent specs)
 
 2. Output this EXACT box:
@@ -161,6 +162,8 @@ Specs loaded at activate from `team/*.md`
 | `MAP.md` | Where is X? (navigation) |
 | `TODO.md` | Task queue (target: 0) |
 | `logs/YYYY/MM-DD.md` | Journal (daily) |
+| `wiki/STATUS.md` | Local project memory health |
+| `wiki/index.md` | Local knowledge index |
 | `PERSONA.md` | Communication style |
 | `team/` | Agent behaviors |
 | `atrisDev.md` | Full spec (reference) |
@@ -196,6 +199,7 @@ Context window = cache. Disk = truth. Route discoveries as they happen.
 | Code location       | MAP.md               | file:line reference  |
 | New task            | TODO.md              | Task + exit condition |
 | Decision / tradeoff | Journal → Notes      | Timestamped line     |
+| Durable project knowledge | wiki/               | page update + STATUS refresh |
 | Something learned   | lessons.md           | One-line lesson      |
 | Work finished       | Journal → Completed  | C#: description      |
 

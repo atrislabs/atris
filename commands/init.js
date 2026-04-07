@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ensureExperimentsFramework } = require('./experiments');
+const { ensureWikiScaffold } = require('../lib/wiki');
 
 /**
  * Detect project context by scanning project structure
@@ -302,6 +303,13 @@ function initAtris() {
   if (!fs.existsSync(personaFile) && fs.existsSync(personaSource)) {
     fs.copyFileSync(personaSource, personaFile);
     console.log('✓ Created PERSONA.md');
+  }
+
+  const wikiDir = path.join(targetDir, 'wiki');
+  const wikiAlreadyExists = fs.existsSync(wikiDir);
+  ensureWikiScaffold(process.cwd());
+  if (!wikiAlreadyExists) {
+    console.log('✓ Created wiki/ scaffold');
   }
 
   if (!fs.existsSync(mapFile)) {

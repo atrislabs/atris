@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -400,6 +401,151 @@ test('unknown single-word command shows warning', () => {
     const res = runCli(['foobarxyz'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Unknown command.*foobarxyz/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// wiki
+// ============================================
+
+test('ingest is local-first and scaffolds atris/wiki', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['ingest', 'README.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Local wiki ingest/);
+    assert.match(res.stdout, /Target: atris\/wiki/);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'wiki.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'index.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('query alias uses local wiki by default', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), '# Atris Wiki Index\n', 'utf8');
+    const res = runCli(['query', 'what is the system state'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Local wiki query/);
+    assert.match(res.stdout, /what is the system state/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki search reads canonical atris/wiki index', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'index.md'),
+      '# Atris Wiki Index\n\n## Concepts\n\n- [[atris/wiki/concepts/local-first.md]] - local-first wiki routing\n',
+      'utf8'
+    );
+    const res = runCli(['wiki', 'search', 'local-first'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /local-first wiki routing/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki log reads canonical atris/wiki log', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'log.md'),
+      '# Atris Wiki Log\n\n## 2026-04-07\n- 10:00 INGEST README.md\n  - created local-first page\n',
+      'utf8'
+    );
+    const res = runCli(['wiki', 'log'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /2026-04-07/);
+    assert.match(res.stdout, /INGEST README\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki sync alias normalizes --only wiki to atris/wiki', () => {
+  assert.equal(normalizeWikiOnlyPrefix('wiki'), 'atris/wiki/');
+  assert.equal(normalizeWikiOnlyPrefix('wiki/'), 'atris/wiki/');
+  assert.equal(normalizeWikiOnlyPrefix('atris/wiki'), 'atris/wiki/');
+});
+
+test('loop flags stale wiki pages and refreshes status/log', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
+    const pagePath = path.join(dir, 'atris', 'wiki', 'concepts', 'stale-page.md');
+    fs.mkdirSync(path.dirname(pagePath), { recursive: true });
+    fs.writeFileSync(pagePath, [
+      '---',
+      'type: concept',
+      'slug: stale-page',
+      'title: Stale Page',
+      'sources:',
+      '  - README.md',
+      'last_compiled: 2000-01-01',
+      'created: 2000-01-01',
+      'updated: 2000-01-01',
+      'tags:',
+      '  - test',
+      '---',
+      '# Stale Page',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['loop'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Wiki Loop/);
+    assert.match(res.stdout, /Stale: 1/);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), 'utf8');
+    assert.match(status, /Last loop:/);
+    assert.match(status, /recompile atris\/wiki\/concepts\/stale-page\.md from README\.md/);
+
+    const log = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'log.md'), 'utf8');
+    assert.match(log, /LOOP/);
+    assert.match(log, /stale atris\/wiki\/concepts\/stale-page\.md <- README\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('loop suggests next ingest candidates when wiki is clean', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
+    const res = runCli(['loop', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const report = JSON.parse(res.stdout);
+    assert.ok(report.nextSources.includes('README.md'));
+    assert.match(report.health, /ready for ingest|stable/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki loop alias runs the same upkeep analysis', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
+    const res = runCli(['wiki', 'loop'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Wiki Loop/);
   } finally {
     cleanupTempDir(dir);
   }

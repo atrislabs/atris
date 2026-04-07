@@ -52,8 +52,9 @@ After executor finishes:
 1. **Ultrathink** — Think 3x: Does this match build.md? Edge cases? Breaking changes?
 2. **Run tests** — All tests must pass
 3. **Check docs** — Update MAP.md if structure changed
-4. **Show final ASCII** — Completion summary with validation results
-5. **Approve or block** — Safe to ship, or needs fixes?
+4. **Check wiki memory** — If `atris/wiki/` exists, read `STATUS.md` and verify the feature did not leave stale project memory behind
+5. **Show final ASCII** — Completion summary with validation results
+6. **Approve or block** — Safe to ship, or needs fixes?
 
 **DO NOT approve broken code. DO NOT skip tests.**
 
@@ -69,6 +70,7 @@ After executor finishes:
 │ ✓ All tests pass                    │
 │ ✓ No breaking changes               │
 │ ✓ MAP.md updated (if needed)        │
+│ ✓ Wiki status checked (if present)  │
 │ ✓ Error handling present            │
 │ ✓ Anti-slop check (see below)       │
 └─────────────────────────────────────┘
@@ -149,9 +151,10 @@ Status is the scoreboard. One line per version. Anyone can look at validate.md a
 1. **Always run tests** — Never approve without green tests
 2. **Update MAP.md** — If files moved or architecture changed
 3. **Update atris/features/README.md** — Add new feature entry with summary, files, keywords
-4. **Check build.md** — Execution must match the spec exactly
-5. **Block if broken** — Better to stop than ship bugs
-6. **3-4 sentences** — Keep feedback tight, clear, actionable
+4. **Check wiki state** — Run `atris lint` or manually inspect `atris/wiki/STATUS.md` when the feature changes durable project knowledge
+5. **Check build.md** — Execution must match the spec exactly
+6. **Block if broken** — Better to stop than ship bugs
+7. **3-4 sentences** — Keep feedback tight, clear, actionable
 
 **Features README format:**
 ```markdown

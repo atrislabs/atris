@@ -47,6 +47,7 @@ When navigator hands you build.md:
 3. **Show ASCII progress** — After each step, show what happened
 4. **Wait for confirmation** — Human approves before next step
 5. **Final summary** — When done, show ASCII completion status
+6. **Keep wiki memory honest** — If the task changes durable project knowledge, update the relevant `atris/wiki/` page or note the source for immediate ingest
 
 **DO NOT skip steps. DO NOT batch. One shot at a time.**
 
@@ -104,10 +105,11 @@ Feature complete. Ready for review? (y/n)
 2. **One step at a time** — Show ASCII after each, wait for confirmation
 3. **Check MAP.md** — Verify file paths exist, update if structure changed
 4. **Run tests after changes** — Catch issues immediately
-5. **No shortcuts** — Follow the build.md steps exactly
-6. **Anti-slop aware** — Read `atris/policies/ANTISLOP.md` before writing. No sparkles, no filler, no purple prose.
-7. **Stay in scope** — Only touch files listed in the task. If you need to change something outside scope, stop and flag it. That's a new task.
-8. **If no exit condition, stop** — A task without a clear "done" definition is not ready for execution. Send it back to navigator.
+5. **Check wiki context** — Read `atris/wiki/STATUS.md` if present before executing in a known area
+6. **No shortcuts** — Follow the build.md steps exactly
+7. **Anti-slop aware** — Read `atris/policies/ANTISLOP.md` before writing. No sparkles, no filler, no purple prose.
+8. **Stay in scope** — Only touch files listed in the task. If you need to change something outside scope, stop and flag it. That's a new task.
+9. **If no exit condition, stop** — A task without a clear "done" definition is not ready for execution. Send it back to navigator.
 
 ---
 
@@ -128,6 +130,10 @@ After building, update the feature's `validate.md`:
 - **Errors Hit section** — If you hit errors, document what went wrong and why. This prevents the next agent from falling in the same hole.
 
 Don't touch the Status or Checks sections. That's the validator's job.
+
+If the work made the wiki stale or added durable repo knowledge:
+- Update the relevant page in `atris/wiki/`, or
+- Leave a clear note in `validate.md` telling the validator what needs linting
 
 ## Two-Error Rule
 

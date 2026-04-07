@@ -208,6 +208,13 @@ function showHelp() {
   console.log('  2. Describe what you want (in your editor or terminal)');
   console.log('  3. Agent shows visualization, you approve, it builds');
   console.log('');
+  console.log('Common invocations:');
+  console.log('  atris init');
+  console.log('  atris run');
+  console.log('  atris status');
+  console.log('  atris soul');
+  console.log('  atris fleet');
+  console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('Setup:');
@@ -231,6 +238,10 @@ function showHelp() {
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
+  console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
+  console.log('  query      - Local-first wiki query against atris/wiki/');
+  console.log('  lint       - Local-first wiki lint for atris/wiki/');
+  console.log('  loop       - Local wiki upkeep loop (stale pages, orphans, next ingest)');
   console.log('');
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
@@ -262,6 +273,7 @@ function showHelp() {
   console.log('  business add <slug>    - Connect a business');
   console.log('  business list          - Show connected businesses');
   console.log('  business remove <slug> - Disconnect a business');
+  console.log('  business team [slug]   - Show members, roles, and admin access');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
   console.log('  business audit         - One-line health summary of all businesses');
   console.log('  business create <name> - Create new business (cloud + local)');
@@ -309,6 +321,10 @@ function showHelp() {
   console.log('  plugin build        - Package skills as .plugin for Cowork');
   console.log('  plugin publish      - Sync skills to marketplace repo and push');
   console.log('  plugin info         - Preview what will be included');
+  console.log('');
+  console.log('Feedback:');
+  console.log('  feedback "msg"      - Submit feedback');
+  console.log('  feedback            - List your feedback');
   console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
@@ -368,29 +384,25 @@ function showReviewHelp() {
 
 function showAutopilotHelp() {
   console.log('');
-  console.log('Usage: atris autopilot "description" [options]');
-  console.log('       atris autopilot --from-todo [options]');
+  console.log('Usage: atris autopilot [description] [options]');
   console.log('');
   console.log('Description:');
-  console.log('  PRD-driven autonomous execution using claude -p.');
-  console.log('  Runs plan → do → review cycles until acceptance criteria are met.');
+  console.log('  Suggests one task at a time with justification.');
+  console.log('  Human approves, skips, or cancels. Agent executes plan → do → review.');
+  console.log('  Detects work from: stale wiki pages, in-progress tasks, backlog, inbox.');
   console.log('');
   console.log('Options:');
-  console.log('  --bug            Treat as bug fix (different acceptance criteria)');
-  console.log('  --from-todo      Pick next item from TODO.md backlog');
-  console.log('  --iterations=N   Max iterations before stopping (default: 5)');
+  console.log('  --auto           Execute without waiting for approval');
+  console.log('  --duration=TIME  Run for a time limit (e.g. 1h, 30m, 90m)');
+  console.log('  --iterations=N   Max tasks before stopping');
   console.log('  --verbose, -v    Show detailed claude output');
-  console.log('  --dry-run        Generate PRD without executing');
+  console.log('  --dry-run        Show suggestions without executing');
   console.log('');
   console.log('Examples:');
-  console.log('  atris autopilot "Add dark mode toggle"');
-  console.log('  atris autopilot --bug "Login fails on Safari"');
-  console.log('  atris autopilot --from-todo --iterations=3');
-  console.log('');
-  console.log('Output:');
-  console.log('  - prd.json: PRD with acceptance criteria');
-  console.log('  - progress.txt: Execution log');
-  console.log('  - Journal: Completion logged to today\'s journal');
+  console.log('  atris autopilot                        # Suggest from existing work');
+  console.log('  atris autopilot --auto --duration=1h    # Autonomous for 1 hour');
+  console.log('  atris autopilot "Add dark mode toggle"  # Seed inbox, then suggest');
+  console.log('  atris autopilot --auto --iterations=3   # Fully autonomous, 3 tasks max');
   console.log('');
 }
 
@@ -411,10 +423,11 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
-                       'activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'diff', 'business', 'sync',
+                       'ingest', 'query', 'lint', 'loop',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'code-review', 'cr'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -869,35 +882,27 @@ if (command === 'init') {
   }
 
   // Parse options
-  const isBug = args.includes('--bug');
-  const fromTodo = args.includes('--from-todo');
   const verbose = args.includes('--verbose') || args.includes('-v');
   const dryRun = args.includes('--dry-run');
+  const auto = args.includes('--auto');
   const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : 5;
+  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
+  const durationArg = args.find(a => a.startsWith('--duration='));
+  const duration = durationArg ? durationArg.split('=')[1] : null;
 
   // Get description (non-flag args)
-  const description = args.filter(a => !a.startsWith('-')).join(' ').trim();
+  const description = args.filter(a => !a.startsWith('-')).join(' ').trim() || null;
 
   const options = {
-    type: isBug ? 'bug' : 'feature',
-    maxIterations,
+    ...(maxIterations !== undefined && { maxIterations }),
     verbose,
-    dryRun
+    dryRun,
+    auto,
+    duration
   };
 
   let promise;
-  if (fromTodo) {
-    promise = require('../commands/autopilot').autopilotFromTodo(options);
-  } else if (description) {
-    promise = require('../commands/autopilot').autopilotAtris(description, options);
-  } else {
-    console.log('Usage: atris autopilot "description" [--bug] [--verbose] [--iterations=N]');
-    console.log('       atris autopilot --from-todo');
-    console.log('');
-    console.log('Run `atris autopilot --help` for more options.');
-    process.exit(1);
-  }
+  promise = require('../commands/autopilot').autopilotAtris(description, options);
 
   promise
     .then(() => process.exit(0))
@@ -1057,9 +1062,33 @@ if (command === 'init') {
   require('../commands/business').businessCommand(subcommand, ...args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'soul') {
+  const args = process.argv.slice(3);
+  require('../commands/soul').soul(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'fleet') {
+  const args = process.argv.slice(3);
+  require('../commands/fleet').fleet(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'code-review' || command === 'cr') {
   const args = process.argv.slice(3);
   require('../commands/review').reviewCommand(...args)
+} else if (command === 'wiki') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/wiki').wikiCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'ingest' || command === 'query' || command === 'lint') {
+  const args = process.argv.slice(3);
+  require('../commands/wiki').wikiCommand(command, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'loop') {
+  const args = process.argv.slice(3);
+  require('../commands/loop').loopAtris(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
@@ -1097,6 +1126,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wake') {
   require('../commands/lifecycle').wakeAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'feedback') {
+  require('../commands/feedback').feedbackCommand()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
