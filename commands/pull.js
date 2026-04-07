@@ -8,9 +8,34 @@ const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
+const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
+
+function pruneEmptyParentDirs(filePath, stopDir) {
+  let current = path.dirname(filePath);
+  const boundary = path.resolve(stopDir);
+  while (current.startsWith(boundary) && current !== boundary) {
+    try {
+      if (fs.readdirSync(current).length > 0) break;
+      fs.rmdirSync(current);
+      current = path.dirname(current);
+    } catch {
+      break;
+    }
+  }
+}
 
 async function pullAtris() {
   let arg = process.argv[3];
+
+  if (arg === '--help') {
+    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--force] [--timeout <seconds>]');
+    console.log('');
+    console.log('  atris pull                   Pull into current business workspace');
+    console.log('  atris pull doordash          Pull a business into ./doordash or --into <path>');
+    console.log('  atris pull doordash --into /tmp/doordash');
+    console.log('  atris pull doordash --only atris/wiki/');
+    return;
+  }
 
   // Auto-detect business from .atris/business.json in current dir
   if (!arg || arg.startsWith('--')) {
@@ -108,6 +133,8 @@ async function pullBusiness(slug) {
   const onlyPrefixes = onlyRaw
     ? onlyRaw.split(',').map(p => {
         let norm = p.replace(/^\//, '');
+        const wikiPrefix = normalizeWikiOnlyPrefix(norm);
+        if (wikiPrefix) return wikiPrefix;
         if (norm && !norm.endsWith('/') && !norm.includes('.')) norm += '/';
         return norm;
       }).filter(Boolean)
@@ -134,6 +161,9 @@ async function pullBusiness(slug) {
     outputDir = path.resolve(process.argv[intoIdx + 1]);
   } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
     // Inside a pulled workspace — pull into current dir (no nesting)
+    outputDir = process.cwd();
+  } else if (fs.existsSync(path.join(process.cwd(), 'atris')) && fs.statSync(path.join(process.cwd(), 'atris')).isDirectory()) {
+    // Inside an atris init'd workspace — merge business into current dir
     outputDir = process.cwd();
   } else {
     // Default: ./{slug}/ in current directory
@@ -358,6 +388,7 @@ async function pullBusiness(slug) {
 
   // Apply changes
   let pulled = 0;
+  let deleted = 0;
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
 
@@ -401,13 +432,28 @@ async function pullBusiness(slug) {
     }
   }
 
-  // Warn about remote deletions
+  // Apply remote deletions
   for (const p of diff.deletedRemote) {
-    console.log(`  - ${p.replace(/^\//, '')}  deleted on computer`);
+    const baseHash = effectiveManifest && effectiveManifest.files && effectiveManifest.files[p]
+      ? effectiveManifest.files[p].hash
+      : null;
+    const localHash = localFiles[p] ? localFiles[p].hash : null;
+    const localChanged = Boolean(baseHash && localHash && localHash !== baseHash);
+
+    if (force || !localChanged) {
+      const localPath = path.join(outputDir, p.replace(/^\//, ''));
+      fs.rmSync(localPath, { force: true });
+      pruneEmptyParentDirs(localPath, outputDir);
+      console.log(`  - ${p.replace(/^\//, '')}  deleted on computer`);
+      deleted++;
+    } else {
+      console.log(`  \u26A0 ${p.replace(/^\//, '')}  deleted on computer, but you changed it locally`);
+      conflictCount++;
+    }
   }
 
   // Show unchanged
-  if (unchangedCount > 0 && pulled === 0 && conflictCount === 0 && diff.deletedRemote.length === 0) {
+  if (unchangedCount > 0 && pulled === 0 && deleted === 0 && conflictCount === 0) {
     console.log('  Already up to date.');
   }
 
@@ -415,10 +461,10 @@ async function pullBusiness(slug) {
   console.log('');
   const parts = [];
   if (pulled > 0) parts.push(`${pulled} pulled`);
+  if (deleted > 0) parts.push(`${deleted} deleted`);
   if (diff.newRemote.length > 0 && !parts.some(p => p.includes('pulled'))) parts.push(`${diff.newRemote.length} new`);
   if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflict${conflictCount > 1 ? 's' : ''}`);
-  if (diff.deletedRemote.length > 0) parts.push(`${diff.deletedRemote.length} deleted remotely`);
   if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
 
   // Get current commit hash from remote (for manifest)
@@ -452,6 +498,63 @@ async function pullBusiness(slug) {
     workspace_id: workspaceId,
     name: businessName,
   }, null, 2));
+
+  // Wire skills → .claude/skills/ so they work as slash commands
+  const skillsDir = path.join(outputDir, 'skills');
+  const claudeSkillsDir = path.join(outputDir, '.claude', 'skills');
+
+  if (fs.existsSync(skillsDir)) {
+    fs.mkdirSync(claudeSkillsDir, { recursive: true });
+
+    // Recursively find all skill folders (any dir containing SKILL.md, at any depth)
+    const wireSkills = (dir, relPrefix) => {
+      const entries = fs.readdirSync(dir);
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry);
+        if (!fs.statSync(fullPath).isDirectory()) continue;
+        if (entry === 'README.md' || entry.startsWith('.')) continue;
+
+        const skillFile = path.join(fullPath, 'SKILL.md');
+        if (fs.existsSync(skillFile)) {
+          // This is a leaf skill — wire it
+          const skillName = relPrefix ? `${relPrefix}-${entry}` : entry;
+          const symlinkPath = path.join(claudeSkillsDir, skillName);
+          const relativePath = path.relative(path.dirname(symlinkPath), fullPath);
+
+          // Business skills override init skills (remove existing symlink if present)
+          if (fs.existsSync(symlinkPath)) {
+            try {
+              const stat = fs.lstatSync(symlinkPath);
+              if (stat.isSymbolicLink()) fs.unlinkSync(symlinkPath);
+              else continue; // Don't overwrite real directories
+            } catch { continue; }
+          }
+          try {
+            fs.symlinkSync(relativePath, symlinkPath);
+          } catch (e) {
+            // Fallback: copy
+            fs.mkdirSync(symlinkPath, { recursive: true });
+            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+          }
+        }
+
+        // Recurse into subdirectories (e.g. skills/executive/pipeline-health/)
+        wireSkills(fullPath, relPrefix ? `${relPrefix}-${entry}` : entry);
+      }
+    };
+
+    wireSkills(skillsDir, '');
+
+    // Count wired skills
+    const wiredSkills = fs.readdirSync(claudeSkillsDir).filter(f => {
+      const p = path.join(claudeSkillsDir, f);
+      return fs.statSync(p).isDirectory();
+    });
+    if (wiredSkills.length > 0) {
+      console.log(`  Wired ${wiredSkills.length} skills → .claude/skills/`);
+    }
+  }
+
 }
 
 

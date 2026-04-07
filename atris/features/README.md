@@ -90,6 +90,22 @@ Close remaining audit gaps from self-audit
 
 ### Completed Features
 
+#### wiki-loop
+Deterministic upkeep loop for the local wiki
+- **Files:** commands/loop.js, lib/wiki.js, commands/wiki.js, bin/atris.js, test/commands.test.js, test/cli-smoke.test.js, atris/skills/loop/SKILL.md, atris/features/wiki-loop/*
+- **Status:** complete
+- **Keywords:** wiki, loop, upkeep, stale, orphan, status
+- **What:** Adds `atris loop` and `atris wiki loop` to refresh `STATUS.md` + `log.md`, detect stale/orphan pages, and suggest the next ingest without auto-push
+- **Completed:** 2026-04-07
+
+#### wiki
+Local-first project wiki with cloud opt-in
+- **Files:** lib/wiki.js, commands/wiki.js, commands/init.js, commands/activate.js, commands/pull.js, commands/push.js, bin/atris.js, test/commands.test.js, test/cli-smoke.test.js, atris/skills/wiki/SKILL.md, atris/wiki/*
+- **Status:** complete
+- **Keywords:** wiki, ingest, local-first, cloud, memory
+- **What:** Canonical `atris/wiki/` scaffold, local-first ingest/query/lint, `--only wiki` sync alias, init/activate integration, project-local wiki skill, seeded repo wiki
+- **Completed:** 2026-04-07
+
 #### self-improving-loop
 Make Atris recursive — validate.md lessons feed back into the next idea.md
 - **Files:** atris/lessons.md (new), atris.md, atris/team/navigator.md, atris/team/validator.md, atris/MAP.md

@@ -1,6 +1,6 @@
 # Team Member Standard (MEMBER.md)
 
-> **Status:** planning
+> **Status:** implemented (core)
 > **Created:** 2026-02-16
 > **Last Updated:** 2026-02-16
 

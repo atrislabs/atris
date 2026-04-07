@@ -1,4 +1,4 @@
-const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions } = require('../utils/auth');
+const { loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 const fs = require('fs');
 const path = require('path');
@@ -464,6 +464,45 @@ function activateGlobal() {
   process.exit(0);
 }
 
+function switchSession() {
+  // Hidden command: atris _switch-session <name> [--session-id <id>]
+  // Per-terminal switch: writes session file so each tab keeps its own account.
+  // Falls back to global (credentials.json) when no session ID is available.
+  const args = process.argv.slice(3);
+  const name = args.filter(a => !a.startsWith('-'))[0];
+  if (!name) { process.exit(1); }
+
+  const profile = loadProfile(name);
+  if (!profile || !profile.token) { process.exit(1); }
+
+  // Accept explicit session ID from the shell wrapper (more reliable than
+  // detecting it from inside a child process where TTY env vars may be missing).
+  const sidIdx = args.indexOf('--session-id');
+  const explicitId = sidIdx !== -1 ? args[sidIdx + 1] : null;
+
+  if (explicitId) {
+    // Write session file directly using the caller's session ID
+    const sanitized = explicitId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+    const sessPath = path.join(getSessionsDir(), `${sanitized}.json`);
+    fs.writeFileSync(sessPath, JSON.stringify({
+      profile: name,
+      set_at: new Date().toISOString(),
+    }));
+  } else {
+    // Try to detect terminal ID from this process; fall back to global
+    const termId = getTerminalSessionId();
+    if (termId) {
+      setSessionProfile(name);
+    } else {
+      // No terminal ID — global fallback
+      const credentialsPath = getCredentialsPath();
+      fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
+      try { fs.chmodSync(credentialsPath, 0o600); } catch {}
+    }
+  }
+  process.exit(0);
+}
+
 function shellInit() {
   // Output shell function for per-terminal account switching
   // Usage: eval "$(atris shell-init)"  (add to ~/.zshrc)
@@ -471,12 +510,26 @@ function shellInit() {
   const lines = [
     '# Atris per-terminal account switching',
     '# Added by: eval "$(atris shell-init)"',
+    '_atris_session_id() {',
+    '  # Detect terminal session ID — same priority as the Node.js code',
+    '  local _sid="${TERM_SESSION_ID:-${ITERM_SESSION_ID:-${TMUX_PANE:-${WT_SESSION:-${WEZTERM_PANE:-}}}}}"',
+    '  if [[ -n "$_sid" ]]; then echo "$_sid"; return; fi',
+    '  # Fallback: TTY device (unique per macOS/Linux terminal tab)',
+    '  local _tty',
+    '  _tty=$(tty 2>/dev/null)',
+    '  if [[ $? -eq 0 && "$_tty" == /dev/* ]]; then echo "$_tty"; return; fi',
+    '}',
     'atris() {',
     '  if [[ "$1" == "switch" && -n "$2" && "$2" != "--"* ]]; then',
     '    local _profile',
     '    _profile=$(command atris _resolve "$2" 2>/dev/null)',
     '    if [[ $? -eq 0 && -n "$_profile" ]]; then',
     '      export ATRIS_PROFILE="$_profile"',
+    '      local _sid',
+    '      _sid=$(_atris_session_id)',
+    '      if [[ -n "$_sid" ]]; then',
+    '        command atris _switch-session "$_profile" --session-id "$_sid" 2>/dev/null',
+    '      fi',
     '      command atris _activate "$_profile" 2>/dev/null',
     '      local _email',
     '      _email=$(command atris _profile-email "$_profile" 2>/dev/null)',
@@ -495,6 +548,11 @@ function shellInit() {
     '      _profile=$(command atris _resolve "$_pick" 2>/dev/null)',
     '      if [[ $? -eq 0 && -n "$_profile" ]]; then',
     '        export ATRIS_PROFILE="$_profile"',
+    '        local _sid',
+    '        _sid=$(_atris_session_id)',
+    '        if [[ -n "$_sid" ]]; then',
+    '          command atris _switch-session "$_profile" --session-id "$_sid" 2>/dev/null',
+    '        fi',
     '        command atris _activate "$_profile" 2>/dev/null',
     '        local _email',
     '        _email=$(command atris _profile-email "$_profile" 2>/dev/null)',
@@ -511,4 +569,4 @@ function shellInit() {
   console.log(lines.join('\n'));
 }
 
-module.exports = { loginAtris, logoutAtris, whoamiAtris, switchAccount, useAccount, accountsCmd, listAccountsCmd, resolveProfile, profileEmail, activateGlobal, shellInit };
+module.exports = { loginAtris, logoutAtris, whoamiAtris, switchAccount, useAccount, accountsCmd, listAccountsCmd, resolveProfile, profileEmail, activateGlobal, switchSession, shellInit };

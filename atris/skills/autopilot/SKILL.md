@@ -1,101 +1,68 @@
 ---
 name: autopilot
-description: PRD-driven autonomous execution - give it a task, it loops until done Triggers on "autopilot", "autonomous", "get it done", "finish this", "ship it".
-version: 1.0.0
+description: "Autonomous task loop. Scans workspace, suggests work, executes plan-do-review one task at a time. Triggers on: autopilot, get it done, ship it, run the loop."
+version: 2.0.0
 tags:
   - autopilot
   - workflow
   - automation
 ---
 
-# Autopilot Skill
+# /autopilot
 
-Autonomous task execution. Plan → Do → Review loop until acceptance criteria pass.
+Autonomous suggest → execute loop. Finds the most important thing to do and does it.
 
-## When to Use
+## When to use
 
-- User says "get this done" or "ship it"
-- User describes a feature/bug and wants hands-off execution
-- Any task that can be validated with acceptance criteria
+- User says "get this done", "ship it", "run the loop"
+- User wants hands-off execution of backlog/inbox work
+- User gives a task description and walks away
 
-## Process
+## How it works
 
-```
-┌───────────────────────────────────────────────────────┐
-│  INPUT: "Add dark mode toggle"                        │
-│                                                       │
-│  1. GENERATE PRD                                      │
-│     - Type: feature or bug (auto-detect)              │
-│     - Acceptance criteria (testable conditions)       │
-│     - Priority: 1 (single story)                      │
-│                                                       │
-│  2. LOOP (max 5 iterations)                           │
-│     ┌──────────────────────────────────────┐          │
-│     │ PLAN: Navigator creates tasks        │          │
-│     │   - Read MAP.md for file locations   │          │
-│     │   - ASCII diagram of approach        │          │
-│     │   - Add tasks to TODO.md             │          │
-│     │   - Signal: [PLAN_COMPLETE]          │          │
-│     ├──────────────────────────────────────┤          │
-│     │ DO: Executor builds                  │          │
-│     │   - Implement each task              │          │
-│     │   - Verify changes work              │          │
-│     │   - Commit changes                   │          │
-│     │   - Signal: [DO_COMPLETE]            │          │
-│     ├──────────────────────────────────────┤          │
-│     │ REVIEW: Validator checks             │          │
-│     │   - Check acceptance criteria        │          │
-│     │   - If fail: [REVIEW_FAILED] reason  │          │
-│     │   - If pass: [COMPLETE]        │
-│     └──────────────────────────────────────┘          │
-│                                                       │
-│  3. OUTPUT                                            │
-│     - prd.json: PRD with passes: true                 │
-│     - progress.txt: Execution log                     │
-│     - Journal: Completion logged                      │
-└───────────────────────────────────────────────────────┘
-```
+The autopilot scans the workspace for signals and picks the highest-priority work:
 
-## Acceptance Criteria Templates
+1. **Resume** — in-progress tasks that were started but never finished
+2. **Staleness** — wiki pages whose sources changed (knowledge rot)
+3. **Cleanup** — tasks claimed >3 days ago and abandoned
+4. **Docs** — broken MAP.md references that need fixing
+5. **Backlog** — next task in TODO.md
+6. **Inbox** — raw ideas that need to become tasks
+7. **Review** — MAP.md or docs that haven't been touched in >7 days
 
-**Feature:**
-- Feature implemented and working as described
-- Tests pass (if test suite exists)
-- Build passes
-- Code follows project patterns (check MAP.md)
+For each suggestion, it shows the task and *why* it matters. Then executes plan → do → review.
 
-**Bug:**
-- Bug is fixed and no longer reproducible
-- Regression test added (if applicable)
-- Build passes
-- No new bugs introduced
-
-## Commands
+## Running from CLI
 
 ```bash
-# With description
-atris autopilot "Add dark mode toggle"
+# Interactive — suggests, you approve each one
+atris autopilot
 
-# Bug fix
-atris autopilot --bug "Login fails on Safari"
+# Fully autonomous — no approval needed
+atris autopilot --auto
 
-# From TODO.md backlog
-atris autopilot --from-todo
+# Seed an idea and let it run
+atris autopilot "add dark mode toggle" --auto
 
-# With options
-atris autopilot "Add feature" --iterations=3 --verbose
+# Preview what it would suggest
+atris autopilot --dry-run
+
+# Limit iterations
+atris autopilot --auto --iterations=3
 ```
 
-## Stop Conditions
+## Running from this conversation
 
-1. `[COMPLETE]` — All acceptance criteria met
-2. Max iterations reached (default: 5)
-3. Error that can't be recovered
+If the user invokes /autopilot inside Claude Code, do this:
+
+1. Run `atris autopilot --dry-run` to see what it would suggest
+2. Show the suggestions to the user
+3. If they approve, run `atris autopilot --auto --iterations=1` for each task
+4. After each task, show what was done and ask if they want to continue
 
 ## Rules
 
-- ONE task at a time
-- Verify before marking passes: true
-- Minimal changes only
-- Check MAP.md before touching code
-- Log to journal when complete
+- One task at a time. Never batch.
+- Always justify *why* before executing.
+- Human can skip or stop at any point.
+- After each task, run atris clean to heal refs and check staleness.
