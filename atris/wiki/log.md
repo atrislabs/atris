@@ -1,5 +1,13 @@
 # Atris Wiki Log
 
+## 2026-04-08
+
+- SCAN /Users/keshavrao/arena/atris-business/atris-labs/ — picked top 3 foundational sources for ingest
+  - #1 `/Users/keshavrao/arena/atris-business/atris-labs/atris.md` (57 lines) — workspace protocol, on-load sequence, layout, surfaces, north star. The operating contract for the reference implementation. → synthesis or entity page for atris-labs workspace.
+  - #2 `/Users/keshavrao/arena/atris-business/atris-labs/goals.md` (32 lines) — north star, 2026 Q2 targets ($1M ARR, 10 customers), H2 plan, standing constraints. Durable company direction. → concept/entity page for atris-labs goals.
+  - #3 `/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md` (39 lines) — workspace identity as a member of the Atris fleet, what it is/isn't, operating principles. Anchors the company-as-mini-AGI shape. → entity page for atris-labs (member).
+  - rejected: STATUS.md (derived, decays fast), MAP.md (index, regenerable), instructions.md/persona.md/memory.md (thin, fold into entity page later), CLAUDE.md (agent harness, not durable knowledge), TODO.md (ephemeral).
+
 ## 2026-04-07
 
 - 00:09 INGEST README.md -> seeded local repo wiki with overview and workflow pages
