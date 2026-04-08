@@ -1,7 +1,7 @@
 ---
 name: endgame
 description: "Fastest path from a vague goal to one concrete next move, powered by the wiki so the user never re-does work. Reads inbox + wiki + recent journal, picks the next horizon, writes the reverse path as tagged tasks to TODO.md so /autopilot can pursue it tick by tick. Triggers on: endgame, what's the last move, where are we heading, reverse engineer, work backward."
-version: 1.0.0
+version: 1.1.0
 tags: [planning, vision, reverse-engineer, atris, wiki, todo]
 ---
 
@@ -9,7 +9,7 @@ tags: [planning, vision, reverse-engineer, atris, wiki, todo]
 
 **Purpose:** help the human (or agent) reach their intent and goal **faster** by leveraging what the wiki already knows. Without endgame, they redo thinking. With endgame, they reach the next move in one pass — and write that move into TODO.md so the autopilot loop can pursue it without re-asking.
 
-Most planning is forward-greedy: *what's the next ticket?* Endgame is backward: *what does winning look like, who are we when we've arrived, and what's the shortest path from here?*
+Most planning is forward-greedy: *what's the next ticket?* Endgame is backward: *what does winning look like, and what's the shortest path from here?*
 
 > "You can't connect the dots looking forward; you can only connect them looking backward." — Steve Jobs
 
@@ -19,7 +19,7 @@ Before anything else, read `atris/TODO.md`. If it already has a `## Endgame` sec
 
 This rule exists so the loop pursues the current horizon to completion instead of constantly repicking.
 
-## Step 1 — READ THE WIKI + LOGS
+## Step 1 — READ THE INBOX, WIKI, LOGS
 
 Before picking a new horizon, read what already exists. The wiki + logs are the user's paid-for memory; not using them means they're paying twice.
 
@@ -31,21 +31,21 @@ Before picking a new horizon, read what already exists. The wiki + logs are the 
 - `atris/logs/YYYY/` — last 7-14 days of journals; scan `## Inbox` sections for unfulfilled ideas (these are user-seeded horizons)
 - `atris/business/<slug>/BUSINESS.md` if a business workspace
 
-**Inbox items are the primary horizon source.** If recent journal `## Inbox` sections have unfulfilled ideas, pick the oldest one and run the five moves on it. Only fall back to reactive signals (wiki staleness, broken refs) if the inbox is empty.
+**Inbox items are the primary horizon source.** If recent journal `## Inbox` sections have unfulfilled ideas, pick the oldest one and run the three moves on it. Only fall back to reactive signals (wiki staleness, broken refs) if the inbox is empty.
 
 If the horizon is genuinely unreadable from those sources, ask **1–3 sharp questions**. Never more. Never a wall of text.
 
-## The five moves
+## The three moves
 
 1. **HORIZON** — One paragraph. What does the world look like when we win? Concrete. Falsifiable. Not a slogan.
-2. **IDENTITY** — Who are we when we've arrived? Not what we've built — who we *are*. State, not destination. This shapes today's behavior more than the steps do.
-3. **GAP** — Two columns: **already true** (fuel) and **not yet** (work). Cite wiki pages. Never deficit-only.
-4. **REVERSE PATH** — Chain backward from HORIZON. Last move before winning, the one before, etc. **Include eliminate steps** — what gets deleted on the way to the endgame, not just what gets added. Stop when you hit something doable this week.
-5. **NEXT** — The first link in the chain. One concrete action, one session, no hedging.
+2. **REVERSE PATH** — Chain backward from HORIZON. Last move before winning, the one before, etc. **Include eliminate steps** — what gets deleted on the way to the endgame, not just what gets added. Stop when you hit something doable this week. 5–7 links max.
+3. **NEXT MOVE** — The first link in the chain. One concrete action, one session, no hedging.
+
+> **v1.1.0 cut:** prior versions had two more moves — `IDENTITY` ("who are we when we've arrived") and `GAP` ("already true vs not yet"). Identity was philosophical overhead; GAP was just the diff between HORIZON and current state, which the wiki + MAP already give you. Three moves is enough. Less drift surface, faster ticks, fewer phrases for the validator to verify.
 
 ## Step 2 — WRITE TO TODO.md
 
-After running the five moves, write the result to `atris/TODO.md`:
+After running the three moves, write the result to `atris/TODO.md`:
 
 1. **Add a `## Endgame` section** (above `## Backlog`) with this exact shape:
 
@@ -55,12 +55,10 @@ After running the five moves, write the result to `atris/TODO.md`:
 **Slug:** <kebab-case-slug>
 **Picked:** YYYY-MM-DD HH:MM
 **Horizon:** <one-line summary of HORIZON>
-**Identity:** <one-line IDENTITY>
 **Source:** <inbox-item | wiki-signal | user-prompt> (so we know where it came from)
-
 ```
 
-2. **Add each REVERSE PATH step as a tagged backlog task** in `## Backlog` using the existing format the parser supports:
+2. **Add each REVERSE PATH step as a tagged backlog task** in `## Backlog`:
 
 ```markdown
 - **T1:** <step 1 description> [endgame]
@@ -68,11 +66,11 @@ After running the five moves, write the result to `atris/TODO.md`:
 - **T3:** <step 3 description> [endgame]
 ```
 
-The tag must be exactly `[endgame]` (no slug, no colon — the parser only matches `\[(\w+)\]`). The slug lives in the `## Endgame` section header.
+The tag must be exactly `[endgame]` (parser only matches `\w+`, no colons or hyphens). The slug lives in the section header.
 
-Use `T1`, `T2`, `T3` … as IDs. Renumber from 1 for each new endgame.
+Use `T1`, `T2`, `T3` … as IDs (or `W1`/`E1`/etc per endgame domain). Single uppercase letter + digits, optional trailing lowercase letter (the parser was extended in commit `4db14d9` to accept `W3b`-style validator sub-task IDs).
 
-3. **Append the full endgame output to today's journal `## Notes`** so the reasoning is preserved:
+3. **Append the full endgame to today's journal `## Notes`** so the reasoning is preserved:
 
 ```markdown
 ### Endgame picked — HH:MM PDT
@@ -81,16 +79,7 @@ slug: <slug>
 source: <where>
 
 HORIZON
-  ...
-
-IDENTITY
-  ...
-
-GAP
-  ALREADY TRUE
-    - ...
-  NOT YET
-    - ...
+  <one paragraph>
 
 REVERSE PATH
   ENDGAME
@@ -101,8 +90,8 @@ REVERSE PATH
     ← T1 (next move)
 
 NEXT MOVE
-  T1: ...
-  Why this first: ...
+  T1: <description>
+  Why this first: <one line>
 ```
 
 This is the archive — once the endgame closes, future `/endgame` runs can read this to learn what worked.
@@ -120,26 +109,15 @@ commits: <list of commits since endgame was picked>
 lessons: <one-line takeaway>
 ```
 
-Then remove the old `## Endgame` section from TODO.md before writing the new one. Completed `[endgame]` tasks should already have moved to `## Completed` via the validator — leave those alone.
+Then remove the old `## Endgame` section from TODO.md before writing the new one. Completed `[endgame]` tasks should already have moved to `## Completed` via the validator.
 
-## Output shape (when called interactively, not from autopilot)
+## Output shape (when called interactively)
 
-When a human runs `/endgame` directly (not from a cron tick), show the five moves on screen first, ask one yes/no for confirmation, then write to TODO.md only after the human says go. When called from autopilot at a boundary, skip the confirmation — write straight to TODO.md and journal it.
+When a human runs `/endgame` directly (not from a cron tick), show the three moves on screen first, ask one yes/no for confirmation, then write to TODO.md only after the human says go. When called from autopilot at a boundary, skip the confirmation — write straight to TODO.md and journal it.
 
 ```
 HORIZON
   [one paragraph: concrete, falsifiable, not a slogan]
-
-IDENTITY
-  [one or two sentences: who are we when we've arrived?]
-
-GAP
-  ALREADY TRUE
-    - [fuel — what the wiki/code already gives us]
-    - ...
-  NOT YET
-    - [biggest missing piece]
-    - ...
 
 REVERSE PATH
   ENDGAME
@@ -157,9 +135,7 @@ NEXT MOVE
 
 - **Step 0 first.** If a current endgame is still active, do not pick a new one. Continue, don't repick.
 - **Read inbox + wiki first.** The whole point is leveraging what exists.
-- **HORIZON before GAP.** Vision before deficit. Never invert.
-- **IDENTITY before GAP.** State before steps. Acting *from* the endgame beats acting *toward* it.
-- **GAP has two columns.** Pure deficit framing makes you tired. Already-true is fuel.
+- **HORIZON before REVERSE PATH.** Vision before steps.
 - **REVERSE PATH includes eliminate.** Half of strategy is removal. Forward-greedy planning never asks this. Endgame must.
 - **The chain must terminate this week.** If it can't, the horizon is too far — pick a closer one and say so.
 - **5–7 links max in the chain.** More than that = horizon is too vague.
@@ -172,7 +148,7 @@ NEXT MOVE
 
 ## Phase 2 — agent runs this on itself
 
-This skill is designed to be runnable by the agent on its own state, not just by humans. When `atris autopilot` finishes the last `[endgame]` task in the current horizon, the next tick's boundary check invokes `/endgame` against the new state, picks the next horizon from inbox/wiki, writes it to TODO.md, and queues the next move — without a human pulling the trigger. The day this runs continuously without drift, atris-cli closes the loop on itself.
+This skill is designed to be runnable by the agent on its own state, not just by humans. When `atris autopilot` finishes the last `[endgame]` task in the current horizon, the next tick's boundary check invokes `/endgame` against the new state, picks the next horizon from inbox/wiki, writes it to TODO.md, and queues the next move — without a human pulling the trigger.
 
 ## When to use vs other skills
 
@@ -190,11 +166,10 @@ This skill is designed to be runnable by the agent on its own state, not just by
 - Skipping Step 0 (check for existing endgame). Repicking mid-pursuit kills compounding.
 - Skipping Step 1 (read inbox + wiki). The skill is pointless without it.
 - Walls of clarifying questions. Max 1–3.
-- Skipping IDENTITY and going straight to GAP. The "who" shapes the "what."
 - Listing 5 possible endgames. Pick one and commit.
-- GAP that's only deficit. Always two columns.
 - REVERSE PATH that's purely additive. Always include at least one eliminate.
 - Chain longer than 7 links. Shorten the horizon.
 - Three "next moves." There is one.
 - Quoting goals from a deck. Read the wiki, look at reality.
 - Tagging tasks with `[endgame:slug]` — parser only accepts `[\w+]`, will fail silently.
+- Padding with IDENTITY or GAP sections — those were cut in v1.1.0 as autopilot overhead.
