@@ -35,8 +35,8 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T8:** Refresh `atris/features/wiki-loop/validate.md` — bump `last_compiled` to 2026-04-08, drop `atris/skills/loop/SKILL.md` from sources (that file is now the autopilot heartbeat scheduler v2.0.0, not wiki upkeep — the wiki upkeep prompt was renamed to `/upkeep` and lives at `~/.claude/skills/upkeep/SKILL.md`, outside this repo), and update Pass 3 `npm test` count from `pass (98/98)` → `pass (118/118)`. CLI surface (`atris loop`, `atris wiki loop`, `loopAtris`, `buildReport`) is unchanged. [execute]
-  **Claimed by:** Executor at 2026-04-08T11:54:54.674Z
+- **T9:** Recompile `atris/wiki/syntheses/atris-cli-overview.md` against current sources. Rewrite the body to reflect shipped surface as of 2026-04-08: pin version 2.8.0; expand the workspace layers from 4 to include `features/`, `skills/`, `team/`, and `lessons.md`; add one paragraph on the extended loop (`brainstorm` → `plan`/`do`/`review` → `autopilot`/`run` → `loop`) with endgame-driven autopilot and experiments/Endstate benchmark called out as the self-improvement rail; keep it tight (synthesis, not manual — target ~25-35 lines of body). Add `atris.md` to `sources` (the spec is load-bearing for plan/do/review wording). Bump `last_compiled` and `updated` to 2026-04-08. Add Cross-References to `[[atris/wiki/systems/atris-cli.md]]` and `[[atris/wiki/concepts/wiki-as-memory-substrate.md]]` alongside the existing plan-do-review-loop link. Exit condition: `node bin/atris.js clean --dry-run` does not flag this page as stale, frontmatter validates, and the body names (verbatim): autopilot, endgame, experiments, wiki loop, skills, features, lessons. [execute]
+  **Claimed by:** Executor at 2026-04-08T12:03:04.213Z
   **Stage:** DO
 
 ---
