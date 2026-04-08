@@ -26,7 +26,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T21e:** Write the T21 verdict summary at the bottom of `atris/features/human-output/validate.md` under `## Verdict`. Table: surface | pass/fail | notes. Overall pass iff every in-scope surface passes all four checks. Link back to T16 (`examples.md`) and T17/T18/T20 completed entries in TODO.md so the reader has the shipping history. Exit: validate.md ends with a verdict table covering every surface from T21a and an overall pass/fail line. [explore]
 - **T23:** Locate today's "heartbeat Notes line" writer — grep `commands/autopilot.js`, `commands/run.js`, and `atris/skills/{autopilot,loop}/SKILL.md` for any `## Notes` append fired per tick. Today's `- HH:MM PDT — ...` lines are agent-written; confirm there is NO CLI writer inside `autopilotAtris` and record the finding (file:line or "agent-only") in `atris/features/human-output/idea.md` under `## T20 scope`. Exit: scope note added; T24 can cite it without re-grepping. [explore]
 - **T24:** Add `appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle })` helper in `commands/autopilot.js` near `logCompletion` (~line 538). Writes a plain-language block to today's journal `## Notes` (append at end of section, mirror `logCompletion`'s file-read/section-replace pattern). Block shape matches `atris/features/human-output/examples.md`: 1 line time, 1–2 lines what happened, 1 line horizon, 1 line next, blank line. When `idle === true` the block MUST include the literal substring `0 tasks in 0s` so `getIdleTickCount` (line 744) still works. Export from `module.exports`. No call site yet. Exit: `node -e "require('./commands/autopilot').appendTickSummary(process.cwd(), { time: '15:00', outcome: 'smoke', horizon: 'loop-self-seeds-horizons', nextStep: 'revert', idle: true })"` writes a block to today's journal containing `0 tasks in 0s`, and `getIdleTickCount(process.cwd())` returns ≥1 after the write. [execute]
 - **T25:** Wire `appendTickSummary` into `autopilotAtris` end-of-tick at `commands/autopilot.js:~1173` (the `const elapsed = ...` block). Three branches: (a) happy — `completed > 0`, outcome = "built and reviewed <task>", pass horizon slug read from `## Endgame` in `atris/TODO.md`; (b) idle — `completed === 0 && !suggestion`, outcome = "no work picked up", `idle: true` (emits `0 tasks in 0s`); (c) halted — review failed or error thrown, outcome = "stopped for manual check". Horizon reader = small inline helper (no new file) that regexes `\*\*Slug:\*\*\s*(\S+)` from TODO.md, returns `'unset'` on miss. Next-step copy = "next tick will …" pulled from the same block that prints to stdout today. Guard with try/catch so a journal write failure never crashes the tick. Exit: `atris autopilot --auto --iterations=1` from a clean workspace writes exactly ONE new block under today's `## Notes`; block matches examples.md shape; `getIdleTickCount` still counts correctly when the tick is idle. [execute]
@@ -36,6 +35,8 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## In Progress
+
+- **T21e:** Write the T21 verdict summary at the bottom of `atris/features/human-output/validate.md` under `## Verdict`. Claimed by: Executor at 2026-04-08T23:14:17.536Z
 
 ---
 
