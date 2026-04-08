@@ -51,8 +51,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
-- **Entry point:** `bin/atris.js:429-710` (knownCommands dispatch)
-- **Handler:** `bin/atris.js:1344-1474` (atrisDevEntry function)
+- **Entry point:** `bin/atris.js:426-437` (knownCommands dispatch)
+- **Handler:** `bin/atris.js:1453-1583` (atrisDevEntry function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -111,15 +111,19 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Experiments (`atris experiments`)
 
-**Purpose:** Scaffold and validate Karpathy-style keep/revert experiment packs inside `atris/experiments/`
+**Purpose:** Scaffold, validate, and run bounded experiment packs inside `atris/experiments/`, including Endstate benchmark receipts
 
 - **Entry point:** `bin/atris.js` command routing for `experiments`
 - **Handler:** `commands/experiments.js`
+- **Core functions:** `commands/experiments.js:52` (`ensureExperimentsFramework`), `commands/experiments.js:271` (`buildBenchmarkArtifact`), `commands/experiments.js:364` (`experimentsRun`)
 - **How it works:**
 - `atris init` now prepares `atris/experiments/` with packaged validators, fixtures, templates, and smoke examples
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
 - `atris experiments validate` runs structural checks and context-bloat validation
+- `atris experiments run <slug>` executes a pack; Endstate packs also emit JSON receipts + append `results.tsv`
+- Endstate packs pin runner profiles in `runner.json` (`baseline-single` vs `stack-coordinated`) so baseline and stack resolve different live prompt strategies
 - `atris experiments benchmark [validate|runtime]` proves the validator and keep/revert example still work
+- **Endstate helper:** `lib/endstate.js:7-179` captures git heads, changed files, wiki deltas, test summaries, scoring, artifact writes, and `results.tsv` rows
 - **Workspace assets:**
 - `atris/experiments/README.md`
 - `atris/experiments/validate.py`
@@ -127,15 +131,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `atris/experiments/benchmark_runtime.py`
 - `atris/experiments/_template/pack/`
 - `atris/experiments/_examples/smoke-keep-revert/`
-- **Value:** Makes self-improvement loops a first-class Atris CLI concept instead of repo-local convention
+- **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
-**Search:** `rg "experimentsCommand|ensureExperimentsFramework" commands/experiments.js commands/init.js`
+**Search:** `rg "experimentsCommand|experimentsRun|buildBenchmarkArtifact|ensureExperimentsFramework" commands/experiments.js commands/init.js`
 
 ### Feature: Spec Update (`atris update`)
 
 **Purpose:** Updates local atris.md to latest package version
 
-- **Entry point:** `commands/sync.js:4-61` (syncAtris function)
+- **Entry point:** `commands/sync.js:123-436` (syncAtris function)
 - **Logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -144,6 +148,16 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Keep local spec in sync with npm package
 
 **Search:** `rg "syncAtris" commands/sync.js`
+
+### Feature: Pull (`atris pull`)
+
+**Purpose:** Pull remote journal/business data into the local workspace
+
+- **Entry point:** `commands/pull.js:27-110` (pullAtris function)
+- **Helpers:** `pullBusiness` (`commands/pull.js:112`), `pullGeneralJournal` (`commands/pull.js:586`), `pullMemberJournal` (`commands/pull.js:651`)
+- **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:688`)
+
+**Search:** `rg "pullAtris" commands/pull.js`
 
 ### Feature: Daily Logging (`atris log`)
 
@@ -214,7 +228,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Default: Visual box-drawing status board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:920-922` (isQuick, isJson flag parsing)
+- **Routing:** `bin/atris.js:998-1076` (isQuick, isJson flag parsing)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris" bin/atris.js`
@@ -347,8 +361,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:455` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:623` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js:717` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:886` (autopilotFromTodo function)
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -358,11 +372,14 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 5. Backlog tasks from TODO.md
   - 6. Unprocessed inbox items from journal
   - 7. Periodic review (MAP.md stale >7 days)
-- **Prompt builder:** `commands/autopilot.js:266` (buildPrompt function) — adapts prompts per task kind
-- **Phase executor:** `commands/autopilot.js:212` (executePhase function) — runs `claude -p`
-- **Approval gate:** `commands/autopilot.js:196` (askApproval function) — enter/skip/quit
+- **Prompt builder:** `commands/autopilot.js:335` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
+- **Single-task runner:** `commands/autopilot.js:496` (`runTaskOnce`) — executes plan → do → review once and returns per-phase prompts, outputs, and elapsed time for benchmark receipts
+- **Phase executor:** `commands/autopilot.js:260` (executePhase function) — runs `claude -p`
+- **Approval gate:** `commands/autopilot.js:212` (askApproval function) — enter/skip/quit
+- **Idle-tick helper:** `commands/autopilot.js:649` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:684` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
-- **Value:** Always knows what to do next and why
+- **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
 
 **Search:** `rg "autopilotAtris|suggestNextTask" commands/autopilot.js`
 
@@ -370,18 +387,18 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Auto-chain plan → do → review cycles autonomously using `claude -p` subprocesses
 
-- **Entry point:** `commands/run.js:201-364` (runAtris function)
+- **Entry point:** `commands/run.js:204-367` (runAtris function)
 - **Prompt builder:** `commands/run.js:25-103` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:108-140` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
 - **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
-- **Journal logger:** `commands/run.js:168-196` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
+- **Journal logger:** `commands/run.js:171-199` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
 - **Summary table:** `commands/run.js:354` (cycleTimings forEach) — per-cycle phase duration table
-- **Post-cycle clean:** `commands/run.js:316` (cleanAtris call) — self-heal MAP.md refs
-- **Post-cycle push:** `commands/run.js:325` (execSync git push) — disabled with `--no-push`
+- **Post-cycle clean:** `commands/run.js:319` (cleanAtris call) — self-heal MAP.md refs
+- **Post-cycle push:** `commands/run.js:328` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:92-105` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:214`
-- **Known commands:** `bin/atris.js:373` (in knownCommands array)
+- **Known commands:** `bin/atris.js:425` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
   - `--once` — Single plan→do→review cycle
@@ -419,13 +436,13 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 2. **`atris do`** - Executor mode
 
-- Entry: `commands/workflow.js:321-661` (doAtris function)
+- Entry: `commands/workflow.js:324-664` (doAtris function)
 - Outputs: executor.md spec + TODO.md + MAP.md
 - Purpose: Build tasks with step-by-step confirmation
 
 3. **`atris review`** - Validator mode
 
-- Entry: `commands/workflow.js:663-1085` (reviewAtris function)
+- Entry: `commands/workflow.js:666-1088` (reviewAtris function)
 - Outputs: validator.md spec + TODO.md + MAP.md + journal
 - Purpose: Ultrathink validation, test, clean docs
 
@@ -479,7 +496,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:1059-1106` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:1168-1215` (upgradeAtris function)
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -508,7 +525,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Select which cloud agent persona to use
 
-- **Entry point:** `bin/atris.js:1122-1203` (agentAtris function)
+- **Entry point:** `bin/atris.js:1231-1312` (agentAtris function)
 - **Requires:** Valid credentials
 - **Logic:**
 - Fetches available agents from backend
@@ -522,7 +539,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:1206-1239` (chatAtris function)
+- **Entry point:** `bin/atris.js:1315-1348` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -565,7 +582,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Auto-advance to next workflow step based on journal state
 
-- **Entry point:** `bin/atris.js:448` (interactiveEntry function)
+- **Entry point:** `bin/atris.js:508` (interactiveEntry function)
 - **Logic:** Same as natural language entry - loads context, detects state, advances
 - **Value:** Single-command workflow progression without typing a description
 
@@ -809,12 +826,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Modular commands (in commands/):**
 
 - `planAtris()` → `commands/workflow.js:5-306`
-- `doAtris()` → `commands/workflow.js:321-661`
-- `reviewAtris()` → `commands/workflow.js:663-1085`
+- `doAtris()` → `commands/workflow.js:324-664`
+- `reviewAtris()` → `commands/workflow.js:666-1088`
 - `statusAtris()` → `commands/status.js:15-216`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
-- `autopilotAtris()` → `commands/autopilot.js:339-486`
+- `autopilotAtris()` → `commands/autopilot.js:674-838`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
