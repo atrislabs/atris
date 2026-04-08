@@ -22,10 +22,14 @@ Note on status: `atris status` is currently hijacked by `.atris/business.json` i
 
 ## Surface: autopilot tick
 
-Command: `node bin/atris.js autopilot --auto --iterations=1 --dry-run`
+Command: `node bin/atris.js autopilot --auto --iterations=1` (T21b re-capture,
+non-dry-run, default non-verbose). The tick blocks on a `claude -p` subprocess
+at the "I am running that task now" step; the stdout block below is the full
+default non-verbose output emitted before that blocking call.
 
 ```text
-  3:16 pm
+
+  3:46 pm
   I am starting an autopilot tick in autonomous mode.
   The current limit is 1 task.
 
@@ -44,36 +48,38 @@ Command: `node bin/atris.js autopilot --auto --iterations=1 --dry-run`
 
 
   I picked task 1 of 1.
-  Validate human-output end-to-end — run one full plan→do→review cycle,
-  screenshot/capture each surface, confirm ≤20 lines × ≤80 chars and that a
-  non-technical reader can decide approve/hold. Append verdict to
-  `atris/features/human-output/validate.md`. Exit: validate.md exists with
-  pass/fail per surface.
+  Capture autopilot tick output — run `atris autopilot --auto
+  --iterations=1` from this repo, paste the full default (non-verbose)
+  stdout block into `atris/features/human-output/validate.md` under `##
+  Surface: autopilot tick`. Exit: section has raw block + 4 check results +
+  overall pass/fail.
 
-  Why now: Next in the backlog (explore). 11 tasks waiting.
+  Why now: This was already started by Executor at 2026-04-08T22:41:42.058Z
+  but never finished.
 
   Next: approve it, skip it, or stop the loop.
 
 
-  This was a dry run, so I did not execute the task.
+  I am running that task now.
 
-  Next I will look for another task on the next pass.
-
-
-  Autopilot finished.
-  It completed 0 tasks in 0s.
+  Next I will report what happened and whether review passed.
 ```
 
-Measurements: 39 lines total, max line width 80 chars.
+Measurements: 36 lines total, max line width 78 chars.
 
 | Check | Result | Notes |
 |---|---|---|
-| (i) ≤ 20 lines | **FAIL** | 39 lines across banner + pick + dry-run + done blocks. Each sub-block is ≤ ~14 lines, but the full tick output as a reader sees it exceeds 20. |
-| (ii) ≤ 80 chars wide | **PASS** | Max 80 chars. |
-| (iii) plain language (no box art in default mode) | **PASS** | No `┌─┐ │ └─┘`, no `━━━`. |
-| (iv) non-technical reader can name horizon + next step | **PASS** | Horizon slug, plain horizon text, next move (scan+pick), and decision line ("approve it, skip it, or stop the loop") all readable. |
+| (i) ≤ 20 lines | **FAIL** | 36 lines across banner + pick + run blocks; horizon paragraph alone is 9 wrapped lines. |
+| (ii) ≤ 80 chars wide | **PASS** | Max 78 chars. |
+| (iii) plain language (no box art in default mode) | **PASS** | No `┌─┐ │ └─┘`, no `━━━`; all briefing copy. |
+| (iv) non-technical reader can state horizon + next step | **PASS** | Horizon slug + plain horizon text printed; next step ("scan and choose one task", "approve it, skip it, or stop the loop") readable. |
 
-Surface verdict: **FAIL** — only on line budget. The horizon paragraph alone is 9 wrapped lines, which eats most of the 20-line budget before the pick + dry-run + done blocks print. Fix = shrink horizon rendering (1–2 sentences) or print it only once per boundary, not every tick.
+Surface verdict: **FAIL** — width and plain-language checks pass, non-technical
+reader can state horizon + next step, but the 20-line budget is blown (36
+lines). Same root cause as T21 run: the horizon paragraph rendered in full on
+every tick eats most of the budget before the pick + run blocks print. Fix =
+render horizon in ≤ 2 sentences (or print the full horizon only on a boundary
+tick, slug-only after that).
 
 ## Surface: status (default)
 
