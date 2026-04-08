@@ -1,40 +1,71 @@
 ---
 name: loop
-description: "Wiki upkeep loop. Scans atris/wiki for stale pages, orphan pages, and high-value next ingests, then refreshes STATUS.md and log.md. Triggers on: /loop, upkeep the wiki, run the wiki loop."
-version: 1.0.0
+description: "Schedule the recurring autopilot heartbeat. Calls CronCreate to fire one autopilot tick every ~15 min. Triggers on: /loop, start the loop, run the loop, autonomous mode, kick off the heartbeat."
+version: 2.0.0
 tags:
   - loop
-  - wiki
-  - upkeep
-  - memory
+  - autopilot
+  - cron
+  - heartbeat
 ---
 
 # /loop
 
-Use this when the user wants the wiki kept alive instead of just written once.
+Schedules the recurring autopilot heartbeat. One tick fires roughly every 13–17 minutes via Claude Code's cron system.
 
 ## What it does
 
-1. Run `atris loop`.
-2. Read the summary from `atris/wiki/STATUS.md`.
-3. Surface stale pages, orphan pages, and the next ingest candidates.
-4. If the user wants action, move immediately into `atris ingest` or a manual wiki page refresh.
+1. Calls `CronCreate` with a recurring schedule (off-clock minute to avoid fleet sync at :00 / :30)
+2. The cron prompt invokes `/autopilot`, which runs ONE plan→do→review tick on the next-priority work
+3. Returns the cron job id so the user can stop it later with `CronDelete`
+4. Lists the active cron jobs via `CronList` so the user can see the heartbeat is alive
 
-## Local-first
+## How to invoke
 
-- Default to the local repo wiki.
-- Do not auto-push.
-- Do not pretend cloud upkeep exists if only the local loop is implemented.
+User says "run /loop", "start the loop", "kick off autonomous mode", or "make autopilot recurring".
 
-## Good usage
+The agent then:
 
-- "run /loop"
-- "upkeep the wiki"
-- "what should we ingest next?"
-- "is the wiki stale?"
+1. Calls `CronCreate` with these args (use whatever off-clock minute you land on, do not pin to :00 or :30):
+   - `cron`: `"*/13 * * * *"` (every 13 min) for tight loops, or `"7 * * * *"` (hourly at :07) for slow loops
+   - `prompt`: `"/autopilot — run one tick. find the next thing in atris/TODO.md or the inbox, plan it, do it, review it. one task only. then stop. do not start a conversation."`
+   - `recurring`: `true`
+   - `durable`: `false` (in-memory only — gone when this Claude session ends)
+2. After creating, calls `CronList` and shows the user the active cron jobs.
+3. Tells the user: "loop is alive. job id <X>. fires roughly every <N> minutes. say 'stop the loop' to kill it. auto-expires after 7 days."
+
+## Stopping the loop
+
+When the user says "stop the loop", call `CronDelete` with the saved job id.
+
+If the user says "kill all loops", call `CronList`, then `CronDelete` for every job.
 
 ## Rules
 
-- Keep the loop deterministic.
-- Prefer concrete next moves over abstract health language.
-- If the wiki is stale, say which page is stale and why.
+- One tick at a time. Never schedule a cron that fires more than once per 10 min.
+- Always pick an off-clock minute (avoid :00 and :30) to prevent the global fleet from hammering the API at the same instant.
+- Use `durable: false` by default. Only use `durable: true` if the user explicitly says "make this survive restarts" or "persist this".
+- Auto-expires after 7 days. Tell the user.
+- Cron only fires while Claude Code is idle (not mid-query). It will NOT run if Claude Code is closed.
+
+## Why this is the heartbeat
+
+`/autopilot` is one tick. `/loop` is the schedule. Together they are the heartbeat:
+
+```
+/loop  →  CronCreate('*/13 * * * *', '/autopilot')
+              ↓
+          every ~13 min while Claude Code is idle:
+              ↓
+          /autopilot  →  one tick
+              ↓
+          plan → do → review → stop
+              ↓
+          (cron fires again next interval)
+```
+
+This is the autonomous mode. Without `/loop`, `/autopilot` only runs when a human invokes it.
+
+## Wiki upkeep is a separate concern
+
+The CLI command `atris loop` is wiki upkeep (stale pages, orphans, ingest candidates). That's a different verb on the same name. If the user wants wiki health, run `atris loop` from a terminal. If they want the autopilot heartbeat, invoke `/loop` here in Claude Code.

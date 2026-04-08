@@ -5,12 +5,12 @@ title: Jack Dorsey
 sources: [https://www.youtube.com/watch?v=YTVSwOY19Qs]
 created: 2026-04-07
 updated: 2026-04-07
-tags: [founder, block, twitter, mini-agi]
+tags: [founder, block, twitter]
 ---
 
 # Jack Dorsey
 
-Co-founder of Twitter and Block. As of the Sequoia interview (2026), running Block (Square / Cash App / Tidal) under a "mini-AGI" reorganization thesis: replace traditional management hierarchy with an AI intelligence layer over company artifacts.
+Co-founder of Twitter and Block. As of the Sequoia interview (2026), running Block (Square / Cash App / Tidal) under an AI-native reorganization thesis: replace traditional management hierarchy with an AI intelligence layer over company artifacts.
 
 ## Beliefs that drive his org design
 
@@ -34,6 +34,5 @@ Co-founder of Twitter and Block. As of the Sequoia interview (2026), running Blo
 
 ## Cross-References
 
-- [[atris/wiki/concepts/mini-agi.md]] — the thesis he's articulating
 - [[atris/wiki/concepts/intent-capability-composition.md]] — his proposed loop
-- [[atris/wiki/syntheses/atris-as-mini-agi.md]] — applying his checklist to atris-cli
+- [[atris/wiki/systems/atris-business.md]] — productized version of the thesis

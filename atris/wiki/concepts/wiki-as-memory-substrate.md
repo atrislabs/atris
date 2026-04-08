@@ -5,7 +5,7 @@ title: Wiki as Memory Substrate
 sources: [/Users/keshavrao/arena/atris-cli/lib/wiki.js, /Users/keshavrao/arena/atris-cli/commands/wiki.js, /Users/keshavrao/arena/atris-cli/atris/skills/wiki/SKILL.md]
 created: 2026-04-07
 updated: 2026-04-07
-tags: [memory, wiki, atris, mini-agi]
+tags: [memory, wiki, atris]
 ---
 
 # Wiki as Memory Substrate
@@ -55,7 +55,7 @@ tags: [tag1, tag2]
 
 Body in markdown. Cross-refs as `[[atris/wiki/...]]` links. Always close with a `## Cross-References` section.
 
-## Where it sits in the mini-AGI stack
+## Where it sits in the loop stack
 
 The wiki is the **memory** layer. The MAP is the **navigation** layer. The team is the **action** layer. The autopilot loop is the **execution** layer. Stack:
 
@@ -75,7 +75,7 @@ The wiki is the **memory** layer. The MAP is the **navigation** layer. The team 
    (code, journal, sources)
 ```
 
-For atris-cli to become a mini-AGI of itself, this layer has to actually exist and be queryable. Right now (2026-04-07) it has 6 pages and is being populated for the first time as a test of the loop.
+For atris-cli to become self-reflective, this layer has to actually exist and be queryable. Right now (2026-04-07) it has 6 pages and is being populated for the first time as a test of the loop.
 
 ## Honest limits
 
@@ -88,5 +88,3 @@ For atris-cli to become a mini-AGI of itself, this layer has to actually exist a
 
 - [[atris/wiki/systems/atris-cli.md]] — the project this wiki lives inside
 - [[atris/wiki/systems/atris-business.md]] — sibling product where the wiki has a cloud counterpart (`context/`)
-- [[atris/wiki/concepts/mini-agi.md]] — what the wiki is *for*
-- [[atris/wiki/syntheses/atris-as-mini-agi.md]] — how much closer the wiki gets us
