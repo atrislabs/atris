@@ -12,11 +12,15 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## Backlog
 
+- **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-07. [execute]
+
 ---
 
 ## In Progress
 
-- **T1:** Refresh `atris/features/cli-ux-simplification/validate.md` — bump `last_compiled` to 2026-04-07. Claimed by: Executor at 2026-04-08T05:54:03.680Z
+- **T1:** Update `atris/features/team-member-standard/build.md` — fix line refs (`bin/atris.js:295-297` → `315-318`, `:979` → `1035-1038`), correct member roster (6 actual: brainstormer/executor/launcher/navigator/researcher/validator — no oracle), add `upgrade` subcommand to CRUD list, fix scaffolded dirs (add `tools/` + `journal/`), document push/pull agent-id round-trip + journal sync, align frontmatter schema with template (description/version/tools/agent-id, drop `traits`), bump `last_compiled` to 2026-04-07. [execute]
+  **Claimed by:** Executor at 2026-04-08T06:02:34.587Z
+  **Stage:** DO
 
 ---
 
