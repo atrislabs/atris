@@ -1,31 +1,48 @@
 # TODO.md
 
-> **Last updated:** 2026-04-07
+> **Last updated:** 2026-04-08
 
 ---
 
 ## Purpose
 
 Tracks active tasks for Atris CLI development. Target state = 0.
+The `## Endgame` section below holds the current horizon; `[endgame]`-tagged
+tasks in `## Backlog` are pursued by /autopilot in priority order until done,
+then /endgame picks the next horizon at the boundary.
+
+---
+
+## Endgame
+
+**Slug:** wiki-from-atris-labs
+**Picked:** 2026-04-08
+**Horizon:** atris-cli wiki has 3 new pages ingested from `/Users/keshavrao/arena/atris-business/atris-labs/`, with `index.md`, `log.md`, and `STATUS.md` updated to reflect them. Zero broken refs. Zero stale pages from this ingest.
+**Identity:** A wiki that is alive — not write-once. Sources land here as soon as they exist; the loop keeps memory fresh without a human pulling the trigger.
+**Source:** user-prompt (Keshav, 2026-04-08, "wiki to update would be great. you can work with atris-business/atris-labs as our wiki")
 
 ---
 
 ## Backlog
 
-- **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-07. [execute]
+- **W1:** Scan /Users/keshavrao/arena/atris-business/atris-labs/ structure and pick the top 3 highest-value source files to ingest into atris/wiki/ (look for READMEs, PLAYBOOKs, contracts, foundational docs). Write the picks to atris/wiki/log.md as a SCAN entry. [endgame]
+- **W2:** Ingest source #1 from atris-labs into atris/wiki/ as a new entity, concept, or synthesis page. Use frontmatter contract (type/slug/title/sources/created/updated/tags). Cite the absolute path in sources. [endgame]
+- **W3:** Ingest source #2 from atris-labs into atris/wiki/ as a new page (same frontmatter contract, cite absolute path in sources). [endgame]
+- **W4:** Ingest source #3 from atris-labs into atris/wiki/ as a new page (same frontmatter contract, cite absolute path in sources). [endgame]
+- **W5:** Update atris/wiki/index.md (add 3 new entries under the right section), atris/wiki/log.md (append INGEST entry listing all 3 sources), and atris/wiki/STATUS.md (refresh health and next move). [endgame]
+- **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
 ---
 
 ## In Progress
 
-- **T3:** Fix broken MAP.md ref for `statusAtris()` in Critical Files section. MAP.md line 814 says `commands/status.js:5-156`; verified actual range is `commands/status.js:15-216` (function declaration at line 15, closing `}` at line 216). One-line edit to MAP.md only. Exit: MAP.md line 814 reads `` `statusAtris()` → `commands/status.js:15-216` ``. [execute]
-  **Claimed by:** Executor at 2026-04-08T06:15:43.186Z
-  **Stage:** DO
-
 ---
 
 ## Completed
 
+- [x] T3: Fix broken MAP.md ref for `statusAtris()` (commit c9a299e)
+- [x] Refine Project Endstate one level deeper — neutral naming, `endgame`, Level 1 contract, shared artifact schema, and runnable experiment pack scaffolds
+- [x] Define Project Endstate benchmark pack — feature spec, build plan, validation script, and features index entry
 - [x] Build wiki upkeep loop — `atris loop`, `/loop`, stale/orphan detection, status/log refresh, tests
 - [x] Fix experiments CLI review findings — console fallback + single-pack validate
 - [x] Add `atris experiments` to CLI — scaffold, validate, benchmark
