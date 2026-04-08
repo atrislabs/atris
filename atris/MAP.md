@@ -292,7 +292,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
 
-- **Entry point:** `commands/verify.js:14-47` (verifyAtris function)
+- **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
 - **Modes:**
 - `atris verify` — Verify entire workspace health
 - `atris verify [task]` — Verify specific task completion
@@ -817,7 +817,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `autopilotAtris()` → `commands/autopilot.js:339-486`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
-- `verifyAtris()` → `commands/verify.js:14-47`
+- `verifyAtris()` → `commands/verify.js:13-35`
 - `gmailCommand()` etc. → `commands/integrations.js`
 
 **Risk:** Breaking changes affect all users
