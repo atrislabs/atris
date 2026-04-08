@@ -1,13 +1,36 @@
 ---
 name: autopilot
-description: "Run ONE autopilot tick. Reads TODO.md endgame state, picks the next [endgame] task or seeds a new endgame at boundaries, then executes plan→do→review on it. Triggers on: autopilot, run one tick, ship one thing, do the next thing, get this done."
-version: 3.1.0
+description: "Run ONE autopilot tick. Reads identity (flow) + horizon (endgame), shows a visual status block, picks the next [endgame] task or seeds a new endgame at boundaries, then executes plan→do→review. Lessons compound to atris/lessons.md. Triggers on: autopilot, run one tick, ship one thing, do the next thing, get this done."
+version: 3.2.0
 tags:
   - autopilot
   - workflow
   - tick
   - endgame
+  - flow
 ---
+
+> **The two-engine architecture:** /flow chains forward from identity (who you are → next move). /endgame chains backward from horizon (where you're going → next move). They meet at the same intersection — the next thing /autopilot should ship. Each tick reads both sides and shows them in the visual status block.
+
+## Visual status block
+
+Every tick prints this BEFORE scanning for work, so you can see the loop's state at a glance:
+
+```
+  ┌──────────────────────────────────────────────────────────────┐
+  │ tick · 14:23                                                 │
+  │ identity:  building atris-business cloud for design partners │
+  │ horizon:   wiki-from-atris-labs                              │
+  │            atris-cli wiki has 3 new pages from atris-labs    │
+  │ progress:  ████████░░░░  6/9 endgame steps                   │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+- **identity** comes from `atris/PERSONA.md` (first non-trivial line)
+- **horizon** comes from the `## Endgame` section in `atris/TODO.md`
+- **progress** counts `[endgame]`-tagged tasks in Backlog vs `T#/W#/E#`-prefixed entries in Completed
+
+If identity is missing, edit PERSONA.md. If no horizon is active, /endgame seeds one from inbox / wiki / lessons.
 
 # /autopilot
 
