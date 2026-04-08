@@ -1,8 +1,10 @@
 ---
-last_compiled: 2026-04-07
+last_compiled: 2026-04-08
 sources:
   - lib/wiki.js
   - commands/wiki.js
+  - commands/init.js
+  - commands/activate.js
   - commands/pull.js
   - commands/push.js
   - bin/atris.js
