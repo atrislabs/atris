@@ -1,6 +1,19 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { runTaskOnce } = require('./autopilot');
+const {
+  appendResultsRow,
+  buildRunId,
+  buildWikiArtifact,
+  collectChangedFiles,
+  getGitHead,
+  inferTestResults,
+  readTextIfExists,
+  scoreEndstateArtifact,
+  summarizeReview,
+  writeArtifact,
+} = require('../lib/endstate');
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ROOT_FILES = ['README.md', 'validate.py', 'benchmark_validate.py', 'benchmark_runtime.py'];
@@ -183,6 +196,225 @@ function experimentsBenchmark(kind = 'all') {
   }
 }
 
+function parseRunOptions(args) {
+  const options = {
+    dryRun: false,
+    verbose: false,
+    backendPath: path.resolve(process.cwd(), '../atrisos-backend'),
+    interventions: [],
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--dry-run' || arg === '-n') {
+      options.dryRun = true;
+      continue;
+    }
+
+    if (arg === '--verbose') {
+      options.verbose = true;
+      continue;
+    }
+
+    if (arg === '--backend' && args[i + 1]) {
+      options.backendPath = path.resolve(process.cwd(), args[++i]);
+      continue;
+    }
+
+    if (arg.startsWith('--backend=')) {
+      options.backendPath = path.resolve(process.cwd(), arg.split('=')[1]);
+      continue;
+    }
+
+    if (arg === '--intervention' && args[i + 1]) {
+      options.interventions.push(args[++i]);
+      continue;
+    }
+
+    if (arg.startsWith('--intervention=')) {
+      options.interventions.push(arg.split('=')[1]);
+      continue;
+    }
+  }
+
+  return options;
+}
+
+function isEndstatePack(name) {
+  return name === 'endstate-baseline' || name === 'endstate-stack';
+}
+
+function readTaskBrief(packDir) {
+  const programPath = path.join(packDir, 'program.md');
+  const content = fs.readFileSync(programPath, 'utf8');
+  return content.replace(/^# Program\s*/i, '').trim();
+}
+
+function buildPromptContext(name, taskBrief, phaseResults) {
+  const sections = [
+    `pack: ${name}`,
+    `task brief:\n${taskBrief}`,
+  ];
+
+  if (phaseResults) {
+    for (const phase of ['plan', 'do', 'review']) {
+      if (!phaseResults[phase]) continue;
+      sections.push(`${phase} prompt:\n${phaseResults[phase].prompt}`);
+      sections.push(`${phase} output:\n${phaseResults[phase].output || ''}`);
+    }
+  }
+
+  return sections.join('\n\n');
+}
+
+function buildBenchmarkArtifact(name, packDir, options) {
+  const track = name.endsWith('stack') ? 'stack' : 'baseline';
+  const cwd = process.cwd();
+  const backendPath = options.backendPath;
+  const taskBrief = readTaskBrief(packDir);
+  const runId = buildRunId(track);
+  const beforeCli = getGitHead(cwd);
+  const beforeBackend = getGitHead(backendPath);
+  const wikiBefore = readTextIfExists(path.join(cwd, 'atris', 'wiki', 'STATUS.md'));
+
+  let execution = null;
+  let reviewStatus = options.dryRun ? 'draft' : 'fail';
+  let reviewSummary = options.dryRun ? 'dry run — benchmark task not executed' : 'benchmark run failed before review';
+  let tests = [{
+    command: options.dryRun ? 'benchmark dry-run' : '(no explicit test command captured)',
+    status: 'not_run',
+  }];
+  let notes = options.dryRun ? 'dry-run artifact only' : '';
+
+  if (!options.dryRun) {
+    try {
+      execution = runTaskOnce(
+        { task: taskBrief, kind: 'benchmark' },
+        {
+          verbose: options.verbose,
+          extraReadFiles: [
+            'atris/features/endstate/contract.md',
+            'atris/features/endstate/artifact-schema.json',
+            path.relative(cwd, path.join(packDir, 'program.md')),
+            '../atrisos-backend/atris/MAP.md',
+            '../atrisos-backend/atris/TODO.md',
+          ],
+          contextNote: [
+            `Project Endstate track: ${track}`,
+            `Pack: atris/experiments/${name}/program.md`,
+            'Stay within the exact Level 1 contract. The outer runner records the receipt.',
+          ].join('\n'),
+        }
+      );
+
+      reviewStatus = execution.success ? 'pass' : 'fail';
+      reviewSummary = summarizeReview(execution.reviewOutput);
+      tests = inferTestResults(execution.reviewOutput);
+    } catch (error) {
+      reviewStatus = 'fail';
+      reviewSummary = summarizeReview(error.message || String(error));
+      notes = 'runner threw before completion';
+    }
+  }
+
+  const afterCli = getGitHead(cwd);
+  const afterBackend = getGitHead(backendPath);
+  const changedFiles = options.dryRun
+    ? []
+    : [
+        ...collectChangedFiles(cwd, beforeCli, afterCli),
+        ...collectChangedFiles(backendPath, beforeBackend, afterBackend, '../atrisos-backend/'),
+      ];
+  const wikiAfter = readTextIfExists(path.join(cwd, 'atris', 'wiki', 'STATUS.md'));
+
+  const artifact = {
+    run_id: runId,
+    track,
+    repo_commits: {
+      atris_cli: beforeCli || 'missing',
+      atrisos_backend: beforeBackend || 'missing',
+    },
+    repo_commits_after: {
+      atris_cli: afterCli || 'missing',
+      atrisos_backend: afterBackend || 'missing',
+    },
+    task_brief: taskBrief,
+    prompt_context: buildPromptContext(name, taskBrief, execution?.phaseResults),
+    changed_files: changedFiles,
+    tests,
+    review: {
+      status: reviewStatus,
+      summary: reviewSummary,
+    },
+    wiki: buildWikiArtifact(wikiBefore, wikiAfter),
+    elapsed_seconds: execution?.elapsedSeconds || 0,
+    interventions: {
+      count: options.interventions.length,
+      events: options.interventions,
+    },
+    notes,
+  };
+
+  const score = scoreEndstateArtifact(artifact);
+  artifact.score = score.total;
+  artifact.score_breakdown = score.breakdown;
+
+  return { artifact, score };
+}
+
+function experimentsRun(name, ...args) {
+  const { experimentsDir } = ensureExperimentsFramework();
+
+  if (!name) {
+    console.error('Usage: atris experiments run <slug> [--dry-run] [--verbose]');
+    process.exit(1);
+  }
+
+  const packDir = path.join(experimentsDir, name);
+  if (!fs.existsSync(packDir)) {
+    console.error(`✗ Experiment "${name}" not found at atris/experiments/${name}/`);
+    process.exit(1);
+  }
+
+  const options = parseRunOptions(args);
+
+  if (!isEndstatePack(name)) {
+    const loopPath = path.join(packDir, 'loop.py');
+    if (!fs.existsSync(loopPath)) {
+      console.error(`✗ Experiment "${name}" has no loop.py to run.`);
+      process.exit(1);
+    }
+    if (options.dryRun) {
+      console.log(`✓ Dry run: would execute atris/experiments/${name}/loop.py`);
+      return;
+    }
+    runPython(loopPath, [], packDir);
+    return;
+  }
+
+  const schemaPath = path.join(process.cwd(), 'atris', 'features', 'endstate', 'artifact-schema.json');
+  const contractPath = path.join(process.cwd(), 'atris', 'features', 'endstate', 'contract.md');
+  if (!fs.existsSync(schemaPath) || !fs.existsSync(contractPath)) {
+    console.error('✗ Endstate contract missing. Expected atris/features/endstate/{contract.md,artifact-schema.json}.');
+    process.exit(1);
+  }
+
+  const { artifact, score } = buildBenchmarkArtifact(name, packDir, options);
+  const artifactPath = writeArtifact(packDir, artifact);
+  appendResultsRow(path.join(packDir, 'results.tsv'), artifactPath, artifact, score);
+
+  console.log(`✓ Endstate ${artifact.track} run recorded`);
+  console.log(`  artifact: ${path.relative(process.cwd(), artifactPath)}`);
+  console.log(`  score: ${score.total}/100`);
+  console.log(`  review: ${artifact.review.status}`);
+  console.log(`  interventions: ${artifact.interventions.count}`);
+
+  if (artifact.review.status === 'fail' && !options.dryRun) {
+    process.exit(1);
+  }
+}
+
 function experimentsCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'init':
@@ -192,6 +424,8 @@ function experimentsCommand(subcommand, ...args) {
       return experimentsValidate(args[0]);
     case 'benchmark':
       return experimentsBenchmark(args[0] || 'all');
+    case 'run':
+      return experimentsRun(args[0], ...args.slice(1));
     default:
       console.log('');
       console.log('Usage: atris experiments <subcommand> [name]');
@@ -199,12 +433,14 @@ function experimentsCommand(subcommand, ...args) {
       console.log('Subcommands:');
       console.log('  init [slug]          Prepare atris/experiments/ or scaffold a new pack');
       console.log('  validate [path|slug] Run structural validation on packs or a single pack');
+      console.log('  run <slug>           Execute a pack or record an Endstate benchmark receipt');
       console.log('  benchmark [mode]     Run validate/runtime/all benchmark harness');
       console.log('');
       console.log('Examples:');
       console.log('  atris experiments init');
       console.log('  atris experiments init self-heal');
       console.log('  atris experiments validate');
+      console.log('  atris experiments run endstate-baseline --dry-run');
       console.log('  atris experiments benchmark runtime');
       console.log('');
   }
@@ -213,4 +449,6 @@ function experimentsCommand(subcommand, ...args) {
 module.exports = {
   experimentsCommand,
   ensureExperimentsFramework,
+  buildBenchmarkArtifact,
+  parseRunOptions,
 };
