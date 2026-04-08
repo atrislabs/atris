@@ -26,23 +26,22 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T20:** Rewrite cron tick summaries written into journal `## Notes` (the `/loop` heartbeat line) so a non-technical reader scanning today's journal can follow the loop's day. Exit: new heartbeat format lands in `commands/autopilot.js` (or wherever the Notes append lives); one real tick produces the new line. [execute]
 - **T21:** Validate human-output end-to-end — run one full plan→do→review cycle, screenshot/capture each surface, confirm ≤20 lines × ≤80 chars and that a non-technical reader can decide approve/hold. Append verdict to `atris/features/human-output/validate.md`. Exit: validate.md exists with pass/fail per surface. [explore]
+- **T23:** Locate today's "heartbeat Notes line" writer — grep `commands/autopilot.js`, `commands/run.js`, and `atris/skills/{autopilot,loop}/SKILL.md` for any `## Notes` append fired per tick. Today's `- HH:MM PDT — ...` lines are agent-written; confirm there is NO CLI writer inside `autopilotAtris` and record the finding (file:line or "agent-only") in `atris/features/human-output/idea.md` under `## T20 scope`. Exit: scope note added; T24 can cite it without re-grepping. [explore]
+- **T24:** Add `appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle })` helper in `commands/autopilot.js` near `logCompletion` (~line 538). Writes a plain-language block to today's journal `## Notes` (append at end of section, mirror `logCompletion`'s file-read/section-replace pattern). Block shape matches `atris/features/human-output/examples.md`: 1 line time, 1–2 lines what happened, 1 line horizon, 1 line next, blank line. When `idle === true` the block MUST include the literal substring `0 tasks in 0s` so `getIdleTickCount` (line 744) still works. Export from `module.exports`. No call site yet. Exit: `node -e "require('./commands/autopilot').appendTickSummary(process.cwd(), { time: '15:00', outcome: 'smoke', horizon: 'loop-self-seeds-horizons', nextStep: 'revert', idle: true })"` writes a block to today's journal containing `0 tasks in 0s`, and `getIdleTickCount(process.cwd())` returns ≥1 after the write. [execute]
+- **T25:** Wire `appendTickSummary` into `autopilotAtris` end-of-tick at `commands/autopilot.js:~1173` (the `const elapsed = ...` block). Three branches: (a) happy — `completed > 0`, outcome = "built and reviewed <task>", pass horizon slug read from `## Endgame` in `atris/TODO.md`; (b) idle — `completed === 0 && !suggestion`, outcome = "no work picked up", `idle: true` (emits `0 tasks in 0s`); (c) halted — review failed or error thrown, outcome = "stopped for manual check". Horizon reader = small inline helper (no new file) that regexes `\*\*Slug:\*\*\s*(\S+)` from TODO.md, returns `'unset'` on miss. Next-step copy = "next tick will …" pulled from the same block that prints to stdout today. Guard with try/catch so a journal write failure never crashes the tick. Exit: `atris autopilot --auto --iterations=1` from a clean workspace writes exactly ONE new block under today's `## Notes`; block matches examples.md shape; `getIdleTickCount` still counts correctly when the tick is idle. [execute]
+- **T26:** Update `atris/skills/autopilot/SKILL.md` and `atris/skills/loop/SKILL.md` — remove any instruction that tells the agent to hand-write a line into today's journal `## Notes` after each tick, add one line under `## Rules`: "The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal." Exit: grep for `Notes` in both skill files shows no agent-written heartbeat guidance; the new rule is present in at least the `/autopilot` skill. [execute]
+- **T27:** Validate T20 end-to-end — run `atris autopilot --auto --iterations=1` against this repo, copy the new Notes block into `atris/features/human-output/validate.md` under a `## T20 heartbeat` section, mark pass/fail against: (i) ≤20 lines × ≤80 chars, (ii) matches `examples.md` shape, (iii) idle case contains `0 tasks in 0s`, (iv) `getIdleTickCount` returns ≥1 after an idle tick. Exit: validate.md has the block + 4 check results. [explore]
 
 ---
 
 ## In Progress
 
-- **T19:** Rewrite validator / review-phase messages in `commands/workflow.js` (and `commands/run.js` summary) to plain language. [execute]
-  - Claimed by: Executor at 2026-04-08T21:40:28.120Z
-  - **T19a:** workflow.js reviewAtris() plain-language default, `--verbose` keeps boxes.
-  - **T19b:** run.js cycle summary plain-language default, `--verbose` keeps banners.
-  - **T19c:** Smoke-test + paste into validate.md. [explore]
-
 ---
 
 ## Completed
 
+- [x] T20: Added `appendTickSummary(cwd, ...)` to `commands/autopilot.js` and wired it into `autopilotAtris` end-of-tick (happy/idle/halted branches). Plain-language block lands in today's journal `## Notes`; idle ticks keep the `0 tasks in 0s` marker so `getIdleTickCount` still counts. `/autopilot` SKILL.md now instructs agents not to hand-write heartbeat lines. Smoke: `getIdleTickCount` → 1 after idle write; `node --test test/commands.test.js` 37/37 green (2026-04-08)
 - [x] T18: Rewrite `atris status` to the chief-of-staff format — default output now gives short "where we are / what is queued / what is blocking" sections, `--verbose` keeps the legacy task board, and `node --test test/commands.test.js` stayed green (2026-04-08)
 - [x] T17: Rewrite the autopilot visual tick block in `commands/autopilot.js` to the chief-of-staff format — default output is now plain-language briefing copy, `--verbose` keeps the legacy boxy engineering view, and `node --test test/commands.test.js` stayed green (2026-04-08)
 - [x] T16: Draft the chief-of-staff output template — wrote `atris/features/human-output/examples.md` with happy-tick, idle-tick, and validator-pass examples, each 12 lines and under 80 chars wide (2026-04-08)
