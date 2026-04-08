@@ -15,23 +15,31 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** wiki-for-atrisos-web
-**Picked:** 2026-04-08 (boundary auto-pickup from inbox I1)
-**Horizon:** `/Users/keshavrao/arena/atrisos-web/atris/wiki/` exists with the standard scaffold (`index.md`, `log.md`, `STATUS.md`, `wiki.md` protocol), 3 entity pages for the major subsystems (app/, components/, lib/), and 1 synthesis page tying them together. Zero broken refs. Seeded from a real codebase scan, not guesses.
-**Identity:** A wiki that bootstraps any project — proving the Memex pattern is portable beyond atris-cli. Same shape, different repo, same intelligence loop.
-**Source:** inbox I1 (Keshav, 2026-04-08, "create wiki for arena/atrisos-web from scratch")
+**Slug:** loop-self-seeds-horizons
+**Picked:** 2026-04-08 (M2 from the 7-day plan)
+**Horizon:** When `atris/TODO.md` has zero `[endgame]` tasks AND no inbox items AND no reactive signals, the autopilot loop reads recent commits + `wiki/STATUS.md` + `lessons.md` + the idle-tick history, asks the LLM to propose 3 candidate horizons with confidence scores, picks the highest, writes it to `## Endgame` + tagged backlog, and the next tick executes the first step. End state: the loop never silently idles for more than one tick — it always either has work or has just imagined some.
+**Source:** session conversation 2026-04-08 — "set goal, solve problem, validate truth, update beliefs, set new goal" + the 24+ idle ticks observed today proving the gap is real.
 
-**Note:** atrisos-web already has an `atris/` folder with the standard scaffold (`MAP.md`, `TODO.md`, `team/`, `skills/`, `logs/`, `features/`) but NO `wiki/` directory. This endgame creates and seeds it.
-
-**Prior endgame closed:** `wiki-from-atris-labs` — W1, W2, W3, W3b, W4a, W4b, W5a/b/c shipped (9 tasks, ~10 commits). Parser bug found and fixed mid-flight (`4db14d9`). Commits: cfd3030, bb4051d, 7ed4d3b, 6129a32, 7fa29ef, 40db84c, plus follow-ups.
+**Prior endgame closed:** `wiki-for-atrisos-web` — E1-E5 + T1-T4 (~14 tasks, 6+ commits across atris-cli + atrisos-web). Boundary auto-pickup from inbox proven. M1 self-improving close shipped mid-stream (`488fb50`).
 
 ---
 
 ## Backlog
 
+- **M1:** Add `getIdleTickCount(cwd)` helper to `commands/autopilot.js` — scan today's journal `## Notes` for "0 tasks in 0s" markers and return the count of consecutive idle ticks. Pure read-only, no side effects. Place near `printTickStatus()`. Exit: function exists, returns an integer, called nowhere yet. [endgame]
+- **M2:** Add `getRecentSignals(cwd)` helper to `commands/autopilot.js` — read `git log --oneline -20`, `atris/wiki/STATUS.md` (if exists), `atris/lessons.md` (last 10 lines), and return `{ recentCommits, wikiHealth, recentLessons }`. Pure read-only. Exit: function exists, returns the struct, no callers yet. [endgame]
+- **M3:** Add `proposeCandidateHorizons(cwd)` async helper to `commands/autopilot.js` — combines `getIdleTickCount` + `getRecentSignals`, builds a prompt asking the LLM "the loop has been idle N ticks. recent commits/wiki/lessons say X. propose 3 next horizons with one-line title + confidence 0-1 + one-sentence rationale", spawns `claude -p` with the prompt, parses the JSON response into `[{ title, confidence, rationale }]`. Exit: function exists, returns an array of 3 candidates when called, all candidates are real strings (not placeholders). [endgame]
+- **M4:** Modify `suggestNextTask(cwd)` in `commands/autopilot.js` — at the very END (after all 9 reactive signals + the existing fallback), if `suggestions.length === 0`, call `proposeCandidateHorizons(cwd)`, pick the highest-confidence one, return `{ task: candidate.title, why: candidate.rationale, kind: 'imagined', priority: 99 }`. Additive — only fires when nothing else does. Exit: dry-run from a clean workspace returns an `imagined` suggestion. [endgame]
+- **M5:** Verify M4 end-to-end and journal the result — run `atris autopilot --dry-run` from the current clean workspace, observe an `imagined` suggestion fire, append a `### M2 verification — HH:MM` entry to today's journal `## Notes` with the candidate that was proposed and a one-line takeaway. Exit: dry-run shows `kind: imagined` for at least one suggestion AND journal has the verification entry. [endgame]
+
 ---
 
 ## In Progress
+
+- **T7:** Split Endstate into real baseline vs stack live runners
+  **Done when:** `atris experiments run endstate-baseline` and `... endstate-stack` resolve different runner configs, the active runner is captured in the artifact, and focused tests prove the split without changing the receipt schema. [execute]
+  **Claimed by:** Codex at 2026-04-08 04:50 PDT
+  **Stage:** DO
 
 ---
 
