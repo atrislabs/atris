@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-04-07
+last_compiled: 2026-04-08
 sources:
   - commands/member.js
   - bin/atris.js
@@ -17,7 +17,7 @@ sources:
 |------|------|
 | `commands/member.js` | Full member CRUD: `list`, `create`, `activate`, `upgrade`, `push`, `pull` |
 | `bin/atris.js:315-318` | Help text for `member create`/`list`/`activate`/`upgrade` |
-| `bin/atris.js:1035-1038` | Routes `atris member <subcommand>` to `memberCommand` |
+| `bin/atris.js:1056` | Routes `atris member <subcommand>` to `memberCommand` |
 | `atris/skills/create-member/SKILL.md` | Skill for creating members via conversation |
 | `atris/team/_template/MEMBER.md` | Canonical frontmatter template |
 | `atris/team/*/MEMBER.md` | 6 built-in members: `brainstormer`, `executor`, `launcher`, `navigator`, `researcher`, `validator` |
