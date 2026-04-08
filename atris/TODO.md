@@ -26,14 +26,14 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 - **W3b:** Refresh `atris/wiki/index.md`, `log.md`, `STATUS.md` to reflect the atris-labs-goals page (add INGEST entry to log.md). [execute] [endgame]
-- **W4:** Ingest `/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md` into `atris/wiki/` as an entity page (slug: `atris-labs`). Same frontmatter contract, cite absolute path. [endgame]
+- **W4b:** Refresh `atris/wiki/index.md`, `log.md`, `STATUS.md` to reflect the atris-labs entity page (add INGEST entry to log.md, link from index). [execute] [endgame]
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
 ---
 
 ## In Progress
 
-- **W3:** Create `atris/wiki/concepts/atris-labs-goals.md` from `/Users/keshavrao/arena/atris-business/atris-labs/goals.md`. Claimed by: Executor at 2026-04-08T08:53:23.299Z [execute] [endgame]
+- **W4a:** Create `atris/wiki/systems/atris-labs.md` from `/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md`. [execute] [endgame] — Claimed by: Executor at 2026-04-08T09:02:19.233Z
 
 ---
 
