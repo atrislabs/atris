@@ -5,12 +5,12 @@ title: atris-cli
 sources: [/Users/keshavrao/arena/atris-cli/CLAUDE.md, /Users/keshavrao/arena/atris-cli/commands/, /Users/keshavrao/arena/atris-cli/lib/wiki.js, /Users/keshavrao/arena/atris-cli/commands/business.js]
 created: 2026-04-07
 updated: 2026-04-07
-tags: [project, cli, atris, agi-substrate]
+tags: [project, cli, atris]
 ---
 
 # atris-cli
 
-Node.js CLI that turns any codebase into an AI-navigable workspace. The dev-tool layer of the Atris stack — sibling to atris-business (productized mini-AGIs) and atrisos-backend/web (cloud).
+Node.js CLI that turns any codebase into an AI-navigable workspace. The dev-tool layer of the Atris stack — sibling to atris-business (AI-native company workspaces) and atrisos-backend/web (cloud).
 
 ## What it does
 
@@ -20,7 +20,7 @@ Three primary moves:
 2. **Run the loop**: `atris plan` → `atris do` → `atris review` (manual) or `atris run` / `atris autopilot` (autonomous)
 3. **Maintain memory**: `atris activate` loads context, `atris log` appends journal, `atris wiki ingest` builds durable knowledge
 
-## Architecture (the bones of a mini-AGI)
+## Architecture (the bones of the loop)
 
 | Layer | File / dir | What it is |
 |---|---|---|
@@ -31,11 +31,11 @@ Three primary moves:
 | Memory | `atris/wiki/` | Durable knowledge (entities/concepts/syntheses) |
 | Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
 | Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
-| Sibling | `commands/business.js` | Cloud-side mini-AGI productization |
+| Sibling | `commands/business.js` | Cloud-side AI-native company productization |
 
 ## Capabilities surface (what atris-cli can do as primitives)
 
-This is the "capabilities" side of the intent→capability→composition loop. If atris-cli were the AGI, here's its capability set:
+This is the "capabilities" side of the intent→capability→composition loop. Here's its capability set:
 
 - read/scan a codebase and produce MAP.md
 - run `claude -p` subprocesses for plan/do/review phases
@@ -59,7 +59,5 @@ This is the "capabilities" side of the intent→capability→composition loop. I
 ## Cross-References
 
 - [[atris/wiki/systems/atris-business.md]] — productized cloud version, has the proactive layer
-- [[atris/wiki/concepts/mini-agi.md]] — the target shape
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-cli implements partially
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is for
-- [[atris/wiki/syntheses/atris-as-mini-agi.md]] — full scoring vs Dorsey

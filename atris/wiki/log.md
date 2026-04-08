@@ -6,13 +6,11 @@
   - created `concepts/plan-do-review-loop.md`
   - created `syntheses/atris-cli-overview.md`
   - updated `index.md` and `STATUS.md`
-- 07:50 INGEST mini-agi seed pass
+- 07:50 INGEST Dorsey thesis seed pass
   - source: https://www.youtube.com/watch?v=YTVSwOY19Qs (Dorsey on Sequoia)
   - source: in-conversation reading of atris-cli (commands/, lib/wiki.js, business.js, CLAUDE.md)
   - created `entities/jack-dorsey.md`, `entities/atris-cli.md`, `entities/atris-business.md`
-  - created `concepts/mini-agi.md`, `concepts/intent-capability-composition.md`, `concepts/wiki-as-memory-substrate.md`
-  - created `syntheses/atris-as-mini-agi.md` (scoring atris-cli vs Dorsey checklist)
-  - finding: atris-cli is ~30–40% of Dorsey checklist; chokepoint is the missing world-model layer
+  - created `concepts/intent-capability-composition.md`, `concepts/wiki-as-memory-substrate.md`
   - VIOLATION: did not read existing log.md before this pass; a prior 00:09 ingest had already happened. merged afterward instead of before. lesson: `read the full source` includes the wiki's own log.
 - 01:18 LOOP 10 pages, 6 stale, 1 orphan, 3 suggested
   - stale atris/wiki/entities/atris-business.md <- /Users/keshavrao/arena/atris-cli/commands/business.js

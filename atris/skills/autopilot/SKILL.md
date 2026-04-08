@@ -1,68 +1,59 @@
 ---
 name: autopilot
-description: "Autonomous task loop. Scans workspace, suggests work, executes plan-do-review one task at a time. Triggers on: autopilot, get it done, ship it, run the loop."
-version: 2.0.0
+description: "Run ONE autopilot tick. Scans workspace, picks the highest-priority work, executes plan→do→review on it, then stops. For autonomous recurring ticks, invoke /loop instead. Triggers on: autopilot, run one tick, ship one thing, do the next thing, get this done."
+version: 3.0.0
 tags:
   - autopilot
   - workflow
-  - automation
+  - tick
 ---
 
 # /autopilot
 
-Autonomous suggest → execute loop. Finds the most important thing to do and does it.
+Runs ONE plan→do→review tick. Finds the highest-priority work, does it, then stops. Not a recurring loop — call `/loop` for that.
 
 ## When to use
 
-- User says "get this done", "ship it", "run the loop"
-- User wants hands-off execution of backlog/inbox work
-- User gives a task description and walks away
+- User says "run one tick", "do the next thing", "ship one thing", "get this done"
+- User wants a single hands-off task executed
+- The cron job from `/loop` invokes this on each fire
 
-## How it works
+## What ONE tick does
 
-The autopilot scans the workspace for signals and picks the highest-priority work:
+1. **Scan** — read `atris/TODO.md`, today's journal `## Inbox`, `atris/wiki/STATUS.md`. Find the highest-priority work.
+2. **Plan** — break it into one concrete task with a clear exit condition.
+3. **Do** — execute the task. Make the changes. Verify they work.
+4. **Review** — check quality, run tests if any, update `MAP.md` and journal.
+5. **Stop** — do not pick a second task. One tick = one task.
 
-1. **Resume** — in-progress tasks that were started but never finished
-2. **Staleness** — wiki pages whose sources changed (knowledge rot)
-3. **Cleanup** — tasks claimed >3 days ago and abandoned
-4. **Docs** — broken MAP.md references that need fixing
-5. **Backlog** — next task in TODO.md
-6. **Inbox** — raw ideas that need to become tasks
-7. **Review** — MAP.md or docs that haven't been touched in >7 days
+## How to invoke
 
-For each suggestion, it shows the task and *why* it matters. Then executes plan → do → review.
-
-## Running from CLI
+When the user invokes `/autopilot`, run this Bash command:
 
 ```bash
-# Interactive — suggests, you approve each one
-atris autopilot
-
-# Fully autonomous — no approval needed
-atris autopilot --auto
-
-# Seed an idea and let it run
-atris autopilot "add dark mode toggle" --auto
-
-# Preview what it would suggest
-atris autopilot --dry-run
-
-# Limit iterations
-atris autopilot --auto --iterations=3
+atris autopilot --auto --iterations=1
 ```
 
-## Running from this conversation
+That's it. The CLI handles the suggest → plan → do → review flow via `claude -p` subprocesses. Show the output to the user.
 
-If the user invokes /autopilot inside Claude Code, do this:
+## Variants
 
-1. Run `atris autopilot --dry-run` to see what it would suggest
-2. Show the suggestions to the user
-3. If they approve, run `atris autopilot --auto --iterations=1` for each task
-4. After each task, show what was done and ask if they want to continue
+- `atris autopilot --dry-run` — preview what it would do, do not execute
+- `atris autopilot --auto --iterations=N` — run up to N ticks back-to-back (still one task per tick)
+- `atris autopilot "<task description>"` — seed a new inbox item, then run
+
+## Autonomous mode
+
+If the user wants this to fire on a recurring schedule without manual invocation, tell them to invoke `/loop` instead. `/loop` schedules a cron that calls `/autopilot` every ~13 min.
+
+```
+/autopilot  →  one tick, then stop
+/loop       →  /autopilot every ~13 min (heartbeat)
+```
 
 ## Rules
 
 - One task at a time. Never batch.
-- Always justify *why* before executing.
-- Human can skip or stop at any point.
-- After each task, run atris clean to heal refs and check staleness.
+- Always show *why* before executing.
+- Stop after the first tick. Do not chain. Chaining is `/loop`'s job.
+- If the workspace is clean (nothing to do), say so and stop.

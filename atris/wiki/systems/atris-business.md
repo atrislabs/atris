@@ -1,16 +1,16 @@
 ---
 type: entity
 slug: atris-business
-title: atris business (mini-AGI for companies)
+title: atris business (AI-native company workspace)
 sources: [/Users/keshavrao/arena/atris-cli/commands/business.js]
 created: 2026-04-07
 updated: 2026-04-07
-tags: [product, mini-agi, cloud, atris]
+tags: [product, cloud, atris]
 ---
 
 # atris business
 
-The productized "mini-AGI for companies" inside atris-cli. A `business` in Atris is a self-contained workspace + agent team + connected integrations that runs on Atris cloud. This is the vehicle Keshav is betting on for the Dorsey thesis.
+The productized "AI-native company workspace" inside atris-cli. A `business` in Atris is a self-contained workspace + agent team + connected integrations that runs on Atris cloud. This is the vehicle Keshav is betting on for the Dorsey thesis.
 
 ## Local shape
 
@@ -55,9 +55,9 @@ Each template ships predefined agents:
 
 This is the **proactive prompting** half of the Dorsey checklist that atris-cli alone is missing.
 
-## Why this matters for the AGI thesis
+## Why this matters for the Dorsey thesis
 
-atris-business is the closest thing in this codebase to a real mini-AGI:
+atris-business is the closest thing in this codebase to Dorsey's intelligence-layer architecture:
 
 - **Artifact layer** — workspace + context dirs + connected integrations (slack/github/notion bring in real artifacts)
 - **Agent team** — predefined roles, deployed alongside the workspace
@@ -67,11 +67,9 @@ atris-business is the closest thing in this codebase to a real mini-AGI:
 What's still missing here vs Dorsey:
 - No real-time composition — agents run on schedules / triggers, not on demand from customer queries
 - No automatic roadmap-from-gaps — humans still write BUSINESS.md
-- No money signal — Ramp skill exists but isn't wired into the mini-AGI loop yet
+- No money signal — Ramp skill exists but isn't wired into the loop yet
 
 ## Cross-References
 
 - [[atris/wiki/systems/atris-cli.md]] — the dev tool that scaffolds these
-- [[atris/wiki/concepts/mini-agi.md]] — the thesis being implemented
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-business runs partially
-- [[atris/wiki/syntheses/atris-as-mini-agi.md]] — full scoring
