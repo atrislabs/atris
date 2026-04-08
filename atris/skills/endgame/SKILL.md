@@ -1,9 +1,11 @@
 ---
 name: endgame
-description: "Fastest path from a vague goal to one concrete next move, powered by the wiki so the user never re-does work. Reads inbox + wiki + recent journal, picks the next horizon, writes the reverse path as tagged tasks to TODO.md so /autopilot can pursue it tick by tick. Triggers on: endgame, what's the last move, where are we heading, reverse engineer, work backward."
-version: 1.1.0
-tags: [planning, vision, reverse-engineer, atris, wiki, todo]
+description: "Backward partner to /flow. Picks the next horizon from inbox + wiki + lessons, writes the reverse path as tagged tasks to TODO.md so /autopilot can pursue it tick by tick. Triggers on: endgame, what's the last move, where are we heading, reverse engineer, work backward."
+version: 1.2.0
+tags: [planning, vision, reverse-engineer, atris, wiki, todo, flow]
 ---
+
+> **Sister skill: /flow** — flow runs the same engine in reverse. flow chains forward from identity (who you are → today's next move). endgame chains backward from horizon (where you're going → today's next move). They meet at the same point: the next thing the agent should ship. Use both. Run flow at sunrise to set identity, run endgame at every TODO.md boundary to set horizon, and let /autopilot tick between them.
 
 # /endgame
 
@@ -23,12 +25,14 @@ This rule exists so the loop pursues the current horizon to completion instead o
 
 Before picking a new horizon, read what already exists. The wiki + logs are the user's paid-for memory; not using them means they're paying twice.
 
+- `atris/lessons.md` — past surprises and failures the validator wrote down. Read this FIRST. Avoid horizons that hit the same rocks.
 - `atris/wiki/STATUS.md` — current state, last loop findings, suggested next ingests
 - `atris/wiki/index.md` — what pages already exist
 - `atris/wiki/syntheses/` — most recent synthesis pages (often already contain a horizon)
 - `atris/MAP.md` — what code exists today
 - `atris/TODO.md` — what's queued, what's done
 - `atris/logs/YYYY/` — last 7-14 days of journals; scan `## Inbox` sections for unfulfilled ideas (these are user-seeded horizons)
+- `atris/PERSONA.md` — current identity (paired with /flow's forward direction)
 - `atris/business/<slug>/BUSINESS.md` if a business workspace
 
 **Inbox items are the primary horizon source.** If recent journal `## Inbox` sections have unfulfilled ideas, pick the oldest one and run the three moves on it. Only fall back to reactive signals (wiki staleness, broken refs) if the inbox is empty.

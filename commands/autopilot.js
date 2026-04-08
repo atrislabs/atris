@@ -222,10 +222,10 @@ function askApproval() {
 /**
  * Run a phase via claude -p subprocess.
  */
-function executePhase(phase, context, options = {}) {
+function executePhaseDetailed(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT } = options;
 
-  const prompt = buildPrompt(phase, context);
+  const prompt = buildPrompt(phase, context, options);
   const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
@@ -243,20 +243,27 @@ function executePhase(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
-    return output || '';
+    return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (err.killed) throw new Error(`${phase} timed out after ${timeout / 1000}s`);
-    if (err.stdout) return err.stdout;
+    if (err.stdout) {
+      return { prompt, output: err.stdout };
+    }
     throw err;
   }
+}
+
+function executePhase(phase, context, options = {}) {
+  return executePhaseDetailed(phase, context, options).output;
 }
 
 /**
  * Build context-aware file list for prompts.
  */
-function getContextFiles(phase) {
+function getContextFiles(phase, options = {}) {
   const cwd = process.cwd();
+  const { extraReadFiles = [] } = options;
   const agentSpec = {
     plan: 'atris/team/navigator/MEMBER.md',
     do: 'atris/team/executor/MEMBER.md',
@@ -270,15 +277,20 @@ function getContextFiles(phase) {
     'atris/TODO.md',
     fs.existsSync(path.join(cwd, 'atris/lessons.md')) ? 'atris/lessons.md' : null,
     (() => { const { logFile } = getLogPath(); return fs.existsSync(logFile) ? path.relative(cwd, logFile) : null; })(),
-  ].filter(Boolean).map(f => `- ${f}`).join('\n');
+    ...extraReadFiles.filter((file) => fs.existsSync(path.join(cwd, file)) || fs.existsSync(path.resolve(cwd, file))),
+  ];
+
+  return [...new Set(files.filter(Boolean))].map((f) => `- ${f}`).join('\n');
 }
 
 /**
  * Build the right prompt for each phase, adapting to the kind of work.
  */
-function buildPrompt(phase, context) {
+function buildPrompt(phase, context, options = {}) {
   const { task, kind } = context;
-  const readFiles = getContextFiles(phase);
+  const { contextNote = '' } = options;
+  const readFiles = getContextFiles(phase, options);
+  const noteBlock = contextNote ? `\nBenchmark context:\n${contextNote}\n` : '';
 
   if (phase === 'plan') {
     const baseRules = `You are the navigator. Read your MEMBER.md spec first if available.
@@ -292,6 +304,19 @@ Rules:
 
 Read these files first:
 ${readFiles}`;
+
+    if (kind === 'benchmark') {
+      return `${baseRules}${noteBlock}
+
+Pinned benchmark task:
+${task}
+
+Rules for this run:
+- Do NOT write to TODO.md, journal, or feature specs.
+- Do NOT invent follow-up tasks or widen scope.
+- Read the benchmark contract and pack files in the read list before deciding.
+- Produce the smallest honest plan for this exact task, then reply: done.`;
+    }
 
     if (kind === 'inbox') {
       return `${baseRules}
@@ -363,6 +388,30 @@ When done, reply: done.`;
   }
 
   if (phase === 'do') {
+    if (kind === 'benchmark') {
+      return `You are the executor. Read your MEMBER.md spec first if available.
+
+Rules:
+- This is a pinned benchmark run. Execute the task directly.
+- You CAN read and write code. Do NOT modify TODO.md or journal state.
+- Stay inside the exact task brief. No side quests.
+- Check MAP.md before grepping.
+- Do NOT create a git commit automatically. The benchmark runner records the result.
+
+Read these files first:
+${readFiles}${noteBlock}
+
+Task: ${task}
+
+1. Read the benchmark contract and pack files in the read list.
+2. Make the smallest changes that satisfy the task brief.
+3. Verify locally if you can.
+4. Update MAP.md only if file locations truly shifted because of your change.
+5. If updating wiki pages, set last_compiled in frontmatter to today's date.
+
+When done, reply: done.`;
+    }
+
     return `You are the executor. Read your MEMBER.md spec first if available.
 
 Rules:
@@ -388,13 +437,36 @@ When done, reply: done.`;
   }
 
   if (phase === 'review') {
+    if (kind === 'benchmark') {
+      return `You are the validator. Read your MEMBER.md spec first if available.
+
+Rules:
+- This is a pinned benchmark review. Check quality without widening scope.
+- You CAN fix issues but CANNOT add new features.
+- Run targeted verification if you can and name the commands explicitly in your response.
+- Do NOT delete tasks from TODO.md or append completions to the journal. The outer benchmark runner records the receipt.
+
+Read these files first:
+${readFiles}${noteBlock}
+
+Task: ${task}
+
+1. Does it work for the exact task brief?
+2. Name any tests or checks you ran and whether they passed.
+3. Call out bugs, edge cases, or drift.
+4. Reply \`done\` if this run passes the review bar.
+5. Reply \`failed — [reason]\` if it does not.`;
+    }
+
     return `You are the validator. Read your MEMBER.md spec first if available.
 
 Rules:
 - You check quality. You CAN fix issues but CANNOT add new features.
 - Ultrathink: spec match, scope check, edge cases, integration.
 - Run tests if they exist. Check MAP.md is still accurate.
-- If you learned something surprising, append ONE line to atris/lessons.md.
+- If you halted, were surprised, or learned a non-obvious lesson, append ONE line to atris/lessons.md in this exact format:
+  - **[YYYY-MM-DD] short-slug** — pass|fail — One sentence on what surprised you or what to remember.
+  Skip if the tick taught nothing non-obvious. Lessons compound — future /endgame runs read this file before picking horizons.
 
 Read these files first:
 ${readFiles}
@@ -416,6 +488,31 @@ If broken beyond quick fix, reply: failed — [reason].`;
   }
 
   return '';
+}
+
+function runTaskOnce(context, options = {}) {
+  const { verbose = false } = options;
+  const phaseResults = {};
+  const startedAt = Date.now();
+
+  for (const phase of ['plan', 'do', 'review']) {
+    const t0 = Date.now();
+    const result = executePhaseDetailed(phase, context, options);
+    phaseResults[phase] = {
+      prompt: result.prompt,
+      output: result.output || '',
+      elapsedSeconds: Math.round((Date.now() - t0) / 1000),
+    };
+  }
+
+  const reviewOutput = phaseResults.review.output || '';
+
+  return {
+    success: !reviewOutput.includes('failed'),
+    elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+    phaseResults,
+    reviewOutput,
+  };
 }
 
 /**
@@ -465,6 +562,80 @@ function parseDuration(str) {
   return null;
 }
 
+/**
+ * Print the visual ASCII tick status block. Shows identity (forward / flow),
+ * current endgame slug + horizon (backward / endgame), and progress through
+ * endgame steps. Two halves of the same engine — flow and endgame — meeting
+ * at the next tick. Called at the start of each autopilot run.
+ */
+function printTickStatus(cwd) {
+  const atrisDir = path.join(cwd, 'atris');
+  const W = 64;        // total box width including borders
+  const C = W - 4;     // content width per line
+
+  const trim = (s, w) => {
+    if (!s) return '';
+    s = String(s).replace(/\s+/g, ' ').trim();
+    if (s.length > w) return s.slice(0, Math.max(0, w - 1)) + '…';
+    return s;
+  };
+  const line = (content) => '  │ ' + content.padEnd(C) + ' │';
+
+  // FLOW side — identity from PERSONA.md (first non-trivial line)
+  let identity = '(no identity set — see atris/PERSONA.md)';
+  const personaPath = path.join(atrisDir, 'PERSONA.md');
+  if (fs.existsSync(personaPath)) {
+    const lines = fs.readFileSync(personaPath, 'utf8').split('\n');
+    for (const l of lines) {
+      const t = l.trim();
+      if (t && !t.startsWith('#') && !t.startsWith('>') && !t.startsWith('---') && !t.startsWith('*') && !t.startsWith('-') && !t.startsWith('|')) {
+        identity = t;
+        break;
+      }
+    }
+  }
+
+  // ENDGAME side — slug + horizon from TODO.md ## Endgame section
+  let slug = '(no endgame active — feed inbox or /endgame)';
+  let horizon = '';
+  const todoPath = path.join(atrisDir, 'TODO.md');
+  let remaining = 0;
+  let completedEndgame = 0;
+  if (fs.existsSync(todoPath)) {
+    const todoContent = fs.readFileSync(todoPath, 'utf8');
+    const endgameMatch = todoContent.match(/##\s+Endgame\s*\n([\s\S]*?)(?=\n##|$)/);
+    if (endgameMatch) {
+      const slugMatch = endgameMatch[1].match(/\*\*Slug:\*\*\s*(.+)/);
+      const horizonMatch = endgameMatch[1].match(/\*\*Horizon:\*\*\s*(.+)/);
+      if (slugMatch) slug = slugMatch[1].trim();
+      if (horizonMatch) horizon = horizonMatch[1].trim();
+    }
+    const todo = parseTodo(todoPath);
+    remaining = todo.backlog.filter(t => t.tag === 'endgame').length;
+    completedEndgame = todo.completed.filter(t => /^[A-Z]\d+[a-z]?[:\s]/.test((t.title || '').trim())).length;
+  }
+  const total = remaining + completedEndgame;
+  const done = completedEndgame;
+
+  const barWidth = 12;
+  const filled = total > 0 ? Math.round((done / total) * barWidth) : 0;
+  const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+  const ratio = total > 0 ? `${done}/${total}` : '0/0';
+
+  const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  console.log('');
+  console.log('  ┌' + '─'.repeat(W - 2) + '┐');
+  console.log(line(`tick · ${time}`));
+  console.log(line(`identity:  ${trim(identity, C - 11)}`));
+  console.log(line(`horizon:   ${trim(slug, C - 11)}`));
+  if (horizon) {
+    console.log(line(`           ${trim(horizon, C - 11)}`));
+  }
+  console.log(line(`progress:  ${bar}  ${ratio} endgame steps`));
+  console.log('  └' + '─'.repeat(W - 2) + '┘');
+}
+
 async function autopilotAtris(description, options = {}) {
   const {
     maxIterations = 100,
@@ -493,6 +664,8 @@ async function autopilotAtris(description, options = {}) {
   console.log('');
   console.log('  atris autopilot v' + pkg.version);
   console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
+  printTickStatus(cwd);
+  console.log('');
   console.log('  scanning workspace for work...');
   console.log('');
 
@@ -590,20 +763,19 @@ async function autopilotAtris(description, options = {}) {
       console.log('');
       console.log('  planning...');
       let t0 = Date.now();
-      executePhase('plan', context, { verbose });
-      const planTime = Math.round((Date.now() - t0) / 1000);
+      const execution = runTaskOnce(context, { verbose });
+      const planTime = execution.phaseResults.plan.elapsedSeconds;
       console.log(`  planned (${planTime}s)`);
 
       console.log('  building...');
       t0 = Date.now();
-      executePhase('do', context, { verbose });
-      const doTime = Math.round((Date.now() - t0) / 1000);
+      const doTime = execution.phaseResults.do.elapsedSeconds;
       console.log(`  built (${doTime}s)`);
 
       console.log('  reviewing...');
       t0 = Date.now();
-      const reviewOutput = executePhase('review', context, { verbose });
-      const reviewTime = Math.round((Date.now() - t0) / 1000);
+      const reviewOutput = execution.reviewOutput;
+      const reviewTime = execution.phaseResults.review.elapsedSeconds;
 
       if (reviewOutput.includes('failed')) {
         console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
@@ -640,5 +812,7 @@ async function autopilotFromTodo(options = {}) {
 module.exports = {
   autopilotAtris,
   autopilotFromTodo,
+  buildPrompt,
+  runTaskOnce,
   suggestNextTask
 };
