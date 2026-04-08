@@ -2,6 +2,9 @@
 
 ## 2026-04-08
 
+- INGEST atris-labs/goals.md -> concepts/atris-labs-goals.md
+  - source: /Users/keshavrao/arena/atris-business/atris-labs/goals.md
+  - durable: north star, 2026 Q2 targets ($1M ARR, 10 customers), H2 plan, standing constraints
 - INGEST atris-labs top 3 sources -> wiki index/log/STATUS refreshed
   - source: /Users/keshavrao/arena/atris-business/atris-labs/atris.md
   - source: /Users/keshavrao/arena/atris-business/atris-labs/goals.md
