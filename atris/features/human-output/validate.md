@@ -175,11 +175,13 @@ and is explicitly out of scope for the ≤20 × ≤80 human-output audit.
 
 ## Surface: review (validator)
 
-Command: `node bin/atris.js review`
+Command: `node bin/atris.js review` (T21d re-capture against a no-op
+workspace state — `## In Progress` holds only the T21d claim itself, no
+code changes pending review).
 
 ```text
 atris review — validator.
-i checked the workspace. map is present, todo is present, 10 feature validate scripts queued.
+i checked the workspace. map is present, todo is present, 11 feature validate scripts queued.
 next i'll run tests, walk each validate.md, and clean completed tasks out of todo.md.
 (run `atris review --verbose` for the full prompt + appendix.)
 
@@ -187,6 +189,9 @@ next: `atris do` to fix issues, then `atris review` again.
 ```
 
 Measurements: 6 content lines (8 incl. trailing blank), max line width 93 chars.
+Exit-status: command succeeded (no error, no "needs in-progress task" branch) —
+the default surface prints a pre-run banner regardless of workspace state, so
+the "n/a — needs in-progress task" fallback does not apply here.
 
 | Check | Result | Notes |
 |---|---|---|
