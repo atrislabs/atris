@@ -15,7 +15,7 @@ tags:
 ---
 # Atris Labs Workspace Protocol
 
-Atris Labs is the operating workspace for the company that builds Atris. It dogfoods the company-as-mini-AGI shape on itself so the pattern is battle-tested before customers touch it — the workspace is the reference implementation of what Atris ships.
+Atris Labs is the operating workspace for the company that builds Atris. It dogfoods the AI-native company shape on itself so the pattern is battle-tested before customers touch it — the workspace is the reference implementation of what Atris ships.
 
 ## On Load
 
