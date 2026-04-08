@@ -204,13 +204,19 @@ Surface verdict: **FAIL** — width overrun on 2 lines, and the default non-`--v
 
 ## Verdict
 
+Rule: a surface passes iff all four checks (≤20 lines, ≤80 chars, plain
+language / required sections, non-technical approve-or-hold decidable) are
+green. Overall pass iff every in-scope surface passes.
+
 | Surface | Pass/Fail | Notes |
 |---|---|---|
-| autopilot tick | **FAIL** | 80-char width OK; 39-line budget blown by horizon paragraph + multi-block tick layout. |
-| status (default) | **FAIL** | 22 lines (2 over), 83 chars (3 over), no explicit decision line. Also gated by `.atris/business.json` routing in this repo. |
-| review | **FAIL** | 93-char line, no verdict block — default surface is a pre-run banner, not a chief-of-staff review. Needs T19 rewrite. |
+| autopilot tick | **FAIL** | (i) 36 lines FAIL, (ii) 78 chars PASS, (iii) plain language PASS, (iv) horizon + next step readable PASS. Budget blown by full horizon paragraph rendering every tick. |
+| status (default) | **FAIL** | (i) 24 lines FAIL, (ii) ≤78 chars PASS, (iii) where/queued/blocking sections PASS, (iv) approve-or-hold PARTIAL — no explicit `Decision:` line. Also gated by `.atris/business.json` hijacking `atris status` into `businessStatus('pallet')`. |
+| review (validator) | **FAIL** | (i) 6 lines PASS, (ii) 93 chars FAIL, (iii) plain-language PARTIAL — pre-run banner, not verdict, (iv) approve/hold FAIL — no verdict line. Needs the T19 rewrite. |
 
-**Overall: FAIL.** Every in-scope surface misses at least one of the four checks. The closest to green is status (sections present, only cosmetic width + budget misses). The farthest from green is review (no verdict block in default mode).
+**Overall: FAIL.** Every in-scope surface misses at least one check. Closest
+to green: status (sections present, cosmetic width + budget misses). Farthest
+from green: review (no verdict block in default mode).
 
 Top fixes, in priority order:
 1. review surface — emit a 3-paragraph validator-pass block per `examples.md`, wrap to ≤ 80 chars, include an explicit "Decision:" line. (T19 scope.)
@@ -218,10 +224,11 @@ Top fixes, in priority order:
 3. status — tighten wrap width to 78, collapse horizon to one sentence, append explicit "Decision: …" line.
 4. status routing — either make `atris status` prefer `statusAtris` and require an explicit `atris status <biz>` for businessStatus, or have businessStatus also honor the chief-of-staff shape.
 
-History:
-- T15 — surface audit in `idea.md`
-- T16 — `examples.md` target shapes (2026-04-08)
-- T17 — autopilot tick rewrite (2026-04-08)
-- T18 — status chief-of-staff rewrite (2026-04-08)
-- T20 — heartbeat tick summary into journal Notes (2026-04-08)
-- T21 — this validate pass (2026-04-08)
+Shipping history (link chain for the reader):
+- **T15** — surface audit in `atris/features/human-output/idea.md` under `## Surface audit` (2026-04-08 Completed).
+- **T16** — target shapes drafted in [`examples.md`](./examples.md): happy-tick, idle-tick, validator-pass, each ≤12 lines and ≤80 chars wide (2026-04-08 Completed in `atris/TODO.md`).
+- **T17** — autopilot tick rewrite in `commands/autopilot.js`; default now briefs in plain language, `--verbose` keeps the boxy legacy view (2026-04-08 Completed in `atris/TODO.md`).
+- **T18** — `atris status` rewrite to chief-of-staff format (where / queued / blocking); `--verbose` keeps the legacy task board (2026-04-08 Completed in `atris/TODO.md`).
+- **T20** — `appendTickSummary` wired into `autopilotAtris` end-of-tick (happy/idle/halted); idle blocks preserve `0 tasks in 0s` for `getIdleTickCount` (2026-04-08 Completed in `atris/TODO.md`).
+- **T21 / T21a–d** — this validate pass: surfaces table + per-surface capture + four-check scoring (2026-04-08 Completed in `atris/TODO.md`).
+- **T21e** — this verdict summary (current task).
