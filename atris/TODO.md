@@ -35,8 +35,8 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T7:** Refresh `atris/features/wiki/validate.md` frontmatter — bump `last_compiled` to 2026-04-08 and add `commands/init.js` + `commands/activate.js` to `sources` (both implement shipped checks — `ensureWikiScaffold` at `commands/init.js:351` and `readWikiStatus` at `commands/activate.js:30` — but are missing from the sources list). All 11 checks still hold; no body edits needed. [execute]
-  **Claimed by:** Executor at 2026-04-08T11:29:03.529Z
+- **T8:** Refresh `atris/features/wiki-loop/validate.md` — bump `last_compiled` to 2026-04-08, drop `atris/skills/loop/SKILL.md` from sources (that file is now the autopilot heartbeat scheduler v2.0.0, not wiki upkeep — the wiki upkeep prompt was renamed to `/upkeep` and lives at `~/.claude/skills/upkeep/SKILL.md`, outside this repo), and update Pass 3 `npm test` count from `pass (98/98)` → `pass (118/118)`. CLI surface (`atris loop`, `atris wiki loop`, `loopAtris`, `buildReport`) is unchanged. [execute]
+  **Claimed by:** Executor at 2026-04-08T11:54:54.674Z
   **Stage:** DO
 
 ---
