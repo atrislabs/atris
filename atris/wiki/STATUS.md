@@ -1,7 +1,7 @@
 # Atris Wiki Status
 
-- Last ingest: never
+- Last ingest: 2026-04-08
 - Last lint: never
 - Last loop: 2026-04-07 01:18
-- Health: 6 stale pages need recompiling
+- Health: 3 fresh pages from atris-labs ingest (syntheses/atris-labs-workspace-protocol, concepts/atris-labs-goals, systems/atris-labs); 6 prior stale pages still need recompiling
 - Next move: recompile atris/wiki/systems/atris-business.md from /Users/keshavrao/arena/atris-cli/commands/business.js
