@@ -562,6 +562,85 @@ function logCompletion(description) {
 }
 
 /**
+ * Append a plain-language tick summary block to today's journal `## Notes`.
+ * Fields:
+ *   - time:     human clock string, e.g. "11:20 a.m."
+ *   - outcome:  one-sentence description of what happened this tick
+ *   - horizon:  current endgame slug (or "unset")
+ *   - nextStep: what the next tick will do
+ *   - idle:     when true, block must contain literal "0 tasks in 0s"
+ *               so getIdleTickCount still works.
+ * Safe to call inside a try/catch — a write failure must never crash a tick.
+ */
+function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle } = {}) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const journalPath = path.join(cwd, 'atris', 'logs', String(yyyy), `${yyyy}-${mm}-${dd}.md`);
+  const dateFormatted = `${yyyy}-${mm}-${dd}`;
+
+  if (!fs.existsSync(journalPath)) {
+    const dir = path.dirname(journalPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    createLogFile(journalPath, dateFormatted);
+  }
+
+  const timeLabel = time || new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  }).toLowerCase();
+  const outcomeLine = outcome || 'I ran an autopilot tick.';
+  const horizonLine = horizon
+    ? `We are still on the ${horizon} endgame.`
+    : 'No endgame is set right now.';
+  const nextLine = nextStep
+    ? `Next tick will ${nextStep}.`
+    : 'Next tick will look for new work.';
+  const idleLine = idle ? 'This tick moved 0 tasks in 0s.' : null;
+
+  const blockLines = [
+    `- ${timeLabel}`,
+    `  ${outcomeLine}`,
+    `  ${horizonLine}`,
+    `  ${nextLine}`,
+  ];
+  // Idle marker must be the last non-empty line so getIdleTickCount, which
+  // scans bottom-up, counts this block when idle=true.
+  if (idleLine) blockLines.push(`  ${idleLine}`);
+  blockLines.push('');
+  const block = blockLines.join('\n');
+
+  let content = fs.readFileSync(journalPath, 'utf8');
+  const notesMatch = content.match(/(##\s+Notes\s*\n)([\s\S]*?)(?=\n##\s|$)/);
+  if (notesMatch) {
+    const header = notesMatch[1];
+    const body = notesMatch[2].replace(/\s*$/, '');
+    const newSection = `${header}${body ? body + '\n\n' : ''}${block}\n`;
+    content = content.replace(notesMatch[0], newSection);
+  } else {
+    const trimmed = content.replace(/\s*$/, '');
+    content = `${trimmed}\n\n## Notes\n\n${block}\n`;
+  }
+  fs.writeFileSync(journalPath, content);
+}
+
+/**
+ * Read the current endgame slug from atris/TODO.md. Returns 'unset' on miss.
+ */
+function readHorizonSlug(cwd) {
+  try {
+    const todoPath = path.join(cwd, 'atris', 'TODO.md');
+    if (!fs.existsSync(todoPath)) return 'unset';
+    const content = fs.readFileSync(todoPath, 'utf8');
+    const match = content.match(/\*\*Slug:\*\*\s*(\S+)/);
+    return match ? match[1].trim() : 'unset';
+  } catch {
+    return 'unset';
+  }
+}
+
+/**
  * Main loop. Suggest → justify → approve → execute, one at a time.
  */
 /**
@@ -579,26 +658,42 @@ function parseDuration(str) {
   return null;
 }
 
-/**
- * Print the visual ASCII tick status block. Shows identity (forward / flow),
- * current endgame slug + horizon (backward / endgame), and progress through
- * endgame steps. Two halves of the same engine — flow and endgame — meeting
- * at the next tick. Called at the start of each autopilot run.
- */
-function printTickStatus(cwd) {
+function wrapText(text, width = 74) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+
+  const words = normalized.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current + ' ' + word).length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function printPlainBlock(text) {
+  console.log('');
+  for (const line of String(text || '').split('\n')) {
+    console.log(`  ${line}`);
+  }
+  console.log('');
+}
+
+function getTickStatus(cwd) {
   const atrisDir = path.join(cwd, 'atris');
-  const W = 64;        // total box width including borders
-  const C = W - 4;     // content width per line
 
-  const trim = (s, w) => {
-    if (!s) return '';
-    s = String(s).replace(/\s+/g, ' ').trim();
-    if (s.length > w) return s.slice(0, Math.max(0, w - 1)) + '…';
-    return s;
-  };
-  const line = (content) => '  │ ' + content.padEnd(C) + ' │';
-
-  // FLOW side — identity from PERSONA.md (first non-trivial line)
   let identity = '(no identity set — see atris/PERSONA.md)';
   const personaPath = path.join(atrisDir, 'PERSONA.md');
   if (fs.existsSync(personaPath)) {
@@ -612,7 +707,6 @@ function printTickStatus(cwd) {
     }
   }
 
-  // ENDGAME side — slug + horizon from TODO.md ## Endgame section
   let slug = '(no endgame active — feed inbox or /endgame)';
   let horizon = '';
   const todoPath = path.join(atrisDir, 'TODO.md');
@@ -631,23 +725,89 @@ function printTickStatus(cwd) {
     remaining = todo.backlog.filter(t => t.tag === 'endgame').length;
     completedEndgame = todo.completed.filter(t => /^[A-Z]\d+[a-z]?[:\s]/.test((t.title || '').trim())).length;
   }
+
   const total = remaining + completedEndgame;
   const done = completedEndgame;
+  const time = new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  }).toLowerCase();
+
+  return { time, identity, slug, horizon, total, done, remaining };
+}
+
+function renderHumanTickIntro(status, options = {}) {
+  const modeLabel = options.auto ? 'autonomous' : 'interactive';
+  const horizonSentence = status.horizon
+    ? `We are working on ${status.slug}: ${status.horizon}`
+    : `We are working on ${status.slug}.`;
+  const progressSentence = status.remaining === 0
+    ? 'No tagged endgame steps are queued right now.'
+    : status.total > 0
+    ? `Progress is ${status.done} of ${status.total} endgame steps.`
+    : 'No endgame steps are queued right now.';
+
+  return [
+    status.time,
+    `I am starting an autopilot tick in ${modeLabel} mode.`,
+    `The current limit is ${options.durationLabel || 'until clean'}.`,
+    '',
+    ...wrapText(horizonSentence),
+    progressSentence,
+    ...wrapText(`Identity: ${status.identity}`),
+    '',
+    'Next I will scan the workspace and choose one task.'
+  ].join('\n');
+}
+
+function renderHumanSuggestion(suggestion, step, maxIterations) {
+  return [
+    `I picked task ${step} of ${maxIterations}.`,
+    ...wrapText(suggestion.task),
+    '',
+    ...wrapText(`Why now: ${suggestion.why}`),
+    '',
+    'Next: approve it, skip it, or stop the loop.'
+  ].join('\n');
+}
+
+/**
+ * Print the visual ASCII tick status block. Shows identity (forward / flow),
+ * current endgame slug + horizon (backward / endgame), and progress through
+ * endgame steps. Two halves of the same engine — flow and endgame — meeting
+ * at the next tick. Called at the start of each autopilot run.
+ */
+function printTickStatus(cwd, options = {}) {
+  const status = getTickStatus(cwd);
+  if (!options.verbose) {
+    printPlainBlock(renderHumanTickIntro(status, options));
+    return;
+  }
+
+  const W = 64;        // total box width including borders
+  const C = W - 4;     // content width per line
+
+  const trim = (s, w) => {
+    if (!s) return '';
+    s = String(s).replace(/\s+/g, ' ').trim();
+    if (s.length > w) return s.slice(0, Math.max(0, w - 1)) + '…';
+    return s;
+  };
+  const line = (content) => '  │ ' + content.padEnd(C) + ' │';
 
   const barWidth = 12;
-  const filled = total > 0 ? Math.round((done / total) * barWidth) : 0;
+  const filled = status.total > 0 ? Math.round((status.done / status.total) * barWidth) : 0;
   const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-  const ratio = total > 0 ? `${done}/${total}` : '0/0';
-
+  const ratio = status.total > 0 ? `${status.done}/${status.total}` : '0/0';
   const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
   console.log('');
   console.log('  ┌' + '─'.repeat(W - 2) + '┐');
   console.log(line(`tick · ${time}`));
-  console.log(line(`identity:  ${trim(identity, C - 11)}`));
-  console.log(line(`horizon:   ${trim(slug, C - 11)}`));
-  if (horizon) {
-    console.log(line(`           ${trim(horizon, C - 11)}`));
+  console.log(line(`identity:  ${trim(status.identity, C - 11)}`));
+  console.log(line(`horizon:   ${trim(status.slug, C - 11)}`));
+  if (status.horizon) {
+    console.log(line(`           ${trim(status.horizon, C - 11)}`));
   }
   console.log(line(`progress:  ${bar}  ${ratio} endgame steps`));
   console.log('  └' + '─'.repeat(W - 2) + '┘');
@@ -861,15 +1021,21 @@ async function autopilotAtris(description, options = {}) {
   }
 
   const durationMs = parseDuration(duration);
-  const durationLabel = duration ? duration : (maxIterations < 100 ? `${maxIterations} tasks` : 'until clean');
+  const durationLabel = duration
+    ? duration
+    : (maxIterations < 100 ? `${maxIterations} task${maxIterations === 1 ? '' : 's'}` : 'until clean');
 
-  console.log('');
-  console.log('  atris autopilot v' + pkg.version);
-  console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
-  printTickStatus(cwd);
-  console.log('');
-  console.log('  scanning workspace for work...');
-  console.log('');
+  if (verbose) {
+    console.log('');
+    console.log('  atris autopilot v' + pkg.version);
+    console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
+    printTickStatus(cwd, { verbose: true });
+    console.log('');
+    console.log('  scanning workspace for work...');
+    console.log('');
+  } else {
+    printTickStatus(cwd, { auto, durationLabel });
+  }
 
   // Seed inbox if a description was given
   if (description) {
@@ -890,40 +1056,85 @@ async function autopilotAtris(description, options = {}) {
       content += `\n## Inbox\n${entry}\n`;
     }
     fs.writeFileSync(logFile, content);
-    console.log(`  added to inbox: "${description}"`);
-    console.log('');
+    if (verbose) {
+      console.log(`  added to inbox: "${description}"`);
+      console.log('');
+    } else {
+      printPlainBlock([
+        'I added this request to the inbox.',
+        `"${description}"`,
+        '',
+        'Next I will scan the workspace with that request in mind.'
+      ].join('\n'));
+    }
   }
 
   const startTime = Date.now();
   let completed = 0;
   const skipped = new Set();
+  let tickOutcome = 'halted';
+  let tickOutcomeText = 'I stopped for a manual check.';
+  let tickNextStep = 'look for new work';
+  let lastTaskTitle = null;
 
   for (let i = 0; i < maxIterations; i++) {
     // Check time budget
     if (durationMs && (Date.now() - startTime) >= durationMs) {
       const mins = Math.round((Date.now() - startTime) / 60000);
-      console.log(`  time's up (${mins}m elapsed). stopping.`);
+      if (verbose) {
+        console.log(`  time's up (${mins}m elapsed). stopping.`);
+      } else {
+        printPlainBlock([
+          `I hit the time limit after ${mins} minute${mins === 1 ? '' : 's'}.`,
+          '',
+          'Next I am stopping the loop.'
+        ].join('\n'));
+      }
       break;
     }
 
     const suggestion = await suggestNextTask(cwd, skipped);
 
     if (!suggestion) {
-      console.log('  nothing to do. workspace is clean.');
+      tickOutcome = 'idle';
+      tickOutcomeText = 'I checked the repo and found no work to pick up this tick.';
+      tickNextStep = 'scan for new signals and propose the next horizon';
+      if (verbose) {
+        console.log('  nothing to do. workspace is clean.');
+      } else {
+        printPlainBlock([
+          'I found no work this tick.',
+          'The workspace looks clean.',
+          '',
+          'Next I will stop until a new signal appears.'
+        ].join('\n'));
+      }
       break;
     }
 
     // Present the suggestion
-    console.log(`  ── suggestion ${i + 1}/${maxIterations} ──────────────────────────────`);
-    console.log('');
-    console.log(`  ${suggestion.task}`);
-    console.log(`  why: ${suggestion.why}`);
-    console.log(`  kind: ${suggestion.kind}`);
-    console.log('');
+    if (verbose) {
+      console.log(`  ── suggestion ${i + 1}/${maxIterations} ──────────────────────────────`);
+      console.log('');
+      console.log(`  ${suggestion.task}`);
+      console.log(`  why: ${suggestion.why}`);
+      console.log(`  kind: ${suggestion.kind}`);
+      console.log('');
+    } else {
+      printPlainBlock(renderHumanSuggestion(suggestion, i + 1, maxIterations));
+    }
 
     if (dryRun) {
-      console.log('  (dry run — would execute this)');
-      console.log('');
+      if (verbose) {
+        console.log('  (dry run — would execute this)');
+        console.log('');
+      } else {
+        printPlainBlock([
+          'This was a dry run, so I did not execute the task.',
+          '',
+          'Next I will look for another task on the next pass.'
+        ].join('\n'));
+      }
       // Track as skipped so dry-run shows variety
       skipped.add(suggestion.task);
       if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
@@ -942,7 +1153,15 @@ async function autopilotAtris(description, options = {}) {
     }
 
     if (decision === 'quit') {
-      console.log('  stopped.');
+      if (verbose) {
+        console.log('  stopped.');
+      } else {
+        printPlainBlock([
+          'I stopped the loop.',
+          '',
+          'Next nothing will run until autopilot starts again.'
+        ].join('\n'));
+      }
       break;
     }
 
@@ -953,53 +1172,132 @@ async function autopilotAtris(description, options = {}) {
       if (suggestion.kind === 'review') skipped.add('review');
       if (suggestion.kind === 'lessons') skipped.add('lessons');
       if (suggestion.kind === 'feature') skipped.add('incomplete-features');
-      console.log('  skipped.');
-      console.log('');
+      if (verbose) {
+        console.log('  skipped.');
+        console.log('');
+      } else {
+        printPlainBlock([
+          'I skipped that task.',
+          '',
+          'Next I will look for another one.'
+        ].join('\n'));
+      }
       continue;
     }
 
     // Execute: plan → do → review
+    lastTaskTitle = suggestion.task;
     const context = { task: suggestion.task, kind: suggestion.kind };
 
     try {
-      console.log('');
-      console.log('  planning...');
-      let t0 = Date.now();
+      if (verbose) {
+        console.log('');
+        console.log('  planning...');
+      } else {
+        printPlainBlock([
+          'I am running that task now.',
+          '',
+          'Next I will report what happened and whether review passed.'
+        ].join('\n'));
+      }
       const execution = runTaskOnce(context, { verbose });
       const planTime = execution.phaseResults.plan.elapsedSeconds;
-      console.log(`  planned (${planTime}s)`);
+      if (verbose) console.log(`  planned (${planTime}s)`);
 
-      console.log('  building...');
-      t0 = Date.now();
+      if (verbose) console.log('  building...');
       const doTime = execution.phaseResults.do.elapsedSeconds;
-      console.log(`  built (${doTime}s)`);
+      if (verbose) console.log(`  built (${doTime}s)`);
 
-      console.log('  reviewing...');
-      t0 = Date.now();
+      if (verbose) console.log('  reviewing...');
       const reviewOutput = execution.reviewOutput;
       const reviewTime = execution.phaseResults.review.elapsedSeconds;
 
       if (reviewOutput.includes('failed')) {
-        console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
+        tickOutcome = 'halted';
+        tickOutcomeText = `I built "${lastTaskTitle}" but review flagged issues.`;
+        tickNextStep = 'wait for a human to check the review output';
+        if (verbose) {
+          console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
+        } else {
+          printPlainBlock([
+            `I planned and built the task, but review found issues after ${reviewTime}s.`,
+            '',
+            'Next I stopped for a manual check.'
+          ].join('\n'));
+        }
         break;
       }
-      console.log(`  reviewed (${reviewTime}s)`);
+      if (verbose) console.log(`  reviewed (${reviewTime}s)`);
 
       completed++;
+      tickOutcome = 'built';
+      tickOutcomeText = `I planned, built, and reviewed "${suggestion.task}".`;
+      tickNextStep = 'pick the next endgame task';
       logCompletion(suggestion.task);
-      console.log(`  done. ${completed} task${completed > 1 ? 's' : ''} completed.`);
-      console.log('');
+      if (verbose) {
+        console.log(`  done. ${completed} task${completed > 1 ? 's' : ''} completed.`);
+        console.log('');
+      } else {
+        printPlainBlock([
+          'I planned, built, and reviewed the task.',
+          `Plan took ${planTime}s, build took ${doTime}s, and review took ${reviewTime}s.`,
+          '',
+          `This tick has completed ${completed} task${completed > 1 ? 's' : ''}.`,
+          '',
+          'Next I will look for the next task.'
+        ].join('\n'));
+      }
 
     } catch (err) {
-      console.error(`  error: ${err.message}`);
+      tickOutcome = 'halted';
+      tickOutcomeText = `I hit an error while running "${lastTaskTitle || 'a task'}": ${err.message}`;
+      tickNextStep = 'stop until a human looks at the error';
+      if (verbose) {
+        console.error(`  error: ${err.message}`);
+      } else {
+        printPlainBlock([
+          'I hit an error while running the task.',
+          err.message,
+          '',
+          'Next I stopped the loop.'
+        ].join('\n'));
+      }
       break;
     }
   }
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);
-  console.log('');
-  console.log(`  autopilot finished. ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`);
-  console.log('');
+
+  // Heartbeat: plain-language tick summary into today's journal `## Notes`.
+  // Guarded — a journal write failure must never crash the tick.
+  try {
+    const horizonSlug = readHorizonSlug(cwd);
+    const time = new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit'
+    }).toLowerCase();
+    const idle = tickOutcome === 'idle' || (completed === 0 && tickOutcome !== 'halted');
+    appendTickSummary(cwd, {
+      time,
+      outcome: tickOutcomeText,
+      horizon: horizonSlug === 'unset' ? null : horizonSlug,
+      nextStep: tickNextStep,
+      idle
+    });
+  } catch {
+    /* journal write failure must not crash the tick */
+  }
+
+  if (verbose) {
+    console.log('');
+    console.log(`  autopilot finished. ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`);
+    console.log('');
+  } else {
+    printPlainBlock([
+      'Autopilot finished.',
+      `It completed ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`
+    ].join('\n'));
+  }
 
   return { success: completed > 0, completed };
 }
@@ -1012,11 +1310,15 @@ async function autopilotFromTodo(options = {}) {
 }
 
 module.exports = {
+  appendTickSummary,
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
   getIdleTickCount,
   getRecentSignals,
+  getTickStatus,
+  renderHumanSuggestion,
+  renderHumanTickIntro,
   proposeCandidateHorizons,
   runTaskOnce,
   suggestNextTask
