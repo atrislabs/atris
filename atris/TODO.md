@@ -25,19 +25,17 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **W4b:** Refresh `atris/wiki/index.md`, `log.md`, `STATUS.md` to reflect the atris-labs entity page (add INGEST entry to log.md, link from index). [execute] [endgame]
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
 ---
 
 ## In Progress
 
-- **W3b:** Refresh `atris/wiki/index.md`, `log.md`, `STATUS.md` to reflect the atris-labs-goals page. Claimed by: Executor at 2026-04-08T09:07:28.214Z [execute] [endgame]
-
 ---
 
 ## Completed
 
+- [x] W4b: Refresh wiki log.md (added MEMBER.md ingest entry) + STATUS.md for atris-labs entity (2026-04-08)
 - [x] W4a: Ingest atris-labs MEMBER.md → atris/wiki/systems/atris-labs.md (2026-04-08)
 - [x] T4: Fix MAP.md broken ref `commands/verify.js:14-47` → `13-35` (2026-04-08)
 - [x] W5a/b/c: Refresh wiki index.md, log.md, STATUS.md for atris-labs ingest (2026-04-08)
