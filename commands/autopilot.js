@@ -113,7 +113,10 @@ function suggestNextTask(cwd, skipped = new Set()) {
     const content = fs.readFileSync(logFile, 'utf8');
     const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-'));
+      const items = inboxMatch[1].trim().split('\n').filter(l => {
+        const t = l.trim();
+        return t.startsWith('- ') && t.length > 2;
+      });
       if (items.length > 0) {
         const firstItem = items[0].replace(/^-\s*\*\*I\d+:\*\*\s*/, '').replace(/^-\s*/, '').trim();
         if (!skipped.has(firstItem)) {
