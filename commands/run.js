@@ -154,7 +154,10 @@ function hasWork(atrisDir) {
     const content = fs.readFileSync(logFile, 'utf8');
     const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-'));
+      const items = inboxMatch[1].trim().split('\n').filter(l => {
+        const t = l.trim();
+        return t.startsWith('- ') && t.length > 2;
+      });
       if (items.length > 0) return true;
     }
   }
@@ -225,14 +228,20 @@ async function runAtris(options = {}) {
   }
 
   console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log(`│ Atris Run v${pkg.version} — autonomous plan → do → review       │`);
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
-  console.log(`Max cycles: ${cycles}`);
-  console.log(`Phase timeout: ${timeout / 1000}s`);
-  console.log(`Verbose: ${verbose}`);
-  console.log('');
+  if (verbose) {
+    console.log('┌─────────────────────────────────────────────────────────────┐');
+    console.log(`│ Atris Run v${pkg.version} — autonomous plan → do → review       │`);
+    console.log('└─────────────────────────────────────────────────────────────┘');
+    console.log('');
+    console.log(`Max cycles: ${cycles}`);
+    console.log(`Phase timeout: ${timeout / 1000}s`);
+    console.log(`Verbose: ${verbose}`);
+    console.log('');
+  } else {
+    console.log(`atris run v${pkg.version} — plan, do, review, repeat.`);
+    console.log(`i'll run up to ${cycles} cycle${cycles === 1 ? '' : 's'}, ${timeout / 1000}s per phase. next i'll check the backlog.`);
+    console.log('');
+  }
 
   // Build context paths
   const context = {
@@ -255,13 +264,19 @@ async function runAtris(options = {}) {
   let completedCycles = 0;
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
-    console.log(`\n${'━'.repeat(60)}`);
-    console.log(`CYCLE ${cycle}/${cycles}`);
-    console.log(`${'━'.repeat(60)}`);
+    if (verbose) {
+      console.log(`\n${'━'.repeat(60)}`);
+      console.log(`CYCLE ${cycle}/${cycles}`);
+      console.log(`${'━'.repeat(60)}`);
+    } else {
+      console.log(`\ncycle ${cycle} of ${cycles}.`);
+    }
 
     // Check if there's work
     if (!hasWork(atrisDir)) {
-      console.log('\nInbox empty. Backlog empty. Nothing to do.');
+      console.log(verbose
+        ? '\nInbox empty. Backlog empty. Nothing to do.'
+        : 'i checked the inbox and backlog. both empty. nothing to do.');
       break;
     }
 
@@ -269,67 +284,81 @@ async function runAtris(options = {}) {
 
     try {
       // PLAN
-      console.log('\n[1/3] PLAN — reading inbox, creating tasks...');
+      console.log(verbose
+        ? '\n[1/3] PLAN — reading inbox, creating tasks...'
+        : 'planning… reading inbox, turning ideas into tasks.');
       let phaseStart = Date.now();
       const planOutput = executePhase('plan', context, { verbose, timeout });
       timing.plan = Date.now() - phaseStart;
 
       if (planOutput.includes('[NOTHING_TO_DO]')) {
-        console.log('Nothing to do. Stopping.');
+        console.log(verbose ? 'Nothing to do. Stopping.' : 'navigator says nothing to do. stopping.');
         break;
       }
-      console.log(`✓ Plan complete (${Math.round(timing.plan / 1000)}s)`);
+      console.log(verbose
+        ? `✓ Plan complete (${Math.round(timing.plan / 1000)}s)`
+        : `planned in ${Math.round(timing.plan / 1000)}s. next i'll pick the top backlog task and build it.`);
 
       // Check if plan created tasks
       if (!hasWork(atrisDir)) {
-        console.log('No tasks created. Stopping.');
+        console.log(verbose ? 'No tasks created. Stopping.' : 'no tasks got created. stopping.');
         break;
       }
 
       // DO
-      console.log('\n[2/3] DO — building task...');
+      console.log(verbose ? '\n[2/3] DO — building task...' : 'building the top task now.');
       phaseStart = Date.now();
       executePhase('do', context, { verbose, timeout });
       timing.do = Date.now() - phaseStart;
-      console.log(`✓ Build complete (${Math.round(timing.do / 1000)}s)`);
+      console.log(verbose
+        ? `✓ Build complete (${Math.round(timing.do / 1000)}s)`
+        : `built in ${Math.round(timing.do / 1000)}s. next i'll review it.`);
 
       // REVIEW
-      console.log('\n[3/3] REVIEW — validating...');
+      console.log(verbose ? '\n[3/3] REVIEW — validating...' : 'reviewing the change against tests and validate.md.');
       phaseStart = Date.now();
       const reviewOutput = executePhase('review', context, { verbose, timeout });
       timing.review = Date.now() - phaseStart;
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
-        console.log('⚠ Review found issues. Stopping for manual check.');
+        console.log(verbose
+          ? '⚠ Review found issues. Stopping for manual check.'
+          : 'review found issues. stopping so a human can look.');
         cycleTimings.push(timing);
         completedCycles++;
         break;
       }
-      console.log(`✓ Review complete (${Math.round(timing.review / 1000)}s)`);
+      console.log(verbose
+        ? `✓ Review complete (${Math.round(timing.review / 1000)}s)`
+        : `review passed in ${Math.round(timing.review / 1000)}s.`);
 
       cycleTimings.push(timing);
       completedCycles++;
 
       // Self-heal MAP.md refs after each cycle
-      console.log('\n[+] CLEAN — healing MAP.md refs...');
+      console.log(verbose
+        ? '\n[+] CLEAN — healing MAP.md refs...'
+        : 'cleaning up drifted MAP.md refs.');
       try {
         cleanAtris({ dryRun: false });
       } catch (cleanErr) {
-        console.log(`⚠ Clean failed: ${cleanErr.message}`);
+        console.log(`${verbose ? '⚠ Clean failed: ' : 'clean failed: '}${cleanErr.message}`);
       }
 
       // Auto-push if not disabled
       if (push) {
-        console.log('\n[+] PUSH — pushing to remote...');
+        console.log(verbose ? '\n[+] PUSH — pushing to remote...' : 'pushing to remote.');
         try {
           execSync('git push', { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
-          console.log('✓ Pushed to remote');
+          console.log(verbose ? '✓ Pushed to remote' : 'pushed.');
         } catch (pushErr) {
-          console.log(`⚠ Push failed: ${pushErr.message.split('\n')[0]}`);
+          console.log(`${verbose ? '⚠ Push failed: ' : 'push failed: '}${pushErr.message.split('\n')[0]}`);
         }
       }
 
-      console.log(`\n✓ Cycle ${cycle} done`);
+      console.log(verbose
+        ? `\n✓ Cycle ${cycle} done`
+        : `cycle ${cycle} done. next cycle.`);
 
     } catch (err) {
       console.error(`\n✗ Cycle ${cycle} failed: ${err.message}`);
@@ -343,24 +372,28 @@ async function runAtris(options = {}) {
   logRunCompletion(completedCycles, startTime, cycleTimings);
 
   console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`Run complete. ${elapsed}s elapsed.`);
+  if (verbose) {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`Run complete. ${elapsed}s elapsed.`);
 
-  // Print phase duration summary table
-  if (cycleTimings.length > 0) {
+    if (cycleTimings.length > 0) {
+      console.log('');
+      console.log('  Cycle  │  Plan   │   Do    │ Review');
+      console.log('  ───────┼─────────┼─────────┼────────');
+      cycleTimings.forEach((t, i) => {
+        const p = `${Math.round(t.plan / 1000)}s`.padStart(5);
+        const d = `${Math.round(t.do / 1000)}s`.padStart(5);
+        const r = `${Math.round(t.review / 1000)}s`.padStart(5);
+        console.log(`    ${String(i + 1).padStart(2)}   │ ${p}   │ ${d}   │ ${r}`);
+      });
+    }
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
-    console.log('  Cycle  │  Plan   │   Do    │ Review');
-    console.log('  ───────┼─────────┼─────────┼────────');
-    cycleTimings.forEach((t, i) => {
-      const p = `${Math.round(t.plan / 1000)}s`.padStart(5);
-      const d = `${Math.round(t.do / 1000)}s`.padStart(5);
-      const r = `${Math.round(t.review / 1000)}s`.padStart(5);
-      console.log(`    ${String(i + 1).padStart(2)}   │ ${p}   │ ${d}   │ ${r}`);
-    });
+  } else {
+    console.log(`run complete. ${completedCycles} cycle${completedCycles === 1 ? '' : 's'} in ${elapsed}s. logged to today's journal.`);
+    console.log('');
   }
-
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
 }
 
 module.exports = { runAtris };
