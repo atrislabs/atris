@@ -29,7 +29,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **E4:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-middleware.md` — entity page for `middleware.ts` (410-line request gate: auth, routing, redirects). Frontmatter contract, cite absolute path. [endgame]
 - **E5:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/syntheses/atrisos-web-overview.md` — architectural synthesis: request flow `middleware → app/(route) → app/api/(handler) → response`. Cite the 3 entity pages. Refresh `atrisos-web/atris/wiki/index.md` + `STATUS.md` after. [endgame]
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
@@ -41,6 +40,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] E4: Wrote atrisos-web-middleware.md entity page + refreshed log/STATUS/index (2026-04-08)
 - [x] E3: Wrote atrisos-web-routes.md entity page + refreshed log/STATUS/index (2026-04-08)
 - [x] W4b: Refresh wiki log.md (added MEMBER.md ingest entry) + STATUS.md for atris-labs entity (2026-04-08)
 - [x] W4a: Ingest atris-labs MEMBER.md → atris/wiki/systems/atris-labs.md (2026-04-08)
