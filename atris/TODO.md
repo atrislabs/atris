@@ -16,6 +16,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
+- **T1:** Refresh `atris/features/cli-ux-simplification/validate.md` — bump `last_compiled` to 2026-04-07. Claimed by: Executor at 2026-04-08T05:54:03.680Z
+
 ---
 
 ## Completed
