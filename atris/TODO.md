@@ -26,7 +26,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T21c:** Capture status output — run `atris status` (default) and `atris status --verbose`, paste both into `atris/features/human-output/validate.md` under `## Surface: status`. For default mode only, mark pass/fail against ≤20 lines × ≤80 chars + "where we are / queued / blocking" sections present + non-technical approve-or-hold decidable. Verbose mode is captured for reference only, no pass/fail. Exit: section has both blocks + 4 check results for default. [explore]
 - **T21d:** Capture validator/review output — run `atris review` (or `atris run --once` if review needs a task) against a trivial no-op workspace state, paste default stdout into `atris/features/human-output/validate.md` under `## Surface: review`. Mark pass/fail against ≤20 lines × ≤80 chars + plain-language verdict + non-technical reader can tell approve/hold. If the command errors because there is no in-progress task, record the error verbatim and mark the surface "n/a — needs in-progress task" (still counts as captured). Exit: section has block or n/a note + check results. [explore]
 - **T21e:** Write the T21 verdict summary at the bottom of `atris/features/human-output/validate.md` under `## Verdict`. Table: surface | pass/fail | notes. Overall pass iff every in-scope surface passes all four checks. Link back to T16 (`examples.md`) and T17/T18/T20 completed entries in TODO.md so the reader has the shipping history. Exit: validate.md ends with a verdict table covering every surface from T21a and an overall pass/fail line. [explore]
 - **T23:** Locate today's "heartbeat Notes line" writer — grep `commands/autopilot.js`, `commands/run.js`, and `atris/skills/{autopilot,loop}/SKILL.md` for any `## Notes` append fired per tick. Today's `- HH:MM PDT — ...` lines are agent-written; confirm there is NO CLI writer inside `autopilotAtris` and record the finding (file:line or "agent-only") in `atris/features/human-output/idea.md` under `## T20 scope`. Exit: scope note added; T24 can cite it without re-grepping. [explore]
@@ -38,6 +37,8 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## In Progress
+
+- **T21c:** Capture status output (default + verbose) into `atris/features/human-output/validate.md` under `## Surface: status`. Claimed by: Executor at 2026-04-08T22:52:58.301Z [explore]
 
 ---
 
