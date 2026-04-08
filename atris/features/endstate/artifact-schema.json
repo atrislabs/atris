@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Endstate Run Artifact",
+  "type": "object",
+  "required": [
+    "run_id",
+    "track",
+    "repo_commits",
+    "task_brief",
+    "prompt_context",
+    "changed_files",
+    "tests",
+    "review",
+    "wiki",
+    "elapsed_seconds",
+    "interventions"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "track": { "type": "string", "enum": ["baseline", "stack"] },
+    "repo_commits": {
+      "type": "object",
+      "required": ["atris_cli", "atrisos_backend"],
+      "properties": {
+        "atris_cli": { "type": "string" },
+        "atrisos_backend": { "type": "string" }
+      }
+    },
+    "task_brief": { "type": "string" },
+    "prompt_context": { "type": "string" },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command", "status"],
+        "properties": {
+          "command": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "fail", "not_run"] }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["status", "summary"],
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail", "draft"] },
+        "summary": { "type": "string" }
+      }
+    },
+    "wiki": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["updated", "not_applicable", "missing"] },
+        "before": { "type": "string" },
+        "after": { "type": "string" }
+      }
+    },
+    "elapsed_seconds": { "type": "number", "minimum": 0 },
+    "interventions": {
+      "type": "object",
+      "required": ["count"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "events": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
