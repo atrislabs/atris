@@ -277,9 +277,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `atris/wiki/index.md`
 - `atris/wiki/log.md`
 - `atris/wiki/STATUS.md`
-- `atris/wiki/entities/`
+- `atris/wiki/people/`
+- `atris/wiki/systems/`
 - `atris/wiki/concepts/`
-- `atris/wiki/syntheses/`
+- `atris/wiki/briefs/`
 - **Value:** Makes project memory local by default instead of forcing the cloud path first
 
 **Search:** `rg "wikiCommand|wikiIngest|buildIngestPrompt|normalizeWikiOnlyPrefix|ensureWikiScaffold" commands/wiki.js lib/wiki.js commands/init.js`
@@ -378,6 +379,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Approval gate:** `commands/autopilot.js:212` (askApproval function) — enter/skip/quit
 - **Idle-tick helper:** `commands/autopilot.js:649` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:684` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Candidate-horizons helper:** `commands/autopilot.js:726` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
 
