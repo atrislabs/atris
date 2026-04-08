@@ -26,10 +26,23 @@ function suggestNextTask(cwd, skipped = new Set()) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
-  // --- Resume interrupted work first ---
+  // --- Endgame tasks (highest priority — pursue the current horizon to completion) ---
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
 
+  for (const t of todo.backlog) {
+    if (t.tag === 'endgame' && !skipped.has(t.title)) {
+      suggestions.push({
+        task: t.title,
+        why: `Next step in the current endgame. Endgame steps are pursued to completion before any reactive signal.`,
+        kind: 'endgame',
+        priority: 0
+      });
+      break;
+    }
+  }
+
+  // --- Resume interrupted work ---
   if (todo.inProgress.length > 0) {
     const t = todo.inProgress[0];
     if (!skipped.has(t.title)) {
