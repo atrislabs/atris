@@ -714,6 +714,116 @@ function getRecentSignals(cwd) {
   return { recentCommits, wikiHealth, recentLessons };
 }
 
+/**
+ * Propose 3 candidate next horizons for the autopilot loop. Combines
+ * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
+ * to imagine what to work on next, spawns `claude -p`, and parses the
+ * JSON response into `[{ title, confidence, rationale }]`.
+ *
+ * Throws on subprocess failure or when fewer than 3 valid candidates
+ * come back. Callers are responsible for catching and falling back.
+ */
+async function proposeCandidateHorizons(cwd) {
+  const idleTicks = getIdleTickCount(cwd);
+  const signals = getRecentSignals(cwd);
+
+  const commitsBlock = signals.recentCommits.length > 0
+    ? signals.recentCommits.slice(0, 20).join('\n')
+    : '(no recent commits)';
+  const wikiBlock = signals.wikiHealth
+    ? signals.wikiHealth.slice(0, 2000)
+    : '(no atris/wiki/STATUS.md)';
+  const lessonsBlock = signals.recentLessons.length > 0
+    ? signals.recentLessons.join('\n')
+    : '(no atris/lessons.md)';
+
+  const prompt = `You are helping the Atris autopilot loop imagine the next horizon to pursue.
+
+The loop has been idle for ${idleTicks} tick(s) (ticks where 0 tasks were picked up in 0s).
+
+Recent commits (git log --oneline -20):
+${commitsBlock}
+
+Wiki STATUS (atris/wiki/STATUS.md):
+${wikiBlock}
+
+Recent lessons (tail of atris/lessons.md):
+${lessonsBlock}
+
+Based on these signals, propose exactly 3 candidate next horizons for the loop to pursue. Each candidate must be:
+- A real, concrete horizon tied to what the signals actually reveal (no placeholders, no "candidate 1", no TODO/FIXME stubs).
+- Something the loop can actually work on in this repo right now.
+- Distinct from the other two candidates.
+
+Output STRICT JSON ONLY — no prose, no markdown code fences, no commentary. The output must be a single JSON array with exactly 3 objects, each shaped:
+
+[
+  { "title": "one-line horizon title", "confidence": 0.0-1.0, "rationale": "one sentence why this is worth pursuing now" },
+  { "title": "...", "confidence": 0.0-1.0, "rationale": "..." },
+  { "title": "...", "confidence": 0.0-1.0, "rationale": "..." }
+]
+
+Reply with the JSON array and nothing else.`;
+
+  const tmpFile = path.join(cwd, '.autopilot-horizons-prompt.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+
+  let output = '';
+  try {
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')"`;
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    output = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout: PHASE_TIMEOUT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 10 * 1024 * 1024,
+      env
+    }).toString();
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+
+  const start = output.indexOf('[');
+  const end = output.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('proposeCandidateHorizons: claude -p returned no JSON array');
+  }
+  const jsonText = output.slice(start, end + 1);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    throw new Error(`proposeCandidateHorizons: JSON parse failed — ${err.message}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('proposeCandidateHorizons: expected JSON array');
+  }
+
+  const candidates = parsed
+    .filter(c => c && typeof c === 'object')
+    .map(c => ({
+      title: typeof c.title === 'string' ? c.title.trim() : '',
+      confidence: typeof c.confidence === 'number' ? c.confidence : Number(c.confidence),
+      rationale: typeof c.rationale === 'string' ? c.rationale.trim() : ''
+    }))
+    .filter(c =>
+      c.title.length > 0 &&
+      typeof c.confidence === 'number' && !Number.isNaN(c.confidence) &&
+      c.confidence >= 0 && c.confidence <= 1 &&
+      c.rationale.length > 0
+    );
+
+  if (candidates.length < 3) {
+    throw new Error(`proposeCandidateHorizons: expected 3 valid candidates, got ${candidates.length}`);
+  }
+
+  return candidates.slice(0, 3);
+}
+
 async function autopilotAtris(description, options = {}) {
   const {
     maxIterations = 100,
@@ -893,6 +1003,7 @@ module.exports = {
   buildPrompt,
   getIdleTickCount,
   getRecentSignals,
+  proposeCandidateHorizons,
   runTaskOnce,
   suggestNextTask
 };
