@@ -35,14 +35,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T9:** Recompile `atris/wiki/syntheses/atris-cli-overview.md` against current sources. Rewrite the body to reflect shipped surface as of 2026-04-08: pin version 2.8.0; expand the workspace layers from 4 to include `features/`, `skills/`, `team/`, and `lessons.md`; add one paragraph on the extended loop (`brainstorm` → `plan`/`do`/`review` → `autopilot`/`run` → `loop`) with endgame-driven autopilot and experiments/Endstate benchmark called out as the self-improvement rail; keep it tight (synthesis, not manual — target ~25-35 lines of body). Add `atris.md` to `sources` (the spec is load-bearing for plan/do/review wording). Bump `last_compiled` and `updated` to 2026-04-08. Add Cross-References to `[[atris/wiki/systems/atris-cli.md]]` and `[[atris/wiki/concepts/wiki-as-memory-substrate.md]]` alongside the existing plan-do-review-loop link. Exit condition: `node bin/atris.js clean --dry-run` does not flag this page as stale, frontmatter validates, and the body names (verbatim): autopilot, endgame, experiments, wiki loop, skills, features, lessons. [execute]
-  **Claimed by:** Executor at 2026-04-08T12:03:04.213Z
-  **Stage:** DO
-
 ---
 
 ## Completed
 
+- [x] T10: Scrubbed "company-as-mini-AGI" → "AI-native company" in `atris/wiki/syntheses/atris-labs-workspace-protocol.md:18`; grep clean, intro still frames Atris Labs as the dogfood/reference workspace (2026-04-08)
 - [x] T6c: Refresh `atris/MAP.md` for the Endstate run surface and clear the last broken MAP ref blocking a green verifier pass (2026-04-08)
 - [x] T6d: Rewrite `atris/features/endstate/validate.md` around shipped dry-run commands, exit condition, and focused harness checks (2026-04-08)
 - [x] T6e: Promote `endstate` from Active Features to Completed Features with shipped status and date (2026-04-08)
