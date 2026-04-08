@@ -22,7 +22,7 @@ const PHASE_TIMEOUT = 600000; // 10 min per phase
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
  */
-function suggestNextTask(cwd, skipped = new Set()) {
+async function suggestNextTask(cwd, skipped = new Set()) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
@@ -200,7 +200,20 @@ function suggestNextTask(cwd, skipped = new Set()) {
     }
   }
 
-  if (suggestions.length === 0) return null;
+  if (suggestions.length === 0) {
+    try {
+      const candidates = await proposeCandidateHorizons(cwd);
+      const top = candidates.reduce((best, c) => (c.confidence > best.confidence ? c : best), candidates[0]);
+      return {
+        task: top.title,
+        why: top.rationale,
+        kind: 'imagined',
+        priority: 99
+      };
+    } catch {
+      return null;
+    }
+  }
 
   suggestions.sort((a, b) => a.priority - b.priority);
   return suggestions[0];
@@ -892,7 +905,7 @@ async function autopilotAtris(description, options = {}) {
       break;
     }
 
-    const suggestion = suggestNextTask(cwd, skipped);
+    const suggestion = await suggestNextTask(cwd, skipped);
 
     if (!suggestion) {
       console.log('  nothing to do. workspace is clean.');
