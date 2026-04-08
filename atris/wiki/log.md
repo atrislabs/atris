@@ -2,6 +2,11 @@
 
 ## 2026-04-08
 
+- INGEST atris-labs top 3 sources -> wiki index/log/STATUS refreshed
+  - source: /Users/keshavrao/arena/atris-business/atris-labs/atris.md
+  - source: /Users/keshavrao/arena/atris-business/atris-labs/goals.md
+  - source: /Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md
+  - index entries: syntheses/atris-labs-workspace-protocol, concepts/atris-labs-goals, systems/atris-labs
 - SCAN /Users/keshavrao/arena/atris-business/atris-labs/ — picked top 3 foundational sources for ingest
   - #1 `/Users/keshavrao/arena/atris-business/atris-labs/atris.md` (57 lines) — workspace protocol, on-load sequence, layout, surfaces, north star. The operating contract for the reference implementation. → synthesis or entity page for atris-labs workspace.
   - #2 `/Users/keshavrao/arena/atris-business/atris-labs/goals.md` (32 lines) — north star, 2026 Q2 targets ($1M ARR, 10 customers), H2 plan, standing constraints. Durable company direction. → concept/entity page for atris-labs goals.
