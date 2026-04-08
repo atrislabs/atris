@@ -119,9 +119,10 @@ async function suggestNextTask(cwd, skipped = new Set()) {
       });
       if (items.length > 0) {
         const firstItem = items[0].replace(/^-\s*\*\*I\d+:\*\*\s*/, '').replace(/^-\s*/, '').trim();
-        if (!skipped.has(firstItem)) {
+        const inboxTaskTitle = `Break down inbox idea: "${firstItem}"`;
+        if (!skipped.has(inboxTaskTitle)) {
           suggestions.push({
-            task: `Break down inbox idea: "${firstItem}"`,
+            task: inboxTaskTitle,
             why: `${items.length} raw idea${items.length > 1 ? 's' : ''} sitting in the inbox. Needs to become concrete tasks before anything can happen.`,
             kind: 'inbox',
             priority: 6
