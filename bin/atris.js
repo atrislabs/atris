@@ -814,6 +814,8 @@ if (command === 'init') {
     if (serveArgs[i] === '--agent' && serveArgs[i + 1]) {
       serveOptions.agent = serveArgs[i + 1];
       i++;
+    } else if (serveArgs[i] === '--allow-bash') {
+      serveOptions.allowBash = true;
     }
   }
   require('../commands/serve').serveAtris(serveOptions)
