@@ -33,7 +33,11 @@ const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const HEARTBEAT_INTERVAL_MS = 30000;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
-const BASH_TIMEOUT_MS = 30000;
+// Bash commands are bounded to 10s — long batches won't lock the CLI for hours
+const BASH_TIMEOUT_MS = 10000;
+// Hard size limits to prevent OOM on large payloads
+const MAX_WRITE_BYTES = 10 * 1024 * 1024;  // 10 MB
+const MAX_EDIT_BYTES = 1 * 1024 * 1024;    // 1 MB find/replace
 
 function getToken() {
   const creds = loadCredentials();
@@ -81,10 +85,15 @@ async function applyOp(workingDir, op) {
     const type = op.type;
 
     if (type === 'write') {
+      const content = op.content || '';
+      const bytes = Buffer.byteLength(content, 'utf8');
+      if (bytes > MAX_WRITE_BYTES) {
+        return { status: 'error', result: { error: `content exceeds ${MAX_WRITE_BYTES} bytes` } };
+      }
       const target = safePath(workingDir, op.path);
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, op.content || '', 'utf8');
-      return { status: 'ok', result: { bytes_written: Buffer.byteLength(op.content || '', 'utf8') } };
+      fs.writeFileSync(target, content, 'utf8');
+      return { status: 'ok', result: { bytes_written: bytes } };
     }
 
     if (type === 'read') {
@@ -97,9 +106,17 @@ async function applyOp(workingDir, op) {
     }
 
     if (type === 'edit') {
+      if (Buffer.byteLength(op.find || '', 'utf8') > MAX_EDIT_BYTES ||
+          Buffer.byteLength(op.replace || '', 'utf8') > MAX_EDIT_BYTES) {
+        return { status: 'error', result: { error: `find/replace exceeds ${MAX_EDIT_BYTES} bytes` } };
+      }
       const target = safePath(workingDir, op.path);
       if (!fs.existsSync(target)) {
         return { status: 'error', result: { error: 'file not found' } };
+      }
+      const stat = fs.statSync(target);
+      if (stat.size > MAX_WRITE_BYTES) {
+        return { status: 'error', result: { error: `file too large (>${MAX_WRITE_BYTES} bytes)` } };
       }
       const original = fs.readFileSync(target, 'utf8');
       if (!original.includes(op.find)) {
@@ -121,7 +138,8 @@ async function applyOp(workingDir, op) {
 
     if (type === 'bash') {
       // Execute bash in the working directory with a timeout.
-      // Note: This is a powerful op — only the session owner can dispatch it.
+      // Note: This is a powerful op — only the session owner can dispatch it,
+      // AND the session must have been created with allow_bash=true.
       try {
         const stdout = execSync(op.command, {
           cwd: workingDir,
@@ -129,14 +147,22 @@ async function applyOp(workingDir, op) {
           encoding: 'utf8',
           maxBuffer: 10 * 1024 * 1024,
         });
-        return { status: 'ok', result: { stdout: stdout.slice(0, 100000), exit_code: 0 } };
+        const truncated = stdout.length > 100000;
+        return {
+          status: 'ok',
+          result: { stdout: stdout.slice(0, 100000), truncated, exit_code: 0 },
+        };
       } catch (execErr) {
+        const stderr = (execErr.stderr || '').toString();
+        const stdout = (execErr.stdout || '').toString();
         return {
           status: 'error',
           result: {
             error: execErr.message,
-            stdout: (execErr.stdout || '').toString().slice(0, 100000),
-            stderr: (execErr.stderr || '').toString().slice(0, 100000),
+            stdout: stdout.slice(0, 100000),
+            stderr: stderr.slice(0, 100000),
+            stdout_truncated: stdout.length > 100000,
+            stderr_truncated: stderr.length > 100000,
             exit_code: execErr.status ?? 1,
           },
         };
@@ -250,6 +276,7 @@ async function serveAtris(options = {}) {
   const token = getToken();
   const workingDir = process.cwd();
   const agentId = options.agent || null;
+  const allowBash = options.allowBash === true;
 
   console.log('');
   console.log('╭──────────────────────────────────────────╮');
@@ -258,6 +285,7 @@ async function serveAtris(options = {}) {
   console.log('');
   console.log(`  📁 Directory: ${workingDir}`);
   console.log(`  🤖 Agent:     ${agentId || '(none)'}`);
+  console.log(`  ⚡ Bash:      ${allowBash ? 'enabled (REMOTE BASH ALLOWED)' : 'disabled (read/write/edit/delete only)'}`);
   console.log('');
 
   // Register the session
@@ -269,6 +297,7 @@ async function serveAtris(options = {}) {
       body: {
         working_directory: workingDir,
         agent_id: agentId,
+        allow_bash: allowBash,
       },
     });
     if (!result.ok) {
