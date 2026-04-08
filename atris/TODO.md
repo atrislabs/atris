@@ -15,16 +15,24 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** wiki-from-atris-labs
-**Picked:** 2026-04-08
-**Horizon:** atris-cli wiki has 3 new pages ingested from `/Users/keshavrao/arena/atris-business/atris-labs/`, with `index.md`, `log.md`, and `STATUS.md` updated to reflect them. Zero broken refs. Zero stale pages from this ingest.
-**Identity:** A wiki that is alive — not write-once. Sources land here as soon as they exist; the loop keeps memory fresh without a human pulling the trigger.
-**Source:** user-prompt (Keshav, 2026-04-08, "wiki to update would be great. you can work with atris-business/atris-labs as our wiki")
+**Slug:** wiki-for-atrisos-web
+**Picked:** 2026-04-08 (boundary auto-pickup from inbox I1)
+**Horizon:** `/Users/keshavrao/arena/atrisos-web/atris/wiki/` exists with the standard scaffold (`index.md`, `log.md`, `STATUS.md`, `wiki.md` protocol), 3 entity pages for the major subsystems (app/, components/, lib/), and 1 synthesis page tying them together. Zero broken refs. Seeded from a real codebase scan, not guesses.
+**Identity:** A wiki that bootstraps any project — proving the Memex pattern is portable beyond atris-cli. Same shape, different repo, same intelligence loop.
+**Source:** inbox I1 (Keshav, 2026-04-08, "create wiki for arena/atrisos-web from scratch")
+
+**Note:** atrisos-web already has an `atris/` folder with the standard scaffold (`MAP.md`, `TODO.md`, `team/`, `skills/`, `logs/`, `features/`) but NO `wiki/` directory. This endgame creates and seeds it.
+
+**Prior endgame closed:** `wiki-from-atris-labs` — W1, W2, W3, W3b, W4a, W4b, W5a/b/c shipped (9 tasks, ~10 commits). Parser bug found and fixed mid-flight (`4db14d9`). Commits: cfd3030, bb4051d, 7ed4d3b, 6129a32, 7fa29ef, 40db84c, plus follow-ups.
 
 ---
 
 ## Backlog
 
+- **E2:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-api.md` — entity page for `app/api/` (41 route groups, 169 dirs — backend route layer). Frontmatter contract (type/slug/title/sources/created/updated/tags). Cite absolute path in sources. [endgame]
+- **E3:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-routes.md` — entity page for `app/` route tree excluding `api/` (Next.js app router user-facing pages). Frontmatter contract, cite absolute path. [endgame]
+- **E4:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-middleware.md` — entity page for `middleware.ts` (410-line request gate: auth, routing, redirects). Frontmatter contract, cite absolute path. [endgame]
+- **E5:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/syntheses/atrisos-web-overview.md` — architectural synthesis: request flow `middleware → app/(route) → app/api/(handler) → response`. Cite the 3 entity pages. Refresh `atrisos-web/atris/wiki/index.md` + `STATUS.md` after. [endgame]
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
 ---
