@@ -26,25 +26,25 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **M1:** Add `getIdleTickCount(cwd)` helper to `commands/autopilot.js` — scan today's journal `## Notes` for "0 tasks in 0s" markers and return the count of consecutive idle ticks. Pure read-only, no side effects. Place near `printTickStatus()`. Exit: function exists, returns an integer, called nowhere yet. [endgame]
-- **M2:** Add `getRecentSignals(cwd)` helper to `commands/autopilot.js` — read `git log --oneline -20`, `atris/wiki/STATUS.md` (if exists), `atris/lessons.md` (last 10 lines), and return `{ recentCommits, wikiHealth, recentLessons }`. Pure read-only. Exit: function exists, returns the struct, no callers yet. [endgame]
 - **M3:** Add `proposeCandidateHorizons(cwd)` async helper to `commands/autopilot.js` — combines `getIdleTickCount` + `getRecentSignals`, builds a prompt asking the LLM "the loop has been idle N ticks. recent commits/wiki/lessons say X. propose 3 next horizons with one-line title + confidence 0-1 + one-sentence rationale", spawns `claude -p` with the prompt, parses the JSON response into `[{ title, confidence, rationale }]`. Exit: function exists, returns an array of 3 candidates when called, all candidates are real strings (not placeholders). [endgame]
 - **M4:** Modify `suggestNextTask(cwd)` in `commands/autopilot.js` — at the very END (after all 9 reactive signals + the existing fallback), if `suggestions.length === 0`, call `proposeCandidateHorizons(cwd)`, pick the highest-confidence one, return `{ task: candidate.title, why: candidate.rationale, kind: 'imagined', priority: 99 }`. Additive — only fires when nothing else does. Exit: dry-run from a clean workspace returns an `imagined` suggestion. [endgame]
 - **M5:** Verify M4 end-to-end and journal the result — run `atris autopilot --dry-run` from the current clean workspace, observe an `imagined` suggestion fire, append a `### M2 verification — HH:MM` entry to today's journal `## Notes` with the candidate that was proposed and a one-line takeaway. Exit: dry-run shows `kind: imagined` for at least one suggestion AND journal has the verification entry. [endgame]
+- **T8:** Smoke-test M2's `getRecentSignals(cwd)` in isolation (before M3 consumes it). From atris-cli root run `node -e "const s=require('./commands/autopilot').getRecentSignals(process.cwd()); console.log(JSON.stringify({commits: s.recentCommits.length, commitsType: Array.isArray(s.recentCommits), wikiType: typeof s.wikiHealth, lessons: s.recentLessons.length, lessonsType: Array.isArray(s.recentLessons)}, null, 2));"` and confirm: `commits >= 1`, `commitsType === true`, `wikiType === 'string'` (atris/wiki/STATUS.md exists in this repo), `lessons === 10`, `lessonsType === true`. Then run `npm test` and confirm 119/119 still green (no regression). Append a one-line `### M2 smoke — HH:MM` entry to today's journal `## Notes` with the result. Pattern to mirror: `getIdleTickCount` at `commands/autopilot.js:649` (pure read, try/catch each source, safe defaults on failure). Exit: smoke output matches the four assertions, tests still 119/119, journal entry exists. [execute]
 
 ---
 
 ## In Progress
 
-- **T7:** Split Endstate into real baseline vs stack live runners
-  **Done when:** `atris experiments run endstate-baseline` and `... endstate-stack` resolve different runner configs, the active runner is captured in the artifact, and focused tests prove the split without changing the receipt schema. [execute]
-  **Claimed by:** Codex at 2026-04-08 04:50 PDT
+- **M2:** Add `getRecentSignals(cwd)` helper to `commands/autopilot.js` — read `git log --oneline -20`, `atris/wiki/STATUS.md` (if exists), `atris/lessons.md` (last 10 lines), and return `{ recentCommits, wikiHealth, recentLessons }`. Pure read-only. Exit: function exists, returns the struct, no callers yet. [endgame]
+  **Claimed by:** Executor at 2026-04-08T19:16:24.997Z
   **Stage:** DO
 
 ---
 
 ## Completed
 
+- [x] M1: Add `getIdleTickCount(cwd)` helper to `commands/autopilot.js` — scans today's journal `## Notes` bottom-up for `0 tasks in 0s` markers (case-insensitive substring), counts consecutive matches, returns 0 when journal absent or no `## Notes` section. Pure read-only, no callers yet. Tests 119/119 green (2026-04-08)
+- [x] T7: Split Endstate into real baseline vs stack live runners — per-pack runner profiles now drive different benchmark prompt strategies and are captured in receipts (2026-04-08)
 - [x] T4e: Closeout endgame `wiki-for-atrisos-web` — `atris clean --dry-run` from atrisos-web reports 0 stale tasks / 0 broken refs / 0 stale wiki pages; closeout Notes line appended to atris-cli journal (2026-04-08)
 - [x] T4d: Refresh atrisos-web/atris/wiki/STATUS.md — Health 4/2, Next-ingests horizon met with I1 dir enumeration, T2/T3 rationale appended to Notes (2026-04-08)
 - [x] T4c: Refresh atrisos-web/atris/wiki/index.md — added client-primitives entity bullet + auth-flow synthesis bullet (2026-04-08)
