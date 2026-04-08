@@ -639,6 +639,41 @@ function printTickStatus(cwd) {
   console.log('  └' + '─'.repeat(W - 2) + '┘');
 }
 
+/**
+ * Count consecutive idle-tick markers at the bottom of today's journal `## Notes`.
+ * Idle marker is the literal substring `0 tasks in 0s` (case-insensitive). Scans
+ * the Notes section bottom-up; the first non-marker, non-blank line breaks the
+ * streak. Returns 0 when the journal is missing or has no `## Notes` section.
+ * Pure read-only — no side effects, no callers yet.
+ */
+function getIdleTickCount(cwd) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const journalPath = path.join(cwd, 'atris', 'logs', String(yyyy), `${yyyy}-${mm}-${dd}.md`);
+
+  if (!fs.existsSync(journalPath)) return 0;
+
+  const content = fs.readFileSync(journalPath, 'utf8');
+  const notesMatch = content.match(/##\s+Notes\s*\n([\s\S]*?)(?=\n##\s|$)/);
+  if (!notesMatch) return 0;
+
+  const marker = '0 tasks in 0s';
+  const lines = notesMatch[1].split('\n');
+  let count = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    if (line.toLowerCase().includes(marker)) {
+      count += 1;
+      continue;
+    }
+    break;
+  }
+  return count;
+}
+
 async function autopilotAtris(description, options = {}) {
   const {
     maxIterations = 100,
@@ -816,6 +851,7 @@ module.exports = {
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
+  getIdleTickCount,
   runTaskOnce,
   suggestNextTask
 };
