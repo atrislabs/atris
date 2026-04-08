@@ -78,7 +78,10 @@ async function planAtris(userInput = null) {
   const inboxCount = inboxContext
     ? inboxContext
         .split('\n')
-        .filter((line) => line.trim().startsWith('-'))
+        .filter((line) => {
+          const t = line.trim();
+          return t.startsWith('- ') && t.length > 2;
+        })
         .length
     : 0;
 
@@ -794,64 +797,77 @@ async function reviewAtris() {
     }
   }
 
-  console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Review — Validator Agent Activated                    │');
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
-
-  console.log('📁 CONTEXT FILES (agent should read):');
-  console.log(`- Validator spec: ${validatorPath}`);
-  console.log(`- Testing guide: ${testingGuideRef || '(none found)'}`);
-  console.log(`- Persona: ${personaRef || 'atris/PERSONA.md (missing)'}`);
   const mapDisplay = mapPath
     ? `${mapPath}${mapIsPlaceholder ? ' (placeholder — generate first)' : ''}`
     : 'atris/MAP.md (missing)';
-  console.log(`- MAP: ${mapDisplay}`);
-  console.log(`- TODO: ${todoPathRef || 'atris/TODO.md (missing)'}`);
-  console.log(`- Journal (today): ${journalPathRef}`);
-  console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
-  console.log('');
 
-  console.log(`🧪 Feature validate scripts found: ${featureValidateRefs.length}`);
-  if (featureValidateRefs.length > 0) {
-    featureValidateRefs.slice(0, 3).forEach((ref) => console.log(`- ${ref}`));
-    if (featureValidateRefs.length > 3) {
-      console.log(`- ... (+${featureValidateRefs.length - 3} more)`);
+  if (showFull) {
+    console.log('');
+    console.log('┌─────────────────────────────────────────────────────────────┐');
+    console.log('│ Atris Review — Validator Agent Activated                    │');
+    console.log('└─────────────────────────────────────────────────────────────┘');
+    console.log('');
+
+    console.log('📁 CONTEXT FILES (agent should read):');
+    console.log(`- Validator spec: ${validatorPath}`);
+    console.log(`- Testing guide: ${testingGuideRef || '(none found)'}`);
+    console.log(`- Persona: ${personaRef || 'atris/PERSONA.md (missing)'}`);
+    console.log(`- MAP: ${mapDisplay}`);
+    console.log(`- TODO: ${todoPathRef || 'atris/TODO.md (missing)'}`);
+    console.log(`- Journal (today): ${journalPathRef}`);
+    console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+    console.log('');
+
+    console.log(`🧪 Feature validate scripts found: ${featureValidateRefs.length}`);
+    if (featureValidateRefs.length > 0) {
+      featureValidateRefs.slice(0, 3).forEach((ref) => console.log(`- ${ref}`));
+      if (featureValidateRefs.length > 3) {
+        console.log(`- ... (+${featureValidateRefs.length - 3} more)`);
+      }
     }
-  }
-  console.log('');
+    console.log('');
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📋 COPY/PASTE PROMPT FOR YOUR CODING AGENT:');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-  console.log('You are the Validator.');
-  console.log('');
-  console.log('Read these files:');
-  console.log(`- ${validatorPath}`);
-  if (testingGuideRef) console.log(`- ${testingGuideRef}`);
-  if (personaRef) console.log(`- ${personaRef}`);
-  if (mapPath) console.log(`- ${mapPath}`);
-  if (todoPathRef) console.log(`- ${todoPathRef}`);
-  console.log(`- ${journalPathRef}`);
-  if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
-  console.log('');
-  if (!mapPath || mapIsPlaceholder) {
-    console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before validating file:line references.');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 COPY/PASTE PROMPT FOR YOUR CODING AGENT:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
+  } else {
+    // Plain-language default: short chief-of-staff briefing
+    console.log('');
+    console.log('atris review — validator.');
+    console.log(`i checked the workspace. map is ${mapPath ? 'present' : 'missing'}, todo is ${todoPathRef ? 'present' : 'missing'}, ${featureValidateRefs.length} feature validate scripts queued.`);
+    console.log('next i\'ll run tests, walk each validate.md, and clean completed tasks out of todo.md.');
+    console.log('(run `atris review --verbose` for the full prompt + appendix.)');
     console.log('');
   }
-  console.log('Workflow:');
-  console.log('1) Run the project test suite (follow TESTING_GUIDE if present).');
-  console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
-  console.log('3) Clean TODO.md: delete completed tasks. Target state = 0.');
-  console.log('   If a task fails validation, move back to ## Backlog with note.');
-  console.log('4) Log to atris/team/validator/journal/YYYY-MM-DD.md');
-  console.log('   (Task, Result, Issues found, Learned)');
-  console.log('5) If anything surprised you, append to atris/lessons.md.');
-  console.log('');
-  console.log('Done when: ✅ All good. TODO.md clean. Ready for human testing.');
-  console.log('');
+  if (showFull) {
+    console.log('You are the Validator.');
+    console.log('');
+    console.log('Read these files:');
+    console.log(`- ${validatorPath}`);
+    if (testingGuideRef) console.log(`- ${testingGuideRef}`);
+    if (personaRef) console.log(`- ${personaRef}`);
+    if (mapPath) console.log(`- ${mapPath}`);
+    if (todoPathRef) console.log(`- ${todoPathRef}`);
+    console.log(`- ${journalPathRef}`);
+    if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
+    console.log('');
+    if (!mapPath || mapIsPlaceholder) {
+      console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before validating file:line references.');
+      console.log('');
+    }
+    console.log('Workflow:');
+    console.log('1) Run the project test suite (follow TESTING_GUIDE if present).');
+    console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
+    console.log('3) Clean TODO.md: delete completed tasks. Target state = 0.');
+    console.log('   If a task fails validation, move back to ## Backlog with note.');
+    console.log('4) Log to atris/team/validator/journal/YYYY-MM-DD.md');
+    console.log('   (Task, Result, Issues found, Learned)');
+    console.log('5) If anything surprised you, append to atris/lessons.md.');
+    console.log('');
+    console.log('Done when: ✅ All good. TODO.md clean. Ready for human testing.');
+    console.log('');
+  }
 
   if (showFull) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -879,13 +895,15 @@ async function reviewAtris() {
     }
   }
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('💡 Next: Run "atris do" to fix any issues, then "atris review" again');
-  if (!showFull) {
-    console.log('   Tip: `atris review --full` prints full spec/context for copy/paste.');
+  if (showFull) {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('💡 Next: Run "atris do" to fix any issues, then "atris review" again');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
+  } else {
+    console.log('next: `atris do` to fix issues, then `atris review` again.');
+    console.log('');
   }
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
   
   // Check execution mode
   if (executionMode === 'agent') {
@@ -1009,19 +1027,25 @@ async function reviewAtris() {
     const hasHandoff = /## Handoff[\s\S]*?\*\*Context:\*\*/.test(journalContent);
 
     if (hasCompletions && !hasHandoff) {
-      console.log('');
-      console.log('┌─────────────────────────────────────────────────────────────┐');
-      console.log('│ 📝 SESSION HANDOFF                                          │');
-      console.log('├─────────────────────────────────────────────────────────────┤');
-      console.log('│ You have completions today. Write a handoff for next session│');
-      console.log('│                                                             │');
-      console.log('│ Add to ## Handoff section in today\'s journal:               │');
-      console.log('│   **Context:** [2 lines - what was accomplished]            │');
-      console.log('│   **Blockers:** [any issues hit, or "none"]                 │');
-      console.log('│   **Next:** [1 clear action for next session]               │');
-      console.log('│   **Learned:** [key insight or pattern discovered]          │');
-      console.log('└─────────────────────────────────────────────────────────────┘');
-      console.log('');
+      if (showFull) {
+        console.log('');
+        console.log('┌─────────────────────────────────────────────────────────────┐');
+        console.log('│ 📝 SESSION HANDOFF                                          │');
+        console.log('├─────────────────────────────────────────────────────────────┤');
+        console.log('│ You have completions today. Write a handoff for next session│');
+        console.log('│                                                             │');
+        console.log('│ Add to ## Handoff section in today\'s journal:               │');
+        console.log('│   **Context:** [2 lines - what was accomplished]            │');
+        console.log('│   **Blockers:** [any issues hit, or "none"]                 │');
+        console.log('│   **Next:** [1 clear action for next session]               │');
+        console.log('│   **Learned:** [key insight or pattern discovered]          │');
+        console.log('└─────────────────────────────────────────────────────────────┘');
+        console.log('');
+      } else {
+        console.log('');
+        console.log('you have completions today. add a ## Handoff block to the journal (context / blockers / next / learned).');
+        console.log('');
+      }
     }
   }
 
@@ -1029,10 +1053,14 @@ async function reviewAtris() {
   if (!process.stdin.isTTY) return;
 
   console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ 💡 Any learnings?                                           │');
-  console.log('│ (Enter insight, or press Enter to skip)                     │');
-  console.log('└─────────────────────────────────────────────────────────────┘');
+  if (showFull) {
+    console.log('┌─────────────────────────────────────────────────────────────┐');
+    console.log('│ 💡 Any learnings?                                           │');
+    console.log('│ (Enter insight, or press Enter to skip)                     │');
+    console.log('└─────────────────────────────────────────────────────────────┘');
+  } else {
+    console.log('any learnings? (enter to skip)');
+  }
 
   const readline = require('readline');
   const rl = readline.createInterface({

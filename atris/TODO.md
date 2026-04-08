@@ -24,15 +24,30 @@ then /endgame picks the next horizon at the boundary.
 
 ---
 
-## Backlog Three coupled edits in `commands/autopilot.js`, must land together: (1) `commands/autopilot.js:25` — change signature `function suggestNextTask(cwd, skipped = new Set())` → `async function suggestNextTask(cwd, skipped = new Set())`. (2) `commands/autopilot.js:203` — replace `if (suggestions.length === 0) return null;` with a try/catch that calls `await proposeCandidateHorizons(cwd)`, picks the candidate with the highest `confidence` (use a `reduce`, not `sort` — the array is exactly 3), and returns `{ task: top.title, why: top.rationale, kind: 'imagined', priority: 99 }`; on any throw (the helper validates strictly and rejects with `proposeCandidateHorizons: ...` errors) `return null` so the loop's existing `if (!suggestion) → "nothing to do. workspace is clean."` path still works. (3) `commands/autopilot.js:895` — update the only caller to `const suggestion = await suggestNextTask(cwd, skipped);`. The call site is inside the already-async `autopilotAtris` for-loop but **outside** any try/catch — leaving it sync would silently return a Promise and break the `if (!suggestion)` branch, which is the bug the try/catch in step 2 protects against. Do NOT touch the 9 reactive signals above line 203, the lessons-harvest fallback (lines 182-201), the sort/return at lines 205-206, or `module.exports.suggestNextTask` at line 1008 (function reference export — async wrapper passes through fine). Do NOT add a new `skipped`-key kind for `imagined` — the fallback only fires when `suggestions.length === 0`, so dedupe is unnecessary. Pattern to mirror: existing return shapes at lines 35-40 (endgame) and 49-54 (resume). No tests reference `suggestNextTask` (grep'd), so no test updates required. Exit: (a) `node -e "console.log(require('./commands/autopilot').suggestNextTask.constructor.name)"` from atris-cli root prints `AsyncFunction`; (b) `npm test` shows no new failures vs the pre-existing 121/123 baseline (the 2 known T7 `getContextFiles-dead-return` fails are unrelated and pre-date this task). End-to-end `imagined`-suggestion verification and journaling are owned by M5 — do not duplicate that work in T14. [execute]
+## Backlog
+
+- **T20:** Rewrite cron tick summaries written into journal `## Notes` (the `/loop` heartbeat line) so a non-technical reader scanning today's journal can follow the loop's day. Exit: new heartbeat format lands in `commands/autopilot.js` (or wherever the Notes append lives); one real tick produces the new line. [execute]
+- **T21:** Validate human-output end-to-end — run one full plan→do→review cycle, screenshot/capture each surface, confirm ≤20 lines × ≤80 chars and that a non-technical reader can decide approve/hold. Append verdict to `atris/features/human-output/validate.md`. Exit: validate.md exists with pass/fail per surface. [explore]
 
 ---
 
 ## In Progress
+
+- **T19:** Rewrite validator / review-phase messages in `commands/workflow.js` (and `commands/run.js` summary) to plain language. [execute]
+  - Claimed by: Executor at 2026-04-08T21:40:28.120Z
+  - **T19a:** workflow.js reviewAtris() plain-language default, `--verbose` keeps boxes.
+  - **T19b:** run.js cycle summary plain-language default, `--verbose` keeps banners.
+  - **T19c:** Smoke-test + paste into validate.md. [explore]
+
 ---
 
 ## Completed
 
+- [x] T18: Rewrite `atris status` to the chief-of-staff format — default output now gives short "where we are / what is queued / what is blocking" sections, `--verbose` keeps the legacy task board, and `node --test test/commands.test.js` stayed green (2026-04-08)
+- [x] T17: Rewrite the autopilot visual tick block in `commands/autopilot.js` to the chief-of-staff format — default output is now plain-language briefing copy, `--verbose` keeps the legacy boxy engineering view, and `node --test test/commands.test.js` stayed green (2026-04-08)
+- [x] T16: Draft the chief-of-staff output template — wrote `atris/features/human-output/examples.md` with happy-tick, idle-tick, and validator-pass examples, each 12 lines and under 80 chars wide (2026-04-08)
+- [x] T15: Audited tick/status/validator output surfaces — audit table in `atris/features/human-output/idea.md` under `## Surface audit` covers `autopilot.js`, `status.js`, `workflow.js`, `run.js` with file:line + shape + what-it-prints per surface (2026-04-08)
+- [x] T22: Standardize `atris-labs-canonical` from `wiki/synthesis/` to `wiki/briefs/` — moved the root wiki folder, rewrote live markdown links/docs/counts, and cleared the last old-path hits in `atris-business` (2026-04-08)
 - [x] T14: M4 — wired `proposeCandidateHorizons` into `suggestNextTask` as imagined-fallback (async signature, try/catch with reduce for top confidence, caller awaited). `suggestNextTask.constructor.name === 'AsyncFunction'`, npm test 121/123 (baseline) (2026-04-08)
 - [x] T12: Smoke-test M3's `proposeCandidateHorizons(cwd)` in isolation — live `claude -p` call returned `isArray=true`, `len=3`, `allReal=true`; top candidate was the known `getContextFiles-dead-return` bug (0.93). `npm test` 121/123 (baseline — same 2 pre-existing fails). Journal entry `### M3 smoke — 13:42` appended (2026-04-08)
 - [x] T8: Smoke-test M2's `getRecentSignals(cwd)` regression check post M3/M4/M5 — commits=20, commitsType=true, wikiType='string', lessons=10, lessonsType=true; `npm test` 121/123 (matches baseline, the 2 fails are pre-existing `getContextFiles-dead-return`); journal entry `### M2 smoke — 13:30` appended (2026-04-08)
