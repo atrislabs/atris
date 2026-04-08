@@ -362,9 +362,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:717` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:886` (autopilotFromTodo function)
-- **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function)
+- **Entry point:** `commands/autopilot.js:840` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:1009` (autopilotFromTodo function)
+- **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
   - 2. Stale wiki pages (source changed since last_compiled)
@@ -373,13 +373,14 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 5. Backlog tasks from TODO.md
   - 6. Unprocessed inbox items from journal
   - 7. Periodic review (MAP.md stale >7 days)
+  - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:335` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:496` (`runTaskOnce`) — executes plan → do → review once and returns per-phase prompts, outputs, and elapsed time for benchmark receipts
-- **Phase executor:** `commands/autopilot.js:260` (executePhase function) — runs `claude -p`
-- **Approval gate:** `commands/autopilot.js:212` (askApproval function) — enter/skip/quit
-- **Idle-tick helper:** `commands/autopilot.js:649` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:684` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:726` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Single-task runner:** `commands/autopilot.js:509` (`runTaskOnce`) — executes plan → do → review once and returns per-phase prompts, outputs, and elapsed time for benchmark receipts
+- **Phase executor:** `commands/autopilot.js:273` (executePhase function) — runs `claude -p`
+- **Approval gate:** `commands/autopilot.js:225` (askApproval function) — enter/skip/quit
+- **Idle-tick helper:** `commands/autopilot.js:662` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:697` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Candidate-horizons helper:** `commands/autopilot.js:739` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
 
