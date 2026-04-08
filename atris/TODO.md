@@ -38,6 +38,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] T4: Fix MAP.md broken ref `commands/verify.js:14-47` → `13-35` (2026-04-08)
 - [x] W5a/b/c: Refresh wiki index.md, log.md, STATUS.md for atris-labs ingest (2026-04-08)
 - [x] W1: Scan atris-labs and pick top 3 ingest sources (atris.md, goals.md, MEMBER.md) — SCAN entry in atris/wiki/log.md
 - [x] T3: Fix broken MAP.md ref for `statusAtris()` (commit c9a299e)
