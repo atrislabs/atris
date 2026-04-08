@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-04-07
+last_compiled: 2026-04-08
 sources:
   - commands/loop.js
   - commands/wiki.js
@@ -7,7 +7,6 @@ sources:
   - bin/atris.js
   - test/commands.test.js
   - test/cli-smoke.test.js
-  - atris/skills/loop/SKILL.md
 ---
 
 # Wiki Upkeep Loop — Validation
@@ -43,7 +42,7 @@ sources:
 ### Pass 3
 
 - Command: `npm test`
-- Result: pass (98/98)
+- Result: pass (118/118)
 
 ### Pass 4
 
