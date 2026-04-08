@@ -805,6 +805,22 @@ if (command === 'init') {
     });
 } else if (command === 'console') {
   consoleCmd();
+} else if (command === 'serve') {
+  // Start the local AI Computer bridge — make this directory addressable
+  // by cloud agents via the Atris API
+  const serveArgs = process.argv.slice(3);
+  const serveOptions = {};
+  for (let i = 0; i < serveArgs.length; i++) {
+    if (serveArgs[i] === '--agent' && serveArgs[i + 1]) {
+      serveOptions.agent = serveArgs[i + 1];
+      i++;
+    }
+  }
+  require('../commands/serve').serveAtris(serveOptions)
+    .catch((err) => {
+      console.error(`✗ atris serve failed: ${err.message}`);
+      process.exit(1);
+    });
 } else if (command === 'version') {
   require('../commands/version').showVersion();
 } else if (command === 'login') {
