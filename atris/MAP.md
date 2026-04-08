@@ -115,7 +115,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `bin/atris.js` command routing for `experiments`
 - **Handler:** `commands/experiments.js`
-- **Core functions:** `commands/experiments.js:52` (`ensureExperimentsFramework`), `commands/experiments.js:271` (`buildBenchmarkArtifact`), `commands/experiments.js:364` (`experimentsRun`)
+- **Core functions:** `commands/experiments.js:52` (`ensureExperimentsFramework`), `commands/experiments.js:307` (`buildBenchmarkArtifact`), `commands/experiments.js:406` (`experimentsRun`)
 - **How it works:**
 - `atris init` now prepares `atris/experiments/` with packaged validators, fixtures, templates, and smoke examples
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
@@ -139,7 +139,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Updates local atris.md to latest package version
 
-- **Entry point:** `commands/sync.js:123-436` (syncAtris function)
+- **Entry point:** `commands/sync.js:126-441` (syncAtris function)
 - **Logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -362,8 +362,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:840` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:1009` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js:1001` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:1308` (autopilotFromTodo function)
+- **Heartbeat writer:** `commands/autopilot.js:575` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -374,13 +375,13 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 6. Unprocessed inbox items from journal
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
-- **Prompt builder:** `commands/autopilot.js:335` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
+- **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
 - **Single-task runner:** `commands/autopilot.js:509` (`runTaskOnce`) — executes plan → do → review once and returns per-phase prompts, outputs, and elapsed time for benchmark receipts
 - **Phase executor:** `commands/autopilot.js:273` (executePhase function) — runs `claude -p`
 - **Approval gate:** `commands/autopilot.js:225` (askApproval function) — enter/skip/quit
-- **Idle-tick helper:** `commands/autopilot.js:662` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:697` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:739` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Idle-tick helper:** `commands/autopilot.js:823` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:858` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Candidate-horizons helper:** `commands/autopilot.js:900` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
 
@@ -834,7 +835,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `statusAtris()` → `commands/status.js:15-216`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
-- `autopilotAtris()` → `commands/autopilot.js:674-838`
+- `autopilotAtris()` → `commands/autopilot.js:840-1004`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
