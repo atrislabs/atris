@@ -674,6 +674,46 @@ function getIdleTickCount(cwd) {
   return count;
 }
 
+/**
+ * Read recent project signals for horizon proposals. Returns:
+ *   - recentCommits: string[] from `git log --oneline -20` (empty on failure)
+ *   - wikiHealth: string of `atris/wiki/STATUS.md` contents, or null if missing
+ *   - recentLessons: string[] of last 10 non-empty lines from `atris/lessons.md`
+ * Pure read-only — try/catch each source, safe defaults on failure. No callers yet.
+ */
+function getRecentSignals(cwd) {
+  let recentCommits = [];
+  try {
+    const out = execSync('git log --oneline -20', { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    recentCommits = out.split('\n').filter(l => l.trim().length > 0);
+  } catch {
+    recentCommits = [];
+  }
+
+  let wikiHealth = null;
+  try {
+    const wikiStatusPath = path.join(cwd, 'atris', 'wiki', 'STATUS.md');
+    if (fs.existsSync(wikiStatusPath)) {
+      wikiHealth = fs.readFileSync(wikiStatusPath, 'utf8');
+    }
+  } catch {
+    wikiHealth = null;
+  }
+
+  let recentLessons = [];
+  try {
+    const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+    if (fs.existsSync(lessonsPath)) {
+      const lines = fs.readFileSync(lessonsPath, 'utf8').split('\n').filter(l => l.trim().length > 0);
+      recentLessons = lines.slice(-10);
+    }
+  } catch {
+    recentLessons = [];
+  }
+
+  return { recentCommits, wikiHealth, recentLessons };
+}
+
 async function autopilotAtris(description, options = {}) {
   const {
     maxIterations = 100,
@@ -852,6 +892,7 @@ module.exports = {
   autopilotFromTodo,
   buildPrompt,
   getIdleTickCount,
+  getRecentSignals,
   runTaskOnce,
   suggestNextTask
 };
