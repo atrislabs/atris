@@ -29,7 +29,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **E2:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-api.md` — entity page for `app/api/` (41 route groups, 169 dirs — backend route layer). Frontmatter contract (type/slug/title/sources/created/updated/tags). Cite absolute path in sources. [endgame]
 - **E3:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-routes.md` — entity page for `app/` route tree excluding `api/` (Next.js app router user-facing pages). Frontmatter contract, cite absolute path. [endgame]
 - **E4:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-middleware.md` — entity page for `middleware.ts` (410-line request gate: auth, routing, redirects). Frontmatter contract, cite absolute path. [endgame]
 - **E5:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/syntheses/atrisos-web-overview.md` — architectural synthesis: request flow `middleware → app/(route) → app/api/(handler) → response`. Cite the 3 entity pages. Refresh `atrisos-web/atris/wiki/index.md` + `STATUS.md` after. [endgame]
@@ -38,6 +37,8 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## In Progress
+
+- **E2:** Write atrisos-web-api.md entity page. Claimed by: Executor at 2026-04-08T09:40:10.346Z
 
 ---
 
