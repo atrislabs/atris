@@ -25,10 +25,9 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **W1:** Scan /Users/keshavrao/arena/atris-business/atris-labs/ structure and pick the top 3 highest-value source files to ingest into atris/wiki/ (look for READMEs, PLAYBOOKs, contracts, foundational docs). Write the picks to atris/wiki/log.md as a SCAN entry. [endgame]
-- **W2:** Ingest source #1 from atris-labs into atris/wiki/ as a new entity, concept, or synthesis page. Use frontmatter contract (type/slug/title/sources/created/updated/tags). Cite the absolute path in sources. [endgame]
-- **W3:** Ingest source #2 from atris-labs into atris/wiki/ as a new page (same frontmatter contract, cite absolute path in sources). [endgame]
-- **W4:** Ingest source #3 from atris-labs into atris/wiki/ as a new page (same frontmatter contract, cite absolute path in sources). [endgame]
+- **W2:** Ingest `/Users/keshavrao/arena/atris-business/atris-labs/atris.md` into `atris/wiki/` as a synthesis page (slug: `atris-labs-workspace-protocol`). Frontmatter contract: type/slug/title/sources/created/updated/tags. Cite absolute path in sources. [endgame] [execute]
+- **W3:** Ingest `/Users/keshavrao/arena/atris-business/atris-labs/goals.md` into `atris/wiki/` as a concept or entity page (slug: `atris-labs-goals`). Same frontmatter contract, cite absolute path. [endgame] [execute]
+- **W4:** Ingest `/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md` into `atris/wiki/` as an entity page (slug: `atris-labs`). Same frontmatter contract, cite absolute path. [endgame] [execute]
 - **W5:** Update atris/wiki/index.md (add 3 new entries under the right section), atris/wiki/log.md (append INGEST entry listing all 3 sources), and atris/wiki/STATUS.md (refresh health and next move). [endgame]
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
@@ -40,6 +39,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] W1: Scan atris-labs and pick top 3 ingest sources (atris.md, goals.md, MEMBER.md) — SCAN entry in atris/wiki/log.md
 - [x] T3: Fix broken MAP.md ref for `statusAtris()` (commit c9a299e)
 - [x] Refine Project Endstate one level deeper — neutral naming, `endgame`, Level 1 contract, shared artifact schema, and runnable experiment pack scaffolds
 - [x] Define Project Endstate benchmark pack — feature spec, build plan, validation script, and features index entry
