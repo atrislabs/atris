@@ -29,17 +29,16 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
-
 ---
 
 ## In Progress
+
+- **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute] — Claimed by: Executor at 2026-04-08T12:27:27.447Z
 
 ---
 
 ## Completed
 
-- [x] T10: Scrubbed "company-as-mini-AGI" → "AI-native company" in `atris/wiki/syntheses/atris-labs-workspace-protocol.md:18`; grep clean, intro still frames Atris Labs as the dogfood/reference workspace (2026-04-08)
 - [x] T6c: Refresh `atris/MAP.md` for the Endstate run surface and clear the last broken MAP ref blocking a green verifier pass (2026-04-08)
 - [x] T6d: Rewrite `atris/features/endstate/validate.md` around shipped dry-run commands, exit condition, and focused harness checks (2026-04-08)
 - [x] T6e: Promote `endstate` from Active Features to Completed Features with shipped status and date (2026-04-08)
