@@ -81,7 +81,14 @@ every tick eats most of the budget before the pick + run blocks print. Fix =
 render horizon in ≤ 2 sentences (or print the full horizon only on a boundary
 tick, slug-only after that).
 
-## Surface: status (default)
+## Surface: status
+
+Note: `atris status` with no sub-command is hijacked in this repo by
+`.atris/business.json` → `businessStatus('pallet')`, and the `--verbose`
+flag is swallowed by the same branch before parsing. To hit the T18
+chief-of-staff surface we invoke `statusAtris` directly.
+
+### Default mode
 
 Command: `node -e "require('./commands/status').statusAtris(false,false,false)"`
 
@@ -94,35 +101,77 @@ Command: `node -e "require('./commands/status').statusAtris(false,false,false)"`
   confidence scores, picks the highest, writes it to `## Endgame` + tagged
   backlog, and the next tick executes the first step. End state: the loop
   never silently idles for more than one tick — it always either has work or
-  has just imagined some. There are 0 tasks in progress, 11 queued, and 56
+  has just imagined some. There are 0 tasks in progress, 8 queued, and 59
   completed items still sitting in TODO.
 
   What is queued:
-  Next backlog item: Validate human-output end-to-end — run one full
-  plan→do→review cycle, screenshot/capture each surface, confirm ≤20 lines ×
-  ≤80 chars and that a non-technical reader can decide approve/hold. Append
-  verdict to `atris/features/human-output/validate.md`. Exit: validate.md
-  exists with pass/fail per surface.. Inbox has 4 items.
+  Next backlog item: Capture status output — run `atris status` (default)
+  and `atris status --verbose`, paste both into
+  `atris/features/human-output/validate.md` under `## Surface: status`. For
+  default mode only, mark pass/fail against ≤20 lines × ≤80 chars + "where
+  we are / queued / blocking" sections present + non-technical
+  approve-or-hold decidable. Verbose mode is captured for reference only, no
+  pass/fail. Exit: section has both blocks + 4 check results for default..
+  Inbox has 4 items.
 
   What is blocking:
-  Main drag: 56 completed items should be cleared from TODO. No team
+  Main drag: 59 completed items should be cleared from TODO. No team
   activity is logged yet today.
 ```
 
-Measurements: 22 content lines, max line width 83 chars.
+Measurements: 24 content lines, max line width ≈78 chars.
 
 | Check | Result | Notes |
 |---|---|---|
-| (i) ≤ 20 lines | **FAIL** | 22 lines. The horizon paragraph in "Where we are" is doing the overrun again. |
-| (ii) ≤ 80 chars wide | **FAIL** | Max 83 chars — wrapper is set to 74 inner chars but the 2-space indent + tail punctuation pushes a few lines to 83. |
-| (iii) "where we are / queued / blocking" sections present | **PASS** | All three sections render. |
-| (iv) non-technical approve-or-hold decidable | **PARTIAL** | Reader can tell what's queued + what's blocking, but there is no explicit "Decision:" line like the examples. |
+| (i) ≤ 20 lines | **FAIL** | 24 content lines. Horizon paragraph in "Where we are" eats 9 wrapped lines; "What is queued" eats 9 more because it renders the full next-backlog-item sentence verbatim. |
+| (ii) ≤ 80 chars wide | **PASS** | Wrapper at 74 + 2-space indent keeps every content line ≤78 chars. |
+| (iii) "where we are / queued / blocking" sections present | **PASS** | All three section headers render, each with body copy. |
+| (iv) non-technical approve-or-hold decidable | **PARTIAL** | Reader can see horizon + what's queued + what's blocking, but there is no explicit "Decision:" line like `examples.md`, so the approve/hold call is inferred not stated. |
 
-Surface verdict: **FAIL** — 2 chars over width, 2 lines over budget, and the decision line is implicit. Fix = tighten wrap width to ~78, summarize horizon in one sentence, add a trailing "Decision: …" line.
+Surface verdict: **FAIL** — width + sections pass, but 4 lines over the 20-line budget and the decision line is still implicit. Fix = summarize horizon in ≤2 sentences, truncate the "next backlog item" title to ~1 line, append a trailing `Decision: …` line.
 
-Routing side note: `atris status` (no sub-command) reads `.atris/business.json` and dispatches to `businessStatus('pallet')`, which prints a 333-line diff dump. Out of scope for human-output surface audit (not in T15 table), but worth flagging — it means a real operator running `atris status` in this repo today never sees the chief-of-staff output, they see the Pallet file list.
+### Verbose mode (reference only, no pass/fail)
 
-`atris status --verbose` reference capture was **not taken** — in this repo the sub-command branch fires before `--verbose` is parsed, so `--verbose` is ignored. Same routing bug.
+Command: `node -e "require('./commands/status').statusAtris(false,false,true)"`
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ TASK BOARD — 2026-04-08                                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   📋 Backlog (8)                                                 │
+│   ├─ T21c: Capture status output — run `atris status` (def...    │
+│   ├─ T21d: Capture validator/review output — run `atris re...    │
+│   ├─ T21e: Write the T21 verdict summary at the bottom of ...    │
+│   ├─ T23: Locate today's "heartbeat Notes line" writer — g...    │
+│   └─ T24: Add `appendTickSummary(cwd, { time, outcome, hor...    │
+│   └─ ... +3 more                                                 │
+│                                                                  │
+│   🔨 In Progress (0)                                             │
+│   (none)                                                         │
+│                                                                  │
+│   ✅ Done (59)  ← clean these up                                 │
+│                                                                  │
+│   📥 Inbox (4)                                                   │
+│   ├─ I3: Agent coordinator (IMPORTANT). Add a thin coordina      │
+│   ├─ I4: Refinement to M2 (loop-self-seeds-horizons). Befor      │
+│   ├─ I5: Rich per-tick visual interface. Every autopilot ti      │
+│   └─ ... +1 more                                                 │
+│                                                                  │
+│   📚 Lessons (23)                                                │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│ TEAM                                                              │
+│                                                                  │
+│   (no journal entries yet)                                       │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+  plan → do → review    (or: atris log to add ideas)
+```
+
+Captured for reference only — verbose mode is the legacy task-board surface
+and is explicitly out of scope for the ≤20 × ≤80 human-output audit.
 
 ## Surface: review (validator)
 
