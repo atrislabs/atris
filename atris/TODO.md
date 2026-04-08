@@ -29,10 +29,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T3:** Write `/Users/keshavrao/arena/atrisos-web/atris/wiki/syntheses/atrisos-web-auth-flow.md` — second synthesis page covering the auth/session request flow across `middleware.ts` → `app/(authed)` → `app/api/*` (the dominant concern identified in C21's middleware entity page: auth, CSRF, token refresh, audit logging). Cite the 3 existing entity pages (api, routes, middleware). Exit: file exists, cites ≥3 entity pages, passes `atris clean --dry-run` from atrisos-web. [execute] [endgame]
-
-- **T4:** Refresh `/Users/keshavrao/arena/atrisos-web/atris/wiki/{index.md,log.md,STATUS.md}` to include T2 + T3 (INGEST entries in log, links in index, STATUS marks endgame horizon met: 4 entity pages + 2 syntheses, all I1 dirs covered). Write a closeout Notes line in atris-cli today's journal. Exit: index/log/STATUS current, `atris clean --dry-run` from atrisos-web reports zero broken refs in the new wiki, closeout line in journal. [execute] [endgame]
-
 ---
 
 ## In Progress
@@ -41,7 +37,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
-- [x] T2: Wrote `/Users/keshavrao/arena/atrisos-web/atris/wiki/systems/atrisos-web-client-primitives.md` — single 56-line entity page covering components/+lib/+hooks/ (18 files: 13 shadcn primitives + 1 UseCaseCard + 3 lib utils + 1 toast hook), frontmatter contract with absolute source paths, `atris clean --dry-run` from atrisos-web green (2026-04-08)
+- [x] T4e: Closeout endgame `wiki-for-atrisos-web` — `atris clean --dry-run` from atrisos-web reports 0 stale tasks / 0 broken refs / 0 stale wiki pages; closeout Notes line appended to atris-cli journal (2026-04-08)
+- [x] T4d: Refresh atrisos-web/atris/wiki/STATUS.md — Health 4/2, Next-ingests horizon met with I1 dir enumeration, T2/T3 rationale appended to Notes (2026-04-08)
+- [x] T4c: Refresh atrisos-web/atris/wiki/index.md — added client-primitives entity bullet + auth-flow synthesis bullet (2026-04-08)
+- [x] T4b: Refresh atrisos-web/atris/wiki/log.md — prepended SYNTHESIS T3 (auth-flow) + INGEST T2 (client-primitives) above E5 entry (2026-04-08)
+- [x] T4a: Fix drift in atrisos-web/atris/wiki/syntheses/atrisos-web-auth-flow.md:22 — bare `payment/` → `/payment/success`, `/payment/cancel` (2026-04-08)
 - [x] T1: Scan `atrisos-web/{components,lib,hooks}/` + wiki health for endgame `wiki-for-atrisos-web` — gap list posted to journal, `atris clean --dry-run` from atrisos-web all green, T2 scope confirmed as-is (2026-04-08)
 - [x] T6c: Refresh `atris/MAP.md` for the Endstate run surface and clear the last broken MAP ref blocking a green verifier pass (2026-04-08)
 - [x] T6d: Rewrite `atris/features/endstate/validate.md` around shipped dry-run commands, exit condition, and focused harness checks (2026-04-08)
