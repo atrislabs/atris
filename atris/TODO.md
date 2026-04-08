@@ -31,15 +31,30 @@ then /endgame picks the next horizon at the boundary.
 
 - **T2:** Update `atris/features/team-member-standard/validate.md` to match — fix "7 built-in members" → 6, add `upgrade` to verification commands, bump `last_compiled` to 2026-04-08. [execute]
 
+- **T6c:** Refresh `atris/MAP.md` Feature: Experiments block (~lines 112-132) for the new run surface. Add bullet `atris experiments run <slug>` routed through `commands/experiments.js:363-413` (`experimentsRun`), list `lib/endstate.js` under workspace assets, and update the `rg` Search line to include `experimentsRun`. Verify both line refs resolve. Parent: T6.
+  **Done when:** MAP.md Feature: Experiments block names the run subcommand, cites valid file:line refs for `experimentsRun` and `lib/endstate.js`, and the MAP ref verifier stays green. [execute]
+
+- **T6d:** Flip `atris/features/endstate/validate.md` Status `Pending` → `v1 — shipped 2026-04-08`, add an Exit condition line, and replace the abstract checks with runnable commands: `node bin/atris.js experiments run endstate-baseline --dry-run`, `node bin/atris.js experiments run endstate-stack --dry-run`, and `node --test test/experiments.test.js`. Keep Regression Check intact. Parent: T6.
+  **Done when:** validate.md shows shipped status, one-line exit condition, and three executable checks a cold reader can copy/paste. [execute]
+
 ---
 
 ## In Progress
 
+- **T6c:** Refresh `atris/MAP.md` Feature: Experiments block (~lines 112-132) for the new run surface. Add bullet `atris experiments run <slug>` routed through `commands/experiments.js:363-413` (`experimentsRun`), list `lib/endstate.js` under workspace assets, and update the `rg` Search line to include `experimentsRun`. Verify both line refs resolve. Parent: T6.
+  **Done when:** MAP.md Feature: Experiments block names the run subcommand, cites valid file:line refs for `experimentsRun` and `lib/endstate.js`, and the MAP ref verifier stays green. [execute]
+  **Claimed by:** Codex at 2026-04-08 04:42 PDT
+  **Stage:** DO
 
 ---
 
 ## Completed
 
+- [x] T6d: Rewrite `atris/features/endstate/validate.md` around shipped dry-run commands, exit condition, and focused harness checks (2026-04-08)
+- [x] T6e: Promote `endstate` from Active Features to Completed Features with shipped status and date (2026-04-08)
+- [x] T6b: Extend `test/experiments.test.js` with a parallel `endstate-stack` dry-run smoke so both benchmark tracks are exercised (2026-04-08)
+- [x] T6a: Stop dry-run receipts from leaking uncommitted tree state into `changed_files` — dry-run artifacts now force `changed_files = []`, covered by test and verified with a real baseline receipt (2026-04-08)
+- [x] T6: Wire Endstate benchmark runs through `atris experiments run` — added receipt writer + dry-run coverage for Endstate packs (2026-04-08)
 - [x] T5: Fix drifted bin/atris.js ref in team-member-standard/build.md (1035-1038 → 1056), bump last_compiled (2026-04-08)
 - [x] E5: Wrote atrisos-web-overview.md synthesis (request flow) + refreshed index/STATUS (2026-04-08)
 - [x] E4: Wrote atrisos-web-middleware.md entity page + refreshed log/STATUS/index (2026-04-08)
