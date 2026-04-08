@@ -811,7 +811,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `planAtris()` → `commands/workflow.js:5-306`
 - `doAtris()` → `commands/workflow.js:321-661`
 - `reviewAtris()` → `commands/workflow.js:663-1085`
-- `statusAtris()` → `commands/status.js:5-156`
+- `statusAtris()` → `commands/status.js:15-216`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
 - `autopilotAtris()` → `commands/autopilot.js:339-486`

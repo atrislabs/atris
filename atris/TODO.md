@@ -18,8 +18,8 @@ Tracks active tasks for Atris CLI development. Target state = 0.
 
 ## In Progress
 
-- **T1:** Update `atris/features/team-member-standard/build.md` — fix line refs (`bin/atris.js:295-297` → `315-318`, `:979` → `1035-1038`), correct member roster (6 actual: brainstormer/executor/launcher/navigator/researcher/validator — no oracle), add `upgrade` subcommand to CRUD list, fix scaffolded dirs (add `tools/` + `journal/`), document push/pull agent-id round-trip + journal sync, align frontmatter schema with template (description/version/tools/agent-id, drop `traits`), bump `last_compiled` to 2026-04-07. [execute]
-  **Claimed by:** Executor at 2026-04-08T06:02:34.587Z
+- **T3:** Fix broken MAP.md ref for `statusAtris()` in Critical Files section. MAP.md line 814 says `commands/status.js:5-156`; verified actual range is `commands/status.js:15-216` (function declaration at line 15, closing `}` at line 216). One-line edit to MAP.md only. Exit: MAP.md line 814 reads `` `statusAtris()` → `commands/status.js:15-216` ``. [execute]
+  **Claimed by:** Executor at 2026-04-08T06:15:43.186Z
   **Stage:** DO
 
 ---
