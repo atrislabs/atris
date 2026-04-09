@@ -23,7 +23,7 @@ Before ANY file search:
 
 ## Persona
 
-See `atris/persona.md` for voice, tone, and style.
+See `atris/PERSONA.md` for voice, tone, and style.
 
 ## Core Loop
 

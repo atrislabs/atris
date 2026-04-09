@@ -31,7 +31,9 @@ function _substituteParams(content, params) {
   return content
     .replace(/\{\{name\}\}/g, params.name || params.slug || 'this business')
     .replace(/\{\{slug\}\}/g, params.slug || 'business')
-    .replace(/\{\{owner_email\}\}/g, params.owner_email || '');
+    .replace(/\{\{owner_email\}\}/g, params.owner_email || '')
+    .replace(/\{\{business_id\}\}/g, params.business_id || '')
+    .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '');
 }
 
 /**
@@ -46,6 +48,8 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
     slug: bizMeta.slug || 'business',
     name: bizMeta.name || bizMeta.slug || 'this business',
     owner_email: bizMeta.owner_email || '',
+    business_id: bizMeta.business_id || '',
+    workspace_id: bizMeta.workspace_id || '',
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
   const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');

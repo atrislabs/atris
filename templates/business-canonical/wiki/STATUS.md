@@ -4,4 +4,4 @@
 - Last lint: never
 - Last loop: never
 - Health: empty wiki, 0 pages
-- Next move: ingest first source from `atris/context/` via `atris ingest <path>`
+- Next move: create one business brief, one live-workspace page, and one measurable loop
