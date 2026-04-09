@@ -25,9 +25,12 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **T#1:** Understand scorecard format + horizon type inference. Read `lib/scorecard.js` and `atris/scorecards.md` structure. Determine how to categorize horizons by type (e.g., "wiki-*" vs "verify-*" vs "refactor-*"). Document in nav journal. [explore]
-- **T#2:** Add `scoreEndgameCandidates(cwd, candidates)` function to `commands/autopilot.js` (~line 1040, near `proposeCandidateHorizons`). Read last 10 scorecards via `readScorecards()`. For each candidate, find similar past horizons by type prefix. Calculate mean reward per type. Score each candidate by historical expected value. Apply 80/20 policy: 80% return best, 20% return random for exploration. Exit: function exists, returns 1 candidate, 4 tests cover nominal/edge cases. [execute]
-- **T#3:** Wire scoring into horizon picking. Replace line 206-207 in `commands/autopilot.js` — instead of `proposeCandidateHorizons` → pick best by confidence, call `scoreEndgameCandidates` to weight by history. Update MAP.md line refs. Exit: `npm test` passes, autopilot dry-run picks a candidate informed by scorecard history. [execute]
+- **T1:** [explore] Document horizon type categorization convention in atris/wiki. What prefixes exist (wiki, verify, refactor, loop, etc.)? What do they mean? Exit: Type guide written, examples clear. [endgame]
+  **Claimed by:** Executor at 2026-04-09T08:18:08.665Z
+  **Stage:** DO
+- **T2:** [explore] Audit current + past horizon slugs. Are they consistent with the type-prefix pattern? Are there edge cases (e.g., hyphenated types like "verify-and-fix")? Exit: List of type patterns found, any issues logged.
+- **T3:** [explore] Propose type validation rules for /endgame horizon suggestions. Should new candidates be checked against known types? Exit: Brief design for type-aware validation.
+- **R9:** (Optional refinement) Refactor type inference if T2 finds inconsistencies. If prefix-only breaks down, add explicit type registry. Exit: Type inference handles all past horizons correctly.
 
 ## In Progress
 
@@ -36,8 +39,5 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Completed
-- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame] [validated]
-- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame] [validated]
-- **B1:** Canonicalize business workspace creation. `atris business init <name>` now creates the cloud record plus a standalone canonical workspace with `.atris/business.json` and business templates. `atris business create <name> --workspace` routes to the same local-first shape. [validated]
 
 ---
