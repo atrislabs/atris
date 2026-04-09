@@ -19,6 +19,7 @@ const {
   writeScorecard,
   detectEndgameCompletion
 } = require('../lib/scorecard');
+const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 
 const pkg = require('../package.json');
 
@@ -574,8 +575,34 @@ function getVerifyCommand(cwd, taskTitle) {
   return 'npm test';
 }
 
+/**
+ * Verify that computeTickReward has not been modified since ship time.
+ * Returns { ok, expected, actual }.
+ */
+function verifyJudgeIntegrity() {
+  const crypto = require('crypto');
+  const actual = crypto.createHash('sha256').update(computeTickReward.toString()).digest('hex');
+  return { ok: actual === REWARD_CHECKSUM, expected: REWARD_CHECKSUM, actual };
+}
+
 function runTaskOnce(context, options = {}) {
   const { verbose = false, cwd = process.cwd() } = options;
+
+  // Judge integrity check — halt if computeTickReward was tampered with
+  const integrity = verifyJudgeIntegrity();
+  if (!integrity.ok) {
+    writeLesson(cwd, 'judge-corruption', 'fail',
+      `computeTickReward checksum mismatch. Expected ${integrity.expected}, got ${integrity.actual}. Tick halted.`);
+    return {
+      outcome: 'halted',
+      reason: 'judge-corruption',
+      phaseResults: {},
+      elapsedSeconds: 0,
+      verifyRan: false,
+      verifyPass: false,
+    };
+  }
+
   const phaseResults = {};
   const startedAt = Date.now();
   const verifyCmd = getVerifyCommand(cwd, context.task);
@@ -673,28 +700,28 @@ function computeTickReward(execution, tickOutcome, verifyCmd) {
 
   // Validator clean: review passed without 'failed'
   if (!execution.reviewOutput || !execution.reviewOutput.includes('failed')) {
-    reward += 1;
+    reward += REWARD_CONFIG.REVIEW_CLEAN;
   }
 
-  // Verify passed: +3
+  // Verify passed
   if (execution.verifyRan && execution.verifyPass) {
-    reward += 3;
+    reward += REWARD_CONFIG.VERIFY_PASS;
   }
 
-  // npm test passed: +2
+  // npm test passed
   if (execution.verifyRan && execution.verifyPass && verifyCmd === 'npm test') {
-    reward += 2;
+    reward += REWARD_CONFIG.NPM_TEST_BONUS;
   }
 
   // Commit landed: check do phase output for git commit patterns
   const doOutput = execution.phaseResults.do.output || '';
   if (doOutput.match(/\[.*\s\d+\sfile.*changed/i) || doOutput.includes('git commit') || doOutput.includes('committed')) {
-    reward += 1;
+    reward += REWARD_CONFIG.COMMIT_LANDED;
   }
 
-  // Halt caught hallucination: -3
+  // Halt caught hallucination
   if (tickOutcome === 'halted') {
-    reward -= 3;
+    reward += REWARD_CONFIG.HALT_PENALTY;
   }
 
   return reward;
@@ -1619,6 +1646,7 @@ module.exports = {
   getTickStatus,
   getVerifyCommand,
   computeTickReward,
+  verifyJudgeIntegrity,
   maybeWriteCompletedEndgameScorecard,
   renderHumanSuggestion,
   renderHumanTickIntro,
