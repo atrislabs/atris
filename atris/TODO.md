@@ -38,14 +38,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T39:** Fix stale source path in `atris/wiki/briefs/atris-labs-workspace-protocol.md` frontmatter — `sources:` currently points at `/Users/keshavrao/arena/atris-business/atris-labs/atris.md`, which no longer exists (workspace renamed `atris-labs` → `atris-labs-1`, protocol moved into an `atris/` subfolder). Replace with `/Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md`. Bump `last_compiled` + `updated` to 2026-04-08. Body copy still matches the source (On Load / Loop / Layout / Surfaces / North Star all verified), and the "mini-AGI" de-slopping is deliberate per `feedback_no_mini_agi` — do NOT reintroduce that phrase. Exit: frontmatter `sources:` points at the real file, dates bumped, body unchanged. [execute]
-  **Claimed by:** Executor at 2026-04-09T02:03:26.432Z
-  **Stage:** DO
-
 ---
 
 ## Completed
 
+- [x] T39: Fixed stale `sources:` path in `atris/wiki/briefs/atris-labs-workspace-protocol.md` frontmatter — repointed from the ghost `atris-business/atris-labs/atris.md` to the real `atris-business/atris-labs-1/atris/atris.md`. Body copy unchanged (On Load / Loop / Layout / Surfaces / North Star re-verified against source); no "mini-AGI" phrase reintroduced per `feedback_no_mini_agi` (2026-04-08)
 - [x] T36: Tightened the default `statusAtris` briefing to the 20-line budget — horizon and backlog summaries are now compact, a `Decision:` line is present, and `node -e "require('./commands/status').statusAtris(false,false,false)"` now measures 18 lines / 75 chars max in this repo (2026-04-08)
 - [x] T35: Tightened the default `atris autopilot` briefing to the 20-line budget — horizon and task summaries are now compact in default mode, `--verbose` still shows the engineering view, and `node bin/atris.js autopilot --dry-run --auto --iterations=1` in this repo now measures 19 lines / 75 chars max (2026-04-08)
 - [x] T34: Rewrite the default `atris review` surface to match the validator-pass brief — default mode now wraps cleanly, includes an explicit `Decision:` line, keeps `--verbose` on the legacy validator board, and `node --test test/commands.test.js` stayed green (2026-04-08)
