@@ -1,0 +1,44 @@
+{
+  "run_id": "2026-04-08T11-06-10-066Z-baseline",
+  "track": "baseline",
+  "repo_commits": {
+    "atris_cli": "488fb50f79ec02442f97e9a7567231d411e42ca6",
+    "atrisos_backend": "d3d18486b3f24a40a14a2cc39427d777c49993a9"
+  },
+  "repo_commits_after": {
+    "atris_cli": "488fb50f79ec02442f97e9a7567231d411e42ca6",
+    "atrisos_backend": "d3d18486b3f24a40a14a2cc39427d777c49993a9"
+  },
+  "task_brief": "Level 1 Endstate baseline run. Use one pinned model, one operator, and the same repo snapshots, budget, and review bar as the stack run. Task set: `atris-cli` implements the `capabilities.md generator` slice; `../atrisos-backend` implements `Task 8: Hourly validator loop` around `scripts/evolve.py`. Success is reviewed completion with a full artifact bundle matching `../../features/endstate/artifact-schema.json`.",
+  "prompt_context": "pack: endstate-baseline\n\ntask brief:\nLevel 1 Endstate baseline run. Use one pinned model, one operator, and the same repo snapshots, budget, and review bar as the stack run. Task set: `atris-cli` implements the `capabilities.md generator` slice; `../atrisos-backend` implements `Task 8: Hourly validator loop` around `scripts/evolve.py`. Success is reviewed completion with a full artifact bundle matching `../../features/endstate/artifact-schema.json`.",
+  "changed_files": [],
+  "tests": [
+    {
+      "command": "benchmark dry-run",
+      "status": "not_run"
+    }
+  ],
+  "review": {
+    "status": "draft",
+    "summary": "dry run — benchmark task not executed"
+  },
+  "wiki": {
+    "status": "not_applicable",
+    "before": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from atris-labs ingest — syntheses/atris-labs-workspace-protocol, **concepts/atris-labs-goals** (north star + Q2 targets), **systems/atris-labs** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from /Users/keshavrao/arena/atris-cli/commands/business.js\n",
+    "after": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from atris-labs ingest — syntheses/atris-labs-workspace-protocol, **concepts/atris-labs-goals** (north star + Q2 targets), **systems/atris-labs** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from /Users/keshavrao/arena/atris-cli/commands/business.js\n"
+  },
+  "elapsed_seconds": 0,
+  "interventions": {
+    "count": 0,
+    "events": []
+  },
+  "notes": "dry-run artifact only",
+  "score": 35,
+  "score_breakdown": {
+    "reviewed_completion": 0,
+    "test_outcome": 0,
+    "artifact_completeness": 15,
+    "wiki_memory": 10,
+    "operator_load": 10
+  }
+}
