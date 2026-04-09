@@ -380,10 +380,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:1224` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:1561` (autopilotFromTodo function)
-- **Reward computer:** `commands/autopilot.js:658` (`computeTickReward`) — computes per-tick reward score from execution signals (commit +1, npm test +2, verify +3, validator clean +1, halt -3)
-- **Heartbeat writer:** `commands/autopilot.js:702` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Entry point:** `commands/autopilot.js:1267` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:1608` (autopilotFromTodo function)
+- **Reward computer:** `commands/autopilot.js:671` (`computeTickReward`) — computes per-tick reward score from execution signals (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
+- **Heartbeat writer:** `commands/autopilot.js:715` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -395,15 +395,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:569-618` (`runTaskOnce`) — executes plan → do → review once, runs verify command after review, returns per-phase prompts, outputs, elapsed time, and verifyPass boolean
-- **Verify executor helper:** `commands/autopilot.js:557` (`getVerifyCommand`) — reads TODO.md In Progress section, extracts verify field from current task, defaults to `npm test`
-- **Lesson writer helper:** `commands/autopilot.js:532` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
+- **Single-task runner:** `commands/autopilot.js:577-630` (`runTaskOnce`) — captures the verify command before plan/do/review mutate TODO.md, runs it after review, and returns `verifyCmd`, `verifyRan`, and `verifyPass`
+- **Verify executor helper:** `commands/autopilot.js:564-574` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field from the current task, defaults to `npm test`
+- **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
 - **Approval gate:** `commands/autopilot.js:290` (askApproval function) — enter/skip/quit
-- **Idle-tick helper:** `commands/autopilot.js:890` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:925` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:1123` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
-- **Scoring helper:** `commands/autopilot.js:1038` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value, applies 80/20 exploit/explore split; called during horizon picking (line 207) to weight candidates by historical reward
+- **Idle-tick helper:** `commands/autopilot.js:1002` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:1037` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Candidate-horizons helper:** `commands/autopilot.js:1166` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Scoring helper:** `commands/autopilot.js:1079` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value, applies 80/20 exploit/explore split; called during horizon picking (line 208) to weight candidates by historical reward
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -702,17 +702,18 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Files:**
 
-- `lib/scorecard.js` (90 lines) — Scorecard writing and parsing
+- `lib/scorecard.js` (284 lines) — Scorecard writing, parsing, and endgame closeout metric synthesis
 - `atris/scorecards.md` (generated) — Append-only endgame results log
 - `atris/wiki/concepts/horizon-types.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
 
 **Key functions (lib/scorecard.js):**
 
-- Lines 9-53: `writeScorecard(atrisDir, data)` — Append scorecard entry to `atris/scorecards.md` when an endgame closes. Format: `- **[date] slug** — shipped: X/Y — wall-clock: Nh — halt: Z% — reward: total — lessons: N`
-- Lines 55-76: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
-- Lines 78-96: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
+- Lines 135-158: `buildScorecardData(atrisDir, { slug, pickedAt })` — Synthesizes closeout metrics from TODO.md, journal reward blocks, and lessons.md so endgame scorecards reflect real loop output
+- Lines 176-208: `writeScorecard(atrisDir, data)` — Append scorecard entry to `atris/scorecards.md` when an endgame closes. Format: `- **[date] slug** — shipped: X/Y — wall-clock: Nh — halt: Z% — reward: total — lessons: N`
+- Lines 215-240: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
+- Lines 246-280: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
 
-**Type Inference (commands/autopilot.js:1054-1080):**
+**Type Inference (commands/autopilot.js:1095-1121):**
 
 - Horizon slugs follow prefix-based type convention (e.g., `loop-*`, `wiki-*`, `verify-*`, `refactor-*`, `human-*`, `agent-*`)
 - `scoreEndgameCandidates()` extracts type by splitting slug on first dash: `slug.split('-')[0]`
@@ -900,10 +901,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `statusAtris()` → `commands/status.js:79-334`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
-- `autopilotAtris()` → `commands/autopilot.js:1092-1357`
-- `writeLesson()` → `commands/autopilot.js:532-550`
-- `getVerifyCommand()` → `commands/autopilot.js:557-567`
-- `runTaskOnce()` → `commands/autopilot.js:569-618`
+- `autopilotAtris()` → `commands/autopilot.js:1267-1602`
+- `writeLesson()` → `commands/autopilot.js:538-556`
+- `getVerifyCommand()` → `commands/autopilot.js:564-574`
+- `runTaskOnce()` → `commands/autopilot.js:577-630`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
