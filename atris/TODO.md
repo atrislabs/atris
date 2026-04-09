@@ -26,6 +26,9 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
+<!-- wiki-upkeep: atris-labs source path drift (same root cause, two files) -->
+- **T40:** Fix the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md` — frontmatter `sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]` is stale (file moved to `.../atris-labs-1/atris/MEMBER.md`), and the body line "A standalone Atris workspace at `arena/atris-business/atris-labs/`" points at the same gone path. Update both the frontmatter source and the body path to `atris-labs-1/atris/`. Bump `last_compiled` + `updated` to 2026-04-08. Do NOT mirror the source's "company-as-mini-AGI" / "mini-AGI dogfood" language — keep the existing neutral "company-as-workspace" framing (per `feedback_no_mini_agi`). Exit: frontmatter `sources:` and body both point at the real `atris-labs-1` path, dates bumped. [execute]
+
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 - **T38:** Decide whether `businessStatus(...)` needs the same chief-of-staff rewrite as local `statusAtris(...)` — audit the current remote output for operator readability, then choose between (a) leave it as a power-user diff surface, or (b) add a parallel human-summary mode. Exit: one short decision block appended to `atris/features/human-output/idea.md` with rationale and non-goal if we defer. [explore]
 - **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
@@ -35,11 +38,14 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
+- **T39:** Fix stale source path in `atris/wiki/briefs/atris-labs-workspace-protocol.md` frontmatter — `sources:` currently points at `/Users/keshavrao/arena/atris-business/atris-labs/atris.md`, which no longer exists (workspace renamed `atris-labs` → `atris-labs-1`, protocol moved into an `atris/` subfolder). Replace with `/Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md`. Bump `last_compiled` + `updated` to 2026-04-08. Body copy still matches the source (On Load / Loop / Layout / Surfaces / North Star all verified), and the "mini-AGI" de-slopping is deliberate per `feedback_no_mini_agi` — do NOT reintroduce that phrase. Exit: frontmatter `sources:` points at the real file, dates bumped, body unchanged. [execute]
+  **Claimed by:** Executor at 2026-04-09T02:03:26.432Z
+  **Stage:** DO
+
 ---
 
 ## Completed
 
-- [x] T37: Un-hijack the default `atris status` route in business-scoped repos — plain `atris status` now prefers local `statusAtris(...)`, explicit `atris status <slug>` still routes to `businessStatus(slug)`, the validator uses the real CLI path again, `node bin/atris.js status` is local, `node bin/atris.js status pallet` still hits the business path, `node bin/atris.js clean --dry-run` is green, and `node --test test/commands.test.js` is 40/40 green (2026-04-08)
 - [x] T36: Tightened the default `statusAtris` briefing to the 20-line budget — horizon and backlog summaries are now compact, a `Decision:` line is present, and `node -e "require('./commands/status').statusAtris(false,false,false)"` now measures 18 lines / 75 chars max in this repo (2026-04-08)
 - [x] T35: Tightened the default `atris autopilot` briefing to the 20-line budget — horizon and task summaries are now compact in default mode, `--verbose` still shows the engineering view, and `node bin/atris.js autopilot --dry-run --auto --iterations=1` in this repo now measures 19 lines / 75 chars max (2026-04-08)
 - [x] T34: Rewrite the default `atris review` surface to match the validator-pass brief — default mode now wraps cleanly, includes an explicit `Decision:` line, keeps `--verbose` on the legacy validator board, and `node --test test/commands.test.js` stayed green (2026-04-08)
