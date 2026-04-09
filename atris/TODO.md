@@ -25,18 +25,8 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **H1:** Fix judge corruption. Move reward constants out of mutable repo state into a frozen config that the loop cannot edit. Add a checksum guard so if computeTickReward changes, the next tick halts and flags it. [endgame]
-  **Verify:** codex exec "Read commands/autopilot.js computeTickReward and lib/scorecard.js. Can the loop modify its own reward function without being caught? Answer YES or NO only." --output-last-message /tmp/h1-check.txt --full-auto && grep -qi "no" /tmp/h1-check.txt
-  - **H1a:** Create `lib/reward-config.js` with all reward constants (`REVIEW_CLEAN: 1`, `VERIFY_PASS: 3`, `NPM_TEST_BONUS: 2`, `COMMIT_LANDED: 1`, `HALT_PENALTY: -3`) exported as a single `Object.freeze`'d object. Include a `REWARD_CHECKSUM` constant = SHA-256 of the `computeTickReward` source text at ship time. One file, no imports beyond `crypto`. [execute]
-    **Exit:** `require('lib/reward-config.js').REWARD_CONFIG` is frozen, `Object.isFrozen()` returns true, checksum is a 64-char hex string.
-  - **H1b:** Refactor `computeTickReward` in `commands/autopilot.js:671-701` to read every magic number from the frozen config instead of inline literals. Zero behavioral change — same inputs produce same outputs. [execute]
-    **Exit:** No numeric literals remain inside `computeTickReward`; all come from `REWARD_CONFIG.*`. Existing tests still pass (`node --test test/commands.test.js`).
-  - **H1c:** Add a `verifyJudgeIntegrity()` function in `commands/autopilot.js` that: (1) reads `computeTickReward.toString()`, (2) SHA-256 hashes it, (3) compares to `REWARD_CHECKSUM` from `lib/reward-config.js`. Returns `{ ok, expected, actual }`. Call it at the top of `runTaskOnce`; if `!ok`, halt the tick, write a lesson to `atris/lessons.md`, and return early. [execute]
-    **Exit:** Manually editing `computeTickReward` body and running a tick causes immediate halt + lesson written. Reverting the edit lets ticks proceed.
-  - **H1d:** Add unit tests in `test/commands.test.js`: (1) `REWARD_CONFIG` is frozen, (2) checksum matches live `computeTickReward.toString()`, (3) `verifyJudgeIntegrity()` returns `ok:true` on clean state. [execute]
-    **Exit:** `node --test test/commands.test.js` — all three new tests green.
-- **H2:** Fix proxy collapse. Remove the generic auto-pass branch in verify.js. Every task must have an explicit verify command or the tick refuses to run. No default pass. [endgame]
-  **Verify:** codex exec "Read commands/verify.js and commands/autopilot.js runTaskOnce. Is there any code path where a task can pass verification without a real check? Answer YES or NO only." --output-last-message /tmp/h2-check.txt --full-auto && grep -qi "no" /tmp/h2-check.txt
+- **H2b:** In `commands/autopilot.js` `runTaskOnce`, add a guard: if `getVerifyCommand()` returns the default `'npm test'` (no explicit verify field on the task), halt the tick and write a lesson instead of silently succeeding. One file: `commands/autopilot.js`. Exit: ticks without an explicit `**Verify:**` field refuse to run. [execute] [endgame]
+  **Verify:** codex exec "Read commands/autopilot.js runTaskOnce. If a task has no Verify field in TODO.md, does the tick halt or does it proceed? Answer HALTS or PROCEEDS only." --output-last-message /tmp/h2b-check.txt --full-auto && grep -qi "halts" /tmp/h2b-check.txt
 - **H3:** Fix search collapse. Replace fixed 80/20 with adaptive explore rate based on scorecard diversity. If last 5 endgames are all the same type, boost explore to 50%. Add a minimum horizon difficulty floor so easy wins don't starve hard work. [endgame]
   **Verify:** codex exec "Read commands/autopilot.js scoreEndgameCandidates. Does the explore rate adapt based on recent horizon diversity? Can it starve hard/novel work? Answer ADAPTIVE or FIXED only." --output-last-message /tmp/h3-check.txt --full-auto && grep -qi "adaptive" /tmp/h3-check.txt
 - **H4:** Fix state incompleteness. Add a delayed regression check: each tick records its commit hash, and every 10th tick re-runs verify on the last 10 commits. If a past verify now fails, charge the original tick with a -5 retroactive penalty and write a lesson. [endgame]
@@ -46,8 +36,8 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **H1:** Fix judge corruption. Move reward constants out of mutable repo state into a frozen config that the loop cannot edit. Add a checksum guard so if computeTickReward changes, the next tick halts and flags it. [endgame]
-  **Claimed by:** Executor at 2026-04-09T11:43:07.332Z
+- **H2a:** Remove the generic auto-pass fallback in `verifyChange()` at `commands/verify.js:447-452`. Change the return from `pass: true` to `pass: false` with details explaining no specific check was possible. One file: `commands/verify.js`. Exit: `verifyChange()` never returns `pass: true` without a real check. [execute] [endgame]
+  **Claimed by:** Executor at 2026-04-09T11:56:13.654Z
   **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
