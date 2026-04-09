@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Atris — an operating system for intelligence. Integrates with any agent.",
   "main": "bin/atris.js",
   "bin": {

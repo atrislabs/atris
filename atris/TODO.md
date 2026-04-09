@@ -23,8 +23,6 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **S2:** Bump package.json to v3.1.0 [endgame]
-  **Verify:** node -e "const p=require('./package.json'); process.exit(p.version==='3.1.0'?0:1)"
 - **S3:** Add RL loop section to README.md (3 bullets, plain English, matches /launch format) [endgame]
   **Verify:** grep -q "reward" README.md
 - **S4:** (eliminate) Remove stale inbox items I8 and I9 from 2026-04-08 journal — they shipped [endgame]
@@ -34,14 +32,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **S1:** Commit all uncommitted RL work as one clean commit. Stage: atris/lessons.md, atris/scorecards.md, lib/scorecard.js, atris/MAP.md, atris/TODO.md, atris/wiki/systems/horizon-type-convention.md (deleted). Exclude .autopilot-prompt.tmp. [execute] [endgame]
-  **Claimed by:** Executor at 2026-04-09T09:03:48.616Z
-  **Stage:** DO
-
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+- **S2:** Bump package.json to v3.1.0 [endgame] ✅
 
 ---
