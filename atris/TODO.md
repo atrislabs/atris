@@ -15,31 +15,27 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** rl-validates-itself
-**Picked:** 2026-04-09 01:45
-**Horizon:** The improved RL loop runs a full tick on itself, auto-writes a scorecard, and proves every connection works end-to-end. The loop that fixed its own bugs now validates its own fixes.
-**Source:** user-prompt "validate while i shower" + Feynman audit proving 5 gaps existed
+**Slug:** ship-rl-to-npm
+**Picked:** 2026-04-09 02:10
+**Horizon:** atris v3.1.0 ships to npm with the complete RL loop (verify fields, reward scoring, scorecards, policy update). README documents the RL loop. Other repos can `npm install -g atris` and get the flywheel. GitHub release + /launch post ready.
+**Source:** inbox I8+I9 shipped, rl-validates-itself closed, user said "keep going"
 
 ---
 
 ## Backlog
-- **T2:** Export `writeLesson` from `commands/autopilot.js` module.exports and add a unit test in `test/commands.test.js` that: creates a temp dir with a lessons.md, calls writeLesson, asserts the file grew by one lesson line. Exit: `npm test` passes with the new test. [execute]
-  **Verify:** npm test
-- **T3:** Run F2's verify command to close the task. If it passes, move F2 to Completed. Exit: verify exit code 0. [execute]
-  **Verify:** node -e "const c=require('fs').readFileSync('atris/lessons.md','utf8').split('\\n').length; process.exit(c > 33 ? 0 : 1)"
-- **F3:** Confirm scorecard auto-writes when endgame completes — check scorecards.md exists and has content after this endgame closes [endgame]
-  **Verify:** test -f atris/scorecards.md
+- **S2:** Bump package.json to v3.1.0 [endgame]
+  **Verify:** node -e "const p=require('./package.json'); process.exit(p.version==='3.1.0'?0:1)"
+- **S3:** Add RL loop section to README.md (3 bullets, plain English, matches /launch format) [endgame]
+  **Verify:** grep -q "reward" README.md
+- **S4:** (eliminate) Remove stale inbox items I8 and I9 from 2026-04-08 journal — they shipped [endgame]
+  **Verify:** node -e "const c=require('fs').readFileSync('atris/logs/2026/2026-04-08.md','utf8'); process.exit(c.includes('I8:') && c.includes('[shipped]') ? 0 : 1)"
+- **S5:** npm publish + GitHub release + /launch post [endgame]
+  **Verify:** npm view atris version | grep -q 3.1.0
 
 ## In Progress
 
-- **F1:** Run `atris autopilot --auto --iterations=1` and confirm the tick completes with a reward score in the journal [endgame]
-  **Verify:** grep -q "Reward:" atris/logs/2026/2026-04-09.md
-  **Claimed by:** Executor at 2026-04-09T08:44:02.227Z
-  **Stage:** DO
-
-- **F2:** Confirm verify failure writes a lesson automatically — trigger a failing verify and check lessons.md grows [endgame]
-  **Verify:** node -e "const c=require('fs').readFileSync('atris/lessons.md','utf8').split('\\n').length; process.exit(c > 33 ? 0 : 1)"
-  **Claimed by:** Executor at 2026-04-09T08:48:24.091Z
+- **S1:** Commit all uncommitted RL work as one clean commit. Stage: atris/lessons.md, atris/scorecards.md, lib/scorecard.js, atris/MAP.md, atris/TODO.md, atris/wiki/systems/horizon-type-convention.md (deleted). Exclude .autopilot-prompt.tmp. [execute] [endgame]
+  **Claimed by:** Executor at 2026-04-09T09:03:48.616Z
   **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
