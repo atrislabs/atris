@@ -1112,12 +1112,12 @@ test('scoreEndgameCandidates returns best by confidence when no scorecards', () 
   }
 });
 
-test('scoreEndgameCandidates scores candidates by historical reward when scorecards exist', () => {
+test('scoreEndgameCandidates scores candidates by historical reward with adaptive explore rate', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
 
-    // Create scorecards with wiki and verify types
+    // Create scorecards with diverse types (wiki, verify, refactor, harden)
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
     const content = `# scorecards.md — Endgame Results
 
@@ -1127,8 +1127,9 @@ test('scoreEndgameCandidates scores candidates by historical reward when scoreca
 
 - **[2026-04-01] wiki-search-v1** — shipped: 3/3 — wall-clock: 2.5h — halt: 10% — reward: 50 — lessons: 5
 - **[2026-04-02] verify-tests** — shipped: 2/3 — wall-clock: 3.0h — halt: 20% — reward: 40 — lessons: 3
-- **[2026-04-03] wiki-ingest** — shipped: 4/4 — wall-clock: 1.5h — halt: 5% — reward: 55 — lessons: 6
-- **[2026-04-04] verify-integration** — shipped: 1/2 — wall-clock: 4.0h — halt: 30% — reward: 30 — lessons: 2
+- **[2026-04-03] refactor-api** — shipped: 4/4 — wall-clock: 1.5h — halt: 5% — reward: 55 — lessons: 6
+- **[2026-04-04] harden-loop** — shipped: 1/2 — wall-clock: 4.0h — halt: 30% — reward: 30 — lessons: 2
+- **[2026-04-05] ship-release** — shipped: 2/2 — wall-clock: 1.0h — halt: 0% — reward: 45 — lessons: 1
 `;
     fs.writeFileSync(scorecardsPath, content, 'utf8');
 
@@ -1138,19 +1139,112 @@ test('scoreEndgameCandidates scores candidates by historical reward when scoreca
       { title: 'refactor-api', confidence: 0.8, rationale: 'Refactor API' }
     ];
 
-    // Call multiple times to verify 80/20 behavior (deterministic by chance)
+    // 5 unique types in last 5 → exploreRate = 0.2 (max diversity)
     let exploitCount = 0, exploreCount = 0;
     for (let i = 0; i < 100; i++) {
       const result = scoreEndgameCandidates(dir, candidates);
       assert.equal(result.scored, true);
       assert.ok(result.reason, 'should have scoring reason');
+      assert.ok(result.exploreRate !== undefined, 'should expose exploreRate');
+      // With 5 unique types, exploreRate should be 0.2
+      assert.ok(Math.abs(result.exploreRate - 0.2) < 0.01, `explore rate ${result.exploreRate} should be ~0.2`);
       if (result.reason.includes('exploit')) exploitCount++;
       else if (result.reason.includes('explore')) exploreCount++;
     }
 
-    // 80/20 split is probabilistic; we should see roughly 80 exploit, 20 explore (with tolerance)
+    // ~80/20 split with diverse history
     assert.ok(exploitCount >= 60 && exploitCount <= 100, `exploit count ${exploitCount} should be ~80`);
     assert.ok(exploreCount >= 0 && exploreCount <= 40, `explore count ${exploreCount} should be ~20`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scoreEndgameCandidates boosts explore to 50% when last 5 are same type', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    // All 5 scorecards are wiki-* type
+    const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
+    const content = `# scorecards.md — Endgame Results
+
+> Append-only. One line per closed endgame.
+
+---
+
+- **[2026-04-01] wiki-search** — shipped: 3/3 — wall-clock: 2.5h — halt: 10% — reward: 50 — lessons: 5
+- **[2026-04-02] wiki-ingest** — shipped: 2/3 — wall-clock: 3.0h — halt: 20% — reward: 40 — lessons: 3
+- **[2026-04-03] wiki-lint** — shipped: 4/4 — wall-clock: 1.5h — halt: 5% — reward: 55 — lessons: 6
+- **[2026-04-04] wiki-status** — shipped: 3/3 — wall-clock: 2.0h — halt: 0% — reward: 45 — lessons: 2
+- **[2026-04-05] wiki-compile** — shipped: 2/2 — wall-clock: 1.0h — halt: 0% — reward: 48 — lessons: 1
+`;
+    fs.writeFileSync(scorecardsPath, content, 'utf8');
+
+    const candidates = [
+      { title: 'wiki-new-feature', confidence: 0.7, rationale: 'More wiki work' },
+      { title: 'verify-edge-cases', confidence: 0.6, rationale: 'Test edge cases' },
+      { title: 'refactor-api', confidence: 0.5, rationale: 'Refactor API' }
+    ];
+
+    let exploitCount = 0, exploreCount = 0;
+    for (let i = 0; i < 200; i++) {
+      const result = scoreEndgameCandidates(dir, candidates);
+      assert.equal(result.scored, true);
+      // All same type → exploreRate should be 0.5
+      assert.ok(Math.abs(result.exploreRate - 0.5) < 0.01, `explore rate ${result.exploreRate} should be 0.5`);
+      if (result.reason.includes('exploit')) exploitCount++;
+      else if (result.reason.includes('explore')) exploreCount++;
+    }
+
+    // ~50/50 split: explore should be significantly higher than 20%
+    assert.ok(exploreCount >= 60, `explore count ${exploreCount} should be >= 60 out of 200 (50% rate)`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scoreEndgameCandidates filters easy-win candidates when harder ones exist', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    // wiki type: high success rate (9/10 = 90%) and high mean reward (50)
+    // verify type: low success rate (3/6 = 50%) and low mean reward (10)
+    const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
+    const content = `# scorecards.md — Endgame Results
+
+> Append-only. One line per closed endgame.
+
+---
+
+- **[2026-04-01] wiki-a** — shipped: 3/3 — wall-clock: 1.0h — halt: 0% — reward: 50 — lessons: 2
+- **[2026-04-02] verify-a** — shipped: 1/2 — wall-clock: 3.0h — halt: 30% — reward: 10 — lessons: 3
+- **[2026-04-03] wiki-b** — shipped: 3/3 — wall-clock: 1.0h — halt: 0% — reward: 50 — lessons: 1
+- **[2026-04-04] verify-b** — shipped: 1/2 — wall-clock: 4.0h — halt: 40% — reward: 10 — lessons: 4
+- **[2026-04-05] wiki-c** — shipped: 3/4 — wall-clock: 1.5h — halt: 5% — reward: 50 — lessons: 2
+- **[2026-04-06] verify-c** — shipped: 1/2 — wall-clock: 3.5h — halt: 35% — reward: 10 — lessons: 3
+`;
+    fs.writeFileSync(scorecardsPath, content, 'utf8');
+
+    const candidates = [
+      { title: 'wiki-easy', confidence: 0.9, rationale: 'Easy wiki task' },
+      { title: 'verify-hard', confidence: 0.7, rationale: 'Hard verify task' },
+      { title: 'refactor-new', confidence: 0.5, rationale: 'New refactor work' }
+    ];
+
+    // Run many times — exploit picks should never be wiki-easy (filtered by difficulty floor)
+    let wikiExploitCount = 0;
+    for (let i = 0; i < 100; i++) {
+      const result = scoreEndgameCandidates(dir, candidates);
+      if (result.reason.includes('exploit') && result.title === 'wiki-easy') {
+        wikiExploitCount++;
+      }
+    }
+
+    // wiki type has >80% success rate and mean reward 50 (>5), so it should be filtered
+    // from the exploit pool. Exploit picks should not select wiki-easy.
+    assert.equal(wikiExploitCount, 0, 'easy-win wiki should be filtered from exploit pool');
   } finally {
     cleanupTempDir(dir);
   }

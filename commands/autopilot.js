@@ -1111,7 +1111,15 @@ function getRecentSignals(cwd) {
 /**
  * Score endgame candidates by historical reward of similar horizon types.
  * Reads last 10 scorecards, infers type from slug prefix, calculates mean
- * reward per type, scores candidates by expected value, applies 80/20 exploit/explore.
+ * reward per type, scores candidates by expected value.
+ *
+ * Adaptive explore rate: if the last 5 endgames are all the same type,
+ * explore rate boosts to 50%. Otherwise scales between 20%-50% based on
+ * type repetition in the last 5.
+ *
+ * Difficulty floor: candidates whose inferred type has >80% success rate
+ * AND mean reward >5 are filtered out when harder candidates exist, so
+ * easy wins don't starve hard work.
  *
  * @param {string} cwd - Current working directory
  * @param {array} candidates - Array of { title, confidence, rationale }
@@ -1135,10 +1143,14 @@ function scoreEndgameCandidates(cwd, candidates) {
 
     // Infer type from slug/title by taking prefix before first dash
     const typeToRewards = {};
+    const typeToAttempts = {}; // track shipped/attempted per type
     for (const sc of scorecards) {
       const type = sc.slug.split('-')[0];
       if (!typeToRewards[type]) typeToRewards[type] = [];
       typeToRewards[type].push(sc.totalReward);
+      if (!typeToAttempts[type]) typeToAttempts[type] = { shipped: 0, attempted: 0 };
+      typeToAttempts[type].shipped += sc.tasksShipped;
+      typeToAttempts[type].attempted += sc.tasksAttempted;
     }
 
     // Calculate mean reward per type
@@ -1148,45 +1160,70 @@ function scoreEndgameCandidates(cwd, candidates) {
       typeMeans[type] = mean;
     }
 
+    // Calculate success rate per type
+    const typeSuccessRate = {};
+    for (const [type, counts] of Object.entries(typeToAttempts)) {
+      typeSuccessRate[type] = counts.attempted > 0 ? counts.shipped / counts.attempted : 0;
+    }
+
+    // Adaptive explore rate based on diversity of last 5 scorecards
+    const last5 = scorecards.slice(-5);
+    const last5Types = last5.map(sc => sc.slug.split('-')[0]);
+    const uniqueTypes = new Set(last5Types).size;
+    // All same type → exploreRate=0.5; all different → exploreRate=0.2
+    // Linear interpolation: exploreRate = 0.5 - (uniqueTypes - 1) * 0.3 / (last5Types.length - 1 || 1)
+    const maxTypes = last5Types.length;
+    const exploreRate = maxTypes <= 1
+      ? 0.2
+      : 0.5 - (uniqueTypes - 1) * 0.3 / (maxTypes - 1);
+
     // Score each candidate by expected value based on historical type mean
     const scored = candidates.map(c => {
       // Infer type from title keywords that match scorecard slug prefixes
       const titleLower = (c.title || '').toLowerCase();
       const cType = Object.keys(typeMeans).find(t => titleLower.includes(t)) || titleLower.split(/[\s\-]+/)[0];
       const historicalMean = typeMeans[cType] !== undefined ? typeMeans[cType] : 0;
+      const successRate = typeSuccessRate[cType] !== undefined ? typeSuccessRate[cType] : 0;
       const expectedValue = historicalMean * c.confidence;
       return {
         ...c,
         expectedValue,
         type: cType,
-        historicalMean
+        historicalMean,
+        successRate
       };
     });
 
-    // Sort by expected value (descending)
-    scored.sort((a, b) => b.expectedValue - a.expectedValue);
+    // Difficulty floor: filter out easy-win candidates (>80% success rate AND
+    // mean reward >5) when harder candidates exist
+    const hardCandidates = scored.filter(c => !(c.successRate > 0.8 && c.historicalMean > 5));
+    const pool = hardCandidates.length > 0 ? hardCandidates : scored;
 
-    // 80/20 split: 80% exploit (best), 20% explore (random)
+    // Sort by expected value (descending)
+    pool.sort((a, b) => b.expectedValue - a.expectedValue);
+
+    // Adaptive exploit/explore split
     const choice = Math.random();
     let selected;
-    if (choice < 0.8) {
+    if (choice < (1 - exploreRate)) {
       // Exploit: return highest expected value
-      selected = scored[0];
+      selected = pool[0];
     } else {
-      // Explore: return random candidate
+      // Explore: return random candidate from full scored list (not filtered)
       selected = scored[Math.floor(Math.random() * scored.length)];
     }
 
-    const reason = choice < 0.8
-      ? `exploit: type=${selected.type} mean-reward=${selected.historicalMean.toFixed(1)} expected-value=${selected.expectedValue.toFixed(1)}`
-      : `explore: random-candidate type=${selected.type}`;
+    const reason = choice < (1 - exploreRate)
+      ? `exploit: type=${selected.type} mean-reward=${selected.historicalMean.toFixed(1)} expected-value=${selected.expectedValue.toFixed(1)} explore-rate=${exploreRate.toFixed(2)}`
+      : `explore: random-candidate type=${selected.type} explore-rate=${exploreRate.toFixed(2)}`;
 
     return {
       title: selected.title,
       confidence: selected.confidence,
       rationale: selected.rationale,
       scored: true,
-      reason
+      reason,
+      exploreRate
     };
   } catch (err) {
     // If scoring fails, fall back to best by confidence
