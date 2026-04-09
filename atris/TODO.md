@@ -40,16 +40,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **R2:** Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field. [endgame]
-  - **R2b:** Hook verify execution into `runTaskOnce` (commands/autopilot.js:528) — after review phase succeeds, extract verify field from current task, default to `npm test`, execute it, return verifyPass boolean. [execute]
-  - **R2c:** Handle verify failure in autopilot loop (commands/autopilot.js:1235-1270) — if verifyPass === false, write lesson to atris/lessons.md + halt with `tickNextStep='verify failed, halting'`. [execute]
-  **Claimed by:** executor at 2026-04-09T07:18:27.202Z
-  **Stage:** DO
 
 
 ---
 
 ## Completed
+
+- [x] **R2:** Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field. Implemented via getVerifyCommand() helper (reads TODO.md verify field), writeLesson() helper (appends to atris/lessons.md), modified runTaskOnce() to execute verify after review succeeds, and updated autopilot loop to halt on verify failure. All tests pass (132/132). [reviewed]
 
 - [x] T47: Reconciled the Endstate contract docs with the shipped harness — `contract.md` now marks the benchmark rehearsal-ready, `endgame.md` now treats receipt emission/scoring/replay as already true, and both point at the remaining real gap: publish one real head-to-head result on pinned snapshots. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
 - [x] T46: Added a one-command benchmark rehearsal surface — `atris experiments replay endstate` now validates both packs, emits fresh dry-run receipts, and compares the latest result in one end-to-end command. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
