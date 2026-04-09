@@ -27,6 +27,9 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 - **R2:** Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field. [endgame]
+  - **R2a:** Add `getTaskFromTodo(cwd, taskTitle)` helper to `lib/todo.js` — reads TODO.md In Progress section, finds matching task by title, returns task object with verify field. [explore]
+  - **R2b:** Hook verify execution into `runTaskOnce` (commands/autopilot.js:528) — after review phase succeeds, extract verify field from current task, default to `npm test`, execute it, return verifyPass boolean. [execute]
+  - **R2c:** Handle verify failure in autopilot loop (commands/autopilot.js:1235-1270) — if verifyPass === false, write lesson to atris/lessons.md + halt with `tickNextStep='verify failed, halting'`. [execute]
 - **R3:** Add per-tick reward scoring to `appendTickSummary`. Compute reward from: commit landed (+1), npm test passed (+2), verify passed (+3), validator clean (+1), halt caught hallucination (-3). Write score to journal tick block. [endgame]
 - **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame]
 - **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
@@ -37,13 +40,16 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
+- **R2:** Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field. [endgame]
+  - **R2b:** Hook verify execution into `runTaskOnce` (commands/autopilot.js:528) — after review phase succeeds, extract verify field from current task, default to `npm test`, execute it, return verifyPass boolean. [execute]
+  - **R2c:** Handle verify failure in autopilot loop (commands/autopilot.js:1235-1270) — if verifyPass === false, write lesson to atris/lessons.md + halt with `tickNextStep='verify failed, halting'`. [execute]
+  **Claimed by:** executor at 2026-04-09T07:18:27.202Z
+  **Stage:** DO
 
 
 ---
 
 ## Completed
-
-- [x] **R1:** Add `verify:` field to endgame task format. Update /endgame SKILL.md to require a deterministic check (test command, grep pattern, file presence) per task. Update lib/todo.js parser to extract the field. [endgame] (2026-04-09) [reviewed]
 
 - [x] T47: Reconciled the Endstate contract docs with the shipped harness — `contract.md` now marks the benchmark rehearsal-ready, `endgame.md` now treats receipt emission/scoring/replay as already true, and both point at the remaining real gap: publish one real head-to-head result on pinned snapshots. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
 - [x] T46: Added a one-command benchmark rehearsal surface — `atris experiments replay endstate` now validates both packs, emits fresh dry-run receipts, and compares the latest result in one end-to-end command. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]

@@ -365,9 +365,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:1001` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:1308` (autopilotFromTodo function)
-- **Heartbeat writer:** `commands/autopilot.js:575` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Entry point:** `commands/autopilot.js:1092` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:1375` (autopilotFromTodo function)
+- **Heartbeat writer:** `commands/autopilot.js:642` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -379,12 +379,14 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:509` (`runTaskOnce`) — executes plan → do → review once and returns per-phase prompts, outputs, and elapsed time for benchmark receipts
-- **Phase executor:** `commands/autopilot.js:273` (executePhase function) — runs `claude -p`
-- **Approval gate:** `commands/autopilot.js:225` (askApproval function) — enter/skip/quit
-- **Idle-tick helper:** `commands/autopilot.js:823` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
-- **Recent-signals helper:** `commands/autopilot.js:858` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:900` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Single-task runner:** `commands/autopilot.js:569` (`runTaskOnce`) — executes plan → do → review once, runs verify command after review, returns per-phase prompts, outputs, elapsed time, and verifyPass boolean
+- **Verify executor helper:** `commands/autopilot.js:557` (`getVerifyCommand`) — reads TODO.md In Progress section, extracts verify field from current task, defaults to `npm test`
+- **Lesson writer helper:** `commands/autopilot.js:532` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
+- **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
+- **Approval gate:** `commands/autopilot.js:290` (askApproval function) — enter/skip/quit
+- **Idle-tick helper:** `commands/autopilot.js:890` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
+- **Recent-signals helper:** `commands/autopilot.js:925` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
+- **Candidate-horizons helper:** `commands/autopilot.js:967` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
 
@@ -838,7 +840,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `statusAtris()` → `commands/status.js:79-334`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
-- `autopilotAtris()` → `commands/autopilot.js:840-1004`
+- `autopilotAtris()` → `commands/autopilot.js:1092-1357`
+- `writeLesson()` → `commands/autopilot.js:532-550`
+- `getVerifyCommand()` → `commands/autopilot.js:557-567`
+- `runTaskOnce()` → `commands/autopilot.js:569-619`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
