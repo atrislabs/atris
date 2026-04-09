@@ -29,7 +29,6 @@ then /endgame picks the next horizon at the boundary.
 
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
-- **T38:** Decide whether `businessStatus(...)` needs the same chief-of-staff rewrite as local `statusAtris(...)` — audit the current remote output for operator readability, then choose between (a) leave it as a power-user diff surface, or (b) add a parallel human-summary mode. Exit: one short decision block appended to `atris/features/human-output/idea.md` with rationale and non-goal if we defer. [explore]
 - **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
 - **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Exit: file exists with ≥4 rules. [explore]
 
@@ -37,12 +36,14 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T40:** Fix the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md`. Exactly 2 edits on 1 file: (1) line 5 frontmatter `sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]` → `sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]`; (2) line 22 body `` A standalone Atris workspace at `arena/atris-business/atris-labs/`. Holds: `` → `` A standalone Atris workspace at `arena/atris-business/atris-labs-1/atris/`. Holds: ``. Verify `last_compiled` + `updated` are `2026-04-08` (already set — no re-bump). Do NOT introduce "mini-AGI" / "company-as-mini-AGI" language — keep the existing neutral "company-as-workspace" framing (per `feedback_no_mini_agi`). Exit: both hits repointed at real `atris-labs-1/atris/` path, dates verified, no new dogma words. [execute] — Claimed by: Executor at 2026-04-09T02:41:40.536Z
+
 
 ---
 
 ## Completed
 
+- [x] T38: Decided `businessStatus` is out of scope for human-output v1 — audited `commands/context-sync.js:55` against a live `node bin/atris.js status pallet` capture (339 lines / 94 chars max on an unsynced workspace, plain-language `You changed:` / `Computer changed:` / `Everything up to date.` shape, no ASCII boxes). Appended `## Decision: businessStatus scope` to `atris/features/human-output/idea.md:149-193` with choice (a) leave as power-user diff surface, four-point rationale (different reader, already plain for purpose, out of original scope, four-state output doesn't flatten to approve/hold binary), and explicit non-goal block deferring any rollup/truncation work to a future `businessStatus-polish` feature. `atris/features/*` is gitignored so idea.md stays local (2026-04-08)
+- [x] T40: Fixed the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md` — frontmatter `sources:` repointed from the ghost `atris-business/atris-labs/MEMBER.md` to real `atris-business/atris-labs-1/atris/MEMBER.md`, and the body line `A standalone Atris workspace at arena/atris-business/atris-labs/` repointed to `atris-business/atris-labs-1/atris/`. `last_compiled` + `updated` verified at `2026-04-08`; no "mini-AGI" / "company-as-mini-AGI" language introduced (neutral "company-as-workspace" framing intact per `feedback_no_mini_agi`). Verified: real source file exists at new path, ghost path is gone (2026-04-08) [reviewed]
 - [x] T44: Added a clean-workspace smoke for the documented benchmark quickstart — `test/experiments.test.js` now executes the public validate + dry-run sequence against a temp workspace, confirms both dry-run receipts land, and keeps the replay docs tied to a passing test. Verification: `node --test test/experiments.test.js` and full `npm test` green on 2026-04-08. [reviewed]
 - [x] T43: Added a public replay quickstart for the benchmark harness — `README.md` now documents the validate + dry-run flow, receipt locations, contract path, and win condition, and `atris/experiments/README.md` mirrors the same repo-root command sequence. [reviewed]
 - [x] T42: Made the benchmark docs public and honest — removed the internal comparator name from `atris/features/endstate/idea.md`, marked the design success criteria against the shipped contract, and updated `atris/features/endstate/validate.md` with the commands that pass today plus one explicit pending clean-room replay gap. [reviewed]
