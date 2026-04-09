@@ -380,12 +380,14 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:1267` (autopilotAtris function)
+- **Entry point:** `commands/autopilot.js:1413` (autopilotAtris function)
 - **From-todo mode:** `commands/autopilot.js:1608` (autopilotFromTodo function)
 - **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
 - **Reward computer:** `commands/autopilot.js:698` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
-- **Judge integrity guard:** `commands/autopilot.js:582` (`verifyJudgeIntegrity`) — SHA-256 checksums `computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
-- **Heartbeat writer:** `commands/autopilot.js:742` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Tick registry writer:** `commands/autopilot.js:563` (`recordTickCommit`) — persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
+- **Regression checker:** `commands/autopilot.js:579` (`regressionCheck`) — reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
+- **Judge integrity guard:** `commands/autopilot.js:649` (`verifyJudgeIntegrity`) — SHA-256 checksums `computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
+- **Heartbeat writer:** `commands/autopilot.js:824` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -397,7 +399,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:587-672` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, runs verify command after review, returns `verifyCmd`, `verifyRan`, and `verifyPass`
+- **Single-task runner:** `commands/autopilot.js:655-740` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, runs verify command after review, returns `verifyCmd`, `verifyRan`, and `verifyPass`
 - **Verify executor helper:** `commands/autopilot.js:565-575` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
@@ -906,10 +908,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `statusAtris()` → `commands/status.js:79-334`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
-- `autopilotAtris()` → `commands/autopilot.js:1267-1602`
+- `autopilotAtris()` → `commands/autopilot.js:1413-1782`
 - `writeLesson()` → `commands/autopilot.js:538-556`
 - `getVerifyCommand()` → `commands/autopilot.js:565-575`
-- `runTaskOnce()` → `commands/autopilot.js:587-672`
+- `recordTickCommit()` → `commands/autopilot.js:563-575`
+- `regressionCheck()` → `commands/autopilot.js:579-635`
+- `runTaskOnce()` → `commands/autopilot.js:655-740`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
