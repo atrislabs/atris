@@ -271,13 +271,14 @@ function showHelp() {
   console.log('  wake [business]    - Resume workspace (agents restart)');
   console.log('');
   console.log('Business:');
+  console.log('  business init <name>   - Create canonical business workspace (cloud + local)');
   console.log('  business add <slug>    - Connect a business');
   console.log('  business list          - Show connected businesses');
   console.log('  business remove <slug> - Disconnect a business');
   console.log('  business team [slug]   - Show members, roles, and admin access');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
   console.log('  business audit         - One-line health summary of all businesses');
-  console.log('  business create <name> - Create new business (cloud + local)');
+  console.log('  business create <name> - Create new business; add --workspace for canonical local scaffold');
   console.log('  business connect <svc> - Wire a skill/integration');
   console.log('  business notify <mode> - Set notification mode (digest/silent/push)');
   console.log('  business deploy <slug> - Push local business to cloud');

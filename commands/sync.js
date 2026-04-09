@@ -41,14 +41,14 @@ function _substituteParams(content, params) {
  * Default: NEVER overwrites existing files (preserves customizations).
  * --force: overwrites existing canonical files (bumps to latest).
  */
-function syncBusinessCanonical(targetRoot, bizMeta) {
+function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
   const params = {
     slug: bizMeta.slug || 'business',
     name: bizMeta.name || bizMeta.slug || 'this business',
     owner_email: bizMeta.owner_email || '',
   };
-  const force = process.argv.includes('--force');
-  const dryRun = process.argv.includes('--dry-run');
+  const force = options.force != null ? options.force : process.argv.includes('--force');
+  const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
   const targetAtrisDir = path.join(targetRoot, 'atris');
 
   if (!fs.existsSync(BUSINESS_TEMPLATE_DIR)) {
@@ -567,4 +567,4 @@ function syncSkills({ silent = false } = {}) {
   return updated;
 }
 
-module.exports = { syncAtris, syncSkills };
+module.exports = { syncAtris, syncSkills, syncBusinessCanonical };

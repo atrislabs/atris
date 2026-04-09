@@ -73,6 +73,20 @@ Core loop: `plan` -> `do` -> `review`
 
 Works with Claude Code, Cursor, Windsurf, Codex, GitHub Copilot, and other coding agents.
 
+## Business Workspaces
+
+If you want a real business workspace, use the business command instead of raw `atris init`.
+
+```bash
+atris business init "BLOND:ISH" --owner-email joel@blondish.world
+cd ~/arena/atris-business/blondish
+atris align --fix
+```
+
+That creates the cloud business, writes `.atris/business.json`, and scaffolds the canonical local `atris/` workspace under `~/arena/atris-business/<slug>/`.
+
+If you already have a folder full of source material, run it from there with `atris business init "BLOND:ISH" --here`.
+
 ## Core Commands
 
 | Command | Purpose |

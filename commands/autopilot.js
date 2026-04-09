@@ -13,6 +13,7 @@ const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
+const { readScorecards } = require('../lib/scorecard');
 
 const pkg = require('../package.json');
 
@@ -204,7 +205,7 @@ async function suggestNextTask(cwd, skipped = new Set()) {
   if (suggestions.length === 0) {
     try {
       const candidates = await proposeCandidateHorizons(cwd);
-      const top = candidates.reduce((best, c) => (c.confidence > best.confidence ? c : best), candidates[0]);
+      const top = scoreEndgameCandidates(cwd, candidates);
       return {
         task: top.title,
         why: top.rationale,
@@ -1026,6 +1027,91 @@ function getRecentSignals(cwd) {
 }
 
 /**
+ * Score endgame candidates by historical reward of similar horizon types.
+ * Reads last 10 scorecards, infers type from slug prefix, calculates mean
+ * reward per type, scores candidates by expected value, applies 80/20 exploit/explore.
+ *
+ * @param {string} cwd - Current working directory
+ * @param {array} candidates - Array of { title, confidence, rationale }
+ * @returns {object} - Single candidate: { title, confidence, rationale, scored: true, reason }
+ */
+function scoreEndgameCandidates(cwd, candidates) {
+  const atrisDir = path.join(cwd, 'atris');
+  if (!fs.existsSync(atrisDir)) {
+    // No atris folder yet - can't score, return best by confidence
+    const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+    return { ...best, scored: false, reason: 'no atris folder' };
+  }
+
+  try {
+    const scorecards = readScorecards(atrisDir).slice(-10); // Last 10
+    if (scorecards.length === 0) {
+      // No scorecards yet - return best by confidence
+      const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+      return { ...best, scored: false, reason: 'no scorecards' };
+    }
+
+    // Infer type from slug/title by taking prefix before first dash
+    const typeToRewards = {};
+    for (const sc of scorecards) {
+      const type = sc.slug.split('-')[0];
+      if (!typeToRewards[type]) typeToRewards[type] = [];
+      typeToRewards[type].push(sc.totalReward);
+    }
+
+    // Calculate mean reward per type
+    const typeMeans = {};
+    for (const [type, rewards] of Object.entries(typeToRewards)) {
+      const mean = rewards.reduce((a, b) => a + b, 0) / rewards.length;
+      typeMeans[type] = mean;
+    }
+
+    // Score each candidate by expected value based on historical type mean
+    const scored = candidates.map(c => {
+      const cType = c.title.split('-')[0].toLowerCase();
+      const historicalMean = typeMeans[cType] !== undefined ? typeMeans[cType] : 0;
+      const expectedValue = historicalMean * c.confidence;
+      return {
+        ...c,
+        expectedValue,
+        type: cType,
+        historicalMean
+      };
+    });
+
+    // Sort by expected value (descending)
+    scored.sort((a, b) => b.expectedValue - a.expectedValue);
+
+    // 80/20 split: 80% exploit (best), 20% explore (random)
+    const choice = Math.random();
+    let selected;
+    if (choice < 0.8) {
+      // Exploit: return highest expected value
+      selected = scored[0];
+    } else {
+      // Explore: return random candidate
+      selected = scored[Math.floor(Math.random() * scored.length)];
+    }
+
+    const reason = choice < 0.8
+      ? `exploit: type=${selected.type} mean-reward=${selected.historicalMean.toFixed(1)} expected-value=${selected.expectedValue.toFixed(1)}`
+      : `explore: random-candidate type=${selected.type}`;
+
+    return {
+      title: selected.title,
+      confidence: selected.confidence,
+      rationale: selected.rationale,
+      scored: true,
+      reason
+    };
+  } catch (err) {
+    // If scoring fails, fall back to best by confidence
+    const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+    return { ...best, scored: false, reason: `scoring error: ${err.message}` };
+  }
+}
+
+/**
  * Propose 3 candidate next horizons for the autopilot loop. Combines
  * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
  * to imagine what to work on next, spawns `claude -p`, and parses the
@@ -1488,5 +1574,6 @@ module.exports = {
   renderHumanTickIntro,
   proposeCandidateHorizons,
   runTaskOnce,
+  scoreEndgameCandidates,
   suggestNextTask
 };
