@@ -229,3 +229,82 @@ merge-conflict surface, reintroducing the collision class we're eliminating.
 The hybrid keeps the authoritative claim in git (visible to every agent and
 CI) while pushing high-frequency liveness signals to a local heartbeat file
 whose TTL lets `atris claim` break stale locks without a human commit.
+
+---
+
+## Schema: lock file
+
+A lock file represents a single agent's claim on a single repo-relative path.
+Claim files live in `atris/locks/` (tracked in git; cross-clone visible).
+Heartbeat files live in `.atris/locks/` (gitignored; local-only liveness).
+Both share the same filename encoding and the same JSON body shape.
+
+### Filename encoding
+
+The claimed path is encoded into the lock filename by replacing every `/`
+with `__` and appending `.lock`. The encoding is reversible and produces no
+subdirectories, so `atris/locks/` stays flat and globbable.
+
+| Claimed path | Lock filename |
+|---|---|
+| `commands/autopilot.js` | `commands__autopilot.js.lock` |
+| `atris/features/agent-coordinator/idea.md` | `atris__features__agent-coordinator__idea.md.lock` |
+| `TODO.md` | `TODO.md.lock` |
+| `lib/wiki.js` | `lib__wiki.js.lock` |
+
+Rules:
+- Only `/` is encoded. Dots, dashes, and underscores pass through untouched.
+- Paths must be repo-relative and POSIX-style (forward slashes only).
+- A literal `__` in a source path is not supported — flag and halt. None
+  exist in this repo today.
+
+### JSON body shape
+
+```json
+{
+  "agent": "string — human or agent identifier (e.g. 'executor', 'autopilot-tick', 'keshav')",
+  "task": "string — task ID from TODO.md (e.g. 'T31') or free-form slug if ad-hoc",
+  "claimed_at": "string — ISO 8601 UTC timestamp with milliseconds (e.g. '2026-04-09T01:28:15.117Z')",
+  "pid": "number — OS process ID of the claiming process (used by heartbeat liveness check)",
+  "ttl_seconds": "number — stale-TTL in seconds; claim is reclaimable after claimed_at + ttl_seconds with no heartbeat refresh",
+  "host": "string — os.hostname() of the claiming machine (disambiguates PIDs across clones)"
+}
+```
+
+All six fields are required. Unknown fields are ignored on read but
+forbidden on write (keeps the schema tight).
+
+### Stale-TTL default + override
+
+- **Default:** `600` seconds (10 minutes). Long enough to survive a normal
+  plan→do→review cycle, short enough that a crashed agent doesn't block the
+  fleet for more than one coffee break.
+- **Override:** `ATRIS_LOCK_TTL_SECONDS` env var. If set and parseable as a
+  positive integer, it replaces the default for any new claim written by
+  that process. Existing locks keep whatever TTL they were written with —
+  the TTL is baked into the lock file itself, not read dynamically.
+- **Reclaim rule:** `atris claim` treats a lock as stale (and therefore
+  reclaimable) when `now - claimed_at > ttl_seconds` AND the local heartbeat
+  file is missing or older than `ttl_seconds`. Both conditions must hold so
+  a live long-running task refreshing its heartbeat is never stolen.
+
+### Example lock file
+
+Path: `atris/locks/commands__autopilot.js.lock`
+
+```json
+{
+  "agent": "executor",
+  "task": "T31",
+  "claimed_at": "2026-04-09T01:28:15.117Z",
+  "pid": 48213,
+  "ttl_seconds": 600,
+  "host": "keshavs-mbp.local"
+}
+```
+
+Decoded: the `executor` agent, running as PID 48213 on `keshavs-mbp.local`,
+claimed `commands/autopilot.js` at `2026-04-09T01:28:15.117Z` for task `T31`
+with a 10-minute stale TTL. Any other agent hitting this path before
+`2026-04-09T01:38:15.117Z` (or before the heartbeat at
+`.atris/locks/commands__autopilot.js.heartbeat` goes cold) halts.
