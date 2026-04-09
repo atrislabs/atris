@@ -2,10 +2,11 @@
 last_compiled: 2026-04-09
 sources:
   - bin/atris.js:199-337 (showHelp function — core workflow section)
-  - commands/init.js:398-424 (TODO.md file creation)
-  - commands/workflow.js:83-92 (planAtris — read TODO.md)
-  - commands/workflow.js:427-434 (doAtris — read TODO.md)
-  - commands/workflow.js:746-754 (reviewAtris — read TODO.md)
+  - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
+  - commands/workflow.js:83-92 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:280-281 (planAtris — include TODO.md in user prompt)
+  - commands/workflow.js:427-437 (doAtris — load and read TODO.md)
+  - commands/workflow.js:746-755 (reviewAtris — read TODO.md)
   - atris/features/cli-ux-simplification/idea.md
   - atris/features/cli-ux-simplification/build.md
 ---
@@ -25,16 +26,16 @@ sources:
 - [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 247-248)
 
 ### 2. TODO.md Creation & Usage
-- [x] `atris init` creates atris/TODO.md with placeholder content (commands/init.js:329-423)
-- [x] TODO.md template includes Backlog, In Progress, Completed sections (init.js:398-411)
-- [x] init summary mentions "Claim tasks in TODO.md" (init.js:624)
+- [x] `atris init` creates atris/TODO.md with placeholder content (commands/init.js:398-422)
+- [x] TODO.md template includes Backlog, In Progress, Completed sections (init.js:398-422)
+- [x] init calls console.log summary after creation (init.js:423)
 
 ### 3. Commands Read TODO.md
 - [x] **plan**: Loads TODO.md for current state (workflow.js:83-92)
-- [x] **plan**: Includes TODO.md in user prompt when present (workflow.js:281, 293)
-- [x] **do**: Reads TODO.md to find tasks to execute (workflow.js:427-434)
-- [x] **review**: Reads TODO.md for task context (workflow.js:746-754)
-- [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js:91-93, parseTodo call)
+- [x] **plan**: Includes TODO.md in user prompt when present (workflow.js:280-281, 293)
+- [x] **do**: Reads TODO.md to find tasks to execute (workflow.js:427-437)
+- [x] **review**: Reads TODO.md for task context (workflow.js:746-755)
+- [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js with parseTodo)
 
 ### 4. Backwards Compatibility
 - [x] Legacy TASK_CONTEXTS.md fallback documented in workflow.js:84 comment
