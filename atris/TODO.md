@@ -27,8 +27,6 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 - **T27 [In Progress, Claimed by: Executor at 2026-04-09T00:27:18.359Z]:** Validate T20 end-to-end — run `atris autopilot --auto --iterations=1` against this repo, copy the new Notes block into `atris/features/human-output/validate.md` under a `## T20 heartbeat` section, mark pass/fail against: (i) ≤20 lines × ≤80 chars, (ii) matches `examples.md` shape, (iii) idle case contains `0 tasks in 0s`, (iv) `getIdleTickCount` returns ≥1 after an idle tick. Exit: validate.md has the block + 4 check results. [explore]
-- **T27a [In Progress, Claimed by: Executor at 2026-04-09T00:28:33.562Z]:** Run `node bin/atris.js autopilot --auto --iterations=1` from this repo and capture the resulting `## Notes` block (the `appendTickSummary` heartbeat) from today's journal `atris/logs/2026/2026-04-08.md`. Save raw block to scratch for T27b. Exit: heartbeat block captured. [execute]
-- **T27b [In Progress, Claimed by: Executor at 2026-04-09T00:29:49.403Z]:** Append a new `## T20 heartbeat` section to `atris/features/human-output/validate.md` containing the captured raw block in a fenced `text` codeblock + measured line count + max line width. Exit: section exists with raw block + measurements. [execute]
 - **T27c:** Under the same `## T20 heartbeat` section, score the 4 checks in a markdown table: (i) ≤20 lines × ≤80 chars, (ii) matches one of `examples.md` shapes (happy/idle/validator-pass), (iii) if idle tick → block contains literal `0 tasks in 0s`, (iv) `getIdleTickCount(process.cwd())` returns ≥1 after the idle tick (smoke via `node -e`). Append surface verdict line. Exit: 4 rows + verdict. [execute]
 
 ---
@@ -39,6 +37,8 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] T27a: Ran `node bin/atris.js autopilot --auto --iterations=1`; captured heartbeat block from `atris/logs/2026/2026-04-08.md:353-356` (5:32 pm tick) to `.atris/scratch-t27a-heartbeat.txt` for T27b/c (2026-04-08)
+- [x] T27b: `## T20 heartbeat` section already present in `atris/features/human-output/validate.md:236-254` with fenced text block + measurements (4 content lines, max 543 chars from verbatim task title; idle variant 5 lines / 56 chars at journal :319-323) (2026-04-08) [reviewed]
 - [x] T25a: Re-verified T25 wiring at `commands/autopilot.js:1271-1289` — `appendTickSummary` called with horizon from `readHorizonSlug` (:631), idle = `tickOutcome === 'idle' || (completed === 0 && tickOutcome !== 'halted')` (:1279), halted branch sets `tickNextStep='stop until a human looks at the error'` (:1254), block wrapped in try/catch (:1273-1289). All four conditions hold; T25b/c dropped (2026-04-08)
 - [x] T26: Replaced the autopilot SKILL.md rule wording with the canonical "The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal." line and added the same rule under loop SKILL.md `## Rules`. Grep for `Notes` in both files now only shows the canonical rule (autopilot) and no agent-written heartbeat guidance (loop) (2026-04-08)
 - [x] T25: Verified `appendTickSummary` wiring already shipped via T20 at `commands/autopilot.js:1271-1289` — calls helper with horizon from `readHorizonSlug` (:631), idle = `completed===0 && tickOutcome!=='halted'` (:1279), halted branch sets `tickNextStep='stop until a human looks at the error'` (:1254), whole block try/catch-guarded. All four T25a conditions hold; T25b/c can drop (2026-04-08)
