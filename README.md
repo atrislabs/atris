@@ -111,6 +111,7 @@ If you already have a folder full of source material, run it from there with `at
 
 - `atris learn` stores structured project memory in `atris/learnings.jsonl`
 - `atris wiki` keeps repo memory in `atris/wiki/` by default, with `--cloud` when you want the remote workspace path
+- `atris wiki --private` uses `.atris/presidio/` for local-only sensitive notes and operating memory
 - `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
 - `atris experiments` runs Karpathy-style keep/revert loops in `atris/experiments/`
@@ -121,7 +122,7 @@ If you already have a folder full of source material, run it from there with `at
 Under the hood, Atris can keep score on real repo work.
 
 - Endgame tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
-- `atris autopilot` can run that check after review, record a reward in the journal, and append a scorecard when a horizon closes.
+- `atris autopilot` can run that check after review, record a reward in the journal, and append a local scorecard when a horizon closes.
 - Future horizon picks can weight against recent scorecards, so the loop learns from repo-local history without claiming model retraining.
 
 ## Benchmark Harness

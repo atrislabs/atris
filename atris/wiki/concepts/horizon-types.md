@@ -131,7 +131,7 @@ Some horizons use non-standard prefixes:
 
 ## Scorecard Contract
 
-When an endgame closes, a scorecard is written to `atris/scorecards.md` with the format:
+When an endgame closes, a scorecard is written to `.atris/presidio/scorecards.md` with the format:
 
 ```markdown
 - **[YYYY-MM-DD] slug** — shipped: N/M — wall-clock: Xh — halt: Z% — reward: R — lessons: L

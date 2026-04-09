@@ -55,14 +55,18 @@
   - source: atris/TODO.md
   - source: commands/autopilot.js
   - source: lib/scorecard.js
-  - source: atris/scorecards.md
-  - durable: Atris should underpromise publicly as a verifiable feedback loop, while internally the repo now behaves like an RL-style environment around fixed-model agents
+  - source: .atris/presidio/scorecards.md
+  - durable: Atris should underpromise publicly as a verifiable feedback loop and keep live scorecards in Presidio
 - RECOMPILE briefs/atris-cli-overview.md and systems/atris-cli.md for the reward rail
   - source: README.md
   - source: commands/autopilot.js
   - source: lib/scorecard.js
   - source: atris/TODO.md
-  - durable: the CLI overview and system page now explain verify commands, reward blocks, scorecards, and horizon weighting in one place
+  - durable: the CLI overview and system page now explain verify commands, reward blocks, scorecards, and the Presidio split in one place
+- MOVE flywheel scorecards to Presidio
+  - source: .gitignore
+  - source: lib/scorecard.js
+  - durable: scorecards are local operating memory and should not live in the tracked repo
 - 19:12 LOOP 11 pages, 7 stale, 1 orphan, 3 suggested
   - stale atris/wiki/people/jack-dorsey.md <- https://www.youtube.com/watch?v=YTVSwOY19Qs
   - stale atris/wiki/systems/atris-business.md <- /Users/keshavrao/arena/atris-cli/commands/business.js

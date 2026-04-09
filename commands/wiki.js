@@ -5,6 +5,8 @@ const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const {
   WIKI_ROOT,
+  PRIVATE_WIKI_ROOT,
+  getWikiRoot,
   ensureWikiScaffold,
   findLocalWikiDir,
   buildIngestPrompt,
@@ -31,9 +33,14 @@ function parseCloudArgs(args) {
 
 function parseModeArgs(args) {
   const cloud = args.includes('--cloud');
+  const privateMode = args.includes('--private');
+  if (cloud && privateMode) {
+    console.error('Use either --cloud or --private, not both.');
+    process.exit(1);
+  }
   return {
-    mode: cloud ? 'cloud' : 'local',
-    args: args.filter((arg) => arg !== '--cloud' && arg !== '--local'),
+    mode: cloud ? 'cloud' : (privateMode ? 'private' : 'local'),
+    args: args.filter((arg) => arg !== '--cloud' && arg !== '--local' && arg !== '--private'),
   };
 }
 
@@ -142,10 +149,10 @@ async function runChat(business, prompt, token) {
   }
 }
 
-function printLocalPrompt(title, prompt, details = []) {
+function printLocalPrompt(title, prompt, wikiRoot, details = []) {
   console.log('');
   console.log(title);
-  console.log(`Target: ${WIKI_ROOT}`);
+  console.log(`Target: ${wikiRoot}`);
   details.forEach((detail) => console.log(detail));
   console.log('');
   console.log('Prompt for the current coding agent:');
@@ -160,9 +167,10 @@ async function wikiIngest(mode, slug, sourceValue) {
     process.exit(1);
   }
 
-  if (mode === 'local') {
-    const wikiDir = ensureWikiScaffold();
-    printLocalPrompt('Local wiki ingest', buildIngestPrompt(sourceValue), [
+  if (mode === 'local' || mode === 'private') {
+    const wikiMode = mode === 'private' ? 'private' : 'public';
+    const wikiDir = ensureWikiScaffold(process.cwd(), wikiMode);
+    printLocalPrompt(mode === 'private' ? 'Private wiki ingest' : 'Local wiki ingest', buildIngestPrompt(sourceValue, wikiMode), getWikiRoot(wikiMode), [
       `Wiki dir: ${wikiDir}`,
       `Sources: ${sourceValue}`,
     ]);
@@ -182,13 +190,14 @@ async function wikiQuery(mode, slug, question) {
     process.exit(1);
   }
 
-  if (mode === 'local') {
-    const wikiDir = findLocalWikiDir(process.cwd(), slug);
+  if (mode !== 'cloud') {
+    const wikiMode = mode === 'private' ? 'private' : 'public';
+    const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
     if (!wikiDir) {
-      console.error('No local atris/wiki found. Run: atris ingest <path>');
+      console.error(`No local wiki found at ${getWikiRoot(wikiMode)}. Run: atris wiki ingest${wikiMode === 'private' ? ' --private' : ''} <path>`);
       process.exit(1);
     }
-    printLocalPrompt('Local wiki query', buildQueryPrompt(question), [
+    printLocalPrompt(mode === 'private' ? 'Private wiki query' : 'Local wiki query', buildQueryPrompt(question, wikiMode), getWikiRoot(wikiMode), [
       `Wiki dir: ${wikiDir}`,
       `Question: ${question}`,
     ]);
@@ -201,13 +210,14 @@ async function wikiQuery(mode, slug, question) {
 }
 
 async function wikiLint(mode, slug) {
-  if (mode === 'local') {
-    const wikiDir = findLocalWikiDir(process.cwd(), slug);
+  if (mode !== 'cloud') {
+    const wikiMode = mode === 'private' ? 'private' : 'public';
+    const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
     if (!wikiDir) {
-      console.error('No local atris/wiki found. Run: atris ingest <path>');
+      console.error(`No local wiki found at ${getWikiRoot(wikiMode)}. Run: atris wiki ingest${wikiMode === 'private' ? ' --private' : ''} <path>`);
       process.exit(1);
     }
-    printLocalPrompt('Local wiki lint', buildLintPrompt(), [`Wiki dir: ${wikiDir}`]);
+    printLocalPrompt(mode === 'private' ? 'Private wiki lint' : 'Local wiki lint', buildLintPrompt(wikiMode), getWikiRoot(wikiMode), [`Wiki dir: ${wikiDir}`]);
     return;
   }
 
@@ -217,15 +227,16 @@ async function wikiLint(mode, slug) {
   await runChat(business, buildLintPrompt(), creds.token);
 }
 
-function wikiSearch(slug, query) {
+function wikiSearch(mode, slug, query) {
   if (!query) {
     console.error('Usage: atris wiki search [business] <term>');
     process.exit(1);
   }
 
-  const wikiDir = findLocalWikiDir(process.cwd(), slug);
+  const wikiMode = mode === 'private' ? 'private' : 'public';
+  const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
   if (!wikiDir) {
-    console.error(`No local wiki found. Run: atris pull ${slug || ''} --only wiki`);
+    console.error(`No local wiki found at ${getWikiRoot(wikiMode)}.`);
     process.exit(1);
   }
 
@@ -250,10 +261,11 @@ function wikiSearch(slug, query) {
   console.log('');
 }
 
-function wikiLog(slug, limit) {
-  const wikiDir = findLocalWikiDir(process.cwd(), slug);
+function wikiLog(mode, slug, limit) {
+  const wikiMode = mode === 'private' ? 'private' : 'public';
+  const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
   if (!wikiDir) {
-    console.error(`No local wiki found. Run: atris pull ${slug || ''} --only wiki`);
+    console.error(`No local wiki found at ${getWikiRoot(wikiMode)}.`);
     process.exit(1);
   }
 
@@ -314,14 +326,21 @@ async function wikiCommand(subcommand, ...args) {
       break;
     }
     case 'search': {
-      const [slug, query] = parseCloudArgs(cleanArgs);
-      wikiSearch(slug, query);
+      if (mode === 'private') {
+        wikiSearch(mode, null, cleanArgs.join(' '));
+      } else {
+        const [slug, query] = parseCloudArgs(cleanArgs);
+        wikiSearch(mode, slug, query);
+      }
       break;
     }
     case 'log': {
       let slug;
       let limit;
-      if (cleanArgs.length === 0) {
+      if (mode === 'private') {
+        slug = null;
+        limit = parseInt(cleanArgs[0], 10) || 20;
+      } else if (cleanArgs.length === 0) {
         slug = autoDetectSlug();
         limit = 20;
       } else if (cleanArgs.length === 1) {
@@ -336,7 +355,7 @@ async function wikiCommand(subcommand, ...args) {
         slug = cleanArgs[0];
         limit = parseInt(cleanArgs[1], 10) || 20;
       }
-      wikiLog(slug, limit);
+      wikiLog(mode, slug, limit);
       break;
     }
     case 'loop': {
@@ -361,6 +380,7 @@ async function wikiCommand(subcommand, ...args) {
       console.log('Flags:');
       console.log('  --cloud                       Route ingest/query/lint to the cloud workspace');
       console.log('  --local                       Be explicit about local mode');
+      console.log(`  --private                     Use local private wiki at ${PRIVATE_WIKI_ROOT}/`);
       console.log('');
       console.log('Business is auto-detected from .atris/business.json for cloud mode if omitted.');
   }

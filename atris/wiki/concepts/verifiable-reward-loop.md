@@ -1,13 +1,13 @@
 ---
 type: concept
 slug: verifiable-reward-loop
-title: Verifiable Reward Loop
+title: Verifiable Feedback Loop
 sources:
   - README.md
   - atris/TODO.md
   - commands/autopilot.js
   - lib/scorecard.js
-  - atris/scorecards.md
+  - .atris/presidio/scorecards.md
 created: 2026-04-09
 updated: 2026-04-09
 last_compiled: 2026-04-09
@@ -19,16 +19,16 @@ tags:
   - rl
 ---
 
-# Verifiable Reward Loop
+# Verifiable Feedback Loop
 
-Atris does not retrain the model. It creates a repo-local environment where agent actions hit deterministic checks, those checks emit reward, and future horizon picks can condition on outcome history. In that sense, it now behaves like an RL-style environment around a fixed model, not an RL-trained model itself.
+Atris can close work on deterministic checks, record reward from those checks, and keep local scorecards for future horizon selection. That makes the loop more verifiable and more grounded in repo history without claiming model retraining.
 
 ## Environment pieces
 
 - **Action surface** — `plan`, `do`, `review`, and `autopilot` act on real repo state.
 - **Truth substrate** — endgame tasks can carry `Verify:` commands that exit cleanly or fail mechanically.
 - **Reward substrate** — autopilot tick summaries write reward into the journal from observable signals.
-- **Episode memory** — closed horizons append scorecards to `atris/scorecards.md`.
+- **Episode memory** — closed horizons append scorecards to `.atris/presidio/scorecards.md`.
 - **Policy update** — future horizon picks can weight candidates against recent scorecard history.
 
 ## Loop shape
@@ -39,19 +39,18 @@ Atris does not retrain the model. It creates a repo-local environment where agen
 4. When the horizon closes, a scorecard is appended with shipped work, reward, halt ratio, and lessons.
 5. The next horizon picker can read those scorecards and weight similar work higher or lower.
 
-## Why "environment creator" is the right phrase
+## Privacy boundary
 
-- The model stays fixed; there is no weight update or fine-tune loop here.
-- The repository, the task board, the verify checks, and the journal create the environment the model acts inside.
-- Rewards come from mechanical checks, not from the model grading itself.
-- Improvement comes from stronger checks and better horizon selection, not from changing the underlying model.
+- `atris/wiki/` is the publishable knowledge surface.
+- `.atris/presidio/` is the local-only operating surface for scorecards and sensitive tuning notes.
+- Distilled lessons can graduate into the public wiki; live reward shaping should stay in Presidio.
 
 ## Honest limits
 
 - Reward shaping is still hand-authored and local to this repo.
 - Scorecard history is small, so weighting is useful but not magical.
 - Verify coverage is only as strong as the checks the human or agent writes.
-- The loop can learn which work shapes close cleanly, but it is not doing policy-gradient training or hidden self-modification.
+- The loop can learn which work shapes close cleanly, but it is not doing model retraining.
 
 ## Cross-References
 
