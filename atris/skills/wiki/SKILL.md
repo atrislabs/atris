@@ -33,7 +33,7 @@ Use:
 When asked to ingest:
 1. Read the full source before writing.
 2. Ask a clarifying question if the source is ambiguous or the scope is too wide.
-3. Create or update entity, concept, and synthesis pages under `atris/wiki/`.
+3. Create or update people, system, concept, and brief pages under `atris/wiki/`.
 4. Update `index.md`, `log.md`, and `STATUS.md` in the same pass.
 5. Merge new facts into existing pages. Do not wipe prior context.
 
@@ -43,7 +43,7 @@ When asked a wiki question:
 1. Read `atris/wiki/index.md` first.
 2. Open only the relevant pages.
 3. Answer with page-path references.
-4. If the answer should compound, offer to save a synthesis page.
+4. If the answer should compound, offer to save a brief page.
 
 ## Lint
 

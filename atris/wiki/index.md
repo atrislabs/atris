@@ -14,7 +14,7 @@
 - [[atris/wiki/concepts/plan-do-review-loop.md]] — core Atris workflow and how local memory fits into it
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
 
-## Syntheses
+## Briefs
 
-- [[atris/wiki/syntheses/atris-cli-overview.md]] — summary of CLI, workspace layers, and why `atris/wiki/` exists
-- [[atris/wiki/syntheses/atris-labs-workspace-protocol.md]] — atris-labs workspace protocol: on-load sequence, layout, surfaces, north star
+- [[atris/wiki/briefs/atris-cli-overview.md]] — summary of CLI, workspace layers, and why `atris/wiki/` exists
+- [[atris/wiki/briefs/atris-labs-workspace-protocol.md]] — atris-labs workspace protocol: on-load sequence, layout, surfaces, north star

@@ -36,9 +36,10 @@ raw source / question
         |   |- index.md
         |   |- log.md
         |   |- STATUS.md
-        |   |- entities/
+        |   |- people/
+        |   |- systems/
         |   |- concepts/
-        |   `- syntheses/
+        |   `- briefs/
         |
         `--> --cloud
               |

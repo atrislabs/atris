@@ -14,15 +14,16 @@ The `atris/wiki/` folder is the durable memory layer beneath the Atris loop. It 
 
 ## Why it exists
 
-Without the wiki, every Atris session starts cold. MAP.md tells you *where* code lives. TODO.md tells you *what's queued*. The journal tells you *what happened today*. But none of those tell you **what this thing is** or **why** decisions were made. The wiki is meant to be the layer where raw artifacts (videos, calls, docs, threads) get distilled into entities, concepts, and syntheses the next agent can pick up cold.
+Without the wiki, every Atris session starts cold. MAP.md tells you *where* code lives. TODO.md tells you *what's queued*. The journal tells you *what happened today*. But none of those tell you **what this thing is** or **why** decisions were made. The wiki is meant to be the layer where raw artifacts (videos, calls, docs, threads) get distilled into people, systems, concepts, and briefs the next agent can pick up cold.
 
-## Three page types
+## Four page types
 
 | Type | Folder | Purpose |
 |---|---|---|
-| **entity** | `entities/` | One page per person, company, project, or system |
+| **person** | `people/` | One page per human worth remembering |
+| **system** | `systems/` | One page per company, project, tool, or service |
 | **concept** | `concepts/` | Patterns, frameworks, recurring ideas |
-| **synthesis** | `syntheses/` | Cross-cutting analyses referencing 3+ pages |
+| **brief** | `briefs/` | Cross-cutting analyses referencing 3+ pages |
 
 Plus four index files at the root: `wiki.md` (protocol), `index.md` (catalog), `log.md` (append-only history), `STATUS.md` (plain-English health).
 
@@ -43,7 +44,7 @@ Plus four index files at the root: `wiki.md` (protocol), `index.md` (catalog), `
 
 ```yaml
 ---
-type: entity | concept | synthesis
+type: person | system | concept | brief
 slug: short-id
 title: Human Readable
 sources: [path/to/source1.md]

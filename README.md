@@ -102,6 +102,40 @@ Works with Claude Code, Cursor, Windsurf, Codex, GitHub Copilot, and other codin
 - `atris experiments` runs Karpathy-style keep/revert loops in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 
+## Benchmark Harness
+
+Atris ships one public head-to-head benchmark harness for comparing a pinned
+single-model baseline against a coordinated stack run on the same task brief.
+
+Quickstart:
+
+```bash
+node bin/atris.js experiments validate endstate-baseline
+node bin/atris.js experiments validate endstate-stack
+node bin/atris.js experiments run endstate-baseline --dry-run
+node bin/atris.js experiments run endstate-stack --dry-run
+node bin/atris.js experiments compare endstate
+```
+
+One-command rehearsal:
+
+```bash
+node bin/atris.js experiments replay endstate
+```
+
+What to inspect:
+
+- receipts land in `atris/experiments/endstate-baseline/artifacts/` and
+  `atris/experiments/endstate-stack/artifacts/`
+- scores append to each pack's `results.tsv`
+- `atris experiments compare endstate` prints the latest side-by-side scorecard
+- `atris experiments replay endstate` runs the full public dry-run rehearsal
+- the benchmark contract lives at `atris/features/endstate/contract.md`
+- the verification log lives at `atris/features/endstate/validate.md`
+
+The stack wins Level 1 only if it beats the baseline on total score and does
+not lose the reviewed completion category.
+
 ## Skills
 
 Atris ships a real skill catalog in `atris/skills/`, not just one workflow file.

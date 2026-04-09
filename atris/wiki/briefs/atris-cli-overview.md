@@ -1,5 +1,5 @@
 ---
-type: synthesis
+type: brief
 slug: atris-cli-overview
 title: Atris CLI Overview
 sources:
@@ -29,7 +29,7 @@ The working set is split across seven layers that compound across sessions:
 - `atris/features/` — feature packs (`idea.md` → `build.md` → `validate.md`)
 - `atris/skills/` — reusable skills agents can invoke
 - `atris/team/` — agent personas (navigator, executor, validator, brainstormer, launcher, researcher)
-- `atris/wiki/` — durable memory (entities, concepts, syntheses)
+- `atris/wiki/` — durable memory (people, systems, concepts, briefs)
 
 `atris/lessons.md` sits alongside as an append-only record the validator harvests after every feature, so failures compound into guidance instead of being forgotten.
 
@@ -37,7 +37,7 @@ The working set is split across seven layers that compound across sessions:
 
 The base move is still `plan` → `do` → `review`: navigator plans, executor builds, validator checks. Around that core, the CLI now wires a longer loop: `brainstorm` shapes raw inbox ideas into tasks, `plan`/`do`/`review` executes them step by step, `autopilot` and `run` drive the loop autonomously via `claude -p` subprocesses, and `loop` schedules the recurring heartbeat that keeps the repo brain honest. `autopilot` is endgame-driven — it reads the current horizon from `TODO.md`'s `## Endgame` section and prefers `[endgame]`-tagged backlog tasks over reactive signals, so progress stays pointed at a real target.
 
-The self-improvement rail is `atris/features/endstate/` and the `experiments/` packs beside it: `atris experiments run <slug>` drives focused benchmark tracks (baseline vs. stack) through the same autopilot primitives that ship real work, emitting receipts and `results.tsv` rows so improvements can be measured instead of claimed. The wiki loop (`atris wiki ingest` / `query` / `lint`, scheduled by `atris loop`) keeps durable knowledge fresh by detecting stale sources and orphan pages, which is how this synthesis got recompiled in the first place.
+The self-improvement rail is `atris/features/endstate/` and the `experiments/` packs beside it: `atris experiments run <slug>` drives focused benchmark tracks (baseline vs. stack) through the same autopilot primitives that ship real work, emitting receipts and `results.tsv` rows so improvements can be measured instead of claimed. The wiki loop (`atris wiki ingest` / `query` / `lint`, scheduled by `atris loop`) keeps durable knowledge fresh by detecting stale sources and orphan pages, which is how this brief got recompiled in the first place.
 
 ## Cross-References
 

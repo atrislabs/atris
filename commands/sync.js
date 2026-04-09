@@ -1,8 +1,142 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { ensureWikiScaffold } = require('../lib/wiki');
+
+const BUSINESS_TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'business-canonical');
+
+/**
+ * Walk a directory and return relative file paths.
+ */
+function _walkTemplateDir(dir, base = dir) {
+  const out = [];
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch { return out; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      out.push(..._walkTemplateDir(full, base));
+    } else if (e.isFile()) {
+      out.push(path.relative(base, full));
+    }
+  }
+  return out;
+}
+
+/**
+ * Substitute {{name}}, {{slug}}, {{owner_email}} in template content.
+ */
+function _substituteParams(content, params) {
+  return content
+    .replace(/\{\{name\}\}/g, params.name || params.slug || 'this business')
+    .replace(/\{\{slug\}\}/g, params.slug || 'business')
+    .replace(/\{\{owner_email\}\}/g, params.owner_email || '');
+}
+
+/**
+ * Sync canonical business template files into a business workspace.
+ * Used when .atris/business.json is present (business mode).
+ *
+ * Default: NEVER overwrites existing files (preserves customizations).
+ * --force: overwrites existing canonical files (bumps to latest).
+ */
+function syncBusinessCanonical(targetRoot, bizMeta) {
+  const params = {
+    slug: bizMeta.slug || 'business',
+    name: bizMeta.name || bizMeta.slug || 'this business',
+    owner_email: bizMeta.owner_email || '',
+  };
+  const force = process.argv.includes('--force');
+  const dryRun = process.argv.includes('--dry-run');
+  const targetAtrisDir = path.join(targetRoot, 'atris');
+
+  if (!fs.existsSync(BUSINESS_TEMPLATE_DIR)) {
+    console.error(`✗ Canonical template directory not found: ${BUSINESS_TEMPLATE_DIR}`);
+    console.error('  Your atris-cli installation may be incomplete.');
+    process.exit(1);
+  }
+
+  console.log('');
+  console.log(`Updating ${params.name} (${params.slug}) from canonical templates...`);
+  console.log(`  Target: ${targetAtrisDir}/`);
+  console.log(`  Source: ${BUSINESS_TEMPLATE_DIR}`);
+  console.log('');
+
+  const templateFiles = _walkTemplateDir(BUSINESS_TEMPLATE_DIR).sort();
+  let added = 0, updated = 0, skipped = 0, preserved = 0;
+  const addedList = [], updatedList = [], preservedList = [];
+
+  for (const relPath of templateFiles) {
+    const templatePath = path.join(BUSINESS_TEMPLATE_DIR, relPath);
+    const targetPath = path.join(targetAtrisDir, relPath);
+    let templateContent;
+    try { templateContent = fs.readFileSync(templatePath, 'utf-8'); } catch { continue; }
+    const finalContent = _substituteParams(templateContent, params);
+
+    if (!fs.existsSync(targetPath)) {
+      addedList.push(relPath); added++;
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.writeFileSync(targetPath, finalContent);
+      }
+    } else {
+      const existing = fs.readFileSync(targetPath, 'utf-8');
+      if (existing === finalContent) {
+        skipped++;
+      } else if (force) {
+        updatedList.push(relPath); updated++;
+        if (!dryRun) fs.writeFileSync(targetPath, finalContent);
+      } else {
+        preservedList.push(relPath); preserved++;
+      }
+    }
+  }
+
+  console.log(`  Added:     ${added}`);
+  console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
+  console.log(`  Preserved: ${preserved} (existing customizations kept)`);
+  console.log(`  Skipped:   ${skipped} (already match template)`);
+  console.log('');
+
+  if (addedList.length > 0) {
+    console.log('  New files:');
+    addedList.slice(0, 15).forEach(p => console.log(`    + atris/${p}`));
+    if (addedList.length > 15) console.log(`    ... +${addedList.length - 15} more`);
+    console.log('');
+  }
+  if (updatedList.length > 0) {
+    console.log(`  ${force ? 'Updated' : 'Differ from template (preserved)'}:`);
+    updatedList.slice(0, 15).forEach(p => console.log(`    ↑ atris/${p}`));
+    if (updatedList.length > 15) console.log(`    ... +${updatedList.length - 15} more`);
+    console.log('');
+  }
+
+  if (dryRun) {
+    console.log('  (--dry-run, no changes made)');
+  } else if (added === 0 && updated === 0) {
+    ensureWikiScaffold(targetRoot);
+    console.log('  ✓ Already up to date');
+  } else {
+    ensureWikiScaffold(targetRoot);
+    console.log(`  ✓ Local workspace updated. Run \`atris align ${params.slug} --fix\` to push to EC2.`);
+  }
+}
 
 function syncAtris() {
+  // Business mode detection: if .atris/business.json exists, use canonical templates
+  const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+  if (fs.existsSync(bizFile)) {
+    try {
+      const bizMeta = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+      return syncBusinessCanonical(process.cwd(), bizMeta);
+    } catch (e) {
+      console.error(`✗ Failed to read .atris/business.json: ${e.message}`);
+      process.exit(1);
+    }
+  }
+
+  // Legacy/dev mode: sync from atris-cli's own atris/ folder
   const targetDir = path.join(process.cwd(), 'atris');
   const teamDir = path.join(targetDir, 'team');
   const legacyAgentTeamDir = path.join(targetDir, 'agent_team');
@@ -297,8 +431,10 @@ After displaying the boot output, respond to the user naturally.
   }
 
   if (updated === 0) {
+    ensureWikiScaffold(process.cwd());
     console.log('✓ Already up to date');
   } else {
+    ensureWikiScaffold(process.cwd());
     console.log(`\n✓ Updated ${updated} file(s), ${skipped} unchanged`);
     console.log('\nRun your AI agent again to use the latest specs and agent templates.');
   }
@@ -378,7 +514,17 @@ function syncSkills({ silent = false } = {}) {
     }
   }
 
-  // --- 2. Project-level (only if inside an atris project) ---
+  // --- 2. Project-level (only if inside an atris project AND not a business workspace) ---
+  // BUSINESS GATE: don't sync framework skills into business workspaces.
+  // Per the canonical-layout decision, framework skills (autopilot, wiki, loop, etc.) live
+  // at the system level on EC2, NOT inside per-business workspaces. Customer workspaces
+  // contain ONLY business-specific custom skills in atris/skills/.
+  const businessJson = path.join(process.cwd(), '.atris', 'business.json');
+  if (fs.existsSync(businessJson)) {
+    // We're inside a business workspace — skip project-level skill sync.
+    return updated;
+  }
+
   const targetDir = path.join(process.cwd(), 'atris');
   if (fs.existsSync(targetDir)) {
     const userSkillsDir = path.join(targetDir, 'skills');

@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const {
+  getRecentSignals,
+  renderHumanSuggestion,
+  renderHumanTickIntro
+} = require('../commands/autopilot');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -27,6 +32,15 @@ function runCli(args, { cwd, input } = {}) {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
     },
+  });
+  if (result.error) throw result.error;
+  return result;
+}
+
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
   });
   if (result.error) throw result.error;
   return result;
@@ -75,6 +89,47 @@ test('search with no keyword prints usage', () => {
     const res = runCli(['search'], { cwd: dir });
     assert.equal(res.status, 1);
     assert.match(res.stdout, /Usage: atris search/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'briefs')));
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'syntheses')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
+  const dir = makeTempDir();
+  try {
+    const wikiDir = path.join(dir, 'atris', 'wiki');
+    const legacyDir = path.join(wikiDir, 'syntheses');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(wikiDir, 'index.md'),
+      '# Atris Wiki Index\n\n## Syntheses\n\n- [[atris/wiki/syntheses/example.md]]\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(legacyDir, 'example.md'),
+      '---\ntype: synthesis\nslug: example\ntitle: Example\n---\n# Example\n',
+      'utf8'
+    );
+
+    ensureWikiScaffold(dir);
+
+    const briefsPath = path.join(wikiDir, 'briefs', 'example.md');
+    assert.ok(fs.existsSync(briefsPath));
+    assert.equal(fs.existsSync(legacyDir), false);
+    assert.match(fs.readFileSync(path.join(wikiDir, 'index.md'), 'utf8'), /## Briefs/);
+    assert.doesNotMatch(fs.readFileSync(path.join(wikiDir, 'index.md'), 'utf8'), /syntheses/);
+    assert.match(fs.readFileSync(briefsPath, 'utf8'), /^type: brief$/m);
   } finally {
     cleanupTempDir(dir);
   }
@@ -183,6 +238,89 @@ test('analytics counts inbox items when Inbox is last section', () => {
     assert.match(res.stdout, /Inbox items:\s+2/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('getRecentSignals returns empty commit/wiki/lesson signals when sources are missing', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    fs.rmSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), { force: true });
+    fs.rmSync(path.join(dir, 'atris', 'lessons.md'), { force: true });
+
+    const signals = getRecentSignals(dir);
+    assert.deepEqual(signals.recentCommits, []);
+    assert.equal(signals.wikiHealth, null);
+    assert.deepEqual(signals.recentLessons, []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('getRecentSignals reads recent git commits, wiki health, and last 10 lesson lines', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    const initResult = runGit(['init'], dir);
+    assert.equal(initResult.status, 0, initResult.stderr);
+    assert.equal(runGit(['config', 'user.name', 'Test User'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.email', 'test@example.com'], dir).status, 0);
+    assert.equal(runGit(['add', '.'], dir).status, 0);
+    const commitResult = runGit(['commit', '-m', 'seed workspace'], dir);
+    assert.equal(commitResult.status, 0, commitResult.stderr);
+
+    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
+    fs.writeFileSync(statusPath, '# STATUS\n\nHealth: 3/5\nNext move: tighten loop\n', 'utf8');
+
+    const lessonsPath = path.join(dir, 'atris', 'lessons.md');
+    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
+    fs.writeFileSync(lessonsPath, `${lessonLines.join('\n')}\n`, 'utf8');
+
+    const signals = getRecentSignals(dir);
+    assert.equal(signals.recentCommits.length, 1);
+    assert.match(signals.recentCommits[0], /seed workspace/);
+    assert.match(signals.wikiHealth, /Health: 3\/5/);
+    assert.equal(signals.recentLessons.length, 10);
+    assert.deepEqual(signals.recentLessons, lessonLines.slice(-10));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('renderHumanTickIntro keeps the default autopilot briefing plain and narrow', () => {
+  const text = renderHumanTickIntro({
+    time: '11:20 a.m.',
+    identity: 'Ship one clean step at a time.',
+    slug: 'loop-self-seeds-horizons',
+    horizon: 'Teach the loop to imagine the next horizon when the queue goes quiet.',
+    total: 5,
+    done: 2
+  }, {
+    auto: true,
+    durationLabel: 'until clean'
+  });
+
+  assert.match(text, /I am starting an autopilot tick in autonomous mode\./);
+  assert.match(text, /Progress is 2 of 5 endgame steps\./);
+  assert.doesNotMatch(text, /[┌┐└┘│]/);
+  for (const line of text.split('\n')) {
+    assert.ok(line.length <= 80, `line too wide: ${line.length} "${line}"`);
+  }
+});
+
+test('renderHumanSuggestion keeps the default suggestion briefing plain and narrow', () => {
+  const text = renderHumanSuggestion({
+    task: 'Rewrite the autopilot tick output to match the chief-of-staff format.',
+    why: 'The current box-heavy output makes it hard for a non-technical reader to decide whether to let the loop continue.',
+    kind: 'execute'
+  }, 1, 4);
+
+  assert.match(text, /I picked task 1 of 4\./);
+  assert.match(text, /Next: approve it, skip it, or stop the loop\./);
+  assert.doesNotMatch(text, /[┌┐└┘│]/);
+  for (const line of text.split('\n')) {
+    assert.ok(line.length <= 80, `line too wide: ${line.length} "${line}"`);
   }
 });
 
@@ -360,7 +498,7 @@ test('log assigns sequential IDs across sessions', () => {
 // status full mode
 // ============================================
 
-test('status full mode renders task board', () => {
+test('status default mode renders human summary', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
@@ -383,7 +521,74 @@ test('status full mode renders task board', () => {
 
     const res = runCli(['status'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Where we are:/);
+    assert.match(res.stdout, /What is queued:/);
+    assert.match(res.stdout, /What is blocking:/);
+    assert.doesNotMatch(res.stdout, /TASK BOARD|┌|└|│/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('status verbose mode keeps the legacy task board', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['status', '--verbose'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /TASK BOARD|Backlog/i);
+    assert.match(res.stdout, /┌|└|│/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('status stays local even when .atris/business.json exists', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const metaDir = path.join(dir, '.atris');
+    fs.mkdirSync(metaDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(metaDir, 'business.json'),
+      JSON.stringify({ slug: 'pallet' }, null, 2),
+      'utf8'
+    );
+
+    const res = runCli(['status'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Where we are:/);
+    assert.doesNotMatch(res.stdout, /last synced/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('review default mode renders human validator brief', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['review'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /I checked the review setup\./);
+    assert.match(res.stdout, /Decision: hold/);
+    assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);
+    for (const line of res.stdout.trimEnd().split('\n')) {
+      assert.ok(line.length <= 80, `line too wide: ${line.length} "${line}"`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('review verbose mode keeps the legacy validator board', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['review', '--verbose'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris Review|Validator Agent Activated/);
+    assert.match(res.stdout, /┌|└|│/);
   } finally {
     cleanupTempDir(dir);
   }

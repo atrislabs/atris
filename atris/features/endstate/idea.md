@@ -1,6 +1,6 @@
 # Project Endstate
 
-> **Status:** planning
+> **Status:** v2 — harness verified 2026-04-08
 > **Created:** 2026-04-07
 > **Last Updated:** 2026-04-08
 
@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-Mythos Preview reset the narrative for autonomous software agents, but vendor benchmark wins blur together model quality, harness quality, and hidden operator help. Atris has enough local primitives to challenge that story, but right now "beat Mythos" is still a slogan instead of a falsifiable eval.
+Recent autonomy benchmark narratives raised the bar for software agents, but public wins still blur model quality, harness quality, and hidden operator help. Atris has enough local primitives to challenge that story, but right now a public win is still a slogan instead of a falsifiable eval.
 
 ---
 
@@ -42,11 +42,11 @@ fixed task set
 
 ## Success Criteria
 
-- [ ] the benchmark names exact repos, task set, time budget, and allowed operator input
-- [ ] the scorecard measures reviewed completion, test pass rate, memory sync, and intervention count
-- [ ] the single-model baseline protocol is pinned tightly enough to rerun
-- [ ] the stack protocol is pinned tightly enough to rerun
-- [ ] the public win condition is explicit: what counts as "beating Mythos" for this system benchmark
+- [x] the benchmark names exact repos, task set, time budget, and allowed operator input
+- [x] the scorecard measures reviewed completion, test pass rate, memory sync, and intervention count
+- [x] the single-model baseline protocol is pinned tightly enough to rerun
+- [x] the stack protocol is pinned tightly enough to rerun
+- [x] the public win condition is explicit: the stack must beat the baseline on total score without losing reviewed completion
 
 ---
 

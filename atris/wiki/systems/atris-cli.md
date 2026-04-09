@@ -28,7 +28,7 @@ Three primary moves:
 | Navigation | `atris/MAP.md` | Hand/agent-curated index with file:line refs |
 | Tasks | `atris/TODO.md` | Current work queue (target = 0) |
 | Journal | `atris/logs/YYYY/YYYY-MM-DD.md` | Daily inbox + completed |
-| Memory | `atris/wiki/` | Durable knowledge (entities/concepts/syntheses) |
+| Memory | `atris/wiki/` | Durable knowledge (people/systems/concepts/briefs) |
 | Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
 | Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
 | Sibling | `commands/business.js` | Cloud-side AI-native company productization |

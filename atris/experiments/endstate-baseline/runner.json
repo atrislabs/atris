@@ -1,0 +1,6 @@
+{
+  "name": "baseline-single",
+  "strategy": "single",
+  "summary": "One direct benchmark pass through the standard autopilot single-task runner.",
+  "context_note": "Runner profile: baseline-single\nProtocol: single-model direct run\nUse one straight plan -> do -> review pass with no extra coordination layer."
+}
