@@ -382,8 +382,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `commands/autopilot.js:1267` (autopilotAtris function)
 - **From-todo mode:** `commands/autopilot.js:1608` (autopilotFromTodo function)
-- **Reward computer:** `commands/autopilot.js:671` (`computeTickReward`) — computes per-tick reward score from execution signals (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
-- **Heartbeat writer:** `commands/autopilot.js:715` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
+- **Reward computer:** `commands/autopilot.js:698` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
+- **Judge integrity guard:** `commands/autopilot.js:582` (`verifyJudgeIntegrity`) — SHA-256 checksums `computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
+- **Heartbeat writer:** `commands/autopilot.js:742` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -702,6 +704,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Files:**
 
+- `lib/reward-config.js` — Frozen reward constants + judge checksum (immutable by loop)
 - `lib/scorecard.js` (284 lines) — Scorecard writing, parsing, and endgame closeout metric synthesis
 - `.atris/presidio/scorecards.md` (generated, local-only) — Append-only endgame results log
 - `atris/wiki/concepts/horizon-types.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
