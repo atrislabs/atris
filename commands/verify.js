@@ -444,11 +444,11 @@ function verifyChange(cwd, change) {
     };
   }
 
-  // Generic check - always pass (can't verify without specifics)
+  // No specific check possible — refuse to auto-pass
   return {
-    pass: true,
+    pass: false,
     description: change.description,
-    details: 'Manual verification recommended'
+    details: 'No verifiable check for this change type. Add an explicit verify command.'
   };
 }
 
