@@ -232,3 +232,23 @@ Shipping history (link chain for the reader):
 - **T20** — `appendTickSummary` wired into `autopilotAtris` end-of-tick (happy/idle/halted); idle blocks preserve `0 tasks in 0s` for `getIdleTickCount` (2026-04-08 Completed in `atris/TODO.md`).
 - **T21 / T21a–d** — this validate pass: surfaces table + per-surface capture + four-check scoring (2026-04-08 Completed in `atris/TODO.md`).
 - **T21e** — this verdict summary (current task).
+
+## T20 heartbeat
+
+Captured from `atris/logs/2026/2026-04-08.md` `## Notes` — the most recent
+heartbeat block written by `appendTickSummary` at the end of an autopilot tick
+(5:15 pm PDT, T25 verification tick). This is the CLI-written block T20 ships,
+not an agent-written line.
+
+```text
+- 5:15 pm
+  I planned, built, and reviewed "Verify T25 wiring already shipped — confirm `commands/autopilot.js:1271-1289` calls `appendTickSummary` with horizon from `readHorizonSlug` (:631), idle branch sets `idle=true` when `completed===0 && tickOutcome!=='halted'`, halted branch sets `tickNextStep='stop until a human looks at the error'`, and the whole block is try/catch-guarded. If all four hold, mark T25 done in Completed and skip T25b/c. If any gap, file a focused follow-up. Exit: T25 either checked off or replaced by a precise gap task.".
+  We are still on the loop-self-seeds-horizons endgame.
+  Next tick will pick the next endgame task.
+```
+
+Measurements: 4 content lines, max line width **543 chars** (line 2 — the
+verbatim task title is reflowed onto a single physical line). The idle-tick
+variant (15:00 smoke at journal lines 319–323) is 5 lines / max 56 chars and
+contains the literal `0 tasks in 0s` marker required by `getIdleTickCount`.
+
