@@ -97,4 +97,4 @@ If the user wants this to fire on a recurring schedule, invoke `/loop` instead. 
 - Endgame tasks always preferred over reactive signals.
 - At every boundary (no current endgame OR all done), reassess via `/endgame` — read inbox/wiki/logs, pick the next horizon, do not just run forever.
 - If a tick fails, halt and journal the failure. Do not pretend it worked.
-- The CLI writes the heartbeat Notes block at the end of each tick. Do not hand-write tick summaries to today's journal `## Notes`.
+- The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal.
