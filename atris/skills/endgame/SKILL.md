@@ -66,15 +66,30 @@ After running the three moves, write the result to `atris/TODO.md`:
 
 ```markdown
 - **T1:** <step 1 description> [endgame]
+  **Verify:** <deterministic-check>
 - **T2:** <step 2 description> [endgame]
+  **Verify:** <deterministic-check>
 - **T3:** <step 3 description> [endgame]
+  **Verify:** <deterministic-check>
 ```
 
 The tag must be exactly `[endgame]` (parser only matches `\w+`, no colons or hyphens). The slug lives in the section header.
 
+3. **Each task must include a `Verify:` line** with a deterministic check:
+   - **Test command:** `npm test` or `npm run test:feature`
+   - **Grep pattern:** `grep -q "pattern" file.js`
+   - **File presence:** `test -f path/to/file.md`
+   - **Exit code:** `node -e "process.exit(...)"` (or any shell command)
+
+   The verify command must:
+   - Complete in <30 seconds
+   - Exit 0 on pass, non-zero on fail
+   - Not require user input
+   - Be runnable from project root
+
 Use `T1`, `T2`, `T3` … as IDs (or `W1`/`E1`/etc per endgame domain). Single uppercase letter + digits, optional trailing lowercase letter (the parser was extended in commit `4db14d9` to accept `W3b`-style validator sub-task IDs).
 
-3. **Append the full endgame to today's journal `## Notes`** so the reasoning is preserved:
+4. **Append the full endgame to today's journal `## Notes`** so the reasoning is preserved:
 
 ```markdown
 ### Endgame picked — HH:MM PDT
@@ -95,6 +110,7 @@ REVERSE PATH
 
 NEXT MOVE
   T1: <description>
+  Verify: <check-command>
   Why this first: <one line>
 ```
 
@@ -132,6 +148,7 @@ REVERSE PATH
 
 NEXT MOVE
   [one concrete action, doable in one session]
+  Verify: [deterministic check — test, grep, file, exit code]
   Why this first: [one line]
 ```
 
@@ -143,6 +160,7 @@ NEXT MOVE
 - **REVERSE PATH includes eliminate.** Half of strategy is removal. Forward-greedy planning never asks this. Endgame must.
 - **The chain must terminate this week.** If it can't, the horizon is too far — pick a closer one and say so.
 - **5–7 links max in the chain.** More than that = horizon is too vague.
+- **Every task must have a Verify line.** Deterministic check (test, grep, file, exit code). Allows the validator to score the endgame autonomously.
 - **Cite wiki pages** with `[[atris/wiki/...]]` refs.
 - **Ask 1–3 questions max** if the horizon is unclear. Never a wall of text.
 - **One chain, not three.** Pick the shortest defensible one.
