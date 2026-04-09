@@ -26,8 +26,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-<!-- wiki-upkeep: atris-labs source path drift (same root cause, two files) -->
-- **T40:** Fix the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md` — frontmatter `sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]` is stale (file moved to `.../atris-labs-1/atris/MEMBER.md`), and the body line "A standalone Atris workspace at `arena/atris-business/atris-labs/`" points at the same gone path. Update both the frontmatter source and the body path to `atris-labs-1/atris/`. Bump `last_compiled` + `updated` to 2026-04-08. Do NOT mirror the source's "company-as-mini-AGI" / "mini-AGI dogfood" language — keep the existing neutral "company-as-workspace" framing (per `feedback_no_mini_agi`). Exit: frontmatter `sources:` and body both point at the real `atris-labs-1` path, dates bumped. [execute]
 
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
@@ -39,11 +37,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T45:** Refresh `atris/wiki/concepts/plan-do-review-loop.md` against its own sources — rewrite the body to match README.md + atris/atris.md: 4-stage scout→plan→do→review, agent mapping, REVIEW pass/fail, auto-chain modes (`atris run` + `atris autopilot`), persistence rule. Keep `## Cross-References`. Bump `last_compiled` + `updated` to 2026-04-08. [execute]
-  **Claimed by:** Executor at 2026-04-09T02:28:43.618Z
-  **Stage:** DO
-
-
+- **T40:** Fix the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md`. Exactly 2 edits on 1 file: (1) line 5 frontmatter `sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]` → `sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]`; (2) line 22 body `` A standalone Atris workspace at `arena/atris-business/atris-labs/`. Holds: `` → `` A standalone Atris workspace at `arena/atris-business/atris-labs-1/atris/`. Holds: ``. Verify `last_compiled` + `updated` are `2026-04-08` (already set — no re-bump). Do NOT introduce "mini-AGI" / "company-as-mini-AGI" language — keep the existing neutral "company-as-workspace" framing (per `feedback_no_mini_agi`). Exit: both hits repointed at real `atris-labs-1/atris/` path, dates verified, no new dogma words. [execute] — Claimed by: Executor at 2026-04-09T02:41:40.536Z
 
 ---
 

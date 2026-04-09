@@ -2,7 +2,7 @@
 type: entity
 slug: atris-labs
 title: atris labs (company workspace dogfood)
-sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]
+sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]
 created: 2026-04-08
 updated: 2026-04-08
 last_compiled: 2026-04-08
@@ -19,7 +19,7 @@ Be the dogfood. Prove the operating model by living in it. The company's brain �
 
 ## What it is
 
-A standalone Atris workspace at `arena/atris-business/atris-labs/`. Holds:
+A standalone Atris workspace at `arena/atris-business/atris-labs-1/atris/`. Holds:
 
 - company state (pipeline, financials, customers)
 - team identities (`team/<member>/MEMBER.md`)
@@ -60,4 +60,4 @@ atris-labs is the proof that the operating model survives contact with a real co
 ## Cross-references
 
 - [[atris/wiki/systems/atris-business.md]] — the productized version of this shape
-- [[atris/wiki/systems/atris-labs-goals.md]] — the goals layer that sits on top
+- [[atris/wiki/concepts/atris-labs-goals.md]] — the goals layer that sits on top
