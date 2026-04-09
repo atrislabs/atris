@@ -560,19 +560,18 @@ function writeLesson(cwd, slug, status, explanation) {
  * Get the verify command for a task from TODO.md
  * Reads TODO.md, finds the task by title across active/completed sections,
  * and extracts the verify field.
- * Defaults to 'npm test' if no verify field found.
+ * Returns { cmd, explicit } — explicit is true only if the task has an explicit Verify field.
  */
 function getVerifyCommand(cwd, taskTitle) {
   const todoPath = path.join(cwd, 'atris', 'TODO.md');
-  if (!fs.existsSync(todoPath)) return 'npm test';
+  if (!fs.existsSync(todoPath)) return { cmd: null, explicit: false };
 
   const todo = parseTodo(todoPath);
   const task = [...todo.inProgress, ...todo.backlog, ...todo.completed]
     .find(t => t.title === taskTitle);
 
-  if (!task) return 'npm test';
-  if (task.verify) return task.verify;
-  return 'npm test';
+  if (!task || !task.verify) return { cmd: null, explicit: false };
+  return { cmd: task.verify, explicit: true };
 }
 
 /**
@@ -605,7 +604,22 @@ function runTaskOnce(context, options = {}) {
 
   const phaseResults = {};
   const startedAt = Date.now();
-  const verifyCmd = getVerifyCommand(cwd, context.task);
+  const verifyResult = getVerifyCommand(cwd, context.task);
+  const verifyCmd = verifyResult.cmd;
+
+  // Guard: refuse to run ticks without an explicit Verify field
+  if (!verifyResult.explicit) {
+    writeLesson(cwd, 'no-verify-field', 'fail',
+      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted — every task must declare how to verify it.`);
+    return {
+      outcome: 'halted',
+      reason: 'no-verify-field',
+      phaseResults: {},
+      elapsedSeconds: 0,
+      verifyRan: false,
+      verifyPass: false,
+    };
+  }
 
   for (const phase of ['plan', 'do', 'review']) {
     const t0 = Date.now();

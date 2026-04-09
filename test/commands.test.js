@@ -918,7 +918,9 @@ test('getVerifyCommand finds task-specific verify commands before and after task
 ---
 `, 'utf8');
 
-    assert.equal(getVerifyCommand(dir, 'ship parser fix'), 'node -e "process.exit(0)"');
+    const result1 = getVerifyCommand(dir, 'ship parser fix');
+    assert.equal(result1.cmd, 'node -e "process.exit(0)"');
+    assert.equal(result1.explicit, true);
 
     fs.writeFileSync(todoPath, `# TODO.md
 
@@ -942,7 +944,9 @@ test('getVerifyCommand finds task-specific verify commands before and after task
 ---
 `, 'utf8');
 
-    assert.equal(getVerifyCommand(dir, 'ship parser fix'), 'node -e "process.exit(0)"');
+    const result2 = getVerifyCommand(dir, 'ship parser fix');
+    assert.equal(result2.cmd, 'node -e "process.exit(0)"');
+    assert.equal(result2.explicit, true);
   } finally {
     cleanupTempDir(dir);
   }
