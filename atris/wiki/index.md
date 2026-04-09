@@ -13,6 +13,7 @@
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is and isn't
 - [[atris/wiki/concepts/plan-do-review-loop.md]] — core Atris workflow and how local memory fits into it
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
+- [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
 
 ## Briefs
 
