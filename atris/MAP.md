@@ -397,15 +397,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:577-630` (`runTaskOnce`) — captures the verify command before plan/do/review mutate TODO.md, runs it after review, and returns `verifyCmd`, `verifyRan`, and `verifyPass`
-- **Verify executor helper:** `commands/autopilot.js:564-574` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field from the current task, defaults to `npm test`
+- **Single-task runner:** `commands/autopilot.js:587-672` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, runs verify command after review, returns `verifyCmd`, `verifyRan`, and `verifyPass`
+- **Verify executor helper:** `commands/autopilot.js:565-575` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
 - **Approval gate:** `commands/autopilot.js:290` (askApproval function) — enter/skip/quit
 - **Idle-tick helper:** `commands/autopilot.js:1002` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:1037` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:1166` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
-- **Scoring helper:** `commands/autopilot.js:1079` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value, applies 80/20 exploit/explore split; called during horizon picking (line 208) to weight candidates by historical reward
+- **Candidate-horizons helper:** `commands/autopilot.js:1244` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Scoring helper:** `commands/autopilot.js:1128` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 208) to weight candidates by historical reward
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -716,11 +716,13 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Lines 227-254: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
 - Lines 258-292: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
 
-**Type Inference (commands/autopilot.js:1095-1121):**
+**Type Inference (commands/autopilot.js:1145-1170):**
 
 - Horizon slugs follow prefix-based type convention (e.g., `loop-*`, `wiki-*`, `verify-*`, `refactor-*`, `human-*`, `agent-*`)
 - `scoreEndgameCandidates()` extracts type by splitting slug on first dash: `slug.split('-')[0]`
 - Uses historical reward means per type to score and weight candidates
+- Adaptive explore rate: 20% when diverse, up to 50% when last 5 are same type
+- Difficulty floor: filters candidates with >80% success rate AND mean reward >5 when harder options exist
 - Full convention rules in `atris/wiki/concepts/horizon-types.md`
 
 **Data structure per scorecard:**
@@ -906,8 +908,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
 - `autopilotAtris()` → `commands/autopilot.js:1267-1602`
 - `writeLesson()` → `commands/autopilot.js:538-556`
-- `getVerifyCommand()` → `commands/autopilot.js:564-574`
-- `runTaskOnce()` → `commands/autopilot.js:577-630`
+- `getVerifyCommand()` → `commands/autopilot.js:565-575`
+- `runTaskOnce()` → `commands/autopilot.js:587-672`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
