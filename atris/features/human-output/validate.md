@@ -252,3 +252,17 @@ verbatim task title is reflowed onto a single physical line). The idle-tick
 variant (15:00 smoke at journal lines 319–323) is 5 lines / max 56 chars and
 contains the literal `0 tasks in 0s` marker required by `getIdleTickCount`.
 
+Scored against the four T27 checks:
+
+| # | Check | Result | Notes |
+|---|---|---|---|
+| i | ≤20 lines × ≤80 chars | FAIL | 4 lines (pass) but max width 543 chars (fail) — verbatim task title reflowed onto one physical line on the captured 5:15 pm happy-tick block. Idle variant (journal :319–323) passes both axes (5 lines / 56 chars). |
+| ii | matches an `examples.md` shape (happy / idle / validator-pass) | PASS | Captured block matches `happy-tick` shape (timestamp → "I planned, built, and reviewed …" → endgame line → next-tick line). Idle variant matches `idle-tick` shape. |
+| iii | idle tick → block contains literal `0 tasks in 0s` | PASS | Idle variant at journal :319–323 contains `0 tasks in 0s`. The captured 5:15 pm block is a happy tick, so this check is N/A there but holds for the idle case the spec targets. |
+| iv | `getIdleTickCount(process.cwd())` ≥1 after an idle tick | FAIL (current state) | Smoke `node -e "const {getIdleTickCount}=require('./commands/autopilot.js'); console.log(getIdleTickCount(process.cwd()))"` → `0`, because the most recent `## Notes` entry today is the 5:15 pm happy tick, not an idle one (consecutive-from-bottom counter resets). After the 15:00 idle tick was the last write, the counter did report ≥1 (per T20 smoke notes). The helper is wired correctly; the live count is just gated on the most recent tick being idle.
+
+**Surface verdict: FAIL** — heartbeat writer ships and shape/marker checks
+pass, but the line-width budget blows up whenever the task title is long, and
+`getIdleTickCount` only reads ≥1 immediately after an idle tick (expected, but
+worth flagging as a follow-up so the heartbeat soft-wraps long titles to ≤80).
+

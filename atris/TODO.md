@@ -27,7 +27,6 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 - **T27 [In Progress, Claimed by: Executor at 2026-04-09T00:27:18.359Z]:** Validate T20 end-to-end — run `atris autopilot --auto --iterations=1` against this repo, copy the new Notes block into `atris/features/human-output/validate.md` under a `## T20 heartbeat` section, mark pass/fail against: (i) ≤20 lines × ≤80 chars, (ii) matches `examples.md` shape, (iii) idle case contains `0 tasks in 0s`, (iv) `getIdleTickCount` returns ≥1 after an idle tick. Exit: validate.md has the block + 4 check results. [explore]
-- **T27c:** Under the same `## T20 heartbeat` section, score the 4 checks in a markdown table: (i) ≤20 lines × ≤80 chars, (ii) matches one of `examples.md` shapes (happy/idle/validator-pass), (iii) if idle tick → block contains literal `0 tasks in 0s`, (iv) `getIdleTickCount(process.cwd())` returns ≥1 after the idle tick (smoke via `node -e`). Append surface verdict line. Exit: 4 rows + verdict. [execute]
 
 ---
 
@@ -37,6 +36,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] T27c: Scored the 4 T27 checks in a markdown table under `## T20 heartbeat` in `atris/features/human-output/validate.md` and appended surface verdict (FAIL — line-width blows up on long task titles; smoke `getIdleTickCount` → 0 because most recent tick is happy, not idle) (2026-04-08)
 - [x] T27a: Ran `node bin/atris.js autopilot --auto --iterations=1`; captured heartbeat block from `atris/logs/2026/2026-04-08.md:353-356` (5:32 pm tick) to `.atris/scratch-t27a-heartbeat.txt` for T27b/c (2026-04-08)
 - [x] T27b: `## T20 heartbeat` section already present in `atris/features/human-output/validate.md:236-254` with fenced text block + measurements (4 content lines, max 543 chars from verbatim task title; idle variant 5 lines / 56 chars at journal :319-323) (2026-04-08) [reviewed]
 - [x] T25a: Re-verified T25 wiring at `commands/autopilot.js:1271-1289` — `appendTickSummary` called with horizon from `readHorizonSlug` (:631), idle = `tickOutcome === 'idle' || (completed === 0 && tickOutcome !== 'halted')` (:1279), halted branch sets `tickNextStep='stop until a human looks at the error'` (:1254), block wrapped in try/catch (:1273-1289). All four conditions hold; T25b/c dropped (2026-04-08)
