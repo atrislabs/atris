@@ -3,7 +3,17 @@ const path = require('path');
 const os = require('os');
 const { ensureWikiScaffold } = require('../lib/wiki');
 
-const BUSINESS_TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'business-canonical');
+const TEMPLATE_ROOT_DIR = path.join(__dirname, '..', 'templates');
+const WORKSPACE_TEMPLATES = {
+  business: {
+    dir: path.join(TEMPLATE_ROOT_DIR, 'business-starter'),
+    label: 'business environment',
+  },
+  research: {
+    dir: path.join(TEMPLATE_ROOT_DIR, 'research-canonical'),
+    label: 'research lab environment',
+  },
+};
 
 /**
  * Walk a directory and return relative file paths.
@@ -25,7 +35,7 @@ function _walkTemplateDir(dir, base = dir) {
 }
 
 /**
- * Substitute {{name}}, {{slug}}, {{owner_email}} in template content.
+ * Substitute workspace metadata in template content.
  */
 function _substituteParams(content, params) {
   return content
@@ -33,7 +43,18 @@ function _substituteParams(content, params) {
     .replace(/\{\{slug\}\}/g, params.slug || 'business')
     .replace(/\{\{owner_email\}\}/g, params.owner_email || '')
     .replace(/\{\{business_id\}\}/g, params.business_id || '')
-    .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '');
+    .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '')
+    .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
+}
+
+function resolveWorkspaceTemplate(templateName = 'business') {
+  const normalized = String(templateName || 'business').toLowerCase();
+  if (normalized === 'research-lab' || normalized === 'researchlab' || normalized === 'lab') {
+    return { key: 'research', ...WORKSPACE_TEMPLATES.research };
+  }
+  const template = WORKSPACE_TEMPLATES[normalized];
+  if (!template) return null;
+  return { key: normalized, ...template };
 }
 
 /**
@@ -43,36 +64,43 @@ function _substituteParams(content, params) {
  * Default: NEVER overwrites existing files (preserves customizations).
  * --force: overwrites existing canonical files (bumps to latest).
  */
-function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
+function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
+  const template = resolveWorkspaceTemplate(options.templateName || bizMeta.workspace_template || 'business');
+  if (!template) {
+    console.error(`✗ Unknown workspace template: ${options.templateName || bizMeta.workspace_template}`);
+    process.exit(1);
+  }
+
   const params = {
     slug: bizMeta.slug || 'business',
     name: bizMeta.name || bizMeta.slug || 'this business',
     owner_email: bizMeta.owner_email || '',
     business_id: bizMeta.business_id || '',
     workspace_id: bizMeta.workspace_id || '',
+    workspace_template: template.key,
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
   const dryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
   const targetAtrisDir = path.join(targetRoot, 'atris');
 
-  if (!fs.existsSync(BUSINESS_TEMPLATE_DIR)) {
-    console.error(`✗ Canonical template directory not found: ${BUSINESS_TEMPLATE_DIR}`);
+  if (!fs.existsSync(template.dir)) {
+    console.error(`✗ Workspace template directory not found: ${template.dir}`);
     console.error('  Your atris-cli installation may be incomplete.');
     process.exit(1);
   }
 
   console.log('');
-  console.log(`Updating ${params.name} (${params.slug}) from canonical templates...`);
+  console.log(`Updating ${params.name} (${params.slug}) from ${template.label} templates...`);
   console.log(`  Target: ${targetAtrisDir}/`);
-  console.log(`  Source: ${BUSINESS_TEMPLATE_DIR}`);
+  console.log(`  Source: ${template.dir}`);
   console.log('');
 
-  const templateFiles = _walkTemplateDir(BUSINESS_TEMPLATE_DIR).sort();
+  const templateFiles = _walkTemplateDir(template.dir).sort();
   let added = 0, updated = 0, skipped = 0, preserved = 0;
   const addedList = [], updatedList = [], preservedList = [];
 
   for (const relPath of templateFiles) {
-    const templatePath = path.join(BUSINESS_TEMPLATE_DIR, relPath);
+    const templatePath = path.join(template.dir, relPath);
     const targetPath = path.join(targetAtrisDir, relPath);
     let templateContent;
     try { templateContent = fs.readFileSync(templatePath, 'utf-8'); } catch { continue; }
@@ -127,13 +155,22 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
   }
 }
 
+function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
+  return syncWorkspaceTemplate(targetRoot, bizMeta, {
+    ...options,
+    templateName: options.templateName || bizMeta.workspace_template || 'business',
+  });
+}
+
 function syncAtris() {
   // Business mode detection: if .atris/business.json exists, use canonical templates
   const bizFile = path.join(process.cwd(), '.atris', 'business.json');
   if (fs.existsSync(bizFile)) {
     try {
       const bizMeta = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
-      return syncBusinessCanonical(process.cwd(), bizMeta);
+      return syncWorkspaceTemplate(process.cwd(), bizMeta, {
+        templateName: bizMeta.workspace_template || 'business',
+      });
     } catch (e) {
       console.error(`✗ Failed to read .atris/business.json: ${e.message}`);
       process.exit(1);
@@ -571,4 +608,10 @@ function syncSkills({ silent = false } = {}) {
   return updated;
 }
 
-module.exports = { syncAtris, syncSkills, syncBusinessCanonical };
+module.exports = {
+  syncAtris,
+  syncSkills,
+  syncBusinessCanonical,
+  syncWorkspaceTemplate,
+  resolveWorkspaceTemplate,
+};
