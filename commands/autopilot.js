@@ -525,8 +525,49 @@ If broken beyond quick fix, reply: failed — [reason].`;
   return '';
 }
 
+/**
+ * Write a lesson to atris/lessons.md
+ * Appends a line in format: - **[YYYY-MM-DD] slug** — pass/fail — explanation
+ */
+function writeLesson(cwd, slug, status, explanation) {
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const lessonLine = `- **[${today}] ${slug}** — ${status} — ${explanation}`;
+
+  if (!fs.existsSync(lessonsPath)) {
+    fs.writeFileSync(lessonsPath, `# lessons.md — What We Learned\n\n> Append-only. One line per lesson.\n\n---\n\n${lessonLine}\n`);
+    return;
+  }
+
+  let content = fs.readFileSync(lessonsPath, 'utf8');
+  // Append after the --- separator
+  if (content.includes('---\n')) {
+    content = content.replace(/---\n/, `---\n\n${lessonLine}\n`);
+  } else {
+    content += `\n${lessonLine}\n`;
+  }
+  fs.writeFileSync(lessonsPath, content);
+}
+
+/**
+ * Get the verify command for a task from TODO.md
+ * Reads the In Progress section, finds the task by title, extracts verify field.
+ * Defaults to 'npm test' if no verify field found.
+ */
+function getVerifyCommand(cwd, taskTitle) {
+  const todoPath = path.join(cwd, 'atris', 'TODO.md');
+  if (!fs.existsSync(todoPath)) return 'npm test';
+
+  const todo = parseTodo(todoPath);
+  const inProgressTask = todo.inProgress.find(t => t.title === taskTitle);
+
+  if (!inProgressTask) return 'npm test';
+  if (inProgressTask.verify) return inProgressTask.verify;
+  return 'npm test';
+}
+
 function runTaskOnce(context, options = {}) {
-  const { verbose = false } = options;
+  const { verbose = false, cwd = process.cwd() } = options;
   const phaseResults = {};
   const startedAt = Date.now();
 
@@ -542,11 +583,37 @@ function runTaskOnce(context, options = {}) {
 
   const reviewOutput = phaseResults.review.output || '';
 
+  // After review succeeds, run verify command if present
+  let verifyPass = true;
+  let verifyOutput = '';
+  if (!reviewOutput.includes('failed')) {
+    const verifyCmd = getVerifyCommand(cwd, context.task);
+    if (verifyCmd) {
+      let t0 = Date.now();
+      try {
+        execSync(verifyCmd, { cwd, stdio: 'pipe' });
+        const verifyTime = Math.round((Date.now() - t0) / 1000);
+        phaseResults.verify = {
+          output: `Verify passed (${verifyTime}s)`,
+          elapsedSeconds: verifyTime,
+        };
+      } catch (e) {
+        verifyPass = false;
+        const verifyTime = Math.round((Date.now() - t0) / 1000);
+        phaseResults.verify = {
+          output: `Verify failed: ${e.message}`,
+          elapsedSeconds: verifyTime,
+        };
+      }
+    }
+  }
+
   return {
-    success: !reviewOutput.includes('failed'),
+    success: !reviewOutput.includes('failed') && verifyPass,
     elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
     phaseResults,
     reviewOutput,
+    verifyPass,
   };
 }
 
@@ -1224,7 +1291,7 @@ async function autopilotAtris(description, options = {}) {
           'Next I will report what happened and whether review passed.'
         ].join('\n'));
       }
-      const execution = runTaskOnce(context, { verbose });
+      const execution = runTaskOnce(context, { verbose, cwd });
       const planTime = execution.phaseResults.plan.elapsedSeconds;
       if (verbose) console.log(`  planned (${planTime}s)`);
 
@@ -1252,6 +1319,24 @@ async function autopilotAtris(description, options = {}) {
         break;
       }
       if (verbose) console.log(`  reviewed (${reviewTime}s)`);
+
+      // Handle verify failure
+      if (!execution.verifyPass) {
+        tickOutcome = 'halted';
+        tickOutcomeText = `I planned, built, and reviewed "${lastTaskTitle}" but verify failed.`;
+        tickNextStep = 'verify failed, halting';
+        writeLesson(cwd, 'verify-failed', 'fail', `Task "${lastTaskTitle}" passed review but failed verify command.`);
+        if (verbose) {
+          console.log(`  verify failed. stopping for manual check.`);
+        } else {
+          printPlainBlock([
+            `I planned, built, and reviewed the task, but the verify check failed.`,
+            '',
+            'Next I stopped for a manual check.'
+          ].join('\n'));
+        }
+        break;
+      }
 
       completed++;
       tickOutcome = 'built';
