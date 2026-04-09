@@ -47,6 +47,7 @@ If the user says "kill all loops", call `CronList`, then `CronDelete` for every 
 - Use `durable: false` by default. Only use `durable: true` if the user explicitly says "make this survive restarts" or "persist this".
 - Auto-expires after 7 days. Tell the user.
 - Cron only fires while Claude Code is idle (not mid-query). It will NOT run if Claude Code is closed.
+- The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal.
 
 ## Why this is the heartbeat
 
