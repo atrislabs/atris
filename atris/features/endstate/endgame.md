@@ -26,10 +26,13 @@ GAP
       evidence bundle both runs must emit.
     - Runnable `endstate-baseline` / `endstate-stack` packs now exist under
       `atris/experiments/`.
+    - Dry-run receipts now capture repo commits, tests, review status, wiki
+      delta, elapsed time, and interventions in the shared artifact schema.
+    - `atris experiments compare endstate` now scores the latest baseline and
+      stack receipts with the Level 1 rule.
+    - `atris experiments replay endstate` now runs the full public rehearsal:
+      validate both packs, emit fresh dry-run receipts, then compare the result.
   NOT YET
-    - No snapshot pinning step writes the exact repo commits into artifacts yet.
-    - No scoring script turns the artifact bundle into the Level 1 scorecard.
-    - No runner emits the shared artifact bundle automatically.
     - No published head-to-head result exists yet.
 
 REVERSE PATH
@@ -43,8 +46,7 @@ REVERSE PATH
     <- freeze Level 1 around one CLI task + one backend task this week
 
 NEXT MOVE
-  Teach both Endstate runners to write `artifact-schema.json` payloads,
-  including repo commits, tests, review result, wiki delta, elapsed time, and
-  intervention count, into a shared artifacts location.
-  Why this first: the contract and schema exist now, so runner emission is the
-  next bottleneck between planning and a real scored matchup.
+  Run one real head-to-head result on pinned snapshots, then publish the
+  artifacts and declared winner.
+  Why this first: the harness, receipts, comparison, and rehearsal surface now
+  exist, so the next bottleneck is evidence, not tooling.

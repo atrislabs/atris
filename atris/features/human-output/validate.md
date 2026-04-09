@@ -183,7 +183,7 @@ green. Overall pass iff every in-scope surface passes.
 | Surface | Pass/Fail | Notes |
 |---|---|---|
 | autopilot tick | **PASS** | (i) 19 lines PASS, (ii) 75 chars PASS, (iii) plain language PASS, (iv) horizon + next step readable PASS. |
-| status (default) | **PASS** | (i) 18 lines PASS, (ii) 75 chars PASS, (iii) where/queued/blocking sections PASS, (iv) approve-or-hold PASS. Residual issue is CLI routing, not the `statusAtris` surface itself. |
+| status (default) | **PASS** | (i) 18 lines PASS, (ii) 75 chars PASS, (iii) where/queued/blocking sections PASS, (iv) approve-or-hold PASS. Captured via the real `node bin/atris.js status` path after T37 un-hijacked the default route. |
 | review (validator) | **PASS** | (i) 11 lines PASS, (ii) 75 chars PASS, (iii) plain-language PASS, (iv) approve/hold PASS — explicit decision line now present. |
 
 **Overall: PASS.** The three direct human-output surfaces now pass their

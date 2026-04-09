@@ -12,7 +12,71 @@ const pad = (str, w = W) => {
   return len >= w ? str : str + ' '.repeat(w - len);
 };
 
-function statusAtris(isQuick = false, jsonMode = false) {
+function wrapText(text, width = 74) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+
+  const words = normalized.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current + ' ' + word).length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function compactWrappedText(text, width = 74, maxLines = 2) {
+  const lines = wrapText(text, width);
+  if (lines.length <= maxLines) return lines;
+
+  const kept = lines.slice(0, maxLines);
+  const head = kept.slice(0, -1);
+  let tail = kept[kept.length - 1].replace(/[ .,;:!?-]+$/, '');
+  if (tail.length >= width) {
+    tail = tail.slice(0, width - 1).replace(/[ .,;:!?-]+$/, '');
+  }
+  return [...head, `${tail}…`];
+}
+
+function printHumanSection(title, body) {
+  console.log(`  ${title}`);
+  const sourceLines = Array.isArray(body) ? body : String(body || '').split('\n');
+  for (const sourceLine of sourceLines) {
+    if (!sourceLine) {
+      console.log('  ');
+      continue;
+    }
+    for (const line of wrapText(sourceLine)) {
+      console.log(`  ${line}`);
+    }
+  }
+  console.log('');
+}
+
+function readEndgameMeta(todoFile) {
+  if (!fs.existsSync(todoFile)) return { slug: null, horizon: null };
+  const todoContent = fs.readFileSync(todoFile, 'utf8');
+  const endgameMatch = todoContent.match(/##\s+Endgame\s*\n([\s\S]*?)(?=\n##|$)/);
+  if (!endgameMatch) return { slug: null, horizon: null };
+
+  const slug = endgameMatch[1].match(/\*\*Slug:\*\*\s*(.+)/)?.[1]?.trim() || null;
+  const horizon = endgameMatch[1].match(/\*\*Horizon:\*\*\s*(.+)/)?.[1]?.trim() || null;
+  return { slug, horizon };
+}
+
+function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   const targetDir = path.join(process.cwd(), 'atris');
 
   if (!fs.existsSync(targetDir)) {
@@ -111,6 +175,60 @@ function statusAtris(isQuick = false, jsonMode = false) {
   // Quick mode
   if (isQuick) {
     console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount}`);
+    return;
+  }
+
+  if (!verbose) {
+    const endgame = readEndgameMeta(todoFile);
+    const where = [];
+    if (endgame.slug) {
+      where.push(`The active horizon is ${endgame.slug}.`);
+      if (endgame.horizon) {
+        where.push(...compactWrappedText(endgame.horizon, 74, 2));
+      }
+    } else {
+      where.push('No active endgame is set.');
+    }
+    where.push(`There are ${todo.inProgress.length} tasks in progress, ${todo.backlog.length} queued, and ${todo.completed.length} completed items still sitting in TODO.`);
+
+    const queueParts = [];
+    if (todo.inProgress[0]) {
+      queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
+    } else {
+      queueParts.push('In progress: none.');
+    }
+    if (todo.backlog[0]) {
+      queueParts.push(...compactWrappedText(`Next backlog item: ${todo.backlog[0].title}.`, 74, 2));
+    } else {
+      queueParts.push('Next backlog item: none.');
+    }
+    queueParts.push(inboxItems.length > 0
+      ? `Inbox has ${inboxItems.length} item${inboxItems.length === 1 ? '' : 's'}.`
+      : 'Inbox is empty.');
+
+    const blockingParts = [];
+    if (todo.completed.length > 0) {
+      blockingParts.push(`Main drag: ${todo.completed.length} completed item${todo.completed.length === 1 ? '' : 's'} should be cleared from TODO.`);
+    } else {
+      blockingParts.push('No cleanup debt is visible in TODO.');
+    }
+    if (todo.inProgress.length === 0 && todo.backlog.length === 0 && inboxItems.length === 0) {
+      blockingParts.push('No active blocker is visible right now.');
+    } else if (teamActivity.length === 0) {
+      blockingParts.push('No team activity is logged yet today.');
+    } else {
+      blockingParts.push(`Team activity has ${teamActivity.length} recent signal${teamActivity.length === 1 ? '' : 's'}.`);
+    }
+    blockingParts.push(
+      todo.completed.length > 0
+        ? 'Decision: let it run unless you want cleanup debt handled first.'
+        : 'Decision: let it run.'
+    );
+
+    console.log('');
+    printHumanSection('Where we are:', where);
+    printHumanSection('What is queued:', queueParts);
+    printHumanSection('What is blocking:', blockingParts);
     return;
   }
 

@@ -90,6 +90,14 @@ Close remaining audit gaps from self-audit
 
 ### Completed Features
 
+#### endstate
+Public benchmark for proving a coordinated stack beats a pinned single-model baseline
+- **Files:** atris/features/endstate/*, commands/autopilot.js, commands/experiments.js, commands/loop.js, lib/wiki.js
+- **Status:** complete
+- **Keywords:** benchmark, endstate, autopilot, experiments, eval
+- **What:** Defines the benchmark, scorecard, and build plan for a head-to-head run across `atris-cli` and `atrisos-backend`
+- **Completed:** 2026-04-08
+
 #### wiki-loop
 Deterministic upkeep loop for the local wiki
 - **Files:** commands/loop.js, lib/wiki.js, commands/wiki.js, bin/atris.js, test/commands.test.js, test/cli-smoke.test.js, atris/skills/loop/SKILL.md, atris/features/wiki-loop/*

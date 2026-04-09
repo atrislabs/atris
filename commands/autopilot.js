@@ -287,7 +287,7 @@ function getContextFiles(phase, options = {}) {
     review: 'atris/team/validator/MEMBER.md'
   }[phase];
 
-  return [
+  const files = [
     agentSpec && fs.existsSync(path.join(cwd, agentSpec)) ? agentSpec : null,
     'atris/PERSONA.md',
     'atris/MAP.md',
@@ -305,9 +305,23 @@ function getContextFiles(phase, options = {}) {
  */
 function buildPrompt(phase, context, options = {}) {
   const { task, kind } = context;
-  const { contextNote = '' } = options;
+  const {
+    benchmarkStrategy = '',
+    contextNote = '',
+    runnerName = '',
+  } = options;
   const readFiles = getContextFiles(phase, options);
-  const noteBlock = contextNote ? `\nBenchmark context:\n${contextNote}\n` : '';
+  const benchmarkProtocol = benchmarkStrategy === 'stack'
+    ? 'coordinated stack run'
+    : (benchmarkStrategy === 'single' ? 'pinned single-model baseline run' : '');
+  const benchmarkContextLines = [
+    runnerName ? `Runner profile: ${runnerName}` : '',
+    benchmarkProtocol ? `Protocol: ${benchmarkProtocol}` : '',
+    contextNote,
+  ].filter(Boolean);
+  const noteBlock = benchmarkContextLines.length > 0
+    ? `\nBenchmark context:\n${benchmarkContextLines.join('\n')}\n`
+    : '';
 
   if (phase === 'plan') {
     const baseRules = `You are the navigator. Read your MEMBER.md spec first if available.
@@ -329,6 +343,10 @@ Pinned benchmark task:
 ${task}
 
 Rules for this run:
+- Treat this as a ${benchmarkProtocol || 'pinned benchmark run'}.
+- ${benchmarkStrategy === 'stack'
+    ? 'Split the work into explicit repo lanes only when the task truly separates.'
+    : 'Stay single-threaded and solve it directly without delegation theater.'}
 - Do NOT write to TODO.md, journal, or feature specs.
 - Do NOT invent follow-up tasks or widen scope.
 - Read the benchmark contract and pack files in the read list before deciding.
@@ -409,7 +427,7 @@ When done, reply: done.`;
       return `You are the executor. Read your MEMBER.md spec first if available.
 
 Rules:
-- This is a pinned benchmark run. Execute the task directly.
+- This is a ${benchmarkProtocol || 'pinned benchmark run'}. Execute the task directly.
 - You CAN read and write code. Do NOT modify TODO.md or journal state.
 - Stay inside the exact task brief. No side quests.
 - Check MAP.md before grepping.
@@ -458,7 +476,7 @@ When done, reply: done.`;
       return `You are the validator. Read your MEMBER.md spec first if available.
 
 Rules:
-- This is a pinned benchmark review. Check quality without widening scope.
+- This is a ${benchmarkProtocol || 'pinned benchmark'} review. Check quality without widening scope.
 - You CAN fix issues but CANNOT add new features.
 - Run targeted verification if you can and name the commands explicitly in your response.
 - Do NOT delete tasks from TODO.md or append completions to the journal. The outer benchmark runner records the receipt.
@@ -683,8 +701,20 @@ function wrapText(text, width = 74) {
   return lines;
 }
 
+function compactWrappedText(text, width = 74, maxLines = 2) {
+  const lines = wrapText(text, width);
+  if (lines.length <= maxLines) return lines;
+
+  const kept = lines.slice(0, maxLines);
+  const head = kept.slice(0, -1);
+  let tail = kept[kept.length - 1].replace(/[ .,;:!?-]+$/, '');
+  if (tail.length >= width) {
+    tail = tail.slice(0, width - 1).replace(/[ .,;:!?-]+$/, '');
+  }
+  return [...head, `${tail}…`];
+}
+
 function printPlainBlock(text) {
-  console.log('');
   for (const line of String(text || '').split('\n')) {
     console.log(`  ${line}`);
   }
@@ -738,9 +768,9 @@ function getTickStatus(cwd) {
 
 function renderHumanTickIntro(status, options = {}) {
   const modeLabel = options.auto ? 'autonomous' : 'interactive';
-  const horizonSentence = status.horizon
-    ? `We are working on ${status.slug}: ${status.horizon}`
-    : `We are working on ${status.slug}.`;
+  const horizonLines = status.horizon
+    ? compactWrappedText(`Horizon: ${status.slug}. ${status.horizon}`, 74, 2)
+    : compactWrappedText(`Horizon: ${status.slug}.`, 74, 2);
   const progressSentence = status.remaining === 0
     ? 'No tagged endgame steps are queued right now.'
     : status.total > 0
@@ -749,13 +779,9 @@ function renderHumanTickIntro(status, options = {}) {
 
   return [
     status.time,
-    `I am starting an autopilot tick in ${modeLabel} mode.`,
-    `The current limit is ${options.durationLabel || 'until clean'}.`,
-    '',
-    ...wrapText(horizonSentence),
+    `I am starting an autopilot tick in ${modeLabel} mode. Limit: ${options.durationLabel || 'until clean'}.`,
+    ...horizonLines,
     progressSentence,
-    ...wrapText(`Identity: ${status.identity}`),
-    '',
     'Next I will scan the workspace and choose one task.'
   ].join('\n');
 }
@@ -763,10 +789,8 @@ function renderHumanTickIntro(status, options = {}) {
 function renderHumanSuggestion(suggestion, step, maxIterations) {
   return [
     `I picked task ${step} of ${maxIterations}.`,
-    ...wrapText(suggestion.task),
-    '',
-    ...wrapText(`Why now: ${suggestion.why}`),
-    '',
+    ...compactWrappedText(`Task: ${suggestion.task}`, 74, 2),
+    ...compactWrappedText(`Why now: ${suggestion.why}`, 74, 2),
     'Next: approve it, skip it, or stop the loop.'
   ].join('\n');
 }

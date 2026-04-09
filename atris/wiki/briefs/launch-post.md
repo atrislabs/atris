@@ -1,5 +1,5 @@
 ---
-type: synthesis
+type: brief
 slug: launch-post
 title: LinkedIn launch — atris/wiki/ as personal memory substrate
 sources: [

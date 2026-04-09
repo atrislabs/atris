@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-04-07
+last_compiled: 2026-04-08
 sources:
   - bin/atris.js
   - atris/features/cli-ux-simplification/idea.md

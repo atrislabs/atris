@@ -226,7 +226,8 @@ test('default entry auto-advances to review when completed tasks exist', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Review — Validator Agent Activated/);
+    assert.match(res.stdout, /I checked the review setup\./);
+    assert.match(res.stdout, /Decision:/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -323,9 +324,9 @@ test('review prints concise validator prompt by default', () => {
 
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /COPY\/PASTE PROMPT/);
-    assert.match(res.stdout, /You are the Validator/);
-    assert.doesNotMatch(res.stdout, /📋 AGENT SPEC/);
+    assert.match(res.stdout, /I checked the review setup\./);
+    assert.match(res.stdout, /Decision:/);
+    assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
   } finally {
     cleanupTempDir(dir);
   }

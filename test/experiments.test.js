@@ -70,6 +70,21 @@ function prepareEndstatePack(dir, slug) {
   );
 }
 
+function prepareEndstateWorkspace(dir) {
+  initWorkspace(dir);
+  copyWorkspacePath('atris/features/endstate', dir);
+
+  for (const slug of ['endstate-baseline', 'endstate-stack']) {
+    copyWorkspacePath(`atris/experiments/${slug}`, dir);
+    fs.rmSync(path.join(dir, 'atris', 'experiments', slug, 'artifacts'), { recursive: true, force: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'experiments', slug, 'results.tsv'),
+      'timestamp\ttrack\trepo\ttask\tstatus\tscore\treviewed\ttests\tartifacts\tinterventions\tnotes\n',
+      'utf8'
+    );
+  }
+}
+
 test('init creates experiments framework assets', () => {
   const dir = makeTempDir();
   try {
@@ -185,6 +200,8 @@ test('experiments run endstate-baseline dry-run writes artifact receipt and resu
     assert.equal(artifact.tests[0].status, 'not_run');
     assert.deepEqual(artifact.changed_files, []);
     assert.ok(typeof artifact.prompt_context === 'string' && artifact.prompt_context.includes('pack: endstate-baseline'));
+    assert.ok(artifact.prompt_context.includes('runner: baseline-single'));
+    assert.ok(artifact.notes.includes('runner=baseline-single'));
 
     const results = fs.readFileSync(path.join(packDir, 'results.tsv'), 'utf8').trim().split('\n');
     assert.equal(results.length, 2);
@@ -219,6 +236,8 @@ test('experiments run endstate-stack dry-run writes artifact receipt and results
     assert.equal(artifact.tests[0].status, 'not_run');
     assert.deepEqual(artifact.changed_files, []);
     assert.ok(typeof artifact.prompt_context === 'string' && artifact.prompt_context.includes('pack: endstate-stack'));
+    assert.ok(artifact.prompt_context.includes('runner: stack-coordinated'));
+    assert.ok(artifact.notes.includes('runner=stack-coordinated'));
 
     const results = fs.readFileSync(path.join(packDir, 'results.tsv'), 'utf8').trim().split('\n');
     assert.equal(results.length, 2);
@@ -235,6 +254,8 @@ test('benchmark prompts render read files as bullet list', () => {
     'plan',
     { task: 'Benchmark task brief', kind: 'benchmark' },
     {
+      benchmarkStrategy: 'single',
+      runnerName: 'baseline-single',
       extraReadFiles: [
         'atris/features/endstate/contract.md',
         'atris/features/endstate/artifact-schema.json',
@@ -247,4 +268,101 @@ test('benchmark prompts render read files as bullet list', () => {
   assert.match(prompt, /- atris\/features\/endstate\/contract\.md/);
   assert.match(prompt, /- atris\/features\/endstate\/artifact-schema\.json/);
   assert.doesNotMatch(prompt, /,\s*atris\/features\/endstate\/contract\.md/);
+  assert.match(prompt, /Runner profile: baseline-single/);
+});
+
+test('benchmark prompts differ between baseline and stack strategies', () => {
+  const baselinePrompt = buildPrompt(
+    'plan',
+    { task: 'Benchmark task brief', kind: 'benchmark' },
+    { benchmarkStrategy: 'single', runnerName: 'baseline-single' }
+  );
+
+  const stackPrompt = buildPrompt(
+    'plan',
+    { task: 'Benchmark task brief', kind: 'benchmark' },
+    { benchmarkStrategy: 'stack', runnerName: 'stack-coordinated' }
+  );
+
+  assert.match(baselinePrompt, /pinned single-model baseline run/i);
+  assert.doesNotMatch(baselinePrompt, /coordinated stack run/i);
+  assert.match(stackPrompt, /coordinated stack run/i);
+  assert.match(stackPrompt, /Split the work into explicit repo lanes/i);
+});
+
+test('documented benchmark quickstart works from a fresh workspace', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    prepareEndstateWorkspace(dir);
+
+    const baselineValidate = runCli(['experiments', 'validate', 'endstate-baseline'], { cwd: dir });
+    const stackValidate = runCli(['experiments', 'validate', 'endstate-stack'], { cwd: dir });
+    const baselineRun = runCli(['experiments', 'run', 'endstate-baseline', '--dry-run'], { cwd: dir });
+    const stackRun = runCli(['experiments', 'run', 'endstate-stack', '--dry-run'], { cwd: dir });
+
+    assert.equal(baselineValidate.status, 0, baselineValidate.stderr);
+    assert.equal(stackValidate.status, 0, stackValidate.stderr);
+    assert.equal(baselineRun.status, 0, baselineRun.stderr);
+    assert.equal(stackRun.status, 0, stackRun.stderr);
+
+    assert.match(baselineValidate.stdout, /PASS: 1 experiment\(s\) valid/);
+    assert.match(stackValidate.stdout, /PASS: 1 experiment\(s\) valid/);
+    assert.match(baselineRun.stdout, /Endstate baseline run recorded/);
+    assert.match(stackRun.stdout, /Endstate stack run recorded/);
+
+    const baselineArtifacts = fs.readdirSync(path.join(dir, 'atris', 'experiments', 'endstate-baseline', 'artifacts'))
+      .filter((file) => file.endsWith('.json'));
+    const stackArtifacts = fs.readdirSync(path.join(dir, 'atris', 'experiments', 'endstate-stack', 'artifacts'))
+      .filter((file) => file.endsWith('.json'));
+
+    assert.equal(baselineArtifacts.length, 1);
+    assert.equal(stackArtifacts.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments compare endstate summarizes the latest receipts', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    prepareEndstateWorkspace(dir);
+    runCli(['experiments', 'run', 'endstate-baseline', '--dry-run'], { cwd: dir });
+    runCli(['experiments', 'run', 'endstate-stack', '--dry-run'], { cwd: dir });
+
+    const compare = runCli(['experiments', 'compare', 'endstate'], { cwd: dir });
+    assert.equal(compare.status, 0, compare.stderr);
+    assert.match(compare.stdout, /Endstate comparison ready/);
+    assert.match(compare.stdout, /baseline: 35\/100 \| review: draft \| interventions: 0/);
+    assert.match(compare.stdout, /stack: 35\/100 \| review: draft \| interventions: 0/);
+    assert.match(compare.stdout, /Decision: no winner yet\./);
+    assert.match(compare.stdout, /Scores are tied at 35\/100/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('experiments replay endstate runs the public rehearsal flow', { skip: !pythonCmd }, () => {
+  const dir = makeTempDir();
+  try {
+    prepareEndstateWorkspace(dir);
+
+    const replay = runCli(['experiments', 'replay', 'endstate'], { cwd: dir });
+    assert.equal(replay.status, 0, replay.stderr);
+    assert.match(replay.stdout, /Replay: validate baseline pack/);
+    assert.match(replay.stdout, /Replay: validate stack pack/);
+    assert.match(replay.stdout, /Replay: baseline dry run/);
+    assert.match(replay.stdout, /Replay: stack dry run/);
+    assert.match(replay.stdout, /Replay: compare latest receipts/);
+    assert.match(replay.stdout, /Decision: no winner yet\./);
+
+    const baselineArtifacts = fs.readdirSync(path.join(dir, 'atris', 'experiments', 'endstate-baseline', 'artifacts'))
+      .filter((file) => file.endsWith('.json'));
+    const stackArtifacts = fs.readdirSync(path.join(dir, 'atris', 'experiments', 'endstate-stack', 'artifacts'))
+      .filter((file) => file.endsWith('.json'));
+
+    assert.equal(baselineArtifacts.length, 1);
+    assert.equal(stackArtifacts.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
