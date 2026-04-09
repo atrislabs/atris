@@ -23,7 +23,7 @@ This is the product. The thing the user pays for. One call, one verifiable resul
   → POST /api/improve { workspace: ".", mode: "full" }
   → backend picks a task, plans, builds, reviews, verifies
   → returns { task, reward, files_changed, verify_pass, summary }
-  → CLI writes scorecard to atris/scorecards.md
+  → CLI writes scorecard to .atris/presidio/scorecards.md
   → CLI reports result to user
 ```
 
@@ -45,7 +45,7 @@ The inference is Claude Code (or whatever model the backend uses). The environme
 5. On success:
    - Show what shipped (task name, files changed, verify result)
    - Show the reward score
-   - Write scorecard to `atris/scorecards.md`
+   - Write scorecard to `.atris/presidio/scorecards.md`
    - Append tick to today's journal
 6. On failure:
    - Show the error

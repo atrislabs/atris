@@ -1,5 +1,6 @@
 # Local files (not for public repo)
 .local/
+.atris/
 
 # Dependencies
 node_modules/
@@ -48,3 +49,4 @@ atris/.research/
 # Autopilot temp files
 prd.json
 progress.txt
+.autopilot-prompt.tmp
