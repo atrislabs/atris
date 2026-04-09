@@ -380,8 +380,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:1092` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:1375` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js:1224` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:1561` (autopilotFromTodo function)
 - **Reward computer:** `commands/autopilot.js:658` (`computeTickReward`) — computes per-tick reward score from execution signals (commit +1, npm test +2, verify +3, validator clean +1, halt -3)
 - **Heartbeat writer:** `commands/autopilot.js:702` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
@@ -402,9 +402,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Approval gate:** `commands/autopilot.js:290` (askApproval function) — enter/skip/quit
 - **Idle-tick helper:** `commands/autopilot.js:890` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:925` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
-- **Candidate-horizons helper:** `commands/autopilot.js:967` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Candidate-horizons helper:** `commands/autopilot.js:1123` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
+- **Scoring helper:** `commands/autopilot.js:1038` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value, applies 80/20 exploit/explore split; called during horizon picking (line 207) to weight candidates by historical reward
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
-- **Value:** Always knows what to do next and why; now also exposes a reusable single-run path for Endstate harnessing
+- **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
 **Search:** `rg "autopilotAtris|suggestNextTask" commands/autopilot.js`
 

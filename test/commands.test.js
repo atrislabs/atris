@@ -5,10 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const { createCanonicalBusinessWorkspace } = require('../commands/business');
 const {
   getRecentSignals,
   renderHumanSuggestion,
-  renderHumanTickIntro
+  renderHumanTickIntro,
+  scoreEndgameCandidates
 } = require('../commands/autopilot');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -468,6 +470,52 @@ test('sync command works as alias for update', () => {
   }
 });
 
+test('createCanonicalBusinessWorkspace writes business metadata and canonical atris scaffold into an existing folder', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'BLONDISH_NOTES.md'), '# raw notes\n', 'utf8');
+
+    const result = createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-123',
+      workspace_id: 'ws-456',
+      name: 'BLOND:ISH',
+      slug: 'blondish',
+      owner_email: 'joel@blondish.world',
+    }, { here: true });
+
+    assert.equal(result.targetRoot, dir);
+    assert.ok(fs.existsSync(path.join(dir, 'BLONDISH_NOTES.md')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'business.json')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'goals.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
+
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
+    assert.equal(meta.slug, 'blondish');
+    assert.equal(meta.business_id, 'biz-123');
+    assert.equal(meta.workspace_id, 'ws-456');
+    assert.equal(meta.owner_email, 'joel@blondish.world');
+
+    const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
+    assert.match(map, /BLOND:ISH/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business help exposes canonical workspace creation', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['business'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /init <name>\s+Create a canonical business workspace/);
+    assert.match(res.stdout, /create <name>\s+Create the cloud business; add --workspace/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ============================================
 // log sequential IDs
 // ============================================
@@ -751,6 +799,113 @@ test('wiki loop alias runs the same upkeep analysis', () => {
     const res = runCli(['wiki', 'loop'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// scoreEndgameCandidates
+// ============================================
+
+test('scoreEndgameCandidates returns best by confidence when no atris folder', () => {
+  const dir = makeTempDir();
+  try {
+    const candidates = [
+      { title: 'wiki-search', confidence: 0.9, rationale: 'High confidence' },
+      { title: 'verify-tests', confidence: 0.7, rationale: 'Medium confidence' },
+      { title: 'refactor-cli', confidence: 0.5, rationale: 'Low confidence' }
+    ];
+    const result = scoreEndgameCandidates(dir, candidates);
+    assert.equal(result.title, 'wiki-search', 'should pick highest confidence');
+    assert.equal(result.confidence, 0.9);
+    assert.equal(result.scored, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scoreEndgameCandidates returns best by confidence when no scorecards', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const candidates = [
+      { title: 'wiki-search', confidence: 0.6, rationale: 'Medium confidence' },
+      { title: 'verify-tests', confidence: 0.8, rationale: 'High confidence' },
+      { title: 'refactor-cli', confidence: 0.4, rationale: 'Low confidence' }
+    ];
+    const result = scoreEndgameCandidates(dir, candidates);
+    assert.equal(result.title, 'verify-tests', 'should pick highest confidence');
+    assert.equal(result.confidence, 0.8);
+    assert.equal(result.scored, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scoreEndgameCandidates scores candidates by historical reward when scorecards exist', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    // Create scorecards with wiki and verify types
+    const scorecardsPath = path.join(dir, 'atris', 'scorecards.md');
+    const content = `# scorecards.md — Endgame Results
+
+> Append-only. One line per closed endgame.
+
+---
+
+- **[2026-04-01] wiki-search-v1** — shipped: 3/3 — wall-clock: 2.5h — halt: 10% — reward: 50 — lessons: 5
+- **[2026-04-02] verify-tests** — shipped: 2/3 — wall-clock: 3.0h — halt: 20% — reward: 40 — lessons: 3
+- **[2026-04-03] wiki-ingest** — shipped: 4/4 — wall-clock: 1.5h — halt: 5% — reward: 55 — lessons: 6
+- **[2026-04-04] verify-integration** — shipped: 1/2 — wall-clock: 4.0h — halt: 30% — reward: 30 — lessons: 2
+`;
+    fs.writeFileSync(scorecardsPath, content, 'utf8');
+
+    const candidates = [
+      { title: 'wiki-new-feature', confidence: 0.7, rationale: 'New wiki work' },
+      { title: 'verify-edge-cases', confidence: 0.6, rationale: 'Test edge cases' },
+      { title: 'refactor-api', confidence: 0.8, rationale: 'Refactor API' }
+    ];
+
+    // Call multiple times to verify 80/20 behavior (deterministic by chance)
+    let exploitCount = 0, exploreCount = 0;
+    for (let i = 0; i < 100; i++) {
+      const result = scoreEndgameCandidates(dir, candidates);
+      assert.equal(result.scored, true);
+      assert.ok(result.reason, 'should have scoring reason');
+      if (result.reason.includes('exploit')) exploitCount++;
+      else if (result.reason.includes('explore')) exploreCount++;
+    }
+
+    // 80/20 split is probabilistic; we should see roughly 80 exploit, 20 explore (with tolerance)
+    assert.ok(exploitCount >= 60 && exploitCount <= 100, `exploit count ${exploitCount} should be ~80`);
+    assert.ok(exploreCount >= 0 && exploreCount <= 40, `explore count ${exploreCount} should be ~20`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('scoreEndgameCandidates returns fallback when scoring fails', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    // Write malformed scorecards to trigger parsing error
+    const scorecardsPath = path.join(dir, 'atris', 'scorecards.md');
+    fs.writeFileSync(scorecardsPath, '# scorecards\n\nmalformed line that won\'t parse', 'utf8');
+
+    const candidates = [
+      { title: 'wiki-work', confidence: 0.9, rationale: 'High confidence' },
+      { title: 'verify-work', confidence: 0.5, rationale: 'Low confidence' }
+    ];
+
+    const result = scoreEndgameCandidates(dir, candidates);
+    // Should fall back to best by confidence
+    assert.equal(result.title, 'wiki-work');
+    assert.equal(result.confidence, 0.9);
+    // scored flag tells us it fell back (if there was an error)
   } finally {
     cleanupTempDir(dir);
   }
