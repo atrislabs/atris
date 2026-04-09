@@ -1,13 +1,11 @@
 # Team — {{name}}
 
-Internal team profiles. One folder per team member.
+This folder lives inside `atris/` because the team is part of the context graph.
+Anything durable and structured belongs under `atris/`.
 
-```
-atris/team/
-├── alice/
-│   └── MEMBER.md
-├── bob/
-│   └── MEMBER.md
-```
+## Role Lenses
 
-Each `MEMBER.md` describes the team member's role, skills, and how the agent should collaborate with them.
+Create lanes that match the real business workflow.
+Examples: intake, scheduling, reactivation, revops, content, partnerships, support.
+
+These are role lenses on one shared environment, not separate magic bots.

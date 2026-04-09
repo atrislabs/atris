@@ -8,11 +8,12 @@ Standard processes and workflows.
 2. Check today's journal
 3. Plan → Do → Review
 4. Update artifacts as you go
+5. Keep all durable context under `atris/`; anything outside is boot glue or raw output
 
 ## Content Generation
 
 1. Understand the goal
-2. Check `atris/persona.md` and recent journals
+2. Check `atris/PERSONA.md` and recent journals
 3. Generate draft
 4. Refine: cut fluff, strengthen hooks
 5. Cite sources from `atris/wiki/`
@@ -33,4 +34,7 @@ When asked anything specific to {{name}}:
 
 ---
 
-*Customize this file with {{name}}-specific workflows.*
+## First Loop
+
+Start with one measurable business loop.
+Define the state, the action, the reward, and the next check window before adding more tooling.

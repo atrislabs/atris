@@ -116,6 +116,14 @@ If you already have a folder full of source material, run it from there with `at
 - `atris experiments` runs Karpathy-style keep/revert loops in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 
+## Verifiable Feedback Loop
+
+Under the hood, Atris can keep score on real repo work.
+
+- Endgame tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
+- `atris autopilot` can run that check after review, record a reward in the journal, and append a scorecard when a horizon closes.
+- Future horizon picks can weight against recent scorecards, so the loop learns from repo-local history without claiming model retraining.
+
 ## Benchmark Harness
 
 Atris ships one public head-to-head benchmark harness for comparing a pinned
