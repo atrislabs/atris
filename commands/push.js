@@ -25,10 +25,13 @@ async function pushAtris() {
   if (!slug || slug === '--help') {
     console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force]');
     console.log('');
+    console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
+    console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
+    console.log('');
     console.log('  atris push                   Push from current folder (auto-detect business)');
     console.log('  atris push pallet            Push pallet/ or atris/pallet/');
     console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
-    console.log('  atris push --force           Override conflicts');
+    console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     process.exit(0);
   }
 
@@ -102,6 +105,29 @@ async function pushAtris() {
 
   if (!workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
+  // Auto-wake the EC2 computer if --auto-wake is set, otherwise check status and warn.
+  // Without this, push silently routes to agent_files cache when computer is asleep
+  // (the silent fallback footgun from tonight's debugging).
+  const autoWake = process.argv.includes('--auto-wake');
+  if (autoWake) {
+    const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+    const computerStatus = statusResult.ok && statusResult.data ? statusResult.data.status : 'unknown';
+    if (computerStatus !== 'running' || !(statusResult.data && statusResult.data.endpoint)) {
+      process.stdout.write('  Waking EC2 computer... ');
+      await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
+      const wakeStart = Date.now();
+      while (Date.now() - wakeStart < 90000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const s = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+        if (s.ok && s.data && s.data.status === 'running' && s.data.endpoint) {
+          const elapsed = Math.floor((Date.now() - wakeStart) / 1000);
+          console.log(`awake (${elapsed}s)`);
+          break;
+        }
+      }
+    }
+  }
+
   // Load manifest and compute local hashes
   const manifest = loadManifest(resolvedSlug || slug);
   const localFiles = computeLocalHashes(sourceDir);
@@ -113,6 +139,88 @@ async function pushAtris() {
 
   console.log('');
   console.log(`Pushing to ${businessName}...`);
+
+  // ───────────────────────────────────────────────────────────────────
+  // FRESHNESS CHECK — pull-before-push enforcement.
+  // ───────────────────────────────────────────────────────────────────
+  // Compare cloud's current state to our local manifest. If cloud has any
+  // file the manifest doesn't know about, OR a file with a different hash
+  // than what we last pulled, the user is out of date and MUST pull first.
+  // This prevents stale local state from clobbering fresh cloud changes —
+  // the "lagging version push" footgun. Use --force to bypass (e.g., for
+  // genuine local-canonical pushes like align --hard).
+  if (!force) {
+    process.stdout.write('  Checking cloud freshness... ');
+    const snapshotResult = await apiRequestJson(
+      `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false`,
+      { method: 'GET', token: creds.token, timeoutMs: 60000 }
+    );
+    if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
+      const cloudHashes = {};
+      for (const f of snapshotResult.data.files) {
+        if (f.path && f.hash) cloudHashes[f.path] = f.hash;
+      }
+      const manifestFiles = (manifest && manifest.files) || {};
+      const driftFiles = [];
+      // Direction 1: cloud has files the manifest doesn't know about, OR
+      // cloud's hash differs from what we last pulled (someone changed it).
+      for (const [p, hash] of Object.entries(cloudHashes)) {
+        // Apply --only filter to drift detection too: if user is scoping the
+        // push to a subtree, only block on drift inside that subtree.
+        if (onlyPrefixes && !onlyPrefixes.some((pref) => p.startsWith(pref))) continue;
+        const manifestEntry = manifestFiles[p];
+        if (!manifestEntry || manifestEntry.hash !== hash) {
+          driftFiles.push(p);
+        }
+      }
+      // Direction 2: manifest has files the cloud no longer has (someone
+      // deleted them). Without this check, we'd silently re-push deleted
+      // files on the next push, undoing the deletion.
+      //
+      // CAVEAT: the warm runner's snapshot endpoint deliberately hides certain
+      // basenames (CLAUDE.md, .* dotfiles, node_modules, __pycache__, .git) —
+      // see ecs_warm_runner.py _snapshot_dir. They CAN exist on cloud but
+      // never appear in cloudHashes. Skip them in the missing-side check or
+      // every CLAUDE.md push will be flagged as drift forever.
+      const SERVER_HIDDEN_BASENAMES = new Set(['CLAUDE.md']);
+      const cloudPathSet = new Set(Object.keys(cloudHashes));
+      for (const p of Object.keys(manifestFiles)) {
+        if (onlyPrefixes && !onlyPrefixes.some((pref) => p.startsWith(pref))) continue;
+        const idx = p.lastIndexOf('/');
+        const base = idx === -1 ? p : p.slice(idx + 1);
+        if (SERVER_HIDDEN_BASENAMES.has(base)) continue;
+        if (!cloudPathSet.has(p)) {
+          driftFiles.push(p);
+        }
+      }
+      if (driftFiles.length > 0) {
+        console.log(`drift detected (${driftFiles.length} file${driftFiles.length === 1 ? '' : 's'})`);
+        console.log('');
+        console.log(`  ✗ Cloud has changed since your last pull. Refusing to push stale state.`);
+        console.log('');
+        console.log('    Files that differ on cloud:');
+        driftFiles.slice(0, 8).forEach((p) => console.log(`      ~ ${p.replace(/^\//, '')}`));
+        if (driftFiles.length > 8) console.log(`      ... +${driftFiles.length - 8} more`);
+        console.log('');
+        console.log('    Run `atris pull` first, then push your changes.');
+        console.log('    To override (force-push, may clobber cloud edits): atris push --force');
+        process.exit(1);
+      }
+      console.log('fresh');
+    } else {
+      // Snapshot fetch failed — fail closed. The whole point of the freshness
+      // check is to prevent accidental stale pushes; if we can't verify cloud
+      // state, we don't push. Use --force to bypass when you know what you're
+      // doing (e.g., the workspace is genuinely unhealthy and you have a clean
+      // local copy you need to recover from).
+      console.log(`failed (status ${snapshotResult.status || 'unknown'})`);
+      console.log('');
+      console.log('  ✗ Could not verify cloud freshness. Refusing to push.');
+      console.log('    The workspace may be unreachable or the snapshot endpoint is broken.');
+      console.log('    To bypass and force-push anyway: atris push --force');
+      process.exit(1);
+    }
+  }
 
   // Compare local hashes to manifest — NO server call needed
   // Files where local hash differs from manifest = changed locally
@@ -214,16 +322,51 @@ async function pushAtris() {
     }
   }
 
-  for (const filePath of deletedPaths) {
-    const deleteResult = await apiRequestJson(
+  // Delete loop — throttled, 429-aware, tracks per-file success/failure.
+  // Earlier bug: bulk deletes hit rate limit (60/min default) at request 60,
+  // then process.exit'd, leaving partial state and a manifest that thought
+  // everything was deleted. New behavior:
+  //   - 600ms throttle between deletes (≈100/min, safe under default rate limit)
+  //   - 429 → wait 20s, retry once
+  //   - 404 → counted as success (file already gone)
+  //   - other failures → collected, reported at end, do NOT exit
+  //   - manifest update only counts confirmed-deleted paths
+  const deletedConfirmed = [];
+  const deleteFailed = [];
+  for (let i = 0; i < deletedPaths.length; i++) {
+    const filePath = deletedPaths[i];
+    if (i > 0) {
+      // sleep 600ms between deletes
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    let deleteResult = await apiRequestJson(
       `/business/${businessId}/workspaces/${workspaceId}/file?path=${encodeURIComponent(filePath)}`,
       { method: 'DELETE', token: creds.token }
     );
-    if (!deleteResult.ok && deleteResult.status !== 404) {
-      console.error(`\n  Delete failed for ${filePath.replace(/^\//, '')}: ${deleteResult.error || deleteResult.status}`);
-      process.exit(1);
+    if (deleteResult.status === 429) {
+      // Rate limit — wait 20s, retry once
+      await new Promise((r) => setTimeout(r, 20000));
+      deleteResult = await apiRequestJson(
+        `/business/${businessId}/workspaces/${workspaceId}/file?path=${encodeURIComponent(filePath)}`,
+        { method: 'DELETE', token: creds.token }
+      );
     }
-    deleted++;
+    if (deleteResult.ok || deleteResult.status === 404) {
+      deletedConfirmed.push(filePath);
+      deleted++;
+    } else {
+      deleteFailed.push({ path: filePath, status: deleteResult.status, error: deleteResult.error });
+    }
+    // Show progress for large batches
+    if (deletedPaths.length > 20 && (i + 1) % 20 === 0) {
+      console.log(`  [delete ${i + 1}/${deletedPaths.length}] ${deletedConfirmed.length} ok, ${deleteFailed.length} failed`);
+    }
+  }
+  if (deleteFailed.length > 0) {
+    console.log('');
+    console.log(`  ⚠ ${deleteFailed.length} delete(s) failed (NOT marked as deleted in manifest):`);
+    deleteFailed.slice(0, 10).forEach((f) => console.log(`    ${f.status} ${f.path.replace(/^\//, '')}`));
+    if (deleteFailed.length > 10) console.log(`    ... +${deleteFailed.length - 10} more`);
   }
 
   // Display results
@@ -236,7 +379,8 @@ async function pushAtris() {
   for (const f of skipped) {
     console.log(`  - ${f.path.replace(/^\//, '')}  skipped (no permission)`);
   }
-  for (const filePath of deletedPaths) {
+  // Only print confirmed deletes (not failed ones — they were reported above)
+  for (const filePath of deletedConfirmed) {
     console.log(`  x ${filePath.replace(/^\//, '')}  deleted`);
   }
 
@@ -245,18 +389,20 @@ async function pushAtris() {
   const parts = [];
   if (pushed > 0) parts.push(`${pushed} pushed`);
   if (deleted > 0) parts.push(`${deleted} deleted`);
+  if (deleteFailed.length > 0) parts.push(`${deleteFailed.length} delete failed`);
   if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
   if (skipped.length > 0) parts.push(`${skipped.length} skipped`);
   console.log(`  ${parts.join(', ')}.`);
 
-  // Update manifest — mark pushed files with their new hash
+  // Update manifest — mark pushed files with their new hash, drop ONLY confirmed deletes.
+  // Failed deletes stay in the manifest so the next push will retry them.
   const updatedFiles = { ...baseFiles };
   for (const f of filesToPush) {
     if (!skipped.includes(f)) {
       updatedFiles[f.path] = localFiles[f.path];
     }
   }
-  for (const filePath of deletedPaths) {
+  for (const filePath of deletedConfirmed) {
     delete updatedFiles[filePath];
   }
   saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null));
