@@ -1,6 +1,6 @@
 # Project Endstate — Level 1 Contract
 
-> **Status:** draft
+> **Status:** v2 — rehearsal-ready 2026-04-08
 > **Created:** 2026-04-08
 > **Last Updated:** 2026-04-08
 
@@ -81,3 +81,10 @@ Tiebreakers:
 ## Win Condition
 
 The stack wins Level 1 if it beats the baseline on total score and does not lose the reviewed completion category.
+
+## Current State
+
+- The benchmark harness can validate both packs, emit dry-run receipts, compare
+  the latest artifacts, and replay that full public rehearsal in one command.
+- The remaining gap is not tooling. It is evidence: a real head-to-head result
+  on pinned snapshots that clears the Level 1 rule.

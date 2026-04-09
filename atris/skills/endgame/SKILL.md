@@ -28,7 +28,7 @@ Before picking a new horizon, read what already exists. The wiki + logs are the 
 - `atris/lessons.md` — past surprises and failures the validator wrote down. Read this FIRST. Avoid horizons that hit the same rocks.
 - `atris/wiki/STATUS.md` — current state, last loop findings, suggested next ingests
 - `atris/wiki/index.md` — what pages already exist
-- `atris/wiki/syntheses/` — most recent synthesis pages (often already contain a horizon)
+- `atris/wiki/briefs/` — most recent cross-cutting brief pages (often already contain a horizon)
 - `atris/MAP.md` — what code exists today
 - `atris/TODO.md` — what's queued, what's done
 - `atris/logs/YYYY/` — last 7-14 days of journals; scan `## Inbox` sections for unfulfilled ideas (these are user-seeded horizons)

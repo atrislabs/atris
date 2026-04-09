@@ -111,19 +111,21 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Experiments (`atris experiments`)
 
-**Purpose:** Scaffold, validate, and run bounded experiment packs inside `atris/experiments/`, including Endstate benchmark receipts
+**Purpose:** Scaffold, validate, run, compare, and rehearse bounded experiment packs inside `atris/experiments/`, including Endstate benchmark receipts
 
 - **Entry point:** `bin/atris.js` command routing for `experiments`
 - **Handler:** `commands/experiments.js`
-- **Core functions:** `commands/experiments.js:52` (`ensureExperimentsFramework`), `commands/experiments.js:307` (`buildBenchmarkArtifact`), `commands/experiments.js:406` (`experimentsRun`)
+- **Core functions:** `commands/experiments.js:55` (`ensureExperimentsFramework`), `commands/experiments.js:310` (`buildBenchmarkArtifact`), `commands/experiments.js:409` (`experimentsRun`), `commands/experiments.js:469` (`experimentsCompare`), `commands/experiments.js:501` (`experimentsReplay`)
 - **How it works:**
 - `atris init` now prepares `atris/experiments/` with packaged validators, fixtures, templates, and smoke examples
 - `atris experiments init [slug]` scaffolds a new bounded experiment pack
 - `atris experiments validate` runs structural checks and context-bloat validation
 - `atris experiments run <slug>` executes a pack; Endstate packs also emit JSON receipts + append `results.tsv`
+- `atris experiments compare endstate` reads the latest baseline + stack receipts, prints the side-by-side scorecard, and declares `stack wins` or `no winner yet` from the Level 1 rule
+- `atris experiments replay endstate` validates both packs, emits fresh dry-run receipts, then compares the latest result in one command
 - Endstate packs pin runner profiles in `runner.json` (`baseline-single` vs `stack-coordinated`) so baseline and stack resolve different live prompt strategies
 - `atris experiments benchmark [validate|runtime]` proves the validator and keep/revert example still work
-- **Endstate helper:** `lib/endstate.js:7-179` captures git heads, changed files, wiki deltas, test summaries, scoring, artifact writes, and `results.tsv` rows
+- **Endstate helper:** `lib/endstate.js:94-259` scores artifacts, reads the latest receipt, compares baseline vs stack, writes artifact files, and appends `results.tsv` rows
 - **Workspace assets:**
 - `atris/experiments/README.md`
 - `atris/experiments/validate.py`
@@ -133,7 +135,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `atris/experiments/_examples/smoke-keep-revert/`
 - **Value:** Makes self-improvement loops and scoreable benchmark runs first-class Atris CLI concepts instead of repo-local convention
 
-**Search:** `rg "experimentsCommand|experimentsRun|buildBenchmarkArtifact|ensureExperimentsFramework" commands/experiments.js commands/init.js`
+**Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework" commands/experiments.js commands/init.js`
 
 ### Feature: Spec Update (`atris update`)
 
@@ -751,7 +753,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - ⭐ `atris/features/README.md` — Feature documentation guide
 - ⭐ `atris/features/_templates/` — idea.md, build.md & validate.md templates
 - ⭐ `atris/lessons.md` — Append-only learnings harvested by validator, read by navigator
-- `README.md` (17 lines) — Project overview
+- `README.md` (159 lines) — Project overview + benchmark harness quickstart
 - `docs/README.md` — Legacy docs (deprecated, points to atris/features/)
 
 **Purpose:**

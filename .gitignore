@@ -37,6 +37,8 @@ atris/TASK_CONTEXTS.md
 atris/features/*
 !atris/features/_templates/
 !atris/features/README.md
+!atris/features/endstate/
+!atris/features/endstate/**
 # Legacy location (deprecated)
 docs/features/
 

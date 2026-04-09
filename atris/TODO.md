@@ -34,10 +34,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Source: `idea.md` ## CLI surface (exit 2 = first-claimer-wins / loser halts), ## Schema: lock file (stale-TTL reclaim), ## Decision: lock storage (heartbeat rule). Kind field: use `draft` — promoted to `pass`/`fail` after the feature ships. Exit: file exists with ≥4 rules, each matching the shape and covering one of the four named rules. [execute]
-  **Claimed by:** Executor at 2026-04-09T03:41:21.150Z
-  **Stage:** DO
-
 
 
 ---

@@ -233,7 +233,48 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 }
 
 function initAtris() {
-  const targetDir = path.join(process.cwd(), 'atris');
+  // GUARD: Refuse nested init.
+  // Bug: running `atris init` inside an existing `atris/` folder creates
+  // `atris/atris/` nesting hell. Cloud doordash had this exact problem.
+  // Fix: detect three nesting conditions and refuse with a clear error.
+  const cwd = process.cwd();
+  const cwdBase = path.basename(cwd);
+  const force = process.argv.includes('--force');
+
+  if (cwdBase === 'atris' && !force) {
+    console.error('✗ Cannot run atris init inside an atris/ directory.');
+    console.error('  You appear to be inside the atris/ folder of an existing workspace.');
+    console.error('  Run init from the parent directory, or use --force to proceed anyway.');
+    process.exit(1);
+  }
+
+  // Check cwd itself for .atris/business.json — already a business workspace
+  const cwdBusinessJson = path.join(cwd, '.atris', 'business.json');
+  if (fs.existsSync(cwdBusinessJson) && !force) {
+    console.error('✗ This directory is already a business workspace (found .atris/business.json).');
+    console.error('  To update canonical files: atris update');
+    console.error('  To re-init anyway: atris init --force');
+    process.exit(1);
+  }
+
+  // Walk up to 6 parent dirs looking for an .atris/business.json — if found, we're inside a workspace
+  let walker = path.dirname(cwd);
+  for (let depth = 0; depth < 6; depth++) {
+    const businessJson = path.join(walker, '.atris', 'business.json');
+    if (fs.existsSync(businessJson)) {
+      if (!force) {
+        console.error(`✗ Cannot run atris init: parent directory ${walker} is already an atris workspace.`);
+        console.error('  Found .atris/business.json in a parent directory.');
+        console.error('  Run init from outside the workspace, or use --force to proceed anyway.');
+        process.exit(1);
+      }
+    }
+    const parent = path.dirname(walker);
+    if (parent === walker) break;
+    walker = parent;
+  }
+
+  const targetDir = path.join(cwd, 'atris');
   const teamDir = path.join(targetDir, 'team');
   const legacyAgentTeamDir = path.join(targetDir, 'agent_team');
   const sourceFile = path.join(__dirname, '..', 'atris.md');

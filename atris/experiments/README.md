@@ -116,3 +116,34 @@ python validate.py .
 python benchmark_validate.py
 python benchmark_runtime.py
 ```
+
+## Public Benchmark Flow
+
+The checked-in benchmark packs live at:
+
+- `atris/experiments/endstate-baseline/`
+- `atris/experiments/endstate-stack/`
+
+Validate and dry-run them from the repo root:
+
+```bash
+node bin/atris.js experiments validate endstate-baseline
+node bin/atris.js experiments validate endstate-stack
+node bin/atris.js experiments run endstate-baseline --dry-run
+node bin/atris.js experiments run endstate-stack --dry-run
+node bin/atris.js experiments compare endstate
+```
+
+Or run the same rehearsal in one step:
+
+```bash
+node bin/atris.js experiments replay endstate
+```
+
+The contract is `atris/features/endstate/contract.md`.
+The validation log is `atris/features/endstate/validate.md`.
+Each dry run writes a receipt JSON under that pack's `artifacts/` directory and
+appends one score row to `results.tsv`.
+The compare command reads the latest receipt from each pack and prints the
+current decision using the Level 1 win rule.
+The replay command runs validate, both dry runs, and compare in sequence.

@@ -1,0 +1,6 @@
+{
+  "name": "stack-coordinated",
+  "strategy": "stack",
+  "summary": "A coordinated benchmark pass that forces explicit lane split, shared checkpoints, and evidence-first review.",
+  "context_note": "Runner profile: stack-coordinated\nProtocol: coordinated stack run\nExploit decomposition, shared checkpoints, and verification discipline as the harness advantage."
+}

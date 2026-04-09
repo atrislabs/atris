@@ -86,7 +86,14 @@ async function addBusiness(slug) {
   console.log(`\nAdded "${biz.name}" (${biz.slug})`);
 }
 
-async function listBusinesses() {
+async function listBusinesses(opts = {}) {
+  // --local mode: walk ~/arena/atris-business/ and show fleet status table
+  // (no API calls, rate-limit safe). Different from API-mode below which lists
+  // businesses cached from the API.
+  if (opts.local) {
+    return listBusinessesLocal(opts);
+  }
+
   const businesses = loadBusinesses();
   const slugs = Object.keys(businesses);
 
@@ -101,6 +108,159 @@ async function listBusinesses() {
     console.log(`  ${b.name || slug} (${b.slug || slug})`);
     console.log(`    ID: ${b.business_id}`);
     console.log(`    Added: ${b.added_at || 'unknown'}`);
+    console.log('');
+  }
+}
+
+/**
+ * Walk ~/arena/atris-business/ and print a fleet status table for every
+ * customer workspace. Pure local — no API calls, no rate-limit risk.
+ *
+ * Classifies each dir as: canonical, flat, unbound, nested, bare, or superseded.
+ *
+ * Discovered the need for this during overnight loop tick #3 when we hand-wrote
+ * /tmp/customer_fleet.md. Now any team member can run `atris business list --local`
+ * (or `atris business fleet`) to see fleet state in one shot.
+ */
+function listBusinessesLocal(opts = {}) {
+  const os = require('os');
+  const SKIP_DIRS = new Set(['deals', 'archive', 'archives', '_archive', 'templates', 'node_modules', '.git']);
+  const SKIP_FILES = new Set(['.DS_Store', 'Thumbs.db']);
+
+  const rootDir = opts.root || path.join(os.homedir(), 'arena', 'atris-business');
+  const jsonMode = opts.json === true;
+
+  if (!fs.existsSync(rootDir)) {
+    console.error(`Fleet root not found: ${rootDir}`);
+    process.exit(1);
+  }
+
+  function countFiles(dir) {
+    let total = 0;
+    let md = 0;
+    function walk(d) {
+      let entries;
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (e.name.startsWith('.git')) continue;
+        if (e.name === 'node_modules') continue;
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) {
+          walk(full);
+        } else if (e.isFile()) {
+          if (SKIP_FILES.has(e.name)) continue;
+          total++;
+          if (e.name.endsWith('.md')) md++;
+        }
+      }
+    }
+    walk(dir);
+    return { total, md };
+  }
+
+  function classifyCustomer(name) {
+    const customerDir = path.join(rootDir, name);
+    const businessJson = path.join(customerDir, '.atris', 'business.json');
+    const atrisDir = path.join(customerDir, 'atris');
+    const nestedDir = path.join(customerDir, name);
+
+    const hasBizJson = fs.existsSync(businessJson);
+    const hasAtris = fs.existsSync(atrisDir) && fs.statSync(atrisDir).isDirectory();
+    const hasNested = fs.existsSync(nestedDir) && fs.statSync(nestedDir).isDirectory();
+    const { total, md } = countFiles(customerDir);
+
+    let state, action, icon;
+    if (hasBizJson && hasAtris) {
+      state = 'canonical'; action = 'none'; icon = '🟢';
+    } else if (hasBizJson && !hasAtris) {
+      state = 'flat'; action = 'migrate to atris/ wrapper'; icon = '🟡';
+    } else if (!hasBizJson && hasAtris) {
+      state = 'unbound'; action = 'create .atris/business.json'; icon = '🟡';
+    } else if (hasNested) {
+      state = 'nested'; action = 'legacy nesting bug'; icon = '🔴';
+    } else if (total < 5) {
+      state = 'bare'; action = 'not yet onboarded'; icon = '⚪';
+    } else {
+      state = 'flat-unbound'; action = 'needs canonical init'; icon = '🟡';
+    }
+
+    let bizName = name;
+    if (hasBizJson) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(businessJson, 'utf8'));
+        bizName = meta.name || name;
+      } catch {}
+    }
+
+    return { name, bizName, state, icon, files: total, md, hasBizJson, hasAtris, hasNested, action };
+  }
+
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .filter((e) => !e.name.startsWith('.'))
+    .filter((e) => !SKIP_DIRS.has(e.name))
+    .map((e) => e.name)
+    .sort();
+
+  const customers = entries.map(classifyCustomer);
+
+  // Mark superseded: any customer with a -canonical sibling is superseded
+  const canonicalNames = new Set(
+    customers.filter((c) => c.name.endsWith('-canonical')).map((c) => c.name.replace(/-canonical$/, ''))
+  );
+  for (const c of customers) {
+    if (canonicalNames.has(c.name)) {
+      c.state = 'superseded';
+      c.icon = '🔴';
+      c.action = `superseded by ${c.name}-canonical`;
+    }
+  }
+
+  if (jsonMode) {
+    console.log(JSON.stringify({ root: rootDir, customers }, null, 2));
+    return;
+  }
+
+  console.log('');
+  console.log(`Atris Fleet — ${rootDir}`);
+  console.log('═'.repeat(86));
+  console.log('  CUSTOMER              STATE         FILES   BIZ.JSON  ATRIS/  ACTION');
+  console.log('  ' + '─'.repeat(83));
+
+  const order = ['canonical', 'flat', 'unbound', 'flat-unbound', 'bare', 'nested', 'superseded'];
+  const grouped = {};
+  for (const c of customers) {
+    if (!grouped[c.state]) grouped[c.state] = [];
+    grouped[c.state].push(c);
+  }
+
+  for (const state of order) {
+    if (!grouped[state]) continue;
+    for (const c of grouped[state]) {
+      const name = c.name.padEnd(20).slice(0, 20);
+      const stateLabel = (c.icon + ' ' + state).padEnd(13).slice(0, 13);
+      const filesStr = String(c.files).padStart(5);
+      const bizStr = c.hasBizJson ? '   ✓    ' : '   ✗    ';
+      const atrisStr = c.hasAtris ? '  ✓   ' : '  ✗   ';
+      const action = c.action.length > 28 ? c.action.slice(0, 25) + '...' : c.action;
+      console.log(`  ${name}  ${stateLabel} ${filesStr}    ${bizStr}  ${atrisStr}  ${action}`);
+    }
+  }
+
+  console.log('  ' + '─'.repeat(83));
+
+  const counts = {};
+  for (const c of customers) counts[c.state] = (counts[c.state] || 0) + 1;
+  const summary = order.filter((s) => counts[s]).map((s) => `${counts[s]} ${s}`).join(', ');
+  console.log(`  ${customers.length} customers — ${summary}`);
+  console.log('');
+
+  const needsWork = customers.filter((c) => ['flat', 'unbound', 'flat-unbound', 'nested'].includes(c.state));
+  if (needsWork.length > 0) {
+    console.log('  Next actions:');
+    needsWork.slice(0, 5).forEach((c) => {
+      console.log(`    ${c.icon} ${c.name}: ${c.action}`);
+    });
     console.log('');
   }
 }
@@ -917,9 +1077,20 @@ async function businessCommand(subcommand, ...args) {
       await createBusiness(args[0], ...args.slice(1));
       break;
     case 'list':
-    case 'ls':
-      await listBusinesses();
+    case 'ls': {
+      const opts = {};
+      if (args.includes('--local')) opts.local = true;
+      if (args.includes('--json')) opts.json = true;
+      await listBusinesses(opts);
       break;
+    }
+    case 'fleet': {
+      // Shorthand for `business list --local`
+      const opts = { local: true };
+      if (args.includes('--json')) opts.json = true;
+      await listBusinesses(opts);
+      break;
+    }
     case 'remove':
     case 'rm':
       await removeBusiness(args[0]);

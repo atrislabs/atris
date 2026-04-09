@@ -6,9 +6,12 @@ const {
   appendResultsRow,
   buildRunId,
   buildWikiArtifact,
+  compareEndstateArtifacts,
   collectChangedFiles,
+  getArtifactScore,
   getGitHead,
   inferTestResults,
+  readLatestArtifact,
   readTextIfExists,
   scoreEndstateArtifact,
   summarizeReview,
@@ -251,9 +254,45 @@ function readTaskBrief(packDir) {
   return content.replace(/^# Program\s*/i, '').trim();
 }
 
-function buildPromptContext(name, taskBrief, phaseResults) {
+function readRunnerConfig(packDir, name) {
+  const runnerPath = path.join(packDir, 'runner.json');
+  const fallback = name.endsWith('stack')
+    ? {
+        name: 'stack-coordinated',
+        strategy: 'stack',
+        summary: 'Coordinated stack benchmark run.',
+        context_note: 'Runner profile: stack-coordinated\nProtocol: coordinated stack run',
+      }
+    : {
+        name: 'baseline-single',
+        strategy: 'single',
+        summary: 'Single-model direct benchmark run.',
+        context_note: 'Runner profile: baseline-single\nProtocol: single-model direct run',
+      };
+
+  if (!fs.existsSync(runnerPath)) return fallback;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(runnerPath, 'utf8'));
+    return {
+      ...fallback,
+      ...parsed,
+      name: parsed.name || fallback.name,
+      strategy: parsed.strategy || fallback.strategy,
+      summary: parsed.summary || fallback.summary,
+      context_note: parsed.context_note || fallback.context_note,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildPromptContext(name, runnerConfig, taskBrief, phaseResults) {
   const sections = [
     `pack: ${name}`,
+    `runner: ${runnerConfig.name}`,
+    `runner strategy: ${runnerConfig.strategy}`,
+    `runner summary:\n${runnerConfig.summary}`,
     `task brief:\n${taskBrief}`,
   ];
 
@@ -273,6 +312,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
   const cwd = process.cwd();
   const backendPath = options.backendPath;
   const taskBrief = readTaskBrief(packDir);
+  const runnerConfig = readRunnerConfig(packDir, name);
   const runId = buildRunId(track);
   const beforeCli = getGitHead(cwd);
   const beforeBackend = getGitHead(backendPath);
@@ -293,6 +333,8 @@ function buildBenchmarkArtifact(name, packDir, options) {
         { task: taskBrief, kind: 'benchmark' },
         {
           verbose: options.verbose,
+          benchmarkStrategy: runnerConfig.strategy,
+          runnerName: runnerConfig.name,
           extraReadFiles: [
             'atris/features/endstate/contract.md',
             'atris/features/endstate/artifact-schema.json',
@@ -303,6 +345,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
           contextNote: [
             `Project Endstate track: ${track}`,
             `Pack: atris/experiments/${name}/program.md`,
+            runnerConfig.context_note,
             'Stay within the exact Level 1 contract. The outer runner records the receipt.',
           ].join('\n'),
         }
@@ -340,7 +383,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
       atrisos_backend: afterBackend || 'missing',
     },
     task_brief: taskBrief,
-    prompt_context: buildPromptContext(name, taskBrief, execution?.phaseResults),
+    prompt_context: buildPromptContext(name, runnerConfig, taskBrief, execution?.phaseResults),
     changed_files: changedFiles,
     tests,
     review: {
@@ -353,7 +396,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
       count: options.interventions.length,
       events: options.interventions,
     },
-    notes,
+    notes: [notes, `runner=${runnerConfig.name}`].filter(Boolean).join(' | '),
   };
 
   const score = scoreEndstateArtifact(artifact);
@@ -415,6 +458,68 @@ function experimentsRun(name, ...args) {
   }
 }
 
+function formatCompareLine(label, entry) {
+  const artifact = entry.artifact;
+  const score = getArtifactScore(artifact);
+  const review = artifact.review?.status || 'unknown';
+  const interventions = artifact.interventions?.count || 0;
+  return `  ${label}: ${score}/100 | review: ${review} | interventions: ${interventions} | artifact: ${path.relative(process.cwd(), entry.filePath)}`;
+}
+
+function experimentsCompare(target = 'endstate') {
+  const { experimentsDir } = ensureExperimentsFramework(process.cwd(), { silent: true });
+
+  if (target !== 'endstate') {
+    console.error('Usage: atris experiments compare endstate');
+    process.exit(1);
+  }
+
+  const baselineDir = path.join(experimentsDir, 'endstate-baseline');
+  const stackDir = path.join(experimentsDir, 'endstate-stack');
+
+  try {
+    const baselineEntry = readLatestArtifact(baselineDir);
+    const stackEntry = readLatestArtifact(stackDir);
+    const comparison = compareEndstateArtifacts(baselineEntry, stackEntry);
+
+    console.log('✓ Endstate comparison ready');
+    console.log(formatCompareLine('baseline', baselineEntry));
+    console.log(formatCompareLine('stack', stackEntry));
+    console.log('');
+    if (comparison.winner === 'stack') {
+      console.log('Decision: stack wins.');
+    } else {
+      console.log('Decision: no winner yet.');
+    }
+    console.log(`Reason: ${comparison.reason}`);
+  } catch (error) {
+    console.error(`✗ ${error.message || error}`);
+    process.exit(1);
+  }
+}
+
+function experimentsReplay(target = 'endstate') {
+  if (target !== 'endstate') {
+    console.error('Usage: atris experiments replay endstate');
+    process.exit(1);
+  }
+
+  console.log('Replay: validate baseline pack');
+  experimentsValidate('endstate-baseline');
+  console.log('');
+  console.log('Replay: validate stack pack');
+  experimentsValidate('endstate-stack');
+  console.log('');
+  console.log('Replay: baseline dry run');
+  experimentsRun('endstate-baseline', '--dry-run');
+  console.log('');
+  console.log('Replay: stack dry run');
+  experimentsRun('endstate-stack', '--dry-run');
+  console.log('');
+  console.log('Replay: compare latest receipts');
+  experimentsCompare('endstate');
+}
+
 function experimentsCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'init':
@@ -424,6 +529,10 @@ function experimentsCommand(subcommand, ...args) {
       return experimentsValidate(args[0]);
     case 'benchmark':
       return experimentsBenchmark(args[0] || 'all');
+    case 'compare':
+      return experimentsCompare(args[0] || 'endstate');
+    case 'replay':
+      return experimentsReplay(args[0] || 'endstate');
     case 'run':
       return experimentsRun(args[0], ...args.slice(1));
     default:
@@ -434,6 +543,8 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  init [slug]          Prepare atris/experiments/ or scaffold a new pack');
       console.log('  validate [path|slug] Run structural validation on packs or a single pack');
       console.log('  run <slug>           Execute a pack or record an Endstate benchmark receipt');
+      console.log('  compare endstate     Compare the latest baseline and stack receipts');
+      console.log('  replay endstate      Validate, dry-run, and compare the public benchmark flow');
       console.log('  benchmark [mode]     Run validate/runtime/all benchmark harness');
       console.log('');
       console.log('Examples:');
@@ -441,6 +552,8 @@ function experimentsCommand(subcommand, ...args) {
       console.log('  atris experiments init self-heal');
       console.log('  atris experiments validate');
       console.log('  atris experiments run endstate-baseline --dry-run');
+      console.log('  atris experiments compare endstate');
+      console.log('  atris experiments replay endstate');
       console.log('  atris experiments benchmark runtime');
       console.log('');
   }

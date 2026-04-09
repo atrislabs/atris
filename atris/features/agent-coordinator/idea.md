@@ -367,14 +367,10 @@ first, wins, and gets exit `0`. Agent B calls the same command a moment
 later, sees A's live lock, and gets exit `2`:
 
 ```sh
-# agent A (wins)
-$ atris claim commands/autopilot.js --task T32 --agent executor-A; echo $?
+$ atris claim commands/autopilot.js --task T32 --agent executor-A   # exit 0
 claimed commands__autopilot.js.lock
-0
-# agent B (halts)
-$ atris claim commands/autopilot.js --task T32 --agent executor-B; echo $?
+$ atris claim commands/autopilot.js --task T32 --agent executor-B   # exit 2
 error: commands/autopilot.js already claimed by executor-A (T32, 9m left)
-2
 ```
 
 Agent B reads exit `2` and halts its edit phase. When A finishes its work

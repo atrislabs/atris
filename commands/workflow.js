@@ -2,6 +2,45 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath } = require('../lib/journal');
 
+function wrapWorkflowText(text, width = 76) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+
+  const words = normalized.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current + ' ' + word).length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function printWorkflowBrief(lines) {
+  console.log('');
+  for (const line of lines) {
+    if (!line) {
+      console.log('');
+      continue;
+    }
+    for (const wrapped of wrapWorkflowText(line)) {
+      console.log(wrapped);
+    }
+  }
+  console.log('');
+}
+
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
   const { loadCredentials } = require('../utils/auth');
@@ -832,13 +871,25 @@ async function reviewAtris() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
   } else {
-    // Plain-language default: short chief-of-staff briefing
-    console.log('');
-    console.log('atris review — validator.');
-    console.log(`i checked the workspace. map is ${mapPath ? 'present' : 'missing'}, todo is ${todoPathRef ? 'present' : 'missing'}, ${featureValidateRefs.length} feature validate scripts queued.`);
-    console.log('next i\'ll run tests, walk each validate.md, and clean completed tasks out of todo.md.');
-    console.log('(run `atris review --verbose` for the full prompt + appendix.)');
-    console.log('');
+    const readinessBits = [
+      `MAP is ${mapPath ? 'present' : 'missing'}`,
+      `TODO is ${todoPathRef ? 'present' : 'missing'}`,
+      `${featureValidateRefs.length} feature validate script${featureValidateRefs.length === 1 ? '' : 's'} ${featureValidateRefs.length === 1 ? 'is' : 'are'} queued`
+    ];
+    const decision = (mapPath && todoPathRef)
+      ? 'Decision: hold final approval until the validator run finishes.'
+      : 'Decision: hold. Review setup is incomplete and needs fixing first.';
+
+    printWorkflowBrief([
+      'I checked the review setup.',
+      readinessBits.join(', ') + '.',
+      '',
+      'This step prepares the validator. It does not mean the change has passed review yet.',
+      'Next I will run tests, walk each validate.md, and clear completed tasks out of TODO.',
+      '',
+      decision,
+      'Run `atris review --verbose` for the full prompt and appendix.'
+    ]);
   }
   if (showFull) {
     console.log('You are the Validator.');
@@ -899,9 +950,6 @@ async function reviewAtris() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('💡 Next: Run "atris do" to fix any issues, then "atris review" again');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('');
-  } else {
-    console.log('next: `atris do` to fix issues, then `atris review` again.');
     console.log('');
   }
   
