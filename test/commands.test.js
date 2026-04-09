@@ -6,11 +6,16 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { createCanonicalBusinessWorkspace } = require('../commands/business');
+const { readScorecards } = require('../lib/scorecard');
 const {
+  computeTickReward,
+  getVerifyCommand,
   getRecentSignals,
+  maybeWriteCompletedEndgameScorecard,
   renderHumanSuggestion,
   renderHumanTickIntro,
-  scoreEndgameCandidates
+  scoreEndgameCandidates,
+  writeLesson
 } = require('../commands/autopilot');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -804,6 +809,167 @@ test('wiki loop alias runs the same upkeep analysis', () => {
   }
 });
 
+test('getVerifyCommand finds task-specific verify commands before and after task moves', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, `# TODO.md
+
+## Endgame
+
+**Slug:** verify-loop
+**Picked:** 2026-04-09 00:00
+**Horizon:** Verify stays attached to the task.
+**Source:** test
+
+## Backlog
+- **T1:** ship parser fix [endgame]
+  **Verify:** node -e "process.exit(0)"
+
+## In Progress
+
+---
+
+## Completed
+
+---
+`, 'utf8');
+
+    assert.equal(getVerifyCommand(dir, 'ship parser fix'), 'node -e "process.exit(0)"');
+
+    fs.writeFileSync(todoPath, `# TODO.md
+
+## Endgame
+
+**Slug:** verify-loop
+**Picked:** 2026-04-09 00:00
+**Horizon:** Verify stays attached to the task.
+**Source:** test
+
+## Backlog
+
+## In Progress
+
+---
+
+## Completed
+- **T1:** ship parser fix [endgame]
+  **Verify:** node -e "process.exit(0)"
+
+---
+`, 'utf8');
+
+    assert.equal(getVerifyCommand(dir, 'ship parser fix'), 'node -e "process.exit(0)"');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('computeTickReward does not award verify points when review failed before verify ran', () => {
+  const reward = computeTickReward({
+    reviewOutput: 'failed — scope drift',
+    verifyPass: false,
+    verifyRan: false,
+    phaseResults: {
+      do: { output: '' }
+    }
+  }, 'halted', 'npm test');
+
+  assert.equal(reward, -3);
+});
+
+test('maybeWriteCompletedEndgameScorecard writes a scorecard from closed endgame state', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const now = new Date();
+    const yyyy = now.getFullYear().toString();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), `# TODO.md
+
+## Endgame
+
+**Slug:** verify-loop
+**Picked:** ${dateStr} 00:00
+**Horizon:** Every closed endgame writes a scorecard.
+**Source:** test
+
+## Backlog
+
+## In Progress
+
+---
+
+## Completed
+- **T1:** ship parser fix [endgame]
+  **Verify:** node -e "process.exit(0)"
+
+---
+`, 'utf8');
+
+    writeTodayLog(dir, `# Log — ${dateStr}
+
+## Handoff
+
+---
+
+## Completed ✅
+
+---
+
+## In Progress 🔄
+
+---
+
+## Backlog
+
+---
+
+## Notes
+
+### Endgame picked — 12:00 AM PDT
+
+slug: verify-loop
+
+- 12:10 am
+  I planned, built, and reviewed "ship parser fix".
+  We are still on the verify-loop endgame.
+  Next tick will pick the next endgame task.
+  Reward: 6
+
+## Inbox
+
+---
+`);
+
+    const wrote = maybeWriteCompletedEndgameScorecard(dir, {
+      slug: 'verify-loop',
+      pickedAt: `${dateStr} 00:00`,
+      remaining: 1,
+    });
+
+    assert.equal(wrote, true);
+    const scorecards = readScorecards(path.join(dir, 'atris'));
+    assert.equal(scorecards.length, 1);
+    assert.equal(scorecards[0].slug, 'verify-loop');
+    assert.equal(scorecards[0].tasksShipped, 1);
+    assert.equal(scorecards[0].totalReward, 6);
+
+    const wroteAgain = maybeWriteCompletedEndgameScorecard(dir, {
+      slug: 'verify-loop',
+      pickedAt: `${dateStr} 00:00`,
+      remaining: 1,
+    });
+    assert.equal(wroteAgain, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ============================================
 // scoreEndgameCandidates
 // ============================================
@@ -906,6 +1072,47 @@ test('scoreEndgameCandidates returns fallback when scoring fails', () => {
     assert.equal(result.title, 'wiki-work');
     assert.equal(result.confidence, 0.9);
     // scored flag tells us it fell back (if there was an error)
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ─── writeLesson ───────────────────────────────────────────
+
+test('writeLesson appends a lesson line to existing lessons.md', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    const lessonsPath = path.join(atrisDir, 'lessons.md');
+    fs.writeFileSync(lessonsPath, '# lessons.md — What We Learned\n\n> Append-only.\n\n---\n\n', 'utf8');
+
+    const before = fs.readFileSync(lessonsPath, 'utf8').split('\n').length;
+    writeLesson(dir, 'test-slug', 'fail', 'Test explanation');
+    const after = fs.readFileSync(lessonsPath, 'utf8').split('\n').length;
+
+    assert.ok(after > before, `Expected line count to grow: ${before} → ${after}`);
+    const content = fs.readFileSync(lessonsPath, 'utf8');
+    assert.ok(content.includes('test-slug'), 'Lesson should contain slug');
+    assert.ok(content.includes('fail'), 'Lesson should contain status');
+    assert.ok(content.includes('Test explanation'), 'Lesson should contain explanation');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('writeLesson creates lessons.md if it does not exist', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+
+    writeLesson(dir, 'new-file-slug', 'pass', 'Created from scratch');
+
+    const lessonsPath = path.join(atrisDir, 'lessons.md');
+    assert.ok(fs.existsSync(lessonsPath), 'lessons.md should be created');
+    const content = fs.readFileSync(lessonsPath, 'utf8');
+    assert.ok(content.includes('new-file-slug'), 'Lesson should contain slug');
   } finally {
     cleanupTempDir(dir);
   }
