@@ -12,11 +12,13 @@
 | `atris/TODO.md` | Active task queue |
 | `atris/CLAUDE.md` | Claude Code persona |
 | `atris/MEMBER.md` | Agent role definition |
-| `atris/persona.md` | Voice and tone |
+| `atris/PERSONA.md` | Canonical voice and tone entrypoint |
+| `atris/persona.md` | Compatibility mirror |
 | `atris/instructions.md` | Workflows |
 | `atris/goals.md` | Strategic direction |
 | `atris/memory.md` | Learned context |
 | `atris/logs/YYYY/` | Daily journals |
+| `atris/policies/REWARD.md` | Local reward rubric for the first measurable loop |
 | `atris/policies/LESSONS.md` | Append-only lessons |
 
 ## Wiki (Compiled Knowledge)
@@ -36,7 +38,8 @@
 
 | Path | What |
 |------|------|
-| `atris/context/` | Briefs, notes, mock data |
+| `atris/context/live-workspace.md` | Live ids and workspace separation rule |
+| `atris/context/README.md` | Raw-source rules |
 
 ## Skills
 
@@ -48,7 +51,8 @@
 
 | Path | What |
 |------|------|
-| `atris/team/` | Internal team profiles |
+| `atris/team/` | Role lenses inside the shared business environment |
+| `atris/team/README.md` | Team folder rules |
 
 ## Reports
 

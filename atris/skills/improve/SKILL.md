@@ -1,84 +1,87 @@
 ---
 name: improve
-description: "Workspace maintenance and knowledge hygiene. Finds stale docs, broken refs, abandoned tasks, and fixes them. Use when things feel messy or you want the system to clean itself up. Triggers on: improve, clean up, maintenance, lint, health check, freshen up."
+description: "Run one RL improvement tick on the workspace via POST /api/improve. Ships one verifiable change, scores it, writes the scorecard. The thing you pay for. Triggers on: improve, make this better, ship one thing, run a tick, get smarter."
 version: 1.0.0
 tags:
-  - maintenance
-  - knowledge
-  - hygiene
-  - docs
+  - rl
+  - improve
+  - reward
+  - tick
+  - autopilot
 ---
 
 # /improve
 
-Finds what's rotting in your workspace and fixes it. Stale pages, broken references, abandoned tasks, outdated docs.
+Runs one improvement tick on the workspace. Calls `POST /api/improve` on the backend, which plans one task, builds it, verifies it, and scores it. Returns what shipped + the reward. Writes the scorecard locally.
 
-## When to use
+This is the product. The thing the user pays for. One call, one verifiable result.
 
-- "Things feel messy"
-- "Clean this up"
-- After a big refactor when docs have drifted
-- Periodically, to keep the knowledge base honest
-- When you suspect MAP.md or wiki pages are out of date
+## How it works
+
+```
+/improve
+  → POST /api/improve { workspace: ".", mode: "full" }
+  → backend picks a task, plans, builds, reviews, verifies
+  → returns { task, reward, files_changed, verify_pass, summary }
+  → CLI writes scorecard to atris/scorecards.md
+  → CLI reports result to user
+```
+
+The inference is Claude Code (or whatever model the backend uses). The environment is the folder. The endpoint is the bridge.
 
 ## On invoke
 
-1. Run `atris clean --dry-run` silently. Collect results.
-2. Read atris/MAP.md, atris/TODO.md, and today's journal for context.
-3. Scan for these problems (in priority order):
+1. Read `~/.atris/credentials.json` for auth token
+2. Read `.atris/business.json` for the API base URL (or default to `http://localhost:8000`)
+3. Call `POST /api/improve` with:
+   ```json
+   {
+     "workspace": "<current working directory>",
+     "mode": "full",
+     "model": "sonnet"
+   }
+   ```
+4. Wait for response (may take 1-5 minutes)
+5. On success:
+   - Show what shipped (task name, files changed, verify result)
+   - Show the reward score
+   - Write scorecard to `atris/scorecards.md`
+   - Append tick to today's journal
+6. On failure:
+   - Show the error
+   - Write a lesson to `atris/lessons.md`
+   - Do not write a scorecard
 
-### What to look for
+## Modes
 
-**Stale wiki pages** — pages with `last_compiled` frontmatter where the source files have been modified since. The page content may be wrong.
+- `full` — plan, build, review, verify (default)
+- `plan` — just pick the task and show what it would do
+- `dry_run` — run everything but don't commit
 
-**Broken MAP.md references** — file:line refs that point to code that moved or was deleted. The auto-healer fixes what it can; report what it can't.
+## Fallback
 
-**Abandoned tasks** — in-progress tasks claimed more than 3 days ago. Either finish them, re-scope them, or delete them.
+If the backend is unreachable (no auth, no network, localhost not running), fall back to local mode: run `atris autopilot --auto --iterations=1` instead. Same loop, just local inference via `claude -p` subprocess. Report that it ran locally.
 
-**Orphan docs** — markdown pages under atris/ that nothing links to. They're invisible and probably stale.
-
-**Stale MAP.md** — if MAP.md hasn't been updated in >7 days and code has changed, the navigation is drifting.
-
-**Empty sections** — TODO.md sections with placeholder text like "(empty)" or "(clean)".
-
-4. Present findings as a numbered list, sorted by impact. For each:
-   - What's wrong
-   - Why it matters
-   - What you'd do to fix it
-
-5. Ask: "want me to fix these? all / pick numbers / skip"
-
-6. Fix what they approve. For each fix:
-   - Make the change
-   - Update last_compiled if touching wiki pages
-   - Commit with a clear message
-
-7. After all fixes, run `atris clean` one more time to verify.
-
-## Example
+## Output
 
 ```
-Found 4 things to improve:
+improved.
 
-1. MAP.md has 11 broken refs — 3 files moved, 8 functions renamed.
-   These make navigation wrong. I can auto-heal most of them.
+  task:    fixed the stale wiki ref in auth-flow.md
+  verify:  pass (npm test, 143/143)
+  reward:  +4
+  files:   atris/wiki/briefs/auth-flow.md
+  time:    47s
 
-2. atris/TODO.md has a task claimed 26 days ago by Executor.
-   It's blocking the in-progress slot. Should delete or re-scope.
-
-3. MAP.md hasn't been updated in 25 days.
-   Code has changed — the map is drifting from reality.
-
-4. 2 empty sections in TODO.md.
-   Just noise. Can clean them out.
-
-want me to fix these? all / pick numbers / skip
+  scorecard updated.
 ```
 
 ## Rules
 
-- Never delete user content without asking.
-- Always show what you found before fixing.
-- Commit fixes in small, clear commits (one per category).
-- Update last_compiled frontmatter when recompiling wiki pages.
-- Run atris clean at the end to verify everything is actually fixed.
+- One tick only. Never batch.
+- Always verify. No reward without a check.
+- Show what shipped, not what was attempted.
+- Write the scorecard. This is the receipt.
+- If verify fails, halt honestly and write a lesson.
+- Fallback to local if backend is unreachable. Never error silently.
+- The user pays because something real happened. Never fake it.

@@ -8,16 +8,18 @@ Compiled knowledge base. Sources live in `atris/context/` (immutable).
 
 ## Systems
 
-(no pages yet)
+- (add a live-workspace or operator-map page first)
 
 ## Concepts
 
-(no pages yet)
+- (add the first measurable reward loop here)
 
 ## Briefs
 
-(no pages yet)
+- (add one business brief first)
 
 ## Gaps
 
-(things we know we don't know — add as you discover them)
+- live source feeds
+- real approval path
+- first measurable loop
