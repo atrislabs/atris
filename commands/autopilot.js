@@ -647,6 +647,47 @@ function logCompletion(description) {
 }
 
 /**
+ * Compute per-tick reward score based on execution signals.
+ * Rewards:
+ *   - commit landed: +1
+ *   - npm test passed: +2
+ *   - verify passed: +3
+ *   - validator clean (review passed): +1
+ *   - halt caught hallucination: -3
+ */
+function computeTickReward(execution, tickOutcome, verifyCmd) {
+  let reward = 0;
+
+  // Validator clean: review passed without 'failed'
+  if (!execution.reviewOutput || !execution.reviewOutput.includes('failed')) {
+    reward += 1;
+  }
+
+  // Verify passed: +3
+  if (execution.verifyPass) {
+    reward += 3;
+  }
+
+  // npm test passed: +2 (if verify command was npm test and it passed)
+  if (verifyCmd === 'npm test' && execution.verifyPass) {
+    reward += 2;
+  }
+
+  // Commit landed: check do phase output for git commit patterns
+  const doOutput = execution.phaseResults.do.output || '';
+  if (doOutput.match(/\[.*\s\d+\sfile.*changed/i) || doOutput.includes('git commit') || doOutput.includes('committed')) {
+    reward += 1;
+  }
+
+  // Halt caught hallucination: -3
+  if (tickOutcome === 'halted') {
+    reward -= 3;
+  }
+
+  return reward;
+}
+
+/**
  * Append a plain-language tick summary block to today's journal `## Notes`.
  * Fields:
  *   - time:     human clock string, e.g. "11:20 a.m."
@@ -655,9 +696,10 @@ function logCompletion(description) {
  *   - nextStep: what the next tick will do
  *   - idle:     when true, block must contain literal "0 tasks in 0s"
  *               so getIdleTickCount still works.
+ *   - reward:   optional tick reward score (from computeTickReward)
  * Safe to call inside a try/catch — a write failure must never crash a tick.
  */
-function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle } = {}) {
+function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle, reward } = {}) {
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -690,6 +732,10 @@ function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle } = {})
     `  ${horizonLine}`,
     `  ${nextLine}`,
   ];
+  // Add reward score if present
+  if (reward !== undefined && reward !== null) {
+    blockLines.push(`  Reward: ${reward}`);
+  }
   // Idle marker must be the last non-empty line so getIdleTickCount, which
   // scans bottom-up, counts this block when idle=true.
   if (idleLine) blockLines.push(`  ${idleLine}`);
@@ -1167,6 +1213,8 @@ async function autopilotAtris(description, options = {}) {
   let tickOutcomeText = 'I stopped for a manual check.';
   let tickNextStep = 'look for new work';
   let lastTaskTitle = null;
+  let lastExecution = null;
+  let lastVerifyCmd = null;
 
   for (let i = 0; i < maxIterations; i++) {
     // Check time budget
@@ -1292,6 +1340,8 @@ async function autopilotAtris(description, options = {}) {
         ].join('\n'));
       }
       const execution = runTaskOnce(context, { verbose, cwd });
+      lastExecution = execution;
+      lastVerifyCmd = getVerifyCommand(cwd, context.task);
       const planTime = execution.phaseResults.plan.elapsedSeconds;
       if (verbose) console.log(`  planned (${planTime}s)`);
 
@@ -1386,12 +1436,20 @@ async function autopilotAtris(description, options = {}) {
       minute: '2-digit'
     }).toLowerCase();
     const idle = tickOutcome === 'idle' || (completed === 0 && tickOutcome !== 'halted');
+
+    // Compute reward score if we had an execution
+    let tickReward = undefined;
+    if (lastExecution && lastVerifyCmd) {
+      tickReward = computeTickReward(lastExecution, tickOutcome, lastVerifyCmd);
+    }
+
     appendTickSummary(cwd, {
       time,
       outcome: tickOutcomeText,
       horizon: horizonSlug === 'unset' ? null : horizonSlug,
       nextStep: tickNextStep,
-      idle
+      idle,
+      reward: tickReward
     });
   } catch {
     /* journal write failure must not crash the tick */
