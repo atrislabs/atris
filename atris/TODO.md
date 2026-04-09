@@ -37,13 +37,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **R1:** Add `verify:` field to endgame task format. Update /endgame SKILL.md to require a deterministic check (test command, grep pattern, file presence) per task. Update lib/todo.js parser to extract the field. [endgame]
-  **Claimed by:** Executor at 2026-04-09T07:11:57.281Z
-  **Stage:** DO
+
 
 ---
 
 ## Completed
+
+- [x] **R1:** Add `verify:` field to endgame task format. Update /endgame SKILL.md to require a deterministic check (test command, grep pattern, file presence) per task. Update lib/todo.js parser to extract the field. [endgame] (2026-04-09) [reviewed]
 
 - [x] T47: Reconciled the Endstate contract docs with the shipped harness — `contract.md` now marks the benchmark rehearsal-ready, `endgame.md` now treats receipt emission/scoring/replay as already true, and both point at the remaining real gap: publish one real head-to-head result on pinned snapshots. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
 - [x] T46: Added a one-command benchmark rehearsal surface — `atris experiments replay endstate` now validates both packs, emits fresh dry-run receipts, and compares the latest result in one end-to-end command. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
