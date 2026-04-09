@@ -29,15 +29,12 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame]
-  **Claimed by:** executor at 2026-04-09T07:41:14.440Z
-  **Stage:** DO
-
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame] [validated]
 - **B1:** Canonicalize business workspace creation. `atris business init <name>` now creates the cloud record plus a standalone canonical workspace with `.atris/business.json` and business templates. `atris business create <name> --workspace` routes to the same local-first shape. [validated]
 
 ---
