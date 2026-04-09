@@ -15,9 +15,9 @@ Read these files first:
 - atris/lessons.md
 - atris/logs/2026/2026-04-09.md
 
-Task: Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field.
+Task: Add per-tick reward scoring to `appendTickSummary`. Compute reward from: commit landed (+1), npm test passed (+2), verify passed (+3), validator clean (+1), halt caught hallucination (-3). Write score to journal tick block.
 
-1. Find the task in TODO.md, move to In Progress with: Claimed by: Executor at 2026-04-09T07:18:27.202Z
+1. Find the task in TODO.md, move to In Progress with: Claimed by: Executor at 2026-04-09T07:32:51.444Z
 2. Read MAP.md for exact file:line locations
 3. Make the changes, verify they work
 4. Update MAP.md if file locations shifted

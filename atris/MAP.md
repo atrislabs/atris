@@ -367,7 +367,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `commands/autopilot.js:1092` (autopilotAtris function)
 - **From-todo mode:** `commands/autopilot.js:1375` (autopilotFromTodo function)
-- **Heartbeat writer:** `commands/autopilot.js:642` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
+- **Reward computer:** `commands/autopilot.js:658` (`computeTickReward`) — computes per-tick reward score from execution signals (commit +1, npm test +2, verify +3, validator clean +1, halt -3)
+- **Heartbeat writer:** `commands/autopilot.js:702` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
   - 1. Resume interrupted in-progress tasks
@@ -379,7 +380,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:569` (`runTaskOnce`) — executes plan → do → review once, runs verify command after review, returns per-phase prompts, outputs, elapsed time, and verifyPass boolean
+- **Single-task runner:** `commands/autopilot.js:569-618` (`runTaskOnce`) — executes plan → do → review once, runs verify command after review, returns per-phase prompts, outputs, elapsed time, and verifyPass boolean
 - **Verify executor helper:** `commands/autopilot.js:557` (`getVerifyCommand`) — reads TODO.md In Progress section, extracts verify field from current task, defaults to `npm test`
 - **Lesson writer helper:** `commands/autopilot.js:532` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
@@ -843,7 +844,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `autopilotAtris()` → `commands/autopilot.js:1092-1357`
 - `writeLesson()` → `commands/autopilot.js:532-550`
 - `getVerifyCommand()` → `commands/autopilot.js:557-567`
-- `runTaskOnce()` → `commands/autopilot.js:569-619`
+- `runTaskOnce()` → `commands/autopilot.js:569-618`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
