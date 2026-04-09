@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { createCanonicalBusinessWorkspace } = require('../commands/business');
-const { readScorecards } = require('../lib/scorecard');
+const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
   getVerifyCommand,
@@ -494,6 +494,9 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'goals.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'PERSONA.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'policies', 'REWARD.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'context', 'live-workspace.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
 
     const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
@@ -504,6 +507,16 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /BLOND:ISH/);
+
+    const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
+    assert.match(persona, /BLOND:ISH/);
+
+    const reward = fs.readFileSync(path.join(dir, 'atris', 'policies', 'REWARD.md'), 'utf8');
+    assert.match(reward, /Reward what makes the operator faster/i);
+
+    const liveWorkspace = fs.readFileSync(path.join(dir, 'atris', 'context', 'live-workspace.md'), 'utf8');
+    assert.match(liveWorkspace, /biz-123/);
+    assert.match(liveWorkspace, /ws-456/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -678,6 +691,21 @@ test('ingest is local-first and scaffolds atris/wiki', () => {
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'wiki.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'index.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki ingest --private scaffolds .atris/presidio', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['wiki', 'ingest', '--private', 'README.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Private wiki ingest/);
+    assert.match(res.stdout, /Target: \.atris\/presidio/);
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'wiki.md')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'index.md')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'STATUS.md')));
   } finally {
     cleanupTempDir(dir);
   }
@@ -1015,7 +1043,7 @@ test('scoreEndgameCandidates scores candidates by historical reward when scoreca
     initWorkspace(dir);
 
     // Create scorecards with wiki and verify types
-    const scorecardsPath = path.join(dir, 'atris', 'scorecards.md');
+    const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
     const content = `# scorecards.md — Endgame Results
 
 > Append-only. One line per closed endgame.
@@ -1059,7 +1087,7 @@ test('scoreEndgameCandidates returns fallback when scoring fails', () => {
     initWorkspace(dir);
 
     // Write malformed scorecards to trigger parsing error
-    const scorecardsPath = path.join(dir, 'atris', 'scorecards.md');
+    const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
     fs.writeFileSync(scorecardsPath, '# scorecards\n\nmalformed line that won\'t parse', 'utf8');
 
     const candidates = [
