@@ -1618,6 +1618,22 @@ async function autopilotAtris(description, options = {}) {
       const execution = runTaskOnce(context, { verbose, cwd });
       lastExecution = execution;
       lastVerifyCmd = execution.verifyCmd;
+
+      // Early halt — judge corruption or no verify field
+      if (execution.outcome === 'halted') {
+        tickOutcome = 'halted';
+        tickOutcomeText = `I halted before running "${lastTaskTitle}": ${execution.reason}.`;
+        tickNextStep = 'stop until a human looks at the error';
+        if (!verbose) {
+          printPlainBlock([
+            `I halted: ${execution.reason}.`,
+            '',
+            'Next I stopped the loop.'
+          ].join('\n'));
+        }
+        break;
+      }
+
       const planTime = execution.phaseResults.plan.elapsedSeconds;
       if (verbose) console.log(`  planned (${planTime}s)`);
 
