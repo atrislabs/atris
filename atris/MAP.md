@@ -704,7 +704,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - `lib/scorecard.js` (90 lines) — Scorecard writing and parsing
 - `atris/scorecards.md` (generated) — Append-only endgame results log
-- `atris/wiki/systems/horizon-type-convention.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
+- `atris/wiki/concepts/horizon-types.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
 
 **Key functions (lib/scorecard.js):**
 
@@ -714,10 +714,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Type Inference (commands/autopilot.js:1054-1080):**
 
-- Horizon slugs follow prefix-based type convention (e.g., `wiki-*`, `loop-*`, `verify-*`, `refactor-*`, `feature-*`, `fix-*`, `skill-*`)
+- Horizon slugs follow prefix-based type convention (e.g., `loop-*`, `wiki-*`, `verify-*`, `refactor-*`, `human-*`, `agent-*`)
 - `scoreEndgameCandidates()` extracts type by splitting slug on first dash: `slug.split('-')[0]`
 - Uses historical reward means per type to score and weight candidates
-- Full convention rules in `atris/wiki/systems/horizon-type-convention.md`
+- Full convention rules in `atris/wiki/concepts/horizon-types.md`
 
 **Data structure per scorecard:**
 
