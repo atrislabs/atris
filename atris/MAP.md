@@ -161,6 +161,21 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
+### Feature: Business Workspaces (`atris business`)
+
+**Purpose:** Create, inspect, and sync real business workspaces, including the canonical standalone `.atris/business.json` + `atris/` shape used for local-first business environments
+
+- **Entry point:** `commands/business.js`
+- **Key flows:**
+- `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a canonical business workspace
+- `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`
+- `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
+- `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-canonical/` into a business workspace without clobbering custom files
+- **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
+- **Value:** Makes business workspaces a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
+
+**Search:** `rg "initBusinessWorkspace|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
+
 ### Feature: Daily Logging (`atris log`)
 
 **Purpose:** Add ideas to inbox in today's journal
@@ -681,6 +696,41 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Pattern:** Always check existence before create/copy
 
 **Search:** `rg "ensureLogDirectory|createLogFile" lib/journal.js`
+
+### Concern: Endgame Scorecards
+
+**Files:**
+
+- `lib/scorecard.js` (90 lines) — Scorecard writing and parsing
+- `atris/scorecards.md` (generated) — Append-only endgame results log
+
+**Key functions (lib/scorecard.js):**
+
+- Lines 9-53: `writeScorecard(atrisDir, data)` — Append scorecard entry to `atris/scorecards.md` when an endgame closes. Format: `- **[date] slug** — shipped: X/Y — wall-clock: Nh — halt: Z% — reward: total — lessons: N`
+- Lines 55-76: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
+- Lines 78-96: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
+
+**Data structure per scorecard:**
+
+```
+{
+  endDate,           // ISO date when endgame closed (YYYY-MM-DD)
+  slug,              // Horizon slug (e.g., "loop-self-seeds-horizons")
+  tasksShipped,      // Count of completed tasks
+  tasksAttempted,    // Count of started/completed tasks
+  wallClockHours,    // Duration in hours (float, e.g., 18.5)
+  haltRatio,         // Fraction of ticks that halted (0.0-1.0)
+  totalReward,       // Sum of per-tick reward scores
+  lessonsGenerated   // Count of lessons appended during endgame
+}
+```
+
+**Usage:**
+
+- Called by validator/autopilot when endgame completes (future wiring)
+- Read by R5 task (`/endgame reads scorecards for historical reward weighting`)
+
+**Search:** `rg "writeScorecard|detectEndgameCompletion" lib/scorecard.js`
 
 ### Concern: API Communication
 

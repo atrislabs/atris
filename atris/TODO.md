@@ -25,18 +25,19 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame]
 - **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
 
 ## In Progress
-- **R3:** Add per-tick reward scoring to `appendTickSummary`. Compute reward from: commit landed (+1), npm test passed (+2), verify passed (+3), validator clean (+1), halt caught hallucination (-3). Write score to journal tick block. [endgame]
-**Claimed by:** executor at 2026-04-09T08:15:22.123Z
-**Stage:** DO
+
+- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame]
+  **Claimed by:** executor at 2026-04-09T07:41:14.440Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+- **B1:** Canonicalize business workspace creation. `atris business init <name>` now creates the cloud record plus a standalone canonical workspace with `.atris/business.json` and business templates. `atris business create <name> --workspace` routes to the same local-first shape. [validated]
 
 ---
