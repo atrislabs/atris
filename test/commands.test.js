@@ -9,6 +9,7 @@ const { createCanonicalBusinessWorkspace } = require('../commands/business');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
+  verifyJudgeIntegrity,
   getVerifyCommand,
   getRecentSignals,
   maybeWriteCompletedEndgameScorecard,
@@ -17,6 +18,7 @@ const {
   scoreEndgameCandidates,
   writeLesson
 } = require('../commands/autopilot');
+const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -503,6 +505,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.equal(meta.slug, 'blondish');
     assert.equal(meta.business_id, 'biz-123');
     assert.equal(meta.workspace_id, 'ws-456');
+    assert.equal(meta.workspace_template, 'business');
     assert.equal(meta.owner_email, 'joel@blondish.world');
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
@@ -522,13 +525,64 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
   }
 });
 
-test('business help exposes canonical workspace creation', () => {
+test('createCanonicalBusinessWorkspace can scaffold a research lab template', () => {
+  const dir = makeTempDir();
+  try {
+    const result = createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-r1',
+      workspace_id: 'ws-r2',
+      name: 'Frontier Lab',
+      slug: 'frontier-lab',
+      owner_email: 'pi@frontier.lab',
+      workspace_template: 'research',
+    }, { here: true, templateName: 'research' });
+
+    assert.equal(result.targetRoot, dir);
+    assert.equal(result.workspaceTemplate, 'research');
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'business.json')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'hypothesis', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'eval', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'concepts', 'research-loop.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'briefs', 'research-program.md')));
+
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
+    assert.equal(meta.workspace_template, 'research');
+
+    const reward = fs.readFileSync(path.join(dir, 'atris', 'policies', 'REWARD.md'), 'utf8');
+    assert.match(reward, /reproducible/i);
+    assert.match(reward, /held-out|replayable/i);
+
+    const liveWorkspace = fs.readFileSync(path.join(dir, 'atris', 'context', 'live-workspace.md'), 'utf8');
+    assert.match(liveWorkspace, /research/i);
+    assert.match(liveWorkspace, /biz-r1/);
+    assert.match(liveWorkspace, /ws-r2/);
+
+    const teamReadme = fs.readFileSync(path.join(dir, 'atris', 'team', 'README.md'), 'utf8');
+    assert.match(teamReadme, /hypothesis, experiment, eval, literature/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business help exposes default workspace creation', () => {
   const dir = makeTempDir();
   try {
     const res = runCli(['business'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /init <name>\s+Create a canonical business workspace/);
+    assert.match(res.stdout, /init <name>\s+Create a default business workspace/);
     assert.match(res.stdout, /create <name>\s+Create the cloud business; add --workspace/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('research help exposes research lab creation', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['research'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /init <name>\s+Create a research lab workspace/);
+    assert.match(res.stdout, /quickstart/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -905,6 +959,23 @@ test('computeTickReward does not award verify points when review failed before v
   }, 'halted', 'npm test');
 
   assert.equal(reward, -3);
+});
+
+test('REWARD_CONFIG is frozen and cannot be mutated', () => {
+  assert.ok(Object.isFrozen(REWARD_CONFIG));
+  assert.throws(() => { 'use strict'; REWARD_CONFIG.VERIFY_PASS = 999; }, TypeError);
+});
+
+test('REWARD_CHECKSUM matches live computeTickReward source', () => {
+  const crypto = require('crypto');
+  const actual = crypto.createHash('sha256').update(computeTickReward.toString()).digest('hex');
+  assert.strictEqual(actual, REWARD_CHECKSUM);
+});
+
+test('verifyJudgeIntegrity returns ok:true on clean state', () => {
+  const result = verifyJudgeIntegrity();
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.expected, result.actual);
 });
 
 test('maybeWriteCompletedEndgameScorecard writes a scorecard from closed endgame state', () => {
