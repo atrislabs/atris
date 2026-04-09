@@ -60,6 +60,36 @@ Next endgame after the current `loop-self-seeds-horizons` horizon closes.
 - How does the dep graph get populated — manual `[blocks: T#]` tag or inferred?
 - Does the lock live in git (visible to all clones) or only locally?
 
+## Prior art
+
+Survey of existing lock/claim/lease/mutex patterns in `commands/`, `lib/`, `.atris/` (2026-04-08, T29). No filesystem locks, no PID files, no leases, no mutexes. Only TODO.md "Claimed by:" string markers and a remote fleet API.
+
+**TODO.md task-claim string markers** (textual, no filesystem lock):
+- `lib/todo.js:7,82-85` — parser for `**Claimed by:** <agent>` lines under In Progress.
+- `commands/clean.js:138-175` — stale-claim detector: parses `Claimed by: <agent> at <ISO>`, flags >3 days as stale.
+- `commands/autopilot.js:51,73-80` — surfaces stale/in-progress claims as next-task suggestions.
+- `commands/run.js:65` — executor prompt instructs the agent to write `**Claimed by:** Executor at <ISO>`.
+- `commands/autopilot.js:446` — same instruction in the autopilot do-phase prompt.
+- `commands/workflow.js:516-517` — manual workflow doc: "claim next unclaimed Backlog task".
+- `commands/status.js:236` — displays `t.claimed || 'unclaimed'`.
+- `commands/init.js:624` — onboarding checklist item.
+
+**Remote fleet API claims** (network, not filesystem):
+- `commands/fleet.js:8-9,162-185,228-237,343,368-370` — `atris fleet claim <task_key>` POSTs to a hub `/api/<id>/claims` endpoint. Server-side, not local.
+
+**Not locks (false positives swept):**
+- `commands/serve.js:36` — comment "won't lock the CLI" (timeout, not a lock).
+- `lib/file-ops.js:67`, `lib/journal.js:230` — "never block journal creation" (control flow, not a lock).
+- `commands/brainstorm.js:931` — "Vision locked in" (UX string).
+- "block" hits in autopilot/status/brainstorm/file-ops/sync/init = markdown-block helpers, not blocking primitives.
+- `commands/clean.js` "stale tasks" = TODO.md string parsing, no filesystem lease.
+
+**`.atris/` directory:** no `locks/`, `coord/`, or lease files. Only `scratch-t27a-heartbeat.txt`, `scheduled_tasks.lock` (Claude Code internal, not ours), and `business.json`.
+
+**Conclusion:** zero filesystem-level lock primitives exist. T30+ builds greenfield. The only existing "claim" concept is the textual `**Claimed by:**` line in TODO.md, which is advisory-only and has no atomicity guarantee — exactly the gap that produced the c65aaf9/2279936 collision.
+
+---
+
 ## Collision: c65aaf9 vs 2279936
 
 Forensic write-up of the 2026-04-08 multi-agent collision on
@@ -176,3 +206,26 @@ because the quality contract halted on the mismatch, but commit titles
 drifted from commit contents — exactly the failure mode a file-claim
 primitive (first-claimer-wins on `commands/autopilot.js`, loser halts) is
 designed to make impossible.
+
+---
+
+## Decision: lock storage
+
+Where does a file-claim lock physically live? Three candidates, scored on
+visibility (can other agents/clones see the claim?), staleness (how fast do
+dead claims rot?), and merge-conflict risk (does the lock itself cause the
+kind of collision it's meant to prevent?).
+
+| Option | Visibility | Staleness | Merge-conflict risk |
+|---|---|---|---|
+| (a) `.atris/locks/` gitignored, local-only | low — invisible across clones/CI, only the local shell sees it | good — dies with the machine, PID check is cheap and authoritative | none — never committed |
+| (b) `atris/locks/` tracked in git | high — every clone sees every claim | bad — a stale claim survives forever until someone commits a delete; crash = permanent lock | **high** — every claim is a commit on a shared directory; two agents claiming in parallel produces the exact collision this feature exists to stop |
+| (c) **CHOSEN** — hybrid: claim in git (`atris/locks/*.lock`), heartbeat local (`.atris/locks/*.heartbeat`) | high on the claim itself; heartbeat is local-only but TTL-bounded | good — heartbeat TTL (default 10 min) expires the claim without needing a commit; `atris claim` treats missing/stale heartbeat as reclaimable | medium — claim files still land in git, but they're single-writer by definition (first-claimer-wins), and the heartbeat churn stays out of the tree |
+
+**CHOSEN: (c) hybrid.** Option (a) fails the core requirement — a 50-agent
+fleet needs cross-process visibility of who owns what, and a gitignored lock
+can't give that. Option (b) is visible but turns every claim into a
+merge-conflict surface, reintroducing the collision class we're eliminating.
+The hybrid keeps the authoritative claim in git (visible to every agent and
+CI) while pushing high-frequency liveness signals to a local heartbeat file
+whose TTL lets `atris claim` break stale locks without a human commit.
