@@ -25,9 +25,6 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **T1:** [explore] Document horizon type categorization convention in atris/wiki. What prefixes exist (wiki, verify, refactor, loop, etc.)? What do they mean? Exit: Type guide written, examples clear. [endgame]
-  **Claimed by:** Executor at 2026-04-09T08:18:08.665Z
-  **Stage:** DO
 - **T2:** [explore] Audit current + past horizon slugs. Are they consistent with the type-prefix pattern? Are there edge cases (e.g., hyphenated types like "verify-and-fix")? Exit: List of type patterns found, any issues logged.
 - **T3:** [explore] Propose type validation rules for /endgame horizon suggestions. Should new candidates be checked against known types? Exit: Brief design for type-aware validation.
 - **R9:** (Optional refinement) Refactor type inference if T2 finds inconsistencies. If prefix-only breaks down, add explicit type registry. Exit: Type inference handles all past horizons correctly.
@@ -39,5 +36,7 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Completed
+
+- **T1:** [explore] Document horizon type categorization convention in atris/wiki. Horizon slug prefix system documented with known types (loop-*, wiki-*, verify-*, refactor-*, human-*, agent-*) and inference rules from scoreEndgameCandidates. Exit: Type guide written, examples clear. [endgame]
 
 ---
