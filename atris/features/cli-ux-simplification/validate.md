@@ -1,5 +1,7 @@
 ---
 last_compiled: 2026-04-09
+validated_by: executor
+validation_notes: All source references verified accurate. Help output, TODO.md creation/reading, features/ alignment, and doc specs all confirmed current.
 sources:
   - bin/atris.js:199-337 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
