@@ -14,6 +14,7 @@
 - [[atris/wiki/concepts/plan-do-review-loop.md]] — core Atris workflow and how local memory fits into it
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
 - [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
+- [[atris/wiki/concepts/verifiable-reward-loop.md]] — reward, scorecards, and why the repo now acts like an RL-style environment
 
 ## Briefs
 

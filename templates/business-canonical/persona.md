@@ -1,6 +1,7 @@
 # {{name}} — Persona
 
-Voice, tone, and style for this workspace.
+Canonical Atris persona entrypoint for this workspace.
+Keep this file aligned with `atris/persona.md`.
 
 ## Voice
 
@@ -23,7 +24,3 @@ Voice, tone, and style for this workspace.
 - No "AI" buzzword
 - No over-promising
 - No ALL CAPS
-
----
-
-*Edit this file to match {{name}}'s voice.*

@@ -2,9 +2,13 @@
 type: entity
 slug: atris-cli
 title: atris-cli
-sources: [/Users/keshavrao/arena/atris-cli/CLAUDE.md, /Users/keshavrao/arena/atris-cli/commands/, /Users/keshavrao/arena/atris-cli/lib/wiki.js, /Users/keshavrao/arena/atris-cli/commands/business.js]
+sources:
+  - /Users/keshavrao/arena/atris-cli/README.md
+  - /Users/keshavrao/arena/atris-cli/commands/autopilot.js
+  - /Users/keshavrao/arena/atris-cli/lib/scorecard.js
+  - /Users/keshavrao/arena/atris-cli/commands/business.js
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-04-09
 tags: [project, cli, atris]
 ---
 
@@ -32,6 +36,12 @@ Three primary moves:
 | Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
 | Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
 | Sibling | `commands/business.js` | Cloud-side AI-native company productization |
+
+## Verifiable reward rail
+
+As of 2026-04-09, atris-cli does more than run a workflow. It can create a repo-local RL-style environment around fixed-model agents. Endgame tasks can name deterministic `Verify:` checks, `autopilot` runs those checks after review, tick summaries store reward, closed horizons append scorecards, and future horizon selection can weight against recent scorecards.
+
+The important distinction is that atris-cli does **not** retrain the model. The model stays fixed. The repo, the checks, the journal, and the scorecards form the environment. Public docs should underpromise this as a verifiable feedback loop. Internally, "RL-style environment creator" is the more precise phrase.
 
 ## Capabilities surface (what atris-cli can do as primitives)
 
@@ -61,3 +71,4 @@ This is the "capabilities" side of the intent→capability→composition loop. H
 - [[atris/wiki/systems/atris-business.md]] — productized cloud version, has the proactive layer
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-cli implements partially
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is for
+- [[atris/wiki/concepts/verifiable-reward-loop.md]] — the reward, scorecard, and horizon-weighting rail

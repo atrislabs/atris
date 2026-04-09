@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-04-08
+> **Last updated:** 2026-04-09
 
 ---
 
@@ -23,8 +23,6 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **S3:** Add RL loop section to README.md (3 bullets, plain English, matches /launch format) [endgame]
-  **Verify:** grep -q "reward" README.md
 - **S4:** (eliminate) Remove stale inbox items I8 and I9 from 2026-04-08 journal — they shipped [endgame]
   **Verify:** node -e "const c=require('fs').readFileSync('atris/logs/2026/2026-04-08.md','utf8'); process.exit(c.includes('I8:') && c.includes('[shipped]') ? 0 : 1)"
 - **S5:** npm publish + GitHub release + /launch post [endgame]
@@ -37,6 +35,8 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Completed
-- **S2:** Bump package.json to v3.1.0 [endgame] ✅
+
+- **S3:** Add RL loop section to README.md (3 bullets, plain English, matches /launch format) [endgame]
+  **Verify:** grep -q "reward" README.md
 
 ---

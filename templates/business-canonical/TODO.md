@@ -5,12 +5,12 @@
 
 ## Backlog
 
-(Add tasks here)
+(none)
 
 ## In Progress
 
-(In-flight work)
+(none)
 
 ## Completed
 
-(Validator deletes after verification)
+(clear)
