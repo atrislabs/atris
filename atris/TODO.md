@@ -28,6 +28,13 @@ then /endgame picks the next horizon at the boundary.
 
 - **T27 [In Progress, Claimed by: Executor at 2026-04-09T00:27:18.359Z]:** Validate T20 end-to-end — run `atris autopilot --auto --iterations=1` against this repo, copy the new Notes block into `atris/features/human-output/validate.md` under a `## T20 heartbeat` section, mark pass/fail against: (i) ≤20 lines × ≤80 chars, (ii) matches `examples.md` shape, (iii) idle case contains `0 tasks in 0s`, (iv) `getIdleTickCount` returns ≥1 after an idle tick. Exit: validate.md has the block + 4 check results. [explore]
 
+<!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
+- **T29:** Survey existing lock primitives in the repo — grep `commands/`, `lib/`, and `.atris/` for any current lock/claim/lease/mutex patterns and list each with file:line in a `## Prior art` section of `atris/features/agent-coordinator/idea.md`. Exit: section lists every hit (or "none found") so T30 doesn't reinvent. [explore]
+- **T30:** Decide lock storage location — write a `## Decision: lock storage` block in `atris/features/agent-coordinator/idea.md` choosing between (a) `.atris/locks/` gitignored local-only, (b) `atris/locks/` tracked in git, (c) hybrid (claim in git, heartbeat local). Score each on visibility / staleness / merge-conflict risk. Exit: one option marked CHOSEN with 2-3 sentence rationale. [explore]
+- **T31:** Spec the lock file schema — append a `## Schema: lock file` block to `atris/features/agent-coordinator/idea.md` with the exact JSON shape (`agent`, `task`, `claimed_at`, `pid`, `ttl_seconds`, `host`), the filename encoding rule (slashes → `__`), and the stale-TTL default + override env var. Exit: block has schema + 1 example lock file contents. [explore]
+- **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
+- **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Exit: file exists with ≥4 rules. [explore]
+
 ---
 
 ## In Progress
