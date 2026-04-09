@@ -13,7 +13,7 @@ const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
-const { readScorecards } = require('../lib/scorecard');
+const { readScorecards, writeScorecard, detectEndgameCompletion } = require('../lib/scorecard');
 
 const pkg = require('../package.json');
 
@@ -605,6 +605,11 @@ function runTaskOnce(context, options = {}) {
           output: `Verify failed: ${e.message}`,
           elapsedSeconds: verifyTime,
         };
+        // RL: write lesson on verify failure so the loop learns
+        try {
+          const slug = (context.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+          writeLesson(cwd, `verify-fail-${slug}`, 'fail', `Verify command \`${verifyCmd}\` failed: ${e.message.split('\n')[0]}`);
+        } catch { /* lesson write must not crash the tick */ }
       }
     }
   }
@@ -651,8 +656,7 @@ function logCompletion(description) {
  * Compute per-tick reward score based on execution signals.
  * Rewards:
  *   - commit landed: +1
- *   - npm test passed: +2
- *   - verify passed: +3
+ *   - verify passed: +3 (any verify command, including npm test)
  *   - validator clean (review passed): +1
  *   - halt caught hallucination: -3
  */
@@ -664,14 +668,9 @@ function computeTickReward(execution, tickOutcome, verifyCmd) {
     reward += 1;
   }
 
-  // Verify passed: +3
+  // Verify passed: +3 (any verify command, including npm test — no double-counting)
   if (execution.verifyPass) {
     reward += 3;
-  }
-
-  // npm test passed: +2 (if verify command was npm test and it passed)
-  if (verifyCmd === 'npm test' && execution.verifyPass) {
-    reward += 2;
   }
 
   // Commit landed: check do phase output for git commit patterns
@@ -1068,7 +1067,9 @@ function scoreEndgameCandidates(cwd, candidates) {
 
     // Score each candidate by expected value based on historical type mean
     const scored = candidates.map(c => {
-      const cType = c.title.split('-')[0].toLowerCase();
+      // Infer type from title keywords that match scorecard slug prefixes
+      const titleLower = (c.title || '').toLowerCase();
+      const cType = Object.keys(typeMeans).find(t => titleLower.includes(t)) || titleLower.split(/[\s\-]+/)[0];
       const historicalMean = typeMeans[cType] !== undefined ? typeMeans[cType] : 0;
       const expectedValue = historicalMean * c.confidence;
       return {
@@ -1539,6 +1540,37 @@ async function autopilotAtris(description, options = {}) {
     });
   } catch {
     /* journal write failure must not crash the tick */
+  }
+
+  // RL: auto-write scorecard when endgame completes (all [endgame] tasks done)
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    const { complete, endgameSlug } = detectEndgameCompletion(atrisDir);
+    if (complete && endgameSlug) {
+      // Sum per-tick rewards from today's journal for this endgame
+      const journalPath = getLogPath();
+      let totalReward = 0;
+      if (fs.existsSync(journalPath)) {
+        const jContent = fs.readFileSync(journalPath, 'utf8');
+        const rewardMatches = jContent.matchAll(/reward:\s*([+-]?\d+)/g);
+        for (const m of rewardMatches) totalReward += parseInt(m[1]);
+      }
+      writeScorecard(atrisDir, {
+        slug: endgameSlug,
+        startDate: new Date().toISOString().split('T')[0],
+        tasksShipped: completed,
+        tasksAttempted: completed + (tickOutcome === 'halted' ? 1 : 0),
+        wallClockHours: elapsed / 3600,
+        haltRatio: tickOutcome === 'halted' ? 1 : 0,
+        totalReward,
+        lessonsGenerated: 0,
+      });
+      if (!verbose) {
+        printPlainBlock(`Scorecard written for endgame "${endgameSlug}". Total reward: ${totalReward}.`);
+      }
+    }
+  } catch {
+    /* scorecard write must not crash the tick */
   }
 
   if (verbose) {
