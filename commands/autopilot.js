@@ -557,6 +557,74 @@ function writeLesson(cwd, slug, status, explanation) {
 }
 
 /**
+ * Record a tick's commit hash and verify command in atris/tick-registry.json.
+ * Each entry: { hash, verifyCmd, slug, timestamp }.
+ */
+function recordTickCommit(cwd, hash, verifyCmd, slug) {
+  const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+  let registry = [];
+  if (fs.existsSync(registryPath)) {
+    try { registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')); } catch { registry = []; }
+  }
+  registry.push({ hash, verifyCmd, slug, timestamp: new Date().toISOString() });
+  fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+}
+
+/**
+ * Retroactive regression check. Reads last 10 entries from tick-registry.json,
+ * re-runs each verify command at its original commit using git worktree,
+ * returns array of { hash, slug, pass }. On failure: writes a lesson with
+ * retroactive context.
+ */
+function regressionCheck(cwd) {
+  const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+  if (!fs.existsSync(registryPath)) return [];
+
+  let registry = [];
+  try { registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')); } catch { return []; }
+  if (!Array.isArray(registry) || registry.length === 0) return [];
+
+  const entries = registry.slice(-10);
+  const results = [];
+
+  for (const entry of entries) {
+    if (!entry.hash || !entry.verifyCmd) {
+      results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
+      continue;
+    }
+
+    const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
+    let pass = false;
+    try {
+      // Create a worktree at the commit
+      execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
+      try {
+        execSync(entry.verifyCmd, { cwd: worktreePath, stdio: 'pipe', timeout: 60000 });
+        pass = true;
+      } catch {
+        pass = false;
+      }
+    } catch {
+      // If worktree creation fails (e.g., commit doesn't exist), skip
+      results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
+      continue;
+    } finally {
+      // Clean up worktree
+      try { execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' }); } catch {}
+    }
+
+    if (!pass) {
+      writeLesson(cwd, `regression-${entry.slug || 'unknown'}`, 'fail',
+        `Retroactive regression: verify command for tick ${entry.hash.slice(0, 7)} (${entry.slug}) now fails. -5 retroactive penalty applied.`);
+    }
+
+    results.push({ hash: entry.hash, slug: entry.slug, pass });
+  }
+
+  return results;
+}
+
+/**
  * Get the verify command for a task from TODO.md
  * Reads TODO.md, finds the task by title across active/completed sections,
  * and extracts the verify field.
@@ -1601,6 +1669,39 @@ async function autopilotAtris(description, options = {}) {
       tickOutcomeText = `I planned, built, and reviewed "${suggestion.task}".`;
       tickNextStep = 'pick the next endgame task';
       logCompletion(suggestion.task);
+
+      // Record commit hash + verify command for retroactive regression checks
+      try {
+        const commitHash = execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
+        const taskSlug = (suggestion.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+        recordTickCommit(cwd, commitHash, execution.verifyCmd || '', taskSlug);
+
+        // Every 10th tick, run retroactive regression check
+        const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+        if (fs.existsSync(registryPath)) {
+          try {
+            const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+            if (Array.isArray(registry) && registry.length % 10 === 0) {
+              const regressionResults = regressionCheck(cwd);
+              const failures = regressionResults.filter(r => !r.pass && !r.skipped);
+              if (failures.length > 0) {
+                // Apply -5 retroactive penalty per failure via journal note
+                for (const f of failures) {
+                  appendTickSummary(cwd, {
+                    outcome: `Retroactive regression failure: tick ${f.hash.slice(0, 7)} (${f.slug}) verify now fails. -5 penalty.`,
+                    horizon: readHorizonSlug(cwd),
+                    nextStep: 'investigate regression',
+                    reward: -5,
+                  });
+                }
+                if (verbose) console.log(`  regression check: ${failures.length} failure(s) found`);
+              } else if (verbose) {
+                console.log(`  regression check: all ${regressionResults.length} entries pass`);
+              }
+            }
+          } catch { /* registry read failure must not crash */ }
+        }
+      } catch { /* commit recording failure must not crash the tick */ }
       if (maybeWriteCompletedEndgameScorecard(cwd, startingEndgame)) {
         tickNextStep = 'pick the next horizon';
       }
@@ -1702,6 +1803,8 @@ module.exports = {
   renderHumanSuggestion,
   renderHumanTickIntro,
   proposeCandidateHorizons,
+  recordTickCommit,
+  regressionCheck,
   runTaskOnce,
   scoreEndgameCandidates,
   suggestNextTask,
