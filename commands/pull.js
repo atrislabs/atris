@@ -28,12 +28,16 @@ async function pullAtris() {
   let arg = process.argv[3];
 
   if (arg === '--help') {
-    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--force] [--timeout <seconds>]');
+    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>]');
+    console.log('');
+    console.log('  Pull is force-overwrite by default. Cloud is the source of truth.');
+    console.log('  Local files that conflict with cloud are replaced by the cloud version.');
     console.log('');
     console.log('  atris pull                   Pull into current business workspace');
     console.log('  atris pull doordash          Pull a business into ./doordash or --into <path>');
     console.log('  atris pull doordash --into /tmp/doordash');
     console.log('  atris pull doordash --only atris/wiki/');
+    console.log('  atris pull --keep-local      Preserve conflicting local edits as .remote files (legacy)');
     return;
   }
 
@@ -116,7 +120,10 @@ async function pullBusiness(slug) {
     process.exit(1);
   }
 
-  const force = process.argv.includes('--force');
+  // Pull is force-overwrite by default (cloud = source of truth).
+  // --keep-local opts back into the legacy three-way merge with .remote conflict files.
+  // --force is still accepted as an alias for the default for muscle-memory.
+  const force = !process.argv.includes('--keep-local');
 
   // Parse --only flag: comma-separated directory prefixes to filter
   // Supports both --only=team/,context/ and --only team/,context/
@@ -214,6 +221,29 @@ async function pullBusiness(slug) {
   if (!workspaceId) {
     console.error(`Business "${slug}" has no workspace. Set one up first.`);
     process.exit(1);
+  }
+
+  // Auto-wake the EC2 computer if --auto-wake is set.
+  // Without this, pull silently serves stale data from agent_files cache when
+  // the computer is asleep — the bug that confused us all night.
+  const autoWake = process.argv.includes('--auto-wake');
+  if (autoWake) {
+    const statusResult = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+    const computerStatus = statusResult.ok && statusResult.data ? statusResult.data.status : 'unknown';
+    if (computerStatus !== 'running' || !(statusResult.data && statusResult.data.endpoint)) {
+      process.stdout.write('  Waking EC2 computer... ');
+      await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
+      const wakeStart = Date.now();
+      while (Date.now() - wakeStart < 90000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const s = await apiRequestJson(`/business/${businessId}/ai-computer/status`, { method: 'GET', token: creds.token });
+        if (s.ok && s.data && s.data.status === 'running' && s.data.endpoint) {
+          const elapsed = Math.floor((Date.now() - wakeStart) / 1000);
+          console.log(`awake (${elapsed}s)`);
+          break;
+        }
+      }
+    }
   }
 
   // Load manifest (last sync state)
@@ -345,10 +375,14 @@ async function pullBusiness(slug) {
   let files = result.data.files || [];
   if (files.length === 0) {
     console.log('  Workspace is empty.');
-    return;
+    // Don't early-return in force mode: we still need to fall through to the
+    // mirror sweep so a genuinely-emptied cloud can clear local files. The
+    // sweep itself has a safety guard that refuses to wipe local content
+    // when remote reports empty (the snapshot-glitch case), so this is safe.
+    if (!force) return;
+  } else {
+    console.log(`  Processing ${files.length} files...`);
   }
-
-  console.log(`  Processing ${files.length} files...`);
 
   // Apply --only filter if specified
   if (onlyPrefixes) {
@@ -359,22 +393,46 @@ async function pullBusiness(slug) {
     });
     if (files.length === 0) {
       console.log(`  No files matched --only filter: ${onlyPrefixes.join(', ')}`);
-      return;
+      // Don't early-return: we still need to update the manifest so paths
+      // that USED to be in the scoped subtree but were deleted on cloud
+      // get evicted from the manifest. Without this, the next push freshness
+      // check would forever flag those paths as drift and demand a pull —
+      // but the pull would early-return again, creating a deadlock.
+    } else {
+      console.log(`  Filtered to ${files.length} files matching: ${onlyPrefixes.join(', ')}`);
     }
-    console.log(`  Filtered to ${files.length} files matching: ${onlyPrefixes.join(', ')}`);
   }
 
-  // Build remote file map {path: {hash, size, content}}
+  // Build remote file map {path: {hash, size}} and content map {path: content}.
+  //
+  // CRITICAL: smart-pull (hash-only fetch) returns files with `path`+`hash`+`size`
+  // but no `content`. Phase-2 batch fetch only adds content for CHANGED files —
+  // unchanged files stay hash-only. We must include hash-only entries in remoteFiles
+  // so threeWayCompare doesn't see them as missing-from-remote (deletedRemote).
+  // The previous version skipped any file without content, which caused every
+  // smart-pull to mark every unchanged file as deleted-on-cloud and rmSync them.
   const remoteFiles = {};
   const remoteContent = {};
+  const crypto = require('crypto');
   for (const file of files) {
-    if (!file.path || file.binary || file.content === null || file.content === undefined) continue;
-    if (file.content === '') continue;
-    // Compute hash from content bytes (matches computeLocalHashes raw byte hashing)
-    const crypto = require('crypto');
-    const rawBytes = Buffer.from(file.content, 'utf-8');
-    remoteFiles[file.path] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
-    remoteContent[file.path] = file.content;
+    if (!file.path || file.binary) continue;
+    // An empty string IS valid content (a real, zero-byte file). The earlier
+    // version excluded `content === ''` from the hasContent path, which made
+    // empty files masquerade as hash-only entries; they'd then be recorded in
+    // the manifest (with the empty-string hash) but never written to disk.
+    // A subsequent push would compare local (file missing) to manifest (file
+    // present) and try to delete the file from cloud — silently undoing the
+    // very thing the user just pulled.
+    const hasContent = file.content !== null && file.content !== undefined && typeof file.content === 'string';
+    if (hasContent) {
+      // Full content available — hash from raw bytes (matches computeLocalHashes)
+      const rawBytes = Buffer.from(file.content, 'utf-8');
+      remoteFiles[file.path] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
+      remoteContent[file.path] = file.content;
+    } else if (file.hash) {
+      // Hash-only entry from smart pull — trust the cloud-reported hash
+      remoteFiles[file.path] = { hash: file.hash, size: file.size || 0 };
+    }
   }
 
   // Compute local file hashes
@@ -452,6 +510,62 @@ async function pullBusiness(slug) {
     }
   }
 
+  // FORCE MIRROR SWEEP — local must EXACTLY match cloud after a force pull.
+  // The threeWayCompare path with effectiveManifest=null only computes
+  // newLocal/conflicts/newRemote and never marks files as deletedRemote, so
+  // local-only files (created locally, never on cloud) survive a force pull.
+  // That breaks the "cloud is the source of truth" promise. Sweep them now.
+  //
+  // SAFETY GUARDS — without these the sweep can wipe an entire local copy:
+  //   • Scope the sweep: when --only is set, only sweep paths INSIDE the
+  //     prefix(es). Out-of-scope local files must be left alone — the user
+  //     asked for a partial pull, not a workspace-wide reset.
+  //   • Skip when remoteFiles is empty AND local has in-scope content: the
+  //     snapshot endpoint has a known server-side bug where it returns 0
+  //     files for healthy workspaces. If cloud reports empty but local has
+  //     in-scope content we refuse to sweep — the user can re-run with
+  //     --keep-local and investigate, or run `atris align --hard` for an
+  //     explicit nuke.
+  //   • Skip files the server's snapshot filter hides. The warm runner's
+  //     _snapshot_dir (ecs_warm_runner.py) deliberately omits CLAUDE.md and
+  //     other names from snapshots, so they never appear in remoteFiles even
+  //     when they DO exist on cloud. Sweeping them would delete server-managed
+  //     files that aren't actually missing on cloud.
+  const SERVER_HIDDEN_BASENAMES = new Set(['CLAUDE.md']);
+  function basename(p) {
+    const idx = p.lastIndexOf('/');
+    return idx === -1 ? p : p.slice(idx + 1);
+  }
+  function isInScope(p) {
+    if (!onlyPrefixes) return true;
+    const rel = p.replace(/^\//, '');
+    return onlyPrefixes.some((pref) => rel.startsWith(pref));
+  }
+  if (force) {
+    const remotePathSet = new Set(Object.keys(remoteFiles));
+    const inScopeLocal = Object.keys(localFiles).filter(isInScope);
+    if (remotePathSet.size === 0 && inScopeLocal.length > 0) {
+      console.log('');
+      console.log('  ⚠ Cloud reported zero files but local has in-scope content. Refusing to sweep.');
+      console.log('    This usually means the snapshot endpoint glitched. Try again,');
+      console.log('    or run `atris align --hard` if you really want to nuke local.');
+    } else {
+      for (const p of inScopeLocal) {
+        if (remotePathSet.has(p)) continue;
+        if (SERVER_HIDDEN_BASENAMES.has(basename(p))) continue;
+        const localPath = path.join(outputDir, p.replace(/^\//, ''));
+        try {
+          fs.rmSync(localPath, { force: true });
+          pruneEmptyParentDirs(localPath, outputDir);
+          console.log(`  - ${p.replace(/^\//, '')}  not on cloud, removed locally`);
+          deleted++;
+        } catch {
+          // ignore — file might already be gone
+        }
+      }
+    }
+  }
+
   // Show unchanged
   if (unchangedCount > 0 && pulled === 0 && deleted === 0 && conflictCount === 0) {
     console.log('  Already up to date.');
@@ -481,10 +595,43 @@ async function pullBusiness(slug) {
     // Git might not be initialized yet — that's fine
   }
 
-  // Save manifest — when using --only, merge into existing manifest to avoid data loss
+  // ANTI-WIPE GUARD: if cloud reported zero in-scope files but local still
+  // has in-scope content (i.e. the sweep refused), don't overwrite the
+  // manifest with empty data for the scoped subtree. The manifest is the
+  // authoritative record of what we last knew was on cloud — wiping it
+  // because of a transient empty snapshot would force every subsequent
+  // push to flag every file as drift. Better to leave the manifest stale
+  // than to record a never-actually-true "cloud is empty" state.
+  //
+  // Applies to both whole-workspace pulls and scoped (--only) pulls.
+  {
+    const inScopeLocalCount = onlyPrefixes
+      ? Object.keys(localFiles).filter((p) => onlyPrefixes.some((pref) => p.replace(/^\//, '').startsWith(pref))).length
+      : Object.keys(localFiles).length;
+    if (Object.keys(remoteFiles).length === 0 && inScopeLocalCount > 0) {
+      return;
+    }
+  }
+
+  // Save manifest — when using --only, merge into existing manifest so paths
+  // OUTSIDE the scoped prefix don't get dropped. Inside the scoped prefix,
+  // however, we must replace (not merge) so that files deleted on cloud
+  // since the last sync get evicted from the manifest. Without this, the
+  // push freshness check would forever flag those paths as "deleted on
+  // cloud" drift, blocking pushes for no reason.
   let manifestFiles = remoteFiles;
   if (onlyPrefixes && manifest && manifest.files) {
-    manifestFiles = { ...manifest.files, ...remoteFiles };
+    const merged = {};
+    // 1. Keep paths from old manifest that are OUTSIDE the scoped prefix.
+    for (const [p, info] of Object.entries(manifest.files)) {
+      const inScope = onlyPrefixes.some((pref) => p.replace(/^\//, '').startsWith(pref));
+      if (!inScope) merged[p] = info;
+    }
+    // 2. Overwrite the in-scope subtree with what we just pulled (cloud truth).
+    for (const [p, info] of Object.entries(remoteFiles)) {
+      merged[p] = info;
+    }
+    manifestFiles = merged;
   }
   const newManifest = buildManifest(manifestFiles, commitHash);
   saveManifest(resolvedSlug || slug, newManifest);
