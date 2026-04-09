@@ -29,6 +29,7 @@ then /endgame picks the next horizon at the boundary.
 <!-- wiki-upkeep: atris-labs source path drift (same root cause, two files) -->
 - **T40:** Fix the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md` — frontmatter `sources: [/Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md]` is stale (file moved to `.../atris-labs-1/atris/MEMBER.md`), and the body line "A standalone Atris workspace at `arena/atris-business/atris-labs/`" points at the same gone path. Update both the frontmatter source and the body path to `atris-labs-1/atris/`. Bump `last_compiled` + `updated` to 2026-04-08. Do NOT mirror the source's "company-as-mini-AGI" / "mini-AGI dogfood" language — keep the existing neutral "company-as-workspace" framing (per `feedback_no_mini_agi`). Exit: frontmatter `sources:` and body both point at the real `atris-labs-1` path, dates bumped. [execute]
 
+
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 - **T38:** Decide whether `businessStatus(...)` needs the same chief-of-staff rewrite as local `statusAtris(...)` — audit the current remote output for operator readability, then choose between (a) leave it as a power-user diff surface, or (b) add a parallel human-summary mode. Exit: one short decision block appended to `atris/features/human-output/idea.md` with rationale and non-goal if we defer. [explore]
 - **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
@@ -38,11 +39,21 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
+- **T45:** Refresh `atris/wiki/concepts/plan-do-review-loop.md` against its own sources — rewrite the body to match README.md + atris/atris.md: 4-stage scout→plan→do→review, agent mapping, REVIEW pass/fail, auto-chain modes (`atris run` + `atris autopilot`), persistence rule. Keep `## Cross-References`. Bump `last_compiled` + `updated` to 2026-04-08. [execute]
+  **Claimed by:** Executor at 2026-04-09T02:28:43.618Z
+  **Stage:** DO
+
+
+
 ---
 
 ## Completed
 
-- [x] T39: Fixed stale `sources:` path in `atris/wiki/briefs/atris-labs-workspace-protocol.md` frontmatter — repointed from the ghost `atris-business/atris-labs/atris.md` to the real `atris-business/atris-labs-1/atris/atris.md`. Body copy unchanged (On Load / Loop / Layout / Surfaces / North Star re-verified against source); no "mini-AGI" phrase reintroduced per `feedback_no_mini_agi` (2026-04-08)
+- [x] T44: Added a clean-workspace smoke for the documented benchmark quickstart — `test/experiments.test.js` now executes the public validate + dry-run sequence against a temp workspace, confirms both dry-run receipts land, and keeps the replay docs tied to a passing test. Verification: `node --test test/experiments.test.js` and full `npm test` green on 2026-04-08. [reviewed]
+- [x] T43: Added a public replay quickstart for the benchmark harness — `README.md` now documents the validate + dry-run flow, receipt locations, contract path, and win condition, and `atris/experiments/README.md` mirrors the same repo-root command sequence. [reviewed]
+- [x] T42: Made the benchmark docs public and honest — removed the internal comparator name from `atris/features/endstate/idea.md`, marked the design success criteria against the shipped contract, and updated `atris/features/endstate/validate.md` with the commands that pass today plus one explicit pending clean-room replay gap. [reviewed]
+- [x] T41: Restored the benchmark prompt contract and review smoke — `commands/autopilot.js` now renders benchmark read-files as bullets, includes runner profile + protocol, and differentiates baseline vs stack guidance; `test/cli-smoke.test.js` now matches the shipped concise review surface. Verification: `node --test test/experiments.test.js`, `node --test test/cli-smoke.test.js`, and `npm test` all green on 2026-04-08. [reviewed]
+- [x] T39: Fixed stale `sources:` path in `atris/wiki/briefs/atris-labs-workspace-protocol.md` frontmatter — repointed from the ghost `atris-business/atris-labs/atris.md` to the real `atris-business/atris-labs-1/atris/atris.md`. Body copy unchanged (On Load / Loop / Layout / Surfaces / North Star re-verified against source); no "mini-AGI" phrase reintroduced per `feedback_no_mini_agi` (2026-04-08) [reviewed]
 - [x] T36: Tightened the default `statusAtris` briefing to the 20-line budget — horizon and backlog summaries are now compact, a `Decision:` line is present, and `node -e "require('./commands/status').statusAtris(false,false,false)"` now measures 18 lines / 75 chars max in this repo (2026-04-08)
 - [x] T35: Tightened the default `atris autopilot` briefing to the 20-line budget — horizon and task summaries are now compact in default mode, `--verbose` still shows the engineering view, and `node bin/atris.js autopilot --dry-run --auto --iterations=1` in this repo now measures 19 lines / 75 chars max (2026-04-08)
 - [x] T34: Rewrite the default `atris review` surface to match the validator-pass brief — default mode now wraps cleanly, includes an explicit `Decision:` line, keeps `--verbose` on the legacy validator board, and `node --test test/commands.test.js` stayed green (2026-04-08)
