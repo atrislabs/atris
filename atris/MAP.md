@@ -703,15 +703,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
 **Files:**
 
 - `lib/scorecard.js` (284 lines) — Scorecard writing, parsing, and endgame closeout metric synthesis
-- `atris/scorecards.md` (generated) — Append-only endgame results log
+- `.atris/presidio/scorecards.md` (generated, local-only) — Append-only endgame results log
 - `atris/wiki/concepts/horizon-types.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
 
 **Key functions (lib/scorecard.js):**
 
-- Lines 135-158: `buildScorecardData(atrisDir, { slug, pickedAt })` — Synthesizes closeout metrics from TODO.md, journal reward blocks, and lessons.md so endgame scorecards reflect real loop output
-- Lines 176-208: `writeScorecard(atrisDir, data)` — Append scorecard entry to `atris/scorecards.md` when an endgame closes. Format: `- **[date] slug** — shipped: X/Y — wall-clock: Nh — halt: Z% — reward: total — lessons: N`
-- Lines 215-240: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
-- Lines 246-280: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
+- Lines 147-184: `buildScorecardData(atrisDir, { slug, pickedAt })` — Synthesizes closeout metrics from TODO.md, journal reward blocks, and lessons.md so endgame scorecards reflect real loop output
+- Lines 188-220: `writeScorecard(atrisDir, data)` — Append scorecard entry to `.atris/presidio/scorecards.md` when an endgame closes. Format: `- **[date] slug** — shipped: X/Y — wall-clock: Nh — halt: Z% — reward: total — lessons: N`
+- Lines 227-254: `detectEndgameCompletion(atrisDir)` — Check if all endgame-tagged tasks have been moved to Completed, return `{ complete: boolean, endgameSlug: string }`
+- Lines 258-292: `readScorecards(atrisDir)` — Parse all scorecard entries, return array of objects
 
 **Type Inference (commands/autopilot.js:1095-1121):**
 

@@ -33,15 +33,16 @@ Three primary moves:
 | Tasks | `atris/TODO.md` | Current work queue (target = 0) |
 | Journal | `atris/logs/YYYY/YYYY-MM-DD.md` | Daily inbox + completed |
 | Memory | `atris/wiki/` | Durable knowledge (people/systems/concepts/briefs) |
+| Private memory | `.atris/presidio/` | Local-only scorecards, reward notes, and sensitive operating docs |
 | Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
 | Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
 | Sibling | `commands/business.js` | Cloud-side AI-native company productization |
 
 ## Verifiable reward rail
 
-As of 2026-04-09, atris-cli does more than run a workflow. It can create a repo-local RL-style environment around fixed-model agents. Endgame tasks can name deterministic `Verify:` checks, `autopilot` runs those checks after review, tick summaries store reward, closed horizons append scorecards, and future horizon selection can weight against recent scorecards.
+As of 2026-04-09, atris-cli can close work on deterministic `Verify:` checks and keep local scorecards for future horizon selection. `autopilot` runs those checks after review, tick summaries store reward, and closed horizons append scorecards under `.atris/presidio/` so the history stays local to the operator.
 
-The important distinction is that atris-cli does **not** retrain the model. The model stays fixed. The repo, the checks, the journal, and the scorecards form the environment. Public docs should underpromise this as a verifiable feedback loop. Internally, "RL-style environment creator" is the more precise phrase.
+The public surface should describe this modestly as a verifiable feedback loop. Sensitive operating notes, scorecards, and sharper internal framing belong in `.atris/presidio/`, not in the tracked repo wiki.
 
 ## Capabilities surface (what atris-cli can do as primitives)
 

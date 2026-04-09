@@ -30,6 +30,9 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
+- **X1:** Add a research-lab workspace template and init path so Atris can scaffold RL-ready research environments without resetting the current endgame.
+  **Verify:** node --test test/commands.test.js
+
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
@@ -38,5 +41,7 @@ then /endgame picks the next horizon at the boundary.
 
 - **S3:** Add RL loop section to README.md (3 bullets, plain English, matches /launch format) [endgame]
   **Verify:** grep -q "reward" README.md
+- **S6:** Create a private Presidio memory surface for flywheel docs and scorecards
+  **Verify:** node --test test/commands.test.js
 
 ---
