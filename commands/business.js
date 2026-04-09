@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const { syncBusinessCanonical } = require('./sync');
 
 function getBusinessConfigPath() {
   const home = require('os').homedir();
@@ -18,6 +20,86 @@ function loadBusinesses() {
 
 function saveBusinesses(data) {
   fs.writeFileSync(getBusinessConfigPath(), JSON.stringify(data, null, 2));
+}
+
+function parseCreateBusinessFlags(flags, cwd = process.cwd()) {
+  const options = {
+    description: '',
+    template: null,
+    ownerEmail: '',
+    noLocal: false,
+    workspace: false,
+    here: false,
+    root: null,
+    cwd,
+  };
+
+  for (let i = 0; i < flags.length; i++) {
+    const flag = flags[i];
+    const next = flags[i + 1];
+
+    if ((flag === '--description' || flag === '-d') && next) {
+      options.description = next;
+      i++;
+    } else if ((flag === '--template' || flag === '-t') && next) {
+      options.template = next;
+      i++;
+    } else if (flag === '--owner-email' && next) {
+      options.ownerEmail = next;
+      i++;
+    } else if ((flag === '--root' || flag === '--workspace-root') && next) {
+      options.root = path.resolve(cwd, next);
+      options.workspace = true;
+      i++;
+    } else if (flag === '--here') {
+      options.here = true;
+      options.workspace = true;
+    } else if (flag === '--workspace' || flag === '--local-workspace') {
+      options.workspace = true;
+    } else if (flag === '--no-local') {
+      options.noLocal = true;
+    }
+  }
+
+  return options;
+}
+
+function resolveWorkspaceRoot(slug, options = {}) {
+  if (options.noLocal) return null;
+  if (options.here) return options.cwd || process.cwd();
+  if (options.root) return path.join(options.root, slug);
+  return path.join(os.homedir(), 'arena', 'atris-business', slug);
+}
+
+function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
+  if (!targetRoot) {
+    throw new Error('No target directory provided for business workspace.');
+  }
+
+  if (options.here !== true && fs.existsSync(targetRoot) && !fs.statSync(targetRoot).isDirectory()) {
+    throw new Error(`Target path is not a directory: ${targetRoot}`);
+  }
+
+  fs.mkdirSync(targetRoot, { recursive: true });
+
+  const atrisMetaDir = path.join(targetRoot, '.atris');
+  const businessJsonPath = path.join(atrisMetaDir, 'business.json');
+  if (fs.existsSync(businessJsonPath)) {
+    throw new Error(`Target already contains .atris/business.json: ${targetRoot}`);
+  }
+
+  fs.mkdirSync(atrisMetaDir, { recursive: true });
+  fs.writeFileSync(businessJsonPath, JSON.stringify({
+    business_id: bizMeta.business_id,
+    workspace_id: bizMeta.workspace_id,
+    name: bizMeta.name,
+    slug: bizMeta.slug,
+    owner_email: bizMeta.owner_email || '',
+    created_at: new Date().toISOString(),
+  }, null, 2));
+
+  syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false });
+  return { targetRoot, businessJsonPath };
 }
 
 function detectBusinessSlug(explicitSlug) {
@@ -519,9 +601,9 @@ async function businessAudit() {
   console.log('');
 }
 
-async function createBusiness(name, ...flags) {
+async function createBusinessInternal(name, flags = [], mode = 'auto') {
   if (!name) {
-    console.error('Usage: atris business create <name> [--description "..."]');
+    console.error('Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]');
     process.exit(1);
   }
 
@@ -531,14 +613,8 @@ async function createBusiness(name, ...flags) {
     process.exit(1);
   }
 
-  // Parse flags
-  let description = '';
-  for (let i = 0; i < flags.length; i++) {
-    if ((flags[i] === '--description' || flags[i] === '-d') && flags[i + 1]) {
-      description = flags[i + 1];
-      i++;
-    }
-  }
+  const options = parseCreateBusinessFlags(flags);
+  const description = options.description;
 
   console.log(`Creating business: ${name}...`);
 
@@ -567,8 +643,15 @@ async function createBusiness(name, ...flags) {
   };
   saveBusinesses(businesses);
 
-  // Scaffold local directory if in an atris project
-  const atrisDir = findAtrisDir();
+  const shouldCreateCanonicalWorkspace = !options.noLocal && (
+    mode === 'canonical' ||
+    options.workspace ||
+    options.here ||
+    Boolean(options.root)
+  );
+
+  // Scaffold legacy local directory if in an atris project
+  const atrisDir = !shouldCreateCanonicalWorkspace ? findAtrisDir() : null;
   if (atrisDir) {
     const bizDir = path.join(atrisDir, 'business', biz.slug);
     if (!fs.existsSync(bizDir)) {
@@ -584,16 +667,21 @@ async function createBusiness(name, ...flags) {
       ].join(''));
       console.log(`  Local scaffold: ${bizDir}/`);
     }
+  } else if (shouldCreateCanonicalWorkspace) {
+    const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
+    const scaffold = createCanonicalBusinessWorkspace(workspaceRoot, {
+      business_id: biz.id,
+      workspace_id: biz.workspace_id,
+      name: biz.name,
+      slug: biz.slug,
+      owner_email: options.ownerEmail,
+    }, { here: options.here });
+    console.log(`  Local workspace: ${scaffold.targetRoot}/`);
+  } else if (!options.noLocal) {
+    console.log('  Tip: run `atris business init "<name>"` or add `--workspace` for a local canonical workspace.');
   }
 
-  // Apply template if specified
-  let template = null;
-  for (let i = 0; i < flags.length; i++) {
-    if ((flags[i] === '--template' || flags[i] === '-t') && flags[i + 1]) {
-      template = flags[i + 1];
-      i++;
-    }
-  }
+  const template = options.template;
 
   if (template) {
     const templates = {
@@ -620,7 +708,20 @@ async function createBusiness(name, ...flags) {
   console.log(`  Slug:      ${biz.slug}`);
   console.log(`  Agent:     ${biz.agent_id || '(none)'}`);
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
+  if (shouldCreateCanonicalWorkspace) {
+    const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
+    console.log(`  Next:      cd ${workspaceRoot}`);
+    console.log('             atris align --fix');
+  }
   console.log('');
+}
+
+async function createBusiness(name, ...flags) {
+  return createBusinessInternal(name, flags, 'auto');
+}
+
+async function initBusinessWorkspace(name, ...flags) {
+  return createBusinessInternal(name, flags, 'canonical');
 }
 
 
@@ -1046,18 +1147,18 @@ async function quickstart() {
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   1. Create:
-     atris business create "My Company" --template saas
+     atris business init "My Company" --template saas
 
-  2. Connect integrations:
+  2. Open the local workspace:
+     cd ~/arena/atris-business/my-company
+
+  3. Push local state to cloud:
+     atris align --fix
+
+  Optional:
      atris business connect slack --business my-company
      atris business connect github --business my-company
 
-  3. Deploy:
-     atris business deploy my-company
-
-  That's it. Your agents are live.
-
-  Optional:
      atris business notify digest --business my-company
      (get 1 email/day instead of every notification)
 
@@ -1075,6 +1176,10 @@ async function businessCommand(subcommand, ...args) {
     case 'create':
     case 'new':
       await createBusiness(args[0], ...args.slice(1));
+      break;
+    case 'init':
+    case 'workspace':
+      await initBusinessWorkspace(args[0], ...args.slice(1));
       break;
     case 'list':
     case 'ls': {
@@ -1130,7 +1235,9 @@ async function businessCommand(subcommand, ...args) {
       console.log('');
       console.log('  quickstart           ← Start here! 3-command guide');
       console.log('');
-      console.log('  create <name>        Create a new business (cloud + local)');
+      console.log('  init <name>          Create a canonical business workspace (cloud + local)');
+      console.log('  workspace <name>     Alias for init');
+      console.log('  create <name>        Create the cloud business; add --workspace for local canonical scaffold');
       console.log('  add <slug>           Register an existing cloud business');
       console.log('  list                 Show registered businesses');
       console.log('  team [slug]          Show members, roles, and admin access');
@@ -1144,4 +1251,14 @@ async function businessCommand(subcommand, ...args) {
   }
 }
 
-module.exports = { businessCommand, businessHealth, businessAudit, businessTeam, loadBusinesses, saveBusinesses, getBusinessConfigPath };
+module.exports = {
+  businessCommand,
+  businessHealth,
+  businessAudit,
+  businessTeam,
+  loadBusinesses,
+  saveBusinesses,
+  getBusinessConfigPath,
+  createCanonicalBusinessWorkspace,
+  initBusinessWorkspace,
+};

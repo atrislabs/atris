@@ -25,9 +25,14 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
+- **T#1:** Understand scorecard format + horizon type inference. Read `lib/scorecard.js` and `atris/scorecards.md` structure. Determine how to categorize horizons by type (e.g., "wiki-*" vs "verify-*" vs "refactor-*"). Document in nav journal. [explore]
+- **T#2:** Add `scoreEndgameCandidates(cwd, candidates)` function to `commands/autopilot.js` (~line 1040, near `proposeCandidateHorizons`). Read last 10 scorecards via `readScorecards()`. For each candidate, find similar past horizons by type prefix. Calculate mean reward per type. Score each candidate by historical expected value. Apply 80/20 policy: 80% return best, 20% return random for exploration. Exit: function exists, returns 1 candidate, 4 tests cover nominal/edge cases. [execute]
+- **T#3:** Wire scoring into horizon picking. Replace line 206-207 in `commands/autopilot.js` — instead of `proposeCandidateHorizons` → pick best by confidence, call `scoreEndgameCandidates` to weight by history. Update MAP.md line refs. Exit: `npm test` passes, autopilot dry-run picks a candidate informed by scorecard history. [execute]
 
 ## In Progress
+- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
+  **Claimed by:** Executor at 2026-04-09T07:49:23.916Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
