@@ -15,18 +15,21 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** loop-self-seeds-horizons
-**Picked:** 2026-04-08 (M2 from the 7-day plan)
-**Horizon:** When `atris/TODO.md` has zero `[endgame]` tasks AND no inbox items AND no reactive signals, the autopilot loop reads recent commits + `wiki/STATUS.md` + `lessons.md` + the idle-tick history, asks the LLM to propose 3 candidate horizons with confidence scores, picks the highest, writes it to `## Endgame` + tagged backlog, and the next tick executes the first step. End state: the loop never silently idles for more than one tick — it always either has work or has just imagined some.
-**Source:** session conversation 2026-04-08 — "set goal, solve problem, validate truth, update beliefs, set new goal" + the 24+ idle ticks observed today proving the gap is real.
+**Slug:** verifiable-reward-loop
+**Picked:** 2026-04-09 09:45
+**Horizon:** Every autopilot tick produces a binary reward signal from mechanical checks (tests pass/fail, build compiles, exit codes). Scorecards accumulate per endgame. /endgame reads past scorecards to pick better horizons. The loop learns from its own outcomes without retraining the model.
+**Source:** inbox I8 + I9, conversation 2026-04-09 "are we an RL environment" + AMP frontier flywheel parallel
 
-**Prior endgame closed:** `wiki-for-atrisos-web` — E1-E5 + T1-T4 (~14 tasks, 6+ commits across atris-cli + atrisos-web). Boundary auto-pickup from inbox proven. M1 self-improving close shipped mid-stream (`488fb50`).
+**Prior endgame closed:** `loop-self-seeds-horizons` — M1-M4, T8-T47 shipped. Self-seeding + idle detection + candidate horizon imaginer all live.
 
 ---
 
 ## Backlog
 
-
+- **R2:** Wire verify execution into the validator phase. After review, run the `verify:` command. Pass = tick reward +3. Fail = halt + lesson. `npm test` as default smoke when no verify field. [endgame]
+- **R3:** Add per-tick reward scoring to `appendTickSummary`. Compute reward from: commit landed (+1), npm test passed (+2), verify passed (+3), validator clean (+1), halt caught hallucination (-3). Write score to journal tick block. [endgame]
+- **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame]
+- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
@@ -34,7 +37,9 @@ then /endgame picks the next horizon at the boundary.
 
 ## In Progress
 
-
+- **R1:** Add `verify:` field to endgame task format. Update /endgame SKILL.md to require a deterministic check (test command, grep pattern, file presence) per task. Update lib/todo.js parser to extract the field. [endgame]
+  **Claimed by:** Executor at 2026-04-09T07:11:57.281Z
+  **Stage:** DO
 
 ---
 
