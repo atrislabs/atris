@@ -30,15 +30,13 @@ then /endgame picks the next horizon at the boundary.
 - **T#3:** Wire scoring into horizon picking. Replace line 206-207 in `commands/autopilot.js` — instead of `proposeCandidateHorizons` → pick best by confidence, call `scoreEndgameCandidates` to weight by history. Update MAP.md line refs. Exit: `npm test` passes, autopilot dry-run picks a candidate informed by scorecard history. [execute]
 
 ## In Progress
-- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame]
-  **Claimed by:** Executor at 2026-04-09T07:49:23.916Z
-  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+- **R5:** /endgame reads last 10 scorecards when picking a new horizon. Weight candidates by historical reward of similar horizon types. 80/20 exploit/explore split. [endgame] [validated]
 - **R4:** Add `atris/scorecards.md` and write a scorecard when an endgame closes. Fields: slug, tasks shipped/attempted, wall-clock time, halt ratio, total reward, lessons generated. [endgame] [validated]
 - **B1:** Canonicalize business workspace creation. `atris business init <name>` now creates the cloud record plus a standalone canonical workspace with `.atris/business.json` and business templates. `atris business create <name> --workspace` routes to the same local-first shape. [validated]
 
