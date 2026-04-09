@@ -308,3 +308,75 @@ claimed `commands/autopilot.js` at `2026-04-09T01:28:15.117Z` for task `T31`
 with a 10-minute stale TTL. Any other agent hitting this path before
 `2026-04-09T01:38:15.117Z` (or before the heartbeat at
 `.atris/locks/commands__autopilot.js.heartbeat` goes cold) halts.
+
+---
+
+## CLI surface
+
+The two commands an executor needs to implement in `commands/claim.js` and
+`commands/release.js`. They wrap the filename encoding from
+`## Schema: lock file` (`/` → `__`) and the hybrid storage from
+`## Decision: lock storage` (authoritative claim in `atris/locks/*.lock`,
+local heartbeat in `.atris/locks/*.heartbeat`). No new primitives here —
+just the operator-facing surface over the already-decided schema.
+
+### Usage
+
+```
+atris claim <path> --task T# --agent <name> [--ttl <sec>] [--force]
+atris release <path>
+```
+
+- `<path>` is repo-relative, POSIX-style, and gets filename-encoded per
+  `## Schema: lock file` (e.g. `commands/autopilot.js` →
+  `commands__autopilot.js.lock`). A literal `__` in the source path is a
+  usage error (exit `1`) — the encoding is not reversible otherwise.
+- `atris claim` writes BOTH the git-tracked claim file at
+  `atris/locks/<encoded>.lock` and the local heartbeat at
+  `.atris/locks/<encoded>.heartbeat` in one step (hybrid storage).
+- `atris release` removes both files. Releasing a lock you don't own is a
+  no-op unless `--force` is passed.
+
+### Flags
+
+| Flag | Type | Default | Purpose |
+|---|---|---|---|
+| `--task` | string (required) | — | Task ID from `atris/TODO.md` (e.g. `T32`) or free-form slug. Written to the `task` field of the lock body. |
+| `--agent` | string (required) | — | Human or agent identifier (`executor`, `autopilot-tick`, `keshav`). Written to the `agent` field; identity check for release and reclaim. |
+| `--ttl` | integer seconds | `600` (or `ATRIS_LOCK_TTL_SECONDS` if set) | Stale-TTL baked into the lock body's `ttl_seconds` field. Per `## Schema: lock file` the TTL is frozen at write time, not read dynamically. |
+| `--force` | boolean flag | `false` | On `claim`: reclaim a stale/broken lock (exit `3` without it). On `release`: remove a lock owned by a different agent. Never breaks a live lock whose heartbeat is fresh. |
+
+### Exit codes
+
+| Code | Meaning | When |
+|---|---|---|
+| `0` | claimed / released | Lock written (or removed) successfully. Stdout prints the encoded lock filename. |
+| `1` | usage error | Missing `--task`/`--agent`, path contains `__`, path is absolute or non-POSIX, or the flag parse fails. |
+| `2` | already claimed by a different agent | Live lock exists for `<path>`, owned by someone else, heartbeat is fresh. Loser halts per arbitration rule. Stderr prints owner + claimed_at + remaining TTL. |
+| `3` | stale/broken lock found | Lock file exists but `now - claimed_at > ttl_seconds` AND heartbeat is missing/cold, OR the lock body is malformed JSON. Reclaimable only with `--force`; without it the command exits `3` so a human can look. |
+
+Exit code `2` is the first-claimer-wins signal — the second caller gets a
+hard non-zero and is expected to halt, not retry in a loop. Exit code `3`
+separates "this lock is dead" from "this lock is live and someone else owns
+it" so stale reclaim never races with legitimate ownership.
+
+### Example session — first-claimer-wins
+
+Two agents race on `commands/autopilot.js`. Agent A calls `atris claim`
+first, wins, and gets exit `0`. Agent B calls the same command a moment
+later, sees A's live lock, and gets exit `2`:
+
+```sh
+# agent A (wins)
+$ atris claim commands/autopilot.js --task T32 --agent executor-A; echo $?
+claimed commands__autopilot.js.lock
+0
+# agent B (halts)
+$ atris claim commands/autopilot.js --task T32 --agent executor-B; echo $?
+error: commands/autopilot.js already claimed by executor-A (T32, 9m left)
+2
+```
+
+Agent B reads exit `2` and halts its edit phase. When A finishes its work
+and calls `atris release commands/autopilot.js`, the lock is removed and B
+(or any later agent) can claim it cleanly.
