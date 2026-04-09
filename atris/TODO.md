@@ -29,18 +29,14 @@ then /endgame picks the next horizon at the boundary.
 
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
-- **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Exit: file exists with ≥4 rules. [explore]
 
 ---
 
 ## In Progress
 
-- **T32:** Spec the `atris claim`/`atris release` CLI surface — append `## CLI surface` section to `atris/features/agent-coordinator/idea.md` after `## Schema: lock file` (~line 311) with four parts: (a) usage lines `atris claim <path> --task T# --agent <name> [--ttl <sec>] [--force]` and `atris release <path>`; (b) flag table (name / type / default / purpose) covering `--task`, `--agent`, `--ttl`, `--force`; (c) exit codes `0`=claimed, `1`=usage error, `2`=already claimed by a different agent, `3`=stale/broken lock found (reclaimable only with `--force`); (d) one 4-line fenced shell example showing agents A and B racing on `commands/autopilot.js` — A runs `atris claim` first and exits `0`, B runs the same command and exits `2` (first-claimer-wins). Must cite the filename encoding rule from `## Schema: lock file` and the hybrid claim-in-git/heartbeat-local storage from `## Decision: lock storage` so the executor has no guesswork. Scope: 1 file, append-only, ~60 lines. Exit: section exists with all four parts; executor can implement `commands/claim.js` + `commands/release.js` against it without asking questions. [explore]
-  **Claimed by:** Executor at 2026-04-09T03:28:55.542Z
+- **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Source: `idea.md` ## CLI surface (exit 2 = first-claimer-wins / loser halts), ## Schema: lock file (stale-TTL reclaim), ## Decision: lock storage (heartbeat rule). Kind field: use `draft` — promoted to `pass`/`fail` after the feature ships. Exit: file exists with ≥4 rules, each matching the shape and covering one of the four named rules. [execute]
+  **Claimed by:** Executor at 2026-04-09T03:41:21.150Z
   **Stage:** DO
-
-
-
 
 
 
