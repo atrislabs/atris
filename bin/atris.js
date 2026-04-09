@@ -232,7 +232,7 @@ function showHelp() {
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
   console.log('  activate   - Load Atris context');
-  console.log('  status     - See active work and completions (--json for machine output)');
+  console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
@@ -982,13 +982,6 @@ if (command === 'init') {
     });
 } else if (command === 'status') {
   let subcommand = process.argv[3];
-  // Auto-detect business from .atris/business.json in cwd
-  if (!subcommand || subcommand.startsWith('-')) {
-    const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
-    if (require('fs').existsSync(bizFile)) {
-      try { subcommand = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
-    }
-  }
   if (subcommand && !subcommand.startsWith('-')) {
     require('../commands/context-sync').businessStatus(subcommand)
       .then(() => process.exit(0))
@@ -996,7 +989,8 @@ if (command === 'init') {
   } else {
     const isQuick = process.argv.includes('--quick') || process.argv.includes('-q');
     const isJson = process.argv.includes('--json');
-    statusCmd(isQuick, isJson);
+    const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
+    statusCmd(isQuick, isJson, verbose);
   }
 } else if (command === 'analytics') {
   require('../commands/analytics').analyticsAtris();

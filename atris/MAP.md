@@ -15,7 +15,7 @@ rg "function brainstormAtris" commands/brainstorm.js  # Brainstorm command (line
 rg "function planAtris" commands/workflow.js   # Plan command (line 5)
 rg "function doAtris" commands/workflow.js     # Do command (line 297)
 rg "function reviewAtris" commands/workflow.js  # Review command (line 667)
-rg "function statusAtris" commands/status.js     # Status command (line 5)
+rg "function statusAtris" commands/status.js     # Status command (line 79)
 rg "function analyticsAtris" commands/analytics.js  # Analytics command (line 4)
 
 # Modular commands
@@ -217,18 +217,19 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Quick visibility into system state - supports parallel work
 
-- **Entry point:** `commands/status.js:15-207` (statusAtris function)
-- **Signature:** `statusAtris(isQuick = false, jsonMode = false)`
+- **Entry point:** `commands/status.js:79-334` (statusAtris function)
+- **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
 - Today's journal Inbox (pending ideas, first 3)
 - Today's journal Completed (recent completions, last 3)
 - **Output:**
-- Default: Visual box-drawing status board
+- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`)
+- `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:998-1076` (isQuick, isJson flag parsing)
+- **Routing:** `bin/atris.js:984-995` (`statusCmd` local path, explicit `businessStatus` slug path)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris" bin/atris.js`
@@ -832,7 +833,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `planAtris()` → `commands/workflow.js:5-306`
 - `doAtris()` → `commands/workflow.js:324-664`
 - `reviewAtris()` → `commands/workflow.js:666-1088`
-- `statusAtris()` → `commands/status.js:15-216`
+- `statusAtris()` → `commands/status.js:79-334`
 - `analyticsAtris()` → `commands/analytics.js:4-147`
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
 - `autopilotAtris()` → `commands/autopilot.js:840-1004`

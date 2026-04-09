@@ -26,10 +26,8 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T27 [In Progress, Claimed by: Executor at 2026-04-09T00:27:18.359Z]:** Validate T20 end-to-end — run `atris autopilot --auto --iterations=1` against this repo, copy the new Notes block into `atris/features/human-output/validate.md` under a `## T20 heartbeat` section, mark pass/fail against: (i) ≤20 lines × ≤80 chars, (ii) matches `examples.md` shape, (iii) idle case contains `0 tasks in 0s`, (iv) `getIdleTickCount` returns ≥1 after an idle tick. Exit: validate.md has the block + 4 check results. [explore]
-
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
-- **T31 [In Progress, Claimed by: Executor at 2026-04-09T01:28:15.117Z]:** Spec the lock file schema — append a `## Schema: lock file` block to `atris/features/agent-coordinator/idea.md` with the exact JSON shape (`agent`, `task`, `claimed_at`, `pid`, `ttl_seconds`, `host`), the filename encoding rule (slashes → `__`), and the stale-TTL default + override env var. Exit: block has schema + 1 example lock file contents. [explore]
+- **T38:** Decide whether `businessStatus(...)` needs the same chief-of-staff rewrite as local `statusAtris(...)` — audit the current remote output for operator readability, then choose between (a) leave it as a power-user diff surface, or (b) add a parallel human-summary mode. Exit: one short decision block appended to `atris/features/human-output/idea.md` with rationale and non-goal if we defer. [explore]
 - **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
 - **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Exit: file exists with ≥4 rules. [explore]
 
@@ -41,6 +39,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- [x] T37: Un-hijack the default `atris status` route in business-scoped repos — plain `atris status` now prefers local `statusAtris(...)`, explicit `atris status <slug>` still routes to `businessStatus(slug)`, the validator uses the real CLI path again, `node bin/atris.js status` is local, `node bin/atris.js status pallet` still hits the business path, `node bin/atris.js clean --dry-run` is green, and `node --test test/commands.test.js` is 40/40 green (2026-04-08)
+- [x] T36: Tightened the default `statusAtris` briefing to the 20-line budget — horizon and backlog summaries are now compact, a `Decision:` line is present, and `node -e "require('./commands/status').statusAtris(false,false,false)"` now measures 18 lines / 75 chars max in this repo (2026-04-08)
+- [x] T35: Tightened the default `atris autopilot` briefing to the 20-line budget — horizon and task summaries are now compact in default mode, `--verbose` still shows the engineering view, and `node bin/atris.js autopilot --dry-run --auto --iterations=1` in this repo now measures 19 lines / 75 chars max (2026-04-08)
+- [x] T34: Rewrite the default `atris review` surface to match the validator-pass brief — default mode now wraps cleanly, includes an explicit `Decision:` line, keeps `--verbose` on the legacy validator board, and `node --test test/commands.test.js` stayed green (2026-04-08)
+- [x] T27: Validate T20 end-to-end — `atris/features/human-output/validate.md` now contains the `## T20 heartbeat` block with measurements plus all 4 checks scored PASS, including the idle `0 tasks in 0s` marker and a `getIdleTickCount` smoke returning ≥1 (2026-04-08)
 - [x] T29: Surveyed lock/claim/lease/mutex patterns in `commands/`, `lib/`, `.atris/`; `## Prior art` section in `atris/features/agent-coordinator/idea.md:63-89` lists all hits (TODO.md textual claim markers, remote fleet API) and confirms zero filesystem-level lock primitives exist (2026-04-08)
 - [x] T27c: Scored the 4 T27 checks in a markdown table under `## T20 heartbeat` in `atris/features/human-output/validate.md` and appended surface verdict (FAIL — line-width blows up on long task titles; smoke `getIdleTickCount` → 0 because most recent tick is happy, not idle) (2026-04-08)
 - [x] T27a: Ran `node bin/atris.js autopilot --auto --iterations=1`; captured heartbeat block from `atris/logs/2026/2026-04-08.md:353-356` (5:32 pm tick) to `.atris/scratch-t27a-heartbeat.txt` for T27b/c (2026-04-08)
