@@ -15,12 +15,7 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** verifiable-reward-loop
-**Picked:** 2026-04-09 09:45
-**Horizon:** Every autopilot tick produces a binary reward signal from mechanical checks (tests pass/fail, build compiles, exit codes). Scorecards accumulate per endgame. /endgame reads past scorecards to pick better horizons. The loop learns from its own outcomes without retraining the model.
-**Source:** inbox I8 + I9, conversation 2026-04-09 "are we an RL environment" + AMP frontier flywheel parallel
-
-**Prior endgame closed:** `loop-self-seeds-horizons` — M1-M4, T8-T47 shipped. Self-seeding + idle detection + candidate horizon imaginer all live.
+(none — verifiable-reward-loop closed 2026-04-09. Next endgame TBD.)
 
 ---
 
@@ -28,15 +23,18 @@ then /endgame picks the next horizon at the boundary.
 - **T2:** [explore] Audit current + past horizon slugs. Are they consistent with the type-prefix pattern? Are there edge cases (e.g., hyphenated types like "verify-and-fix")? Exit: List of type patterns found, any issues logged.
 - **T3:** [explore] Propose type validation rules for /endgame horizon suggestions. Should new candidates be checked against known types? Exit: Brief design for type-aware validation.
 - **R9:** (Optional refinement) Refactor type inference if T2 finds inconsistencies. If prefix-only breaks down, add explicit type registry. Exit: Type inference handles all past horizons correctly.
+- **T1:** [execute] Fix validate.md check #1.3 for cli-ux-simplification. Lines 345, 361, 377 don't exist in showHelp(). Either remove this check (help descriptions don't need to mention TODO.md) or redirect to docs references (GETTING_STARTED.md, PERSONA.md). Exit: Validation check either removed or corrected with valid source references.
 
 ## In Progress
+
+- **V1:** [execute] Validate verifiable-reward-loop patch claims against committed code and current working tree. Exit: review the shipped R1-R5 logic, run the full test suite, and confirm whether the loop is actually ready to ship.
+  **Claimed by:** validator at 2026-04-09 20:27 PDT
+  **Stage:** REVIEW
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
-
-- **T1:** [explore] Document horizon type categorization convention in atris/wiki. Horizon slug prefix system documented with known types (loop-*, wiki-*, verify-*, refactor-*, human-*, agent-*) and inference rules from scoreEndgameCandidates. Exit: Type guide written, examples clear. [endgame]
 
 ---
