@@ -29,12 +29,18 @@ then /endgame picks the next horizon at the boundary.
 
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
-- **T32:** Spec the `atris claim` / `atris release` CLI surface — append a `## CLI surface` block to `atris/features/agent-coordinator/idea.md` with usage, flags, exit codes (0 = claimed, 2 = already claimed by other, 3 = stale-broken), and a 4-line example session showing first-claimer-wins. Exit: block ready for an executor to implement against. [explore]
 - **T33:** Draft the arbitration rules as a `lessons.md` candidate — write `atris/features/agent-coordinator/arbitration.md` with the first-claimer-wins / loser-halts / stale-expiry / human-override rules, each as a one-liner in `lessons.md` shape (`- **[date] slug** — kind — text`). Exit: file exists with ≥4 rules. [explore]
 
 ---
 
 ## In Progress
+
+- **T32:** Spec the `atris claim`/`atris release` CLI surface — append `## CLI surface` section to `atris/features/agent-coordinator/idea.md` after `## Schema: lock file` (~line 311) with four parts: (a) usage lines `atris claim <path> --task T# --agent <name> [--ttl <sec>] [--force]` and `atris release <path>`; (b) flag table (name / type / default / purpose) covering `--task`, `--agent`, `--ttl`, `--force`; (c) exit codes `0`=claimed, `1`=usage error, `2`=already claimed by a different agent, `3`=stale/broken lock found (reclaimable only with `--force`); (d) one 4-line fenced shell example showing agents A and B racing on `commands/autopilot.js` — A runs `atris claim` first and exits `0`, B runs the same command and exits `2` (first-claimer-wins). Must cite the filename encoding rule from `## Schema: lock file` and the hybrid claim-in-git/heartbeat-local storage from `## Decision: lock storage` so the executor has no guesswork. Scope: 1 file, append-only, ~60 lines. Exit: section exists with all four parts; executor can implement `commands/claim.js` + `commands/release.js` against it without asking questions. [explore]
+  **Claimed by:** Executor at 2026-04-09T03:28:55.542Z
+  **Stage:** DO
+
+
+
 
 
 
@@ -42,7 +48,10 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
-- [x] T38: Decided `businessStatus` is out of scope for human-output v1 — audited `commands/context-sync.js:55` against a live `node bin/atris.js status pallet` capture (339 lines / 94 chars max on an unsynced workspace, plain-language `You changed:` / `Computer changed:` / `Everything up to date.` shape, no ASCII boxes). Appended `## Decision: businessStatus scope` to `atris/features/human-output/idea.md:149-193` with choice (a) leave as power-user diff surface, four-point rationale (different reader, already plain for purpose, out of original scope, four-state output doesn't flatten to approve/hold binary), and explicit non-goal block deferring any rollup/truncation work to a future `businessStatus-polish` feature. `atris/features/*` is gitignored so idea.md stays local (2026-04-08)
+- [x] T47: Reconciled the Endstate contract docs with the shipped harness — `contract.md` now marks the benchmark rehearsal-ready, `endgame.md` now treats receipt emission/scoring/replay as already true, and both point at the remaining real gap: publish one real head-to-head result on pinned snapshots. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
+- [x] T46: Added a one-command benchmark rehearsal surface — `atris experiments replay endstate` now validates both packs, emits fresh dry-run receipts, and compares the latest result in one end-to-end command. Verification: `node --test test/experiments.test.js` passed `13/13` and `npm test` passed `132/132` on 2026-04-08. [reviewed]
+- [x] T45: Added a receipt-compare surface for the benchmark harness — `atris experiments compare endstate` now reads the latest baseline + stack artifacts, prints the side-by-side scorecard, and declares `stack wins` or `no winner yet` by the Level 1 rule. Verification: `node --test test/experiments.test.js` and `npm test` green on 2026-04-08, with the new compare smoke included. [reviewed]
+- [x] T38: Decided `businessStatus` is out of scope for human-output v1 — audited `commands/context-sync.js:55` against a live `node bin/atris.js status pallet` capture (339 lines / 94 chars max on an unsynced workspace, plain-language `You changed:` / `Computer changed:` / `Everything up to date.` shape, no ASCII boxes). Appended `## Decision: businessStatus scope` to `atris/features/human-output/idea.md:149-193` with choice (a) leave as power-user diff surface, four-point rationale (different reader, already plain for purpose, out of original scope, four-state output doesn't flatten to approve/hold binary), and explicit non-goal block deferring any rollup/truncation work to a future `businessStatus-polish` feature. `atris/features/*` is gitignored so idea.md stays local (2026-04-08) [reviewed]
 - [x] T40: Fixed the same stale `atris-labs` path drift in `atris/wiki/systems/atris-labs.md` — frontmatter `sources:` repointed from the ghost `atris-business/atris-labs/MEMBER.md` to real `atris-business/atris-labs-1/atris/MEMBER.md`, and the body line `A standalone Atris workspace at arena/atris-business/atris-labs/` repointed to `atris-business/atris-labs-1/atris/`. `last_compiled` + `updated` verified at `2026-04-08`; no "mini-AGI" / "company-as-mini-AGI" language introduced (neutral "company-as-workspace" framing intact per `feedback_no_mini_agi`). Verified: real source file exists at new path, ghost path is gone (2026-04-08) [reviewed]
 - [x] T44: Added a clean-workspace smoke for the documented benchmark quickstart — `test/experiments.test.js` now executes the public validate + dry-run sequence against a temp workspace, confirms both dry-run receipts land, and keeps the replay docs tied to a passing test. Verification: `node --test test/experiments.test.js` and full `npm test` green on 2026-04-08. [reviewed]
 - [x] T43: Added a public replay quickstart for the benchmark harness — `README.md` now documents the validate + dry-run flow, receipt locations, contract path, and win condition, and `atris/experiments/README.md` mirrors the same repo-root command sequence. [reviewed]
