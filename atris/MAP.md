@@ -408,7 +408,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Recent-signals helper:** `commands/autopilot.js:1037` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
 - **Candidate-horizons helper:** `commands/autopilot.js:1244` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Scoring helper:** `commands/autopilot.js:1128` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 208) to weight candidates by historical reward
-- **Staleness gate:** `commands/autopilot.js:1813` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Task age helper:** `commands/autopilot.js:1850` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
+- **Staleness gate:** `commands/autopilot.js:1879` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Staleness wiring:** `commands/autopilot.js:230` — after sorting suggestions, filters via `checkStaleness`; skips `unverified`/`stale` into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -916,7 +918,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `recordTickCommit()` → `commands/autopilot.js:563-571`
 - `regressionCheck()` → `commands/autopilot.js:579-625`
 - `runTaskOnce()` → `commands/autopilot.js:655-740`
-- `checkStaleness()` → `commands/autopilot.js:1813-1869`
+- `getTaskAgeDays()` → `commands/autopilot.js:1850-1868`
+- `checkStaleness()` → `commands/autopilot.js:1879-1937`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
