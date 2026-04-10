@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+# Pre-commit hook: block changes to lib/reward-config.js unless
+# ATRIS_REWARD_EDIT=1 is set. Keeps the reward judge immutable
+# during normal plan/do/review loops.
+
+if [ "$ATRIS_REWARD_EDIT" = "1" ]; then
+  exit 0
+fi
+
+if git diff --cached --name-only | grep -q '^lib/reward-config\.js$'; then
+  echo "error: lib/reward-config.js is protected."
+  echo "set ATRIS_REWARD_EDIT=1 to override."
+  exit 1
+fi

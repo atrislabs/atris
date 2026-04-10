@@ -382,11 +382,11 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `commands/autopilot.js:1413` (autopilotAtris function)
 - **From-todo mode:** `commands/autopilot.js:1608` (autopilotFromTodo function)
-- **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
+- **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
 - **Reward computer:** `commands/autopilot.js:698` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
 - **Tick registry writer:** `commands/autopilot.js:563` (`recordTickCommit`) — persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
 - **Regression checker:** `commands/autopilot.js:579` (`regressionCheck`) — reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
-- **Judge integrity guard:** `commands/autopilot.js:649` (`verifyJudgeIntegrity`) — SHA-256 checksums `computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
+- **Judge integrity guard:** `commands/autopilot.js:649` (`verifyJudgeIntegrity`) — SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Heartbeat writer:** `commands/autopilot.js:824` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
 - **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
   - Checks 7 signal types in priority order:
@@ -706,7 +706,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Files:**
 
-- `lib/reward-config.js` — Frozen reward constants + judge checksum (immutable by loop)
+- `lib/reward-config.js` — Frozen reward constants + judge checksum (immutable by loop, guarded by `scripts/pre-commit`)
+- `scripts/pre-commit` — Git pre-commit hook: blocks staged changes to `lib/reward-config.js` unless `ATRIS_REWARD_EDIT=1`
 - `lib/scorecard.js` (284 lines) — Scorecard writing, parsing, and endgame closeout metric synthesis
 - `.atris/presidio/scorecards.md` (generated, local-only) — Append-only endgame results log
 - `atris/wiki/concepts/horizon-types.md` — Horizon type categorization guide for slug prefixes and historical reward weighting
@@ -910,9 +911,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `brainstormAtris()` → `commands/brainstorm.js:10-344`
 - `autopilotAtris()` → `commands/autopilot.js:1413-1782`
 - `writeLesson()` → `commands/autopilot.js:538-556`
-- `getVerifyCommand()` → `commands/autopilot.js:565-575`
-- `recordTickCommit()` → `commands/autopilot.js:563-575`
-- `regressionCheck()` → `commands/autopilot.js:579-635`
+- `getVerifyCommand()` → `commands/autopilot.js:633-643`
+- `recordTickCommit()` → `commands/autopilot.js:563-571`
+- `regressionCheck()` → `commands/autopilot.js:579-625`
 - `runTaskOnce()` → `commands/autopilot.js:655-740`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
