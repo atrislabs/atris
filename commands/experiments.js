@@ -351,7 +351,7 @@ function buildBenchmarkArtifact(name, packDir, options) {
         }
       );
 
-      reviewStatus = execution.success ? 'pass' : 'fail';
+      reviewStatus = execution.verifyPass ? 'pass' : 'fail';
       reviewSummary = summarizeReview(execution.reviewOutput);
       tests = inferTestResults(execution.reviewOutput);
     } catch (error) {

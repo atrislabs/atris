@@ -707,7 +707,7 @@ function runTaskOnce(context, options = {}) {
   // After review succeeds, run verify command if present
   let verifyPass = false;
   let verifyRan = false;
-  if (!reviewOutput.includes('failed') && verifyCmd) {
+  if (verifyCmd) {
     verifyRan = true;
     let t0 = Date.now();
     try {
@@ -732,7 +732,7 @@ function runTaskOnce(context, options = {}) {
   }
 
   return {
-    success: !reviewOutput.includes('failed') && (!verifyRan || verifyPass),
+    success: verifyRan && verifyPass,
     elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
     phaseResults,
     reviewOutput,
