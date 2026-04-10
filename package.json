@@ -32,7 +32,8 @@
     "atris/skills/"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "prepare": "cp scripts/pre-commit .git/hooks/pre-commit 2>/dev/null && chmod +x .git/hooks/pre-commit || true"
   },
   "keywords": [
     "atrisdev",
