@@ -236,9 +236,16 @@ async function suggestNextTask(cwd, skipped = new Set()) {
     }
     const age = getTaskAgeDays(fakeTask, todoPath);
     const status = checkStaleness({ title: s.task, age, source: null }, cwd);
-    if (status === 'unverified' || status === 'stale') {
-      staleSkipped.push({ task: s.task, status });
+    if (status === 'stale') {
+      staleSkipped.push({ task: s.task, status, reasoning: null });
       return false;
+    }
+    if (status === 'unverified') {
+      const { fresh, reasoning } = askModelFreshness({ title: s.task, age, source: null }, cwd);
+      if (!fresh) {
+        staleSkipped.push({ task: s.task, status: 'unverified (model: not fresh)', reasoning });
+        return false;
+      }
     }
     return true;
   });
@@ -249,7 +256,7 @@ async function suggestNextTask(cwd, skipped = new Set()) {
       const { logFile } = getLogPath();
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})`);
+      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})${s.reasoning ? ` — ${s.reasoning}` : ''}`);
       const note = `\n### Staleness skip — ${hhmm}\n${lines.join('\n')}\n`;
       if (fs.existsSync(logFile)) {
         const content = fs.readFileSync(logFile, 'utf8');
