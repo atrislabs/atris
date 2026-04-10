@@ -388,8 +388,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Regression checker:** `commands/autopilot.js:579` (`regressionCheck`) — reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
 - **Judge integrity guard:** `commands/autopilot.js:649` (`verifyJudgeIntegrity`) — SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Heartbeat writer:** `commands/autopilot.js:824` (`appendTickSummary`) — appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
-- **Suggestion engine:** `commands/autopilot.js:25` (suggestNextTask function, async)
-  - Checks 7 signal types in priority order:
+- **Suggestion engine:** `commands/autopilot.js:32` (suggestNextTask function, async)
+  - Checks 8 signal types in priority order:
+  - 0. Endgame tasks (current horizon — highest priority)
   - 1. Resume interrupted in-progress tasks
   - 2. Stale wiki pages (source changed since last_compiled)
   - 3. Abandoned tasks (claimed >3 days, never finished)
@@ -410,6 +411,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Scoring helper:** `commands/autopilot.js:1128` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 208) to weight candidates by historical reward
 - **Task age helper:** `commands/autopilot.js:1850` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
 - **Staleness gate:** `commands/autopilot.js:1879` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Model freshness check:** `commands/autopilot.js:1948` (`askModelFreshness`) — called when `checkStaleness` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
 - **Staleness wiring:** `commands/autopilot.js:230` — after sorting suggestions, filters via `checkStaleness`; skips `unverified`/`stale` into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
@@ -920,6 +922,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `runTaskOnce()` → `commands/autopilot.js:655-740`
 - `getTaskAgeDays()` → `commands/autopilot.js:1850-1868`
 - `checkStaleness()` → `commands/autopilot.js:1879-1937`
+- `askModelFreshness()` → `commands/autopilot.js:1948-1988`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
