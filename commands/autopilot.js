@@ -1801,6 +1801,76 @@ async function autopilotAtris(description, options = {}) {
 }
 
 /**
+ * Check whether a task/fact is still actionable.
+ *
+ * @param {{ title: string, age: number, source?: string }} fact
+ *   - title: the task or fact description
+ *   - age: age in days since the task was created/last verified
+ *   - source: optional file path or identifier where the fact originated
+ * @param {string} cwd - workspace root
+ * @returns {'actionable'|'unverified'|'stale'}
+ */
+function checkStaleness(fact, cwd) {
+  const { title, age, source } = fact;
+
+  // Fresh tasks are always actionable
+  if (age <= 7) return 'actionable';
+
+  // Extract searchable keywords from the title (skip short/common words)
+  const keywords = title
+    .replace(/[`\[\](){}]/g, '')
+    .split(/[\s/\\.:,;]+/)
+    .filter(w => w.length > 3)
+    .slice(0, 5);
+
+  if (keywords.length === 0) return 'unverified';
+
+  // Strategy 1: If source file is given, check it still exists
+  if (source) {
+    const sourcePath = path.isAbsolute(source) ? source : path.join(cwd, source);
+    if (!fs.existsSync(sourcePath)) return 'stale';
+  }
+
+  // Strategy 2: grep the codebase for key terms from the title
+  let grepHits = 0;
+  for (const kw of keywords) {
+    try {
+      execSync(`grep -r -l --include='*.js' --include='*.md' -m 1 "${kw}" .`, {
+        cwd,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 10000
+      });
+      grepHits++;
+    } catch {
+      // grep returns non-zero when no match — that's fine
+    }
+  }
+
+  // If none of the keywords appear in the codebase, it's stale
+  if (grepHits === 0) return 'stale';
+
+  // Strategy 3: check git log for recent activity related to the keywords
+  let gitHits = 0;
+  for (const kw of keywords.slice(0, 3)) {
+    try {
+      const out = execSync(
+        `git log --oneline --since="30 days ago" --all --grep="${kw}" -1`,
+        { cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }
+      ).toString().trim();
+      if (out.length > 0) gitHits++;
+    } catch {
+      // git-log failure is non-fatal
+    }
+  }
+
+  // Strong mechanical evidence: grep found terms AND recent git activity
+  if (gitHits > 0) return 'actionable';
+
+  // Grep found terms but no recent git activity — can't fully verify
+  return 'unverified';
+}
+
+/**
  * Entry point when called without a description.
  */
 async function autopilotFromTodo(options = {}) {
@@ -1812,6 +1882,7 @@ module.exports = {
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
+  checkStaleness,
   getIdleTickCount,
   getRecentSignals,
   getTickStatus,
