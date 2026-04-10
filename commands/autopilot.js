@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
@@ -224,7 +224,48 @@ async function suggestNextTask(cwd, skipped = new Set()) {
   }
 
   suggestions.sort((a, b) => a.priority - b.priority);
-  return suggestions[0];
+
+  // Staleness gate: filter out unverified/stale suggestions
+  const staleSkipped = [];
+  const fresh = suggestions.filter(s => {
+    // Build a fake task object for age calculation
+    const fakeTask = { title: s.task, tag: s.kind === 'endgame' ? 'endgame' : null, claimed: null };
+    // For resume kind, try to find the in-progress task's claimed field
+    if (s.kind === 'resume' && todo.inProgress.length > 0) {
+      fakeTask.claimed = todo.inProgress[0].claimed;
+    }
+    const age = getTaskAgeDays(fakeTask, todoPath);
+    const status = checkStaleness({ title: s.task, age, source: null }, cwd);
+    if (status === 'unverified' || status === 'stale') {
+      staleSkipped.push({ task: s.task, status });
+      return false;
+    }
+    return true;
+  });
+
+  // Log skipped items to journal
+  if (staleSkipped.length > 0) {
+    try {
+      const { logFile } = getLogPath();
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})`);
+      const note = `\n### Staleness skip — ${hhmm}\n${lines.join('\n')}\n`;
+      if (fs.existsSync(logFile)) {
+        const content = fs.readFileSync(logFile, 'utf8');
+        const notesIdx = content.indexOf('## Notes');
+        if (notesIdx !== -1) {
+          const insertAt = content.indexOf('\n', notesIdx) + 1;
+          const updated = content.slice(0, insertAt) + note + content.slice(insertAt);
+          fs.writeFileSync(logFile, updated);
+        } else {
+          fs.appendFileSync(logFile, `\n## Notes\n${note}`);
+        }
+      }
+    } catch {}
+  }
+
+  return fresh[0] || null;
 }
 
 /**
@@ -1801,6 +1842,31 @@ async function autopilotAtris(description, options = {}) {
 }
 
 /**
+ * Compute age in days for a task.
+ * Endgame tasks use the Picked: date from TODO.md Endgame section.
+ * In-progress tasks parse timestamp from Claimed by: field.
+ * Fallback returns 0 (fresh).
+ */
+function getTaskAgeDays(task, todoPath) {
+  if (task.claimed) {
+    const tsMatch = task.claimed.match(/\d{4}-\d{2}-\d{2}/);
+    if (tsMatch) {
+      const d = new Date(tsMatch[0]);
+      if (!isNaN(d)) return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+  if (task.tag === 'endgame' && todoPath && fs.existsSync(todoPath)) {
+    const content = fs.readFileSync(todoPath, 'utf8');
+    const m = content.match(/\*\*Picked:\*\*\s*(\d{4}-\d{2}-\d{2})/);
+    if (m) {
+      const d = new Date(m[1]);
+      if (!isNaN(d)) return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+  return 0;
+}
+
+/**
  * Check whether a task/fact is still actionable.
  *
  * @param {{ title: string, age: number, source?: string }} fact
@@ -1835,7 +1901,7 @@ function checkStaleness(fact, cwd) {
   let grepHits = 0;
   for (const kw of keywords) {
     try {
-      execSync(`grep -r -l --include='*.js' --include='*.md' -m 1 "${kw}" .`, {
+      execFileSync('grep', ['-r', '-l', '--include=*.js', '--include=*.md', '-m', '1', kw, '.'], {
         cwd,
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: 10000
@@ -1853,8 +1919,8 @@ function checkStaleness(fact, cwd) {
   let gitHits = 0;
   for (const kw of keywords.slice(0, 3)) {
     try {
-      const out = execSync(
-        `git log --oneline --since="30 days ago" --all --grep="${kw}" -1`,
+      const out = execFileSync(
+        'git', ['log', '--oneline', '--since=30 days ago', '--all', `--grep=${kw}`, '-1'],
         { cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }
       ).toString().trim();
       if (out.length > 0) gitHits++;
@@ -1883,6 +1949,7 @@ module.exports = {
   autopilotFromTodo,
   buildPrompt,
   checkStaleness,
+  getTaskAgeDays,
   getIdleTickCount,
   getRecentSignals,
   getTickStatus,
