@@ -648,7 +648,10 @@ function getVerifyCommand(cwd, taskTitle) {
  */
 function verifyJudgeIntegrity() {
   const crypto = require('crypto');
-  const actual = crypto.createHash('sha256').update(computeTickReward.toString()).digest('hex');
+  const h = crypto.createHash('sha256');
+  h.update(JSON.stringify(REWARD_CONFIG));
+  h.update(computeTickReward.toString());
+  const actual = h.digest('hex');
   return { ok: actual === REWARD_CHECKSUM, expected: REWARD_CHECKSUM, actual };
 }
 

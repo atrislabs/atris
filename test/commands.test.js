@@ -970,9 +970,12 @@ test('REWARD_CONFIG is frozen and cannot be mutated', () => {
   assert.throws(() => { 'use strict'; REWARD_CONFIG.VERIFY_PASS = 999; }, TypeError);
 });
 
-test('REWARD_CHECKSUM matches live computeTickReward source', () => {
+test('REWARD_CHECKSUM matches live REWARD_CONFIG + computeTickReward source', () => {
   const crypto = require('crypto');
-  const actual = crypto.createHash('sha256').update(computeTickReward.toString()).digest('hex');
+  const h = crypto.createHash('sha256');
+  h.update(JSON.stringify(REWARD_CONFIG));
+  h.update(computeTickReward.toString());
+  const actual = h.digest('hex');
   assert.strictEqual(actual, REWARD_CHECKSUM);
 });
 
