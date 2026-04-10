@@ -25,17 +25,14 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 ## In Progress
-- **G3:** Fix H2 gap: audit every code path in runTaskOnce that can return verifyPass=true. Ensure none bypass the actual verify command execution. [endgame]
-  **Verify:** codex exec "Read commands/autopilot.js runTaskOnce end to end. Is there ANY path where verifyPass is true without executing a real verify command? Answer YES or NO only." --output-last-message /tmp/g3-check.txt --full-auto && grep -qi "no" /tmp/g3-check.txt
-- **G4:** Fix H1 gap: prevent same-commit checksum update. Add a test that the REWARD_CHECKSUM in reward-config.js matches the committed version, not the working tree. [endgame]
-  **Verify:** npm test
-
-## In Progress
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+
+- **T1:** Update validate.md Check 1 help sections list (17 sections, removed stale refs)
+- **T2:** Update validate.md Check 6 MAP.md line ref (455-483, was 50-68)
 
 ---

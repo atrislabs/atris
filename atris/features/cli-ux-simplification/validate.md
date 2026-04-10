@@ -1,7 +1,7 @@
 ---
-last_compiled: 2026-04-09
+last_compiled: 2026-04-10
 validated_by: executor
-validation_notes: All source references verified accurate. Help output, TODO.md creation/reading, features/ alignment, and doc specs all confirmed current.
+validation_notes: Check 1 updated — 17 help sections (was 6), removed stale line refs 345/361/377. Check 6 updated — MAP.md plan/do/review at lines 455-483 (was 50-68).
 sources:
   - bin/atris.js:199-337 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
@@ -21,9 +21,8 @@ sources:
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Cloud & agents
+- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-333)
 - [x] Core workflow grouped: plan, do, review, run (lines 226-230)
-- [x] plan/do/review descriptions mention TODO.md (lines 345, 361, 377)
 - [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 249)
 - [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 247-248)
 
@@ -54,7 +53,7 @@ sources:
 - [x] atris.md Phase 3 reframed as TODO-based task context system (not TASK_CONTEXTS.md)
 - [x] GETTING_STARTED.md references TODO.md as primary working set
 - [x] PERSONA.md reflects plan→do→review as core loop
-- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 50-68)
+- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 455-483)
 
 ## Context
 
