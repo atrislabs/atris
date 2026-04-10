@@ -25,8 +25,6 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **S2:** Wire staleness gate into `suggestNextTask`. Before proposing any task, call `checkStaleness`. Skip `unverified` and `stale`. Log skipped items to journal. [endgame]
-  **Verify:** npm test
 - **S3:** Add `askModelFreshness(fact, cwd)` function. When mechanical check fails, call local model (`codex exec` or `claude -p`) with "Is this still true? Check the codebase." Returns yes/no + reasoning. [endgame]
   **Verify:** node -e "const {askModelFreshness}=require('./commands/autopilot'); process.exit(typeof askModelFreshness==='function'?0:1)"
 - **S4:** Add `[unverified]` tag to TODO parser. Tasks tagged `[unverified]` are readable but never proposed. Only human or fresh verification removes the tag. [endgame]
@@ -35,15 +33,15 @@ then /endgame picks the next horizon at the boundary.
   **Verify:** grep -q "still relevant" commands/autopilot.js
 
 ## In Progress
-- **S1:** Add `checkStaleness(fact, cwd)` to `commands/autopilot.js`. Takes task title + age + source. If older than 7 days: grep/git-log to verify still real. Returns `actionable`, `unverified`, or `stale`. [endgame]
-  **Claimed by:** Executor at 2026-04-10T23:23:52.828Z
-  **Stage:** DO
-  **Verify:** node -e "const {checkStaleness}=require('./commands/autopilot'); process.exit(typeof checkStaleness==='function'?0:1)"
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+
+- **S2a:** Add `getTaskAgeDays(task, todoPath)` helper in `commands/autopilot.js` [endgame]
+- **S2b:** Wire `checkStaleness` gate into `suggestNextTask` with staleSkipped array [endgame]
+- **S2c:** Log staleness-skipped items to journal `## Notes` [endgame]
 
 ---
