@@ -88,6 +88,7 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
     throw new Error(`Target already contains .atris/business.json: ${targetRoot}`);
   }
 
+  const workspaceTemplate = options.templateName || bizMeta.workspace_template || 'business';
   fs.mkdirSync(atrisMetaDir, { recursive: true });
   fs.writeFileSync(businessJsonPath, JSON.stringify({
     business_id: bizMeta.business_id,
@@ -95,11 +96,12 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
     name: bizMeta.name,
     slug: bizMeta.slug,
     owner_email: bizMeta.owner_email || '',
+    workspace_template: workspaceTemplate,
     created_at: new Date().toISOString(),
   }, null, 2));
 
-  syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false });
-  return { targetRoot, businessJsonPath };
+  syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false, templateName: workspaceTemplate });
+  return { targetRoot, businessJsonPath, workspaceTemplate };
 }
 
 function detectBusinessSlug(explicitSlug) {
