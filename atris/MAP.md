@@ -399,7 +399,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
 - **Prompt builder:** `commands/autopilot.js:305` (buildPrompt function) — adapts prompts per task kind, including strategy-specific benchmark runs
-- **Single-task runner:** `commands/autopilot.js:655-740` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, runs verify command after review, returns `verifyCmd`, `verifyRan`, and `verifyPass`
+- **Single-task runner:** `commands/autopilot.js:658-743` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, and `verifyPass`
 - **Verify executor helper:** `commands/autopilot.js:565-575` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
