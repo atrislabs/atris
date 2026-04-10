@@ -1937,6 +1937,57 @@ function checkStaleness(fact, cwd) {
 }
 
 /**
+ * Ask a local model whether a task/fact is still relevant.
+ * Called when checkStaleness returns 'unverified' — the mechanical check
+ * couldn't confirm or deny, so we ask claude -p to inspect the codebase.
+ *
+ * @param {{ title: string, age: number, source?: string }} fact
+ * @param {string} cwd - workspace root
+ * @returns {{ fresh: boolean, reasoning: string }}
+ */
+function askModelFreshness(fact, cwd) {
+  const { title, source } = fact;
+  const sourceHint = source ? `\nOriginal source file: ${source}` : '';
+  const prompt = `You are a staleness checker. Answer with exactly one line: YES or NO, followed by a short reason (under 30 words).
+
+Is this task still relevant to the codebase? Check for the mentioned files, functions, or patterns.
+
+Task: "${title}"${sourceHint}
+
+Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
+
+  const tmpFile = path.join(cwd, '.staleness-prompt.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+
+  try {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Glob,Grep"`;
+    const output = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout: 60000,
+      stdio: 'pipe',
+      maxBuffer: 2 * 1024 * 1024,
+      env
+    }).trim();
+
+    try { fs.unlinkSync(tmpFile); } catch {}
+
+    // Parse YES/NO from the first line of output
+    const firstLine = output.split('\n').find(l => /^\s*(YES|NO)\b/i.test(l)) || output.split('\n')[0] || '';
+    const fresh = /^\s*YES\b/i.test(firstLine);
+    const reasoning = firstLine.replace(/^\s*(YES|NO)\s*/i, '').trim() || output.slice(0, 200);
+
+    return { fresh, reasoning };
+  } catch (err) {
+    try { fs.unlinkSync(tmpFile); } catch {}
+    // On timeout or crash, treat as unverifiable — conservative default
+    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+  }
+}
+
+/**
  * Entry point when called without a description.
  */
 async function autopilotFromTodo(options = {}) {
@@ -1945,6 +1996,7 @@ async function autopilotFromTodo(options = {}) {
 
 module.exports = {
   appendTickSummary,
+  askModelFreshness,
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
