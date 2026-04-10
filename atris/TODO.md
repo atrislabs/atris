@@ -25,23 +25,22 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **S3:** Add `askModelFreshness(fact, cwd)` function. When mechanical check fails, call local model (`codex exec` or `claude -p`) with "Is this still true? Check the codebase." Returns yes/no + reasoning. [endgame]
-  **Verify:** node -e "const {askModelFreshness}=require('./commands/autopilot'); process.exit(typeof askModelFreshness==='function'?0:1)"
+- **S3b:** Wire `askModelFreshness` into `suggestNextTask` at line ~238. When `checkStaleness` returns `unverified`, call `askModelFreshness`. If fresh → propose. If not → skip + log. [execute] [endgame]
+  **Verify:** grep -q "askModelFreshness" commands/autopilot.js && node -e "const src=require('fs').readFileSync('commands/autopilot.js','utf8'); process.exit(src.includes('askModelFreshness')&&src.includes('unverified')?0:1)"
 - **S4:** Add `[unverified]` tag to TODO parser. Tasks tagged `[unverified]` are readable but never proposed. Only human or fresh verification removes the tag. [endgame]
   **Verify:** node -e "const {parseSection}=require('./lib/todo'); process.exit(0)"
 - **S5:** Add human ask path. In interactive mode, print "Is [task] still relevant? y/n" for unverified high-priority items. In auto mode, skip silently. [endgame]
   **Verify:** grep -q "still relevant" commands/autopilot.js
 
 ## In Progress
+- **S3a:** Add `askModelFreshness(fact, cwd)` function in `commands/autopilot.js`. Reuse `claude -p` tmpfile pattern from `executePhaseDetailed`. Prompt: "Is this task still relevant? Check the codebase: [title]". Parse output for yes/no + reasoning. Export it. [execute] [endgame]
+  **Claimed by:** Executor at 2026-04-10T23:41:01.385Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
-
-- **S2a:** Add `getTaskAgeDays(task, todoPath)` helper in `commands/autopilot.js` [endgame]
-- **S2b:** Wire `checkStaleness` gate into `suggestNextTask` with staleSkipped array [endgame]
-- **S2c:** Log staleness-skipped items to journal `## Notes` [endgame]
 
 ---
