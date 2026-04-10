@@ -38,6 +38,7 @@ async function suggestNextTask(cwd, skipped = new Set()) {
   const todo = parseTodo(todoPath);
 
   for (const t of todo.backlog) {
+    if (t.tags && t.tags.includes('unverified')) continue;
     if (t.tag === 'endgame' && !skipped.has(t.title)) {
       suggestions.push({
         task: t.title,
@@ -103,15 +104,17 @@ async function suggestNextTask(cwd, skipped = new Set()) {
   }
 
   // --- Backlog tasks ---
-  for (const t of todo.backlog.slice(0, 1)) {
+  for (const t of todo.backlog) {
+    if (t.tags && t.tags.includes('unverified')) continue;
     if (skipped.has(t.title)) continue;
-    const remaining = todo.backlog.length;
+    const remaining = todo.backlog.filter(b => !(b.tags && b.tags.includes('unverified'))).length;
     suggestions.push({
       task: t.title,
       why: `Next in the backlog${t.tag ? ` (${t.tag})` : ''}. ${remaining} task${remaining > 1 ? 's' : ''} waiting.`,
       kind: 'backlog',
       priority: 5
     });
+    break;
   }
 
   // --- Unprocessed inbox items ---
