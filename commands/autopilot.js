@@ -1380,13 +1380,70 @@ function scoreEndgameCandidates(cwd, candidates) {
 }
 
 /**
+ * Check whether a lesson's bug pattern is still present in the named files.
+ * Parses the lesson line for file paths (e.g. `commands/autopilot.js:116`)
+ * and the slug (e.g. `inbox-parser-eats-hr-separator`). Greps the named
+ * files for slug keywords. If none match → lesson is resolved.
+ *
+ * @param {string} lessonLine - A single line from lessons.md
+ * @param {string} cwd - Current working directory
+ * @returns {boolean} true if the lesson's bug pattern is gone (resolved)
+ */
+function isLessonResolved(lessonLine, cwd) {
+  // Extract slug: bold text after date, e.g. **[2026-04-08] inbox-parser-eats-hr-separator**
+  const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+  if (!slugMatch) return false;
+  const slug = slugMatch[1];
+
+  // Extract file paths: patterns like `commands/autopilot.js:116` or `commands/run.js:157`
+  const fileRefs = [];
+  const filePattern = /`([a-zA-Z0-9_/./-]+\.[a-zA-Z]+(?::\d+(?:-\d+)?)?)`/g;
+  let m;
+  while ((m = filePattern.exec(lessonLine)) !== null) {
+    const ref = m[1].replace(/:\d+(-\d+)?$/, ''); // strip line numbers
+    if (ref.includes('/') || ref.endsWith('.js') || ref.endsWith('.md') || ref.endsWith('.ts')) {
+      fileRefs.push(ref);
+    }
+  }
+
+  if (fileRefs.length === 0) return false;
+
+  // Derive keywords from slug (split on dashes, drop short words)
+  const keywords = slug.split('-').filter(w => w.length > 2);
+  if (keywords.length === 0) return false;
+
+  // Grep each named file for any keyword. If at least one file still matches → not resolved.
+  for (const ref of fileRefs) {
+    const absPath = path.isAbsolute(ref) ? ref : path.join(cwd, ref);
+    if (!fs.existsSync(absPath)) continue; // file deleted = pattern gone
+    for (const kw of keywords) {
+      try {
+        execFileSync('grep', ['-q', '-i', kw, absPath], {
+          cwd,
+          timeout: 5000,
+          stdio: ['ignore', 'ignore', 'ignore']
+        });
+        // grep exited 0 → keyword found → lesson still applies
+        return false;
+      } catch {
+        // grep exited non-zero → keyword not found in this file, continue
+      }
+    }
+  }
+
+  // No keyword matched in any named file → lesson is resolved
+  return true;
+}
+
+/**
  * Propose 3 candidate next horizons for the autopilot loop. Combines
  * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
  * to imagine what to work on next, spawns `claude -p`, and parses the
  * JSON response into `[{ title, confidence, rationale }]`.
  *
- * Throws on subprocess failure or when fewer than 3 valid candidates
- * come back. Callers are responsible for catching and falling back.
+ * Filters out candidates derived from resolved lessons (bug pattern no
+ * longer present in named files). Resolved lessons get tagged `[resolved]`
+ * in lessons.md. Requires at least 1 valid candidate after filtering.
  */
 async function proposeCandidateHorizons(cwd) {
   const idleTicks = getIdleTickCount(cwd);
@@ -1482,11 +1539,50 @@ Reply with the JSON array and nothing else.`;
       c.rationale.length > 0
     );
 
-  if (candidates.length < 3) {
-    throw new Error(`proposeCandidateHorizons: expected 3 valid candidates, got ${candidates.length}`);
+  if (candidates.length < 1) {
+    throw new Error(`proposeCandidateHorizons: expected at least 1 valid candidate, got ${candidates.length}`);
   }
 
-  return candidates.slice(0, 3);
+  // Filter out candidates derived from resolved lessons
+  const lessonSignals = getRecentSignals(cwd);
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  const filtered = [];
+  for (const c of candidates) {
+    const combinedText = `${c.title} ${c.rationale}`.toLowerCase();
+    let droppedByLesson = false;
+    for (const lessonLine of lessonSignals.recentLessons) {
+      const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+      if (!slugMatch) continue;
+      if (lessonLine.includes('[resolved]')) continue;
+      const slug = slugMatch[1];
+      // Fuzzy match: check if slug keywords appear in the candidate text
+      const slugWords = slug.split('-').filter(w => w.length > 2);
+      const matchCount = slugWords.filter(w => combinedText.includes(w)).length;
+      if (matchCount < Math.ceil(slugWords.length * 0.5)) continue;
+      // Candidate matches this lesson — check if the lesson is resolved
+      if (isLessonResolved(lessonLine, cwd)) {
+        // Tag lesson [resolved] in lessons.md
+        try {
+          let content = fs.readFileSync(lessonsPath, 'utf8');
+          const taggedLine = lessonLine.replace(
+            /\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*/,
+            '**[$1] $2** [resolved]'
+          );
+          content = content.replace(lessonLine.trim(), taggedLine.trim());
+          fs.writeFileSync(lessonsPath, content);
+        } catch {}
+        droppedByLesson = true;
+        break;
+      }
+    }
+    if (!droppedByLesson) filtered.push(c);
+  }
+
+  if (filtered.length < 1) {
+    throw new Error('proposeCandidateHorizons: all candidates were from resolved lessons');
+  }
+
+  return filtered.slice(0, 3);
 }
 
 async function autopilotAtris(description, options = {}) {
@@ -2035,6 +2131,7 @@ module.exports = {
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
+  isLessonResolved,
   isStillTrue,
   getTaskAgeDays,
   getIdleTickCount,
