@@ -403,16 +403,17 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Single-task runner:** `commands/autopilot.js:658-743` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, and `verifyPass`
 - **Verify executor helper:** `commands/autopilot.js:565-575` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
-- **Phase executor:** `commands/autopilot.js:340` (executePhaseDetailed function) — runs `claude -p`
-- **Approval gate:** `commands/autopilot.js:290` (askApproval function) — enter/skip/quit
+- **Phase executor:** `commands/autopilot.js:325` (executePhaseDetailed function) — runs `claude -p`
+- **Approval gate:** `commands/autopilot.js:293` (askApproval function) — enter/skip/quit
+- **Human freshness check:** `commands/autopilot.js:311` (`askHumanFreshness`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `checkStaleness` returns `unverified`
 - **Idle-tick helper:** `commands/autopilot.js:1002` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:1037` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
 - **Candidate-horizons helper:** `commands/autopilot.js:1244` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (3 validated entries); throws on parse/count failure
 - **Scoring helper:** `commands/autopilot.js:1128` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 208) to weight candidates by historical reward
-- **Task age helper:** `commands/autopilot.js:1850` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
-- **Staleness gate:** `commands/autopilot.js:1879` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
-- **Model freshness check:** `commands/autopilot.js:1948` (`askModelFreshness`) — called when `checkStaleness` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
-- **Staleness wiring:** `commands/autopilot.js:230` — after sorting suggestions, filters via `checkStaleness`; skips `unverified`/`stale` into `staleSkipped` array; logs to journal `## Notes`.
+- **Task age helper:** `commands/autopilot.js:1857` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
+- **Staleness gate:** `commands/autopilot.js:1914` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Model freshness check:** `commands/autopilot.js:1983` (`askModelFreshness`) — called when `checkStaleness` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
+- **Staleness wiring:** `commands/autopilot.js:228` — after sorting suggestions, filters via `checkStaleness`; in auto mode, `unverified` items escalate to `askModelFreshness`; in interactive mode, prompts human via `askHumanFreshness`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -920,9 +921,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `recordTickCommit()` → `commands/autopilot.js:563-571`
 - `regressionCheck()` → `commands/autopilot.js:579-625`
 - `runTaskOnce()` → `commands/autopilot.js:655-740`
-- `getTaskAgeDays()` → `commands/autopilot.js:1850-1868`
-- `checkStaleness()` → `commands/autopilot.js:1879-1937`
-- `askModelFreshness()` → `commands/autopilot.js:1948-1988`
+- `getTaskAgeDays()` → `commands/autopilot.js:1857-1874`
+- `askHumanFreshness()` → `commands/autopilot.js:311-322`
+- `checkStaleness()` → `commands/autopilot.js:1914-1972`
+- `askModelFreshness()` → `commands/autopilot.js:1983-2023`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
