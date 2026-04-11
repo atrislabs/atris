@@ -23,24 +23,19 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **L2a:** Create `commands/release.js` with `releaseAtris()` function. Reads git log since last tag (`git describe --tags --abbrev=0` → `git log <tag>..HEAD --oneline`), computes changelog, determines bump type (minor if any scorecard has reward≥5, else patch), bumps `package.json` version via `semver`-style string replace, commits, tags `vX.Y.Z`, pushes + pushes tags, calls `gh release create` with changelog body. Support `--dry-run` flag that prints draft without mutating. [endgame] [execute]
-  **Verify:** node bin/atris.js release --dry-run 2>&1 | grep -q "draft"
-- **L2b:** Wire `release` into CLI router. Add `'release'` to `knownCommands` array at `bin/atris.js:427`. Add `else if (command === 'release')` dispatch block near line ~1005 that parses `--dry-run` flag and calls `require('../commands/release').releaseAtris({ dryRun })`. [endgame] [execute]
-  **Verify:** node bin/atris.js help 2>&1 | grep -q "release"
-- **L2c:** Add `/launch` post draft output to `releaseAtris()`. After release succeeds (or in dry-run), print a 3-emoji-bullet launch post (Twitter+LinkedIn format per launch skill) summarizing the version, top changes, and link placeholder. [endgame] [execute]
-  **Verify:** node bin/atris.js release --dry-run 2>&1 | grep -q "launch"
-- **L3:** Bump to v3.2.0 final, commit release notes to README. [endgame]
-  **Verify:** node -e "process.exit(require('./package.json').version==='3.2.0'?0:1)"
+- **L4:** Commit README release notes + any unstaged v3.2.0 changes. Tag `v3.2.0`. [execute]
+  **Verify:** git tag --list v3.2.0 | grep -q v3.2.0
 
 ## In Progress
+- **L3:** Add v3.2.0 release notes section to README.md — summarize staleness gate, lesson gate, `atris release` command, shell injection fix, Codex hardening. Insert above `## Update` near EOF. [execute]
+  **Verify:** grep -q "v3.2.0" README.md
+  **Claimed by:** Executor at 2026-04-11T04:45:49.511Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
-- **L2a:** Create `commands/release.js` with `releaseAtris()` function [endgame] [reviewed]
-- **L2b:** Wire `release` into CLI router [endgame] [reviewed]
-- **L2c:** Add `/launch` post draft output to `releaseAtris()` [endgame] [reviewed]
 
 ---

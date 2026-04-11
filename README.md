@@ -179,6 +179,14 @@ atris skill link [--all]
 
 For Codex, copy any skill folder into `~/.codex/skills/`.
 
+## v3.2.0
+
+- **Staleness gate** — tasks tagged `[unverified]` are skipped at the moment of use, not pruned eagerly. Three-state model: actionable / unverified / deleted.
+- **Lesson gate** — `isLessonResolved` checks whether a lesson already shipped before proposing new horizons from it. Prevents the loop from re-solving solved problems.
+- **`atris release`** — new command: tags the version, bumps package.json, creates a GitHub release, and drafts a `/launch` post in one shot.
+- **Shell injection fix** — `checkStaleness` switched from `execSync` string interpolation to `execFileSync` with args arrays. Markdown-derived content (task titles, inbox items) no longer reaches a shell.
+- **Codex hardening** — `atris activate` and `atris` entry point detect Codex environments and write `AGENTS.md` so Codex sessions start with workspace context.
+
 ## Update
 
 ```bash
