@@ -1,9 +1,9 @@
 ---
 last_compiled: 2026-04-10
 validated_by: executor
-validation_notes: Check 1 updated — 17 help sections (was 6), removed stale line refs 345/361/377. Check 6 updated — MAP.md plan/do/review at lines 455-483 (was 50-68).
+validation_notes: Line-number drift fix (2026-04-11) — showHelp 199-338, sections 220-334, visualize 250, brainstorm/autopilot 248-249, MAP features/ line 90, MAP plan/do/review 477-505. All source refs re-verified against current code.
 sources:
-  - bin/atris.js:199-337 (showHelp function — core workflow section)
+  - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
   - commands/workflow.js:83-92 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:280-281 (planAtris — include TODO.md in user prompt)
@@ -21,10 +21,10 @@ sources:
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-333)
+- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-334)
 - [x] Core workflow grouped: plan, do, review, run (lines 226-230)
-- [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 249)
-- [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 247-248)
+- [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 250)
+- [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 248-249)
 
 ### 2. TODO.md Creation & Usage
 - [x] `atris init` creates atris/TODO.md with placeholder content (commands/init.js:398-422)
@@ -44,7 +44,7 @@ sources:
 - [x] No error messages if TASK_CONTEXTS.md missing (graceful degradation)
 
 ### 5. Features/ Alignment
-- [x] init.js creates atris/features/ directory (v1.9.6 update, per MAP.md line 89)
+- [x] init.js creates atris/features/ directory (v1.9.6 update, per MAP.md line 90)
 - [x] init.js scaffolds atris/features/README.md template (templates/features-readme.md)
 - [x] features/cli-ux-simplification listed in features/README.md as completed (line 142-149)
 - [x] feature/README.md distinguishes "substantial work" (features/) from "simple tasks" (TODO.md) (lines 155-165)
@@ -53,7 +53,7 @@ sources:
 - [x] atris.md Phase 3 reframed as TODO-based task context system (not TASK_CONTEXTS.md)
 - [x] GETTING_STARTED.md references TODO.md as primary working set
 - [x] PERSONA.md reflects plan→do→review as core loop
-- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 455-483)
+- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 477-505)
 
 ## Context
 
