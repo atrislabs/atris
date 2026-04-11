@@ -1,7 +1,7 @@
 ---
-last_compiled: 2026-04-10
+last_compiled: 2026-04-11
 validated_by: executor
-validation_notes: Line-number drift fix (2026-04-11) — showHelp 199-338, sections 220-334, visualize 250, brainstorm/autopilot 248-249, MAP features/ line 90, MAP plan/do/review 477-505. All source refs re-verified against current code.
+validation_notes: Re-verified (2026-04-11) — all 6 source refs confirmed current. showHelp 199-338, init TODO.md 398-422, workflow plan/do/review 83-92/280-281/427-437/746-755, MAP features/ line 90, MAP plan/do/review 477-505. Zero drift.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
