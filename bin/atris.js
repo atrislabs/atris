@@ -237,6 +237,7 @@ function showHelp() {
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
@@ -424,7 +425,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // All other commands are lazy-loaded inline (require() only when invoked)
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review',
+const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'align', 'terminal', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop',
@@ -1002,6 +1003,11 @@ if (command === 'init') {
 } else if (command === 'verify') {
   const taskId = process.argv[3] || null;
   require('../commands/verify').verifyAtris(taskId);
+} else if (command === 'release') {
+  const dryRun = process.argv.includes('--dry-run');
+  require('../commands/release').releaseAtris({ dryRun })
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'search') {
   const keyword = process.argv.slice(3).join(' ');
   searchJournal(keyword);
