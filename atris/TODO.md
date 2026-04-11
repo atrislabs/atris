@@ -23,19 +23,15 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Backlog
-- **L4:** Commit README release notes + any unstaged v3.2.0 changes. Tag `v3.2.0`. [execute]
-  **Verify:** git tag --list v3.2.0 | grep -q v3.2.0
 
 ## In Progress
-- **L3:** Add v3.2.0 release notes section to README.md — summarize staleness gate, lesson gate, `atris release` command, shell injection fix, Codex hardening. Insert above `## Update` near EOF. [execute]
-  **Verify:** grep -q "v3.2.0" README.md
-  **Claimed by:** Executor at 2026-04-11T04:45:49.511Z
-  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
+
+- **T1:** Updated drifted line refs in cli-ux-simplification validate.md (6 refs fixed)
 
 ---
