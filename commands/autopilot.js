@@ -29,7 +29,7 @@ const PHASE_TIMEOUT = 600000; // 10 min per phase
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
  */
-async function suggestNextTask(cwd, skipped = new Set()) {
+async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
@@ -53,7 +53,7 @@ async function suggestNextTask(cwd, skipped = new Set()) {
   // --- Resume interrupted work ---
   if (todo.inProgress.length > 0) {
     const t = todo.inProgress[0];
-    if (!skipped.has(t.title)) {
+    if (!(t.tags && t.tags.includes('unverified')) && !skipped.has(t.title)) {
       suggestions.push({
         task: t.title,
         why: `This was already started${t.claimed ? ` by ${t.claimed}` : ''} but never finished.`,
@@ -230,10 +230,9 @@ async function suggestNextTask(cwd, skipped = new Set()) {
 
   // Staleness gate: filter out unverified/stale suggestions
   const staleSkipped = [];
-  const fresh = suggestions.filter(s => {
-    // Build a fake task object for age calculation
+  const fresh = [];
+  for (const s of suggestions) {
     const fakeTask = { title: s.task, tag: s.kind === 'endgame' ? 'endgame' : null, claimed: null };
-    // For resume kind, try to find the in-progress task's claimed field
     if (s.kind === 'resume' && todo.inProgress.length > 0) {
       fakeTask.claimed = todo.inProgress[0].claimed;
     }
@@ -241,17 +240,27 @@ async function suggestNextTask(cwd, skipped = new Set()) {
     const status = checkStaleness({ title: s.task, age, source: null }, cwd);
     if (status === 'stale') {
       staleSkipped.push({ task: s.task, status, reasoning: null });
-      return false;
+      continue;
     }
     if (status === 'unverified') {
-      const { fresh, reasoning } = askModelFreshness({ title: s.task, age, source: null }, cwd);
-      if (!fresh) {
-        staleSkipped.push({ task: s.task, status: 'unverified (model: not fresh)', reasoning });
-        return false;
+      if (auto) {
+        // Auto mode: use model check
+        const result = askModelFreshness({ title: s.task, age, source: null }, cwd);
+        if (!result.fresh) {
+          staleSkipped.push({ task: s.task, status: 'unverified (model: not fresh)', reasoning: result.reasoning });
+          continue;
+        }
+      } else {
+        // Interactive mode: ask the human
+        const result = await askHumanFreshness(s.task);
+        if (!result.fresh) {
+          staleSkipped.push({ task: s.task, status: 'unverified (human: not relevant)', reasoning: null });
+          continue;
+        }
       }
     }
-    return true;
-  });
+    fresh.push(s);
+  }
 
   // Log skipped items to journal
   if (staleSkipped.length > 0) {
@@ -290,6 +299,22 @@ function askApproval() {
       if (a === 'q' || a === 'quit' || a === 'exit') resolve('quit');
       else if (a === 's' || a === 'skip') resolve('skip');
       else resolve('approve');
+    });
+  });
+}
+
+/**
+ * Ask the human whether an unverified task is still relevant.
+ * Interactive mode only — in auto mode, caller skips silently.
+ * Returns { fresh: boolean }.
+ */
+function askHumanFreshness(taskTitle) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`  is "${taskTitle}" still relevant? y/n → `, (answer) => {
+      rl.close();
+      const a = (answer || '').trim().toLowerCase();
+      resolve({ fresh: a === 'y' || a === 'yes' });
     });
   });
 }
@@ -1561,7 +1586,7 @@ async function autopilotAtris(description, options = {}) {
       break;
     }
 
-    const suggestion = await suggestNextTask(cwd, skipped);
+    const suggestion = await suggestNextTask(cwd, skipped, { auto });
 
     if (!suggestion) {
       tickOutcome = 'idle';
