@@ -31,6 +31,7 @@ rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport" commands/loop.js # Wiki upkeep loop
 rg "runAtris" commands/run.js               # Run command (autonomous loop)
 rg "verifyAtris" commands/verify.js         # Verify command
+rg "releaseAtris" commands/release.js      # Release command
 rg "searchJournal" bin/atris.js             # Search command (inline)
 rg "gmailCommand" commands/integrations.js  # Integration commands
 
@@ -340,6 +341,20 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Confidence before marking work complete
 
 **Search:** `rg "verifyAtris" commands/verify.js`
+
+### Feature: Release (`atris release`)
+
+**Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
+
+- **Entry point:** `commands/release.js:15` (releaseAtris function)
+- **Flags:** `--dry-run` — print draft without mutating
+- **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → bump package.json → commit → tag → push → `gh release create` → print launch post
+- **Helpers:**
+  - `determineBumpType()` → `commands/release.js:127`
+  - `bumpVersion()` → `commands/release.js:149`
+  - `printLaunchPost()` → `commands/release.js:163`
+
+**Search:** `rg "releaseAtris" commands/release.js`
 
 ### Feature: Analytics (`atris analytics`)
 
@@ -929,6 +944,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
+- `releaseAtris()` → `commands/release.js:15-122`
 - `gmailCommand()` etc. → `commands/integrations.js`
 
 **Risk:** Breaking changes affect all users
