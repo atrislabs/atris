@@ -2126,6 +2126,7 @@ async function autopilotFromTodo(options = {}) {
 
 module.exports = {
   appendTickSummary,
+  askHuman,
   askModel,
   autopilotAtris,
   autopilotFromTodo,
