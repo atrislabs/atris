@@ -32,6 +32,4 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
-- **T1:** Updated drifted line refs in cli-ux-simplification validate.md (6 refs fixed)
-
 ---

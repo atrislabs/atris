@@ -1544,13 +1544,12 @@ Reply with the JSON array and nothing else.`;
   }
 
   // Filter out candidates derived from resolved lessons
-  const lessonSignals = getRecentSignals(cwd);
   const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
   const filtered = [];
   for (const c of candidates) {
     const combinedText = `${c.title} ${c.rationale}`.toLowerCase();
     let droppedByLesson = false;
-    for (const lessonLine of lessonSignals.recentLessons) {
+    for (const lessonLine of signals.recentLessons) {
       const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
       if (!slugMatch) continue;
       if (lessonLine.includes('[resolved]')) continue;
