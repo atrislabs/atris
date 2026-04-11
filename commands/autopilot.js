@@ -237,7 +237,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       fakeTask.claimed = todo.inProgress[0].claimed;
     }
     const age = getTaskAgeDays(fakeTask, todoPath);
-    const status = checkStaleness({ title: s.task, age, source: null }, cwd);
+    const status = isStillTrue({ title: s.task, age, source: null }, cwd);
     if (status === 'stale') {
       staleSkipped.push({ task: s.task, status, reasoning: null });
       continue;
@@ -245,14 +245,14 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     if (status === 'unverified') {
       if (auto) {
         // Auto mode: use model check
-        const result = askModelFreshness({ title: s.task, age, source: null }, cwd);
+        const result = askModel({ title: s.task, age, source: null }, cwd);
         if (!result.fresh) {
           staleSkipped.push({ task: s.task, status: 'unverified (model: not fresh)', reasoning: result.reasoning });
           continue;
         }
       } else {
         // Interactive mode: ask the human
-        const result = await askHumanFreshness(s.task);
+        const result = await askHuman(s.task);
         if (!result.fresh) {
           staleSkipped.push({ task: s.task, status: 'unverified (human: not relevant)', reasoning: null });
           continue;
@@ -308,7 +308,7 @@ function askApproval() {
  * Interactive mode only — in auto mode, caller skips silently.
  * Returns { fresh: boolean }.
  */
-function askHumanFreshness(taskTitle) {
+function askHuman(taskTitle) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(`  is "${taskTitle}" still relevant? y/n → `, (answer) => {
@@ -1911,7 +1911,7 @@ function getTaskAgeDays(task, todoPath) {
  * @param {string} cwd - workspace root
  * @returns {'actionable'|'unverified'|'stale'}
  */
-function checkStaleness(fact, cwd) {
+function isStillTrue(fact, cwd) {
   const { title, age, source } = fact;
 
   // Fresh tasks are always actionable
@@ -1973,14 +1973,14 @@ function checkStaleness(fact, cwd) {
 
 /**
  * Ask a local model whether a task/fact is still relevant.
- * Called when checkStaleness returns 'unverified' — the mechanical check
+ * Called when isStillTrue returns 'unverified' — the mechanical check
  * couldn't confirm or deny, so we ask claude -p to inspect the codebase.
  *
  * @param {{ title: string, age: number, source?: string }} fact
  * @param {string} cwd - workspace root
  * @returns {{ fresh: boolean, reasoning: string }}
  */
-function askModelFreshness(fact, cwd) {
+function askModel(fact, cwd) {
   const { title, source } = fact;
   const sourceHint = source ? `\nOriginal source file: ${source}` : '';
   const prompt = `You are a staleness checker. Answer with exactly one line: YES or NO, followed by a short reason (under 30 words).
@@ -2031,11 +2031,11 @@ async function autopilotFromTodo(options = {}) {
 
 module.exports = {
   appendTickSummary,
-  askModelFreshness,
+  askModel,
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
-  checkStaleness,
+  isStillTrue,
   getTaskAgeDays,
   getIdleTickCount,
   getRecentSignals,
