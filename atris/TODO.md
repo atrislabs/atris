@@ -24,17 +24,16 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-
 ## In Progress
+
+- **T1:** Fix two stale line refs in `atris/features/cli-ux-simplification/validate.md`: Check 1 bullet 1 end-line 220-334 → 220-335 (line 335 = `help` entry under Other), Check 6 bullet 4 MAP.md lines 477-505 → 481-509 (section shifted ~4 lines). Done when: both ranges match source. [execute]
+  **Claimed by:** Executor at 2026-04-13T09:20:10.233Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
 ---
 
 ## Completed
-
-- **T2a:** Add `--name` flag to `parseOnboardFlags` and auto-scaffold `.atris/business.json` in `onboardBusiness()` [done]
-- **T2b:** Write starter action as a task to `atris/TODO.md` under Backlog after onboarding [done]
-- **T2c:** Add `business onboard` to help text and test for bare-directory bootstrap [done]
 
 ---
