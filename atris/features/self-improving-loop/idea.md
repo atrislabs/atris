@@ -1,8 +1,8 @@
 # Self-Improving Loop
 
-> **Status:** planning
+> **Status:** shipped (v3.1.0–v3.3.0)
 > **Created:** 2026-02-09
-> **Last Updated:** 2026-02-09
+> **Last Updated:** 2026-04-13
 
 ---
 
