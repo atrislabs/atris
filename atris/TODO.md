@@ -32,6 +32,4 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
-- **T1:** Fix validate.md Check 5 bullet 2: replaced stale "(templates/features-readme.md)" with "(inline content, init.js:486)" [done]
-
 ---
