@@ -58,7 +58,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
 - Loads context from state detection
-- Shows atrisDev protocol instructions
+- Shows atris protocol instructions
 - Tells agents to: visualize → approve → build → review
 - **Examples:**
 - `atris` → Shows context + instructions
@@ -421,16 +421,16 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Lesson writer helper:** `commands/autopilot.js:538-556` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:325` (executePhaseDetailed function) — runs `claude -p`
 - **Approval gate:** `commands/autopilot.js:293` (askApproval function) — enter/skip/quit
-- **Human freshness check:** `commands/autopilot.js:311` (`askHumanFreshness`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `checkStaleness` returns `unverified`
+- **Human freshness check:** `commands/autopilot.js:311` (`askHuman`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
 - **Idle-tick helper:** `commands/autopilot.js:1002` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:1225` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
 - **Lesson-resolved checker:** `commands/autopilot.js:1392` (`isLessonResolved`) — parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
 - **Candidate-horizons helper:** `commands/autopilot.js:1448` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering resolved lessons); tags resolved lessons `[resolved]` in lessons.md
 - **Scoring helper:** `commands/autopilot.js:1128` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 208) to weight candidates by historical reward
 - **Task age helper:** `commands/autopilot.js:1857` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
-- **Staleness gate:** `commands/autopilot.js:1914` (`checkStaleness`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
-- **Model freshness check:** `commands/autopilot.js:1983` (`askModelFreshness`) — called when `checkStaleness` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
-- **Staleness wiring:** `commands/autopilot.js:228` — after sorting suggestions, filters via `checkStaleness`; in auto mode, `unverified` items escalate to `askModelFreshness`; in interactive mode, prompts human via `askHumanFreshness`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
+- **Staleness gate:** `commands/autopilot.js:1914` (`isStillTrue`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
+- **Model freshness check:** `commands/autopilot.js:1983` (`askModel`) — called when `isStillTrue` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
+- **Staleness wiring:** `commands/autopilot.js:228` — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -939,9 +939,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `regressionCheck()` → `commands/autopilot.js:579-625`
 - `runTaskOnce()` → `commands/autopilot.js:655-740`
 - `getTaskAgeDays()` → `commands/autopilot.js:1857-1874`
-- `askHumanFreshness()` → `commands/autopilot.js:311-322`
-- `checkStaleness()` → `commands/autopilot.js:1914-1972`
-- `askModelFreshness()` → `commands/autopilot.js:1983-2023`
+- `askHuman()` → `commands/autopilot.js:311-322`
+- `isStillTrue()` → `commands/autopilot.js:1914-1972`
+- `askModel()` → `commands/autopilot.js:1983-2023`
 - `activateAtris()` → `commands/activate.js:6-129`
 - `cleanAtris()` → `commands/clean.js:12-117`
 - `verifyAtris()` → `commands/verify.js:13-35`
@@ -965,7 +965,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - Phase 3 (lines 129-195): TODO.md generation
 - Phase 4 (lines 184-211): Activation & validation
 - Phase 5 (lines 260-467): Daily workflow + journal protocol
-- Phase 5.2 (lines 469+): atrisDev protocol (visualize → approve → build)
+- Phase 5.2 (lines 469+): atris protocol (visualize → approve → build)
 
 **Version:** v2.5.4
 
@@ -1104,7 +1104,7 @@ User: atris (or atris [task description])
   ↓
 CLI: Loads context (MAP.md, journal, tasks)
   ↓
-CLI: Shows atrisDev protocol instructions
+CLI: Shows atris protocol instructions
   ↓
 Agent: Creates visualization (ASCII diagram)
   ↓
