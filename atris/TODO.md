@@ -24,17 +24,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T2a:** Add `--name` flag to `parseOnboardFlags` and auto-scaffold `.atris/business.json` in `onboardBusiness()` when missing but name provided — so `atris business onboard --name "Foo" --website foo.com` works from a bare directory without `atris business init` first [execute]
-  **Files:** `commands/business.js` (parseOnboardFlags ~:167, readWorkspaceBusinessMeta ~:208, onboardBusiness ~:439)
-  **Exit:** `onboardBusiness('--name', 'Acme', '--website', 'https://acme.com')` succeeds in a directory with no `.atris/business.json`
-
-- **T2b:** Write the starter action as a task to `atris/TODO.md` under Backlog after onboarding — so the loop can pick it up instead of it being prose-only in the cheat sheet [execute]
-  **Files:** `commands/business.js` (onboardBusiness, after cheat sheet write ~:634)
-  **Exit:** after onboard, `atris/TODO.md` contains one backlog task derived from `suggestStarterAction()` output
-
-- **T2c:** Add `business onboard` to help text and add test for bare-directory bootstrap [execute]
-  **Files:** `bin/atris.js` (showHelp ~:275), `test/commands.test.js`
-  **Exit:** `atris help` lists `business onboard`; new test passes for onboard from empty dir with `--name`
 
 ## In Progress
 
@@ -43,5 +32,9 @@ then /endgame picks the next horizon at the boundary.
 ---
 
 ## Completed
+
+- **T2a:** Add `--name` flag to `parseOnboardFlags` and auto-scaffold `.atris/business.json` in `onboardBusiness()` [done]
+- **T2b:** Write starter action as a task to `atris/TODO.md` under Backlog after onboarding [done]
+- **T2c:** Add `business onboard` to help text and test for bare-directory bootstrap [done]
 
 ---
