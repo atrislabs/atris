@@ -1,7 +1,7 @@
 ---
 last_compiled: 2026-04-13
-validated_by: executor
-validation_notes: Re-verified (2026-04-13T07:57) — all 6 source refs confirmed current (zero line-number drift). No source file changes since prior validation (68e49ba). showHelp 199-338, init TODO template 398-422, plan/do/review TODO reads all at documented lines. All 6 checks pass.
+validated_by: validator
+validation_notes: Re-verified (2026-04-13T08:03) — all 6 source refs confirmed current, zero drift. showHelp 199-338, init TODO template 398-422, planAtris TODO read 83-92, planAtris TODO prompt 280-281, doAtris TODO load 427-437, reviewAtris TODO read 746-755. All checks pass.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
