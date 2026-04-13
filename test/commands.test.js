@@ -773,6 +773,10 @@ test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse i
     assert.match(status, /starter onboarding compiled/);
     const log = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'log.md'), 'utf8');
     assert.match(log, /ONBOARD starter onboarding compiled for cashmere-ai/);
+
+    const todoContent = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todoContent, /\[execute\]/);
+    assert.match(todoContent, /Draft a founder-context note/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -812,6 +816,42 @@ test('business onboard can infer signals from sloppy input and local files', asy
     assert.match(fs.readFileSync(briefPath, 'utf8'), /sleep deprived onboarding need something useful fast/);
     assert.match(fs.readFileSync(onePagerPath, 'utf8'), /Map the offer into one loop|Extract the first workflow from local evidence/);
     assert.match(sourcesTxt, /meeting-notes\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business onboard bootstraps from bare directory with --name flag', async () => {
+  const dir = makeTempDir();
+  try {
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--name', 'Acme Corp',
+        '--website', 'https://acme.com',
+        '--contact', 'Jane Doe',
+        '--email', 'jane@acme.com'
+      );
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const bizFile = path.join(dir, '.atris', 'business.json');
+    assert.ok(fs.existsSync(bizFile), '.atris/business.json should exist');
+    const meta = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+    assert.equal(meta.name, 'Acme Corp');
+    assert.equal(meta.slug, 'acme-corp');
+
+    const briefPath = path.join(dir, 'atris', 'wiki', 'briefs', 'acme-corp-starter-brief.md');
+    assert.ok(fs.existsSync(briefPath), 'starter brief should exist');
+    assert.match(fs.readFileSync(briefPath, 'utf8'), /Jane Doe/);
+
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    assert.ok(fs.existsSync(todoPath), 'TODO.md should exist');
+    const todoContent = fs.readFileSync(todoPath, 'utf8');
+    assert.match(todoContent, /Backlog/);
+    assert.match(todoContent, /\[execute\]/);
   } finally {
     cleanupTempDir(dir);
   }

@@ -150,6 +150,7 @@ function parseRecordFlags(args, cwd = process.cwd()) {
 function parseOnboardFlags(args, cwd = process.cwd()) {
   const options = {
     cwd,
+    name: '',
     website: '',
     links: [],
     notes: [],
@@ -164,7 +165,10 @@ function parseOnboardFlags(args, cwd = process.cwd()) {
     const arg = args[i];
     const next = args[i + 1];
 
-    if ((arg === '--website' || arg === '--site') && next) {
+    if ((arg === '--name' || arg === '--business') && next) {
+      options.name = next;
+      i++;
+    } else if ((arg === '--website' || arg === '--site') && next) {
       options.website = next;
       i++;
     } else if ((arg === '--link' || arg === '--url') && next) {
@@ -439,6 +443,20 @@ function suggestStarterAction(signals) {
 async function onboardBusiness(...flags) {
   const options = parseOnboardFlags(flags, process.cwd());
   const cwd = options.cwd || process.cwd();
+
+  const bizFile = path.join(cwd, '.atris', 'business.json');
+  if (!fs.existsSync(bizFile) && options.name) {
+    const slug = slugifyName(options.name);
+    createCanonicalBusinessWorkspace(cwd, {
+      business_id: '',
+      workspace_id: '',
+      name: options.name,
+      slug,
+      owner_email: '',
+      workspace_template: 'business',
+    }, { here: true });
+  }
+
   const bizMeta = readWorkspaceBusinessMeta(cwd);
 
   ensureWorkspaceStateFiles(cwd, {
@@ -632,6 +650,20 @@ ${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` :
   ].filter(Boolean).join('\n') + '\n';
   fs.writeFileSync(cheatSheetPath, operatorSummary, 'utf8');
   fs.writeFileSync(onePagerPath, operatorSummary.replace('# ', '# One Pager — '), 'utf8');
+
+  const todoPath = path.join(cwd, 'atris', 'TODO.md');
+  if (fs.existsSync(todoPath)) {
+    let todoContent = fs.readFileSync(todoPath, 'utf8');
+    const taskLine = `- **Onboard:** ${starterAction.title} — ${starterAction.action} [execute]\n`;
+    const backlogMatch = todoContent.match(/^## Backlog\s*$/m);
+    if (backlogMatch) {
+      const insertAt = backlogMatch.index + backlogMatch[0].length;
+      todoContent = todoContent.slice(0, insertAt) + '\n' + taskLine + todoContent.slice(insertAt);
+    } else {
+      todoContent += '\n## Backlog\n\n' + taskLine;
+    }
+    fs.writeFileSync(todoPath, todoContent, 'utf8');
+  }
 
   writeWikiStatus(cwd, {
     health: `starter onboarding compiled from ${intakeRel}`,

@@ -273,6 +273,7 @@ function showHelp() {
   console.log('');
   console.log('Business:');
   console.log('  business init <name>   - Create canonical business workspace (cloud + local)');
+  console.log('  business onboard       - Onboard from sparse input (--name, --website, --contact)');
   console.log('  business add <slug>    - Connect a business');
   console.log('  business list          - Show connected businesses');
   console.log('  business remove <slug> - Disconnect a business');
