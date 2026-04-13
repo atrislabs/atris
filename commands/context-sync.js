@@ -281,6 +281,11 @@ async function businessLog(slug) {
 }
 
 
+/**
+ * Convert ISO timestamp to human-readable relative time (e.g., "5m ago").
+ * @param {string} isoString - ISO 8601 timestamp
+ * @returns {string|null} Relative time string, or null if no input
+ */
 function _timeSince(isoString) {
   if (!isoString) return null;
   const diff = Date.now() - new Date(isoString).getTime();
