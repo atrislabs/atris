@@ -8,11 +8,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
+const {
+  buildScorecardData,
+  readScorecards,
+  writeScorecard,
+  detectEndgameCompletion
+} = require('../lib/scorecard');
+const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 
 const pkg = require('../package.json');
 
@@ -22,17 +29,31 @@ const PHASE_TIMEOUT = 600000; // 10 min per phase
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
  */
-function suggestNextTask(cwd, skipped = new Set()) {
+async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
-  // --- Resume interrupted work first ---
+  // --- Endgame tasks (highest priority — pursue the current horizon to completion) ---
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
 
+  for (const t of todo.backlog) {
+    if (t.tags && t.tags.includes('unverified')) continue;
+    if (t.tag === 'endgame' && !skipped.has(t.title)) {
+      suggestions.push({
+        task: t.title,
+        why: `Next step in the current endgame. Endgame steps are pursued to completion before any reactive signal.`,
+        kind: 'endgame',
+        priority: 0
+      });
+      break;
+    }
+  }
+
+  // --- Resume interrupted work ---
   if (todo.inProgress.length > 0) {
     const t = todo.inProgress[0];
-    if (!skipped.has(t.title)) {
+    if (!(t.tags && t.tags.includes('unverified')) && !skipped.has(t.title)) {
       suggestions.push({
         task: t.title,
         why: `This was already started${t.claimed ? ` by ${t.claimed}` : ''} but never finished.`,
@@ -83,15 +104,17 @@ function suggestNextTask(cwd, skipped = new Set()) {
   }
 
   // --- Backlog tasks ---
-  for (const t of todo.backlog.slice(0, 1)) {
+  for (const t of todo.backlog) {
+    if (t.tags && t.tags.includes('unverified')) continue;
     if (skipped.has(t.title)) continue;
-    const remaining = todo.backlog.length;
+    const remaining = todo.backlog.filter(b => !(b.tags && b.tags.includes('unverified'))).length;
     suggestions.push({
       task: t.title,
       why: `Next in the backlog${t.tag ? ` (${t.tag})` : ''}. ${remaining} task${remaining > 1 ? 's' : ''} waiting.`,
       kind: 'backlog',
       priority: 5
     });
+    break;
   }
 
   // --- Unprocessed inbox items ---
@@ -100,12 +123,16 @@ function suggestNextTask(cwd, skipped = new Set()) {
     const content = fs.readFileSync(logFile, 'utf8');
     const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-'));
+      const items = inboxMatch[1].trim().split('\n').filter(l => {
+        const t = l.trim();
+        return t.startsWith('- ') && t.length > 2;
+      });
       if (items.length > 0) {
         const firstItem = items[0].replace(/^-\s*\*\*I\d+:\*\*\s*/, '').replace(/^-\s*/, '').trim();
-        if (!skipped.has(firstItem)) {
+        const inboxTaskTitle = `Break down inbox idea: "${firstItem}"`;
+        if (!skipped.has(inboxTaskTitle)) {
           suggestions.push({
-            task: `Break down inbox idea: "${firstItem}"`,
+            task: inboxTaskTitle,
             why: `${items.length} raw idea${items.length > 1 ? 's' : ''} sitting in the inbox. Needs to become concrete tasks before anything can happen.`,
             kind: 'inbox',
             priority: 6
@@ -184,10 +211,80 @@ function suggestNextTask(cwd, skipped = new Set()) {
     }
   }
 
-  if (suggestions.length === 0) return null;
+  if (suggestions.length === 0) {
+    try {
+      const candidates = await proposeCandidateHorizons(cwd);
+      const top = scoreEndgameCandidates(cwd, candidates);
+      return {
+        task: top.title,
+        why: top.rationale,
+        kind: 'imagined',
+        priority: 99
+      };
+    } catch {
+      return null;
+    }
+  }
 
   suggestions.sort((a, b) => a.priority - b.priority);
-  return suggestions[0];
+
+  // Staleness gate: filter out unverified/stale suggestions
+  const staleSkipped = [];
+  const fresh = [];
+  for (const s of suggestions) {
+    const fakeTask = { title: s.task, tag: s.kind === 'endgame' ? 'endgame' : null, claimed: null };
+    if (s.kind === 'resume' && todo.inProgress.length > 0) {
+      fakeTask.claimed = todo.inProgress[0].claimed;
+    }
+    const age = getTaskAgeDays(fakeTask, todoPath);
+    const status = isStillTrue({ title: s.task, age, source: null }, cwd);
+    if (status === 'stale') {
+      staleSkipped.push({ task: s.task, status, reasoning: null });
+      continue;
+    }
+    if (status === 'unverified') {
+      if (auto) {
+        // Auto mode: use model check
+        const result = askModel({ title: s.task, age, source: null }, cwd);
+        if (!result.fresh) {
+          staleSkipped.push({ task: s.task, status: 'unverified (model: not fresh)', reasoning: result.reasoning });
+          continue;
+        }
+      } else {
+        // Interactive mode: ask the human
+        const result = await askHuman(s.task);
+        if (!result.fresh) {
+          staleSkipped.push({ task: s.task, status: 'unverified (human: not relevant)', reasoning: null });
+          continue;
+        }
+      }
+    }
+    fresh.push(s);
+  }
+
+  // Log skipped items to journal
+  if (staleSkipped.length > 0) {
+    try {
+      const { logFile } = getLogPath();
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const lines = staleSkipped.map(s => `- ${s.task} (${s.status})${s.reasoning ? ` — ${s.reasoning}` : ''}`);
+      const note = `\n### Staleness skip — ${hhmm}\n${lines.join('\n')}\n`;
+      if (fs.existsSync(logFile)) {
+        const content = fs.readFileSync(logFile, 'utf8');
+        const notesIdx = content.indexOf('## Notes');
+        if (notesIdx !== -1) {
+          const insertAt = content.indexOf('\n', notesIdx) + 1;
+          const updated = content.slice(0, insertAt) + note + content.slice(insertAt);
+          fs.writeFileSync(logFile, updated);
+        } else {
+          fs.appendFileSync(logFile, `\n## Notes\n${note}`);
+        }
+      }
+    } catch {}
+  }
+
+  return fresh[0] || null;
 }
 
 /**
@@ -207,12 +304,28 @@ function askApproval() {
 }
 
 /**
+ * Ask the human whether an unverified task is still relevant.
+ * Interactive mode only — in auto mode, caller skips silently.
+ * Returns { fresh: boolean }.
+ */
+function askHuman(taskTitle) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`  is "${taskTitle}" still relevant? y/n → `, (answer) => {
+      rl.close();
+      const a = (answer || '').trim().toLowerCase();
+      resolve({ fresh: a === 'y' || a === 'yes' });
+    });
+  });
+}
+
+/**
  * Run a phase via claude -p subprocess.
  */
-function executePhase(phase, context, options = {}) {
+function executePhaseDetailed(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT } = options;
 
-  const prompt = buildPrompt(phase, context);
+  const prompt = buildPrompt(phase, context, options);
   const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
@@ -230,42 +343,68 @@ function executePhase(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
-    return output || '';
+    return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (err.killed) throw new Error(`${phase} timed out after ${timeout / 1000}s`);
-    if (err.stdout) return err.stdout;
+    if (err.stdout) {
+      return { prompt, output: err.stdout };
+    }
     throw err;
   }
+}
+
+function executePhase(phase, context, options = {}) {
+  return executePhaseDetailed(phase, context, options).output;
 }
 
 /**
  * Build context-aware file list for prompts.
  */
-function getContextFiles(phase) {
+function getContextFiles(phase, options = {}) {
   const cwd = process.cwd();
+  const { extraReadFiles = [] } = options;
   const agentSpec = {
     plan: 'atris/team/navigator/MEMBER.md',
     do: 'atris/team/executor/MEMBER.md',
     review: 'atris/team/validator/MEMBER.md'
   }[phase];
 
-  return [
+  const files = [
     agentSpec && fs.existsSync(path.join(cwd, agentSpec)) ? agentSpec : null,
     'atris/PERSONA.md',
     'atris/MAP.md',
     'atris/TODO.md',
     fs.existsSync(path.join(cwd, 'atris/lessons.md')) ? 'atris/lessons.md' : null,
     (() => { const { logFile } = getLogPath(); return fs.existsSync(logFile) ? path.relative(cwd, logFile) : null; })(),
-  ].filter(Boolean).map(f => `- ${f}`).join('\n');
+    ...extraReadFiles.filter((file) => fs.existsSync(path.join(cwd, file)) || fs.existsSync(path.resolve(cwd, file))),
+  ];
+
+  return [...new Set(files.filter(Boolean))].map((f) => `- ${f}`).join('\n');
 }
 
 /**
  * Build the right prompt for each phase, adapting to the kind of work.
  */
-function buildPrompt(phase, context) {
+function buildPrompt(phase, context, options = {}) {
   const { task, kind } = context;
-  const readFiles = getContextFiles(phase);
+  const {
+    benchmarkStrategy = '',
+    contextNote = '',
+    runnerName = '',
+  } = options;
+  const readFiles = getContextFiles(phase, options);
+  const benchmarkProtocol = benchmarkStrategy === 'stack'
+    ? 'coordinated stack run'
+    : (benchmarkStrategy === 'single' ? 'pinned single-model baseline run' : '');
+  const benchmarkContextLines = [
+    runnerName ? `Runner profile: ${runnerName}` : '',
+    benchmarkProtocol ? `Protocol: ${benchmarkProtocol}` : '',
+    contextNote,
+  ].filter(Boolean);
+  const noteBlock = benchmarkContextLines.length > 0
+    ? `\nBenchmark context:\n${benchmarkContextLines.join('\n')}\n`
+    : '';
 
   if (phase === 'plan') {
     const baseRules = `You are the navigator. Read your MEMBER.md spec first if available.
@@ -279,6 +418,23 @@ Rules:
 
 Read these files first:
 ${readFiles}`;
+
+    if (kind === 'benchmark') {
+      return `${baseRules}${noteBlock}
+
+Pinned benchmark task:
+${task}
+
+Rules for this run:
+- Treat this as a ${benchmarkProtocol || 'pinned benchmark run'}.
+- ${benchmarkStrategy === 'stack'
+    ? 'Split the work into explicit repo lanes only when the task truly separates.'
+    : 'Stay single-threaded and solve it directly without delegation theater.'}
+- Do NOT write to TODO.md, journal, or feature specs.
+- Do NOT invent follow-up tasks or widen scope.
+- Read the benchmark contract and pack files in the read list before deciding.
+- Produce the smallest honest plan for this exact task, then reply: done.`;
+    }
 
     if (kind === 'inbox') {
       return `${baseRules}
@@ -350,6 +506,30 @@ When done, reply: done.`;
   }
 
   if (phase === 'do') {
+    if (kind === 'benchmark') {
+      return `You are the executor. Read your MEMBER.md spec first if available.
+
+Rules:
+- This is a ${benchmarkProtocol || 'pinned benchmark run'}. Execute the task directly.
+- You CAN read and write code. Do NOT modify TODO.md or journal state.
+- Stay inside the exact task brief. No side quests.
+- Check MAP.md before grepping.
+- Do NOT create a git commit automatically. The benchmark runner records the result.
+
+Read these files first:
+${readFiles}${noteBlock}
+
+Task: ${task}
+
+1. Read the benchmark contract and pack files in the read list.
+2. Make the smallest changes that satisfy the task brief.
+3. Verify locally if you can.
+4. Update MAP.md only if file locations truly shifted because of your change.
+5. If updating wiki pages, set last_compiled in frontmatter to today's date.
+
+When done, reply: done.`;
+    }
+
     return `You are the executor. Read your MEMBER.md spec first if available.
 
 Rules:
@@ -375,13 +555,36 @@ When done, reply: done.`;
   }
 
   if (phase === 'review') {
+    if (kind === 'benchmark') {
+      return `You are the validator. Read your MEMBER.md spec first if available.
+
+Rules:
+- This is a ${benchmarkProtocol || 'pinned benchmark'} review. Check quality without widening scope.
+- You CAN fix issues but CANNOT add new features.
+- Run targeted verification if you can and name the commands explicitly in your response.
+- Do NOT delete tasks from TODO.md or append completions to the journal. The outer benchmark runner records the receipt.
+
+Read these files first:
+${readFiles}${noteBlock}
+
+Task: ${task}
+
+1. Does it work for the exact task brief?
+2. Name any tests or checks you ran and whether they passed.
+3. Call out bugs, edge cases, or drift.
+4. Reply \`done\` if this run passes the review bar.
+5. Reply \`failed — [reason]\` if it does not.`;
+    }
+
     return `You are the validator. Read your MEMBER.md spec first if available.
 
 Rules:
 - You check quality. You CAN fix issues but CANNOT add new features.
 - Ultrathink: spec match, scope check, edge cases, integration.
 - Run tests if they exist. Check MAP.md is still accurate.
-- If you learned something surprising, append ONE line to atris/lessons.md.
+- If you halted, were surprised, or learned a non-obvious lesson, append ONE line to atris/lessons.md in this exact format:
+  - **[YYYY-MM-DD] short-slug** — pass|fail — One sentence on what surprised you or what to remember.
+  Skip if the tick taught nothing non-obvious. Lessons compound — future /endgame runs read this file before picking horizons.
 
 Read these files first:
 ${readFiles}
@@ -403,6 +606,217 @@ If broken beyond quick fix, reply: failed — [reason].`;
   }
 
   return '';
+}
+
+/**
+ * Write a lesson to atris/lessons.md
+ * Appends a line in format: - **[YYYY-MM-DD] slug** — pass/fail — explanation
+ */
+function writeLesson(cwd, slug, status, explanation) {
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const lessonLine = `- **[${today}] ${slug}** — ${status} — ${explanation}`;
+
+  if (!fs.existsSync(lessonsPath)) {
+    fs.writeFileSync(lessonsPath, `# lessons.md — What We Learned\n\n> Append-only. One line per lesson.\n\n---\n\n${lessonLine}\n`);
+    return;
+  }
+
+  let content = fs.readFileSync(lessonsPath, 'utf8');
+  // Append after the --- separator
+  if (content.includes('---\n')) {
+    content = content.replace(/---\n/, `---\n\n${lessonLine}\n`);
+  } else {
+    content += `\n${lessonLine}\n`;
+  }
+  fs.writeFileSync(lessonsPath, content);
+}
+
+/**
+ * Record a tick's commit hash and verify command in atris/tick-registry.json.
+ * Each entry: { hash, verifyCmd, slug, timestamp }.
+ */
+function recordTickCommit(cwd, hash, verifyCmd, slug) {
+  const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+  let registry = [];
+  if (fs.existsSync(registryPath)) {
+    try { registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')); } catch { registry = []; }
+  }
+  registry.push({ hash, verifyCmd, slug, timestamp: new Date().toISOString() });
+  fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+}
+
+/**
+ * Retroactive regression check. Reads last 10 entries from tick-registry.json,
+ * re-runs each verify command at its original commit using git worktree,
+ * returns array of { hash, slug, pass }. On failure: writes a lesson with
+ * retroactive context.
+ */
+function regressionCheck(cwd) {
+  const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+  if (!fs.existsSync(registryPath)) return [];
+
+  let registry = [];
+  try { registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')); } catch { return []; }
+  if (!Array.isArray(registry) || registry.length === 0) return [];
+
+  const entries = registry.slice(-10);
+  const results = [];
+
+  for (const entry of entries) {
+    if (!entry.hash || !entry.verifyCmd) {
+      results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
+      continue;
+    }
+
+    const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
+    let pass = false;
+    try {
+      // Create a worktree at the commit
+      execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
+      try {
+        execSync(entry.verifyCmd, { cwd: worktreePath, stdio: 'pipe', timeout: 60000 });
+        pass = true;
+      } catch {
+        pass = false;
+      }
+    } catch {
+      // If worktree creation fails (e.g., commit doesn't exist), skip
+      results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
+      continue;
+    } finally {
+      // Clean up worktree
+      try { execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' }); } catch {}
+    }
+
+    if (!pass) {
+      writeLesson(cwd, `regression-${entry.slug || 'unknown'}`, 'fail',
+        `Retroactive regression: verify command for tick ${entry.hash.slice(0, 7)} (${entry.slug}) now fails. -5 retroactive penalty applied.`);
+    }
+
+    results.push({ hash: entry.hash, slug: entry.slug, pass });
+  }
+
+  return results;
+}
+
+/**
+ * Get the verify command for a task from TODO.md
+ * Reads TODO.md, finds the task by title across active/completed sections,
+ * and extracts the verify field.
+ * Returns { cmd, explicit } — explicit is true only if the task has an explicit Verify field.
+ */
+function getVerifyCommand(cwd, taskTitle) {
+  const todoPath = path.join(cwd, 'atris', 'TODO.md');
+  if (!fs.existsSync(todoPath)) return { cmd: null, explicit: false };
+
+  const todo = parseTodo(todoPath);
+  const task = [...todo.inProgress, ...todo.backlog, ...todo.completed]
+    .find(t => t.title === taskTitle);
+
+  if (!task || !task.verify) return { cmd: null, explicit: false };
+  return { cmd: task.verify, explicit: true };
+}
+
+/**
+ * Verify that computeTickReward has not been modified since ship time.
+ * Returns { ok, expected, actual }.
+ */
+function verifyJudgeIntegrity() {
+  const crypto = require('crypto');
+  const h = crypto.createHash('sha256');
+  h.update(JSON.stringify(REWARD_CONFIG));
+  h.update(computeTickReward.toString());
+  const actual = h.digest('hex');
+  return { ok: actual === REWARD_CHECKSUM, expected: REWARD_CHECKSUM, actual };
+}
+
+function runTaskOnce(context, options = {}) {
+  const { verbose = false, cwd = process.cwd() } = options;
+
+  // Judge integrity check — halt if computeTickReward was tampered with
+  const integrity = verifyJudgeIntegrity();
+  if (!integrity.ok) {
+    writeLesson(cwd, 'judge-corruption', 'fail',
+      `computeTickReward checksum mismatch. Expected ${integrity.expected}, got ${integrity.actual}. Tick halted.`);
+    return {
+      outcome: 'halted',
+      reason: 'judge-corruption',
+      phaseResults: {},
+      elapsedSeconds: 0,
+      verifyRan: false,
+      verifyPass: false,
+    };
+  }
+
+  const phaseResults = {};
+  const startedAt = Date.now();
+  const verifyResult = getVerifyCommand(cwd, context.task);
+  const verifyCmd = verifyResult.cmd;
+
+  // Guard: endgame tasks must have an explicit Verify field.
+  // Reactive signals (inbox, staleness, imagined) use npm test as default.
+  if (!verifyResult.explicit && context.kind === 'endgame') {
+    writeLesson(cwd, 'no-verify-field', 'fail',
+      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted — every endgame task must declare how to verify it.`);
+    return {
+      outcome: 'halted',
+      reason: 'no-verify-field',
+      phaseResults: {},
+      elapsedSeconds: 0,
+      verifyRan: false,
+      verifyPass: false,
+    };
+  }
+
+  for (const phase of ['plan', 'do', 'review']) {
+    const t0 = Date.now();
+    const result = executePhaseDetailed(phase, context, options);
+    phaseResults[phase] = {
+      prompt: result.prompt,
+      output: result.output || '',
+      elapsedSeconds: Math.round((Date.now() - t0) / 1000),
+    };
+  }
+
+  const reviewOutput = phaseResults.review.output || '';
+
+  // After review succeeds, run verify command if present
+  let verifyPass = false;
+  let verifyRan = false;
+  if (verifyCmd) {
+    verifyRan = true;
+    let t0 = Date.now();
+    try {
+      execSync(verifyCmd, { cwd, stdio: 'pipe' });
+      verifyPass = true;
+      const verifyTime = Math.round((Date.now() - t0) / 1000);
+      phaseResults.verify = {
+        output: `Verify passed (${verifyTime}s)`,
+        elapsedSeconds: verifyTime,
+      };
+    } catch (e) {
+      const verifyTime = Math.round((Date.now() - t0) / 1000);
+      phaseResults.verify = {
+        output: `Verify failed: ${e.message}`,
+        elapsedSeconds: verifyTime,
+      };
+      try {
+        const slug = (context.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+        writeLesson(cwd, `verify-fail-${slug}`, 'fail', `Verify command \`${verifyCmd}\` failed: ${e.message.split('\n')[0]}`);
+      } catch { /* lesson write must not crash the tick */ }
+    }
+  }
+
+  return {
+    success: verifyRan && verifyPass,
+    elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+    phaseResults,
+    reviewOutput,
+    verifyCmd,
+    verifyPass,
+    verifyRan,
+  };
 }
 
 /**
@@ -435,6 +849,173 @@ function logCompletion(description) {
 }
 
 /**
+ * Compute per-tick reward score based on execution signals.
+ * Rewards:
+ *   - commit landed: +1
+ *   - verify passed: +3
+ *   - npm test passed: +2
+ *   - validator clean (review passed): +1
+ *   - halt caught hallucination: -3
+ */
+function computeTickReward(execution, tickOutcome, verifyCmd) {
+  let reward = 0;
+
+  // Validator clean: review passed without 'failed'
+  if (!execution.reviewOutput || !execution.reviewOutput.includes('failed')) {
+    reward += REWARD_CONFIG.REVIEW_CLEAN;
+  }
+
+  // Verify passed
+  if (execution.verifyRan && execution.verifyPass) {
+    reward += REWARD_CONFIG.VERIFY_PASS;
+  }
+
+  // npm test passed
+  if (execution.verifyRan && execution.verifyPass && verifyCmd === 'npm test') {
+    reward += REWARD_CONFIG.NPM_TEST_BONUS;
+  }
+
+  // Commit landed: check do phase output for git commit patterns
+  const doOutput = execution.phaseResults.do.output || '';
+  if (doOutput.match(/\[.*\s\d+\sfile.*changed/i) || doOutput.includes('git commit') || doOutput.includes('committed')) {
+    reward += REWARD_CONFIG.COMMIT_LANDED;
+  }
+
+  // Halt caught hallucination
+  if (tickOutcome === 'halted') {
+    reward += REWARD_CONFIG.HALT_PENALTY;
+  }
+
+  return reward;
+}
+
+/**
+ * Append a plain-language tick summary block to today's journal `## Notes`.
+ * Fields:
+ *   - time:     human clock string, e.g. "11:20 a.m."
+ *   - outcome:  one-sentence description of what happened this tick
+ *   - horizon:  current endgame slug (or "unset")
+ *   - nextStep: what the next tick will do
+ *   - idle:     when true, block must contain literal "0 tasks in 0s"
+ *               so getIdleTickCount still works.
+ *   - reward:   optional tick reward score (from computeTickReward)
+ * Safe to call inside a try/catch — a write failure must never crash a tick.
+ */
+function appendTickSummary(cwd, { time, outcome, horizon, nextStep, idle, reward } = {}) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const journalPath = path.join(cwd, 'atris', 'logs', String(yyyy), `${yyyy}-${mm}-${dd}.md`);
+  const dateFormatted = `${yyyy}-${mm}-${dd}`;
+
+  if (!fs.existsSync(journalPath)) {
+    const dir = path.dirname(journalPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    createLogFile(journalPath, dateFormatted);
+  }
+
+  const timeLabel = time || new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  }).toLowerCase();
+  const outcomeLine = outcome || 'I ran an autopilot tick.';
+  const horizonLine = horizon
+    ? `We are still on the ${horizon} endgame.`
+    : 'No endgame is set right now.';
+  const nextLine = nextStep
+    ? `Next tick will ${nextStep}.`
+    : 'Next tick will look for new work.';
+  const idleLine = idle ? 'This tick moved 0 tasks in 0s.' : null;
+
+  const blockLines = [
+    `- ${timeLabel}`,
+    `  ${outcomeLine}`,
+    `  ${horizonLine}`,
+    `  ${nextLine}`,
+  ];
+  // Add reward score if present
+  if (reward !== undefined && reward !== null) {
+    blockLines.push(`  Reward: ${reward}`);
+  }
+  // Idle marker must be the last non-empty line so getIdleTickCount, which
+  // scans bottom-up, counts this block when idle=true.
+  if (idleLine) blockLines.push(`  ${idleLine}`);
+  blockLines.push('');
+  const block = blockLines.join('\n');
+
+  let content = fs.readFileSync(journalPath, 'utf8');
+  const notesMatch = content.match(/(##\s+Notes\s*\n)([\s\S]*?)(?=\n##\s|$)/);
+  if (notesMatch) {
+    const header = notesMatch[1];
+    const body = notesMatch[2].replace(/\s*$/, '');
+    const newSection = `${header}${body ? body + '\n\n' : ''}${block}\n`;
+    content = content.replace(notesMatch[0], newSection);
+  } else {
+    const trimmed = content.replace(/\s*$/, '');
+    content = `${trimmed}\n\n## Notes\n\n${block}\n`;
+  }
+  fs.writeFileSync(journalPath, content);
+}
+
+/**
+ * Read the current endgame state from atris/TODO.md.
+ */
+function readEndgameState(cwd) {
+  try {
+    const todoPath = path.join(cwd, 'atris', 'TODO.md');
+    if (!fs.existsSync(todoPath)) {
+      return { slug: 'unset', pickedAt: null, horizon: '', remaining: 0, completed: 0 };
+    }
+
+    const todo = parseTodo(todoPath);
+    const content = fs.readFileSync(todoPath, 'utf8');
+    const endgameMatch = content.match(/##\s+Endgame\s*\n([\s\S]*?)(?=\n##|$)/);
+    const section = endgameMatch ? endgameMatch[1] : '';
+    const slugMatch = section.match(/\*\*Slug:\*\*\s*(\S+)/);
+    const pickedMatch = section.match(/\*\*Picked:\*\*\s*(.+)/);
+    const horizonMatch = section.match(/\*\*Horizon:\*\*\s*(.+)/);
+
+    return {
+      slug: slugMatch ? slugMatch[1].trim() : 'unset',
+      pickedAt: pickedMatch ? pickedMatch[1].trim() : null,
+      horizon: horizonMatch ? horizonMatch[1].trim() : '',
+      remaining: todo.backlog.filter(t => t.tag === 'endgame').length
+        + todo.inProgress.filter(t => t.tag === 'endgame').length,
+      completed: todo.completed.filter(t => t.tag === 'endgame').length,
+    };
+  } catch {
+    return { slug: 'unset', pickedAt: null, horizon: '', remaining: 0, completed: 0 };
+  }
+}
+
+function readHorizonSlug(cwd) {
+  return readEndgameState(cwd).slug;
+}
+
+function maybeWriteCompletedEndgameScorecard(cwd, startingEndgame) {
+  if (!startingEndgame || startingEndgame.slug === 'unset' || startingEndgame.remaining === 0) {
+    return false;
+  }
+
+  const atrisDir = path.join(cwd, 'atris');
+  if (!fs.existsSync(atrisDir)) return false;
+
+  const { complete, endgameSlug } = detectEndgameCompletion(atrisDir);
+  if (!complete || endgameSlug !== startingEndgame.slug) return false;
+
+  const alreadyWritten = readScorecards(atrisDir).some(sc => sc.slug === endgameSlug);
+  if (alreadyWritten) return false;
+
+  const data = buildScorecardData(atrisDir, {
+    slug: endgameSlug,
+    pickedAt: startingEndgame.pickedAt,
+  });
+  writeScorecard(atrisDir, data);
+  return true;
+}
+
+/**
  * Main loop. Suggest → justify → approve → execute, one at a time.
  */
 /**
@@ -450,6 +1031,558 @@ function parseDuration(str) {
   if (unit === 'm') return val * 60 * 1000;
   if (unit === 's') return val * 1000;
   return null;
+}
+
+function wrapText(text, width = 74) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+
+  const words = normalized.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current + ' ' + word).length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function compactWrappedText(text, width = 74, maxLines = 2) {
+  const lines = wrapText(text, width);
+  if (lines.length <= maxLines) return lines;
+
+  const kept = lines.slice(0, maxLines);
+  const head = kept.slice(0, -1);
+  let tail = kept[kept.length - 1].replace(/[ .,;:!?-]+$/, '');
+  if (tail.length >= width) {
+    tail = tail.slice(0, width - 1).replace(/[ .,;:!?-]+$/, '');
+  }
+  return [...head, `${tail}…`];
+}
+
+function printPlainBlock(text) {
+  for (const line of String(text || '').split('\n')) {
+    console.log(`  ${line}`);
+  }
+  console.log('');
+}
+
+function getTickStatus(cwd) {
+  const atrisDir = path.join(cwd, 'atris');
+
+  let identity = '(no identity set — see atris/PERSONA.md)';
+  const personaPath = path.join(atrisDir, 'PERSONA.md');
+  if (fs.existsSync(personaPath)) {
+    const lines = fs.readFileSync(personaPath, 'utf8').split('\n');
+    for (const l of lines) {
+      const t = l.trim();
+      if (t && !t.startsWith('#') && !t.startsWith('>') && !t.startsWith('---') && !t.startsWith('*') && !t.startsWith('-') && !t.startsWith('|')) {
+        identity = t;
+        break;
+      }
+    }
+  }
+
+  const endgame = readEndgameState(cwd);
+  const slug = endgame.slug === 'unset' ? '(no endgame active — feed inbox or /endgame)' : endgame.slug;
+  const horizon = endgame.horizon;
+  const remaining = endgame.remaining;
+  const completedEndgame = endgame.completed;
+
+  const total = remaining + completedEndgame;
+  const done = completedEndgame;
+  const time = new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  }).toLowerCase();
+
+  return { time, identity, slug, horizon, total, done, remaining };
+}
+
+function renderHumanTickIntro(status, options = {}) {
+  const modeLabel = options.auto ? 'autonomous' : 'interactive';
+  const horizonLines = status.horizon
+    ? compactWrappedText(`Horizon: ${status.slug}. ${status.horizon}`, 74, 2)
+    : compactWrappedText(`Horizon: ${status.slug}.`, 74, 2);
+  const progressSentence = status.remaining === 0
+    ? 'No tagged endgame steps are queued right now.'
+    : status.total > 0
+    ? `Progress is ${status.done} of ${status.total} endgame steps.`
+    : 'No endgame steps are queued right now.';
+
+  return [
+    status.time,
+    `I am starting an autopilot tick in ${modeLabel} mode. Limit: ${options.durationLabel || 'until clean'}.`,
+    ...horizonLines,
+    progressSentence,
+    'Next I will scan the workspace and choose one task.'
+  ].join('\n');
+}
+
+function renderHumanSuggestion(suggestion, step, maxIterations) {
+  return [
+    `I picked task ${step} of ${maxIterations}.`,
+    ...compactWrappedText(`Task: ${suggestion.task}`, 74, 2),
+    ...compactWrappedText(`Why now: ${suggestion.why}`, 74, 2),
+    'Next: approve it, skip it, or stop the loop.'
+  ].join('\n');
+}
+
+/**
+ * Print the visual ASCII tick status block. Shows identity (forward / flow),
+ * current endgame slug + horizon (backward / endgame), and progress through
+ * endgame steps. Two halves of the same engine — flow and endgame — meeting
+ * at the next tick. Called at the start of each autopilot run.
+ */
+function printTickStatus(cwd, options = {}) {
+  const status = getTickStatus(cwd);
+  if (!options.verbose) {
+    printPlainBlock(renderHumanTickIntro(status, options));
+    return;
+  }
+
+  const W = 64;        // total box width including borders
+  const C = W - 4;     // content width per line
+
+  const trim = (s, w) => {
+    if (!s) return '';
+    s = String(s).replace(/\s+/g, ' ').trim();
+    if (s.length > w) return s.slice(0, Math.max(0, w - 1)) + '…';
+    return s;
+  };
+  const line = (content) => '  │ ' + content.padEnd(C) + ' │';
+
+  const barWidth = 12;
+  const filled = status.total > 0 ? Math.round((status.done / status.total) * barWidth) : 0;
+  const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+  const ratio = status.total > 0 ? `${status.done}/${status.total}` : '0/0';
+  const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  console.log('');
+  console.log('  ┌' + '─'.repeat(W - 2) + '┐');
+  console.log(line(`tick · ${time}`));
+  console.log(line(`identity:  ${trim(status.identity, C - 11)}`));
+  console.log(line(`horizon:   ${trim(status.slug, C - 11)}`));
+  if (status.horizon) {
+    console.log(line(`           ${trim(status.horizon, C - 11)}`));
+  }
+  console.log(line(`progress:  ${bar}  ${ratio} endgame steps`));
+  console.log('  └' + '─'.repeat(W - 2) + '┘');
+}
+
+/**
+ * Count consecutive idle-tick markers at the bottom of today's journal `## Notes`.
+ * Idle marker is the literal substring `0 tasks in 0s` (case-insensitive). Scans
+ * the Notes section bottom-up; the first non-marker, non-blank line breaks the
+ * streak. Returns 0 when the journal is missing or has no `## Notes` section.
+ * Pure read-only — no side effects, no callers yet.
+ */
+function getIdleTickCount(cwd) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const journalPath = path.join(cwd, 'atris', 'logs', String(yyyy), `${yyyy}-${mm}-${dd}.md`);
+
+  if (!fs.existsSync(journalPath)) return 0;
+
+  const content = fs.readFileSync(journalPath, 'utf8');
+  const notesMatch = content.match(/##\s+Notes\s*\n([\s\S]*?)(?=\n##\s|$)/);
+  if (!notesMatch) return 0;
+
+  const marker = '0 tasks in 0s';
+  const lines = notesMatch[1].split('\n');
+  let count = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    if (line.toLowerCase().includes(marker)) {
+      count += 1;
+      continue;
+    }
+    break;
+  }
+  return count;
+}
+
+/**
+ * Read recent project signals for horizon proposals. Returns:
+ *   - recentCommits: string[] from `git log --oneline -20` (empty on failure)
+ *   - wikiHealth: string of `atris/wiki/STATUS.md` contents, or null if missing
+ *   - recentLessons: string[] of last 10 non-empty lines from `atris/lessons.md`
+ * Pure read-only — try/catch each source, safe defaults on failure. No callers yet.
+ */
+function getRecentSignals(cwd) {
+  let recentCommits = [];
+  try {
+    const out = execSync('git log --oneline -20', { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    recentCommits = out.split('\n').filter(l => l.trim().length > 0);
+  } catch {
+    recentCommits = [];
+  }
+
+  let wikiHealth = null;
+  try {
+    const wikiStatusPath = path.join(cwd, 'atris', 'wiki', 'STATUS.md');
+    if (fs.existsSync(wikiStatusPath)) {
+      wikiHealth = fs.readFileSync(wikiStatusPath, 'utf8');
+    }
+  } catch {
+    wikiHealth = null;
+  }
+
+  let recentLessons = [];
+  try {
+    const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+    if (fs.existsSync(lessonsPath)) {
+      const lines = fs.readFileSync(lessonsPath, 'utf8').split('\n').filter(l => l.trim().length > 0);
+      recentLessons = lines.slice(-10);
+    }
+  } catch {
+    recentLessons = [];
+  }
+
+  return { recentCommits, wikiHealth, recentLessons };
+}
+
+/**
+ * Score endgame candidates by historical reward of similar horizon types.
+ * Reads last 10 scorecards, infers type from slug prefix, calculates mean
+ * reward per type, scores candidates by expected value.
+ *
+ * Adaptive explore rate: if the last 5 endgames are all the same type,
+ * explore rate boosts to 50%. Otherwise scales between 20%-50% based on
+ * type repetition in the last 5.
+ *
+ * Difficulty floor: candidates whose inferred type has >80% success rate
+ * AND mean reward >5 are filtered out when harder candidates exist, so
+ * easy wins don't starve hard work.
+ *
+ * @param {string} cwd - Current working directory
+ * @param {array} candidates - Array of { title, confidence, rationale }
+ * @returns {object} - Single candidate: { title, confidence, rationale, scored: true, reason }
+ */
+function scoreEndgameCandidates(cwd, candidates) {
+  const atrisDir = path.join(cwd, 'atris');
+  if (!fs.existsSync(atrisDir)) {
+    // No atris folder yet - can't score, return best by confidence
+    const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+    return { ...best, scored: false, reason: 'no atris folder' };
+  }
+
+  try {
+    const scorecards = readScorecards(atrisDir).slice(-10); // Last 10
+    if (scorecards.length === 0) {
+      // No scorecards yet - return best by confidence
+      const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+      return { ...best, scored: false, reason: 'no scorecards' };
+    }
+
+    // Infer type from slug/title by taking prefix before first dash
+    const typeToRewards = {};
+    const typeToAttempts = {}; // track shipped/attempted per type
+    for (const sc of scorecards) {
+      const type = sc.slug.split('-')[0];
+      if (!typeToRewards[type]) typeToRewards[type] = [];
+      typeToRewards[type].push(sc.totalReward);
+      if (!typeToAttempts[type]) typeToAttempts[type] = { shipped: 0, attempted: 0 };
+      typeToAttempts[type].shipped += sc.tasksShipped;
+      typeToAttempts[type].attempted += sc.tasksAttempted;
+    }
+
+    // Calculate mean reward per type
+    const typeMeans = {};
+    for (const [type, rewards] of Object.entries(typeToRewards)) {
+      const mean = rewards.reduce((a, b) => a + b, 0) / rewards.length;
+      typeMeans[type] = mean;
+    }
+
+    // Calculate success rate per type
+    const typeSuccessRate = {};
+    for (const [type, counts] of Object.entries(typeToAttempts)) {
+      typeSuccessRate[type] = counts.attempted > 0 ? counts.shipped / counts.attempted : 0;
+    }
+
+    // Adaptive explore rate based on diversity of last 5 scorecards
+    const last5 = scorecards.slice(-5);
+    const last5Types = last5.map(sc => sc.slug.split('-')[0]);
+    const uniqueTypes = new Set(last5Types).size;
+    // All same type → exploreRate=0.5; all different → exploreRate=0.2
+    // Linear interpolation: exploreRate = 0.5 - (uniqueTypes - 1) * 0.3 / (last5Types.length - 1 || 1)
+    const maxTypes = last5Types.length;
+    const exploreRate = maxTypes <= 1
+      ? 0.2
+      : 0.5 - (uniqueTypes - 1) * 0.3 / (maxTypes - 1);
+
+    // Score each candidate by expected value based on historical type mean
+    const scored = candidates.map(c => {
+      // Infer type from title keywords that match scorecard slug prefixes
+      const titleLower = (c.title || '').toLowerCase();
+      const cType = Object.keys(typeMeans).find(t => titleLower.includes(t)) || titleLower.split(/[\s\-]+/)[0];
+      const historicalMean = typeMeans[cType] !== undefined ? typeMeans[cType] : 0;
+      const successRate = typeSuccessRate[cType] !== undefined ? typeSuccessRate[cType] : 0;
+      const expectedValue = historicalMean * c.confidence;
+      return {
+        ...c,
+        expectedValue,
+        type: cType,
+        historicalMean,
+        successRate
+      };
+    });
+
+    // Difficulty floor: filter out easy-win candidates (>80% success rate AND
+    // mean reward >5) when harder candidates exist
+    const hardCandidates = scored.filter(c => !(c.successRate > 0.8 && c.historicalMean > 5));
+    const pool = hardCandidates.length > 0 ? hardCandidates : scored;
+
+    // Sort by expected value (descending)
+    pool.sort((a, b) => b.expectedValue - a.expectedValue);
+
+    // Adaptive exploit/explore split
+    const choice = Math.random();
+    let selected;
+    if (choice < (1 - exploreRate)) {
+      // Exploit: return highest expected value
+      selected = pool[0];
+    } else {
+      // Explore: return random candidate from full scored list (not filtered)
+      selected = scored[Math.floor(Math.random() * scored.length)];
+    }
+
+    const reason = choice < (1 - exploreRate)
+      ? `exploit: type=${selected.type} mean-reward=${selected.historicalMean.toFixed(1)} expected-value=${selected.expectedValue.toFixed(1)} explore-rate=${exploreRate.toFixed(2)}`
+      : `explore: random-candidate type=${selected.type} explore-rate=${exploreRate.toFixed(2)}`;
+
+    return {
+      title: selected.title,
+      confidence: selected.confidence,
+      rationale: selected.rationale,
+      scored: true,
+      reason,
+      exploreRate
+    };
+  } catch (err) {
+    // If scoring fails, fall back to best by confidence
+    const best = candidates.reduce((a, b) => (a.confidence > b.confidence ? a : b), candidates[0]);
+    return { ...best, scored: false, reason: `scoring error: ${err.message}` };
+  }
+}
+
+/**
+ * Check whether a lesson's bug pattern is still present in the named files.
+ * Parses the lesson line for file paths (e.g. `commands/autopilot.js:116`)
+ * and the slug (e.g. `inbox-parser-eats-hr-separator`). Greps the named
+ * files for slug keywords. If none match → lesson is resolved.
+ *
+ * @param {string} lessonLine - A single line from lessons.md
+ * @param {string} cwd - Current working directory
+ * @returns {boolean} true if the lesson's bug pattern is gone (resolved)
+ */
+function isLessonResolved(lessonLine, cwd) {
+  // Extract slug: bold text after date, e.g. **[2026-04-08] inbox-parser-eats-hr-separator**
+  const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+  if (!slugMatch) return false;
+  const slug = slugMatch[1];
+
+  // Extract file paths: patterns like `commands/autopilot.js:116` or `commands/run.js:157`
+  const fileRefs = [];
+  const filePattern = /`([a-zA-Z0-9_/./-]+\.[a-zA-Z]+(?::\d+(?:-\d+)?)?)`/g;
+  let m;
+  while ((m = filePattern.exec(lessonLine)) !== null) {
+    const ref = m[1].replace(/:\d+(-\d+)?$/, ''); // strip line numbers
+    if (ref.includes('/') || ref.endsWith('.js') || ref.endsWith('.md') || ref.endsWith('.ts')) {
+      fileRefs.push(ref);
+    }
+  }
+
+  if (fileRefs.length === 0) return false;
+
+  // Derive keywords from slug (split on dashes, drop short words)
+  const keywords = slug.split('-').filter(w => w.length > 2);
+  if (keywords.length === 0) return false;
+
+  // Grep each named file for any keyword. If at least one file still matches → not resolved.
+  for (const ref of fileRefs) {
+    const absPath = path.isAbsolute(ref) ? ref : path.join(cwd, ref);
+    if (!fs.existsSync(absPath)) continue; // file deleted = pattern gone
+    for (const kw of keywords) {
+      try {
+        execFileSync('grep', ['-q', '-i', kw, absPath], {
+          cwd,
+          timeout: 5000,
+          stdio: ['ignore', 'ignore', 'ignore']
+        });
+        // grep exited 0 → keyword found → lesson still applies
+        return false;
+      } catch {
+        // grep exited non-zero → keyword not found in this file, continue
+      }
+    }
+  }
+
+  // No keyword matched in any named file → lesson is resolved
+  return true;
+}
+
+/**
+ * Propose 3 candidate next horizons for the autopilot loop. Combines
+ * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
+ * to imagine what to work on next, spawns `claude -p`, and parses the
+ * JSON response into `[{ title, confidence, rationale }]`.
+ *
+ * Filters out candidates derived from resolved lessons (bug pattern no
+ * longer present in named files). Resolved lessons get tagged `[resolved]`
+ * in lessons.md. Requires at least 1 valid candidate after filtering.
+ */
+async function proposeCandidateHorizons(cwd) {
+  const idleTicks = getIdleTickCount(cwd);
+  const signals = getRecentSignals(cwd);
+
+  const commitsBlock = signals.recentCommits.length > 0
+    ? signals.recentCommits.slice(0, 20).join('\n')
+    : '(no recent commits)';
+  const wikiBlock = signals.wikiHealth
+    ? signals.wikiHealth.slice(0, 2000)
+    : '(no atris/wiki/STATUS.md)';
+  const lessonsBlock = signals.recentLessons.length > 0
+    ? signals.recentLessons.join('\n')
+    : '(no atris/lessons.md)';
+
+  const prompt = `You are helping the Atris autopilot loop imagine the next horizon to pursue.
+
+The loop has been idle for ${idleTicks} tick(s) (ticks where 0 tasks were picked up in 0s).
+
+Recent commits (git log --oneline -20):
+${commitsBlock}
+
+Wiki STATUS (atris/wiki/STATUS.md):
+${wikiBlock}
+
+Recent lessons (tail of atris/lessons.md):
+${lessonsBlock}
+
+Based on these signals, propose exactly 3 candidate next horizons for the loop to pursue. Each candidate must be:
+- A real, concrete horizon tied to what the signals actually reveal (no placeholders, no "candidate 1", no TODO/FIXME stubs).
+- Something the loop can actually work on in this repo right now.
+- Distinct from the other two candidates.
+
+Output STRICT JSON ONLY — no prose, no markdown code fences, no commentary. The output must be a single JSON array with exactly 3 objects, each shaped:
+
+[
+  { "title": "one-line horizon title", "confidence": 0.0-1.0, "rationale": "one sentence why this is worth pursuing now" },
+  { "title": "...", "confidence": 0.0-1.0, "rationale": "..." },
+  { "title": "...", "confidence": 0.0-1.0, "rationale": "..." }
+]
+
+Reply with the JSON array and nothing else.`;
+
+  const tmpFile = path.join(cwd, '.autopilot-horizons-prompt.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+
+  let output = '';
+  try {
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')"`;
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    output = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout: PHASE_TIMEOUT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 10 * 1024 * 1024,
+      env
+    }).toString();
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+
+  const start = output.indexOf('[');
+  const end = output.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('proposeCandidateHorizons: claude -p returned no JSON array');
+  }
+  const jsonText = output.slice(start, end + 1);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    throw new Error(`proposeCandidateHorizons: JSON parse failed — ${err.message}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('proposeCandidateHorizons: expected JSON array');
+  }
+
+  const candidates = parsed
+    .filter(c => c && typeof c === 'object')
+    .map(c => ({
+      title: typeof c.title === 'string' ? c.title.trim() : '',
+      confidence: typeof c.confidence === 'number' ? c.confidence : Number(c.confidence),
+      rationale: typeof c.rationale === 'string' ? c.rationale.trim() : ''
+    }))
+    .filter(c =>
+      c.title.length > 0 &&
+      typeof c.confidence === 'number' && !Number.isNaN(c.confidence) &&
+      c.confidence >= 0 && c.confidence <= 1 &&
+      c.rationale.length > 0
+    );
+
+  if (candidates.length < 1) {
+    throw new Error(`proposeCandidateHorizons: expected at least 1 valid candidate, got ${candidates.length}`);
+  }
+
+  // Filter out candidates derived from resolved lessons
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  const filtered = [];
+  for (const c of candidates) {
+    const combinedText = `${c.title} ${c.rationale}`.toLowerCase();
+    let droppedByLesson = false;
+    for (const lessonLine of signals.recentLessons) {
+      const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+      if (!slugMatch) continue;
+      if (lessonLine.includes('[resolved]')) continue;
+      const slug = slugMatch[1];
+      // Fuzzy match: check if slug keywords appear in the candidate text
+      const slugWords = slug.split('-').filter(w => w.length > 2);
+      const matchCount = slugWords.filter(w => combinedText.includes(w)).length;
+      if (matchCount < Math.ceil(slugWords.length * 0.5)) continue;
+      // Candidate matches this lesson — check if the lesson is resolved
+      if (isLessonResolved(lessonLine, cwd)) {
+        // Tag lesson [resolved] in lessons.md
+        try {
+          let content = fs.readFileSync(lessonsPath, 'utf8');
+          const taggedLine = lessonLine.replace(
+            /\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*/,
+            '**[$1] $2** [resolved]'
+          );
+          content = content.replace(lessonLine.trim(), taggedLine.trim());
+          fs.writeFileSync(lessonsPath, content);
+        } catch {}
+        droppedByLesson = true;
+        break;
+      }
+    }
+    if (!droppedByLesson) filtered.push(c);
+  }
+
+  if (filtered.length < 1) {
+    throw new Error('proposeCandidateHorizons: all candidates were from resolved lessons');
+  }
+
+  return filtered.slice(0, 3);
 }
 
 async function autopilotAtris(description, options = {}) {
@@ -475,13 +1608,21 @@ async function autopilotAtris(description, options = {}) {
   }
 
   const durationMs = parseDuration(duration);
-  const durationLabel = duration ? duration : (maxIterations < 100 ? `${maxIterations} tasks` : 'until clean');
+  const durationLabel = duration
+    ? duration
+    : (maxIterations < 100 ? `${maxIterations} task${maxIterations === 1 ? '' : 's'}` : 'until clean');
 
-  console.log('');
-  console.log('  atris autopilot v' + pkg.version);
-  console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
-  console.log('  scanning workspace for work...');
-  console.log('');
+  if (verbose) {
+    console.log('');
+    console.log('  atris autopilot v' + pkg.version);
+    console.log(`  mode: ${auto ? 'autonomous' : 'interactive'} · limit: ${durationLabel}`);
+    printTickStatus(cwd, { verbose: true });
+    console.log('');
+    console.log('  scanning workspace for work...');
+    console.log('');
+  } else {
+    printTickStatus(cwd, { auto, durationLabel });
+  }
 
   // Seed inbox if a description was given
   if (description) {
@@ -502,40 +1643,87 @@ async function autopilotAtris(description, options = {}) {
       content += `\n## Inbox\n${entry}\n`;
     }
     fs.writeFileSync(logFile, content);
-    console.log(`  added to inbox: "${description}"`);
-    console.log('');
+    if (verbose) {
+      console.log(`  added to inbox: "${description}"`);
+      console.log('');
+    } else {
+      printPlainBlock([
+        'I added this request to the inbox.',
+        `"${description}"`,
+        '',
+        'Next I will scan the workspace with that request in mind.'
+      ].join('\n'));
+    }
   }
 
   const startTime = Date.now();
   let completed = 0;
   const skipped = new Set();
+  let tickOutcome = 'halted';
+  let tickOutcomeText = 'I stopped for a manual check.';
+  let tickNextStep = 'look for new work';
+  let lastTaskTitle = null;
+  let lastExecution = null;
+  let lastVerifyCmd = null;
 
   for (let i = 0; i < maxIterations; i++) {
     // Check time budget
     if (durationMs && (Date.now() - startTime) >= durationMs) {
       const mins = Math.round((Date.now() - startTime) / 60000);
-      console.log(`  time's up (${mins}m elapsed). stopping.`);
+      if (verbose) {
+        console.log(`  time's up (${mins}m elapsed). stopping.`);
+      } else {
+        printPlainBlock([
+          `I hit the time limit after ${mins} minute${mins === 1 ? '' : 's'}.`,
+          '',
+          'Next I am stopping the loop.'
+        ].join('\n'));
+      }
       break;
     }
 
-    const suggestion = suggestNextTask(cwd, skipped);
+    const suggestion = await suggestNextTask(cwd, skipped, { auto });
 
     if (!suggestion) {
-      console.log('  nothing to do. workspace is clean.');
+      tickOutcome = 'idle';
+      tickOutcomeText = 'I checked the repo and found no work to pick up this tick.';
+      tickNextStep = 'scan for new signals and propose the next horizon';
+      if (verbose) {
+        console.log('  nothing to do. workspace is clean.');
+      } else {
+        printPlainBlock([
+          'I found no work this tick.',
+          'The workspace looks clean.',
+          '',
+          'Next I will stop until a new signal appears.'
+        ].join('\n'));
+      }
       break;
     }
 
     // Present the suggestion
-    console.log(`  ── suggestion ${i + 1}/${maxIterations} ──────────────────────────────`);
-    console.log('');
-    console.log(`  ${suggestion.task}`);
-    console.log(`  why: ${suggestion.why}`);
-    console.log(`  kind: ${suggestion.kind}`);
-    console.log('');
+    if (verbose) {
+      console.log(`  ── suggestion ${i + 1}/${maxIterations} ──────────────────────────────`);
+      console.log('');
+      console.log(`  ${suggestion.task}`);
+      console.log(`  why: ${suggestion.why}`);
+      console.log(`  kind: ${suggestion.kind}`);
+      console.log('');
+    } else {
+      printPlainBlock(renderHumanSuggestion(suggestion, i + 1, maxIterations));
+    }
 
     if (dryRun) {
-      console.log('  (dry run — would execute this)');
-      console.log('');
+      if (verbose) {
+        console.log('  (dry run — would execute this)');
+        console.log('');
+      } else {
+        printPlainBlock([
+          'This was a dry run, so I did not execute the task.',
+          '',
+          'Next I will look for another task on the next pass.'
+        ].join('\n'));
+      }
       // Track as skipped so dry-run shows variety
       skipped.add(suggestion.task);
       if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
@@ -554,7 +1742,15 @@ async function autopilotAtris(description, options = {}) {
     }
 
     if (decision === 'quit') {
-      console.log('  stopped.');
+      if (verbose) {
+        console.log('  stopped.');
+      } else {
+        printPlainBlock([
+          'I stopped the loop.',
+          '',
+          'Next nothing will run until autopilot starts again.'
+        ].join('\n'));
+      }
       break;
     }
 
@@ -565,56 +1761,361 @@ async function autopilotAtris(description, options = {}) {
       if (suggestion.kind === 'review') skipped.add('review');
       if (suggestion.kind === 'lessons') skipped.add('lessons');
       if (suggestion.kind === 'feature') skipped.add('incomplete-features');
-      console.log('  skipped.');
-      console.log('');
+      if (verbose) {
+        console.log('  skipped.');
+        console.log('');
+      } else {
+        printPlainBlock([
+          'I skipped that task.',
+          '',
+          'Next I will look for another one.'
+        ].join('\n'));
+      }
       continue;
     }
 
     // Execute: plan → do → review
+    lastTaskTitle = suggestion.task;
     const context = { task: suggestion.task, kind: suggestion.kind };
+    const startingEndgame = readEndgameState(cwd);
 
     try {
-      console.log('');
-      console.log('  planning...');
-      let t0 = Date.now();
-      executePhase('plan', context, { verbose });
-      const planTime = Math.round((Date.now() - t0) / 1000);
-      console.log(`  planned (${planTime}s)`);
+      if (verbose) {
+        console.log('');
+        console.log('  planning...');
+      } else {
+        printPlainBlock([
+          'I am running that task now.',
+          '',
+          'Next I will report what happened and whether review passed.'
+        ].join('\n'));
+      }
+      const execution = runTaskOnce(context, { verbose, cwd });
+      lastExecution = execution;
+      lastVerifyCmd = execution.verifyCmd;
 
-      console.log('  building...');
-      t0 = Date.now();
-      executePhase('do', context, { verbose });
-      const doTime = Math.round((Date.now() - t0) / 1000);
-      console.log(`  built (${doTime}s)`);
-
-      console.log('  reviewing...');
-      t0 = Date.now();
-      const reviewOutput = executePhase('review', context, { verbose });
-      const reviewTime = Math.round((Date.now() - t0) / 1000);
-
-      if (reviewOutput.includes('failed')) {
-        console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
+      // Early halt — judge corruption or no verify field
+      if (execution.outcome === 'halted') {
+        tickOutcome = 'halted';
+        tickOutcomeText = `I halted before running "${lastTaskTitle}": ${execution.reason}.`;
+        tickNextStep = 'stop until a human looks at the error';
+        if (!verbose) {
+          printPlainBlock([
+            `I halted: ${execution.reason}.`,
+            '',
+            'Next I stopped the loop.'
+          ].join('\n'));
+        }
         break;
       }
-      console.log(`  reviewed (${reviewTime}s)`);
+
+      const planTime = execution.phaseResults.plan.elapsedSeconds;
+      if (verbose) console.log(`  planned (${planTime}s)`);
+
+      if (verbose) console.log('  building...');
+      const doTime = execution.phaseResults.do.elapsedSeconds;
+      if (verbose) console.log(`  built (${doTime}s)`);
+
+      if (verbose) console.log('  reviewing...');
+      const reviewOutput = execution.reviewOutput;
+      const reviewTime = execution.phaseResults.review.elapsedSeconds;
+
+      if (reviewOutput.includes('failed')) {
+        tickOutcome = 'halted';
+        tickOutcomeText = `I built "${lastTaskTitle}" but review flagged issues.`;
+        tickNextStep = 'wait for a human to check the review output';
+        if (verbose) {
+          console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
+        } else {
+          printPlainBlock([
+            `I planned and built the task, but review found issues after ${reviewTime}s.`,
+            '',
+            'Next I stopped for a manual check.'
+          ].join('\n'));
+        }
+        break;
+      }
+      if (verbose) console.log(`  reviewed (${reviewTime}s)`);
+
+      // Handle verify failure
+      if (!execution.verifyPass) {
+        tickOutcome = 'halted';
+        tickOutcomeText = `I planned, built, and reviewed "${lastTaskTitle}" but verify failed.`;
+        tickNextStep = 'verify failed, halting';
+        writeLesson(cwd, 'verify-failed', 'fail', `Task "${lastTaskTitle}" passed review but failed verify command.`);
+        if (verbose) {
+          console.log(`  verify failed. stopping for manual check.`);
+        } else {
+          printPlainBlock([
+            `I planned, built, and reviewed the task, but the verify check failed.`,
+            '',
+            'Next I stopped for a manual check.'
+          ].join('\n'));
+        }
+        break;
+      }
 
       completed++;
+      tickOutcome = 'built';
+      tickOutcomeText = `I planned, built, and reviewed "${suggestion.task}".`;
+      tickNextStep = 'pick the next endgame task';
       logCompletion(suggestion.task);
-      console.log(`  done. ${completed} task${completed > 1 ? 's' : ''} completed.`);
-      console.log('');
+
+      // Record commit hash + verify command for retroactive regression checks
+      try {
+        const commitHash = execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
+        const taskSlug = (suggestion.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+        recordTickCommit(cwd, commitHash, execution.verifyCmd || '', taskSlug);
+
+        // Every 10th tick, run retroactive regression check
+        const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
+        if (fs.existsSync(registryPath)) {
+          try {
+            const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+            if (Array.isArray(registry) && registry.length % 10 === 0) {
+              const regressionResults = regressionCheck(cwd);
+              const failures = regressionResults.filter(r => !r.pass && !r.skipped);
+              if (failures.length > 0) {
+                // Apply -5 retroactive penalty per failure via journal note
+                for (const f of failures) {
+                  appendTickSummary(cwd, {
+                    outcome: `Retroactive regression failure: tick ${f.hash.slice(0, 7)} (${f.slug}) verify now fails. -5 penalty.`,
+                    horizon: readHorizonSlug(cwd),
+                    nextStep: 'investigate regression',
+                    reward: -5,
+                  });
+                }
+                if (verbose) console.log(`  regression check: ${failures.length} failure(s) found`);
+              } else if (verbose) {
+                console.log(`  regression check: all ${regressionResults.length} entries pass`);
+              }
+            }
+          } catch { /* registry read failure must not crash */ }
+        }
+      } catch { /* commit recording failure must not crash the tick */ }
+      if (maybeWriteCompletedEndgameScorecard(cwd, startingEndgame)) {
+        tickNextStep = 'pick the next horizon';
+      }
+      if (verbose) {
+        console.log(`  done. ${completed} task${completed > 1 ? 's' : ''} completed.`);
+        console.log('');
+      } else {
+        printPlainBlock([
+          'I planned, built, and reviewed the task.',
+          `Plan took ${planTime}s, build took ${doTime}s, and review took ${reviewTime}s.`,
+          '',
+          `This tick has completed ${completed} task${completed > 1 ? 's' : ''}.`,
+          '',
+          'Next I will look for the next task.'
+        ].join('\n'));
+      }
 
     } catch (err) {
-      console.error(`  error: ${err.message}`);
+      tickOutcome = 'halted';
+      tickOutcomeText = `I hit an error while running "${lastTaskTitle || 'a task'}": ${err.message}`;
+      tickNextStep = 'stop until a human looks at the error';
+      if (verbose) {
+        console.error(`  error: ${err.message}`);
+      } else {
+        printPlainBlock([
+          'I hit an error while running the task.',
+          err.message,
+          '',
+          'Next I stopped the loop.'
+        ].join('\n'));
+      }
       break;
     }
   }
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);
-  console.log('');
-  console.log(`  autopilot finished. ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`);
-  console.log('');
+
+  // Heartbeat: plain-language tick summary into today's journal `## Notes`.
+  // Guarded — a journal write failure must never crash the tick.
+  try {
+    const horizonSlug = readHorizonSlug(cwd);
+    const time = new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit'
+    }).toLowerCase();
+    const idle = tickOutcome === 'idle' || (completed === 0 && tickOutcome !== 'halted');
+
+    // Compute reward score if we had an execution
+    let tickReward = undefined;
+    if (lastExecution && lastVerifyCmd) {
+      tickReward = computeTickReward(lastExecution, tickOutcome, lastVerifyCmd);
+    }
+
+    appendTickSummary(cwd, {
+      time,
+      outcome: tickOutcomeText,
+      horizon: horizonSlug === 'unset' ? null : horizonSlug,
+      nextStep: tickNextStep,
+      idle,
+      reward: tickReward
+    });
+  } catch {
+    /* journal write failure must not crash the tick */
+  }
+
+  if (verbose) {
+    console.log('');
+    console.log(`  autopilot finished. ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`);
+    console.log('');
+  } else {
+    printPlainBlock([
+      'Autopilot finished.',
+      `It completed ${completed} task${completed !== 1 ? 's' : ''} in ${elapsed}s.`
+    ].join('\n'));
+  }
 
   return { success: completed > 0, completed };
+}
+
+/**
+ * Compute age in days for a task.
+ * Endgame tasks use the Picked: date from TODO.md Endgame section.
+ * In-progress tasks parse timestamp from Claimed by: field.
+ * Fallback returns 0 (fresh).
+ */
+function getTaskAgeDays(task, todoPath) {
+  if (task.claimed) {
+    const tsMatch = task.claimed.match(/\d{4}-\d{2}-\d{2}/);
+    if (tsMatch) {
+      const d = new Date(tsMatch[0]);
+      if (!isNaN(d)) return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+  if (task.tag === 'endgame' && todoPath && fs.existsSync(todoPath)) {
+    const content = fs.readFileSync(todoPath, 'utf8');
+    const m = content.match(/\*\*Picked:\*\*\s*(\d{4}-\d{2}-\d{2})/);
+    if (m) {
+      const d = new Date(m[1]);
+      if (!isNaN(d)) return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+  return 0;
+}
+
+/**
+ * Check whether a task/fact is still actionable.
+ *
+ * @param {{ title: string, age: number, source?: string }} fact
+ *   - title: the task or fact description
+ *   - age: age in days since the task was created/last verified
+ *   - source: optional file path or identifier where the fact originated
+ * @param {string} cwd - workspace root
+ * @returns {'actionable'|'unverified'|'stale'}
+ */
+function isStillTrue(fact, cwd) {
+  const { title, age, source } = fact;
+
+  // Fresh tasks are always actionable
+  if (age <= 7) return 'actionable';
+
+  // Extract searchable keywords from the title (skip short/common words)
+  const keywords = title
+    .replace(/[`\[\](){}]/g, '')
+    .split(/[\s/\\.:,;]+/)
+    .filter(w => w.length > 3)
+    .slice(0, 5);
+
+  if (keywords.length === 0) return 'unverified';
+
+  // Strategy 1: If source file is given, check it still exists
+  if (source) {
+    const sourcePath = path.isAbsolute(source) ? source : path.join(cwd, source);
+    if (!fs.existsSync(sourcePath)) return 'stale';
+  }
+
+  // Strategy 2: grep the codebase for key terms from the title
+  let grepHits = 0;
+  for (const kw of keywords) {
+    try {
+      execFileSync('grep', ['-r', '-l', '--include=*.js', '--include=*.md', '-m', '1', kw, '.'], {
+        cwd,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 10000
+      });
+      grepHits++;
+    } catch {
+      // grep returns non-zero when no match — that's fine
+    }
+  }
+
+  // If none of the keywords appear in the codebase, it's stale
+  if (grepHits === 0) return 'stale';
+
+  // Strategy 3: check git log for recent activity related to the keywords
+  let gitHits = 0;
+  for (const kw of keywords.slice(0, 3)) {
+    try {
+      const out = execFileSync(
+        'git', ['log', '--oneline', '--since=30 days ago', '--all', `--grep=${kw}`, '-1'],
+        { cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }
+      ).toString().trim();
+      if (out.length > 0) gitHits++;
+    } catch {
+      // git-log failure is non-fatal
+    }
+  }
+
+  // Strong mechanical evidence: grep found terms AND recent git activity
+  if (gitHits > 0) return 'actionable';
+
+  // Grep found terms but no recent git activity — can't fully verify
+  return 'unverified';
+}
+
+/**
+ * Ask a local model whether a task/fact is still relevant.
+ * Called when isStillTrue returns 'unverified' — the mechanical check
+ * couldn't confirm or deny, so we ask claude -p to inspect the codebase.
+ *
+ * @param {{ title: string, age: number, source?: string }} fact
+ * @param {string} cwd - workspace root
+ * @returns {{ fresh: boolean, reasoning: string }}
+ */
+function askModel(fact, cwd) {
+  const { title, source } = fact;
+  const sourceHint = source ? `\nOriginal source file: ${source}` : '';
+  const prompt = `You are a staleness checker. Answer with exactly one line: YES or NO, followed by a short reason (under 30 words).
+
+Is this task still relevant to the codebase? Check for the mentioned files, functions, or patterns.
+
+Task: "${title}"${sourceHint}
+
+Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
+
+  const tmpFile = path.join(cwd, '.staleness-prompt.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+
+  try {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Glob,Grep"`;
+    const output = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout: 60000,
+      stdio: 'pipe',
+      maxBuffer: 2 * 1024 * 1024,
+      env
+    }).trim();
+
+    try { fs.unlinkSync(tmpFile); } catch {}
+
+    // Parse YES/NO from the first line of output
+    const firstLine = output.split('\n').find(l => /^\s*(YES|NO)\b/i.test(l)) || output.split('\n')[0] || '';
+    const fresh = /^\s*YES\b/i.test(firstLine);
+    const reasoning = firstLine.replace(/^\s*(YES|NO)\s*/i, '').trim() || output.slice(0, 200);
+
+    return { fresh, reasoning };
+  } catch (err) {
+    try { fs.unlinkSync(tmpFile); } catch {}
+    // On timeout or crash, treat as unverifiable — conservative default
+    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+  }
 }
 
 /**
@@ -625,7 +2126,29 @@ async function autopilotFromTodo(options = {}) {
 }
 
 module.exports = {
+  appendTickSummary,
+  askHuman,
+  askModel,
   autopilotAtris,
   autopilotFromTodo,
-  suggestNextTask
+  buildPrompt,
+  isLessonResolved,
+  isStillTrue,
+  getTaskAgeDays,
+  getIdleTickCount,
+  getRecentSignals,
+  getTickStatus,
+  getVerifyCommand,
+  computeTickReward,
+  verifyJudgeIntegrity,
+  maybeWriteCompletedEndgameScorecard,
+  renderHumanSuggestion,
+  renderHumanTickIntro,
+  proposeCandidateHorizons,
+  recordTickCommit,
+  regressionCheck,
+  runTaskOnce,
+  scoreEndgameCandidates,
+  suggestNextTask,
+  writeLesson
 };
