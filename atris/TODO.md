@@ -24,9 +24,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## Backlog
 
-- **T1:** Update cli-ux-simplification validate.md: (1) bump `last_compiled` to 2026-04-13, (2) update `validation_notes` to note 4 cosmetic commits since dc8ed07 with zero line-number drift, (3) reword Check #6 bullet "GETTING_STARTED.md references TODO.md as primary working set" → "GETTING_STARTED.md lists TODO.md in folder structure and key commands" to match the f5fd130 rewrite. All 6 source line refs confirmed current. Files: `atris/features/cli-ux-simplification/validate.md` only. **Verify:** grep validate.md for "primary working set" returns 0 hits. [execute]
-
 ## In Progress
+
+- **T1:** Update cli-ux-simplification validate.md: (1) bump `last_compiled` to 2026-04-13, (2) update `validation_notes` to note 4 cosmetic commits since dc8ed07 with zero line-number drift, (3) reword Check #6 bullet "GETTING_STARTED.md references TODO.md as primary working set" → "GETTING_STARTED.md lists TODO.md in folder structure and key commands" to match the f5fd130 rewrite. All 6 source line refs confirmed current. Files: `atris/features/cli-ux-simplification/validate.md` only. **Verify:** grep validate.md for "primary working set" returns 0 hits. [execute]
+  **Claimed by:** Executor at 2026-04-13T07:41:39.066Z
+  **Stage:** DO
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
