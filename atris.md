@@ -225,6 +225,8 @@ sources:
 
 **Compounding:** When you answer a question that required synthesis across multiple pages, file the answer back as a new page (or update an existing one). Explorations accumulate — they don't disappear.
 
+**Activation:** On session start, if `atris/wiki/STATUS.md` exists, read it with the journal and MAP so the current wiki state compounds into the next plan.
+
 **Linting:** During `atris review`, check for:
 - Stale pages (source newer than last_compiled)
 - Orphan pages (no inbound references)
