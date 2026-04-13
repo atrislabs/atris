@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-04-12
+> **Last updated:** 2026-04-13
 
 ---
 
@@ -25,6 +25,14 @@ then /endgame picks the next horizon at the boundary.
 ## Backlog
 
 ## In Progress
+
+- **T1:** Fix two stale refs in cli-ux-simplification validate.md: (1) Check 4 bullet 1 says "workflow.js:84 comment" but actual comment is at line 83, (2) Check 6 bullet 1 says "atris.md Phase 3 reframed" but atris.md no longer uses Phase numbering — correct to "atris.md TASK RULES section (line 101) defines TODO.md-based task system". File: atris/features/cli-ux-simplification/validate.md. Done when: both line refs match actual source and grep confirms no "Phase 3" in atris.md. [execute]
+  **Claimed by:** Executor at 2026-04-13T08:56:46.771Z
+  **Stage:** DO
+
+- **T2:** Make `atris business onboard` work from sparse input and emit a safe starter action
+  **Stage:** DO
+  **Claimed by:** Codex at 2026-04-13 13:05
 
 <!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
 
