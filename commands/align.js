@@ -32,14 +32,29 @@ const SKIP_DIRS = new Set([
 
 const SKIP_FILES = new Set(['.DS_Store', 'Thumbs.db']);
 
+/**
+ * Sleep for a given number of milliseconds.
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise<void>}
+ */
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Compute SHA-256 hash of content string.
+ * @param {string} content - Content to hash
+ * @returns {string} Hex-encoded hash
+ */
 function hashContent(content) {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
+/**
+ * Compute SHA-256 hash of a file.
+ * @param {string} absPath - Absolute path to file
+ * @returns {string|null} Hex-encoded hash, or null if file unreadable
+ */
 function hashFile(absPath) {
   try {
     const buf = fs.readFileSync(absPath);
