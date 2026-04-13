@@ -199,7 +199,7 @@ function consoleCmd() {
 function showHelp() {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('atrisDev — The new way to build with AI');
+  console.log('atris — an operating system for intelligence');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('Quick Start:');
@@ -1542,7 +1542,7 @@ async function atrisDevEntry(userInput = null) {
   }
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🤖 atrisDev Protocol — Navigator Agent');
+  console.log('atris — navigator agent');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 
