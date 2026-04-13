@@ -8,6 +8,10 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const ATRIS_DIR = path.join(os.homedir(), '.atris');
 const CACHE_FILE = path.join(ATRIS_DIR, '.update-check');
 
+/**
+ * Get the currently installed CLI version from package.json.
+ * @returns {string|null} Installed version string, or null on error
+ */
 function getInstalledVersion() {
   try {
     const packageJsonPath = path.join(__dirname, '..', 'package.json');
@@ -18,6 +22,10 @@ function getInstalledVersion() {
   }
 }
 
+/**
+ * Load cached update check data from ~/.atris/.update-check.
+ * @returns {{lastCheck: Date|null, latestVersion: string|null}} Cache data
+ */
 function getCacheData() {
   try {
     if (fs.existsSync(CACHE_FILE)) {
@@ -33,6 +41,10 @@ function getCacheData() {
   return { lastCheck: null, latestVersion: null };
 }
 
+/**
+ * Save update check result to ~/.atris/.update-check cache file.
+ * @param {string} latestVersion - The latest version from npm
+ */
 function saveCacheData(latestVersion) {
   try {
     // Ensure ~/.atris/ exists
@@ -49,6 +61,10 @@ function saveCacheData(latestVersion) {
   }
 }
 
+/**
+ * Fetch the latest version of atris from npm registry.
+ * @returns {Promise<string>} Latest version string
+ */
 function checkNpmVersion() {
   return new Promise((resolve, reject) => {
     const options = {
