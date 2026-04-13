@@ -164,14 +164,15 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Business Workspaces (`atris business`)
 
-**Purpose:** Create, inspect, and sync real business workspaces, including the canonical standalone `.atris/business.json` + `atris/` shape used for local-first business environments
+**Purpose:** Create, inspect, and sync real business workspaces, including the default standalone `.atris/business.json` + `atris/` shape used for local-first business environments
 
 - **Entry point:** `commands/business.js`
 - **Key flows:**
-- `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a canonical business workspace
+- `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
 - `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`
+- `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
 - `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
-- `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-canonical/` into a business workspace without clobbering custom files
+- `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files
 - **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
 - **Value:** Makes business workspaces a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
