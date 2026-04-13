@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-04-13] no-verify-field** — fail — Task "Break down inbox idea: "demo"" has no explicit **Verify:** field in TODO.md. Tick halted — every task must declare how to verify it.
+
 - **[2026-04-09] reward-checksum-layered-guards** — pass — Judge immutability enforced at two layers: git pre-commit hook blocks staging, runtime test + judge integrity guard catch bypass. Hook alone isn't enough (—no-verify can bypass it); test + runtime check are the failsafe. For critical constants, combine git-level + runtime verification.
 
 - **[2026-02-09] validate-md-gap** — pass — The validate.md template existed but nothing in the system told agents to use it. Three places needed updating: README, CLI output, workflow docs. Always check that templates are wired into the actual workflow, not just sitting in _templates/.

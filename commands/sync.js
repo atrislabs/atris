@@ -44,6 +44,7 @@ function _substituteParams(content, params) {
     .replace(/\{\{owner_email\}\}/g, params.owner_email || '')
     .replace(/\{\{business_id\}\}/g, params.business_id || '')
     .replace(/\{\{workspace_id\}\}/g, params.workspace_id || '')
+    .replace(/\{\{today\}\}/g, params.today || new Date().toISOString().slice(0, 10))
     .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
 }
 
@@ -55,6 +56,43 @@ function resolveWorkspaceTemplate(templateName = 'business') {
   const template = WORKSPACE_TEMPLATES[normalized];
   if (!template) return null;
   return { key: normalized, ...template };
+}
+
+function ensureWorkspaceStateFiles(targetRoot, params, options = {}) {
+  const dryRun = options.dryRun === true;
+  const metaDir = path.join(targetRoot, '.atris');
+  const stateDir = path.join(metaDir, 'state');
+  const created = [];
+
+  const files = [
+    {
+      relPath: '_sync.json',
+      content: `${JSON.stringify({
+        workspace_slug: params.slug || 'business',
+        business_id: params.business_id || '',
+        workspace_id: params.workspace_id || '',
+        workspace_template: params.workspace_template || 'business',
+        status: 'initialized-local',
+        updated_at: new Date().toISOString(),
+        source: 'workspace template bootstrap',
+      }, null, 2)}\n`,
+    },
+    { relPath: 'events.jsonl', content: '' },
+    { relPath: 'episodes.jsonl', content: '' },
+    { relPath: 'scorecards.jsonl', content: '' },
+  ];
+
+  for (const file of files) {
+    const fullPath = path.join(stateDir, file.relPath);
+    if (fs.existsSync(fullPath)) continue;
+    created.push(path.join('.atris', 'state', file.relPath));
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, file.content);
+    }
+  }
+
+  return created;
 }
 
 /**
@@ -77,6 +115,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     owner_email: bizMeta.owner_email || '',
     business_id: bizMeta.business_id || '',
     workspace_id: bizMeta.workspace_id || '',
+    today: new Date().toISOString().slice(0, 10),
     workspace_template: template.key,
   };
   const force = options.force != null ? options.force : process.argv.includes('--force');
@@ -125,6 +164,8 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     }
   }
 
+  const stateAddedList = ensureWorkspaceStateFiles(targetRoot, params, { dryRun });
+
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
   console.log(`  Preserved: ${preserved} (existing customizations kept)`);
@@ -143,10 +184,15 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     if (updatedList.length > 15) console.log(`    ... +${updatedList.length - 15} more`);
     console.log('');
   }
+  if (stateAddedList.length > 0) {
+    console.log('  State files:');
+    stateAddedList.forEach(p => console.log(`    + ${p}`));
+    console.log('');
+  }
 
   if (dryRun) {
     console.log('  (--dry-run, no changes made)');
-  } else if (added === 0 && updated === 0) {
+  } else if (added === 0 && updated === 0 && stateAddedList.length === 0) {
     ensureWikiScaffold(targetRoot);
     console.log('  ✓ Already up to date');
   } else {
@@ -614,4 +660,5 @@ module.exports = {
   syncBusinessCanonical,
   syncWorkspaceTemplate,
   resolveWorkspaceTemplate,
+  ensureWorkspaceStateFiles,
 };

@@ -1,7 +1,7 @@
 ---
 last_compiled: 2026-04-11
 validated_by: executor
-validation_notes: Re-verified (2026-04-11) — all 6 source refs confirmed current. showHelp 199-338, init TODO.md 398-422, workflow plan/do/review 83-92/280-281/427-437/746-755, MAP features/ line 90, MAP plan/do/review 477-505. Zero drift.
+validation_notes: Re-verified (2026-04-11T22:52) — all 6 source refs + 2 MAP refs confirmed current. showHelp 199-338, init TODO.md 398-422, workflow plan/do/review 83-92/280-281/427-437/746-755, MAP features/ line 90, MAP plan/do/review 477-505. Zero drift.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)

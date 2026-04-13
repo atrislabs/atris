@@ -14,3 +14,4 @@ Examples:
 
 - Reports referenced by name from journals (`atris/logs/`)
 - Canonical findings get promoted to `atris/wiki/briefs/`
+- Use `atris business record <report-path>` to turn a finished recap into structured state
