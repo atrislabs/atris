@@ -4,6 +4,10 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const readline = require('readline');
 
+/**
+ * Open a URL in the system's default browser.
+ * @param {string} url - URL to open
+ */
 function openBrowser(url) {
   const platform = os.platform();
   // Sanitize URL to prevent shell injection — only allow valid URL characters
@@ -30,6 +34,11 @@ let sharedRl = null;
 let inputLines = [];
 let inputIndex = 0;
 
+/**
+ * Prompt the user for input, handling both TTY and piped input.
+ * @param {string} question - Prompt text to display
+ * @returns {Promise<string>} User's input
+ */
 function promptUser(question) {
   // If stdin is not a TTY (piped input), read all lines upfront
   if (!process.stdin.isTTY && inputLines.length === 0 && !sharedRl) {
@@ -74,7 +83,11 @@ function promptUser(question) {
 
 const TOKEN_REFRESH_BUFFER_SECONDS = 300;
 
-// JWT helpers
+/**
+ * Decode and parse the claims from a JWT token.
+ * @param {string} token - JWT token string
+ * @returns {Object|null} Decoded claims or null if invalid
+ */
 function decodeJwtClaims(token) {
   if (!token || typeof token !== 'string') {
     return null;
@@ -93,6 +106,11 @@ function decodeJwtClaims(token) {
   }
 }
 
+/**
+ * Get the expiration time of a JWT token in epoch seconds.
+ * @param {string} token - JWT token string
+ * @returns {number|null} Expiry epoch seconds or null if invalid
+ */
 function getTokenExpiryEpochSeconds(token) {
   const claims = decodeJwtClaims(token);
   if (!claims || typeof claims.exp !== 'number') {
@@ -101,6 +119,12 @@ function getTokenExpiryEpochSeconds(token) {
   return claims.exp;
 }
 
+/**
+ * Check if a JWT token should be refreshed based on expiry.
+ * @param {string} token - JWT token string
+ * @param {number} [bufferSeconds=300] - Seconds before expiry to trigger refresh
+ * @returns {boolean} True if token needs refresh
+ */
 function shouldRefreshToken(token, bufferSeconds = TOKEN_REFRESH_BUFFER_SECONDS) {
   const exp = getTokenExpiryEpochSeconds(token);
   if (!exp) {
