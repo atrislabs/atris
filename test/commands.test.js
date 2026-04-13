@@ -760,6 +760,7 @@ test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse i
     assert.match(fs.readFileSync(conceptPath, 'utf8'), /Candidate Loop/);
     assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Next 3 Moves/);
     assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Best Next Action/);
+    assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Swarlo join/);
     assert.match(fs.readFileSync(onePagerPath, 'utf8'), /One Pager/);
     assert.match(fs.readFileSync(onePagerPath, 'utf8'), /Swarlo join/);
 
