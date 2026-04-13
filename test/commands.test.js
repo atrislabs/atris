@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
-const { createCanonicalBusinessWorkspace } = require('../commands/business');
+const { createCanonicalBusinessWorkspace, recordBusinessRun } = require('../commands/business');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -16,6 +16,7 @@ const {
   renderHumanSuggestion,
   renderHumanTickIntro,
   scoreEndgameCandidates,
+  suggestNextTask,
   writeLesson
 } = require('../commands/autopilot');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
@@ -500,6 +501,16 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'policies', 'REWARD.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'context', 'live-workspace.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', '_sync.json')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'events.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'episodes.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'reports', 'operating-recap-template.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'concepts', 'first-loop-template.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', '_template', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'ops', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'comms', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'research', 'MEMBER.md')));
 
     const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
     assert.equal(meta.slug, 'blondish');
@@ -508,18 +519,39 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.equal(meta.workspace_template, 'business');
     assert.equal(meta.owner_email, 'joel@blondish.world');
 
+    const syncMeta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', '_sync.json'), 'utf8'));
+    assert.equal(syncMeta.workspace_slug, 'blondish');
+    assert.equal(syncMeta.business_id, 'biz-123');
+    assert.equal(syncMeta.workspace_id, 'ws-456');
+    assert.equal(syncMeta.workspace_template, 'business');
+
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /BLOND:ISH/);
+    assert.match(map, /\.atris\/state\/events\.jsonl/);
 
     const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
     assert.match(persona, /BLOND:ISH/);
 
     const reward = fs.readFileSync(path.join(dir, 'atris', 'policies', 'REWARD.md'), 'utf8');
     assert.match(reward, /Reward what makes the operator faster/i);
+    assert.match(reward, /events\.jsonl/);
 
     const liveWorkspace = fs.readFileSync(path.join(dir, 'atris', 'context', 'live-workspace.md'), 'utf8');
     assert.match(liveWorkspace, /biz-123/);
     assert.match(liveWorkspace, /ws-456/);
+    assert.match(liveWorkspace, /Structured State/);
+
+    const todo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todo, /## Endgame/);
+    assert.match(todo, /\*\*B1:\*\*/);
+    assert.match(todo, /\[endgame\]/);
+    assert.match(todo, /\*\*Verify:\*\*/);
+    assert.match(todo, /first measurable loop/i);
+    assert.match(todo, /named human/i);
+    assert.match(todo, /structured state entries/i);
+
+    const teamReadme = fs.readFileSync(path.join(dir, 'atris', 'team', 'README.md'), 'utf8');
+    assert.match(teamReadme, /real humans/i);
   } finally {
     cleanupTempDir(dir);
   }
@@ -540,6 +572,10 @@ test('createCanonicalBusinessWorkspace can scaffold a research lab template', ()
     assert.equal(result.targetRoot, dir);
     assert.equal(result.workspaceTemplate, 'research');
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'business.json')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', '_sync.json')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'events.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'episodes.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'hypothesis', 'MEMBER.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'eval', 'MEMBER.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'concepts', 'research-loop.md')));
@@ -547,6 +583,12 @@ test('createCanonicalBusinessWorkspace can scaffold a research lab template', ()
 
     const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
     assert.equal(meta.workspace_template, 'research');
+
+    const todo = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    assert.match(todo, /## Endgame/);
+    assert.match(todo, /\*\*R1:\*\*/);
+    assert.match(todo, /\[endgame\]/);
+    assert.match(todo, /\*\*Verify:\*\*/);
 
     const reward = fs.readFileSync(path.join(dir, 'atris', 'policies', 'REWARD.md'), 'utf8');
     assert.match(reward, /reproducible/i);
@@ -571,6 +613,97 @@ test('business help exposes default workspace creation', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /init <name>/);
     assert.match(res.stdout, /create <name>/);
+    assert.match(res.stdout, /business environment/i);
+    assert.doesNotMatch(res.stdout, /canonical business workspace/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('fresh business environment starter exposes an endgame task with explicit verify', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-123',
+      workspace_id: 'ws-456',
+      name: 'BLOND:ISH',
+      slug: 'blondish',
+      owner_email: 'joel@blondish.world',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const suggestion = await suggestNextTask(dir, new Set(), { auto: true });
+    assert.equal(suggestion.kind, 'endgame');
+
+    const verify = getVerifyCommand(dir, suggestion.task);
+    assert.equal(verify.explicit, true);
+    assert.match(verify.cmd, /find atris\/wiki\/concepts/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('fresh research environment starter exposes an endgame task with explicit verify', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-r1',
+      workspace_id: 'ws-r2',
+      name: 'Frontier Lab',
+      slug: 'frontier-lab',
+      owner_email: 'pi@frontier.lab',
+      workspace_template: 'research',
+    }, { here: true, templateName: 'research' });
+
+    const suggestion = await suggestNextTask(dir, new Set(), { auto: true });
+    assert.equal(suggestion.kind, 'endgame');
+
+    const verify = getVerifyCommand(dir, suggestion.task);
+    assert.equal(verify.explicit, true);
+    assert.match(verify.cmd, /research-program\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business record appends recap state to all three workspace logs', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-123',
+      workspace_id: 'ws-456',
+      name: 'BLOND:ISH',
+      slug: 'blondish',
+      owner_email: 'joel@blondish.world',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const reportPath = path.join(dir, 'atris', 'reports', '2026-04-12-operator-recap.md');
+    fs.writeFileSync(reportPath, '# Operator Recap\n\nA real run happened.\n', 'utf8');
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await recordBusinessRun('atris/reports/2026-04-12-operator-recap.md', '--outcome', 'positive', '--metric', 'ticket pulse');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const events = fs.readFileSync(path.join(dir, '.atris', 'state', 'events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const episodes = fs.readFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const scorecards = fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+
+    assert.equal(events.length, 1);
+    assert.equal(episodes.length, 1);
+    assert.equal(scorecards.length, 1);
+    assert.equal(events[0].type, 'report_recorded');
+    assert.equal(episodes[0].type, 'episode');
+    assert.equal(scorecards[0].type, 'scorecard');
+    assert.equal(events[0].business_slug, 'blondish');
+    assert.equal(events[0].report_path, 'atris/reports/2026-04-12-operator-recap.md');
+    assert.equal(events[0].metric, 'ticket pulse');
+    assert.equal(events[0].outcome, 'positive');
+    assert.equal(events[0].reward, 5);
   } finally {
     cleanupTempDir(dir);
   }

@@ -12,14 +12,19 @@ Compiled knowledge base. Sources live in `atris/context/` (immutable).
 
 ## Concepts
 
-- (add the first measurable reward loop here)
+- [First Loop Template](concepts/first-loop-template.md) - starter structure for the first measurable reward loop
 
 ## Briefs
 
 - (add one business brief first)
+
+## Reports
+
+- [Operating Recap Template](../reports/operating-recap-template.md) - default artifact for the first real loop
 
 ## Gaps
 
 - live source feeds
 - real approval path
 - first measurable loop
+- named humans

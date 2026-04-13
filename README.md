@@ -83,9 +83,15 @@ cd ~/arena/atris-business/blondish
 atris align --fix
 ```
 
-That creates the cloud business, writes `.atris/business.json`, and scaffolds the canonical local `atris/` workspace under `~/arena/atris-business/<slug>/`.
+That creates the cloud business, writes `.atris/business.json`, initializes `.atris/state/` for events, episodes, and scorecards, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter team lanes, a default recap artifact, and a first-loop starter queue in `atris/TODO.md`.
 
 If you already have a folder full of source material, run it from there with `atris business init "BLOND:ISH" --here`.
+
+When the first recap is done, record it into the RL state logs:
+
+```bash
+atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed --metric "operator speed"
+```
 
 ## Core Commands
 

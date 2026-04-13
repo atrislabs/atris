@@ -1,7 +1,7 @@
 # Atris Wiki Status
 
-- Last ingest: never
-- Last lint: never
-- Last loop: never
-- Health: empty wiki, 0 pages
-- Next move: create one business brief, one live-workspace page, and one measurable loop
+- Last ingest: starter
+- Last lint: starter
+- Last loop: starter
+- Health: starter wiki, ready for the first brief, named humans, first loop, and first artifact
+- Next move: compile one business brief, add the first named humans, fill the first loop template, and turn one real run into an artifact

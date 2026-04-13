@@ -16,6 +16,9 @@ Reward what makes the operator faster and the business loop more correct.
 
 After each meaningful run:
 
-1. log the episode in today's journal
-2. add one lesson to `atris/policies/LESSONS.md` if the system got sharper
-3. keep the docs short enough that an operator could skim them
+1. log the run in today's journal
+2. append the raw event to `.atris/state/events.jsonl`
+3. append the episode to `.atris/state/episodes.jsonl`
+4. append the run summary to `.atris/state/scorecards.jsonl`
+5. add one lesson to `atris/policies/LESSONS.md` if the system got sharper
+6. keep the docs short enough that an operator could skim them
