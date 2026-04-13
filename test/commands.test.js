@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
-const { createCanonicalBusinessWorkspace, recordBusinessRun } = require('../commands/business');
+const { createCanonicalBusinessWorkspace, onboardBusiness, recordBusinessRun } = require('../commands/business');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -709,6 +709,113 @@ test('business record appends recap state to all three workspace logs', async ()
   }
 });
 
+test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse inputs', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-789',
+      workspace_id: 'ws-789',
+      name: 'Cashmere AI',
+      slug: 'cashmere-ai',
+      owner_email: 'team@cashmere.ai',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--website', 'https://cashmere.ai',
+        '--contact', 'Farbod Nowzad',
+        '--email', 'farbod@cashmere.ai',
+        '--role', 'Founder',
+        '--note', 'Warm proposal-stage account',
+        '--note', 'Need a sharper first loop'
+      );
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const ingestRoot = path.join(dir, 'atris', 'context', '_ingest');
+    const packs = fs.readdirSync(ingestRoot);
+    assert.equal(packs.length, 1);
+    assert.ok(fs.existsSync(path.join(ingestRoot, packs[0], 'intake.md')));
+    assert.ok(fs.existsSync(path.join(ingestRoot, packs[0], 'links.txt')));
+    assert.ok(fs.existsSync(path.join(ingestRoot, packs[0], 'sources.txt')));
+
+    const briefPath = path.join(dir, 'atris', 'wiki', 'briefs', 'cashmere-ai-starter-brief.md');
+    const personPath = path.join(dir, 'atris', 'wiki', 'people', 'farbod-nowzad.md');
+    const conceptPath = path.join(dir, 'atris', 'wiki', 'concepts', 'cashmere-ai-first-loop.md');
+    const cheatSheetPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-cashmere-ai-onboarding-cheat-sheet.md`);
+    const onePagerPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-cashmere-ai-operator-one-pager.md`);
+
+    assert.ok(fs.existsSync(briefPath));
+    assert.ok(fs.existsSync(personPath));
+    assert.ok(fs.existsSync(conceptPath));
+    assert.ok(fs.existsSync(cheatSheetPath));
+    assert.ok(fs.existsSync(onePagerPath));
+
+    assert.match(fs.readFileSync(briefPath, 'utf8'), /Warm proposal-stage account/);
+    assert.match(fs.readFileSync(personPath, 'utf8'), /Farbod Nowzad/);
+    assert.match(fs.readFileSync(conceptPath, 'utf8'), /Candidate Loop/);
+    assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Next 3 Moves/);
+    assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Best Next Action/);
+    assert.match(fs.readFileSync(onePagerPath, 'utf8'), /One Pager/);
+    assert.match(fs.readFileSync(onePagerPath, 'utf8'), /Swarlo join/);
+
+    const index = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), 'utf8');
+    assert.match(index, /\[\[atris\/wiki\/briefs\/cashmere-ai-starter-brief\.md\]\]/);
+    assert.match(index, /\[\[atris\/wiki\/people\/farbod-nowzad\.md\]\]/);
+    assert.match(index, /\[\[atris\/wiki\/concepts\/cashmere-ai-first-loop\.md\]\]/);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), 'utf8');
+    assert.match(status, /starter onboarding compiled/);
+    const log = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'log.md'), 'utf8');
+    assert.match(log, /ONBOARD starter onboarding compiled for cashmere-ai/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business onboard can infer signals from sloppy input and local files', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-900',
+      workspace_id: 'ws-900',
+      name: 'Northstar Ops',
+      slug: 'northstar-ops',
+      owner_email: 'team@northstar.ops',
+      workspace_template: 'business',
+    }, { here: true });
+
+    fs.writeFileSync(path.join(dir, 'meeting-notes.md'), '# Notes\n\nSite: https://northstarops.ai\n', 'utf8');
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness('sleep deprived onboarding', 'need something useful fast');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const briefPath = path.join(dir, 'atris', 'wiki', 'briefs', 'northstar-ops-starter-brief.md');
+    const onePagerPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-northstar-ops-operator-one-pager.md`);
+    const sourcesRoot = path.join(dir, 'atris', 'context', '_ingest');
+    const pack = fs.readdirSync(sourcesRoot)[0];
+    const sourcesTxt = fs.readFileSync(path.join(sourcesRoot, pack, 'sources.txt'), 'utf8');
+
+    assert.ok(fs.existsSync(briefPath));
+    assert.ok(fs.existsSync(onePagerPath));
+    assert.match(fs.readFileSync(briefPath, 'utf8'), /Website: https:\/\/northstarops\.ai/);
+    assert.match(fs.readFileSync(briefPath, 'utf8'), /sleep deprived onboarding need something useful fast/);
+    assert.match(fs.readFileSync(onePagerPath, 'utf8'), /Map the offer into one loop|Extract the first workflow from local evidence/);
+    assert.match(sourcesTxt, /meeting-notes\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // research CLI command not yet wired — template exists but no `atris research` subcommand
 
 // ============================================
@@ -861,6 +968,7 @@ test('unknown single-word command shows warning', () => {
 test('ingest is local-first and scaffolds atris/wiki', () => {
   const dir = makeTempDir();
   try {
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Test source\n', 'utf8');
     const res = runCli(['ingest', 'README.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Local wiki ingest/);
@@ -868,6 +976,43 @@ test('ingest is local-first and scaffolds atris/wiki', () => {
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'wiki.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'index.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'context', 'README.md')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('local ingest stages a source pack and refreshes wiki bookkeeping', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'sources'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'sources', 'overview.md'), '# Overview\n', 'utf8');
+
+    const res = runCli(['ingest', 'sources'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Pack: atris\/context\/_ingest\//);
+    assert.match(res.stdout, /Manifest: atris\/context\/_ingest\//);
+    assert.match(res.stdout, /Sources: atris\/context\/_ingest\//);
+
+    const ingestRoot = path.join(dir, 'atris', 'context', '_ingest');
+    const packs = fs.readdirSync(ingestRoot);
+    assert.equal(packs.length, 1);
+
+    const packDir = path.join(ingestRoot, packs[0]);
+    const manifestPath = path.join(packDir, 'manifest.json');
+    assert.ok(fs.existsSync(manifestPath));
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(manifest.entries[0].kind, 'directory');
+    assert.ok(manifest.entries[0].files.some((file) => file.endsWith('overview.md')));
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), 'utf8');
+    assert.match(status, /Last ingest: \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+    assert.match(status, /Health: ingest staged from atris\/context\/_ingest\//);
+    assert.match(status, /Next move: compile atris\/context\/_ingest\//);
+
+    const log = fs.readFileSync(path.join(dir, 'atris', 'wiki', 'log.md'), 'utf8');
+    assert.match(log, /INGEST 1 source item\(s\) staged from sources/);
+    assert.match(log, /manifest atris\/context\/_ingest\//);
   } finally {
     cleanupTempDir(dir);
   }
@@ -876,6 +1021,7 @@ test('ingest is local-first and scaffolds atris/wiki', () => {
 test('wiki ingest --private scaffolds .atris/presidio', () => {
   const dir = makeTempDir();
   try {
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Private source\n', 'utf8');
     const res = runCli(['wiki', 'ingest', '--private', 'README.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Private wiki ingest/);
@@ -883,6 +1029,7 @@ test('wiki ingest --private scaffolds .atris/presidio', () => {
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'wiki.md')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'index.md')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'STATUS.md')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'presidio', 'context', 'README.md')));
   } finally {
     cleanupTempDir(dir);
   }
