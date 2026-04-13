@@ -1,7 +1,7 @@
 ---
 last_compiled: 2026-04-13
 validated_by: executor
-validation_notes: Re-verified (2026-04-13T07:41) — all 6 source refs confirmed current (zero line-number drift). 4 cosmetic commits since dc8ed07 (f5fd130 GETTING_STARTED rewrite, 0b33481 stale-ref scrub, 8655994/756ce0d/0cc9239 prune passes) touched no source lines. Check #6 reworded to match f5fd130 GETTING_STARTED.md rewrite.
+validation_notes: Re-verified (2026-04-13T07:48) — all 6 source refs confirmed current (zero line-number drift). No source file changes since prior validation (84b291c). showHelp 199-338, init TODO template 398-422, plan/do/review TODO reads all at documented lines.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
