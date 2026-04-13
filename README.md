@@ -71,7 +71,7 @@ If you're still shaping the idea, use `atris brainstorm`. If you want Atris to k
 
 Core loop: `plan` -> `do` -> `review`
 
-Works with Claude Code, Cursor, Windsurf, Codex, GitHub Copilot, and other coding agents.
+Integrates with any agent.
 
 ## Business Workspaces
 
