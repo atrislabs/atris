@@ -75,6 +75,15 @@ After running the three moves, write the result to `atris/TODO.md`:
 
 The tag must be exactly `[endgame]` (parser only matches `\w+`, no colons or hyphens). The slug lives in the section header.
 
+3. **Always append an RSI audit as the final task:**
+
+```markdown
+- **TN:** RSI audit: read this endgame's halts, verify failures, and lessons. If the loop itself broke during this endgame (parser, reward, scorecard, verify wiring), fix it. If nothing broke, no-op. [endgame]
+  **Verify:** npm test
+```
+
+This is non-negotiable. Every endgame ends by pointing the loop inward. The loop improves what it ships (RL) AND improves itself (RSI). Same chain, last task, always.
+
 3. **Each task must include a `Verify:` line** with a deterministic check:
    - **Test command:** `npm test` or `npm run test:feature`
    - **Grep pattern:** `grep -q "pattern" file.js`
