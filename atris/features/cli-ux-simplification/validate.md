@@ -1,7 +1,7 @@
 ---
 last_compiled: 2026-04-13
 validated_by: validator
-validation_notes: Re-verified (2026-04-13T08:03) — all 6 source refs confirmed current, zero drift. showHelp 199-338, init TODO template 398-422, planAtris TODO read 83-92, planAtris TODO prompt 280-281, doAtris TODO load 427-437, reviewAtris TODO read 746-755. All checks pass.
+validation_notes: Re-verified (2026-04-13T08:10) — all 6 source refs confirmed current, zero drift. Fixed Check 5 bullet 2: replaced stale "(templates/features-readme.md)" with "(inline content, init.js:486)" — template file never existed, README written inline. showHelp 199-338, init TODO 398-422, planAtris TODO read 83-92, planAtris TODO prompt 280-281, doAtris TODO load 427-437, reviewAtris TODO read 746-755.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
@@ -45,7 +45,7 @@ sources:
 
 ### 5. Features/ Alignment
 - [x] init.js creates atris/features/ directory (v1.9.6 update, per MAP.md line 90)
-- [x] init.js scaffolds atris/features/README.md template (templates/features-readme.md)
+- [x] init.js scaffolds atris/features/README.md template (inline content, init.js:486)
 - [x] features/cli-ux-simplification listed in features/README.md as completed (line 142-149)
 - [x] feature/README.md distinguishes "substantial work" (features/) from "simple tasks" (TODO.md) (lines 155-165)
 
