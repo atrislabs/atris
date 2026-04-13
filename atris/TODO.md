@@ -1,35 +1,40 @@
 # TODO.md
 
-> **Last updated:** 2026-04-13
+> **Last updated:** 2026-03-11
 
 ---
 
 ## Purpose
 
 Tracks active tasks for Atris CLI development. Target state = 0.
-The `## Endgame` section below holds the current horizon; `[endgame]`-tagged
-tasks in `## Backlog` are pursued by /autopilot in priority order until done,
-then /endgame picks the next horizon at the boundary.
-
----
-
-## Endgame
-
-**Slug:** check-before-acting
-**Picked:** 2026-04-10 16:30
-**Horizon:** The loop never proposes action from a resolved lesson or a stale fact. I4 (lesson-still-applies) shipped. `atris release` auto-drafts version bumps and /launch posts. v3.2.0 story is complete: "the loop checks before it acts."
-**Source:** staleness-gate closed, I4 from inbox, user said "keep going"
 
 ---
 
 ## Backlog
 
-## In Progress
+---
 
-<!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
+## In Progress
 
 ---
 
 ## Completed
+
+- [x] Fix experiments CLI review findings — console fallback + single-pack validate
+- [x] Add `atris experiments` to CLI — scaffold, validate, benchmark
+- [x] Audit runtime/CLI regressions — fixed `taskContexts` ReferenceError crash in doAtris (workflow.js:513,565), cataloged dead auth code in bin/atris.js
+- [x] Audit journal/log merge behavior (lib/journal.js + commands/log-sync.js)
+- [x] Install all skills to Codex (8 skills → ~/.codex/skills/)
+- [x] Add frontmatter to email-agent, memory, autopilot skills
+- [x] Clean up stale files, duplicate folders, gitignore
+- [x] FEAT-001: CLI version in autopilot banner
+- [x] Define Atris system skill
+- [x] Publish skill distro + smoke test
+- [x] Auth utils: chmod, dedupe, timeout
+- [x] `atris search` command
+- [x] INTUITION.md template
+- [x] Last 3 completions at activate
+- [x] "Learned" field in Handoff
+- [x] "Any learnings?" validator prompt
 
 ---
