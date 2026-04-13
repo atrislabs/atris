@@ -754,10 +754,11 @@ function runTaskOnce(context, options = {}) {
   const verifyResult = getVerifyCommand(cwd, context.task);
   const verifyCmd = verifyResult.cmd;
 
-  // Guard: refuse to run ticks without an explicit Verify field
-  if (!verifyResult.explicit) {
+  // Guard: endgame tasks must have an explicit Verify field.
+  // Reactive signals (inbox, staleness, imagined) use npm test as default.
+  if (!verifyResult.explicit && context.kind === 'endgame') {
     writeLesson(cwd, 'no-verify-field', 'fail',
-      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted — every task must declare how to verify it.`);
+      `Task "${context.task}" has no explicit **Verify:** field in TODO.md. Tick halted — every endgame task must declare how to verify it.`);
     return {
       outcome: 'halted',
       reason: 'no-verify-field',

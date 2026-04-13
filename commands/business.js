@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
-const { syncBusinessCanonical } = require('./sync');
+const { syncBusinessCanonical, ensureWorkspaceStateFiles } = require('./sync');
 
 function getBusinessConfigPath() {
   const home = require('os').homedir();
@@ -104,6 +104,168 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
   return { targetRoot, businessJsonPath, workspaceTemplate };
 }
 
+function parseRecordFlags(args, cwd = process.cwd()) {
+  const options = {
+    cwd,
+    reportPath: null,
+    summary: '',
+    metric: '',
+    outcome: 'recorded',
+    reward: null,
+    loop: 'manual',
+    actor: 'operator',
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if ((arg === '--summary' || arg === '-s') && next) {
+      options.summary = next;
+      i++;
+    } else if ((arg === '--metric' || arg === '-m') && next) {
+      options.metric = next;
+      i++;
+    } else if ((arg === '--outcome' || arg === '-o') && next) {
+      options.outcome = next;
+      i++;
+    } else if ((arg === '--reward' || arg === '-r') && next) {
+      options.reward = next;
+      i++;
+    } else if (arg === '--loop' && next) {
+      options.loop = next;
+      i++;
+    } else if (arg === '--actor' && next) {
+      options.actor = next;
+      i++;
+    } else if (!arg.startsWith('-') && !options.reportPath) {
+      options.reportPath = arg;
+    }
+  }
+
+  return options;
+}
+
+function readWorkspaceBusinessMeta(cwd = process.cwd()) {
+  const bizFile = path.join(cwd, '.atris', 'business.json');
+  if (!fs.existsSync(bizFile)) {
+    throw new Error('Run this command inside a business environment with .atris/business.json.');
+  }
+  try {
+    return JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+  } catch (error) {
+    throw new Error(`Failed to read .atris/business.json: ${error.message}`);
+  }
+}
+
+function resolveWorkspaceReport(cwd, reportPath) {
+  if (!reportPath) {
+    throw new Error('Usage: atris business record <report-path> [--summary "text"] [--metric name] [--outcome positive|mixed|negative] [--reward N]');
+  }
+  const absPath = path.resolve(cwd, reportPath);
+  if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
+    throw new Error(`Report not found: ${reportPath}`);
+  }
+  const relPath = path.relative(cwd, absPath).replace(/\\/g, '/');
+  return { absPath, relPath };
+}
+
+function extractReportTitle(content, absPath) {
+  const heading = String(content || '').match(/^#\s+(.+)$/m);
+  if (heading) return heading[1].trim();
+  return path.basename(absPath, path.extname(absPath));
+}
+
+function normalizeOutcome(value) {
+  const normalized = String(value || 'recorded').trim().toLowerCase();
+  if (['positive', 'win', 'success', 'improved'].includes(normalized)) return 'positive';
+  if (['negative', 'loss', 'failed', 'regressed'].includes(normalized)) return 'negative';
+  if (['mixed', 'partial', 'unclear'].includes(normalized)) return 'mixed';
+  return 'recorded';
+}
+
+function defaultRewardForOutcome(outcome) {
+  if (outcome === 'positive') return 5;
+  if (outcome === 'negative') return -3;
+  if (outcome === 'mixed') return 1;
+  return 0;
+}
+
+function appendJsonl(filePath, record) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+async function recordBusinessRun(reportArg, ...flags) {
+  const options = parseRecordFlags([reportArg, ...flags], process.cwd());
+  const cwd = options.cwd || process.cwd();
+  const bizMeta = readWorkspaceBusinessMeta(cwd);
+  const { absPath, relPath } = resolveWorkspaceReport(cwd, options.reportPath);
+
+  ensureWorkspaceStateFiles(cwd, {
+    slug: bizMeta.slug || 'business',
+    business_id: bizMeta.business_id || '',
+    workspace_id: bizMeta.workspace_id || '',
+    workspace_template: bizMeta.workspace_template || 'business',
+  }, { dryRun: false });
+
+  const reportContent = fs.readFileSync(absPath, 'utf8');
+  const title = extractReportTitle(reportContent, absPath);
+  const outcome = normalizeOutcome(options.outcome);
+  const reward = options.reward != null ? Number(options.reward) : defaultRewardForOutcome(outcome);
+  if (!Number.isFinite(reward)) {
+    throw new Error(`Invalid reward: ${options.reward}`);
+  }
+
+  const recordedAt = new Date().toISOString();
+  const summary = options.summary || title;
+  const metric = options.metric || null;
+  const loop = options.loop || 'manual';
+  const actor = options.actor || 'operator';
+  const stateDir = path.join(cwd, '.atris', 'state');
+
+  const shared = {
+    recorded_at: recordedAt,
+    business_slug: bizMeta.slug || null,
+    business_name: bizMeta.name || null,
+    business_id: bizMeta.business_id || null,
+    workspace_id: bizMeta.workspace_id || null,
+    workspace_template: bizMeta.workspace_template || 'business',
+    report_path: relPath,
+    report_title: title,
+    summary,
+    metric,
+    outcome,
+    reward,
+    loop,
+    actor,
+  };
+
+  appendJsonl(path.join(stateDir, 'events.jsonl'), {
+    ...shared,
+    type: 'report_recorded',
+  });
+
+  appendJsonl(path.join(stateDir, 'episodes.jsonl'), {
+    ...shared,
+    type: 'episode',
+  });
+
+  appendJsonl(path.join(stateDir, 'scorecards.jsonl'), {
+    ...shared,
+    type: 'scorecard',
+  });
+
+  console.log('');
+  console.log(`Recorded recap for ${bizMeta.name || bizMeta.slug || 'workspace'}.`);
+  console.log(`  Report:  ${relPath}`);
+  console.log(`  Outcome: ${outcome}`);
+  console.log(`  Reward:  ${reward}`);
+  if (metric) console.log(`  Metric:  ${metric}`);
+  console.log('  State:   .atris/state/events.jsonl, episodes.jsonl, scorecards.jsonl');
+  console.log('');
+}
+
 function detectBusinessSlug(explicitSlug) {
   if (explicitSlug) return explicitSlug;
   const bizFile = path.join(process.cwd(), '.atris', 'business.json');
@@ -200,7 +362,7 @@ async function listBusinesses(opts = {}) {
  * Walk ~/arena/atris-business/ and print a fleet status table for every
  * customer workspace. Pure local — no API calls, no rate-limit risk.
  *
- * Classifies each dir as: canonical, flat, unbound, nested, bare, or superseded.
+ * Classifies each dir as: ready, flat, unbound, nested, bare, or superseded.
  *
  * Discovered the need for this during overnight loop tick #3 when we hand-wrote
  * /tmp/customer_fleet.md. Now any team member can run `atris business list --local`
@@ -255,7 +417,7 @@ function listBusinessesLocal(opts = {}) {
 
     let state, action, icon;
     if (hasBizJson && hasAtris) {
-      state = 'canonical'; action = 'none'; icon = '🟢';
+      state = 'ready'; action = 'none'; icon = '🟢';
     } else if (hasBizJson && !hasAtris) {
       state = 'flat'; action = 'migrate to atris/ wrapper'; icon = '🟡';
     } else if (!hasBizJson && hasAtris) {
@@ -265,7 +427,7 @@ function listBusinessesLocal(opts = {}) {
     } else if (total < 5) {
       state = 'bare'; action = 'not yet onboarded'; icon = '⚪';
     } else {
-      state = 'flat-unbound'; action = 'needs canonical init'; icon = '🟡';
+      state = 'flat-unbound'; action = 'needs business init'; icon = '🟡';
     }
 
     let bizName = name;
@@ -311,7 +473,7 @@ function listBusinessesLocal(opts = {}) {
   console.log('  CUSTOMER              STATE         FILES   BIZ.JSON  ATRIS/  ACTION');
   console.log('  ' + '─'.repeat(83));
 
-  const order = ['canonical', 'flat', 'unbound', 'flat-unbound', 'bare', 'nested', 'superseded'];
+  const order = ['ready', 'flat', 'unbound', 'flat-unbound', 'bare', 'nested', 'superseded'];
   const grouped = {};
   for (const c of customers) {
     if (!grouped[c.state]) grouped[c.state] = [];
@@ -680,7 +842,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
     }, { here: options.here });
     console.log(`  Local workspace: ${scaffold.targetRoot}/`);
   } else if (!options.noLocal) {
-    console.log('  Tip: run `atris business init "<name>"` or add `--workspace` for a local canonical workspace.');
+    console.log('  Tip: run `atris business init "<name>"` or add `--workspace` for a local business environment.');
   }
 
   const template = options.template;
@@ -1157,6 +1319,12 @@ async function quickstart() {
   3. Push local state to cloud:
      atris align --fix
 
+  Then open atris/TODO.md and work the starter queue:
+     define the first loop -> add named humans -> write the first recap
+
+  After the first recap lands:
+     atris business record atris/reports/YYYY-MM-DD-your-recap.md --outcome mixed --metric "operator speed"
+
   Optional:
      atris business connect slack --business my-company
      atris business connect github --business my-company
@@ -1227,6 +1395,10 @@ async function businessCommand(subcommand, ...args) {
     case 'push':
       await deployBusiness(args[0]);
       break;
+    case 'record':
+    case 'record-recap':
+      await recordBusinessRun(args[0], ...args.slice(1));
+      break;
     case 'quickstart':
     case 'start':
     case 'guide':
@@ -1237,9 +1409,9 @@ async function businessCommand(subcommand, ...args) {
       console.log('');
       console.log('  quickstart           ← Start here! 3-command guide');
       console.log('');
-      console.log('  init <name>          Create a canonical business workspace (cloud + local)');
+      console.log('  init <name>          Create a business environment (cloud + local)');
       console.log('  workspace <name>     Alias for init');
-      console.log('  create <name>        Create the cloud business; add --workspace for local canonical scaffold');
+      console.log('  create <name>        Create the cloud business; add --workspace for a local business environment');
       console.log('  add <slug>           Register an existing cloud business');
       console.log('  list                 Show registered businesses');
       console.log('  team [slug]          Show members, roles, and admin access');
@@ -1249,6 +1421,7 @@ async function businessCommand(subcommand, ...args) {
       console.log('  connect <service>    Connect a skill/integration');
       console.log('  notify <mode>        Set notification mode (digest/silent/push)');
       console.log('  deploy <slug>        Push local business to cloud');
+      console.log('  record <report>      Append recap state into events, episodes, and scorecards');
       console.log('  remove <slug>        Unregister locally');
   }
 }
@@ -1263,4 +1436,5 @@ module.exports = {
   getBusinessConfigPath,
   createCanonicalBusinessWorkspace,
   initBusinessWorkspace,
+  recordBusinessRun,
 };

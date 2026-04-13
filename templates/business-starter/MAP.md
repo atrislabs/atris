@@ -32,6 +32,7 @@
 | `atris/wiki/people/` | Human profiles |
 | `atris/wiki/systems/` | Tools, tables, services |
 | `atris/wiki/concepts/` | Patterns and frameworks |
+| `atris/wiki/concepts/first-loop-template.md` | Starter template for the first measurable loop |
 | `atris/wiki/briefs/` | Cross-cutting briefs |
 
 ## Context (Raw Sources)
@@ -52,13 +53,22 @@
 | Path | What |
 |------|------|
 | `atris/team/` | Role lenses inside the shared business environment |
+| `atris/team/_template/MEMBER.md` | Starter member template for real humans or new lanes |
+| `atris/team/ops/MEMBER.md` | Default operating lane |
+| `atris/team/comms/MEMBER.md` | Default communication lane |
+| `atris/team/research/MEMBER.md` | Default research lane |
 | `atris/team/README.md` | Team folder rules |
 
 ## Reports
 
 | Path | What |
 |------|------|
+| `atris/reports/operating-recap-template.md` | Default artifact for the first real loop |
 | `atris/reports/` | Past artifacts |
+| `.atris/state/_sync.json` | Workspace sync receipt |
+| `.atris/state/events.jsonl` | Raw event stream |
+| `.atris/state/episodes.jsonl` | Episode log |
+| `.atris/state/scorecards.jsonl` | Run summaries |
 
 ---
 
