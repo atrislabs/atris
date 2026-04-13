@@ -82,7 +82,7 @@ Delete when done. Clean workspace = clear mind.
 
 ## Collaboration
 
-**Trust the system.** MAP.md is truth. TODO.md is current work (formerly `TODO.md`).
+**Trust the system.** MAP.md is truth. TODO.md is current work.
 
 Navigator finds, executor builds, validator verifies. Stay in your lane.
 
