@@ -32,4 +32,6 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
+- **T1:** Re-read sources and update atris/features/cli-ux-simplification/validate.md — all 6 source refs current, zero drift [execute → done]
+
 ---
