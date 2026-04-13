@@ -6,6 +6,11 @@ const { findAllSkills, parseFrontmatter } = require('./skill');
 
 // --- Recursive Copy Helper ---
 
+/**
+ * Recursively copy a directory, skipping .DS_Store and .git.
+ * @param {string} src - Source directory path
+ * @param {string} dest - Destination directory path
+ */
 function copyRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   const entries = fs.readdirSync(src);
@@ -23,6 +28,12 @@ function copyRecursive(src, dest) {
 
 // --- Generate plugin.json manifest ---
 
+/**
+ * Generate plugin.json manifest from discovered skills.
+ * @param {Array} skills - Array of skill objects
+ * @param {string} projectDir - Project root directory
+ * @returns {Object} Plugin manifest object
+ */
 function generateManifest(skills, projectDir) {
   let pkg = {};
   const pkgPath = path.join(projectDir, 'package.json');
