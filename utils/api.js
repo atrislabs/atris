@@ -20,22 +20,41 @@ try {
 const DEFAULT_CLIENT_ID = `AtrisCLI/${CLI_VERSION}`;
 const DEFAULT_USER_AGENT = `${DEFAULT_CLIENT_ID} (node ${process.version}; ${os.platform()} ${os.release()} ${os.arch()})`;
 
+/**
+ * Get the base URL for the Atris API.
+ * @returns {string} API base URL
+ */
 function getApiBaseUrl() {
   const raw = process.env.ATRIS_API_URL || 'https://api.atris.ai/api';
   return raw.replace(/\/$/, '');
 }
 
+/**
+ * Get the base URL for the Atris web app.
+ * @returns {string} App base URL
+ */
 function getAppBaseUrl() {
   const raw = process.env.ATRIS_APP_URL || 'https://atris.ai';
   return raw.replace(/\/$/, '');
 }
 
+/**
+ * Build a full API URL from a path.
+ * @param {string} pathname - API endpoint path
+ * @returns {string} Full API URL
+ */
 function buildApiUrl(pathname) {
   const base = getApiBaseUrl();
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   return `${base}${normalizedPath}`;
 }
 
+/**
+ * Make an HTTP/HTTPS request.
+ * @param {string} urlString - Full URL to request
+ * @param {Object} options - Request options (method, headers, body, timeoutMs)
+ * @returns {Promise<Object>} Response with statusCode, headers, and data
+ */
 function httpRequest(urlString, options) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(urlString);
