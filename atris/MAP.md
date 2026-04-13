@@ -170,7 +170,7 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Key flows:**
 - `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
 - `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`
-- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, and an operator one-pager
+- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, and a starter task in `atris/TODO.md`. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
 - `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
 - `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
 - `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files
