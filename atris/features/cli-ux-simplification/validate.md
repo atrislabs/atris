@@ -1,7 +1,7 @@
 ---
-last_compiled: 2026-04-11
+last_compiled: 2026-04-13
 validated_by: executor
-validation_notes: Re-verified (2026-04-11T22:52) — all 6 source refs + 2 MAP refs confirmed current. showHelp 199-338, init TODO.md 398-422, workflow plan/do/review 83-92/280-281/427-437/746-755, MAP features/ line 90, MAP plan/do/review 477-505. Zero drift.
+validation_notes: Re-verified (2026-04-13T07:41) — all 6 source refs confirmed current (zero line-number drift). 4 cosmetic commits since dc8ed07 (f5fd130 GETTING_STARTED rewrite, 0b33481 stale-ref scrub, 8655994/756ce0d/0cc9239 prune passes) touched no source lines. Check #6 reworded to match f5fd130 GETTING_STARTED.md rewrite.
 sources:
   - bin/atris.js:199-338 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
@@ -51,7 +51,7 @@ sources:
 
 ### 6. Documentation & Specs Updated
 - [x] atris.md Phase 3 reframed as TODO-based task context system (not TASK_CONTEXTS.md)
-- [x] GETTING_STARTED.md references TODO.md as primary working set
+- [x] GETTING_STARTED.md lists TODO.md in folder structure and key commands
 - [x] PERSONA.md reflects plan→do→review as core loop
 - [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 477-505)
 
