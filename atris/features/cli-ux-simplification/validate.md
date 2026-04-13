@@ -39,7 +39,7 @@ sources:
 - [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js with parseTodo)
 
 ### 4. Backwards Compatibility
-- [x] Legacy TASK_CONTEXTS.md fallback documented in workflow.js:84 comment
+- [x] Legacy TASK_CONTEXTS.md fallback documented in workflow.js:83 comment
 - [x] state-detection.js prefers TODO.md but accepts TASK_CONTEXTS.md (not breaking)
 - [x] No error messages if TASK_CONTEXTS.md missing (graceful degradation)
 
@@ -50,7 +50,7 @@ sources:
 - [x] feature/README.md distinguishes "substantial work" (features/) from "simple tasks" (TODO.md) (lines 155-165)
 
 ### 6. Documentation & Specs Updated
-- [x] atris.md Phase 3 reframed as TODO-based task context system (not TASK_CONTEXTS.md)
+- [x] atris.md TASK RULES section (line 101) defines TODO.md-based task system (not TASK_CONTEXTS.md)
 - [x] GETTING_STARTED.md lists TODO.md in folder structure and key commands
 - [x] PERSONA.md reflects plan→do→review as core loop
 - [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 477-505)
