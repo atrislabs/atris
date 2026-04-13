@@ -21,7 +21,7 @@ sources:
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-334)
+- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-335)
 - [x] Core workflow grouped: plan, do, review, run (lines 226-230)
 - [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 250)
 - [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 248-249)
@@ -53,7 +53,7 @@ sources:
 - [x] atris.md TASK RULES section (line 101) defines TODO.md-based task system (not TASK_CONTEXTS.md)
 - [x] GETTING_STARTED.md lists TODO.md in folder structure and key commands
 - [x] PERSONA.md reflects plan→do→review as core loop
-- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 477-505)
+- [x] MAP.md By-Feature section highlights plan/do/review with file:line (lines 481-509)
 
 ## Context
 
