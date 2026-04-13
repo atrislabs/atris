@@ -3,6 +3,10 @@ const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
+/**
+ * Resolve business slug from CLI arg or local .atris/business.json.
+ * @returns {string|null} The resolved slug, or null if not found.
+ */
 function resolveSlug() {
   let slug = process.argv[3];
   if (!slug || slug.startsWith('-')) {
@@ -18,6 +22,10 @@ function resolveSlug() {
   return slug;
 }
 
+/**
+ * Pause a workspace to save compute (storage only mode).
+ * @returns {Promise<void>}
+ */
 async function sleepAtris() {
   const slug = resolveSlug();
 
@@ -45,6 +53,10 @@ async function sleepAtris() {
   console.log('Compute paused. Storage only — pennies/day.');
 }
 
+/**
+ * Wake a sleeping workspace so agents resume automatically.
+ * @returns {Promise<void>}
+ */
 async function wakeAtris() {
   const slug = resolveSlug();
 
