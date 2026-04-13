@@ -1,172 +1,106 @@
-# Getting Started with atrisDev
+# Getting Started with Atris
 
-Welcome! atrisDev gives you a high-quality AI development workflow that works with any coding agent.
+Atris turns any folder into a workspace that gets better over time. Integrates with any agent.
 
-## What Just Happened?
+## Install
 
-You ran `atris init` and got this folder structure:
+```bash
+npm install -g atris
+```
+
+## Setup (1 minute)
+
+```bash
+cd your-project
+atris init
+```
+
+This creates an `atris/` folder with everything the system needs:
 
 ```
 atris/
-├── GETTING_STARTED.md (you are here!)
-├── atris.md (atrisDev protocol + specs)
-├── CLAUDE.md (tells agents to follow atrisDev)
-├── MAP.md (navigation - AI will generate)
-└── team/ (agent specs)
+├── MAP.md          navigation (file:line references)
+├── TODO.md         current work queue
+├── PERSONA.md      how the agent communicates
+├── lessons.md      what went wrong and what worked
+├── logs/           daily journal
+├── wiki/           durable knowledge
+└── team/           agent roles
 ```
 
-## Quick Start (2 Steps)
+## Your first goal
 
-### Step 1: Run atris
+Tell atris what you want to build:
 
 ```bash
-atris
+atris log "add dark mode to the settings page"
 ```
 
-This loads your workspace context and activates the atrisDev protocol.
+This lands in today's journal as an inbox item. The loop picks it up from there.
 
-### Step 2: Describe what you want
-
-In your coding agent (Claude Code, Cursor, Windsurf, etc.), just describe what you want to build:
-
-```
-"I want to add dark mode to the settings page"
-"Build a CSV export feature for the dashboard"
-"Refactor the auth system to use OAuth"
-```
-
-The agent will:
-0. (Optional) Explore with you conversationally (`atris brainstorm`)
-1. Show you an **atris visualization** (diagram of the plan)
-2. Wait for your approval
-3. Create `atris/features/[name]/idea.md` + `build.md` + `validate.md`
-4. Execute step by step
-5. Validate (fill in validate.md, harvest lessons if anything surprised you)
-
-💡 Tip: Use `atris brainstorm` if you're exploring options. Use `atris plan` when ready to build.
-
-**Total time: Start building immediately**
-
-## The atrisDev Protocol
-
-When agents see `atris/CLAUDE.md`, they automatically follow the atrisDev workflow. No manual setup needed.
-
-You can also run:
+## Run one tick
 
 ```bash
-atris activate
+atris autopilot --auto --iterations=1
 ```
 
-This shows today's journal, MAP.md, and TODO.md so you can browse and take notes offline. Authentication and agent selection are only required when you want to use `atris chat` with Atris cloud agents.
+The autopilot will:
+1. Read your inbox and pick a task
+2. Plan it
+3. Build it
+4. Review it
+5. Run the verify check (pass or fail, no opinions)
+6. Write a lesson if something went wrong
 
-## Try the autopilot loop (optional)
+One task. One commit. One result you can check.
 
-Need a guided work session? Run:
+## Set a goal with an endgame
+
+For bigger work, set a goal and let the loop pursue it:
+
+In your coding agent, say `/endgame` or describe where you want to end up. The system will:
+1. Pick a horizon (what does done look like?)
+2. Break it into verified tasks (each has a real check)
+3. Work through them one tick at a time
+4. Write a scorecard when the goal closes
+5. Use that scorecard to pick a better goal next time
+
+## Run the loop
 
 ```bash
-atris autopilot
+atris autopilot --auto --iterations=5
 ```
 
-You'll pick a vision (from today's Inbox or a fresh idea), define success criteria, and then step through plan → do → review cycles. The CLI logs each iteration, and you can type `exit` at any prompt to stop.
+Or in your coding agent, say `/loop` to schedule it every 13 minutes.
 
-## Launch a brainstorm (optional)
+The loop runs until the goal is done, then picks the next one from scorecards + inbox.
 
-Need help shaping an idea before it becomes a task? Run:
+## Key commands
 
-```bash
-atris brainstorm
+```
+atris init                 set up a new workspace
+atris activate             load context (MAP, TODO, journal)
+atris log                  add to today's journal
+atris autopilot            run one tick (plan, build, review, verify)
+atris status               where things stand
+atris clean                find broken refs, stale docs
+atris release --dry-run    preview a version bump
 ```
 
-Answer a couple quick questions, get a ready-to-send Claude Code conversation starter (context + ASCII cue), and choose whether to log the session summary and next steps.
+## How it improves over time
 
-## What Each File Does
+Every tick:
+- A verify check runs. Pass or fail.
+- A reward gets scored from the result.
+- If something fails, a lesson is written.
 
-### MAP.md
-Your system's navigation guide. Contains:
-- Quick reference index (grep-friendly shortcuts)
-- Feature map (where is feature X?)
-- Architecture map (where is concern Y?)
-- Critical files (high-impact areas)
-- Entry points
+Every goal:
+- A scorecard records what shipped, what failed, and the total reward.
+- The next goal is picked based on what actually worked before.
 
-**Use it:** When you need to find something fast or onboard new people
+The folder gets smarter. The agent doesn't change. The context around it does.
 
-### team/navigator.md
-Your "where is X?" expert. Ask it questions like:
-- "Where is the authentication logic?"
-- "Show me all API endpoints"
-- "Where do we handle file uploads?"
+## Need help?
 
-Always cites MAP.md with exact file:line references.
-
-### team/executor.md
-Your task runner. Give it work like:
-- "Add authentication to the upload endpoint"
-- "Fix the bug in user registration"
-- "Refactor the payment flow"
-
-Reads MAP.md, plans execution with file:line references, executes step-by-step.
-
-### team/validator.md
-Your quality gatekeeper. Runs after changes to:
-- Check for breaking changes
-- Update MAP.md if structure changed
-- Run tests and type checks
-- Report risks
-
-### TODO.md
-Auto-generated task bank with:
-- Task complexity (Trivial → Epic)
-- Exact file:line references
-- Execution plans
-- Risk assessments
-- Dependencies
-
-**Use it:** Pick tasks, assign to agents, track progress
-
-## Using Your Agents
-
-Once the files are populated, you can interact with your agents:
-
-**Ask the navigator:**
-```
-@navigator where is the user authentication logic?
-```
-
-**Give tasks to the executor:**
-```
-@executor add rate limiting to the API (see TODO.md T-005)
-```
-
-**Validate changes:**
-```
-@validator check if the recent auth changes are safe to merge
-```
-
-## Keeping Atris Updated
-
-When the Atris package updates with new features:
-
-```bash
-cd /path/to/your/project
-atris update
-```
-
-This syncs your local `atris.md` and agent templates to the latest version. Re-run your AI agent to regenerate MAP.md with the new spec.
-
-## What's Next?
-
-1. **Let your AI agent generate MAP.md** (Step 2 above if you haven't already)
-2. **Explore MAP.md** - Get familiar with your system's structure
-3. **Try the pre-built agents** - Ask navigator questions, run executor tasks
-4. **Pick a task** - Check TODO.md for quick wins
-
-## Need Help?
-
-- **Full spec:** Read `atris.md` for technical details
-- **Issues:** https://github.com/atrislabs/atris/issues
-- **Docs:** https://github.com/atrislabs/atris
-
----
-
-**Ready?** Open `atris.md` and paste it to your AI agent. Watch your system become fully instrumented for AI collaboration.
+- Issues: https://github.com/atrislabs/atris/issues
+- Source: https://github.com/atrislabs/atris
