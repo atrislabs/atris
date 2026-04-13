@@ -447,7 +447,7 @@ function checkPageStaleness(cwd, filePath) {
 
   // Check each source's mtime against last_compiled
   for (const source of sources) {
-    const sourcePath = path.isAbsolute(source) ? source : path.join(cwd, source);
+    const sourcePath = path.join(cwd, source);
     try {
       const stat = fs.statSync(sourcePath);
       if (stat.mtime > compiledDate) {

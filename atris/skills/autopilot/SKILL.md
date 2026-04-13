@@ -1,100 +1,68 @@
 ---
 name: autopilot
-description: "Run ONE autopilot tick. Reads identity (flow) + horizon (endgame), shows a visual status block, picks the next [endgame] task or seeds a new endgame at boundaries, then executes plan→do→review. Lessons compound to atris/lessons.md. Triggers on: autopilot, run one tick, ship one thing, do the next thing, get this done."
-version: 3.2.0
+description: "Autonomous task loop. Scans workspace, suggests work, executes plan-do-review one task at a time. Triggers on: autopilot, get it done, ship it, run the loop."
+version: 2.0.0
 tags:
   - autopilot
   - workflow
-  - tick
-  - endgame
-  - flow
+  - automation
 ---
-
-> **The two-engine architecture:** /flow chains forward from identity (who you are → next move). /endgame chains backward from horizon (where you're going → next move). They meet at the same intersection — the next thing /autopilot should ship. Each tick reads both sides and shows them in the visual status block.
-
-## Visual status block
-
-Every tick prints this BEFORE scanning for work, so you can see the loop's state at a glance:
-
-```
-  ┌──────────────────────────────────────────────────────────────┐
-  │ tick · 14:23                                                 │
-  │ identity:  building atris-business cloud for design partners │
-  │ horizon:   wiki-from-atris-labs                              │
-  │            atris-cli wiki has 3 new pages from atris-labs    │
-  │ progress:  ████████░░░░  6/9 endgame steps                   │
-  └──────────────────────────────────────────────────────────────┘
-```
-
-- **identity** comes from `atris/PERSONA.md` (first non-trivial line)
-- **horizon** comes from the `## Endgame` section in `atris/TODO.md`
-- **progress** counts `[endgame]`-tagged tasks in Backlog vs `T#/W#/E#`-prefixed entries in Completed
-
-If identity is missing, edit PERSONA.md. If no horizon is active, /endgame seeds one from inbox / wiki / lessons.
 
 # /autopilot
 
-Runs ONE plan→do→review tick anchored to the current endgame. If no endgame is active, seeds one from the inbox or wiki signals first. Not a recurring loop — call `/loop` for that.
+Autonomous suggest → execute loop. Finds the most important thing to do and does it.
 
 ## When to use
 
-- User says "run one tick", "do the next thing", "ship one thing", "get this done"
-- The cron job from `/loop` invokes this on each fire
+- User says "get this done", "ship it", "run the loop"
+- User wants hands-off execution of backlog/inbox work
+- User gives a task description and walks away
 
-## What ONE tick does
+## How it works
 
-1. **Read state** — load `atris/TODO.md`. Look for the `## Endgame` section header and `[endgame]`-tagged tasks in `## Backlog`.
-2. **Boundary check** — if no `## Endgame` section exists, OR every `[endgame]`-tagged task in Backlog is done/missing, invoke `/endgame` first to seed the next horizon. `/endgame` will write a new `## Endgame` section + tagged backlog tasks to TODO.md.
-3. **Execute** — run `atris autopilot --auto --iterations=1` via Bash. The CLI prefers `[endgame]`-tagged backlog tasks (priority 0) over reactive signals (priority 1+). One task per tick.
-4. **Stop** — show the output, do not start a conversation, do not chain. The next tick is the cron's job.
+The autopilot scans the workspace for signals and picks the highest-priority work:
 
-## How to invoke
+1. **Resume** — in-progress tasks that were started but never finished
+2. **Staleness** — wiki pages whose sources changed (knowledge rot)
+3. **Cleanup** — tasks claimed >3 days ago and abandoned
+4. **Docs** — broken MAP.md references that need fixing
+5. **Backlog** — next task in TODO.md
+6. **Inbox** — raw ideas that need to become tasks
+7. **Review** — MAP.md or docs that haven't been touched in >7 days
 
-When the user (or cron) invokes `/autopilot`:
+For each suggestion, it shows the task and *why* it matters. Then executes plan → do → review.
 
+## Running from CLI
+
+```bash
+# Interactive — suggests, you approve each one
+atris autopilot
+
+# Fully autonomous — no approval needed
+atris autopilot --auto
+
+# Seed an idea and let it run
+atris autopilot "add dark mode toggle" --auto
+
+# Preview what it would suggest
+atris autopilot --dry-run
+
+# Limit iterations
+atris autopilot --auto --iterations=3
 ```
-1. Read atris/TODO.md
-2. If TODO.md has no `## Endgame` section OR no `[endgame]` tasks in Backlog:
-     → Invoke `/endgame` first (it will write the new endgame to TODO.md)
-3. Run: atris autopilot --auto --iterations=1
-4. Show output
-5. Stop
-```
 
-## Boundary behavior
+## Running from this conversation
 
-The whole point of the architecture: **finish the current endgame before picking another.** Reactive signals (stale pages, broken refs) are fallbacks, not the main road. The main road is endgame → endgame → endgame, set by the human or seeded from inbox at every boundary.
+If the user invokes /autopilot inside Claude Code, do this:
 
-```
-TODO.md state                          → tick action
-─────────────────────────────────────────────────────────────────────
-no ## Endgame section                  → /endgame to seed, then run tick
-## Endgame exists, [endgame] tasks 0   → /endgame to pick next, then run tick
-## Endgame exists, [endgame] tasks 1+  → run tick (pick next [endgame] task)
-no endgame anywhere, no inbox, clean   → loop journals "nothing left", stops
-```
-
-## Variants
-
-- `atris autopilot --dry-run` — preview what it would do, do not execute
-- `atris autopilot --auto --iterations=N` — run up to N ticks back-to-back (still one task per tick, boundary checks between)
-- `atris autopilot "<task description>"` — seed a new inbox item, then run
-
-## Autonomous mode
-
-If the user wants this to fire on a recurring schedule, invoke `/loop` instead. `/loop` schedules a cron that calls `/autopilot` every ~13 min, with the boundary check baked in.
-
-```
-/autopilot  →  one tick (with boundary check at start)
-/loop       →  /autopilot every ~13 min (heartbeat)
-```
+1. Run `atris autopilot --dry-run` to see what it would suggest
+2. Show the suggestions to the user
+3. If they approve, run `atris autopilot --auto --iterations=1` for each task
+4. After each task, show what was done and ask if they want to continue
 
 ## Rules
 
 - One task at a time. Never batch.
-- Always show *why* before executing.
-- Stop after the first tick. Do not chain. Chaining is `/loop`'s job.
-- Endgame tasks always preferred over reactive signals.
-- At every boundary (no current endgame OR all done), reassess via `/endgame` — read inbox/wiki/logs, pick the next horizon, do not just run forever.
-- If a tick fails, halt and journal the failure. Do not pretend it worked.
-- The CLI writes the heartbeat Notes block. Do not hand-write tick summaries to the journal.
+- Always justify *why* before executing.
+- Human can skip or stop at any point.
+- After each task, run atris clean to heal refs and check staleness.
