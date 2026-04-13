@@ -55,6 +55,10 @@ function generateManifest(skills, projectDir) {
 
 // --- Generate /atris-setup command ---
 
+/**
+ * Generate the /atris-setup skill markdown for workspace bootstrapping.
+ * @returns {string} Skill markdown content
+ */
 function generateSetupCommand() {
   return `---
 description: Set up Atris authentication and connect integrations (Gmail, Calendar, Slack, Notion, Drive)
@@ -124,6 +128,11 @@ Tell the user which integrations are connected and which still need setup. They 
 
 // --- Generate README.md ---
 
+/**
+ * Generate README.md for the plugin package.
+ * @param {Array} skills - Array of discovered skills
+ * @returns {string} README markdown content
+ */
 function generateREADME(skills) {
   const skillList = skills.map(s => {
     const fm = s.frontmatter || {};
@@ -160,6 +169,10 @@ ${skillList}
 
 // --- BUILD subcommand ---
 
+/**
+ * Build the plugin package from atris/skills into dist/.
+ * @param {...string} args - CLI arguments
+ */
 function buildPlugin(...args) {
   const projectDir = process.cwd();
   const atrisDir = path.join(projectDir, 'atris');
