@@ -170,13 +170,14 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Key flows:**
 - `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
 - `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`
+- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, and an operator one-pager
 - `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
 - `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
 - `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files
 - **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
 - **Value:** Makes business workspaces a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
-**Search:** `rg "initBusinessWorkspace|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
+**Search:** `rg "initBusinessWorkspace|onboardBusiness|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
 
 ### Feature: Daily Logging (`atris log`)
 
@@ -277,12 +278,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Wiki (`atris ingest`, `atris query`, `atris lint`, `atris wiki`)
 
-**Purpose:** Local-first project memory in `atris/wiki/`, with `--cloud` opt-in for business workspaces and session-start activation wiring
+**Purpose:** Local-first project memory with raw evidence in `atris/context/` and compiled memory in `atris/wiki/`, with `--cloud` opt-in for business workspaces and session-start activation wiring
 
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
 - **How it works:**
-- `atris ingest <path>` scaffolds `atris/wiki/` and prints the local ingest prompt
+- `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
 - `atris query "question"` prints a local wiki query prompt
 - `atris lint` prints a local wiki lint prompt
 - `atris init` now scaffolds `atris/wiki/` in every new workspace
@@ -293,6 +294,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `atris wiki loop` routes to the same local upkeep analysis as `atris loop`
 - `atris pull --only wiki` / `atris push --only wiki` normalize to `atris/wiki/`
 - **Wiki structure:**
+- `atris/context/`
+- `atris/context/_ingest/`
 - `atris/wiki/wiki.md`
 - `atris/wiki/index.md`
 - `atris/wiki/log.md`

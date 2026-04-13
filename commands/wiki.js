@@ -8,10 +8,14 @@ const {
   PRIVATE_WIKI_ROOT,
   getWikiRoot,
   ensureWikiScaffold,
+  ensureContextScaffold,
   findLocalWikiDir,
+  stageWikiIngest,
   buildIngestPrompt,
   buildQueryPrompt,
   buildLintPrompt,
+  writeWikiStatus,
+  appendWikiLog,
 } = require('../lib/wiki');
 
 function autoDetectSlug() {
@@ -170,9 +174,30 @@ async function wikiIngest(mode, slug, sourceValue) {
   if (mode === 'local' || mode === 'private') {
     const wikiMode = mode === 'private' ? 'private' : 'public';
     const wikiDir = ensureWikiScaffold(process.cwd(), wikiMode);
-    printLocalPrompt(mode === 'private' ? 'Private wiki ingest' : 'Local wiki ingest', buildIngestPrompt(sourceValue, wikiMode), getWikiRoot(wikiMode), [
+    const contextDir = ensureContextScaffold(process.cwd(), wikiMode);
+    const staged = stageWikiIngest(process.cwd(), sourceValue, wikiMode);
+    writeWikiStatus(process.cwd(), {
+      health: `ingest staged from ${staged.packPath}`,
+      nextMove: `compile ${staged.promptSource} into ${getWikiRoot(wikiMode)}`,
+    }, wikiMode, { lastIngest: staged.manifest.ingested_at });
+    appendWikiLog(
+      process.cwd(),
+      `${staged.manifest.entries.length} source item(s) staged from ${sourceValue}`,
+      [
+        `context ${contextDir}`,
+        `pack ${staged.packPath}`,
+        `manifest ${staged.manifestPath}`,
+        ...staged.manifest.entries.map((entry) => `${entry.kind} ${entry.staged}`),
+      ],
+      wikiMode,
+      'INGEST'
+    );
+    printLocalPrompt(mode === 'private' ? 'Private wiki ingest' : 'Local wiki ingest', buildIngestPrompt(staged.promptSource, wikiMode), getWikiRoot(wikiMode), [
       `Wiki dir: ${wikiDir}`,
-      `Sources: ${sourceValue}`,
+      `Context dir: ${contextDir}`,
+      `Pack: ${staged.packPath}`,
+      `Manifest: ${staged.manifestPath}`,
+      `Sources: ${staged.promptSource}`,
     ]);
     return;
   }

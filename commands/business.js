@@ -4,6 +4,7 @@ const os = require('os');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { syncBusinessCanonical, ensureWorkspaceStateFiles } = require('./sync');
+const { ensureContextScaffold, writeWikiStatus, appendWikiLog } = require('../lib/wiki');
 
 function getBusinessConfigPath() {
   const home = require('os').homedir();
@@ -146,6 +147,64 @@ function parseRecordFlags(args, cwd = process.cwd()) {
   return options;
 }
 
+function parseOnboardFlags(args, cwd = process.cwd()) {
+  const options = {
+    cwd,
+    website: '',
+    links: [],
+    notes: [],
+    sources: [],
+    contactName: '',
+    contactEmail: '',
+    contactRole: '',
+  };
+  const freeform = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if ((arg === '--website' || arg === '--site') && next) {
+      options.website = next;
+      i++;
+    } else if ((arg === '--link' || arg === '--url') && next) {
+      options.links.push(next);
+      i++;
+    } else if ((arg === '--from' || arg === '--source') && next) {
+      options.sources.push(next);
+      i++;
+    } else if ((arg === '--note' || arg === '--notes') && next) {
+      options.notes.push(next);
+      i++;
+    } else if ((arg === '--contact' || arg === '--person') && next) {
+      options.contactName = next;
+      i++;
+    } else if (arg === '--email' && next) {
+      options.contactEmail = next;
+      i++;
+    } else if (arg === '--role' && next) {
+      options.contactRole = next;
+      i++;
+    } else if (!arg.startsWith('-')) {
+      const resolved = path.resolve(cwd, arg);
+      if (/^https?:\/\//i.test(arg)) {
+        if (!options.website) options.website = arg;
+        else options.links.push(arg);
+      } else if (fs.existsSync(resolved)) {
+        options.sources.push(arg);
+      } else {
+        freeform.push(arg);
+      }
+    }
+  }
+
+  if (freeform.length > 0) {
+    options.notes.push(freeform.join(' '));
+  }
+
+  return options;
+}
+
 function readWorkspaceBusinessMeta(cwd = process.cwd()) {
   const bizFile = path.join(cwd, '.atris', 'business.json');
   if (!fs.existsSync(bizFile)) {
@@ -194,6 +253,411 @@ function defaultRewardForOutcome(outcome) {
 function appendJsonl(filePath, record) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+function slugifyName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'item';
+}
+
+function upsertIndexEntry(indexPath, sectionName, relativePath, description) {
+  const normalizedPath = relativePath.replace(/\\/g, '/');
+  const entryLine = `- [[${normalizedPath}]] - ${description}`;
+  let lines = fs.readFileSync(indexPath, 'utf8').split('\n');
+  const existingIndex = lines.findIndex((line) => line.includes(`[[${normalizedPath}]]`));
+  if (existingIndex >= 0) {
+    lines[existingIndex] = entryLine;
+    fs.writeFileSync(indexPath, `${lines.join('\n').replace(/\n*$/, '\n')}`, 'utf8');
+    return;
+  }
+
+  const header = `## ${sectionName}`;
+  const sectionIndex = lines.findIndex((line) => line.trim() === header);
+  if (sectionIndex === -1) return;
+
+  let insertAt = sectionIndex + 1;
+  while (insertAt < lines.length && !/^##\s+/.test(lines[insertAt])) {
+    insertAt++;
+  }
+
+  lines.splice(insertAt, 0, entryLine);
+  fs.writeFileSync(indexPath, `${lines.join('\n').replace(/\n*$/, '\n')}`, 'utf8');
+}
+
+function writeMarkdownWithFrontmatter(filePath, frontmatter, body) {
+  const yaml = Object.entries(frontmatter).map(([key, value]) => {
+    if (Array.isArray(value)) {
+      return `${key}:\n${value.map((item) => `  - ${item}`).join('\n')}`;
+    }
+    return `${key}: ${value}`;
+  }).join('\n');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `---\n${yaml}\n---\n\n${body.trim()}\n`, 'utf8');
+}
+
+function walkOnboardingFiles(dir, options = {}) {
+  const skipDirs = new Set(['.git', '.atris', 'atris', '_ingest', 'node_modules', 'dist', 'build', 'coverage', '.next']);
+  const allowedExt = new Set(['.md', '.txt', '.pdf', '.csv', '.json', '.html', '.htm', '.docx', '.xlsx', '.png', '.jpg', '.jpeg']);
+  const maxFiles = options.maxFiles || 25;
+  const output = [];
+
+  function walk(currentDir) {
+    if (!fs.existsSync(currentDir) || output.length >= maxFiles) return;
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (output.length >= maxFiles) break;
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (skipDirs.has(entry.name)) continue;
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (entry.name.startsWith('.')) continue;
+      if (!allowedExt.has(path.extname(entry.name).toLowerCase())) continue;
+      output.push(fullPath);
+    }
+  }
+
+  walk(dir);
+  return output;
+}
+
+function extractUrlsFromText(text) {
+  return Array.from(new Set((String(text || '').match(/https?:\/\/[^\s)<>"']+/g) || []).map((item) => item.replace(/[.,]$/, ''))));
+}
+
+function isTextLike(filePath) {
+  return new Set(['.md', '.txt', '.json', '.csv', '.html', '.htm']).has(path.extname(filePath).toLowerCase());
+}
+
+function readSmallText(filePath, maxBytes = 200000) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > maxBytes || !isTextLike(filePath)) return null;
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function discoverOnboardingSignals(cwd, options = {}) {
+  const explicitSourcePaths = (options.sources || [])
+    .map((value) => path.resolve(cwd, value))
+    .filter((fullPath) => fs.existsSync(fullPath));
+
+  const rootCandidates = walkOnboardingFiles(cwd, { maxFiles: 20 })
+    .filter((fullPath) => {
+      const relative = path.relative(cwd, fullPath).replace(/\\/g, '/');
+      return !relative.startsWith('atris/') && !relative.startsWith('.atris/');
+    });
+
+  const contextDir = path.join(cwd, 'atris', 'context');
+  const contextCandidates = walkOnboardingFiles(contextDir, { maxFiles: 20 })
+    .filter((fullPath) => {
+      const relative = path.relative(contextDir, fullPath).replace(/\\/g, '/');
+      return !relative.startsWith('_ingest/') && relative !== 'README.md' && relative !== 'live-workspace.md';
+    });
+
+  const sourcePaths = Array.from(new Set([...explicitSourcePaths, ...rootCandidates, ...contextCandidates]));
+  const urls = new Set([options.website, ...(options.links || [])].filter(Boolean));
+
+  for (const note of options.notes || []) {
+    for (const url of extractUrlsFromText(note)) urls.add(url);
+  }
+
+  for (const sourcePath of sourcePaths) {
+    const text = readSmallText(sourcePath);
+    if (!text) continue;
+    for (const url of extractUrlsFromText(text)) urls.add(url);
+  }
+
+  return {
+    website: options.website || Array.from(urls)[0] || '',
+    urls: Array.from(urls),
+    sourcePaths,
+  };
+}
+
+function stageOnboardingSources(cwd, packDir, sourcePaths = []) {
+  const stagedDir = path.join(packDir, 'sources');
+  fs.mkdirSync(stagedDir, { recursive: true });
+  const stagedEntries = [];
+  let counter = 0;
+
+  for (const sourcePath of sourcePaths) {
+    if (!fs.existsSync(sourcePath)) continue;
+    counter += 1;
+    const baseName = path.basename(sourcePath);
+    const targetPath = path.join(stagedDir, `${String(counter).padStart(2, '0')}-${baseName}`);
+    const stat = fs.statSync(sourcePath);
+    if (stat.isDirectory()) {
+      fs.cpSync(sourcePath, targetPath, { recursive: true });
+    } else {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+    stagedEntries.push({
+      original: path.relative(cwd, sourcePath).replace(/\\/g, '/'),
+      staged: path.relative(cwd, targetPath).replace(/\\/g, '/'),
+      kind: stat.isDirectory() ? 'directory' : 'file',
+    });
+  }
+
+  return stagedEntries;
+}
+
+function suggestStarterAction(signals) {
+  if (signals.contactEmail && signals.website) {
+    return {
+      title: 'Draft a founder-context note',
+      action: `Write a short note to ${signals.contactName || 'the contact'} that reflects the website, asks for the current priority, and proposes one concrete first loop.`,
+      why: 'This is the shortest safe path to real feedback from a named human.',
+    };
+  }
+  if (signals.website) {
+    return {
+      title: 'Map the offer into one loop',
+      action: 'Read the website and turn it into one measurable workflow with a clear reward signal.',
+      why: 'A website is enough to define a first useful business loop without waiting for perfect intake.',
+    };
+  }
+  if ((signals.sourceEntries || []).length > 0) {
+    return {
+      title: 'Extract the first workflow from local evidence',
+      action: 'Read the strongest local source, summarize what the company does, and choose one workflow worth operationalizing first.',
+      why: 'Local evidence is already better than a blank template and can anchor the first action.',
+    };
+  }
+  return {
+    title: 'Collect one anchor signal',
+    action: 'Get one website, one named human, or one source doc so the environment can stop guessing.',
+    why: 'The system can work from partial input, but it still needs one concrete anchor.',
+  };
+}
+
+async function onboardBusiness(...flags) {
+  const options = parseOnboardFlags(flags, process.cwd());
+  const cwd = options.cwd || process.cwd();
+  const bizMeta = readWorkspaceBusinessMeta(cwd);
+
+  ensureWorkspaceStateFiles(cwd, {
+    slug: bizMeta.slug || 'business',
+    business_id: bizMeta.business_id || '',
+    workspace_id: bizMeta.workspace_id || '',
+    workspace_template: bizMeta.workspace_template || 'business',
+  }, { dryRun: false });
+
+  const contextDir = ensureContextScaffold(cwd, 'public');
+  const stamp = new Date().toISOString().replace(/[:]/g, '-').slice(0, 16);
+  const packDir = path.join(contextDir, '_ingest', `${stamp}-onboarding`);
+  fs.mkdirSync(packDir, { recursive: true });
+
+  const discovered = discoverOnboardingSignals(cwd, options);
+  const stagedSources = stageOnboardingSources(cwd, packDir, discovered.sourcePaths);
+  const links = Array.from(new Set([discovered.website, ...discovered.urls].filter(Boolean)));
+  const starterAction = suggestStarterAction({
+    website: discovered.website,
+    contactName: options.contactName,
+    contactEmail: options.contactEmail,
+    sourceEntries: stagedSources,
+  });
+  const intakeLines = [
+    `# ${bizMeta.name} Onboarding Intake`,
+    '',
+    `- Business: ${bizMeta.name}`,
+    `- Slug: ${bizMeta.slug}`,
+    discovered.website ? `- Website: ${discovered.website}` : null,
+    options.contactName ? `- Contact: ${options.contactName}` : null,
+    options.contactRole ? `- Contact role: ${options.contactRole}` : null,
+    options.contactEmail ? `- Contact email: ${options.contactEmail}` : null,
+    '',
+    '## Notes',
+    ...(options.notes.length > 0 ? options.notes.map((note) => `- ${note}`) : ['- No notes captured yet.']),
+    '',
+    '## Discovered Sources',
+    ...(stagedSources.length > 0 ? stagedSources.map((entry) => `- ${entry.original} -> ${entry.staged}`) : ['- No local files discovered yet.']),
+    '',
+    '## Links',
+    ...(links.length > 0 ? links.map((link) => `- ${link}`) : ['- No links captured yet.']),
+  ].filter(Boolean);
+  const intakePath = path.join(packDir, 'intake.md');
+  fs.writeFileSync(intakePath, `${intakeLines.join('\n')}\n`, 'utf8');
+
+  const linksPath = path.join(packDir, 'links.txt');
+  fs.writeFileSync(linksPath, `${links.join('\n')}${links.length > 0 ? '\n' : ''}`, 'utf8');
+  const sourcesPath = path.join(packDir, 'sources.txt');
+  fs.writeFileSync(
+    sourcesPath,
+    `${stagedSources.map((entry) => `${entry.original} -> ${entry.staged}`).join('\n')}${stagedSources.length > 0 ? '\n' : ''}`,
+    'utf8'
+  );
+
+  const intakeRel = path.relative(cwd, intakePath).replace(/\\/g, '/');
+  const linksRel = path.relative(cwd, linksPath).replace(/\\/g, '/');
+  const sourcesRel = path.relative(cwd, sourcesPath).replace(/\\/g, '/');
+  const today = new Date().toISOString().slice(0, 10);
+
+  const briefSlug = `${bizMeta.slug}-starter-brief`;
+  const briefPath = path.join(cwd, 'atris', 'wiki', 'briefs', `${briefSlug}.md`);
+  writeMarkdownWithFrontmatter(briefPath, {
+    type: 'brief',
+    slug: briefSlug,
+    title: `${bizMeta.name} Starter Brief`,
+    sources: [intakeRel, linksRel, sourcesRel],
+    last_compiled: today,
+    created: today,
+    updated: today,
+    tags: ['business', 'onboarding', 'starter'],
+  }, `
+# ${bizMeta.name} Starter Brief
+
+## What We Know
+
+- Website: ${discovered.website || 'unknown'}
+- Contact: ${options.contactName || 'unknown'}
+- Contact role: ${options.contactRole || 'unknown'}
+- Contact email: ${options.contactEmail || 'unknown'}
+${options.notes.map((note) => `- Note: ${note}`).join('\n') || '- Notes: none captured yet'}
+${stagedSources.length > 0 ? `- Local sources discovered: ${stagedSources.length}` : '- Local sources discovered: 0'}
+
+## Unknowns
+
+- Primary customer or audience
+- Revenue model and buying motion
+- Main operator inside the business
+- Tool stack and source systems
+- First measurable operating loop
+
+## Next Moves
+
+- Read the staged intake in \`${intakeRel}\`
+- ${starterAction.action}
+- Turn the first real interaction into a recap, then run \`atris business record ...\`
+`);
+  upsertIndexEntry(path.join(cwd, 'atris', 'wiki', 'index.md'), 'Briefs', path.relative(cwd, briefPath), 'Starter business brief from onboarding intake');
+
+  let personRelativePath = null;
+  if (options.contactName) {
+    const personSlug = slugifyName(options.contactName);
+    const personPath = path.join(cwd, 'atris', 'wiki', 'people', `${personSlug}.md`);
+    writeMarkdownWithFrontmatter(personPath, {
+      type: 'person',
+      slug: personSlug,
+      title: options.contactName,
+      sources: [intakeRel, sourcesRel],
+      last_compiled: today,
+      created: today,
+      updated: today,
+      tags: ['person', 'contact', 'onboarding'],
+    }, `
+# ${options.contactName}
+
+## Known
+
+- Business: ${bizMeta.name}
+- Role: ${options.contactRole || 'unknown'}
+- Email: ${options.contactEmail || 'unknown'}
+
+## Unknown
+
+- Decision authority
+- Preferred communication rhythm
+- Main business pain
+
+## Cross-References
+
+- [[atris/wiki/briefs/${path.basename(briefPath)}]] - starter brief
+`);
+    personRelativePath = path.relative(cwd, personPath).replace(/\\/g, '/');
+    upsertIndexEntry(path.join(cwd, 'atris', 'wiki', 'index.md'), 'People', personRelativePath, `Seed contact for ${bizMeta.name}`);
+  }
+
+  const conceptSlug = `${bizMeta.slug}-first-loop`;
+  const conceptPath = path.join(cwd, 'atris', 'wiki', 'concepts', `${conceptSlug}.md`);
+  writeMarkdownWithFrontmatter(conceptPath, {
+    type: 'concept',
+    slug: conceptSlug,
+    title: `${bizMeta.name} First Loop`,
+    sources: [intakeRel, linksRel, sourcesRel],
+    last_compiled: today,
+    created: today,
+    updated: today,
+    tags: ['concept', 'loop', 'onboarding'],
+  }, `
+# ${bizMeta.name} First Loop
+
+## Candidate Loop
+
+- Trigger: a new lead, meeting, client request, or operator handoff
+- Action: summarize context, propose the next move, and draft one concrete output
+- Reward: operator approval, reply, booked meeting, or visible pipeline progress
+
+## Known Signals
+
+${links.map((link) => `- ${link}`).join('\n') || '- No external links captured yet'}
+${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` : ''}
+
+## Unknowns
+
+- Best first workflow to automate
+- Exact reward signal
+- Required integrations
+`);
+  upsertIndexEntry(path.join(cwd, 'atris', 'wiki', 'index.md'), 'Concepts', path.relative(cwd, conceptPath), 'Seed first-loop hypothesis from onboarding intake');
+
+  const cheatSheetPath = path.join(cwd, 'atris', 'reports', `${today}-${bizMeta.slug}-onboarding-cheat-sheet.md`);
+  const onePagerPath = path.join(cwd, 'atris', 'reports', `${today}-${bizMeta.slug}-operator-one-pager.md`);
+  const operatorSummary = [
+    `# ${bizMeta.name} Onboarding Cheat Sheet`,
+    '',
+    '## What Exists',
+    `- Starter brief: ${path.relative(cwd, briefPath).replace(/\\/g, '/')}`,
+    personRelativePath ? `- Contact page: ${personRelativePath}` : null,
+    `- First loop page: ${path.relative(cwd, conceptPath).replace(/\\/g, '/')}`,
+    `- Raw intake: ${intakeRel}`,
+    `- Source list: ${sourcesRel}`,
+    stagedSources.length > 0 ? `- Staged sources: ${stagedSources.length}` : '- Staged sources: 0',
+    '',
+    '## Best Next Action',
+    `- ${starterAction.title}`,
+    `- Action: ${starterAction.action}`,
+    `- Why: ${starterAction.why}`,
+    '- Swarlo join: placeholder preserved for the next live join step.',
+    '',
+    '## Next 3 Moves',
+    '- Open the starter brief and correct anything false.',
+    `- ${starterAction.action}`,
+    '- After the first real run, write a recap and record it with `atris business record ...`.',
+  ].filter(Boolean).join('\n') + '\n';
+  fs.writeFileSync(cheatSheetPath, operatorSummary, 'utf8');
+  fs.writeFileSync(onePagerPath, operatorSummary.replace('# ', '# One Pager — '), 'utf8');
+
+  writeWikiStatus(cwd, {
+    health: `starter onboarding compiled from ${intakeRel}`,
+    nextMove: `review ${path.relative(cwd, briefPath).replace(/\\/g, '/')} and tighten the first loop`,
+  }, 'public', { lastIngest: `${today} ${new Date().toTimeString().slice(0, 5)}` });
+  appendWikiLog(cwd, `starter onboarding compiled for ${bizMeta.slug}`, [
+    `intake ${intakeRel}`,
+    `sources ${sourcesRel}`,
+    `brief ${path.relative(cwd, briefPath).replace(/\\/g, '/')}`,
+    personRelativePath ? `person ${personRelativePath}` : null,
+    `concept ${path.relative(cwd, conceptPath).replace(/\\/g, '/')}`,
+    `cheat sheet ${path.relative(cwd, cheatSheetPath).replace(/\\/g, '/')}`,
+    `one pager ${path.relative(cwd, onePagerPath).replace(/\\/g, '/')}`,
+  ].filter(Boolean), 'public', 'ONBOARD');
+
+  console.log('');
+  console.log(`Onboarded ${bizMeta.name}.`);
+  console.log(`  Intake:      ${intakeRel}`);
+  console.log(`  Sources:     ${sourcesRel}`);
+  console.log(`  Brief:       ${path.relative(cwd, briefPath).replace(/\\/g, '/')}`);
+  if (personRelativePath) console.log(`  Contact:     ${personRelativePath}`);
+  console.log(`  First loop:  ${path.relative(cwd, conceptPath).replace(/\\/g, '/')}`);
+  console.log(`  Cheat sheet: ${path.relative(cwd, cheatSheetPath).replace(/\\/g, '/')}`);
+  console.log(`  One pager:   ${path.relative(cwd, onePagerPath).replace(/\\/g, '/')}`);
+  console.log(`  Next action: ${starterAction.title}`);
+  console.log('');
 }
 
 async function recordBusinessRun(reportArg, ...flags) {
@@ -1316,7 +1780,10 @@ async function quickstart() {
   2. Open the local workspace:
      cd ~/arena/atris-business/my-company
 
-  3. Push local state to cloud:
+  3. Seed onboarding context:
+     atris business onboard --website https://example.com --contact "Founder Name" --note "what they do"
+
+  4. Push local state to cloud:
      atris align --fix
 
   Then open atris/TODO.md and work the starter queue:
@@ -1399,6 +1866,9 @@ async function businessCommand(subcommand, ...args) {
     case 'record-recap':
       await recordBusinessRun(args[0], ...args.slice(1));
       break;
+    case 'onboard':
+      await onboardBusiness(...args);
+      break;
     case 'quickstart':
     case 'start':
     case 'guide':
@@ -1421,6 +1891,7 @@ async function businessCommand(subcommand, ...args) {
       console.log('  connect <service>    Connect a skill/integration');
       console.log('  notify <mode>        Set notification mode (digest/silent/push)');
       console.log('  deploy <slug>        Push local business to cloud');
+      console.log('  onboard              Seed brief, person, first loop, safe next action, and one-pager from sparse input');
       console.log('  record <report>      Append recap state into events, episodes, and scorecards');
       console.log('  remove <slug>        Unregister locally');
   }
@@ -1436,5 +1907,6 @@ module.exports = {
   getBusinessConfigPath,
   createCanonicalBusinessWorkspace,
   initBusinessWorkspace,
+  onboardBusiness,
   recordBusinessRun,
 };
