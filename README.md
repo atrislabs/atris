@@ -80,10 +80,19 @@ If you want a real business workspace, use the business command instead of raw `
 ```bash
 atris business init "BLOND:ISH" --owner-email joel@blondish.world
 cd ~/arena/atris-business/blondish
+atris business onboard --website https://blondish.world --contact "Joel Zimmerman" --note "artist-led brand and ticket sales"
 atris align --fix
 ```
 
 That creates the cloud business, writes `.atris/business.json`, initializes `.atris/state/` for events, episodes, and scorecards, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter team lanes, a default recap artifact, and a first-loop starter queue in `atris/TODO.md`.
+
+If you do not have a neat source pack yet, `atris business onboard` is the low-friction intake step: give it a website, a named human, a few notes, or even just run it in a folder with loose files, and it seeds raw intake, a starter brief, a first loop, a safe next action, and an operator one-pager for you.
+
+You can also use bare input:
+
+```bash
+atris business onboard https://example.com "founder-led b2b ops" ./notes.md
+```
 
 If you already have a folder full of source material, run it from there with `atris business init "BLOND:ISH" --here`.
 
@@ -108,7 +117,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris log` | Add inbox items to today's journal |
 | `atris status` | Show active work and completions |
 | `atris learn` | Manage structured learnings |
-| `atris ingest` | Fast local-first wiki ingest into `atris/wiki/` |
+| `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
 | `atris experiments` | Run Karpathy-style keep/revert packs |
@@ -117,6 +126,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 
 - `atris learn` stores structured project memory in `atris/learnings.jsonl`
 - `atris wiki` keeps repo memory in `atris/wiki/` by default, with `--cloud` when you want the remote workspace path
+- `atris ingest` now stages local source packs under `atris/context/_ingest/`, writes a manifest receipt, and refreshes `atris/wiki/STATUS.md` plus `log.md`
 - `atris wiki --private` uses `.atris/presidio/` for local-only sensitive notes and operating memory
 - `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
