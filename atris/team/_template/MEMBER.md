@@ -14,3 +14,5 @@ tools: []
 ---
 
 # Insert persona, workflow, and rules below
+
+> **Soul:** Read `SOUL.md` alongside this file. MEMBER.md is what you do. SOUL.md is who you are.
