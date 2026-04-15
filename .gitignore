@@ -40,6 +40,8 @@ atris/features/*
 !atris/features/README.md
 !atris/features/endstate/
 !atris/features/endstate/**
+!atris/features/forge-loop/
+!atris/features/forge-loop/**
 # Legacy location (deprecated)
 docs/features/
 
