@@ -48,6 +48,79 @@ function _substituteParams(content, params) {
     .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
 }
 
+/**
+ * Sync the canonical skill set from atris-cli/atris/skills/* into a
+ * workspace's atris/skills/* (plus ensure .claude/skills/ symlinks).
+ *
+ * Shared by business mode (via syncWorkspaceTemplate) and legacy/dev mode
+ * (via syncAtris). Single source of truth = atris-cli/atris/skills/.
+ *
+ * Returns the number of files updated (0 if everything was up to date).
+ */
+function syncPackageSkills(targetAtrisDir, opts = {}) {
+  const packageSkillsDir = path.join(__dirname, '..', 'atris', 'skills');
+  const userSkillsDir = path.join(targetAtrisDir, 'skills');
+  const claudeSkillsBaseDir = path.join(path.dirname(targetAtrisDir), '.claude', 'skills');
+  const verbose = opts.verbose !== false;
+  let updated = 0;
+
+  if (!fs.existsSync(packageSkillsDir)) return 0;
+
+  if (!fs.existsSync(userSkillsDir)) fs.mkdirSync(userSkillsDir, { recursive: true });
+  if (!fs.existsSync(claudeSkillsBaseDir)) fs.mkdirSync(claudeSkillsBaseDir, { recursive: true });
+
+  const skillFolders = fs.readdirSync(packageSkillsDir).filter(f => {
+    try { return fs.statSync(path.join(packageSkillsDir, f)).isDirectory(); }
+    catch { return false; }
+  });
+
+  for (const skill of skillFolders) {
+    const srcSkillDir = path.join(packageSkillsDir, skill);
+    const destSkillDir = path.join(userSkillsDir, skill);
+    const symlinkPath = path.join(claudeSkillsBaseDir, skill);
+
+    const syncRecursive = (src, dest, skillName, basePath = '') => {
+      if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+      for (const entry of fs.readdirSync(src)) {
+        const srcPath = path.join(src, entry);
+        const destPath = path.join(dest, entry);
+        const relPath = basePath ? `${basePath}/${entry}` : entry;
+        if (fs.statSync(srcPath).isDirectory()) {
+          syncRecursive(srcPath, destPath, skillName, relPath);
+        } else {
+          const srcContent = fs.readFileSync(srcPath, 'utf8');
+          const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
+          if (srcContent !== destContent) {
+            fs.writeFileSync(destPath, srcContent);
+            if (entry.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
+            if (verbose) console.log(`✓ Updated atris/skills/${skillName}/${relPath}`);
+            updated++;
+          }
+        }
+      }
+    };
+
+    syncRecursive(srcSkillDir, destSkillDir, skill);
+
+    if (!fs.existsSync(symlinkPath)) {
+      const relativePath = path.relative(claudeSkillsBaseDir, destSkillDir);
+      try {
+        fs.symlinkSync(relativePath, symlinkPath);
+        if (verbose) console.log(`✓ Linked .claude/skills/${skill}`);
+      } catch (e) {
+        fs.mkdirSync(symlinkPath, { recursive: true });
+        const skillFile = path.join(destSkillDir, 'SKILL.md');
+        if (fs.existsSync(skillFile)) {
+          fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
+        }
+        if (verbose) console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
+      }
+    }
+  }
+
+  return updated;
+}
+
 function resolveWorkspaceTemplate(templateName = 'business') {
   const normalized = String(templateName || 'business').toLowerCase();
   if (normalized === 'research-lab' || normalized === 'researchlab' || normalized === 'lab') {
@@ -166,10 +239,20 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
 
   const stateAddedList = ensureWorkspaceStateFiles(targetRoot, params, { dryRun });
 
+  // Skills: sync the canonical skill set from atris-cli package into the
+  // customer workspace. Business-starter template ships skill infra (README,
+  // folders) but skill files live in atris-cli/atris/skills/ — single source
+  // of truth. Any new skill (e.g. AEO) auto-propagates to every customer.
+  let skillsUpdated = 0;
+  if (!dryRun) {
+    skillsUpdated = syncPackageSkills(targetAtrisDir, { verbose: false });
+  }
+
   console.log(`  Added:     ${added}`);
   console.log(`  Updated:   ${updated} ${force ? '' : '(--force to enable)'}`);
   console.log(`  Preserved: ${preserved} (existing customizations kept)`);
   console.log(`  Skipped:   ${skipped} (already match template)`);
+  console.log(`  Skills:    ${skillsUpdated} updated from atris-cli/atris/skills/`);
   console.log('');
 
   if (addedList.length > 0) {
@@ -324,80 +407,8 @@ function syncAtris() {
     console.log('✓ Migrated TASK_CONTEXTS.md to TODO.md');
   }
 
-  // Sync all skills from package to user's project
-  const packageSkillsDir = path.join(__dirname, '..', 'atris', 'skills');
-  const userSkillsDir = path.join(targetDir, 'skills');
-  const claudeSkillsBaseDir = path.join(process.cwd(), '.claude', 'skills');
-
-  if (fs.existsSync(packageSkillsDir)) {
-    // Ensure directories exist
-    if (!fs.existsSync(userSkillsDir)) {
-      fs.mkdirSync(userSkillsDir, { recursive: true });
-    }
-    if (!fs.existsSync(claudeSkillsBaseDir)) {
-      fs.mkdirSync(claudeSkillsBaseDir, { recursive: true });
-    }
-
-    // Get all skill folders from package
-    const skillFolders = fs.readdirSync(packageSkillsDir).filter(f => {
-      const skillPath = path.join(packageSkillsDir, f);
-      return fs.statSync(skillPath).isDirectory();
-    });
-
-    for (const skill of skillFolders) {
-      const srcSkillDir = path.join(packageSkillsDir, skill);
-      const destSkillDir = path.join(userSkillsDir, skill);
-      const symlinkPath = path.join(claudeSkillsBaseDir, skill);
-
-      // Recursive sync function for skills (handles subdirs like hooks/)
-      const syncRecursive = (src, dest, skillName, basePath = '') => {
-        if (!fs.existsSync(dest)) {
-          fs.mkdirSync(dest, { recursive: true });
-        }
-        const entries = fs.readdirSync(src);
-        for (const entry of entries) {
-          const srcPath = path.join(src, entry);
-          const destPath = path.join(dest, entry);
-          const relPath = basePath ? `${basePath}/${entry}` : entry;
-
-          if (fs.statSync(srcPath).isDirectory()) {
-            syncRecursive(srcPath, destPath, skillName, relPath);
-          } else {
-            const srcContent = fs.readFileSync(srcPath, 'utf8');
-            const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-            if (srcContent !== destContent) {
-              fs.writeFileSync(destPath, srcContent);
-              // Preserve executable permission for shell scripts
-              if (entry.endsWith('.sh')) {
-                fs.chmodSync(destPath, 0o755);
-              }
-              console.log(`✓ Updated atris/skills/${skillName}/${relPath}`);
-              updated++;
-            }
-          }
-        }
-      };
-
-      syncRecursive(srcSkillDir, destSkillDir, skill);
-
-      // Create symlink if doesn't exist
-      if (!fs.existsSync(symlinkPath)) {
-        const relativePath = path.join('..', '..', 'atris', 'skills', skill);
-        try {
-          fs.symlinkSync(relativePath, symlinkPath);
-          console.log(`✓ Linked .claude/skills/${skill}`);
-        } catch (e) {
-          // Fallback: copy instead of symlink
-          fs.mkdirSync(symlinkPath, { recursive: true });
-          const skillFile = path.join(destSkillDir, 'SKILL.md');
-          if (fs.existsSync(skillFile)) {
-            fs.copyFileSync(skillFile, path.join(symlinkPath, 'SKILL.md'));
-          }
-          console.log(`✓ Copied .claude/skills/${skill} (symlink failed)`);
-        }
-      }
-    }
-  }
+  // Sync all skills from package to user's project via shared helper.
+  updated += syncPackageSkills(targetDir, { verbose: true });
 
   // Update .claude/skills/atris/SKILL.md (legacy - now handled above, keeping for compatibility)
   const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills', 'atris');
