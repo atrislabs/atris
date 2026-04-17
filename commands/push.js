@@ -6,9 +6,12 @@ const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 
 async function pushAtris() {
+  const elapsedMs = startTimer();
   let slug = process.argv[3];
+  let _coldWake = false;
 
   // Auto-detect business from .atris/business.json in current dir
   if (!slug || slug.startsWith('-')) {
@@ -105,6 +108,11 @@ async function pushAtris() {
 
   if (!workspaceId) { console.error(`Business "${slug}" has no workspace.`); process.exit(1); }
 
+  // Telemetry helper — emits one event with the elapsed wall-clock time.
+  // Awaited (not fire-and-forget) because process.exit kills in-flight requests.
+  const emit = (outcome, extras = {}) =>
+    emitSyncEvent(creds.token, businessId, workspaceId, 'push', outcome, elapsedMs(), extras);
+
   // Auto-wake the EC2 computer if --auto-wake is set, otherwise check status and warn.
   // Without this, push silently routes to agent_files cache when computer is asleep
   // (the silent fallback footgun from tonight's debugging).
@@ -114,6 +122,7 @@ async function pushAtris() {
     const computerStatus = statusResult.ok && statusResult.data ? statusResult.data.status : 'unknown';
     if (computerStatus !== 'running' || !(statusResult.data && statusResult.data.endpoint)) {
       process.stdout.write('  Waking EC2 computer... ');
+      _coldWake = true;
       await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
       const wakeStart = Date.now();
       while (Date.now() - wakeStart < 90000) {
@@ -204,6 +213,7 @@ async function pushAtris() {
         console.log('');
         console.log('    Run `atris pull` first, then push your changes.');
         console.log('    To override (force-push, may clobber cloud edits): atris push --force');
+        await emit('drift', { error_detail: `${driftFiles.length} file(s) drifted` });
         process.exit(1);
       }
       console.log('fresh');
@@ -218,6 +228,7 @@ async function pushAtris() {
       console.log('  ✗ Could not verify cloud freshness. Refusing to push.');
       console.log('    The workspace may be unreachable or the snapshot endpoint is broken.');
       console.log('    To bypass and force-push anyway: atris push --force');
+      await emit('status_unknown', { error_detail: `snapshot status ${snapshotResult.status || 'unknown'}` });
       process.exit(1);
     }
   }
@@ -256,6 +267,7 @@ async function pushAtris() {
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
     console.log('\n  Already up to date.\n');
+    await emit('success', { files_unchanged: filteredLocalCount });
     return;
   }
 
@@ -304,17 +316,21 @@ async function pushAtris() {
             pushed = allowed.length;
           } else {
             console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
+            await emit('access_denied', { error_detail: `403 retry failed: ${retry.status}` });
             process.exit(1);
           }
         } else {
           console.error('\n  Access denied: you can only push to your team/ folder.');
+          await emit('access_denied');
           process.exit(1);
         }
       } else if (result.status === 409) {
         console.error('\n  Computer is sleeping. Wake it first.');
+        await emit('cold_wake', { error_detail: 'computer sleeping (409)' });
         process.exit(1);
       } else {
         console.error(`\n  Push failed: ${result.errorMessage || result.error || result.status}`);
+        await emit('status_unknown', { error_detail: `sync status ${result.status}` });
         process.exit(1);
       }
     } else {
@@ -333,6 +349,7 @@ async function pushAtris() {
   //   - manifest update only counts confirmed-deleted paths
   const deletedConfirmed = [];
   const deleteFailed = [];
+  let _rateLimitedDeletes = 0;
   for (let i = 0; i < deletedPaths.length; i++) {
     const filePath = deletedPaths[i];
     if (i > 0) {
@@ -345,6 +362,7 @@ async function pushAtris() {
     );
     if (deleteResult.status === 429) {
       // Rate limit — wait 20s, retry once
+      _rateLimitedDeletes++;
       await new Promise((r) => setTimeout(r, 20000));
       deleteResult = await apiRequestJson(
         `/business/${businessId}/workspaces/${workspaceId}/file?path=${encodeURIComponent(filePath)}`,
@@ -406,6 +424,32 @@ async function pushAtris() {
     delete updatedFiles[filePath];
   }
   saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null));
+
+  // Telemetry — outcome reflects actual run quality, not just exit-code-zero.
+  // Partial delete failures or rate-limit retries mean the run was NOT a clean win;
+  // labeling them success would poison the RL signal.
+  const bytesChanged = filesToPush.reduce((acc, f) => acc + (f.content ? Buffer.byteLength(f.content, 'utf8') : 0), 0);
+  let finalOutcome;
+  let finalDetail;
+  if (deleteFailed.length > 0) {
+    finalOutcome = 'status_unknown';
+    finalDetail = `${deleteFailed.length} delete(s) failed (statuses: ${[...new Set(deleteFailed.map(f => f.status))].join(',')})`;
+  } else if (_rateLimitedDeletes > 0) {
+    finalOutcome = 'rate_limited';
+    finalDetail = `${_rateLimitedDeletes} delete(s) hit 429 (recovered)`;
+  } else if (_coldWake) {
+    finalOutcome = 'cold_wake';
+  } else {
+    finalOutcome = 'success';
+  }
+  await emit(finalOutcome, {
+    files_pushed: pushed,
+    files_deleted: deleted,
+    files_unchanged: unchangedCount,
+    bytes_changed: bytesChanged,
+    bytes_transferred: bytesChanged,
+    error_detail: finalDetail,
+  });
 }
 
 module.exports = { pushAtris };
