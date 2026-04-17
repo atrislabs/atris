@@ -9,6 +9,7 @@ const { parseJournalSections, mergeSections, reconstructJournal } = require('../
 const { loadBusinesses } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 
 function pruneEmptyParentDirs(filePath, stopDir) {
   let current = path.dirname(filePath);
@@ -114,6 +115,7 @@ async function pullAtris() {
 
 
 async function pullBusiness(slug) {
+  const elapsedMs = startTimer();
   const creds = loadCredentials();
   if (!creds || !creds.token) {
     console.error('Not logged in. Run: atris login');
@@ -223,6 +225,11 @@ async function pullBusiness(slug) {
     process.exit(1);
   }
 
+  // Telemetry helper — captures wall-clock time including wake.
+  let _coldWake = false;
+  const emit = (outcome, extras = {}) =>
+    emitSyncEvent(creds.token, businessId, workspaceId, 'pull', outcome, elapsedMs(), extras);
+
   // Auto-wake the EC2 computer if --auto-wake is set.
   // Without this, pull silently serves stale data from agent_files cache when
   // the computer is asleep — the bug that confused us all night.
@@ -232,6 +239,7 @@ async function pullBusiness(slug) {
     const computerStatus = statusResult.ok && statusResult.data ? statusResult.data.status : 'unknown';
     if (computerStatus !== 'running' || !(statusResult.data && statusResult.data.endpoint)) {
       process.stdout.write('  Waking EC2 computer... ');
+      _coldWake = true;
       await apiRequestJson(`/business/${businessId}/ai-computer/wake`, { method: 'POST', token: creds.token });
       const wakeStart = Date.now();
       while (Date.now() - wakeStart < 90000) {
@@ -355,20 +363,30 @@ async function pullBusiness(slug) {
 
   if (!result.ok) {
     const msg = result.errorMessage || result.error || `HTTP ${result.status}`;
+    let outcome = 'status_unknown';
     if (result.status === 0 || (typeof msg === 'string' && msg.toLowerCase().includes('timeout'))) {
       console.error(`\n  Workspace timed out (large workspaces can take 60s+). Try: atris pull ${slug} --timeout=600`);
+      outcome = 'hang';
     } else if (result.status === 502) {
       console.error(`\n  Computer didn't respond in time. It may be waking up or the workspace is large.`);
       console.error(`  Try again in 30s, or use: atris pull ${slug} --only=team/,context/`);
+      outcome = 'cold_wake';
     } else if (result.status === 409) {
       console.error(`\n  Computer is sleeping. Wake it first, then pull again.`);
+      outcome = 'cold_wake';
     } else if (result.status === 403) {
       console.error(`\n  Access denied. You're not a member of "${slug}".`);
+      outcome = 'access_denied';
     } else if (result.status === 404) {
       console.error(`\n  Business "${slug}" not found.`);
+      outcome = 'status_unknown';
+    } else if (result.status === 429) {
+      console.error(`\n  Pull failed: ${msg}`);
+      outcome = 'rate_limited';
     } else {
       console.error(`\n  Pull failed: ${msg}`);
     }
+    await emit(outcome, { error_detail: `${result.status}: ${msg}`.slice(0, 500) });
     process.exit(1);
   }
 
@@ -379,7 +397,10 @@ async function pullBusiness(slug) {
     // mirror sweep so a genuinely-emptied cloud can clear local files. The
     // sweep itself has a safety guard that refuses to wipe local content
     // when remote reports empty (the snapshot-glitch case), so this is safe.
-    if (!force) return;
+    if (!force) {
+      await emit(_coldWake ? 'cold_wake' : 'success', { files_unchanged: 0 });
+      return;
+    }
   } else {
     console.log(`  Processing ${files.length} files...`);
   }
@@ -702,6 +723,24 @@ async function pullBusiness(slug) {
     }
   }
 
+  // Telemetry — only count files where content actually came over the wire
+  // (smart-pull skips unchanged files and just sends a hash). Counting all
+  // remoteFiles here would dwarf the real signal once smart-pull steady-state
+  // is normal (< 1% of files transferred per pull).
+  let bytesTransferred = 0;
+  let filesTransferred = 0;
+  for (const filePath of Object.keys(remoteContent)) {
+    const f = remoteFiles[filePath];
+    if (f && typeof f.size === 'number') bytesTransferred += f.size;
+    filesTransferred++;
+  }
+  const totalRemote = Object.keys(remoteFiles).length;
+  await emit(_coldWake ? 'cold_wake' : 'success', {
+    files_pushed: filesTransferred,
+    files_unchanged: Math.max(0, totalRemote - filesTransferred),
+    bytes_transferred: bytesTransferred,
+    bytes_changed: bytesTransferred,
+  });
 }
 
 
