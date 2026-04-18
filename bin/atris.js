@@ -290,6 +290,7 @@ function showHelp() {
   console.log('  cr --all               - Audit all backend services');
   console.log('');
   console.log('Cloud & agents:');
+  console.log('  computer   - Talk directly to the AI computer (bash or agent exec)');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  agent      - Select which Atris agent to use');
   console.log('  chat       - Chat with the selected Atris agent');
@@ -428,7 +429,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'learn', 'plugin', 'experiments', 'pull', 'push', 'align', 'terminal', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'pull', 'push', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
@@ -1057,6 +1058,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/member').memberCommand(subcommand, ...args);
+} else if (command === 'app') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/app').appCommand(subcommand, ...args);
 } else if (command === 'pull') {
   require('../commands/pull').pullAtris()
     .then(() => process.exit(0))
@@ -1071,6 +1076,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'terminal') {
   require('../commands/terminal').terminalAtris()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'computer') {
+  require('../commands/computer').runComputer()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'diff') {
