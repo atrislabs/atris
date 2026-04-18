@@ -1,6 +1,6 @@
 ---
 name: aeo
-description: "Answer Engine Optimization — write content engineered to get cited by ChatGPT, Claude, Perplexity, Gemini. Not SEO. Triggers on: aeo, answer engine, llm citation, get cited, write for ai."
+description: "AI Engine Optimization — write content engineered to get cited by ChatGPT, Claude, and Gemini. Not SEO. Triggers on: aeo, AI engine, llm citation, get cited, write for ai."
 when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get Pallet cited by ChatGPT', 'aeo for our recruiting page', 'make this quotable by LLMs'."
 version: 0.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
@@ -10,14 +10,14 @@ tags:
   - marketing
 ---
 
-# AEO — Answer Engine Optimization
+# AEO — AI Engine Optimization
 
 Write content that LLMs cite when a human asks them a question. Different objective than SEO, different rules than craft writing.
 
 ## When to use this skill
 
-- User wants content that gets quoted by ChatGPT / Claude / Perplexity / Gemini
-- User mentions "AEO", "answer engine", "LLM citation", "get cited", "write for AI"
+- User wants content that gets quoted by ChatGPT / Claude / Gemini
+- User mentions "AEO", "AI engine", "LLM citation", "get cited", "write for AI"
 - Content is for a brand, product, person, or category the customer wants to own in LLM answers
 
 **Not for:**
