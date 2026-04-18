@@ -1,0 +1,6 @@
+timestamp	topic	papers_found	top_score	top_paper	source_breakdown
+2026-04-13T11:50:00Z	rl-creative-writing+self-improvement+story-coherence	30	9.2	R2-Write (arxiv:2604.03004)	arxiv:30 scholar:0 web:0
+2026-04-13T17:50:00Z	rubric-refinement+scene-rewriting	20	9.4	RRD Rubric Refinement (arxiv:2602.05125)	arxiv:10 web:10
+2026-04-13T23:10:00Z	sensory-language+embodiment	12	8.6	Zero Body Problem (arxiv:2504.06393)	web:12
+2026-04-14T04:10:00Z	scorer-variance+judge-consistency	20	9.0	Efficient Noisy LLM Judge (arxiv:2601.05420)	web:20
+2026-04-14T05:00:00Z	micro-gesture+embodied-fiction	10	6.0	none-actionable	web:10
