@@ -38,12 +38,12 @@ then /endgame picks the next horizon at the boundary.
   **After:** T2
 ## In Progress
 
-- **T10:** Fixture task — append navigator-planned stamp line to today's Notes section [execute]
-  **Claimed by:** Executor at 2026-04-19T22:50:01.633Z
-  **Stage:** DO
-  **Exit:** `atris/logs/2026/2026-04-19.md` `## Notes` gains a new `### Fixture T10 Navigator-Planned — 2026-04-19 HH:MM` heading
-  **Verify:** `grep -c "Fixture T10 Navigator-Planned" atris/logs/2026/2026-04-19.md | grep -v "^0$"`
+- **T11:** Fixture task — append stamp line to today's journal Notes section [execute]
+  **Exit:** `atris/logs/2026/2026-04-19.md` contains a new `### Fixture T11 — YYYY-MM-DD HH:MM` heading under `## Notes`
+  **Verify:** `grep -c "Fixture T11" atris/logs/2026/2026-04-19.md | grep -v "^0$"`
   **After:** none
+  **Claimed by:** Executor at 2026-04-19T22:51:47.716Z
+  **Stage:** DO
 
 ---
 
