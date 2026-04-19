@@ -1,7 +1,8 @@
 /**
  * Atris Computer — interact with your EC2 AI Computer
  *
- *   atris computer                  — Show status
+ *   atris computer                  — Open SMART mode (cloud in business workspace, local elsewhere)
+ *   atris computer --cloud          — Open CLOUD workspace mode
  *   atris computer wake             — Start the computer
  *   atris computer sleep            — Stop (files persist)
  *   atris computer run <command>    — Run bash on EC2 (no LLM)
@@ -11,8 +12,16 @@
  *   atris computer exec <prompt>    — Run with LLM (Claude Code)
  */
 
-const { loadCredentials } = require('../utils/auth');
-const { apiRequestJson } = require('../utils/api');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const readline = require('readline');
+const { spawnSync } = require('child_process');
+const { loadCredentials, decodeJwtClaims } = require('../utils/auth');
+const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
+const { loadBusinesses, saveBusinesses } = require('./business');
+const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
+const { streamSession } = require('./serve');
 
 function getToken() {
   const creds = loadCredentials();
@@ -23,7 +32,899 @@ function getToken() {
   return creds.token;
 }
 
-async function computerStatus(token) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const VALID_CLOUD_WORKERS = new Set(['claude', 'openai']);
+const LOCAL_BRIDGE_RECONNECT_MS = 2000;
+const KNOWN_CHAT_COMMANDS = new Set([
+  '/audit',
+  '/exit',
+  '/files',
+  '/help',
+  '/login',
+  '/model',
+  '/pwd',
+  '/quit',
+  '/reset',
+  '/run',
+  '/start',
+  '/status',
+  '/worker',
+]);
+
+function color(code, value) {
+  if (process.env.NO_COLOR || !process.stdout.isTTY) return String(value);
+  return `\x1b[${code}m${value}\x1b[0m`;
+}
+
+const ui = {
+  bold: (value) => color(1, value),
+  dim: (value) => color(2, value),
+  green: (value) => color(32, value),
+  yellow: (value) => color(33, value),
+  cyan: (value) => color(36, value),
+  red: (value) => color(31, value),
+};
+
+function useInteractiveCloudUi() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+}
+
+function useInteractiveTerminalUi() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
+}
+
+function printCloudWordmark() {
+  if (!process.stdout.isTTY) return;
+  console.log(ui.cyan('    ___  __________  ________   CLOUD'));
+  console.log(ui.cyan('   / _ |/_  __/ __ \\/  _/ __/'));
+  console.log(ui.cyan('  / __ | / / / /_/ // /_\\ \\  '));
+  console.log(ui.cyan(' /_/ |_|/_/  \\____/___/___/  '));
+}
+
+function printLocalWordmark() {
+  if (!process.stdout.isTTY) return;
+  console.log(ui.green('    ___  __________  ________   LOCAL'));
+  console.log(ui.green('   / _ |/_  __/ __ \\/  _/ __/'));
+  console.log(ui.green('  / __ | / / / /_/ // /_\\ \\  '));
+  console.log(ui.green(' /_/ |_|/_/  \\____/___/___/  '));
+}
+
+function activeWorker(worker) {
+  return (worker || 'claude').toLowerCase() === 'default' ? 'claude' : (worker || 'claude').toLowerCase();
+}
+
+function formatWorkerName(worker) {
+  const active = activeWorker(worker);
+  return active === 'openai' ? 'OpenAI' : 'Claude';
+}
+
+function formatBillingMode(worker) {
+  return activeWorker(worker) === 'openai'
+    ? 'Atris credits'
+    : 'Claude subscription lane';
+}
+
+async function describeClaudeAuth(token, ctx) {
+  try {
+    const status = await fetchBusinessClaudeLoginStatus(token, ctx);
+    if (!status.ok) {
+      return {
+        connected: false,
+        label: 'Claude login: unknown',
+        detail: 'run /login to connect the remote computer',
+      };
+    }
+    const data = status.data || {};
+    if (data.loggedIn || data.connected || data.status === 'completed' || data.next_action === 'connected') {
+      return {
+        connected: true,
+        label: 'Claude login: connected',
+        detail: 'Claude subscription lane is active',
+      };
+    }
+    return {
+      connected: false,
+      label: 'Claude login: not connected',
+      detail: 'run /login to turn on the 0-credit Claude lane',
+    };
+  } catch {
+    return {
+      connected: false,
+      label: 'Claude login: unknown',
+      detail: 'run /login to connect the remote computer',
+    };
+  }
+}
+
+async function describeBillingMode(token, ctx, worker) {
+  if (activeWorker(worker) === 'openai') {
+    return 'Atris credits';
+  }
+  const auth = await describeClaudeAuth(token, ctx);
+  if (auth.connected) {
+    return 'Claude subscription connected - 0 Atris credits';
+  }
+  return 'Claude login needed - 0 credits after /login';
+}
+
+function printCloudHelp() {
+  console.log('');
+  console.log(ui.bold('Useful commands'));
+  console.log('  /start               Show the beginner flow again');
+  console.log('  /help                Show this menu');
+  console.log('  /status              Show cloud computer status');
+  console.log('  /files [path]        List files in the workspace');
+  console.log('  /run <cmd>           Run shell without the model');
+  console.log('  /audit [n]           Show recent runs, output, and charges');
+  console.log('  /worker claude       Use Claude subscription lane');
+  console.log('  /worker openai       Use OpenAI credit lane');
+  console.log('  /login               Connect Claude subscription on the remote box');
+  console.log('  /reset               Start a fresh chat session');
+  console.log('  /exit                Leave cloud mode');
+  console.log('');
+  console.log(ui.dim('No code needed: type the outcome in normal English. Unknown /commands are blocked locally.'));
+}
+
+function printCloudStartPanel(ctx, worker, model, billingLabel, authSummary = null) {
+  console.log('');
+  console.log(ui.bold('Atris Cloud Computer'));
+  console.log(`${ctx.businessName}  ${ui.dim('/workspace persists')}`);
+  console.log(`Lane: ${ui.bold(formatWorkerName(worker))}  ${ui.dim(formatCloudSelection({ worker, model }))}`);
+  console.log(`Billing: ${billingLabel}`);
+  if (authSummary) console.log(`${authSummary.label}  ${ui.dim(authSummary.detail)}`);
+  console.log(`${ui.green('Atris loaded')}  ${ui.dim('plain English -> workspace actions')}`);
+  console.log('');
+  console.log(ui.bold('Start here'));
+  console.log('  Type what you want built. Atris can inspect, edit, run, and save files.');
+  console.log('  "look around this workspace and tell me what is here"');
+  console.log('  "build me a one-page website for my coffee shop"');
+  console.log('  "make a script that turns a CSV into a chart"');
+  console.log('');
+  console.log(ui.bold('Controls'));
+  console.log('  /start   this screen      /status  lane, auth, billing');
+  console.log('  /files   workspace files  /run pwd shell without the model');
+  console.log('  /login   connect Claude   /worker openai use credits');
+  console.log('  /audit 5 recent runs      /exit leave cloud mode');
+  console.log('');
+  console.log(ui.dim('Plain English goes to Atris. Slash commands control the computer.'));
+}
+
+function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
+  const endpoint = `/api/cli/sessions/${sessionId}/file-op`;
+  const bashLine = allowBash
+    ? '- Run local commands with local_file_op({ "type": "bash", "command": "..." }).'
+    : '- Bash is disabled for this local session. Use read/write/edit/delete only.';
+
+  return `
+
+## Atris Local Folder Mode
+
+The user connected their LOCAL folder to Atris through CLI session ${sessionId}.
+Their local root is: ${localRoot}
+Treat this local folder as the primary workspace for this chat.
+The cloud /workspace is only a control plane.
+Do not use Write/Edit/apply_patch for requested local edits.
+Use the native local_file_op tool for every local filesystem change.
+
+Preferred tool calls:
+- local_file_op({ "type": "read", "path": "relative/path.txt" })
+- local_file_op({ "type": "write", "path": "file.txt", "content": "..." })
+- local_file_op({ "type": "edit", "path": "file.txt", "find": "...", "replace": "..." })
+- local_file_op({ "type": "delete", "path": "file.txt" })
+${bashLine}
+
+Fallback if the native tool is unavailable: use Bash to call the Atris Python API from the cloud workspace:
+
+\`\`\`python
+from atris_api import api
+api("POST", "${endpoint}", {
+    "type": "read",
+    "path": "relative/path.txt",
+    "wait_for_ack": True,
+    "timeout_seconds": 30,
+})
+\`\`\`
+
+Supported operations:
+- Read: { "type": "read", "path": "file.txt", "wait_for_ack": true }
+- Write: { "type": "write", "path": "file.txt", "content": "...", "wait_for_ack": true }
+- Edit: { "type": "edit", "path": "file.txt", "find": "...", "replace": "...", "wait_for_ack": true }
+- Delete: { "type": "delete", "path": "file.txt", "wait_for_ack": true }
+
+Rules:
+- All paths must be relative to the local root.
+- Read before editing unless you are creating a new file.
+- Use local bash for ls/rg/tests when available.
+- Do not ask the user to copy, paste, or save files. Apply the change through the bridge.
+- In final answers, say what changed locally and how you verified it.
+---`;
+}
+
+function printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, authSummary = null) {
+  console.log('');
+  console.log(ui.bold('Atris Local Computer'));
+  console.log(`${ctx.businessName}  ${ui.dim('cloud brain -> local folder')}`);
+  console.log(`Local: ${bridge.workingDir}`);
+  console.log(`Bridge: ${bridge.sessionId.slice(0, 8)}  ${ui.dim(bridge.allowBash ? 'local bash enabled' : 'file ops only')}`);
+  console.log(`Lane: ${ui.bold(formatWorkerName(worker))}  ${ui.dim(formatCloudSelection({ worker, model }))}`);
+  console.log(`Billing: ${billingLabel}`);
+  if (authSummary) console.log(`${authSummary.label}  ${ui.dim(authSummary.detail)}`);
+  console.log(`${ui.green('Atris loaded')}  ${ui.dim('plain English -> local edits')}`);
+  console.log('');
+  console.log(ui.bold('Start here'));
+  console.log('  "look around this folder and tell me what is here"');
+  console.log('  "make the homepage look premium"');
+  console.log('  "add a script that converts a CSV into a chart"');
+  console.log('');
+  console.log(ui.bold('Controls'));
+  console.log('  /status  local bridge, lane, billing');
+  console.log('  /files   local files');
+  console.log('  /run     local shell command');
+  console.log('  /audit   recent cloud brain runs');
+  console.log('  /worker  claude');
+  console.log('  /exit    leave local Atris mode');
+  console.log('');
+  console.log(ui.dim('Tokens run through Atris/cloud billing. Edits land in this local folder.'));
+}
+
+async function printCloudSessionStatus(token, ctx, worker, model) {
+  const statusResult = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, {
+    method: 'GET',
+    token,
+  });
+  const d = statusResult.ok ? (statusResult.data || {}) : {};
+  const computerState = d.status || (statusResult.ok ? 'unknown' : `error ${statusResult.status}`);
+  const authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+  const billingLabel = await describeBillingMode(token, ctx, worker);
+
+  console.log('');
+  console.log(ui.bold('Cloud status'));
+  console.log(`  Computer: ${computerState}`);
+  console.log(`  Business: ${ctx.businessName}`);
+  console.log('  Workspace: /workspace');
+  console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model })}`);
+  console.log(`  Billing: ${billingLabel}`);
+  console.log('  Atris: loaded');
+  if (authSummary) console.log(`  Claude: ${authSummary.connected ? 'connected' : 'not connected'}  ${authSummary.detail}`);
+  if (d.endpoint) console.log(`  Endpoint: ${d.endpoint}`);
+}
+
+function formatDropdownLine(choice, selected) {
+  const pointer = selected ? '>' : ' ';
+  const label = selected ? ui.bold(choice.label) : choice.label;
+  return `${pointer} ${label}  ${ui.dim(choice.detail || '')}`.trimEnd();
+}
+
+async function selectFromDropdown(title, choices) {
+  if (!useInteractiveTerminalUi() || !choices.length) return choices[0] || null;
+
+  readline.emitKeypressEvents(process.stdin);
+  const hadRawMode = Boolean(process.stdin.isRaw);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+
+  let index = 0;
+  let printedLines = 0;
+
+  const render = () => {
+    if (printedLines) {
+      readline.moveCursor(process.stdout, 0, -printedLines);
+      readline.clearScreenDown(process.stdout);
+    }
+    const lines = [
+      ui.bold(title),
+      ...choices.map((choice, i) => formatDropdownLine(choice, i === index)),
+      ui.dim('Use arrow keys, Enter to choose.'),
+    ];
+    process.stdout.write(`${lines.join('\n')}\n`);
+    printedLines = lines.length;
+  };
+
+  return new Promise((resolve) => {
+    const cleanup = (choice) => {
+      process.stdin.removeListener('keypress', onKeypress);
+      process.stdin.setRawMode(hadRawMode);
+      if (!hadRawMode) process.stdin.pause();
+      resolve(choice);
+    };
+
+    const onKeypress = (_str, key = {}) => {
+      if (key.name === 'up' || key.name === 'k') {
+        index = (index - 1 + choices.length) % choices.length;
+        render();
+        return;
+      }
+      if (key.name === 'down' || key.name === 'j') {
+        index = (index + 1) % choices.length;
+        render();
+        return;
+      }
+      if (key.name === 'return') {
+        cleanup(choices[index]);
+        return;
+      }
+      if (key.name === 'c' && key.ctrl) {
+        cleanup(null);
+      }
+    };
+
+    process.stdin.on('keypress', onKeypress);
+    render();
+  });
+}
+
+function describeLocalClaudeAuth() {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return 'Local auth: ANTHROPIC_API_KEY set on this Mac';
+  }
+  const hasClaude = spawnSync('which', ['claude'], { encoding: 'utf8', timeout: 1000 }).status === 0;
+  if (!hasClaude) {
+    return 'Local auth: Claude CLI not found; use Cloud workspace or install Claude Code';
+  }
+  const status = spawnSync('claude', ['auth', 'status', '--json'], {
+    encoding: 'utf8',
+    timeout: 1500,
+    stdio: 'pipe',
+  });
+  if (status.error && status.error.code === 'ETIMEDOUT') {
+    return 'Local auth: Claude CLI installed, auth check timed out; Cloud subscription does not carry over';
+  }
+  const raw = String(status.stdout || status.stderr || '').trim();
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.loggedIn || parsed.status === 'logged_in' || parsed.authMethod) {
+      const plan = parsed.subscriptionType || parsed.plan || parsed.authMethod || 'connected';
+      return `Local auth: Claude logged in on this Mac (${plan})`;
+    }
+  } catch {
+    // Fall through to text checks.
+  }
+  if (/logged\s*in|subscription|max|pro/i.test(raw)) {
+    return 'Local auth: Claude appears logged in on this Mac';
+  }
+  return 'Local auth: not confirmed; run `claude login` on this Mac or choose Cloud workspace';
+}
+
+async function chooseComputerSurface(hasBusinessBinding, hasLocalHarness) {
+  if (!useInteractiveTerminalUi()) {
+    return hasBusinessBinding ? 'cloud' : 'local';
+  }
+  if (hasBusinessBinding) {
+    const choices = [
+      { label: 'Cloud workspace', value: 'cloud', detail: '/workspace, shared, Atris loaded' },
+      { label: 'Local folder', value: 'local-atris', detail: 'edits this folder, tokens run through Atris' },
+    ];
+    if (hasLocalHarness) {
+      choices.push({ label: 'Local BYO Claude', value: 'local-byo', detail: 'advanced, tokens go to Anthropic' });
+    }
+    const selected = await selectFromDropdown('Choose computer', choices);
+    if (selected === null) return null;
+    return selected?.value || 'cloud';
+  }
+  return 'local';
+}
+
+async function chooseCloudLane(token, ctx, initialOptions = {}) {
+  let worker = initialOptions.worker || null;
+  let model = initialOptions.model || null;
+
+  if (!worker && useInteractiveCloudUi()) {
+    const selected = await selectFromDropdown('Choose compute lane', [
+      { label: 'Claude', value: 'claude', detail: 'subscription lane when connected, 0 Atris credits' },
+      { label: 'OpenAI', value: 'openai', detail: 'works now, uses Atris credits' },
+    ]);
+    if (selected === null) return { cancelled: true };
+    if (selected?.value) worker = selected.value;
+  }
+
+  if (activeWorker(worker) === 'claude' && useInteractiveCloudUi()) {
+    let state = null;
+    try {
+      const status = await fetchBusinessClaudeLoginStatus(token, ctx);
+      state = status.ok ? status.data : null;
+    } catch {
+      state = null;
+    }
+
+    if (!state?.connected && !state?.loggedIn && state?.status !== 'completed' && state?.next_action !== 'connected') {
+      const selected = await selectFromDropdown('Claude subscription auth', [
+        { label: 'Login to Claude', value: 'login', detail: 'recommended, turns on 0-credit Claude lane' },
+        { label: 'Use OpenAI', value: 'openai', detail: 'works now, uses Atris credits' },
+        { label: 'Try Claude', value: 'continue', detail: 'only works if the box is already authenticated' },
+      ]);
+      if (selected === null) return { cancelled: true };
+      if (selected?.value === 'login') {
+        await computerCloudLogin(token, ctx);
+      } else if (selected?.value === 'openai') {
+        worker = 'openai';
+      }
+    }
+  }
+
+  return { worker, model };
+}
+
+function parseComputerOptions(argv) {
+  const positional = [];
+  let worker = process.env.ATRIS_CLOUD_WORKER || null;
+  let model = process.env.ATRIS_CLOUD_MODEL || null;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--worker' && argv[i + 1]) {
+      worker = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--worker=')) {
+      worker = arg.split('=', 2)[1] || null;
+      continue;
+    }
+    if (arg === '--model' && argv[i + 1]) {
+      model = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--model=')) {
+      model = arg.split('=', 2)[1] || null;
+      continue;
+    }
+    positional.push(arg);
+  }
+
+  if (worker && !VALID_CLOUD_WORKERS.has(worker)) {
+    console.error(`Invalid cloud worker: ${worker}`);
+    console.error('Expected one of: claude, openai');
+    process.exit(1);
+  }
+
+  return {
+    positional,
+    options: {
+      worker: worker || null,
+      model: model || null,
+    },
+  };
+}
+
+function formatCloudSelection(options = {}) {
+  const worker = activeWorker(options.worker);
+  const parts = [`worker=${worker}`];
+  if (options.model) parts.push(`model=${options.model}`);
+  if (!options.model) parts.push('model=default');
+  return parts.join(' ');
+}
+
+function printModeBanner(mode, root, lines = []) {
+  console.log(`Mode: ${mode}`);
+  console.log(`Root: ${root}`);
+  for (const line of lines) console.log(line);
+  console.log('');
+}
+
+function findAtrisCodeTerminal() {
+  const envPath = process.env.ATRIS_CODE_PY;
+  const candidates = [
+    envPath,
+    path.join(__dirname, '..', 'cli', 'atris_code.py'),
+    path.join(process.cwd(), 'cli', 'atris_code.py'),
+    path.join(os.homedir(), 'arena', 'atrisos-backend', 'cli', 'atris_code.py'),
+  ].filter(Boolean);
+
+  let dir = process.cwd();
+  for (let i = 0; i < 4; i++) {
+    candidates.push(path.join(dir, 'cli', 'atris_code.py'));
+    dir = path.dirname(dir);
+  }
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function findAtrisCodePython(terminalPath) {
+  const envPython = process.env.ATRIS_CODE_PYTHON;
+  if (envPython && fs.existsSync(envPython)) return envPython;
+  if (!terminalPath) return 'python3';
+
+  const projectRoot = path.dirname(path.dirname(terminalPath));
+  const candidates = [
+    path.join(projectRoot, 'venv', 'bin', 'python3'),
+    path.join(projectRoot, '.venv', 'bin', 'python3'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'python3';
+}
+
+function computerLocalLegacy(extraArgs = []) {
+  printModeBanner('LOCAL', process.cwd(), [
+    'Current folder is the workspace.',
+    'Legacy console mode.',
+  ]);
+
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0], originalArgv[1], originalArgv[2], ...extraArgs];
+  try {
+    consoleCommand();
+  } finally {
+    process.argv = originalArgv;
+  }
+}
+
+function computerLocal(extraArgs = []) {
+  printLocalWordmark();
+  printModeBanner('LOCAL', process.cwd(), [
+    'Claude Code + Atris workspace context.',
+    'BYO local Claude: tokens go through Anthropic, not Atris.',
+    'No Atris credits, no cloud audit, no remote workspace.',
+    'Remote /login only applies to Cloud workspace.',
+  ]);
+
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0], originalArgv[1], originalArgv[2], 'claude', ...extraArgs];
+  try {
+    consoleCommand();
+  } finally {
+    process.argv = originalArgv;
+  }
+}
+
+async function startLocalAtrisBridge(token, options = {}) {
+  const workingDir = process.cwd();
+  const allowBash = options.allowBash !== false;
+  const result = await apiRequestJson('/cli/sessions', {
+    method: 'POST',
+    token,
+    body: {
+      working_directory: workingDir,
+      agent_id: null,
+      allow_bash: allowBash,
+    },
+    timeoutMs: 15000,
+  });
+
+  if (!result.ok) {
+    throw new Error(result.errorMessage || result.error || `failed to create local bridge (${result.status})`);
+  }
+
+  const session = result.data || {};
+  const sessionId = session.session_id;
+  if (!sessionId) {
+    throw new Error('local bridge did not return a session id');
+  }
+
+  let stopped = false;
+  const loop = async () => {
+    while (!stopped) {
+      try {
+        await streamSession(token, sessionId, workingDir);
+      } catch (err) {
+        if (!stopped) console.error(ui.dim(`  local bridge reconnecting: ${err.message}`));
+      }
+      if (!stopped) await sleep(LOCAL_BRIDGE_RECONNECT_MS);
+    }
+  };
+  loop();
+
+  return {
+    sessionId,
+    workingDir,
+    allowBash,
+    stop: async () => {
+      stopped = true;
+      await apiRequestJson(`/cli/sessions/${sessionId}`, {
+        method: 'DELETE',
+        token,
+        timeoutMs: 10000,
+      }).catch(() => {});
+    },
+  };
+}
+
+async function runLocalBridgeOp(token, sessionId, op, timeoutSeconds = 30) {
+  const result = await apiRequestJson(`/cli/sessions/${sessionId}/file-op`, {
+    method: 'POST',
+    token,
+    body: {
+      ...op,
+      wait_for_ack: true,
+      timeout_seconds: timeoutSeconds,
+    },
+    timeoutMs: Math.max(10, timeoutSeconds + 5) * 1000,
+  });
+
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.error || result.status}`);
+    return null;
+  }
+
+  const data = result.data || {};
+  if (data.status === 'error') {
+    const err = data.result?.error || 'local operation failed';
+    console.error(`Failed: ${err}`);
+  }
+  return data;
+}
+
+function readBusinessBinding() {
+  const bindingPath = path.join(process.cwd(), '.atris', 'business.json');
+  if (!fs.existsSync(bindingPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(bindingPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function resolveBusinessContext(token) {
+  const binding = readBusinessBinding();
+  if (!binding) return null;
+
+  if (binding.business_id && binding.workspace_id) {
+    return {
+      slug: binding.slug,
+      businessId: binding.business_id,
+      workspaceId: binding.workspace_id,
+      businessName: binding.name || binding.slug || 'business',
+    };
+  }
+
+  const slug = binding.slug;
+  if (!slug) return null;
+
+  const businesses = loadBusinesses();
+  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  if (list.ok) {
+    const match = (list.data || []).find(
+      (b) => b.slug === slug || (b.name || '').toLowerCase() === slug.toLowerCase()
+    );
+    if (match) {
+      businesses[slug] = {
+        business_id: match.id,
+        workspace_id: match.workspace_id,
+        name: match.name,
+        slug: match.slug,
+        added_at: new Date().toISOString(),
+      };
+      saveBusinesses(businesses);
+      return {
+        slug: match.slug,
+        businessId: match.id,
+        workspaceId: match.workspace_id,
+        businessName: match.name || match.slug,
+      };
+    }
+  }
+
+  const cached = businesses[slug];
+  if (cached && cached.business_id && cached.workspace_id) {
+    return {
+      slug,
+      businessId: cached.business_id,
+      workspaceId: cached.workspace_id,
+      businessName: cached.name || slug,
+    };
+  }
+
+  return null;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function businessPromptUserId(token) {
+  const claims = decodeJwtClaims(token) || {};
+  return claims.sub || claims.user_id || claims.uid || null;
+}
+
+async function runBusinessTerminalCommand(token, ctx, command, timeout = 30) {
+  return apiRequestJson(
+    `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/terminal`,
+    {
+      method: 'POST',
+      token,
+      body: { command, timeout },
+      timeoutMs: Math.max(timeout + 10, 40) * 1000,
+    }
+  );
+}
+
+async function readBusinessWorkspaceFile(token, ctx, remotePath, timeoutMs = 15000) {
+  return apiRequestJson(
+    `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/file?path=${encodeURIComponent(remotePath)}`,
+    {
+      method: 'GET',
+      token,
+      timeoutMs,
+    }
+  );
+}
+
+function extractRunnerProxyText(payload = {}) {
+  const result = String(payload.result || '').trim();
+  if (result) return result;
+  if (Array.isArray(payload.assistant_text)) {
+    const joined = payload.assistant_text.join('').trim();
+    if (joined) return joined;
+  }
+  if (typeof payload.text === 'string' && payload.text.trim()) {
+    return payload.text.trim();
+  }
+  return '';
+}
+
+async function runBusinessPromptViaRunnerProxy(token, ctx, prompt, options = {}) {
+  const requestId = `cli-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+  const remoteDir = '/workspace/.atris-runner-proxy';
+  const outputPath = `${remoteDir}/${requestId}.json`;
+  const scriptPath = `/tmp/atris_runner_proxy_${requestId}.py`;
+  const stdoutPath = `/tmp/atris_runner_proxy_${requestId}.stdout`;
+  const stderrPath = `/tmp/atris_runner_proxy_${requestId}.stderr`;
+  const payload = {
+    prompt,
+    permission_mode: 'bypassPermissions',
+    max_turns: Math.min(Math.max(Number(options.maxTurns || 12), 1), 25),
+    reset_context: Boolean(options.resetContext),
+  };
+  if (options.worker) payload.worker = options.worker;
+  if (options.model) payload.model = options.model;
+  if (options.systemPrompt) payload.system_prompt = options.systemPrompt;
+  if (options.allowedTools) payload.allowed_tools = options.allowedTools;
+  if (options.localCliSessionId) payload.local_cli_session_id = options.localCliSessionId;
+
+  const userId = businessPromptUserId(token);
+  if (userId) payload.user_id = userId;
+
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  const remoteScript = [
+    'import base64, json, pathlib, time, urllib.request',
+    `PAYLOAD = json.loads(base64.b64decode(${JSON.stringify(payloadB64)}).decode("utf-8"))`,
+    `OUTPUT_PATH = pathlib.Path(${JSON.stringify(outputPath)})`,
+    'TOKEN = ""',
+    'with open("/opt/atris/config/env", "r", encoding="utf-8") as fh:',
+    '    for line in fh:',
+    '        if line.startswith("ATRIS_SERVICE_TOKEN="):',
+    '            TOKEN = line.split("=", 1)[1].strip()',
+    '            break',
+    'if not TOKEN:',
+    '    OUTPUT_PATH.write_text(json.dumps({"status":"error","error":"missing ATRIS_SERVICE_TOKEN"}), encoding="utf-8")',
+    '    raise SystemExit(0)',
+    'def _fetch(req, timeout=120):',
+    '    with urllib.request.urlopen(req, timeout=timeout) as resp:',
+    '        return json.loads(resp.read().decode("utf-8"))',
+    'try:',
+    '    start_req = urllib.request.Request(',
+    '        "http://127.0.0.1:8081/execute-background",',
+    '        data=json.dumps(PAYLOAD).encode("utf-8"),',
+    '        headers={"Content-Type":"application/json","X-Atris-Service-Token":TOKEN},',
+    '        method="POST",',
+    '    )',
+    '    start = _fetch(start_req)',
+    '    execution_id = start.get("execution_id")',
+    '    result = {"execution_id": execution_id, "assistant_text": [], "result": "", "status": "running", "result_event": None}',
+    '    from_index = 0',
+    '    deadline = time.time() + 300',
+    '    while time.time() < deadline:',
+    '        poll_req = urllib.request.Request(',
+    '            f"http://127.0.0.1:8081/events?execution_id={execution_id}&from_index={from_index}",',
+    '            headers={"X-Atris-Service-Token":TOKEN},',
+    '            method="GET",',
+    '        )',
+    '        data = _fetch(poll_req, timeout=60)',
+    '        events = data.get("events") or []',
+    '        for event in events:',
+    '            typ = event.get("type")',
+    '            if typ in ("assistant_text", "text"):',
+    '                content = event.get("content") or ""',
+    '                if content:',
+    '                    result["assistant_text"].append(content)',
+    '            elif typ == "result":',
+    '                result["result"] = event.get("result") or result["result"]',
+    '                result["result_event"] = event',
+    '        from_index = data.get("next_index", from_index + len(events))',
+    '        result["status"] = data.get("status") or result["status"]',
+    '        if result["status"] in ("completed", "failed", "error", "cancelled"):',
+    '            break',
+    '        time.sleep(2)',
+    '    OUTPUT_PATH.write_text(json.dumps(result), encoding="utf-8")',
+    'except Exception as exc:',
+    '    OUTPUT_PATH.write_text(json.dumps({"execution_id": None, "assistant_text": [], "result": "", "status": "error", "error": str(exc)}), encoding="utf-8")',
+  ].join('\n');
+
+  const launcher = [
+    `mkdir -p ${shellQuote(remoteDir)}`,
+    `cat > ${shellQuote(scriptPath)} <<'PY'`,
+    remoteScript,
+    'PY',
+    `nohup python3 ${shellQuote(scriptPath)} >${shellQuote(stdoutPath)} 2>${shellQuote(stderrPath)} < /dev/null &`,
+    'echo launched',
+  ].join('\n');
+
+  const launchResult = await runBusinessTerminalCommand(token, ctx, launcher, 30);
+  if (!launchResult.ok) {
+    return {
+      ok: false,
+      error: launchResult.error || `launcher failed (${launchResult.status})`,
+      status: launchResult.status,
+    };
+  }
+
+  const deadline = Date.now() + 330000;
+  while (Date.now() < deadline) {
+    const fileResult = await readBusinessWorkspaceFile(token, ctx, outputPath, 15000);
+    if (!fileResult.ok) {
+      if (fileResult.status === 404) {
+        await sleep(2000);
+        continue;
+      }
+      return {
+        ok: false,
+        error: fileResult.error || `runner proxy read failed (${fileResult.status})`,
+        status: fileResult.status,
+      };
+    }
+    try {
+      const payload = JSON.parse(fileResult.data?.content || '{}');
+      const status = payload.status || 'unknown';
+      if (['completed', 'failed', 'error', 'cancelled', 'timeout'].includes(status)) {
+        return { ok: status === 'completed', payload, status };
+      }
+    } catch {
+      // Ignore partial file writes and keep polling.
+    }
+    await sleep(2000);
+  }
+
+  return { ok: false, error: 'runner proxy timed out', status: 0 };
+}
+
+async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
+  const status = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
+  if (status.ok && status.data && status.data.status === 'running' && status.data.endpoint) {
+    return true;
+  }
+  process.stdout.write('  Waking business computer... ');
+  await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, { method: 'POST', token, body: {} });
+  const start = Date.now();
+  while (Date.now() - start < maxWaitSec * 1000) {
+    await sleep(3000);
+    const next = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
+    if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
+      const elapsed = Math.floor((Date.now() - start) / 1000);
+      console.log(`awake (${elapsed}s)`);
+      return true;
+    }
+  }
+  console.log('timeout');
+  return false;
+}
+
+async function computerStatus(token, ctx = null) {
+  if (ctx) {
+    const result = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, {
+      method: 'GET',
+      token,
+    });
+    if (!result.ok) {
+      console.error(`Failed: ${result.errorMessage || result.status}`);
+      return;
+    }
+    const d = result.data || {};
+    const status = d.status || 'unknown';
+    const icon = status === 'running' ? '●' : '○';
+    console.log(`  ${icon} Computer: ${status}`);
+    console.log(`    Business: ${ctx.businessName}`);
+    if (d.endpoint) console.log(`    Endpoint: ${d.endpoint}`);
+    return;
+  }
+
   const result = await apiRequestJson('/ai-computer/user/status', {
     method: 'GET',
     token,
@@ -54,7 +955,23 @@ async function computerStatus(token) {
   }
 }
 
-async function computerWake(token) {
+async function computerWake(token, ctx = null) {
+  if (ctx) {
+    console.log(`Waking computer for ${ctx.businessName}...`);
+    const result = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, {
+      method: 'POST',
+      token,
+      body: {},
+    });
+    if (!result.ok) {
+      console.error(`Failed: ${result.errorMessage || result.status}`);
+      return;
+    }
+    console.log(`  Status:   ${result.data.status}`);
+    if (result.data.endpoint) console.log(`  Endpoint: ${result.data.endpoint}`);
+    return;
+  }
+
   console.log('Waking computer...');
   const result = await apiRequestJson('/ai-computer/user/wake', {
     method: 'POST',
@@ -69,7 +986,22 @@ async function computerWake(token) {
   console.log(`  Endpoint: ${result.data.endpoint}`);
 }
 
-async function computerSleep(token) {
+async function computerSleep(token, ctx = null) {
+  if (ctx) {
+    console.log(`Sleeping computer for ${ctx.businessName}...`);
+    const result = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/sleep`, {
+      method: 'POST',
+      token,
+      body: {},
+    });
+    if (!result.ok) {
+      console.error(`Failed: ${result.errorMessage || result.status}`);
+      return;
+    }
+    console.log('  Computer is sleeping. Files persist.');
+    return;
+  }
+
   console.log('Sleeping computer...');
   const result = await apiRequestJson('/ai-computer/user/sleep', {
     method: 'POST',
@@ -83,11 +1015,44 @@ async function computerSleep(token) {
   console.log('  Computer is sleeping. Files persist.');
 }
 
-async function computerRun(token, command) {
+async function computerRun(token, command, ctx = null) {
   if (!command) {
     console.error('Usage: atris computer run <command>');
     process.exit(1);
   }
+
+  if (ctx) {
+    const awake = await ensureBusinessAwake(token, ctx);
+    if (!awake) {
+      console.error('  Computer did not become ready in time.');
+      return;
+    }
+    const result = await apiRequestJson(
+      `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/terminal`,
+      {
+        method: 'POST',
+        token,
+        body: { command, timeout: 30 },
+        timeoutMs: 40000,
+      }
+    );
+    if (!result.ok) {
+      if (result.status === 409 || (result.errorMessage || '').includes('running')) {
+        console.error('Computer is off. Run: atris computer wake');
+      } else {
+        console.error(`Failed: ${result.errorMessage || result.status}`);
+      }
+      return;
+    }
+    const d = result.data || {};
+    if (d.stdout) process.stdout.write(d.stdout);
+    if (d.stderr) process.stderr.write(d.stderr);
+    if (d.exit_code && d.exit_code !== 0) {
+      console.error(`Exit: ${d.exit_code}`);
+    }
+    return;
+  }
+
   const result = await apiRequestJson('/ai-computer/terminal', {
     method: 'POST',
     token,
@@ -109,16 +1074,36 @@ async function computerRun(token, command) {
   }
 }
 
-async function computerGrep(token, pattern) {
+async function computerGrep(token, pattern, ctx = null) {
   if (!pattern) {
     console.error('Usage: atris computer grep <pattern>');
     process.exit(1);
   }
-  return computerRun(token, `grep -rni "${pattern}" . --include="*.md" --include="*.py" --include="*.js" --include="*.json" 2>/dev/null | head -30`);
+  return computerRun(token, `grep -rni "${pattern}" . --include="*.md" --include="*.py" --include="*.js" --include="*.json" 2>/dev/null | head -30`, ctx);
 }
 
-async function computerLs(token, remotePath) {
+async function computerLs(token, remotePath, ctx = null) {
   const path = remotePath || '/';
+
+  if (ctx) {
+    const result = await apiRequestJson(
+      `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/files?path=${encodeURIComponent(path)}`,
+      {
+        method: 'GET',
+        token,
+      }
+    );
+    if (!result.ok) {
+      console.error(`Failed: ${result.errorMessage || result.status}`);
+      return;
+    }
+    for (const f of (result.data.files || [])) {
+      const type = f.type === 'dir' ? 'DIR ' : '    ';
+      console.log(`  ${type}${f.name}  (${f.size || 0}b)`);
+    }
+    return;
+  }
+
   const result = await apiRequestJson(`/ai-computer/files?path=${encodeURIComponent(path)}`, {
     method: 'GET',
     token,
@@ -133,11 +1118,28 @@ async function computerLs(token, remotePath) {
   }
 }
 
-async function computerCat(token, remotePath) {
+async function computerCat(token, remotePath, ctx = null) {
   if (!remotePath) {
     console.error('Usage: atris computer cat <path>');
     process.exit(1);
   }
+
+  if (ctx) {
+    const result = await apiRequestJson(
+      `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/file?path=${encodeURIComponent(remotePath)}`,
+      {
+        method: 'GET',
+        token,
+      }
+    );
+    if (!result.ok) {
+      console.error(`Failed: ${result.errorMessage || result.status}`);
+      return;
+    }
+    console.log(result.data.content || '');
+    return;
+  }
+
   const result = await apiRequestJson(`/ai-computer/file?path=${encodeURIComponent(remotePath)}`, {
     method: 'GET',
     token,
@@ -149,16 +1151,14 @@ async function computerCat(token, remotePath) {
   console.log(result.data.content || '');
 }
 
-async function computerDiff(token, remotePath) {
+async function computerDiff(token, remotePath, ctx = null) {
   const rPath = remotePath || 'soul';
-  const fs = require('fs');
-  const path = require('path');
-  const crypto = require('crypto');
 
   // List remote files
-  const listResult = await apiRequestJson(`/ai-computer/files?path=${encodeURIComponent(rPath)}`, {
-    method: 'GET', token,
-  });
+  const listPath = ctx
+    ? `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/files?path=${encodeURIComponent(rPath)}`
+    : `/ai-computer/files?path=${encodeURIComponent(rPath)}`;
+  const listResult = await apiRequestJson(listPath, { method: 'GET', token });
   if (!listResult.ok) {
     console.error(`Failed: ${listResult.errorMessage || listResult.status}`);
     return;
@@ -199,16 +1199,15 @@ async function computerDiff(token, remotePath) {
   console.log(`\n  ${added} new, ${modified} changed, ${deleted} deleted, ${same} unchanged`);
 }
 
-async function computerPull(token, remotePath, localDir) {
+async function computerPull(token, remotePath, localDir, ctx = null) {
   const rPath = remotePath || 'soul';
   const lDir = localDir || 'ec2_pull';
-  const fs = require('fs');
-  const path = require('path');
 
   // List files
-  const listResult = await apiRequestJson(`/ai-computer/files?path=${encodeURIComponent(rPath)}`, {
-    method: 'GET', token,
-  });
+  const listPath = ctx
+    ? `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/files?path=${encodeURIComponent(rPath)}`
+    : `/ai-computer/files?path=${encodeURIComponent(rPath)}`;
+  const listResult = await apiRequestJson(listPath, { method: 'GET', token });
   if (!listResult.ok) {
     console.error(`Failed to list: ${listResult.errorMessage || listResult.status}`);
     return;
@@ -225,8 +1224,11 @@ async function computerPull(token, remotePath, localDir) {
 
   let pulled = 0;
   for (const f of files) {
+    const filePath = ctx
+      ? `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/file?path=${encodeURIComponent(rPath + '/' + f.name)}`
+      : `/ai-computer/file?path=${encodeURIComponent(rPath + '/' + f.name)}`;
     const fileResult = await apiRequestJson(
-      `/ai-computer/file?path=${encodeURIComponent(rPath + '/' + f.name)}`,
+      filePath,
       { method: 'GET', token, timeoutMs: 15000 }
     );
     if (fileResult.ok && fileResult.data.content) {
@@ -318,7 +1320,11 @@ async function computerOnboard(token, businessSlug) {
   console.log(`    atris computer learn                                  Trigger another learning cycle`);
 }
 
-async function computerLearn(token) {
+async function computerLearn(token, ctx = null) {
+  if (ctx) {
+    console.error('Learning mode is not wired for business workspaces yet. Use `atris computer exec` for now.');
+    return;
+  }
   console.log('Starting learning cycle on EC2...');
 
   // First check how many learnings exist
@@ -351,12 +1357,59 @@ async function computerLearn(token) {
   console.log(`  The computer is thinking... check back with: atris computer diff soul`);
 }
 
-async function computerExec(token, prompt) {
+async function computerExec(token, prompt, ctx = null, options = {}) {
   if (!prompt) {
     console.error('Usage: atris computer exec "<prompt>"');
     process.exit(1);
   }
   console.log('Executing on computer (with LLM)...');
+
+  if (ctx) {
+    const awake = await ensureBusinessAwake(token, ctx);
+    if (!awake) {
+      console.error('  Computer did not become ready in time.');
+      return;
+    }
+    const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
+      method: 'POST',
+      token,
+      body: {
+        message: prompt,
+        workspace_id: ctx.workspaceId,
+        ...(options.worker ? { worker: options.worker } : {}),
+        ...(options.model ? { model: options.model } : {}),
+      },
+      timeoutMs: 40000,
+    });
+    if (!result.ok) {
+      const fallback = await runBusinessPromptViaRunnerProxy(token, ctx, prompt, options);
+      if (!fallback.ok) {
+        console.error(`Failed: ${result.error || result.status}`);
+        if (fallback.error) {
+          console.error(`Fallback failed: ${fallback.error}`);
+        }
+        return;
+      }
+      const text = extractRunnerProxyText(fallback.payload);
+      if (fallback.payload?.execution_id) {
+        console.log(`  Execution: ${fallback.payload.execution_id} (runner fallback)`);
+      }
+      if (text) {
+        console.log(text);
+      } else {
+        console.log('(no result)');
+      }
+      return;
+    }
+    const data = result.data || {};
+    const base = getApiBaseUrl();
+    console.log(`  Execution: ${data.execution_id}`);
+    console.log(`  Session:   ${data.session_id}`);
+    console.log(`  Stream: ${base}/business/${ctx.businessId}/chat/stream?execution_id=${data.execution_id}&workspace_id=${ctx.workspaceId}`);
+    console.log('  Use the stream URL to watch progress.');
+    return;
+  }
+
   const result = await apiRequestJson('/ai-computer/execute', {
     method: 'POST',
     token,
@@ -371,13 +1424,787 @@ async function computerExec(token, prompt) {
   console.log('  Use the stream URL to watch progress.');
 }
 
-async function runComputer() {
-  const sub = process.argv[3];
+async function cancelBusinessChat(token, ctx, executionId) {
+  return apiRequestJson(
+    `/business/${ctx.businessId}/chat/cancel?execution_id=${encodeURIComponent(executionId)}&workspace_id=${encodeURIComponent(ctx.workspaceId)}`,
+    { method: 'POST', token, timeoutMs: 15000, retries: 0 }
+  );
+}
 
-  if (!sub || sub === '--help') {
-    console.log('Usage: atris computer <command>');
+async function fetchBusinessChatAudit(token, ctx, limit = 10) {
+  return apiRequestJson(
+    `/business/${ctx.businessId}/chat/audit?workspace_id=${encodeURIComponent(ctx.workspaceId)}&limit=${Math.max(1, Math.min(limit, 25))}`,
+    { method: 'GET', token, timeoutMs: 15000, retries: 0 }
+  );
+}
+
+async function startBusinessClaudeLogin(token, ctx) {
+  return apiRequestJson('/sandbox-secrets/claude-login/start', {
+    method: 'POST',
+    token,
+    body: { business_id: ctx.businessId },
+    timeoutMs: 15000,
+    retries: 0,
+  });
+}
+
+async function fetchBusinessClaudeLoginStatus(token, ctx) {
+  return apiRequestJson(
+    `/sandbox-secrets/claude-login/status?business_id=${encodeURIComponent(ctx.businessId)}`,
+    { method: 'GET', token, timeoutMs: 15000, retries: 0 }
+  );
+}
+
+async function submitBusinessClaudeLoginCode(token, ctx, code) {
+  return apiRequestJson('/sandbox-secrets/claude-login/input', {
+    method: 'POST',
+    token,
+    body: { business_id: ctx.businessId, code },
+    timeoutMs: 15000,
+    retries: 0,
+  });
+}
+
+async function stopBusinessClaudeLogin(token, ctx) {
+  return apiRequestJson('/sandbox-secrets/claude-login/stop', {
+    method: 'POST',
+    token,
+    body: { business_id: ctx.businessId },
+    timeoutMs: 15000,
+    retries: 0,
+  });
+}
+
+function maybeOpenUrl(url) {
+  if (!url) return;
+  if (process.platform === 'darwin') {
+    spawnSync('open', [url], { stdio: 'ignore' });
+  }
+}
+
+async function computerCloudLogin(token, ctx, rawArg = '') {
+  if (!ctx) {
+    console.error('Cloud login requires a bound business workspace.');
+    return;
+  }
+
+  const arg = String(rawArg || '').trim();
+  if (arg.toLowerCase() === 'stop') {
+    const stopped = await stopBusinessClaudeLogin(token, ctx);
+    if (!stopped.ok) {
+      console.error(`Failed: ${stopped.errorMessage || stopped.status}`);
+      return;
+    }
+    console.log('Claude login stopped.');
+    return;
+  }
+
+  if (arg) {
+    const submitted = await submitBusinessClaudeLoginCode(token, ctx, arg);
+    if (!submitted.ok) {
+      console.error(`Failed: ${submitted.errorMessage || submitted.status}`);
+      return;
+    }
+    console.log(`Claude login status: ${submitted.data?.status || 'running'}`);
+    return;
+  }
+
+  const started = await startBusinessClaudeLogin(token, ctx);
+  if (!started.ok) {
+    console.error(`Failed: ${started.errorMessage || started.status}`);
+    return;
+  }
+
+  let state = started.data || {};
+  const startedAt = Date.now();
+  while (!state.url && !['completed', 'failed', 'idle'].includes(state.status || '') && Date.now() - startedAt < 15000) {
+    await sleep(1000);
+    const status = await fetchBusinessClaudeLoginStatus(token, ctx);
+    if (!status.ok) {
+      console.error(`Failed: ${status.errorMessage || status.status}`);
+      return;
+    }
+    state = status.data || {};
+  }
+
+  if (state.loggedIn || state.status === 'completed') {
+    console.log('Claude App is already logged in on this computer.');
+    return;
+  }
+  if (state.url) {
+    console.log('Open this URL to log the remote computer into your Claude subscription:');
+    console.log(state.url);
+    maybeOpenUrl(state.url);
+    console.log('After approval, paste the code with `/login <code>`.');
+    return;
+  }
+  if (state.output) {
+    console.log(state.output);
+    console.log('If Claude asks for a code, paste it with `/login <code>`.');
+    return;
+  }
+  console.log(`Claude login status: ${state.status || 'unknown'}`);
+}
+
+function printBusinessChatAudit(rows) {
+  console.log('');
+  console.log(ui.bold('Recent cloud runs'));
+  if (!rows.length) {
+    console.log('  No recent cloud runs.');
+    return;
+  }
+  for (const row of rows) {
+    const when = row.started_at ? String(row.started_at).replace('T', ' ').replace(/\.\d+/, '').replace('+00:00', 'Z') : '-';
+    const tokens = Number.isFinite(row.tokens_used) ? `${row.tokens_used} tok` : '-';
+    const cost = Number.isFinite(row.cost_usd) ? `$${Number(row.cost_usd).toFixed(4)}` : '-';
+    const credits = Number(row.credits_charged || 0);
+    const charge = credits > 0 ? ui.yellow(`${credits} cr`) : ui.green('0 cr');
+    console.log(`  ${when}  ${row.status || 'unknown'}  ${tokens}  cost ${cost}  charge ${charge}`);
+    if (row.worker || row.model) console.log(`    ${row.worker || '-'}  ${row.model || '-'}`);
+    if (row.preview) console.log(`    ${String(row.preview).slice(0, 140)}`);
+    if (row.result_preview) console.log(`    => ${String(row.result_preview).slice(0, 180)}`);
+  }
+}
+
+async function computerAudit(token, ctx, limit = 10) {
+  if (!ctx) {
+    console.error('Cloud audit requires a bound business workspace.');
+    return;
+  }
+  const result = await fetchBusinessChatAudit(token, ctx, limit);
+  if (!result.ok) {
+    console.error(`Failed: ${result.errorMessage || result.status}`);
+    return;
+  }
+  printBusinessChatAudit(result.data?.rows || []);
+}
+
+async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
+  let fromIndex = 0;
+  let errors = 0;
+  let cancelling = false;
+  let cancelPromise = null;
+  let sawVisibleOutput = false;
+
+  const requestCancel = async () => {
+    if (cancelling) return;
+    cancelling = true;
+    process.stdout.write('\nInterrupting cloud run...\n');
+    const result = await cancelBusinessChat(token, ctx, executionId);
+    if (!result.ok) {
+      console.error(`Interrupt failed: ${result.error || result.status}`);
+      return;
+    }
+    const status = result.data?.status || 'sent';
+    if (status === 'not_found') {
+      console.log('Run already finished.');
+      return;
+    }
+    if (status === 'idle') {
+      console.log('No active run to interrupt.');
+      return;
+    }
+    console.log('Interrupt sent.');
+  };
+
+  const onSigint = () => {
+    if (!cancelPromise) {
+      cancelPromise = requestCancel();
+    }
+  };
+
+  if (rl) {
+    rl.on('SIGINT', onSigint);
+  }
+
+  console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
+
+  try {
+    while (true) {
+      await sleep(1200);
+      const events = await apiRequestJson(
+        `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=${fromIndex}`,
+        { method: 'GET', token, timeoutMs: 60000 }
+      );
+
+      if (!events.ok) {
+        if (++errors >= 5) {
+          console.error('\nLost connection to AI computer.');
+          return;
+        }
+        continue;
+      }
+
+      errors = 0;
+      let done = false;
+      for (const event of (events.data?.events || [])) {
+        fromIndex++;
+        if (event.type === 'assistant_text' && event.content) {
+          sawVisibleOutput = true;
+          process.stdout.write(event.content);
+        } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
+          sawVisibleOutput = true;
+          process.stdout.write(String(event.result));
+        } else if (event.type === 'tool_use' && event.tool) {
+          const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
+          if (arg) {
+            console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
+          } else {
+            console.log(`\n  [${event.tool}]`);
+          }
+        } else if (event.type === 'error') {
+          if (event.error) console.error(`\n${event.error}`);
+          done = true;
+          break;
+        } else if (event.type === 'complete') {
+          done = true;
+          break;
+        }
+      }
+
+      if (done || ['completed', 'error', 'failed'].includes(events.data?.status)) {
+        if (!process.stdout.write('\n')) {
+          // no-op: keep line handling stable
+        }
+        return;
+      }
+    }
+  } finally {
+    if (rl) {
+      rl.removeListener('SIGINT', onSigint);
+    }
+  }
+}
+
+async function sendBusinessChat(token, ctx, message, sessionId, resetContext = false, rl = null, options = {}) {
+  const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
+    method: 'POST',
+    token,
+    body: {
+      message,
+      workspace_id: ctx.workspaceId,
+      session_id: sessionId,
+      reset_context: resetContext,
+      ...(options.worker ? { worker: options.worker } : {}),
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.systemPrompt ? { system_prompt: options.systemPrompt } : {}),
+      ...(options.allowedTools ? { allowed_tools: options.allowedTools } : {}),
+      ...(options.localCliSessionId ? { local_cli_session_id: options.localCliSessionId } : {}),
+    },
+    timeoutMs: 40000,
+  });
+
+  if (!result.ok) {
+    const fallback = await runBusinessPromptViaRunnerProxy(token, ctx, message, {
+      ...options,
+      resetContext,
+      maxTurns: 25,
+    });
+    if (!fallback.ok) {
+      console.error(`Failed: ${result.error || result.status}`);
+      if (fallback.error) {
+        console.error(`Fallback failed: ${fallback.error}`);
+      }
+      return sessionId;
+    }
+    const text = extractRunnerProxyText(fallback.payload);
+    if (text) {
+      process.stdout.write(`${text}\n`);
+    } else {
+      process.stdout.write('(no result)\n');
+    }
+    return sessionId;
+  }
+
+  const data = result.data || {};
+  const nextSessionId = data.session_id || sessionId;
+  await streamBusinessChatResult(token, ctx, data.execution_id, rl);
+  return nextSessionId;
+}
+
+async function computerChat(token, ctx, initialOptions = {}) {
+  if (!ctx) {
+    console.error('Cloud computer mode requires a bound business workspace.');
+    console.error('Run this inside ~/arena/atris-business/<slug>/, or use `atris computer --local` for local mode.');
+    return;
+  }
+
+  let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+  printCloudWordmark();
+  const selection = await chooseCloudLane(token, ctx, initialOptions);
+  if (selection.cancelled) return;
+  let worker = selection.worker || null;
+  let model = selection.model || null;
+  let awaitingLoginCode = false;
+  let billingLabel = await describeBillingMode(token, ctx, worker);
+  let authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+
+  const awake = await ensureBusinessAwake(token, ctx);
+  if (!awake) {
+    console.error('  Computer did not become ready in time.');
+    return;
+  }
+
+  printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: 'cloud> ',
+  });
+
+  rl.prompt();
+
+  try {
+    for await (const rawLine of rl) {
+      const line = String(rawLine || '').trim();
+      if (!line) {
+        rl.prompt();
+        continue;
+      }
+      if (line === '/exit' || line === '/quit') {
+        rl.close();
+        break;
+      }
+      if (line === '/start') {
+        billingLabel = await describeBillingMode(token, ctx, worker);
+        authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+        printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/help') {
+        printCloudHelp();
+        rl.prompt();
+        continue;
+      }
+      if (line === '/status') {
+        await printCloudSessionStatus(token, ctx, worker, model);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/pwd') {
+        await computerRun(token, 'pwd', ctx);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/files' || line.startsWith('/files ')) {
+        const filePath = line.slice('/files'.length).trim() || '/workspace';
+        await computerLs(token, filePath, ctx);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/reset') {
+        sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+        console.log('Session reset.');
+        rl.prompt();
+        continue;
+      }
+      if (line === '/worker' || line.startsWith('/worker ')) {
+        const nextWorker = line.split(/\s+/, 2)[1];
+        if (!nextWorker) {
+          console.log(`Worker: ${worker || 'default'}`);
+        } else if (!VALID_CLOUD_WORKERS.has(nextWorker)) {
+          console.log('Expected: /worker claude|openai');
+        } else {
+          worker = nextWorker;
+          billingLabel = await describeBillingMode(token, ctx, worker);
+          authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+          console.log(`Lane: ${formatWorkerName(worker)}`);
+          console.log(`Billing: ${billingLabel}`);
+          if (authSummary) console.log(authSummary.label);
+        }
+        rl.prompt();
+        continue;
+      }
+      if (line === '/model' || line.startsWith('/model ')) {
+        const nextModel = line.split(/\s+/, 2)[1];
+        if (!nextModel) {
+          console.log(`Model: ${model || 'default'}`);
+        } else {
+          model = nextModel;
+          console.log(`Model set: ${model}`);
+        }
+        rl.prompt();
+        continue;
+      }
+      if (line === '/run') {
+        console.log('Usage: /run <shell command>');
+        rl.prompt();
+        continue;
+      }
+      if (line.startsWith('/run ')) {
+        await computerRun(token, line.slice(5), ctx);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/audit' || line.startsWith('/audit ')) {
+        const rawLimit = line.split(/\s+/, 2)[1];
+        const limit = rawLimit ? Number.parseInt(rawLimit, 10) : 10;
+        await computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/login' || line.startsWith('/login ')) {
+        const loginArg = line.split(/\s+/, 2)[1] || '';
+        await computerCloudLogin(token, ctx, loginArg);
+        billingLabel = await describeBillingMode(token, ctx, worker);
+        authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+        awaitingLoginCode = !loginArg || loginArg.toLowerCase() === 'stop' ? !loginArg : false;
+        rl.prompt();
+        continue;
+      }
+      if (
+        awaitingLoginCode &&
+        !line.startsWith('/') &&
+        /^[A-Za-z0-9._~-]+#[A-Za-z0-9._~-]+$/.test(line)
+      ) {
+        await computerCloudLogin(token, ctx, line);
+        billingLabel = await describeBillingMode(token, ctx, worker);
+        authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+        awaitingLoginCode = false;
+        rl.prompt();
+        continue;
+      }
+      if (line.startsWith('/')) {
+        const command = line.split(/\s+/, 1)[0];
+        if (!KNOWN_CHAT_COMMANDS.has(command)) {
+          console.log(`Unknown command: ${command}`);
+          console.log('Type /help for commands, or remove the slash to ask the model.');
+          rl.prompt();
+          continue;
+        }
+      }
+
+      sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, rl, { worker, model });
+      rl.prompt();
+    }
+  } catch (error) {
+    if (!String(error?.message || error || '').includes('readline was closed')) {
+      throw error;
+    }
+  }
+}
+
+async function computerLocalAtris(token, ctx, initialOptions = {}) {
+  if (!ctx) {
+    console.error('Atris local mode needs a bound business workspace for the cloud brain.');
+    console.error('Run inside ~/arena/atris-business/<slug>/, or use `atris computer local-byo`.');
+    return;
+  }
+
+  printLocalWordmark();
+  const selection = await chooseCloudLane(token, ctx, initialOptions);
+  if (selection.cancelled) return;
+  let worker = selection.worker || null;
+  let model = selection.model || null;
+  if (activeWorker(worker) === 'openai') {
+    console.log('Local folder mode currently uses the Claude lane so Atris can call local_file_op.');
+    worker = 'claude';
+    model = null;
+  }
+  let bridge = null;
+  let sessionId = `local-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+
+  try {
+    bridge = await startLocalAtrisBridge(token, { allowBash: true });
+  } catch (err) {
+    console.error(`Failed to start local bridge: ${err.message}`);
+    return;
+  }
+
+  const cleanup = async () => {
+    if (bridge) {
+      const stop = bridge.stop;
+      bridge = null;
+      await stop();
+    }
+  };
+
+  process.once('SIGINT', cleanup);
+  process.once('SIGTERM', cleanup);
+
+  try {
+    const awake = await ensureBusinessAwake(token, ctx);
+    if (!awake) {
+      console.error('  Computer did not become ready in time.');
+      return;
+    }
+
+    let billingLabel = await describeBillingMode(token, ctx, worker);
+    let authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+    let awaitingLoginCode = false;
+    let localSystemPrompt = buildLocalBridgeSystemPrompt(bridge.sessionId, bridge.workingDir, bridge.allowBash);
+
+    printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, authSummary);
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: 'local> ',
+    });
+
+    rl.prompt();
+
+    try {
+      for await (const rawLine of rl) {
+        const line = String(rawLine || '').trim();
+        if (!line) {
+          rl.prompt();
+          continue;
+        }
+        if (line === '/exit' || line === '/quit') {
+          rl.close();
+          break;
+        }
+        if (line === '/start') {
+          billingLabel = await describeBillingMode(token, ctx, worker);
+          authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+          printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, authSummary);
+          rl.prompt();
+          continue;
+        }
+        if (line === '/help') {
+          console.log('');
+          console.log(ui.bold('Local Atris commands'));
+          console.log('  /status              Show local bridge, lane, billing');
+          console.log('  /files [path]        List local files');
+          console.log('  /run <cmd>           Run shell in this local folder');
+          console.log('  /audit [n]           Show recent cloud brain runs');
+          console.log('  /worker claude       Use Claude subscription lane');
+          console.log('  /worker claude       Use Claude local-file lane');
+          console.log('  /model [id]          Set model override');
+          console.log('  /login               Connect Claude subscription on remote brain');
+          console.log('  /reset               Start a fresh chat session');
+          console.log('  /exit                Leave local Atris mode');
+          console.log('');
+          rl.prompt();
+          continue;
+        }
+        if (line === '/status') {
+          console.log('');
+          console.log(ui.bold('Local status'));
+          console.log(`  Local folder: ${bridge.workingDir}`);
+          console.log(`  Bridge: ${bridge.sessionId}`);
+          console.log(`  Bash: ${bridge.allowBash ? 'enabled' : 'disabled'}`);
+          console.log(`  Business: ${ctx.businessName}`);
+          console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model })}`);
+          billingLabel = await describeBillingMode(token, ctx, worker);
+          console.log(`  Billing: ${billingLabel}`);
+          rl.prompt();
+          continue;
+        }
+        if (line === '/files' || line.startsWith('/files ')) {
+          const filePath = line.slice('/files'.length).trim();
+          const safePath = filePath ? filePath.replace(/'/g, "'\\''") : '.';
+          const op = await runLocalBridgeOp(token, bridge.sessionId, {
+            type: 'bash',
+            command: `ls -la '${safePath}'`,
+          });
+          const stdout = op?.result?.stdout || '';
+          const stderr = op?.result?.stderr || '';
+          if (stdout) process.stdout.write(stdout);
+          if (stderr) process.stderr.write(stderr);
+          rl.prompt();
+          continue;
+        }
+        if (line === '/run') {
+          console.log('Usage: /run <local shell command>');
+          rl.prompt();
+          continue;
+        }
+        if (line.startsWith('/run ')) {
+          const op = await runLocalBridgeOp(token, bridge.sessionId, {
+            type: 'bash',
+            command: line.slice(5),
+          }, 30);
+          const stdout = op?.result?.stdout || '';
+          const stderr = op?.result?.stderr || '';
+          if (stdout) process.stdout.write(stdout);
+          if (stderr) process.stderr.write(stderr);
+          rl.prompt();
+          continue;
+        }
+        if (line === '/audit' || line.startsWith('/audit ')) {
+          const rawLimit = line.split(/\s+/, 2)[1];
+          const limit = rawLimit ? Number.parseInt(rawLimit, 10) : 10;
+          await computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
+          rl.prompt();
+          continue;
+        }
+        if (line === '/reset') {
+          sessionId = `local-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+          console.log('Session reset.');
+          rl.prompt();
+          continue;
+        }
+        if (line === '/worker' || line.startsWith('/worker ')) {
+          const nextWorker = line.split(/\s+/, 2)[1];
+          if (!nextWorker) {
+            console.log(`Worker: ${worker || 'default'}`);
+          } else if (!VALID_CLOUD_WORKERS.has(nextWorker)) {
+            console.log('Expected: /worker claude|openai');
+          } else if (nextWorker === 'openai') {
+            console.log('Local folder mode uses Claude for now because local_file_op is a Claude runner tool.');
+            worker = 'claude';
+            model = null;
+          } else {
+            worker = nextWorker;
+            billingLabel = await describeBillingMode(token, ctx, worker);
+            authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+            console.log(`Lane: ${formatWorkerName(worker)}`);
+            console.log(`Billing: ${billingLabel}`);
+            if (authSummary) console.log(authSummary.label);
+          }
+          rl.prompt();
+          continue;
+        }
+        if (line === '/model' || line.startsWith('/model ')) {
+          const nextModel = line.split(/\s+/, 2)[1];
+          if (!nextModel) {
+            console.log(`Model: ${model || 'default'}`);
+          } else {
+            model = nextModel;
+            console.log(`Model set: ${model}`);
+          }
+          rl.prompt();
+          continue;
+        }
+        if (line === '/login' || line.startsWith('/login ')) {
+          const loginArg = line.split(/\s+/, 2)[1] || '';
+          await computerCloudLogin(token, ctx, loginArg);
+          billingLabel = await describeBillingMode(token, ctx, worker);
+          authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+          awaitingLoginCode = !loginArg || loginArg.toLowerCase() === 'stop' ? !loginArg : false;
+          rl.prompt();
+          continue;
+        }
+        if (
+          awaitingLoginCode &&
+          !line.startsWith('/') &&
+          /^[A-Za-z0-9._~-]+#[A-Za-z0-9._~-]+$/.test(line)
+        ) {
+          await computerCloudLogin(token, ctx, line);
+          billingLabel = await describeBillingMode(token, ctx, worker);
+          authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+          awaitingLoginCode = false;
+          rl.prompt();
+          continue;
+        }
+        if (line.startsWith('/')) {
+          const command = line.split(/\s+/, 1)[0];
+          if (!KNOWN_CHAT_COMMANDS.has(command)) {
+            console.log(`Unknown command: ${command}`);
+            console.log('Type /help for commands, or remove the slash to ask the model.');
+            rl.prompt();
+            continue;
+          }
+        }
+
+        localSystemPrompt = buildLocalBridgeSystemPrompt(bridge.sessionId, bridge.workingDir, bridge.allowBash);
+        sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, rl, {
+          worker,
+          model,
+          systemPrompt: localSystemPrompt,
+          localCliSessionId: bridge.sessionId,
+        });
+        rl.prompt();
+      }
+    } catch (error) {
+      if (!String(error?.message || error || '').includes('readline was closed')) {
+        throw error;
+      }
+    }
+  } finally {
+    process.removeListener('SIGINT', cleanup);
+    process.removeListener('SIGTERM', cleanup);
+    await cleanup();
+  }
+}
+
+async function runComputer() {
+  const parsed = parseComputerOptions(process.argv.slice(3));
+  const args = parsed.positional;
+  const cloudOptions = parsed.options;
+  const sub = args[0];
+
+  if (!sub) {
+    const hasBusinessBinding = Boolean(readBusinessBinding());
+    const hasLocalHarness = Boolean(findAtrisCodeTerminal());
+    const surface = await chooseComputerSurface(hasBusinessBinding, hasLocalHarness);
+    if (!surface) return;
+    if ((surface === 'cloud' || surface === 'local-atris') && hasBusinessBinding) {
+      const token = getToken();
+      const ctx = await resolveBusinessContext(token);
+      if (ctx) {
+        if (surface === 'local-atris') {
+          await computerLocalAtris(token, ctx, cloudOptions);
+        } else {
+          await computerChat(token, ctx, cloudOptions);
+        }
+        return;
+      }
+    }
+    if (surface === 'local-byo' && hasLocalHarness) {
+      computerLocal();
+      return;
+    }
+    computerLocal();
+    return;
+  }
+
+  if (sub === '--local' || sub === 'local') {
+    const token = getToken();
+    const ctx = await resolveBusinessContext(token);
+    if (ctx) {
+      await computerLocalAtris(token, ctx, cloudOptions);
+      return;
+    }
+    computerLocal(args.slice(1));
+    return;
+  }
+
+  if (sub === 'local-atris') {
+    const token = getToken();
+    const ctx = await resolveBusinessContext(token);
+    await computerLocalAtris(token, ctx, cloudOptions);
+    return;
+  }
+
+  if (sub === 'local-byo' || sub === '--local-byo') {
+    computerLocal(args.slice(1));
+    return;
+  }
+
+  if (sub === 'claude' || sub === 'codex') {
+    computerLocalLegacy(args);
+    return;
+  }
+
+  if (sub === '--help') {
+    console.log('Usage: atris computer [mode|command]');
     console.log('');
-    console.log('Commands:');
+    console.log('First use:');
+    console.log('  cd ~/arena/atris-business/<business>');
+    console.log('  atris computer');
+    console.log('  Choose Cloud workspace or Local folder, then type the outcome in plain English.');
+    console.log('');
+    console.log('Modes:');
+    console.log('  (default)       Choose CLOUD vs LOCAL when both are available');
+    console.log('  local           Open LOCAL Atris mode; cloud brain edits this folder');
+    console.log('  local-byo       Open LOCAL BYO Claude mode; Anthropic tokens, no cloud audit');
+    console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
+    console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
+    console.log('  --worker        Cloud worker override: claude | openai');
+    console.log('  --model         Cloud model override');
+    console.log('  claude|codex    Legacy local console backends');
+    console.log('');
+    console.log('Cloud commands:');
+    console.log('  chat            Interactive cloud workspace chat');
+    console.log('                  Ctrl-C during a cloud run interrupts it');
+    console.log('                  /start shows the beginner flow');
+    console.log('                  /status shows lane, Claude auth, and billing');
+    console.log('                  /audit [n] shows recent cloud runs inside chat');
     console.log('  status          Show computer status');
     console.log('  wake            Start the computer');
     console.log('  sleep           Stop the computer (files persist)');
@@ -392,6 +2219,12 @@ async function runComputer() {
     console.log('  onboard <slug>    Set up a new business computer');
     console.log('');
     console.log('Examples:');
+    console.log('  atris computer');
+    console.log('  atris computer local');
+    console.log('  atris computer codex');
+    console.log('  atris computer --cloud');
+    console.log('  atris computer --cloud --worker openai --model gpt-5.4');
+    console.log('  atris computer cloud');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');
@@ -402,23 +2235,31 @@ async function runComputer() {
   }
 
   const token = getToken();
-  const rest = process.argv.slice(4).join(' ');
+  const ctx = await resolveBusinessContext(token);
+
+  if (sub === '--cloud' || sub === 'cloud') {
+    await computerChat(token, ctx, cloudOptions);
+    return;
+  }
+
+  const rest = args.slice(1).join(' ');
 
   switch (sub) {
-    case 'status': return computerStatus(token);
-    case 'wake': return computerWake(token);
-    case 'sleep': return computerSleep(token);
-    case 'run': return computerRun(token, rest);
-    case 'grep': return computerGrep(token, rest);
-    case 'ls': return computerLs(token, rest || undefined);
-    case 'cat': return computerCat(token, rest);
-    case 'exec': return computerExec(token, rest);
+    case 'chat': return computerChat(token, ctx, cloudOptions);
+    case 'status': return computerStatus(token, ctx);
+    case 'wake': return computerWake(token, ctx);
+    case 'sleep': return computerSleep(token, ctx);
+    case 'run': return computerRun(token, rest, ctx);
+    case 'grep': return computerGrep(token, rest, ctx);
+    case 'ls': return computerLs(token, rest || undefined, ctx);
+    case 'cat': return computerCat(token, rest, ctx);
+    case 'exec': return computerExec(token, rest, ctx, cloudOptions);
     case 'pull': {
       const parts = rest.split(' ').filter(Boolean);
-      return computerPull(token, parts[0], parts[1]);
+      return computerPull(token, parts[0], parts[1], ctx);
     }
-    case 'diff': return computerDiff(token, rest || undefined);
-    case 'learn': return computerLearn(token);
+    case 'diff': return computerDiff(token, rest || undefined, ctx);
+    case 'learn': return computerLearn(token, ctx);
     case 'onboard': return computerOnboard(token, rest);
     default:
       console.error(`Unknown subcommand: ${sub}`);
