@@ -147,7 +147,7 @@ async function describeBillingMode(token, ctx, worker) {
   if (auth.connected) {
     return 'Claude subscription connected - 0 Atris credits';
   }
-  return 'Claude login needed - 0 credits after /login';
+  return 'Claude via Atris credits - /login makes it 0 credits';
 }
 
 function printCloudHelp() {
@@ -264,7 +264,7 @@ function printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, aut
   console.log('  /files   local files');
   console.log('  /run     local shell command');
   console.log('  /audit   recent cloud brain runs');
-  console.log('  /worker  claude');
+  console.log('  /worker  claude|openai');
   console.log('  /exit    leave local Atris mode');
   console.log('');
   console.log(ui.dim('Tokens run through Atris/cloud billing. Edits land in this local folder.'));
@@ -298,62 +298,31 @@ function formatDropdownLine(choice, selected) {
   return `${pointer} ${label}  ${ui.dim(choice.detail || '')}`.trimEnd();
 }
 
+function questionAsync(rl, question) {
+  return new Promise((resolve) => rl.question(question, resolve));
+}
+
 async function selectFromDropdown(title, choices) {
   if (!useInteractiveTerminalUi() || !choices.length) return choices[0] || null;
 
-  readline.emitKeypressEvents(process.stdin);
-  const hadRawMode = Boolean(process.stdin.isRaw);
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-
-  let index = 0;
-  let printedLines = 0;
-
-  const render = () => {
-    if (printedLines) {
-      readline.moveCursor(process.stdout, 0, -printedLines);
-      readline.clearScreenDown(process.stdout);
-    }
-    const lines = [
-      ui.bold(title),
-      ...choices.map((choice, i) => formatDropdownLine(choice, i === index)),
-      ui.dim('Use arrow keys, Enter to choose.'),
-    ];
-    process.stdout.write(`${lines.join('\n')}\n`);
-    printedLines = lines.length;
-  };
-
-  return new Promise((resolve) => {
-    const cleanup = (choice) => {
-      process.stdin.removeListener('keypress', onKeypress);
-      process.stdin.setRawMode(hadRawMode);
-      if (!hadRawMode) process.stdin.pause();
-      resolve(choice);
-    };
-
-    const onKeypress = (_str, key = {}) => {
-      if (key.name === 'up' || key.name === 'k') {
-        index = (index - 1 + choices.length) % choices.length;
-        render();
-        return;
-      }
-      if (key.name === 'down' || key.name === 'j') {
-        index = (index + 1) % choices.length;
-        render();
-        return;
-      }
-      if (key.name === 'return') {
-        cleanup(choices[index]);
-        return;
-      }
-      if (key.name === 'c' && key.ctrl) {
-        cleanup(null);
-      }
-    };
-
-    process.stdin.on('keypress', onKeypress);
-    render();
+  console.log(ui.bold(title));
+  choices.forEach((choice, i) => {
+    console.log(`${i + 1}. ${choice.label}  ${ui.dim(choice.detail || '')}`.trimEnd());
   });
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = String(await questionAsync(rl, `Choose [1-${choices.length}] (default 1): `) || '').trim();
+  rl.close();
+
+  if (!answer) return choices[0];
+  if (answer.toLowerCase() === 'q' || answer.toLowerCase() === 'quit' || answer.toLowerCase() === 'exit') {
+    return null;
+  }
+  const selected = Number.parseInt(answer, 10);
+  if (Number.isFinite(selected) && selected >= 1 && selected <= choices.length) {
+    return choices[selected - 1];
+  }
+  return choices[0];
 }
 
 function describeLocalClaudeAuth() {
@@ -431,9 +400,9 @@ async function chooseCloudLane(token, ctx, initialOptions = {}) {
 
     if (!state?.connected && !state?.loggedIn && state?.status !== 'completed' && state?.next_action !== 'connected') {
       const selected = await selectFromDropdown('Claude subscription auth', [
-        { label: 'Login to Claude', value: 'login', detail: 'recommended, turns on 0-credit Claude lane' },
+        { label: 'Use Atris Claude', value: 'continue', detail: 'works now, uses Atris credits' },
+        { label: 'Login to Claude', value: 'login', detail: 'turns on 0-credit Claude lane' },
         { label: 'Use OpenAI', value: 'openai', detail: 'works now, uses Atris credits' },
-        { label: 'Try Claude', value: 'continue', detail: 'only works if the box is already authenticated' },
       ]);
       if (selected === null) return { cancelled: true };
       if (selected?.value === 'login') {
@@ -1718,7 +1687,12 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
 
   const data = result.data || {};
   const nextSessionId = data.session_id || sessionId;
-  await streamBusinessChatResult(token, ctx, data.execution_id, rl);
+  if (rl) rl.pause();
+  try {
+    await streamBusinessChatResult(token, ctx, data.execution_id, rl);
+  } finally {
+    if (rl) rl.resume();
+  }
   return nextSessionId;
 }
 
@@ -1898,11 +1872,6 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
   if (selection.cancelled) return;
   let worker = selection.worker || null;
   let model = selection.model || null;
-  if (activeWorker(worker) === 'openai') {
-    console.log('Local folder mode currently uses the Claude lane so Atris can call local_file_op.');
-    worker = 'claude';
-    model = null;
-  }
   let bridge = null;
   let sessionId = `local-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
 
@@ -1972,7 +1941,8 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           console.log('  /run <cmd>           Run shell in this local folder');
           console.log('  /audit [n]           Show recent cloud brain runs');
           console.log('  /worker claude       Use Claude subscription lane');
-          console.log('  /worker claude       Use Claude local-file lane');
+          console.log('  /worker claude       Use Claude lane');
+          console.log('  /worker openai       Use OpenAI lane');
           console.log('  /model [id]          Set model override');
           console.log('  /login               Connect Claude subscription on remote brain');
           console.log('  /reset               Start a fresh chat session');
@@ -2044,10 +2014,6 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
             console.log(`Worker: ${worker || 'default'}`);
           } else if (!VALID_CLOUD_WORKERS.has(nextWorker)) {
             console.log('Expected: /worker claude|openai');
-          } else if (nextWorker === 'openai') {
-            console.log('Local folder mode uses Claude for now because local_file_op is a Claude runner tool.');
-            worker = 'claude';
-            model = null;
           } else {
             worker = nextWorker;
             billingLabel = await describeBillingMode(token, ctx, worker);
