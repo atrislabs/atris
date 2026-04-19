@@ -15,23 +15,46 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** check-before-acting
-**Picked:** 2026-04-10 16:30
-**Horizon:** The loop never proposes action from a resolved lesson or a stale fact. I4 (lesson-still-applies) shipped. `atris release` auto-drafts version bumps and /launch posts. v3.2.0 story is complete: "the loop checks before it acts."
-**Source:** staleness-gate closed, I4 from inbox, user said "keep going"
+**Slug:** agent-commands-solid
+**Picked:** 2026-04-14 23:00
+**Done when:** `atris agent` + `atris chat` handle expired tokens, plan/do/review accept `--agent <name>` to pick which agent runs the work, and one end-to-end test proves agent selection + chat + plan cycle works without manual token refresh.
+**Source:** boundary — "check-before-acting" complete (I4 shipped, backlog empty). Agent commands exist (agent, chat, plan --execute) but token refresh is unguarded and agent selection doesn't carry through plan/do/review. Queued: agent-coordinator.
 
 ---
 
 ## Backlog
 
+- **T1:** Guard token expiry in agent-using commands — loadCredentials() must call ensureValidCredentials() before API calls [endgame] [execute]
+  **Exit:** expired token triggers refresh, not silent failure
+  **Verify:** `grep -c "ensureValidCredentials" commands/workflow.js | grep -v "^0$"`
+  **After:** none
+- **T2:** Add `--agent <name>` flag to plan/do/review commands — agent selection carries through the workflow [endgame] [execute]
+  **Exit:** `atris plan --agent researcher` uses the researcher agent, not default
+  **Verify:** `grep -c "\-\-agent" commands/workflow.js | grep -v "^0$"`
+  **After:** T1
+- **T3:** End-to-end smoke test — select agent, chat, plan cycle completes without manual intervention [endgame] [execute]
+  **Exit:** scripted test runs agent select + chat + plan and exits 0
+  **Verify:** `node tests/agent-e2e.js` exits 0
+  **After:** T2
+
 ## In Progress
 
-<!-- agent-coordinator endgame queue (queued, waits for current endgame to close) -->
+- **T6:** Fixture task — smoke-test navigator planning path [explore]
+  **Exit:** fixture task appears under ## Backlog in TODO.md
+  **Verify:** `grep -c "T6:" atris/TODO.md | grep -v "^0$"`
+  **After:** none
+  **Claimed by:** Executor at 2026-04-19T22:39:40.449Z
 
 ---
 
 ## Completed
 
-- **T1:** Re-read sources and update atris/features/cli-ux-simplification/validate.md — all 6 source refs current, zero drift [execute → done]
+- **T4:** Audit CLI bloat against atrisos-backend boundary [explore]
+  **Exit:** identify concrete trim targets or duplication hotspots with file references and keep/cut recommendation
+  **Result:** command sprawl and backend-coupled modules are the main bloat; npm package size is modest
+
+- **T5:** Verify business computer flow against atris-labs-1 [execute]
+  **Exit:** run live CLI checks against atris-labs-1 and confirm business binding + computer path works or capture the failing step
+  **Result:** business chat bridge returned 502, but `commands/computer.js` now falls back to a direct runner proxy and live exec/chat both work in atris-labs-1
 
 ---
