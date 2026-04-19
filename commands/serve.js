@@ -354,6 +354,7 @@ async function serveAtris(options = {}) {
 
 module.exports = {
   serveAtris,
+  streamSession,
   // exported for testing
   safePath,
   applyOp,
