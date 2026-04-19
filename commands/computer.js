@@ -76,6 +76,15 @@ function useInteractiveTerminalUi() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.ATRIS_NO_INTERACTIVE);
 }
 
+async function readPipedStdin() {
+  if (process.stdin.isTTY) return null;
+  let input = '';
+  for await (const chunk of process.stdin) {
+    input += chunk.toString();
+  }
+  return input;
+}
+
 function printCloudWordmark() {
   if (!process.stdout.isTTY) return;
   console.log(ui.cyan('    ___  __________  ________   CLOUD'));
@@ -1867,6 +1876,8 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
     return;
   }
 
+  const pipedInput = await readPipedStdin();
+
   printLocalWordmark();
   const selection = await chooseCloudLane(token, ctx, initialOptions);
   if (selection.cancelled) return;
@@ -1907,30 +1918,36 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
 
     printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, authSummary);
 
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: 'local> ',
-    });
+    const rl = pipedInput === null
+      ? readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          prompt: 'local> ',
+        })
+      : null;
+    const inputLines = pipedInput === null ? rl : String(pipedInput).split(/\r?\n/);
+    const promptLocal = () => {
+      if (rl) rl.prompt();
+    };
 
-    rl.prompt();
+    promptLocal();
 
     try {
-      for await (const rawLine of rl) {
+      for await (const rawLine of inputLines) {
         const line = String(rawLine || '').trim();
         if (!line) {
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/exit' || line === '/quit') {
-          rl.close();
+          if (rl) rl.close();
           break;
         }
         if (line === '/start') {
           billingLabel = await describeBillingMode(token, ctx, worker);
           authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
           printLocalAtrisStartPanel(ctx, bridge, worker, model, billingLabel, authSummary);
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/help') {
@@ -1940,7 +1957,6 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           console.log('  /files [path]        List local files');
           console.log('  /run <cmd>           Run shell in this local folder');
           console.log('  /audit [n]           Show recent cloud brain runs');
-          console.log('  /worker claude       Use Claude subscription lane');
           console.log('  /worker claude       Use Claude lane');
           console.log('  /worker openai       Use OpenAI lane');
           console.log('  /model [id]          Set model override');
@@ -1948,7 +1964,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           console.log('  /reset               Start a fresh chat session');
           console.log('  /exit                Leave local Atris mode');
           console.log('');
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/status') {
@@ -1961,7 +1977,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model })}`);
           billingLabel = await describeBillingMode(token, ctx, worker);
           console.log(`  Billing: ${billingLabel}`);
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/files' || line.startsWith('/files ')) {
@@ -1975,12 +1991,12 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           const stderr = op?.result?.stderr || '';
           if (stdout) process.stdout.write(stdout);
           if (stderr) process.stderr.write(stderr);
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/run') {
           console.log('Usage: /run <local shell command>');
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line.startsWith('/run ')) {
@@ -1992,20 +2008,20 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           const stderr = op?.result?.stderr || '';
           if (stdout) process.stdout.write(stdout);
           if (stderr) process.stderr.write(stderr);
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/audit' || line.startsWith('/audit ')) {
           const rawLimit = line.split(/\s+/, 2)[1];
           const limit = rawLimit ? Number.parseInt(rawLimit, 10) : 10;
           await computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/reset') {
           sessionId = `local-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
           console.log('Session reset.');
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/worker' || line.startsWith('/worker ')) {
@@ -2022,7 +2038,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
             console.log(`Billing: ${billingLabel}`);
             if (authSummary) console.log(authSummary.label);
           }
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/model' || line.startsWith('/model ')) {
@@ -2033,7 +2049,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
             model = nextModel;
             console.log(`Model set: ${model}`);
           }
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line === '/login' || line.startsWith('/login ')) {
@@ -2042,7 +2058,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           billingLabel = await describeBillingMode(token, ctx, worker);
           authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
           awaitingLoginCode = !loginArg || loginArg.toLowerCase() === 'stop' ? !loginArg : false;
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (
@@ -2054,7 +2070,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           billingLabel = await describeBillingMode(token, ctx, worker);
           authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
           awaitingLoginCode = false;
-          rl.prompt();
+          promptLocal();
           continue;
         }
         if (line.startsWith('/')) {
@@ -2062,7 +2078,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           if (!KNOWN_CHAT_COMMANDS.has(command)) {
             console.log(`Unknown command: ${command}`);
             console.log('Type /help for commands, or remove the slash to ask the model.');
-            rl.prompt();
+            promptLocal();
             continue;
           }
         }
@@ -2074,7 +2090,7 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
           systemPrompt: localSystemPrompt,
           localCliSessionId: bridge.sessionId,
         });
-        rl.prompt();
+        promptLocal();
       }
     } catch (error) {
       if (!String(error?.message || error || '').includes('readline was closed')) {
