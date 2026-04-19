@@ -36,14 +36,14 @@ then /endgame picks the next horizon at the boundary.
   **Exit:** scripted test runs agent select + chat + plan and exits 0
   **Verify:** `node tests/agent-e2e.js` exits 0
   **After:** T2
-
 ## In Progress
 
-- **T6:** Fixture task — smoke-test navigator planning path [explore]
-  **Exit:** fixture task appears under ## Backlog in TODO.md
-  **Verify:** `grep -c "T6:" atris/TODO.md | grep -v "^0$"`
+- **T7:** Fixture task — append today's date stamp to atris/logs/2026/2026-04-19.md under ## Notes [execute]
+  **Claimed by:** Executor at 2026-04-19T22:41:21.120Z
+  **Stage:** DO
+  **Exit:** one `### Fixture — YYYY-MM-DD HH:MM` line appears in today's log Notes section
+  **Verify:** `grep -c "### Fixture — 2026-04-19" atris/logs/2026/2026-04-19.md | grep -v "^0$"`
   **After:** none
-  **Claimed by:** Executor at 2026-04-19T22:39:40.449Z
 
 ---
 
