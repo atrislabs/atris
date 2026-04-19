@@ -2104,6 +2104,116 @@ async function computerLocalAtris(token, ctx, initialOptions = {}) {
   }
 }
 
+async function computerProof(token, ctx, initialOptions = {}) {
+  if (!ctx) {
+    console.error('Atris computer proof needs a bound business workspace.');
+    console.error('Run inside ~/arena/atris-business/<slug>/ first.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const worker = initialOptions.worker || 'openai';
+  const model = initialOptions.model || null;
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const fileName = `atris-proof-${stamp}.txt`;
+  const expected = `ATRIS_PROOF_OK_${stamp}`;
+  const sessionId = `proof-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+  let bridge = null;
+
+  console.log('');
+  console.log(ui.bold('Atris Computer Proof'));
+  console.log(`${ctx.businessName}  ${ui.dim('cloud brain -> local folder -> audit')}`);
+  console.log(`Lane: ${ui.bold(formatWorkerName(worker))}  ${ui.dim(formatCloudSelection({ worker, model }))}`);
+
+  try {
+    bridge = await startLocalAtrisBridge(token, { allowBash: true });
+  } catch (err) {
+    console.error(`Failed to start local bridge: ${err.message}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const cleanup = async () => {
+    if (bridge) {
+      const stop = bridge.stop;
+      bridge = null;
+      await stop();
+    }
+  };
+
+  process.once('SIGINT', cleanup);
+  process.once('SIGTERM', cleanup);
+
+  try {
+    const awake = await ensureBusinessAwake(token, ctx);
+    if (!awake) {
+      console.error('Computer did not become ready in time.');
+      process.exitCode = 1;
+      return;
+    }
+
+    const billingLabel = await describeBillingMode(token, ctx, worker);
+    console.log(`Local: ${bridge.workingDir}`);
+    console.log(`Bridge: ${bridge.sessionId.slice(0, 8)}  ${ui.dim('local bash enabled')}`);
+    console.log(`Billing: ${billingLabel}`);
+    console.log('');
+
+    const prompt = [
+      `Create a file named ${fileName} in the LOCAL folder with exactly ${expected}.`,
+      'Use local_file_op for the write.',
+      'Read it back through local_file_op.',
+      'Reply with exactly ATRIS COMPUTER PROOF OK.',
+    ].join(' ');
+    const systemPrompt = buildLocalBridgeSystemPrompt(bridge.sessionId, bridge.workingDir, bridge.allowBash);
+
+    console.log(ui.bold('Run'));
+    console.log(`  prompt: ${prompt}`);
+    const nextSessionId = await sendBusinessChat(token, ctx, prompt, sessionId, true, null, {
+      worker,
+      model,
+      systemPrompt,
+      localCliSessionId: bridge.sessionId,
+    });
+
+    const localPath = path.join(bridge.workingDir, fileName);
+    let localContent = '';
+    try {
+      localContent = fs.readFileSync(localPath, 'utf8').trim();
+    } catch {
+      localContent = '';
+    }
+    const localOk = localContent === expected;
+
+    const cloudFile = await readBusinessWorkspaceFile(token, ctx, fileName, 15000);
+    const cloudClear = !cloudFile.ok && cloudFile.status === 404;
+
+    const audit = await fetchBusinessChatAudit(token, ctx, 5);
+    const rows = audit.ok ? (audit.data?.rows || []) : [];
+    const auditRow = rows.find((row) => row.session_id === nextSessionId || row.preview?.includes(fileName)) || rows[0] || {};
+    const auditOk = audit.ok && auditRow.status === 'completed' && String(auditRow.result_preview || '').includes('ATRIS COMPUTER PROOF OK');
+
+    console.log('');
+    console.log(ui.bold('Proof'));
+    console.log(`  local edit:      ${localOk ? ui.green('PASS') : ui.red('FAIL')}  ${fileName}`);
+    console.log(`  local contents:  ${localContent || '(missing)'}`);
+    console.log(`  cloud isolation: ${cloudClear ? ui.green('PASS') : ui.red('FAIL')}  /workspace/${fileName} ${cloudClear ? 'absent' : 'present or unchecked'}`);
+    console.log(`  audit:           ${auditOk ? ui.green('PASS') : ui.red('CHECK')}  ${auditRow.status || 'unknown'} ${auditRow.worker || '-'} charge ${auditRow.credits_charged ?? '-'} cr`);
+    if (auditRow.result_preview) console.log(`  result:          ${String(auditRow.result_preview).slice(0, 120)}`);
+    console.log('');
+    console.log(ui.bold('Team command'));
+    console.log('  atris computer local --worker openai');
+    console.log('');
+
+    if (!localOk || !cloudClear || !auditOk) {
+      process.exitCode = 1;
+    }
+  } finally {
+    process.removeListener('SIGINT', cleanup);
+    process.removeListener('SIGTERM', cleanup);
+    await cleanup();
+  }
+}
+
 async function runComputer() {
   const parsed = parseComputerOptions(process.argv.slice(3));
   const args = parsed.positional;
@@ -2174,6 +2284,7 @@ async function runComputer() {
     console.log('Modes:');
     console.log('  (default)       Choose CLOUD vs LOCAL when both are available');
     console.log('  local           Open LOCAL Atris mode; cloud brain edits this folder');
+    console.log('  proof           Run the local-edit + cloud-isolation + audit proof');
     console.log('  local-byo       Open LOCAL BYO Claude mode; Anthropic tokens, no cloud audit');
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
@@ -2202,6 +2313,7 @@ async function runComputer() {
     console.log('');
     console.log('Examples:');
     console.log('  atris computer');
+    console.log('  atris computer proof');
     console.log('  atris computer local');
     console.log('  atris computer codex');
     console.log('  atris computer --cloud');
@@ -2228,6 +2340,7 @@ async function runComputer() {
 
   switch (sub) {
     case 'chat': return computerChat(token, ctx, cloudOptions);
+    case 'proof': return computerProof(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'wake': return computerWake(token, ctx);
     case 'sleep': return computerSleep(token, ctx);
