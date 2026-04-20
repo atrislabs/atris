@@ -21,7 +21,7 @@ _(none — boundary. `typed-lessons` endgame shipped in v3.8.0. Next horizon pen
 
 ## Backlog
 
-_(empty — target state reached for v3.8.0 shipping window)_
+_(empty — target state reached for v3.9.0 shipping window)_
 
 ## In Progress
 

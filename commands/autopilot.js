@@ -1826,6 +1826,40 @@ function scoreEndgameCandidates(cwd, candidates) {
 }
 
 /**
+ * Write `status: attempted` back to the typed lesson sidecar for a slug when
+ * a self-heal tick tried and failed. Increments `attempts`, stamps
+ * `last_attempt` (YYYY-MM-DD) and `last_attempt_reason`. Creates the sidecar
+ * (and the slug entry) if missing.
+ *
+ * This closes the survivorship-bias loop the oracle flagged: without this,
+ * the ledger only records fixes that worked, never the ones that didn't.
+ *
+ * @returns {boolean} true on success, false on malformed sidecar or write error
+ */
+function markLessonAttempted(cwd, slug, reason) {
+  if (!slug || typeof slug !== 'string') return false;
+  const metaPath = path.join(cwd, 'atris', 'lessons.json');
+  let meta = {};
+  if (fs.existsSync(metaPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      if (parsed && typeof parsed === 'object') meta = parsed;
+    } catch { return false; }
+  }
+  if (!meta[slug] || typeof meta[slug] !== 'object') meta[slug] = {};
+  meta[slug].status = 'attempted';
+  meta[slug].attempts = (typeof meta[slug].attempts === 'number' ? meta[slug].attempts : 0) + 1;
+  meta[slug].last_attempt = new Date().toISOString().slice(0, 10);
+  if (reason) meta[slug].last_attempt_reason = String(reason);
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    if (!fs.existsSync(atrisDir)) fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+    return true;
+  } catch { return false; }
+}
+
+/**
  * Load the typed lesson metadata sidecar (atris/lessons.json).
  * Keyed by slug. Each entry may carry: scope, applies_to, detector, status.
  * Missing file or parse errors → empty object (prose-only fallback).
@@ -1987,16 +2021,19 @@ function pickUnresolvedFailLesson(cwd) {
   const lessons = parseLessons(cwd);
   if (lessons.length === 0) return null;
 
+  const MAX_ATTEMPTS = 3;
   const candidates = [];
   for (const lesson of lessons) {
     if (lesson.verdict !== 'fail') continue;
     if (lesson.resolvedTag) continue;
     // Typed lesson with explicit status wins — respect the sidecar.
     // `resolved` = done. `observed` = process rule, not a fixable code state.
-    // Only `open` and `attempted` flow to self-heal execution.
+    // `attempted` with attempts >= MAX_ATTEMPTS = needs human re-scoping, skip.
+    // Only `open` and `attempted` (under the cap) flow to self-heal execution.
     if (lesson.meta && lesson.meta.status) {
       const s = lesson.meta.status;
       if (s === 'resolved' || s === 'observed') continue;
+      if (s === 'attempted' && (lesson.meta.attempts || 0) >= MAX_ATTEMPTS) continue;
     }
     // Detector-backed or legacy grep check.
     if (isLessonResolved(lesson.line, cwd, { meta: lesson.meta })) continue;
@@ -2006,7 +2043,8 @@ function pickUnresolvedFailLesson(cwd) {
       slug: lesson.id,
       line: lesson.line,
       typed: !lesson.legacy,
-      detector: lesson.meta ? lesson.meta.detector || null : null
+      detector: lesson.meta ? lesson.meta.detector || null : null,
+      attempts: lesson.meta ? (lesson.meta.attempts || 0) : 0
     });
   }
 
@@ -2387,6 +2425,9 @@ async function autopilotAtris(description, options = {}) {
         tickOutcome = 'halted';
         tickOutcomeText = `I halted before running "${lastTaskTitle}": ${execution.reason}.`;
         tickNextStep = 'stop until a human looks at the error';
+        if (suggestion.kind === 'self-heal' && suggestion.lessonSlug) {
+          markLessonAttempted(cwd, suggestion.lessonSlug, `halted:${execution.reason}`);
+        }
         if (!verbose) {
           printPlainBlock([
             `I halted: ${execution.reason}.`,
@@ -2412,6 +2453,9 @@ async function autopilotAtris(description, options = {}) {
         tickOutcome = 'halted';
         tickOutcomeText = `I built "${lastTaskTitle}" but review flagged issues.`;
         tickNextStep = 'wait for a human to check the review output';
+        if (suggestion.kind === 'self-heal' && suggestion.lessonSlug) {
+          markLessonAttempted(cwd, suggestion.lessonSlug, 'review-rejected');
+        }
         if (verbose) {
           console.log(`  review flagged issues (${reviewTime}s). stopping for manual check.`);
         } else {
@@ -2431,6 +2475,9 @@ async function autopilotAtris(description, options = {}) {
         tickOutcomeText = `I planned, built, and reviewed "${lastTaskTitle}" but verify failed.`;
         tickNextStep = 'verify failed, halting';
         writeLesson(cwd, 'verify-failed', 'fail', `Task "${lastTaskTitle}" passed review but failed verify command.`);
+        if (suggestion.kind === 'self-heal' && suggestion.lessonSlug) {
+          markLessonAttempted(cwd, suggestion.lessonSlug, 'verify-failed');
+        }
         if (verbose) {
           console.log(`  verify failed. stopping for manual check.`);
         } else {
@@ -2723,6 +2770,7 @@ module.exports = {
   isLessonResolved,
   isLessonResolvedLegacy,
   loadLessonMetadata,
+  markLessonAttempted,
   parseLessons,
   pickUnresolvedFailLesson,
   runLessonDetector,
