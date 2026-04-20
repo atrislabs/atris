@@ -665,8 +665,192 @@ function syncSkills({ silent = false } = {}) {
   return updated;
 }
 
+/**
+ * Discover atris-managed projects under a root directory.
+ * A project is any directory whose immediate child `atris/` folder contains `atris.md`.
+ * Skips noise: node_modules, .git, .claude, dist, build, _archive, worktrees.
+ */
+function _findAtrisProjects(rootDir, maxDepth = 8) {
+  const skip = new Set([
+    'node_modules', '.git', '.claude', '.next', 'dist', 'build',
+    '_archive', 'worktrees', '.codex', '.venv', 'venv', '__pycache__',
+  ]);
+  const found = [];
+  function walk(dir, depth) {
+    if (depth > maxDepth) return;
+    const atrisMd = path.join(dir, 'atris', 'atris.md');
+    if (fs.existsSync(atrisMd)) found.push(dir);
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (skip.has(e.name)) continue;
+      if (e.name.startsWith('.')) continue;
+      walk(path.join(dir, e.name), depth + 1);
+    }
+  }
+  walk(path.resolve(rootDir), 0);
+  return found;
+}
+
+/**
+ * Sync canonical atris.md (and core docs) across every atris project under cwd.
+ * Walks the subtree, finds every `atris/atris.md`, copies the package source.
+ *
+ * Flags: --dry-run (preview only), --yes/--force (skip confirm).
+ * Skips business workspaces (they use syncWorkspaceTemplate via syncAtris).
+ */
+// Canonical files shipped from the package root. Must match syncAtris's filesToSync.
+const SYNC_ALL_FILES = [
+  { source: 'atris.md', target: 'atris.md' },
+  { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
+  { source: 'PERSONA.md', target: 'PERSONA.md' },
+  { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
+  { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
+];
+
+/**
+ * Pure function: build the sync plan for every atris project under root.
+ * No console output, no writes. Returns { projects, plan } for inspection.
+ * Plan entries: { projectRoot, isBusiness, isCustomized, changes }.
+ *
+ * Exported for tests — the production syncAtrisAll wraps this.
+ */
+function buildSyncAllPlan({ root, pkgRoot, filesToSync = SYNC_ALL_FILES } = {}) {
+  const projects = _findAtrisProjects(root);
+  const plan = [];
+  for (const projectRoot of projects) {
+    const atrisDir = path.join(projectRoot, 'atris');
+    const bizFile = path.join(projectRoot, '.atris', 'business.json');
+    const isSelf = path.resolve(projectRoot) === path.resolve(pkgRoot);
+    const isInBusinessDir = projectRoot.split(path.sep).includes('atris-business');
+    let isBusiness = isInBusinessDir || (fs.existsSync(bizFile) && !isSelf);
+    if (isBusiness && !isInBusinessDir) {
+      try {
+        const head = fs.readFileSync(path.join(atrisDir, 'atris.md'), 'utf8').slice(0, 300);
+        if (!/^#\s+Atris Boot Protocol/i.test(head)) isBusiness = false;
+      } catch {}
+    }
+    let isCustomized = false;
+    if (!isSelf && !isBusiness) {
+      try {
+        const head = fs.readFileSync(path.join(atrisDir, 'atris.md'), 'utf8').slice(0, 500);
+        const isNewCanonical = /^#\s+atris\s*\n\nAtris exists because/m.test(head);
+        const isOldGeneric = /^#\s+atris\.md\s*\n\n>\s+Drop this file anywhere/m.test(head);
+        if (!isNewCanonical && !isOldGeneric) isCustomized = true;
+      } catch {}
+    }
+    const changes = [];
+    for (const { source, target } of filesToSync) {
+      const sourceFile = path.join(pkgRoot, source);
+      const targetFile = path.join(atrisDir, target);
+      if (!fs.existsSync(sourceFile)) continue;
+      const newContent = fs.readFileSync(sourceFile, 'utf8');
+      const currentContent = fs.existsSync(targetFile) ? fs.readFileSync(targetFile, 'utf8') : '';
+      if (currentContent !== newContent) changes.push(target);
+    }
+    plan.push({ projectRoot, isBusiness, isCustomized, changes });
+  }
+  return { projects, plan };
+}
+
+function syncAtrisAll({ dryRun = false, force = false } = {}) {
+  const root = process.cwd();
+  const pkgRoot = path.join(__dirname, '..');
+
+  console.log('');
+  console.log(`Scanning ${root} for atris projects...`);
+
+  const filesToSync = SYNC_ALL_FILES;
+  const { projects, plan: initialPlan } = buildSyncAllPlan({ root, pkgRoot, filesToSync });
+
+  if (projects.length === 0) {
+    console.log('No atris projects found under current directory.');
+    return;
+  }
+
+  const plan = initialPlan;
+
+  // Report.
+  console.log(`Found ${projects.length} project(s).`);
+  console.log('');
+  let wouldUpdate = 0, unchanged = 0, skipped = 0;
+  for (const p of plan) {
+    const rel = path.relative(root, p.projectRoot) || '.';
+    if (p.isBusiness) {
+      console.log(`  ⏭  ${rel} (business workspace — run "atris update" in that dir)`);
+      skipped++;
+    } else if (p.isCustomized) {
+      console.log(`  ⏭  ${rel} (customized atris.md — review manually)`);
+      skipped++;
+    } else if (p.changes.length === 0) {
+      console.log(`  ·  ${rel} (up to date)`);
+      unchanged++;
+    } else {
+      console.log(`  →  ${rel} — ${p.changes.length} file(s): ${p.changes.join(', ')}`);
+      wouldUpdate++;
+    }
+  }
+  console.log('');
+
+  if (dryRun) {
+    console.log(`Dry run: ${wouldUpdate} project(s) would update, ${unchanged} unchanged, ${skipped} skipped.`);
+    return;
+  }
+
+  if (wouldUpdate === 0) {
+    console.log('Nothing to sync.');
+    return;
+  }
+
+  // Confirm unless forced.
+  if (!force) {
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => {
+      rl.question(`Sync ${wouldUpdate} project(s)? (y/N) `, (answer) => {
+        rl.close();
+        if (!/^y(es)?$/i.test(answer.trim())) {
+          console.log('Cancelled.');
+          resolve();
+          return;
+        }
+        _executeSyncAll(plan, pkgRoot, filesToSync, root);
+        resolve();
+      });
+    });
+  }
+
+  _executeSyncAll(plan, pkgRoot, filesToSync, root);
+}
+
+function _executeSyncAll(plan, pkgRoot, filesToSync, root) {
+  let updated = 0;
+  for (const p of plan) {
+    if (p.isBusiness || p.isCustomized || p.changes.length === 0) continue;
+    const atrisDir = path.join(p.projectRoot, 'atris');
+    for (const { source, target } of filesToSync) {
+      const sourceFile = path.join(pkgRoot, source);
+      const targetFile = path.join(atrisDir, target);
+      if (!fs.existsSync(sourceFile)) continue;
+      const newContent = fs.readFileSync(sourceFile, 'utf8');
+      const currentContent = fs.existsSync(targetFile) ? fs.readFileSync(targetFile, 'utf8') : '';
+      if (currentContent === newContent) continue;
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.copyFileSync(sourceFile, targetFile);
+    }
+    updated++;
+  }
+  console.log('');
+  console.log(`✓ Synced ${updated} project(s).`);
+}
+
 module.exports = {
   syncAtris,
+  syncAtrisAll,
+  buildSyncAllPlan,
+  SYNC_ALL_FILES,
   syncSkills,
   syncBusinessCanonical,
   syncWorkspaceTemplate,
