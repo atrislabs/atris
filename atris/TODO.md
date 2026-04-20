@@ -1,6 +1,6 @@
 # TODO.md
 
-> **Last updated:** 2026-04-13
+> **Last updated:** 2026-04-20
 
 ---
 
@@ -15,31 +15,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-**Slug:** agent-commands-solid
-**Picked:** 2026-04-14 23:00
-**Done when:** `atris agent` + `atris chat` handle expired tokens, plan/do/review accept `--agent <name>` to pick which agent runs the work, and one end-to-end test proves agent selection + chat + plan cycle works without manual token refresh.
-**Source:** boundary — "check-before-acting" complete (I4 shipped, backlog empty). Agent commands exist (agent, chat, plan --execute) but token refresh is unguarded and agent selection doesn't carry through plan/do/review. Queued: agent-coordinator.
+_(none — boundary. `typed-lessons` endgame shipped in v3.8.0. Next horizon pending; likely `three-state-ledger` (observed→attempted→resolved transitions) or `repo-shape-manifest` per oracle 2026-04-20.)_
 
 ---
 
 ## Backlog
 
-- **T1:** Guard token expiry in agent-using commands — loadCredentials() must call ensureValidCredentials() before API calls [endgame] [execute]
-  **Exit:** expired token triggers refresh, not silent failure
-  **Verify:** `grep -c "ensureValidCredentials" commands/workflow.js | grep -v "^0$"`
-  **After:** none
-- **T2:** Add `--agent <name>` flag to plan/do/review commands — agent selection carries through the workflow [endgame] [execute]
-  **Exit:** `atris plan --agent researcher` uses the researcher agent, not default
-  **Verify:** `grep -c "\-\-agent" commands/workflow.js | grep -v "^0$"`
-  **After:** T1
-- **T3:** End-to-end smoke test — select agent, chat, plan cycle completes without manual intervention [endgame] [execute]
-  **Exit:** scripted test runs agent select + chat + plan and exits 0
-  **Verify:** `node tests/agent-e2e.js` exits 0
-  **After:** T2
-- **T6:** Fixture task — no-op placeholder for navigator/executor/validator pipeline smoke test [explore]
-  **Exit:** task round-trips through plan→do→review without side effects
-  **Verify:** `true`
-  **After:** none
+_(empty — target state reached for v3.8.0 shipping window)_
 
 ## In Progress
 
@@ -47,12 +29,11 @@ then /endgame picks the next horizon at the boundary.
 
 ## Completed
 
-- **T4:** Audit CLI bloat against atrisos-backend boundary [explore]
-  **Exit:** identify concrete trim targets or duplication hotspots with file references and keep/cut recommendation
-  **Result:** command sprawl and backend-coupled modules are the main bloat; npm package size is modest
-
-- **T5:** Verify business computer flow against atris-labs-1 [execute]
-  **Exit:** run live CLI checks against atris-labs-1 and confirm business binding + computer path works or capture the failing step
-  **Result:** business chat bridge returned 502, but `commands/computer.js` now falls back to a direct runner proxy and live exec/chat both work in atris-labs-1
+- **T1 (retired):** Guard token expiry — shipped in v3.6.0. Verify `grep -c "ensureValidCredentials" commands/workflow.js` returns 6.
+- **T2/T3 (retired):** Agent-commands-solid endgame superseded by self-heal work (v3.6/v3.7) + typed-lessons (v3.8). `--agent` flag + e2e agent test deferred.
+- **T30/T31/T32 (shipped in v3.8.0):** typed-lessons endgame
+  - T30 — `parseLessons` + `loadLessonMetadata` + `runLessonDetector` added to `commands/autopilot.js`. 12 new tests in `test/typed-lessons.test.js`.
+  - T31 — `isLessonResolved` runs detector when sidecar has one; legacy grep is the fallback (`isLessonResolvedLegacy`). Never auto-promotes prose lessons to resolved.
+  - T32 — `atris/lessons.json` sidecar shipped with 4 real entries (2 resolved detectors, 2 observed process rules). Remaining 30+ legacy lessons stay prose-only and continue to work via fallback.
 
 ---
