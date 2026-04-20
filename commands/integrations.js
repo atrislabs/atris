@@ -10,20 +10,25 @@
  *   atris slack channels    - List Slack channels
  */
 
-const { loadCredentials } = require('../utils/auth');
+const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
-function getAuth() {
-  const creds = loadCredentials();
+async function getAuth() {
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  const creds = ensured.error ? null : ensured.credentials;
   if (!creds || !creds.token) {
-    console.error('Not logged in. Run: atris login');
+    if (ensured.error && ensured.error !== 'not_logged_in') {
+      console.error(`Authentication failed: ${ensured.detail || ensured.error}. Run: atris login`);
+    } else {
+      console.error('Not logged in. Run: atris login');
+    }
     process.exit(1);
   }
   return { token: creds.token, email: creds.email || 'unknown' };
 }
 
 async function getAuthToken() {
-  return getAuth().token;
+  return (await getAuth()).token;
 }
 
 // ============================================================================
@@ -31,7 +36,7 @@ async function getAuthToken() {
 // ============================================================================
 
 async function gmailInbox(options = {}) {
-  const { token, email } = getAuth();
+  const { token, email } = await getAuth();
   const limit = options.limit || 10;
 
   console.log('📬 Fetching inbox...\n');
@@ -129,7 +134,7 @@ async function gmailCommand(subcommand, ...args) {
 // ============================================================================
 
 async function calendarToday() {
-  const { token, email } = getAuth();
+  const { token, email } = await getAuth();
 
   console.log('📅 Today\'s events:\n');
 
@@ -224,7 +229,7 @@ async function twitterPost(text) {
 
   if (!result.ok) {
     if (result.status === 400 || result.status === 401) {
-      const { email } = getAuth();
+      const { email } = await getAuth();
       console.error(`Twitter not connected for ${email}.`);
       console.error('Connect at: https://atris.ai/dashboard/settings');
       console.error(`Make sure you're signed in as ${email} on the web.`);
@@ -268,7 +273,7 @@ async function slackChannels() {
 
   if (!result.ok) {
     if (result.status === 400 || result.status === 401) {
-      const { email } = getAuth();
+      const { email } = await getAuth();
       console.error(`Slack not connected for ${email}.`);
       console.error('Connect at: https://atris.ai/dashboard/settings');
       console.error(`Make sure you're signed in as ${email} on the web.`);
