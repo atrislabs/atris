@@ -43,7 +43,8 @@ function printWorkflowBrief(lines) {
 
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials } = require('../utils/auth');
+  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
@@ -243,10 +244,14 @@ async function planAtris(userInput = null) {
     if (!config.agent_id) {
       throw new Error('No agent selected. Run "atris agent" first.');
     }
-    const credentials = loadCredentials();
-    if (!credentials || !credentials.token) {
+    const ensured = await ensureValidCredentials(apiRequestJson);
+    if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
       throw new Error('Not logged in. Run "atris login" first.');
     }
+    if (ensured.error) {
+      throw new Error(`Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    }
+    const credentials = ensured.credentials;
 
     // Build system prompt
     let systemPrompt = '';
@@ -362,7 +367,8 @@ async function planAtris(userInput = null) {
 
 async function doAtris() {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials } = require('../utils/auth');
+  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
@@ -603,10 +609,14 @@ async function doAtris() {
     if (!config.agent_id) {
       throw new Error('No agent selected. Run "atris agent" first.');
     }
-    const credentials = loadCredentials();
-    if (!credentials || !credentials.token) {
+    const ensured = await ensureValidCredentials(apiRequestJson);
+    if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
       throw new Error('Not logged in. Run "atris login" first.');
     }
+    if (ensured.error) {
+      throw new Error(`Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    }
+    const credentials = ensured.credentials;
 
     // Build system prompt
     let systemPrompt = '';
@@ -704,7 +714,8 @@ async function doAtris() {
 
 async function reviewAtris() {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials } = require('../utils/auth');
+  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
@@ -959,10 +970,14 @@ async function reviewAtris() {
     if (!config.agent_id) {
       throw new Error('No agent selected. Run "atris agent" first.');
     }
-    const credentials = loadCredentials();
-    if (!credentials || !credentials.token) {
+    const ensured = await ensureValidCredentials(apiRequestJson);
+    if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
       throw new Error('Not logged in. Run "atris login" first.');
     }
+    if (ensured.error) {
+      throw new Error(`Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    }
+    const credentials = ensured.credentials;
 
     // Build system prompt
     let systemPrompt = '';

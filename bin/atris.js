@@ -1263,13 +1263,17 @@ async function agentAtris() {
     process.exit(1);
   }
 
-  // Check if logged in
-  const credentials = loadCredentials();
-
-  if (!credentials || !credentials.token) {
+  // Check if logged in (with token refresh)
+  const ensured = await ensureValidCredentials();
+  if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
     console.error('✗ Error: Not logged in. Run "atris login" first.');
     process.exit(1);
   }
+  if (ensured.error) {
+    console.error(`✗ Error: Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    process.exit(1);
+  }
+  const credentials = ensured.credentials;
 
   console.log('🔍 Fetching your agents...\n');
 
@@ -1356,12 +1360,17 @@ async function chatAtris() {
     process.exit(1);
   }
 
-  // Check credentials
-  const credentials = loadCredentials();
-  if (!credentials || !credentials.token) {
+  // Check credentials (with token refresh)
+  const ensured = await ensureValidCredentials();
+  if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
     console.error('✗ Error: Not logged in. Run "atris login" first.');
     process.exit(1);
   }
+  if (ensured.error) {
+    console.error(`✗ Error: Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    process.exit(1);
+  }
+  const credentials = ensured.credentials;
 
   // If message provided, one-shot mode
   if (message) {
