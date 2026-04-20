@@ -328,8 +328,11 @@ function showHelp() {
   console.log('  plugin info         - Preview what will be included');
   console.log('');
   console.log('Feedback:');
-  console.log('  feedback "msg"      - Submit feedback');
-  console.log('  feedback            - List your feedback');
+  console.log('  feedback "msg"             - Submit feedback');
+  console.log('  feedback                   - List feedback queue');
+  console.log('  feedback resolve <id> "<note>" - Mark resolved (admin)');
+  console.log('  feedback close <id>        - Close as wontfix (admin)');
+  console.log('  feedback delete <id>       - Delete feedback (admin)');
   console.log('');
   console.log('Other:');
   console.log('  version    - Show Atris version');
