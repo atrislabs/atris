@@ -109,9 +109,12 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     if (failLesson && !skipped.has(`self-heal:${failLesson.slug}`)) {
       suggestions.push({
         task: `Fix unresolved fail lesson: ${failLesson.slug}`,
-        why: `Lesson from ${failLesson.date} tagged \`fail\` and grep confirms the bug pattern is still present in-repo. Self-heal before taking new work. Lesson: ${failLesson.line}`,
+        why: `Lesson from ${failLesson.date} tagged \`fail\` and grep confirms the bug pattern is still present in-repo. Self-heal before taking new work.`,
         kind: 'self-heal',
-        priority: 4.5
+        priority: 4.5,
+        lessonLine: failLesson.line,
+        lessonSlug: failLesson.slug,
+        lessonDate: failLesson.date
       });
     }
   }
@@ -508,6 +511,27 @@ mistakes that were caught. Append to atris/lessons.md. One line per lesson. Be s
 When done, reply: done.`;
     }
 
+    if (kind === 'self-heal') {
+      const { lessonLine = '', lessonSlug = '' } = context;
+      const lessonBlock = lessonLine ? `\nUnresolved fail lesson:\n${lessonLine}\n` : '';
+      return `${baseRules}${lessonBlock}
+Self-heal task: ${task}
+
+This is an unresolved \`fail\` lesson from atris/lessons.md. grep confirms the bug pattern
+is still present in-repo — the fix has NOT been shipped yet.
+
+Plan the smallest fix:
+1. Parse the lesson for file:line references and the described bug pattern.
+2. Read those files to confirm the bug is exactly as described (or has drifted).
+3. Write ONE task in atris/TODO.md with:
+   - **Exit:** the specific behavior that proves the fix
+   - **Verify:** a command that fails now and will pass after the fix${lessonSlug ? ` (include "${lessonSlug}" in the task title so the lesson auto-resolves)` : ''}
+   - **Rollback:** how to revert if the fix misses
+4. Do NOT fix it in this phase — planner only. The executor will do the work.
+
+When done, reply: done.`;
+    }
+
     return `${baseRules}
 
 Task: ${task}
@@ -539,6 +563,32 @@ Task: ${task}
 3. Verify locally if you can.
 4. Update MAP.md only if file locations truly shifted because of your change.
 5. If updating wiki pages, set last_compiled in frontmatter to today's date.
+
+When done, reply: done.`;
+    }
+
+    if (kind === 'self-heal') {
+      const { lessonLine = '', lessonSlug = '' } = context;
+      const lessonBlock = lessonLine ? `\nUnresolved fail lesson:\n${lessonLine}\n` : '';
+      return `You are the executor. Read your MEMBER.md spec first if available.
+
+Rules:
+- You CAN read and write code. You CANNOT plan or create new tasks.
+- Execute ONE step at a time. Verify each step before moving on.
+- Check MAP.md for file locations before grepping.
+- Stay in scope. Only fix the bug described in the lesson — no side quests.
+
+Read these files first:
+${readFiles}
+${lessonBlock}
+Self-heal task: ${task}
+
+1. Find the self-heal task in TODO.md and claim it (Claimed by: Executor at ${new Date().toISOString()}).
+2. Parse the lesson above for file:line references. Open those files and locate the bug pattern.
+3. Make the smallest change that removes the bug pattern AND makes the lesson's Verify command pass.
+4. Run the Verify command yourself to confirm it passes.
+5. Update MAP.md only if file:line locations shifted because of your fix.
+6. Commit: git add <specific-files> && git commit -m "fix: ${lessonSlug || 'self-heal'}"
 
 When done, reply: done.`;
     }
@@ -2209,7 +2259,13 @@ async function autopilotAtris(description, options = {}) {
 
     // Execute: plan → do → review
     lastTaskTitle = suggestion.task;
-    const context = { task: suggestion.task, kind: suggestion.kind };
+    const context = {
+      task: suggestion.task,
+      kind: suggestion.kind,
+      ...(suggestion.lessonLine ? { lessonLine: suggestion.lessonLine } : {}),
+      ...(suggestion.lessonSlug ? { lessonSlug: suggestion.lessonSlug } : {}),
+      ...(suggestion.lessonDate ? { lessonDate: suggestion.lessonDate } : {})
+    };
     const startingEndgame = readEndgameState(cwd);
 
     try {
