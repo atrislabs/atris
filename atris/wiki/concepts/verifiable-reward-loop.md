@@ -9,8 +9,8 @@ sources:
   - lib/scorecard.js
   - .atris/presidio/scorecards.md
 created: 2026-04-09
-updated: 2026-04-09
-last_compiled: 2026-04-09
+updated: 2026-04-20
+last_compiled: 2026-04-20
 tags:
   - reward
   - autopilot
