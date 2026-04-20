@@ -70,9 +70,16 @@ or
 ```
 REJECT: <one sentence on what is wrong>
 FIX: <one sentence on what must change>
+PROPOSED:
+  Files: <concrete path list>
+  Exit: <sharp, observable done condition>
+  Verify: <falsifiable shell command, prefer atris verify <slug> --section preflight>
+  Rollback: <git revert <sha> or concrete checkpoint>
 ```
 
-No preamble, no explanation before. The autopilot parses this literally.
+Be a drafting partner, not just a critic. When you REJECT, write the PROPOSED block as a concrete draft the human can accept as-is, edit, or reject. Skip any PROPOSED field that is already correct in the original task. Omit the whole PROPOSED block only if the rejection is about scope or intent rather than a field that can be drafted.
+
+No preamble, no explanation before the verdict. The autopilot parses this literally.
 
 ### Review — after executor finishes
 
