@@ -73,7 +73,8 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       task: `Re-read sources and update ${pageName}`,
       why: `"${sp.staleSource}" changed on ${sp.sourceDate} but the page was last compiled ${sp.compiledDate}. The content may be wrong.`,
       kind: 'staleness',
-      priority: 2
+      priority: 2,
+      skipKey: key
     });
     break;
   }
@@ -87,7 +88,8 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       task: `Finish or remove stale task: ${st.title}`,
       why: `Claimed ${st.daysSinceClaim} days ago and never completed. Either finish it or delete it — stale tasks add noise.`,
       kind: 'cleanup',
-      priority: 3
+      priority: 3,
+      skipKey: key
     });
   }
 
@@ -114,7 +116,8 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
         priority: 4.5,
         lessonLine: failLesson.line,
         lessonSlug: failLesson.slug,
-        lessonDate: failLesson.date
+        lessonDate: failLesson.date,
+        skipKey: `self-heal:${failLesson.slug}`
       });
     }
   }
@@ -1823,16 +1826,110 @@ function scoreEndgameCandidates(cwd, candidates) {
 }
 
 /**
+ * Load the typed lesson metadata sidecar (atris/lessons.json).
+ * Keyed by slug. Each entry may carry: scope, applies_to, detector, status.
+ * Missing file or parse errors → empty object (prose-only fallback).
+ */
+function loadLessonMetadata(cwd) {
+  const metaPath = path.join(cwd, 'atris', 'lessons.json');
+  if (!fs.existsSync(metaPath)) return {};
+  try {
+    const raw = fs.readFileSync(metaPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Parse atris/lessons.md into structured lesson objects, joined with the
+ * optional atris/lessons.json sidecar by slug. Returns an array of:
+ *   { id, date, verdict, body, line, resolvedTag, meta, legacy }
+ * where `legacy` is true when no sidecar metadata exists for the slug.
+ */
+function parseLessons(cwd) {
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  if (!fs.existsSync(lessonsPath)) return [];
+  const content = fs.readFileSync(lessonsPath, 'utf8');
+  const metadata = loadLessonMetadata(cwd);
+
+  const out = [];
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine;
+    if (!line.trim().startsWith('- **[')) continue;
+    const m = line.match(/\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*\s*[—-]\s*(pass|fail)?\s*[—-]?\s*(.*)$/);
+    if (!m) continue;
+    const [, date, id, verdict, rest] = m;
+    const resolvedTag = /\[resolved\]/.test(rest);
+    const body = rest.replace(/^\[resolved\]\s*/, '').trim();
+    const meta = metadata[id] || null;
+    out.push({
+      id,
+      date,
+      verdict: verdict || null,
+      body,
+      line: line.trim(),
+      resolvedTag,
+      meta,
+      legacy: !meta
+    });
+  }
+  return out;
+}
+
+/**
+ * Run a lesson's detector command. Returns true if the detector exits 0,
+ * false otherwise (non-zero exit, timeout, spawn error).
+ * execFileSync is intentionally avoided for detectors because they may
+ * legitimately shell out (e.g. `node --test path | grep X`).
+ */
+function runLessonDetector(detector, cwd, timeoutMs = 60000) {
+  if (!detector || typeof detector !== 'string') return false;
+  try {
+    execSync(detector, { cwd, stdio: 'pipe', timeout: timeoutMs });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check whether a lesson's bug pattern is still present in the named files.
- * Parses the lesson line for file paths (e.g. `commands/autopilot.js:116`)
- * and the slug (e.g. `inbox-parser-eats-hr-separator`). Greps the named
- * files for slug keywords. If none match → lesson is resolved.
+ *
+ * Detector-backed path (preferred): if sidecar metadata has `detector`, run it.
+ *   exit 0 → resolved (true). non-zero → not resolved (false).
+ *
+ * Legacy path (fallback): parse the lesson line for file paths + slug keywords
+ * and grep. If no keyword matches any named file → resolved (true).
  *
  * @param {string} lessonLine - A single line from lessons.md
  * @param {string} cwd - Current working directory
- * @returns {boolean} true if the lesson's bug pattern is gone (resolved)
+ * @param {object} [options] - Optional pre-loaded metadata ({ meta, detectorTimeout })
+ * @returns {boolean} true if the bug pattern is gone (resolved)
  */
-function isLessonResolved(lessonLine, cwd) {
+function isLessonResolved(lessonLine, cwd, options = {}) {
+  const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
+  if (!slugMatch) return false;
+  const slug = slugMatch[1];
+
+  // Detector-backed check (typed lesson sidecar)
+  const meta = options.meta || loadLessonMetadata(cwd)[slug];
+  if (meta && meta.detector) {
+    return runLessonDetector(meta.detector, cwd, options.detectorTimeout);
+  }
+
+  // Legacy fallback: keyword grep against referenced files.
+  return isLessonResolvedLegacy(lessonLine, cwd);
+}
+
+/**
+ * The pre-v3.8 resolver — kept as an internal fallback for prose-only lessons
+ * that don't have detector metadata yet. Never auto-promotes a prose lesson to
+ * resolved in the typed system (callers can still use the `resolvedTag` field
+ * from parseLessons for hand-tagged entries).
+ */
+function isLessonResolvedLegacy(lessonLine, cwd) {
   // Extract slug: bold text after date, e.g. **[2026-04-08] inbox-parser-eats-hr-separator**
   const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
   if (!slugMatch) return false;
@@ -1887,28 +1984,29 @@ function isLessonResolved(lessonLine, cwd) {
  * === false` means grep confirms the bug pattern is still present — actionable.
  */
 function pickUnresolvedFailLesson(cwd) {
-  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
-  if (!fs.existsSync(lessonsPath)) return null;
-
-  const content = fs.readFileSync(lessonsPath, 'utf8');
-  const lines = content.split('\n');
+  const lessons = parseLessons(cwd);
+  if (lessons.length === 0) return null;
 
   const candidates = [];
-  for (const line of lines) {
-    if (!line.trim().startsWith('- **[')) continue;
-    if (line.includes('[resolved]')) continue;
-    // Match `— fail —` or `— fail ` as the verdict marker
-    if (!/\s[—-]\s*fail\s*[—-\s]/.test(line)) continue;
-
-    const slugMatch = line.match(/\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*/);
-    if (!slugMatch) continue;
-
-    if (isLessonResolved(line, cwd)) continue;
+  for (const lesson of lessons) {
+    if (lesson.verdict !== 'fail') continue;
+    if (lesson.resolvedTag) continue;
+    // Typed lesson with explicit status wins — respect the sidecar.
+    // `resolved` = done. `observed` = process rule, not a fixable code state.
+    // Only `open` and `attempted` flow to self-heal execution.
+    if (lesson.meta && lesson.meta.status) {
+      const s = lesson.meta.status;
+      if (s === 'resolved' || s === 'observed') continue;
+    }
+    // Detector-backed or legacy grep check.
+    if (isLessonResolved(lesson.line, cwd, { meta: lesson.meta })) continue;
 
     candidates.push({
-      date: slugMatch[1],
-      slug: slugMatch[2],
-      line: line.trim()
+      date: lesson.date,
+      slug: lesson.id,
+      line: lesson.line,
+      typed: !lesson.legacy,
+      detector: lesson.meta ? lesson.meta.detector || null : null
     });
   }
 
@@ -2209,6 +2307,7 @@ async function autopilotAtris(description, options = {}) {
       }
       // Track as skipped so dry-run shows variety
       skipped.add(suggestion.task);
+      if (suggestion.skipKey) skipped.add(suggestion.skipKey);
       if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
       if (suggestion.kind === 'review') skipped.add('review');
       if (suggestion.kind === 'lessons') skipped.add('lessons');
@@ -2239,7 +2338,7 @@ async function autopilotAtris(description, options = {}) {
 
     if (decision === 'skip') {
       skipped.add(suggestion.task);
-      if (suggestion.kind === 'staleness') skipped.add(`recompile:${suggestion.task}`);
+      if (suggestion.skipKey) skipped.add(suggestion.skipKey);
       if (suggestion.kind === 'docs') skipped.add('fix-map-refs');
       if (suggestion.kind === 'review') skipped.add('review');
       if (suggestion.kind === 'lessons') skipped.add('lessons');
@@ -2622,7 +2721,11 @@ module.exports = {
   autopilotFromTodo,
   buildPrompt,
   isLessonResolved,
+  isLessonResolvedLegacy,
+  loadLessonMetadata,
+  parseLessons,
   pickUnresolvedFailLesson,
+  runLessonDetector,
   isStillTrue,
   getTaskAgeDays,
   getIdleTickCount,
