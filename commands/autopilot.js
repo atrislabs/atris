@@ -774,14 +774,46 @@ function regressionCheck(cwd) {
  */
 function getVerifyCommand(cwd, taskTitle) {
   const todoPath = path.join(cwd, 'atris', 'TODO.md');
-  if (!fs.existsSync(todoPath)) return { cmd: null, explicit: false };
+  if (fs.existsSync(todoPath)) {
+    const todo = parseTodo(todoPath);
+    const task = [...todo.inProgress, ...todo.backlog, ...todo.completed]
+      .find(t => t.title === taskTitle);
+    if (task && task.verify) return { cmd: task.verify, explicit: true };
+  }
+  // Fallback: detect repo shape and pick a sensible default.
+  // Reactive tasks (inbox/staleness/imagined) don't carry explicit verify fields,
+  // so without shape detection they get `npm test` even on Python/Rust/Go repos.
+  return { cmd: detectDefaultVerify(cwd), explicit: false };
+}
 
-  const todo = parseTodo(todoPath);
-  const task = [...todo.inProgress, ...todo.backlog, ...todo.completed]
-    .find(t => t.title === taskTitle);
-
-  if (!task || !task.verify) return { cmd: null, explicit: false };
-  return { cmd: task.verify, explicit: true };
+/**
+ * Infer a default verify command from the repo shape. Order matters:
+ * package.json with a non-stub test script → `npm test`; then pytest/python;
+ * then rust/go; otherwise null (no default — skip verify).
+ */
+function detectDefaultVerify(cwd) {
+  const pkg = path.join(cwd, 'package.json');
+  if (fs.existsSync(pkg)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(pkg, 'utf8'));
+      const test = parsed.scripts && parsed.scripts.test;
+      if (test && test !== 'echo "Error: no test specified" && exit 1') {
+        return 'npm test';
+      }
+    } catch { /* fall through */ }
+  }
+  if (fs.existsSync(path.join(cwd, 'pytest.ini')) ||
+      fs.existsSync(path.join(cwd, 'pyproject.toml')) ||
+      fs.existsSync(path.join(cwd, 'setup.py'))) {
+    return 'pytest';
+  }
+  if (fs.existsSync(path.join(cwd, 'Cargo.toml'))) {
+    return 'cargo test';
+  }
+  if (fs.existsSync(path.join(cwd, 'go.mod'))) {
+    return 'go test ./...';
+  }
+  return null;
 }
 
 /**
@@ -2781,6 +2813,7 @@ module.exports = {
   getTickStatus,
   getVerifyCommand,
   computeTickReward,
+  detectDefaultVerify,
   verifyJudgeIntegrity,
   maybeWriteCompletedEndgameScorecard,
   renderHumanSuggestion,

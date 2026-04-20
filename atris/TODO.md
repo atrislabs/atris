@@ -15,13 +15,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-_(none — `wiki-staleness-sweep` shipped in v3.9.1. Workspace reports clean: 0 stale pages, 0 broken MAP refs, 0 stale tasks. Next horizon likely `repo-shape-manifest` (oracle #3) or dogfood against a second repo — pending direction.)_
+_(none — v3.10.0 shipped repo shape detection. Dogfooded against swarlo (Python) which exposed the `npm test` default as a real portability bug; `detectDefaultVerify` now picks pytest/cargo test/go test based on manifest files. Next horizon TBD.)_
 
 ---
 
 ## Backlog
 
-_(empty — target state reached for v3.9.1 shipping window)_
+_(empty — target state reached for v3.10.0 shipping window)_
 
 ## In Progress
 
