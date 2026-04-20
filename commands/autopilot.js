@@ -136,6 +136,14 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     break;
   }
 
+  // --- Proactive "surprise me" anomalies (didn't-ask-but-noticed signals) ---
+  try {
+    for (const anomaly of scanAnomalies(cwd)) {
+      if (anomaly.skipKey && skipped.has(anomaly.skipKey)) continue;
+      suggestions.push(anomaly);
+    }
+  } catch { /* anomaly scanner must never crash the tick */ }
+
   // --- Unprocessed inbox items ---
   const { logFile } = getLogPath();
   if (fs.existsSync(logFile)) {
@@ -1858,6 +1866,156 @@ function scoreEndgameCandidates(cwd, candidates) {
 }
 
 /**
+ * Proactive "surprise me" scanner — surfaces things the user didn't ask about.
+ * Returns an array of suggestion objects in the same shape as the reactive
+ * signals in suggestNextTask. Three orthogonal checks, none requiring
+ * cross-session state:
+ *   - orphan-todo: `// TODO` or `// FIXME` in source with no matching backlog item
+ *   - unverified-detector: typed lesson has a detector but no last_detected stamp
+ *   - hotspot: file with >5 git commits in last 24h (churn signal)
+ *
+ * Each suggestion includes a `skipKey` so dry-run / skip doesn't re-fire it.
+ */
+function scanAnomalies(cwd) {
+  const results = [];
+  const atrisDir = path.join(cwd, 'atris');
+
+  // --- orphan-todo: code TODOs not tracked in TODO.md backlog ---
+  try {
+    const codeTodos = findCodeTodos(cwd);
+    if (codeTodos.length > 0) {
+      const todoFile = path.join(atrisDir, 'TODO.md');
+      const backlogText = fs.existsSync(todoFile) ? fs.readFileSync(todoFile, 'utf8') : '';
+      const untracked = codeTodos.filter(t => !isTodoTracked(t.text, backlogText));
+      if (untracked.length > 0) {
+        const first = untracked[0];
+        const sample = untracked.slice(0, 3).map(t => `${t.file}:${t.line}`).join(', ');
+        const firstText = first.text.slice(0, 60);
+        results.push({
+          task: `Track the ${untracked.length} orphan TODO${untracked.length > 1 ? 's' : ''} in source — first: "${firstText}"`,
+          why: `Code has ${untracked.length} \`// TODO\`/\`// FIXME\` comment${untracked.length > 1 ? 's' : ''} never written to TODO.md. First: "${firstText}" (${sample}). Either convert to real tasks or delete if obsolete.`,
+          kind: 'orphan-todo',
+          priority: 6,
+          skipKey: 'orphan-todo'
+        });
+      }
+    }
+  } catch { /* best-effort scan */ }
+
+  // --- unverified-detector: lesson has detector but last_detected missing/stale ---
+  try {
+    const meta = loadLessonMetadata(cwd);
+    const unverified = [];
+    for (const [slug, entry] of Object.entries(meta)) {
+      if (slug === '_schema') continue;
+      if (!entry || typeof entry !== 'object') continue;
+      if (!entry.detector) continue;
+      if (!entry.last_detected) unverified.push(slug);
+    }
+    if (unverified.length > 0) {
+      results.push({
+        task: `Run the ${unverified.length} unverified detector${unverified.length > 1 ? 's' : ''} in atris/lessons.json`,
+        why: `These lessons claim they're resolved via a detector but the detector has never been run: ${unverified.slice(0, 3).join(', ')}${unverified.length > 3 ? ', …' : ''}. Until it runs and exits 0, the resolved claim is unverified.`,
+        kind: 'unverified-detector',
+        priority: 5.5,
+        skipKey: 'unverified-detector'
+      });
+    }
+  } catch { /* best-effort */ }
+
+  // --- hotspot: file with high churn in last 24h ---
+  try {
+    const hotspot = findHotspot(cwd);
+    if (hotspot) {
+      results.push({
+        task: `Pause and review ${hotspot.file} — ${hotspot.commits} commits in the last 24h`,
+        why: `That file has churned more than any other file today. Could be genuine progress or a sign the change isn't sticking. Worth reading the diff before continuing.`,
+        kind: 'hotspot',
+        priority: 6.5,
+        skipKey: `hotspot:${hotspot.file}`
+      });
+    }
+  } catch { /* best-effort */ }
+
+  return results;
+}
+
+/**
+ * Grep source code for TODO/FIXME comments. Skips test/, node_modules/,
+ * atris/, and .md files. Returns [{file, line, text}].
+ *
+ * Uses a loose grep then filters to real comment prefixes in JS — git grep's
+ * -E flag doesn't support `\s` on macOS, so we keep the pattern simple and
+ * refine post-hoc.
+ */
+function findCodeTodos(cwd) {
+  try {
+    const out = execFileSync('git', [
+      'grep', '-n', '-I', '-E', '(TODO|FIXME)',
+      '--', ':!test/', ':!node_modules/', ':!atris/', ':!**/*.md'
+    ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const results = [];
+    for (const raw of out.split('\n').filter(Boolean)) {
+      const m = raw.match(/^([^:]+):(\d+):(.*)$/);
+      if (!m) continue;
+      const line = m[3];
+      // A real TODO is a comment marker at the start of the line (allowing
+      // leading indent) followed by TODO/FIXME and at least one word. This
+      // rejects "TODO.md" string literals in templates (init.js:398 style).
+      const commentMatch = line.match(/^\s*(?:\/\/|#|\/\*|\*)\s*(TODO|FIXME):?\s+(\S.*)/);
+      if (!commentMatch) continue;
+      const text = commentMatch[2].replace(/\*\/\s*$/, '').trim();
+      if (!text) continue;
+      results.push({ file: m[1], line: parseInt(m[2], 10), text });
+      if (results.length >= 100) break;
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Heuristic: is a code TODO text substring already mentioned in the backlog?
+ * We check for significant words (>=4 chars) overlap. At least 2 must match.
+ */
+function isTodoTracked(todoText, backlogText) {
+  if (!todoText || !backlogText) return false;
+  const significantWords = todoText
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(w => w.length >= 4 && !['todo', 'fixme', 'this', 'that', 'with', 'from', 'when', 'then'].includes(w));
+  if (significantWords.length === 0) return false;
+  const lowerBacklog = backlogText.toLowerCase();
+  const matches = significantWords.filter(w => lowerBacklog.includes(w)).length;
+  return matches >= Math.min(2, significantWords.length);
+}
+
+/**
+ * Find the file with the most commits in the last 24 hours. Returns null if
+ * no file has more than 5 commits (below the "hotspot" threshold).
+ */
+function findHotspot(cwd) {
+  try {
+    const out = execFileSync('git', [
+      'log', '--since=24.hours.ago', '--name-only', '--pretty=format:'
+    ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const counts = {};
+    for (const f of out.split('\n').map(s => s.trim()).filter(Boolean)) {
+      counts[f] = (counts[f] || 0) + 1;
+    }
+    let best = null;
+    for (const [file, commits] of Object.entries(counts)) {
+      if (commits < 6) continue;
+      if (!best || commits > best.commits) best = { file, commits };
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Write `status: attempted` back to the typed lesson sidecar for a slug when
  * a self-heal tick tried and failed. Increments `attempts`, stamps
  * `last_attempt` (YYYY-MM-DD) and `last_attempt_reason`. Creates the sidecar
@@ -2814,6 +2972,10 @@ module.exports = {
   getVerifyCommand,
   computeTickReward,
   detectDefaultVerify,
+  findCodeTodos,
+  findHotspot,
+  isTodoTracked,
+  scanAnomalies,
   verifyJudgeIntegrity,
   maybeWriteCompletedEndgameScorecard,
   renderHumanSuggestion,
