@@ -82,6 +82,8 @@ Every task in `TODO.md`:
 
 Deeper project work uses `atris/features/<slug>/` with `idea.md` (plan), `build.md` (steps), `validate.md` (checks). The task points at the triptych; the triptych holds the long form.
 
+Verify cannot be a raw shell shortcut; it must call a rubric or test that can fail before the work is done. Prefer `atris verify <slug> --section <name>`, which extracts the fenced bash under `## <name>` in `validate.md` and runs it. The rubric is read-only, deterministic, and references only the working tree.
+
 ## routing
 
 Before picking up work, decide scope:
@@ -95,6 +97,7 @@ The human is the constructor. You multiply. Handoff fidelity lives in the files,
 Move one task at a time through plan → do → review.
 
 - **plan** — read relevant files, produce an ASCII visualization, wait for approval. No code.
+- **plan-review** — the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:\nFIX:`. Plan does not move to do without signoff. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
 - **do** — claim the task (move it to In Progress with `Claimed by:` and a timestamp), execute step by step, update `MAP.md` and the journal as reality changes.
 - **review** — run the task's `Verify:` command, read the diff, run the relevant tests, append a one-line lesson to `lessons.md`, move the task to Completed.
 
