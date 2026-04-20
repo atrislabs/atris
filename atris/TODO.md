@@ -15,13 +15,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-_(none — v3.10.0 shipped repo shape detection. Dogfooded against swarlo (Python) which exposed the `npm test` default as a real portability bug; `detectDefaultVerify` now picks pytest/cargo test/go test based on manifest files. Next horizon TBD.)_
+_(none — v3.11.0 shipped proactive scanner. Oracle's 3 prescriptions + proactive-surprise inspired by OpenClaw TED talk all delivered. Next horizon TBD.)_
 
 ---
 
 ## Backlog
 
-_(empty — target state reached for v3.10.0 shipping window)_
+_(empty — target state reached for v3.11.0 shipping window)_
 
 ## In Progress
 
