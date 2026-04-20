@@ -29,7 +29,7 @@ grep -q "plan-rejected-at-review" commands/autopilot.js
 
 # 6. Test suite green.
 node --test test/autopilot-plan-review.test.js > /tmp/atris-plan-review-suite.log 2>&1
-grep -qE "(pass|ℹ pass) 9" /tmp/atris-plan-review-suite.log
+grep -qE "(pass|ℹ pass) 13" /tmp/atris-plan-review-suite.log
 grep -qE "(fail|ℹ fail) 0" /tmp/atris-plan-review-suite.log
 ```
 
