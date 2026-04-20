@@ -10,6 +10,7 @@ const { loadBusinesses } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
+const { resolveSafeOutputDir } = require('../lib/workspace-safety');
 
 function pruneEmptyParentDirs(filePath, stopDir) {
   let current = path.dirname(filePath);
@@ -163,21 +164,43 @@ async function pullBusiness(slug) {
   }
   const timeoutMs = timeoutSec * 1000;
 
-  // Determine output directory
+  // Determine output directory.
+  //
+  // We only reuse the current working directory when we can prove it's the
+  // correct workspace for THIS business — i.e. it has a `.atris/business.json`
+  // whose slug matches `slug`. Any other signal (a stray `atris/` folder, a
+  // business.json for a different business, etc.) is NOT enough: pulling
+  // atris-labs-1 on top of a pallet workspace would mix two businesses into
+  // one directory and write pallet's manifest over atris-labs-1's (or vice
+  // versa), causing the next sync to do strange things.
+  //
+  // Fallback: create a fresh ./{slug}/ subdir. Always safe — even if cwd is
+  // $HOME or /tmp, we land in a dedicated subfolder.
   const intoIdx = process.argv.indexOf('--into');
   let outputDir;
   if (intoIdx !== -1 && process.argv[intoIdx + 1]) {
     outputDir = path.resolve(process.argv[intoIdx + 1]);
-  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
-    // Inside a pulled workspace — pull into current dir (no nesting)
-    outputDir = process.cwd();
-  } else if (fs.existsSync(path.join(process.cwd(), 'atris')) && fs.statSync(path.join(process.cwd(), 'atris')).isDirectory()) {
-    // Inside an atris init'd workspace — merge business into current dir
-    outputDir = process.cwd();
   } else {
-    // Default: ./{slug}/ in current directory
-    outputDir = path.join(process.cwd(), slug);
+    const bizFile = path.join(process.cwd(), '.atris', 'business.json');
+    let cwdMatchesSlug = false;
+    if (fs.existsSync(bizFile)) {
+      try {
+        const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
+        const cwdSlug = biz.slug || biz.name;
+        cwdMatchesSlug = cwdSlug === slug;
+      } catch {
+        // Corrupt business.json — ignore, treat as no match.
+      }
+    }
+    outputDir = cwdMatchesSlug ? process.cwd() : path.join(process.cwd(), slug);
   }
+
+  // Auto-relocate if the resolved outputDir is dangerous ($HOME, /, /Users,
+  // system dirs, reserved home folders). Non-technical users shouldn't have
+  // to know about mkdir/cd — atris picks a safe subdir and tells them.
+  // Paired with the manifest-scoped sweep below, this makes it impossible
+  // for a stray cwd to cause atris to delete user files.
+  ({ dir: outputDir } = resolveSafeOutputDir(outputDir, { slug, op: 'pull into' }));
 
   // Resolve business ID — always refresh from API to avoid stale workspace_id
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -564,14 +587,27 @@ async function pullBusiness(slug) {
   }
   if (force) {
     const remotePathSet = new Set(Object.keys(remoteFiles));
+
+    // SAFETY: only sweep files atris previously wrote (recorded in the
+    // manifest). Local-only files that were never on cloud are the user's
+    // own — atris didn't put them there, atris doesn't delete them. This
+    // makes it impossible for a stray cwd (e.g. $HOME) to cause atris to
+    // wipe ~/Library, ~/Downloads, etc.
+    //
+    // If there's no prior manifest (first pull), there's nothing to sweep —
+    // threeWayCompare already handled newRemote/conflicts/newLocal, and we
+    // have no basis for claiming ownership of any local-only file.
+    const managedPaths = manifest && manifest.files ? Object.keys(manifest.files) : [];
+    const sweepCandidates = managedPaths.filter(isInScope).filter((p) => localFiles[p]);
     const inScopeLocal = Object.keys(localFiles).filter(isInScope);
+
     if (remotePathSet.size === 0 && inScopeLocal.length > 0) {
       console.log('');
       console.log('  ⚠ Cloud reported zero files but local has in-scope content. Refusing to sweep.');
       console.log('    This usually means the snapshot endpoint glitched. Try again,');
       console.log('    or run `atris align --hard` if you really want to nuke local.');
     } else {
-      for (const p of inScopeLocal) {
+      for (const p of sweepCandidates) {
         if (remotePathSet.has(p)) continue;
         if (SERVER_HIDDEN_BASENAMES.has(basename(p))) continue;
         const localPath = path.join(outputDir, p.replace(/^\//, ''));

@@ -28,6 +28,7 @@ const { loadBusinesses, saveBusinesses } = require('./business');
 const SKIP_DIRS = new Set([
   'node_modules', '__pycache__', '.git', 'venv', '.venv',
   'lost+found', '.cache', '.atris', '.claude', 'default',
+  'Library', 'Applications', 'System',
 ]);
 
 const SKIP_FILES = new Set(['.DS_Store', 'Thumbs.db']);
