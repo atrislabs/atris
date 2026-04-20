@@ -1,8 +1,8 @@
 ---
-last_compiled: 2026-04-08
+last_compiled: 2026-04-20
 sources:
   - commands/member.js
-  - bin/atris.js
+  - bin/atris.js:430 (knownCommands dispatch)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---

@@ -15,13 +15,13 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-_(none — boundary. `typed-lessons` endgame shipped in v3.8.0. Next horizon pending; likely `three-state-ledger` (observed→attempted→resolved transitions) or `repo-shape-manifest` per oracle 2026-04-20.)_
+_(none — `wiki-staleness-sweep` shipped in v3.9.1. Workspace reports clean: 0 stale pages, 0 broken MAP refs, 0 stale tasks. Next horizon likely `repo-shape-manifest` (oracle #3) or dogfood against a second repo — pending direction.)_
 
 ---
 
 ## Backlog
 
-_(empty — target state reached for v3.9.0 shipping window)_
+_(empty — target state reached for v3.9.1 shipping window)_
 
 ## In Progress
 
@@ -35,5 +35,9 @@ _(empty — target state reached for v3.9.0 shipping window)_
   - T30 — `parseLessons` + `loadLessonMetadata` + `runLessonDetector` added to `commands/autopilot.js`. 12 new tests in `test/typed-lessons.test.js`.
   - T31 — `isLessonResolved` runs detector when sidecar has one; legacy grep is the fallback (`isLessonResolvedLegacy`). Never auto-promotes prose lessons to resolved.
   - T32 — `atris/lessons.json` sidecar shipped with 4 real entries (2 resolved detectors, 2 observed process rules). Remaining 30+ legacy lessons stay prose-only and continue to work via fallback.
+- **T40–T47 (shipped in v3.9.1):** wiki-staleness-sweep endgame
+  - 8 feature/wiki pages refreshed with current file:line source refs and `last_compiled: 2026-04-20`.
+  - Dogfood found `checkPageStaleness` parser bug: trailing `(annotation)` and `:line-range` suffixes weren't stripped before `fs.statSync`, causing false "missing" reports. Fixed; 5 new tests in `test/staleness-parser.test.js`.
+  - `atris clean --dry-run` now reports: 0 stale tasks, 0 unhealable MAP refs, 0 stale wiki pages. Target state ✓.
 
 ---
