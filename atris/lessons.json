@@ -14,14 +14,16 @@
     "scope": "atris-cli",
     "applies_to": ["commands/clean.js"],
     "detector": "grep -q 'path.isAbsolute' commands/clean.js",
-    "status": "resolved"
+    "status": "resolved",
+    "last_detected": "2026-04-20"
   },
 
   "benchmark-prompt-paths": {
     "scope": "atris-cli",
     "applies_to": ["test/experiments.test.js"],
     "detector": "grep -q 'assert.match(prompt' test/experiments.test.js",
-    "status": "resolved"
+    "status": "resolved",
+    "last_detected": "2026-04-20"
   },
 
   "map-line-drift": {
