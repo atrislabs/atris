@@ -418,7 +418,7 @@ if (command === 'help' || command === '--help' || command === '-h') {
 
 // Core command handlers — loaded eagerly (used by interactiveEntry default path)
 const { initAtris: initCmd } = require('../commands/init');
-const { syncAtris: syncCmd } = require('../commands/sync');
+const { syncAtris: syncCmd, syncAtrisAll: syncAllCmd } = require('../commands/sync');
 const { logAtris: logCmd } = require('../commands/log');
 const { activateAtris: activateCmd } = require('../commands/activate');
 const { statusAtris: statusCmd } = require('../commands/status');
@@ -798,7 +798,15 @@ if (command === 'init') {
 } else if (command === 'activate') {
   activateCmd();
 } else if (command === 'update' || command === 'sync') {
-  syncCmd();
+  if (process.argv.includes('--all')) {
+    const dryRun = process.argv.includes('--dry-run');
+    const force = process.argv.includes('--force') || process.argv.includes('--yes') || process.argv.includes('-y');
+    Promise.resolve(syncAllCmd({ dryRun, force }))
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  } else {
+    syncCmd();
+  }
 } else if (command === 'upgrade') {
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat') {
@@ -1003,6 +1011,13 @@ if (command === 'init') {
   const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
   require('../commands/clean').cleanAtris({ dryRun });
 } else if (command === 'verify') {
+  const sectionIdx = process.argv.indexOf('--section');
+  if (sectionIdx > 0 && process.argv[sectionIdx + 1]) {
+    const slug = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
+    const section = process.argv[sectionIdx + 1];
+    const code = require('../commands/verify').verifyRubric(slug, section);
+    process.exit(code);
+  }
   const taskId = process.argv[3] || null;
   require('../commands/verify').verifyAtris(taskId);
 } else if (command === 'release') {
