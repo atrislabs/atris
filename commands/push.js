@@ -7,6 +7,7 @@ const { loadBusinesses, saveBusinesses } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
+const { assertSafeWorkspaceRoot } = require('../lib/workspace-safety');
 
 async function pushAtris() {
   const elapsedMs = startTimer();
@@ -82,6 +83,9 @@ async function pushAtris() {
   }
 
   if (!fs.existsSync(sourceDir)) { console.error(`Source not found: ${sourceDir}`); process.exit(1); }
+
+  // Refuse to walk/upload dangerous paths ($HOME, /, /Users, system dirs).
+  assertSafeWorkspaceRoot(sourceDir, { slug, op: 'push from' });
 
   // Resolve business — always refresh from API
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -292,13 +296,73 @@ async function pushAtris() {
   let pushed = 0;
   let deleted = 0;
   let skipped = [];
+  // Files we sent that the server did not confirm as written/unchanged.
+  // The /sync endpoint can silently drop files (role-based filters on the
+  // business workspace route, path-rejection inside the warm runner, etc.)
+  // and still return HTTP 200. If we don't cross-check per-file results,
+  // the CLI prints "Pushed" for files that never actually landed — and
+  // the manifest records a hash that makes the next push skip them too,
+  // losing them permanently. `failedToLand` collects those casualties so
+  // we can warn the user AND keep them out of the manifest update.
+  let failedToLand = [];
+  const landedPaths = new Set();
   let result = { ok: true };
 
+  // Server-canonical path format for the /sync endpoint: NO leading slash.
+  // The warm runner's _safe_path rejects `/atris/...` with "Absolute path
+  // outside workspace" (it only accepts paths under `/workspace/...`). All
+  // our internal bookkeeping uses a leading slash (manifest keys, localFiles
+  // keys, snapshot response paths), so we strip only at the wire.
+  const toWirePath = (p) => (p || '').replace(/^\/+/, '');
+  const fromWirePath = (p) => {
+    const s = String(p || '');
+    return s.startsWith('/') ? s : `/${s}`;
+  };
+  const wireFiles = (files) => files.map((f) => ({ path: toWirePath(f.path), content: f.content }));
+
+  // Inspect per-file results from a /sync response. Treat "written" and
+  // "unchanged" as success; everything else (including missing-from-results,
+  // which is how silent server-side drops look) is a failure.
+  const recordSyncResults = (sentFiles, response) => {
+    const resultsArr = response && response.data && Array.isArray(response.data.results)
+      ? response.data.results
+      : null;
+    const seen = new Set();
+    if (resultsArr) {
+      for (const r of resultsArr) {
+        if (!r || !r.path) continue;
+        const status = String(r.status || '').toLowerCase();
+        const canonical = fromWirePath(r.path);
+        if (status === 'written' || status === 'unchanged') {
+          landedPaths.add(canonical);
+          seen.add(canonical);
+        } else {
+          failedToLand.push({ path: canonical, status: status || 'error', error: r.error || '' });
+          seen.add(canonical);
+        }
+      }
+    } else {
+      // No results array in response — old server. Best-effort: assume
+      // everything sent landed. This preserves existing behavior when
+      // talking to a server that doesn't return per-file status.
+      for (const f of sentFiles) {
+        landedPaths.add(f.path);
+        seen.add(f.path);
+      }
+    }
+    // Any file we sent that the server didn't mention = silently dropped.
+    for (const f of sentFiles) {
+      if (!seen.has(f.path)) {
+        failedToLand.push({ path: f.path, status: 'dropped', error: 'server did not confirm write' });
+      }
+    }
+  };
+
   if (filesToPush.length > 0) {
-    // Push files to server
+    // Push files to server (strip leading slash — server requires workspace-relative paths)
     result = await apiRequestJson(
       `/business/${businessId}/workspaces/${workspaceId}/sync`,
-      { method: 'POST', token: creds.token, body: { files: filesToPush }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+      { method: 'POST', token: creds.token, body: { files: wireFiles(filesToPush) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
     );
 
     if (!result.ok) {
@@ -310,10 +374,11 @@ async function pushAtris() {
         if (allowed.length > 0) {
           const retry = await apiRequestJson(
             `/business/${businessId}/workspaces/${workspaceId}/sync`,
-            { method: 'POST', token: creds.token, body: { files: allowed }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+            { method: 'POST', token: creds.token, body: { files: wireFiles(allowed) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
           );
           if (retry.ok) {
-            pushed = allowed.length;
+            recordSyncResults(allowed, retry);
+            pushed = landedPaths.size;
           } else {
             console.error(`\n  Push failed: ${retry.errorMessage || retry.error || retry.status}`);
             await emit('access_denied', { error_detail: `403 retry failed: ${retry.status}` });
@@ -334,7 +399,8 @@ async function pushAtris() {
         process.exit(1);
       }
     } else {
-      pushed = filesToPush.length;
+      recordSyncResults(filesToPush, result);
+      pushed = landedPaths.size;
     }
   }
 
@@ -387,10 +453,15 @@ async function pushAtris() {
     if (deleteFailed.length > 10) console.log(`    ... +${deleteFailed.length - 10} more`);
   }
 
-  // Display results
+  // Display results — only for files the server confirmed as landed.
+  // A non-technical user seeing "+ atris/ideas/foo.md new file" naturally
+  // assumes foo.md is on cloud. So we only print that line when the server
+  // actually confirmed it via per-file status. Anything else goes into the
+  // loud failure block below.
   console.log('');
   for (const f of filesToPush) {
     if (skipped.includes(f)) continue;
+    if (!landedPaths.has(f.path)) continue;
     const isNew = !baseFiles[f.path];
     console.log(`  ${isNew ? '+' : '\u2191'} ${f.path.replace(/^\//, '')}  ${isNew ? 'new file' : 'updated'}`);
   }
@@ -400,6 +471,26 @@ async function pushAtris() {
   // Only print confirmed deletes (not failed ones — they were reported above)
   for (const filePath of deletedConfirmed) {
     console.log(`  x ${filePath.replace(/^\//, '')}  deleted`);
+  }
+
+  // Loud failure block — files the server silently dropped or rejected.
+  // These did NOT land on cloud even though the HTTP call returned 200.
+  if (failedToLand.length > 0) {
+    console.log('');
+    console.log(`  ⚠ ${failedToLand.length} file(s) did NOT land on cloud (server returned 200 but`);
+    console.log(`     dropped or rejected these files):`);
+    const shown = failedToLand.slice(0, 15);
+    for (const f of shown) {
+      const detail = f.error ? ` — ${f.error}` : ` (${f.status})`;
+      console.log(`    ✗ ${f.path.replace(/^\//, '')}${detail}`);
+    }
+    if (failedToLand.length > shown.length) {
+      console.log(`    ... +${failedToLand.length - shown.length} more`);
+    }
+    console.log('');
+    console.log('  Common causes: path is outside the workspace (e.g. absolute /Users/... path),');
+    console.log('  your role lacks write permission for that folder, or warm runner returned an error.');
+    console.log('  These files will appear as drift on your next push so you can retry.');
   }
 
   // Summary
@@ -414,11 +505,17 @@ async function pushAtris() {
 
   // Update manifest — mark pushed files with their new hash, drop ONLY confirmed deletes.
   // Failed deletes stay in the manifest so the next push will retry them.
+  //
+  // CRITICAL: only record manifest entries for files the server confirmed as
+  // landed (landedPaths). If we recorded the local hash for a file that the
+  // server silently dropped, the next push would compare local==manifest and
+  // skip it — the file would never land. Keeping it OUT of the manifest means
+  // the next push sees it as new/changed and retries automatically.
   const updatedFiles = { ...baseFiles };
   for (const f of filesToPush) {
-    if (!skipped.includes(f)) {
-      updatedFiles[f.path] = localFiles[f.path];
-    }
+    if (skipped.includes(f)) continue;
+    if (!landedPaths.has(f.path)) continue;
+    updatedFiles[f.path] = localFiles[f.path];
   }
   for (const filePath of deletedConfirmed) {
     delete updatedFiles[filePath];
@@ -431,7 +528,10 @@ async function pushAtris() {
   const bytesChanged = filesToPush.reduce((acc, f) => acc + (f.content ? Buffer.byteLength(f.content, 'utf8') : 0), 0);
   let finalOutcome;
   let finalDetail;
-  if (deleteFailed.length > 0) {
+  if (failedToLand.length > 0) {
+    finalOutcome = 'status_unknown';
+    finalDetail = `${failedToLand.length} file(s) silently dropped by server (statuses: ${[...new Set(failedToLand.map(f => f.status))].join(',')})`;
+  } else if (deleteFailed.length > 0) {
     finalOutcome = 'status_unknown';
     finalDetail = `${deleteFailed.length} delete(s) failed (statuses: ${[...new Set(deleteFailed.map(f => f.status))].join(',')})`;
   } else if (_rateLimitedDeletes > 0) {

@@ -693,6 +693,36 @@ async function resolveBusinessContext(token) {
   return null;
 }
 
+async function resolveBusinessContextBySlug(token, slug) {
+  if (!slug) return null;
+
+  const businesses = loadBusinesses();
+  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  if (list.ok) {
+    const match = (list.data || []).find(
+      (b) => b.slug === slug || (b.name || '').toLowerCase() === slug.toLowerCase()
+    );
+    if (match) {
+      businesses[match.slug || slug] = {
+        business_id: match.id,
+        workspace_id: match.workspace_id,
+        name: match.name,
+        slug: match.slug,
+        added_at: new Date().toISOString(),
+      };
+      saveBusinesses(businesses);
+      return {
+        slug: match.slug,
+        businessId: match.id,
+        workspaceId: match.workspace_id,
+        businessName: match.name || match.slug,
+      };
+    }
+  }
+
+  return null;
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -2288,6 +2318,7 @@ async function runComputer() {
     console.log('  local-byo       Open LOCAL BYO Claude mode; Anthropic tokens, no cloud audit');
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
+    console.log('  codeops         Open Atris CodeOps cloud workspace if your account has access');
     console.log('  --worker        Cloud worker override: claude | openai');
     console.log('  --model         Cloud model override');
     console.log('  claude|codex    Legacy local console backends');
@@ -2319,6 +2350,7 @@ async function runComputer() {
     console.log('  atris computer --cloud');
     console.log('  atris computer --cloud --worker openai --model gpt-5.4');
     console.log('  atris computer cloud');
+    console.log('  atris computer codeops');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');
@@ -2330,6 +2362,17 @@ async function runComputer() {
 
   const token = getToken();
   const ctx = await resolveBusinessContext(token);
+
+  if (sub === 'codeops') {
+    const codeopsCtx = await resolveBusinessContextBySlug(token, 'atris-codeops');
+    if (!codeopsCtx) {
+      console.error('Atris CodeOps is not available for this account.');
+      console.error('Ask an Atris CodeOps admin to add you to the atris-codeops business.');
+      return;
+    }
+    await computerChat(token, codeopsCtx, { worker: 'claude', ...cloudOptions });
+    return;
+  }
 
   if (sub === '--cloud' || sub === 'cloud') {
     await computerChat(token, ctx, cloudOptions);
