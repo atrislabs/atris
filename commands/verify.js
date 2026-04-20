@@ -479,6 +479,55 @@ function checkMapForFiles(atrisDir, changes) {
   return { documented: documented >= fileChanges.length / 2 };
 }
 
+/**
+ * atris verify <slug> --section <name>
+ *
+ * Extract the first fenced bash block under "## <name>" in
+ * atris/features/<slug>/validate.md and execute it. Returns the exit code
+ * from bash. Used as the machine-checkable Verify command in TODO.md tasks.
+ *
+ * Contract (per atris.md): the rubric must be read-only, deterministic, and
+ * reference only the working tree. The command fails loudly when the rubric
+ * or section is missing — that prevents silent "trivial Verify" regressions.
+ */
+function verifyRubric(slug, section, opts = {}) {
+  const cwd = opts.cwd || process.cwd();
+  if (!slug || !section) {
+    console.error('Usage: atris verify <feature-slug> --section <name>');
+    return 2;
+  }
+  const validateFile = path.join(cwd, 'atris', 'features', slug, 'validate.md');
+  if (!fs.existsSync(validateFile)) {
+    console.error(`✗ No rubric at ${path.relative(cwd, validateFile)}`);
+    return 2;
+  }
+  const content = fs.readFileSync(validateFile, 'utf8');
+  // Match "## <section>" (case-insensitive, anchored), skipping optional
+  // prose until the first ```bash or ```sh fence. Extract until the closing ```.
+  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `^##\\s+${escaped}\\s*$[\\s\\S]*?\\n\`\`\`(?:bash|sh)?\\s*\\n([\\s\\S]*?)\\n\`\`\``,
+    'mi'
+  );
+  const match = content.match(pattern);
+  if (!match) {
+    console.error(`✗ No fenced bash block under "## ${section}" in ${path.relative(cwd, validateFile)}`);
+    return 2;
+  }
+  const script = match[1];
+  const os = require('os');
+  const tmpFile = path.join(os.tmpdir(), `atris-verify-${Date.now()}-${Math.floor(Math.random() * 1e6)}.sh`);
+  fs.writeFileSync(tmpFile, `#!/usr/bin/env bash\nset -e\n${script}\n`);
+  fs.chmodSync(tmpFile, 0o755);
+  try {
+    const proc = spawnSync('bash', [tmpFile], { cwd, stdio: opts.silent ? 'pipe' : 'inherit' });
+    return typeof proc.status === 'number' ? proc.status : 1;
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+}
+
 module.exports = {
-  verifyAtris
+  verifyAtris,
+  verifyRubric
 };

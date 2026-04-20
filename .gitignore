@@ -40,6 +40,11 @@ atris/features/*
 !atris/features/README.md
 !atris/features/endstate/
 !atris/features/endstate/**
+# Contract features: their validate.md rubrics are load-bearing; must travel with the code.
+!atris/features/verify-falsifiability/
+!atris/features/verify-falsifiability/**
+!atris/features/plan-review-by-validator/
+!atris/features/plan-review-by-validator/**
 # Legacy location (deprecated)
 docs/features/
 
