@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execSync, execFileSync, spawnSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
@@ -731,6 +731,252 @@ function verifyJudgeIntegrity() {
   return { ok: actual === REWARD_CHECKSUM, expected: REWARD_CHECKSUM, actual };
 }
 
+/**
+ * Build the validator's plan-review prompt. Fresh context — the validator
+ * reads the plan output and the contract fields as if it has never seen them.
+ */
+function buildPlanReviewPrompt(context, planOutput) {
+  const files = Array.isArray(context.files) && context.files.length
+    ? context.files.join(', ')
+    : 'none declared in context';
+  return `You are the validator in plan-review mode. You have NOT seen the planning context — read everything fresh.
+
+Task: "${context.task}"
+Kind: ${context.kind || 'unknown'}
+Files declared in context: ${files}
+
+Plan output from the navigator:
+---
+${planOutput || '(no plan output captured)'}
+---
+
+Read from disk:
+- atris/atris.md (the workspace protocol — operating rules and task shape)
+- atris/TODO.md (find this task; inspect Files, Exit, Verify, After, Rollback)
+- atris/lessons.md (recent failures — last 20 lines)
+
+Decide if the plan is safe to execute. Check:
+1. Verify points at a falsifiable rubric or test (not \`true\`, \`echo ok\`, or similar).
+   Prefer \`atris verify <slug> --section <name>\`.
+2. Files are explicitly declared (not empty, not vague).
+3. Rollback is named (commit, checkpoint, or \`git revert\`).
+4. The plan's claims match the declared Task fields.
+5. Nothing in lessons.md contradicts this plan.
+
+Output EXACTLY one of these two formats as the LAST thing in your response. No preamble before the verdict line.
+
+SIGNOFF: <one sentence on why the plan is safe>
+
+or
+
+REJECT: <one sentence on what is wrong>
+FIX: <one sentence on what must change>
+`;
+}
+
+/**
+ * Parse the validator's verdict line(s) from their output. Returns one of:
+ *   { verdict: 'SIGNOFF', reason }
+ *   { verdict: 'REJECT', reason, fix }
+ * If neither format is present, treats it as a REJECT with a parse-fail reason.
+ */
+function parseVerdict(output) {
+  const text = String(output || '');
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  // Scan from the end backwards — the verdict is supposed to be LAST.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (/^SIGNOFF\s*:/i.test(line)) {
+      return { verdict: 'SIGNOFF', reason: line.replace(/^SIGNOFF\s*:\s*/i, ''), fix: '' };
+    }
+    if (/^REJECT\s*:/i.test(line)) {
+      const reason = line.replace(/^REJECT\s*:\s*/i, '');
+      // Fix line is usually immediately after REJECT.
+      const fixLine = lines.slice(i).find((l) => /^FIX\s*:/i.test(l));
+      const fix = fixLine ? fixLine.replace(/^FIX\s*:\s*/i, '') : '';
+      return { verdict: 'REJECT', reason, fix };
+    }
+  }
+  return {
+    verdict: 'REJECT',
+    reason: 'validator output did not contain SIGNOFF or REJECT',
+    fix: 'ensure validator emits machine-parseable verdict as the last line',
+  };
+}
+
+/**
+ * Default executor for plan-review: spawn a fresh claude -p call.
+ * Kept thin so tests can inject a stub via options.planReviewExec.
+ */
+function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
+  const tmpFile = path.join(cwd, '.autopilot-plan-review.tmp');
+  fs.writeFileSync(tmpFile, prompt);
+  try {
+    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Grep,Glob"`;
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    const output = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout,
+      stdio: 'pipe',
+      maxBuffer: 10 * 1024 * 1024,
+      env,
+    });
+    return output || '';
+  } catch (err) {
+    if (err.stdout) return err.stdout;
+    throw err;
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+}
+
+/**
+ * Default executor for codex: spawn `codex` with the prompt via stdin.
+ * Users can override with ATRIS_CODEX_CMD env var; tests inject via options.codexExec.
+ */
+function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
+  const cmd = process.env.ATRIS_CODEX_CMD || 'codex';
+  const proc = spawnSync(cmd, ['-p', prompt], {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    stdio: 'pipe',
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (proc.status !== 0 && !proc.stdout) {
+    throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
+  }
+  return proc.stdout || '';
+}
+
+/**
+ * Check if codex is available on PATH (or ATRIS_CODEX_CMD points to something runnable).
+ * Kept simple: `which` probe. Tests override via options.hasCodex.
+ */
+function hasCodex() {
+  const cmd = process.env.ATRIS_CODEX_CMD || 'codex';
+  try {
+    const r = spawnSync('which', [cmd], { stdio: 'pipe' });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run plan-review: the validator (and optionally codex) read the plan and
+ * decide if it is safe to execute. Returns { verdict, reason, fix, signers, notes }.
+ *
+ * Codex is invoked only when the task explicitly opts in:
+ *   - env ATRIS_USE_CODEX=1, or
+ *   - context.tags includes 'codex', or
+ *   - context.kind === 'endgame' AND context.tags includes 'gray' or 'high-risk'
+ *
+ * If codex is opted-in but not installed, we skip gracefully and surface a note.
+ * If both signers run and disagree, verdict is REJECT with both opinions in reason.
+ */
+function runPlanReview({ cwd, context, planOutput, options = {} }) {
+  const prompt = buildPlanReviewPrompt(context, planOutput);
+  const tags = Array.isArray(context.tags) ? context.tags : [];
+
+  // Primary signer: validator.
+  const validatorExec = options.planReviewExec || defaultPlanReviewExecutor;
+  const validatorOutput = validatorExec(prompt, { cwd, role: 'validator' });
+  const primary = parseVerdict(validatorOutput);
+
+  // Codex: opted in explicitly, not inferred.
+  const codexOptIn =
+    process.env.ATRIS_USE_CODEX === '1' ||
+    tags.includes('codex') ||
+    tags.includes('gray') ||
+    tags.includes('high-risk');
+
+  if (!codexOptIn) {
+    return { ...primary, signers: ['validator'] };
+  }
+
+  const codexCheck = options.hasCodex != null ? options.hasCodex : hasCodex();
+  if (!codexCheck) {
+    return {
+      ...primary,
+      signers: ['validator'],
+      notes: 'codex was requested but not on PATH; skipped gracefully',
+    };
+  }
+
+  const codexExec = options.codexExec || defaultCodexExecutor;
+  let codexOutput;
+  try {
+    codexOutput = codexExec(prompt, { cwd, role: 'codex' });
+  } catch (err) {
+    return {
+      ...primary,
+      signers: ['validator'],
+      notes: `codex invocation failed: ${err.message}; falling back to single signer`,
+    };
+  }
+  const codex = parseVerdict(codexOutput);
+
+  if (primary.verdict === 'SIGNOFF' && codex.verdict === 'SIGNOFF') {
+    return {
+      verdict: 'SIGNOFF',
+      reason: primary.reason,
+      fix: '',
+      signers: ['validator', 'codex'],
+    };
+  }
+
+  // Any disagreement or joint reject → halt with both opinions surfaced.
+  return {
+    verdict: 'REJECT',
+    reason: `Split verdict. validator=${primary.verdict} (${primary.reason || 'no reason'}); codex=${codex.verdict} (${codex.reason || 'no reason'}).`,
+    fix: primary.fix || codex.fix || 'reconcile the two signers before re-planning',
+    signers: ['validator', 'codex'],
+    split: true,
+  };
+}
+
+/**
+ * Append a plan-review rejection to today's journal under ## Notes.
+ * Intentionally does NOT write to lessons.md — rejections only become lessons
+ * if a human spots a reusable failure pattern.
+ */
+function appendPlanRejection(cwd, context, review) {
+  try {
+    // Compute the journal path from the passed cwd so tests and isolated
+    // workspaces both work. getLogPath() resolves against process.cwd()
+    // which isn't always the task's workspace.
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const logFile = path.join(cwd, 'atris', 'logs', String(year), `${year}-${month}-${day}.md`);
+    if (!fs.existsSync(logFile)) return;
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const signers = (review.signers || []).join(' + ');
+    const block =
+      `\n### Plan rejected — ${now}\n\n` +
+      `**Task:** ${context.task}\n` +
+      `**Signers:** ${signers}\n` +
+      `**Reason:** ${review.reason}\n` +
+      (review.fix ? `**Fix:** ${review.fix}\n` : '') +
+      (review.notes ? `**Notes:** ${review.notes}\n` : '');
+    let content = fs.readFileSync(logFile, 'utf8');
+    const notesIdx = content.indexOf('## Notes');
+    if (notesIdx === -1) {
+      content = content.replace(/\s*$/, '') + `\n\n## Notes\n${block}\n`;
+    } else {
+      const eol = content.indexOf('\n', notesIdx);
+      content = content.slice(0, eol + 1) + block + content.slice(eol + 1);
+    }
+    fs.writeFileSync(logFile, content);
+  } catch {
+    // journaling must never crash the tick
+  }
+}
+
 function runTaskOnce(context, options = {}) {
   const { verbose = false, cwd = process.cwd() } = options;
 
@@ -769,10 +1015,92 @@ function runTaskOnce(context, options = {}) {
     };
   }
 
-  for (const phase of ['plan', 'do', 'review']) {
+  // Falsifiability gate (endgame + explicit Verify only).
+  // Run Verify BEFORE the work. If it passes, the rubric is trivial or the
+  // task is already done — either way, halt. This is the keystone that makes
+  // Verify load-bearing. The cmd is captured here and reused post-execute so
+  // an agent cannot swap the rubric mid-tick.
+  const skipFalsifiability = options.skipFalsifiability === true;
+  if (!skipFalsifiability && verifyResult.explicit && context.kind === 'endgame' && verifyCmd) {
+    try {
+      execSync(verifyCmd, { cwd, stdio: 'pipe', timeout: 60000 });
+      writeLesson(cwd, 'verify-not-falsifiable', 'fail',
+        `Verify \`${verifyCmd}\` passed before work started on "${context.task}". Either the rubric is trivial or the task is already done. Tick halted.`);
+      return {
+        outcome: 'halted',
+        reason: 'verify-not-falsifiable',
+        phaseResults: {},
+        elapsedSeconds: 0,
+        verifyRan: true,
+        verifyPass: false,
+      };
+    } catch {
+      // Pre-verify failed — good, the rubric is falsifiable. Proceed.
+    }
+  }
+
+  // Phase: plan
+  {
     const t0 = Date.now();
-    const result = executePhaseDetailed(phase, context, options);
-    phaseResults[phase] = {
+    const result = (options.phaseExec || executePhaseDetailed)('plan', context, options);
+    phaseResults.plan = {
+      prompt: result.prompt,
+      output: result.output || '',
+      elapsedSeconds: Math.round((Date.now() - t0) / 1000),
+    };
+  }
+
+  // Phase: plan-review — validator reads the plan fresh and signs off or rejects.
+  // Can be skipped via options.skipPlanReview (tests only). Codex is optional,
+  // opt-in via env var / tags. On REJECT, the tick halts and the rejection is
+  // journaled; lessons.md is NOT touched (only promoted lessons go there).
+  if (!options.skipPlanReview) {
+    const t0 = Date.now();
+    const review = runPlanReview({
+      cwd,
+      context,
+      planOutput: phaseResults.plan.output,
+      options,
+    });
+    const elapsed = Math.round((Date.now() - t0) / 1000);
+    phaseResults['plan-review'] = {
+      output:
+        `${review.verdict}: ${review.reason || ''}` +
+        (review.fix ? `\nFIX: ${review.fix}` : '') +
+        (review.notes ? `\n(${review.notes})` : ''),
+      signers: review.signers,
+      elapsedSeconds: elapsed,
+    };
+
+    if (review.verdict === 'REJECT') {
+      appendPlanRejection(cwd, context, review);
+      return {
+        outcome: 'halted',
+        reason: 'plan-rejected-at-review',
+        phaseResults,
+        elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+        verifyRan: false,
+        verifyPass: false,
+      };
+    }
+  }
+
+  // Phase: do
+  {
+    const t0 = Date.now();
+    const result = (options.phaseExec || executePhaseDetailed)('do', context, options);
+    phaseResults.do = {
+      prompt: result.prompt,
+      output: result.output || '',
+      elapsedSeconds: Math.round((Date.now() - t0) / 1000),
+    };
+  }
+
+  // Phase: review
+  {
+    const t0 = Date.now();
+    const result = (options.phaseExec || executePhaseDetailed)('review', context, options);
+    phaseResults.review = {
       prompt: result.prompt,
       output: result.output || '',
       elapsedSeconds: Math.round((Date.now() - t0) / 1000),
@@ -2147,7 +2475,10 @@ module.exports = {
   proposeCandidateHorizons,
   recordTickCommit,
   regressionCheck,
+  runPlanReview,
   runTaskOnce,
+  buildPlanReviewPrompt,
+  parseVerdict,
   scoreEndgameCandidates,
   suggestNextTask,
   writeLesson

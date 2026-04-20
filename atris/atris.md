@@ -1,221 +1,187 @@
-# atris.md
+# atris
 
-> Drop this file anywhere. AI agent team activates.
+Atris exists because agents make work fast but unsafe without memory, ownership,
+and rollback. This file is the workspace protocol: read reality from disk, choose
+the right scope, claim work before changing it, verify before calling it done, and
+leave a trail another agent or human can trust.
 
----
+## activate
 
-## ACTIVATE
+On session start, before responding:
 
-**STOP. When you read this or hear "atris activate", do this immediately:**
+1. Read:
+   - `atris/logs/YYYY/YYYY-MM-DD.md` — today's journal
+   - `atris/MAP.md` — navigation
+   - `atris/wiki/STATUS.md` if present — current memory snapshot
 
-1. Load context (ONE time, remember for session):
-   - `atris/logs/YYYY/YYYY-MM-DD.md` (today's journal)
-   - `atris/MAP.md` (navigation overview)
-   - `atris/wiki/STATUS.md` (wiki health + next ingest targets, if present)
-   - `atris/team/*.md` (all agent specs)
-
-2. Output this EXACT box:
+2. Show this box, then ask what to work on if no task was already given.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ ATRIS                                            [STAGE]    │
+│ atris                                              [stage]  │
 ├─────────────────────────────────────────────────────────────┤
-│ RECENT                                                      │
-│ • [2-3 items from Completed ✅]                             │
+│ recent                                                      │
+│ • [2-3 items from Completed]                                │
 ├─────────────────────────────────────────────────────────────┤
-│ NOW                                                         │
-│ ► [from In Progress 🔄] ····················· [in progress] │
+│ now                                                         │
+│ ► [from In Progress] ····················· [in progress]    │
 │   [from Backlog] ····························── [next]      │
 ├─────────────────────────────────────────────────────────────┤
-│ INBOX ([count])                                             │
-│ • [from Inbox section]                                      │
+│ inbox ([count])                                             │
+│ • [from Inbox]                                              │
 └─────────────────────────────────────────────────────────────┘
-
-Stage: PLAN → do → review   (capitalize current stage)
 ```
 
-3. Then ask: "What would you like to work on?"
+If a task was already given, show the box and proceed with that task.
 
-**DO NOT explain. DO NOT summarize. Output the box, then ask.**
+## operating rules
 
----
+You can move fast. You do not get to move blindly.
 
-## NEXT
+Before changing anything, state:
+- the goal
+- the files or systems in scope
+- what "done" means
+- how it will be checked
+- what happens if it fails
 
-**STOP. When you hear "atris next", do this immediately:**
+Then:
+- do not execute if another agent owns the same task or files
+- do not call something complete without verification
+- do not take irreversible actions without approval from the human
+- do not hide state outside markdown, logs, diffs, or the journal
+- do not edit the rules that judge you — the reward config, the authority policy, or this file
 
-1. Read today's journal
+If you cannot honor these rules, stop, write why in the journal, and ask the human before continuing.
 
-2. Check state and progress through stages:
+Labels used below:
+- `guarded` — checked by code or a pre-commit hook; bypassing is a bug
+- `expected` — convention; honor it or stop
 
-   **No task in progress?**
-   - If Backlog has task → move to In Progress, stage = PLAN
-   - Else if Inbox has items → ask "Convert [item] to task?"
-   - Else → go to BRAINSTORM
+## task shape
 
-   **Task in progress?** Progress to next stage:
-   - **PLAN** → Show ASCII plan, wait for approval → next stage = DO
-   - **DO** → Execute the work → next stage = REVIEW
-   - **REVIEW** → Run validator checks (test, verify, quality check)
-     - If passes → move to Completed, show DONE
-     - If fails → show issues, stay in DO
+Every task in `TODO.md`:
 
-3. Output this EXACT box:
+```
+- **T#:** <title> [tier] [kind]
+  **Owner:** <slug>
+  **Files:** <paths touched>
+  **Exit:** <observable done condition>
+  **Verify:** <shell command, exits 0 on success>
+  **After:** <T# deps or none>
+  **Rollback:** <commit/checkpoint or "none (gray)">
+```
+
+| Field | Meaning | Enforcement |
+|---|---|---|
+| tier | `agent` proceeds, `gray` queues for approval, `human` never attempted by you | guarded |
+| kind | `explore` for ambiguous, `execute` for precise | expected |
+| Files | declared upfront; becomes the file lock | guarded (Swarlo claim) |
+| Verify | must exit 0 for the task to be complete | guarded (tick halts if missing) |
+| Rollback | how to undo; `git revert <sha>` for most tasks | expected |
+
+Deeper project work uses `atris/features/<slug>/` with `idea.md` (plan), `build.md` (steps), `validate.md` (checks). The task points at the triptych; the triptych holds the long form.
+
+## routing
+
+Before picking up work, decide scope:
+- single project → route to that project's `atris/team/` and `TODO.md`
+- crosses projects → route to `atris/team/cross-project-architect/` and plan the dependency order first
+
+The human is the constructor. You multiply. Handoff fidelity lives in the files, not in context.
+
+## next
+
+Move one task at a time through plan → do → review.
+
+- **plan** — read relevant files, produce an ASCII visualization, wait for approval. No code.
+- **do** — claim the task (move it to In Progress with `Claimed by:` and a timestamp), execute step by step, update `MAP.md` and the journal as reality changes.
+- **review** — run the task's `Verify:` command, read the diff, run the relevant tests, append a one-line lesson to `lessons.md`, move the task to Completed.
+
+State the next stage:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ NEXT: [task name]                              [PLAN|DO|REVIEW]
-│                                                             │
-│ [1-2 sentences: what you'll do in this stage]               │
+│ next: [task]                                  [plan|do|review]
+│ [1-2 sentences on this stage]                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-4. Wait for input. User says anything → execute current stage → update journal.
+If the queue is empty, suggest three ideas from `MAP.md`, the journal, or product gaps. No extra reads. Three max.
 
-5. After REVIEW passes, show:
+## sweep
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ DONE: [task name]                                   [✓ REVIEWED] │
-│                                                             │
-│ [1-2 sentences: what was done + review result]              │
-└─────────────────────────────────────────────────────────────┘
-```
+Periodically, and before closing an endgame, clean:
+- stale tasks (claimed >3 days, never finished)
+- broken `MAP.md` refs (auto-heal where possible, flag the rest)
+- stale wiki pages (source newer than `last_compiled`)
+- orphan pages (unlinked from anywhere)
+- empty placeholder sections
 
-**Every task goes through PLAN → DO → REVIEW. No shortcuts.**
+`atris clean` runs this. `atris clean --dry-run` previews.
 
----
-
-## WORKFLOW
+## journal
 
 ```
-scout → plan → do → review
-```
+## Completed
+- **C1:** Description [reviewed]
 
-- **SCOUT** — Read relevant files first. Understand before you act. Report what you found.
-- **PLAN** — ASCII visualization, get approval, NO code yet
-- **DO** — Execute step-by-step, update journal
-- **REVIEW** — Test, validate, clean up, delete completed tasks
-
----
-
-## TASK RULES
-
-Every task must follow these rules. No exceptions.
-
-**One job per task.** If a task touches more than 2-3 files, break it down. If you can't describe "done" in one sentence, it's too big.
-
-**Clear exit condition.** Every task states what "done" looks like. Not "improve auth" — instead: "Add session check to upload handler. Done when: unauthenticated requests return 401 and test passes."
-
-**Tag every task:**
-- `[explore]` — Ambiguous. Needs reading, research, judgment. Output is understanding.
-- `[execute]` — Precise. Route is clear. Just do it. Output is code or artifact.
-
-**Explore before execute.** When starting a new area of work, the first tasks should be `[explore]`. Read the files. Map the space. Report what you found. Then plan `[execute]` tasks based on what you learned.
-
-**Sequence matters.** Order tasks so each one builds context for the next. Early tasks should teach you about the problem. Later tasks use that knowledge.
-
----
-
-## AGENTS
-
-| Command | Agent | Guardrail |
-|---------|-------|-----------|
-| `atris plan` | navigator | Plans only, NO code |
-| `atris do` | executor | Builds only, NO unplanned work |
-| `atris review` | validator | Checks only, NO new features |
-| `atris brainstorm` | brainstormer | Ideas only, NO code |
-
-`atris next` = auto-selects agent based on journal state
-
-Specs loaded at activate from `team/*.md`
-
----
-
-## BRAINSTORM
-
-**When queue empty (no backlog, no inbox):**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ BRAINSTORM                                           [PLAN] │
-├─────────────────────────────────────────────────────────────┤
-│ [1 sentence: what this project is]                          │
-│                                                             │
-│ Ideas:                                                      │
-│ 1. [suggestion based on MAP.md]                             │
-│ 2. [suggestion based on journal patterns]                   │
-│ 3. [suggestion based on product gaps]                       │
-├─────────────────────────────────────────────────────────────┤
-│ Pick one, remix, or "something else"                        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**NO extra reads. Use loaded context. 3 ideas max.**
-
----
-
-## INDEX
-
-| File | Purpose |
-|------|---------|
-| `MAP.md` | Where is X? (navigation) |
-| `TODO.md` | Task queue (target: 0) |
-| `logs/YYYY/MM-DD.md` | Journal (daily) |
-| `wiki/STATUS.md` | Local project memory health |
-| `wiki/index.md` | Local knowledge index |
-| `PERSONA.md` | Communication style |
-| `team/` | Agent behaviors |
-| `atrisDev.md` | Full spec (reference) |
-
----
-
-## JOURNAL FORMAT
-
-```
-## Completed ✅
-- **C1:** Description [✓ REVIEWED]
-
-## In Progress 🔄
+## In Progress
 - **T1:** Description
-  **Stage:** PLAN | DO | REVIEW
-  **Claimed by:** [Name] at [Time]
+  **Stage:** plan | do | review
+  **Claimed by:** <agent> at <ISO timestamp>
 
 ## Backlog
 - **T2:** Description
 
 ## Inbox
 - **I1:** Description
+
+## Notes
+[timestamped lines — one per discovery, decision, or tick]
 ```
 
+Context is a cache. Disk is truth. Route discoveries as they happen:
+
+| You discover... | Write to... |
+|---|---|
+| a code location | `MAP.md` (file:line) |
+| a new task | `TODO.md` |
+| a decision or tradeoff | journal `## Notes` |
+| something learned | `lessons.md` (one line) |
+| work finished | journal `## Completed` (C#) |
+| a source changed | re-check pages that reference it |
+
+Do not batch. Nothing important should live only in memory.
+
+## failure smells
+
+If you notice these, stop and flag — do not continue:
+- **loop** — the same suggestion fires tick after tick, nothing changes on disk
+- **drift** — `MAP.md` file:line refs no longer match the code
+- **stale task** — a backlog task references a file or symbol that no longer exists
+- **hidden side effect** — an action changed external state (email sent, money moved, deploy) without a queued approval
+- **unverifiable completion** — a task marked complete without a `Verify:` command that actually ran
+
+Each has real examples in `lessons.md`. Before nontrivial execution, read the relevant recent lessons.
+
+## upkeep
+
+Pages that summarize or reference other files declare their sources in YAML frontmatter:
+
+    ---
+    last_compiled: YYYY-MM-DD
+    sources:
+      - path/to/source1
+      - path/to/source2
+    ---
+
+If any source was modified after `last_compiled`, the page is stale. Re-read the sources, update the page, bump `last_compiled`.
+
+Compounding: when you answer a question that required synthesis across pages, file the answer back — as a new page or into an existing one. Explorations accumulate.
+
+Linting during review catches stale pages, orphans, contradictions, and concepts mentioned but missing their own page.
+
 ---
 
-## PERSISTENCE
-
-Context window = cache. Disk = truth. Route discoveries as they happen.
-
-| You discover...     | Write to...          | Format               |
-|---------------------|----------------------|----------------------|
-| Code location       | MAP.md               | file:line reference  |
-| New task            | TODO.md              | Task + exit condition |
-| Decision / tradeoff | Journal → Notes      | Timestamped line     |
-| Durable project knowledge | wiki/               | page update + STATUS refresh |
-| Something learned   | lessons.md           | One-line lesson      |
-| Work finished       | Journal → Completed  | C#: description      |
-
-Don't batch. Don't wait for session end. Nothing important should live only in-context.
-
----
-
-## RULES
-
-- 3-4 sentences max
-- ASCII visualization before any plan
-- Check MAP.md before touching code
-- Update journal after completing work
-- Delete tasks when done (target: 0)
-- Persist as you go (see PERSISTENCE)
-
----
-
-*Full spec and setup instructions: atrisDev.md*
+*Canonical copy: workspace root `atris.md`. Project copies are distributed; `atris update` syncs them. Full spec: `atrisDev.md`.*
