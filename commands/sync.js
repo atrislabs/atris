@@ -701,43 +701,29 @@ function _findAtrisProjects(rootDir, maxDepth = 8) {
  * Flags: --dry-run (preview only), --yes/--force (skip confirm).
  * Skips business workspaces (they use syncWorkspaceTemplate via syncAtris).
  */
-function syncAtrisAll({ dryRun = false, force = false } = {}) {
-  const root = process.cwd();
-  const pkgRoot = path.join(__dirname, '..');
+// Canonical files shipped from the package root. Must match syncAtris's filesToSync.
+const SYNC_ALL_FILES = [
+  { source: 'atris.md', target: 'atris.md' },
+  { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
+  { source: 'PERSONA.md', target: 'PERSONA.md' },
+  { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
+  { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
+];
 
-  console.log('');
-  console.log(`Scanning ${root} for atris projects...`);
+/**
+ * Pure function: build the sync plan for every atris project under root.
+ * No console output, no writes. Returns { projects, plan } for inspection.
+ * Plan entries: { projectRoot, isBusiness, isCustomized, changes }.
+ *
+ * Exported for tests — the production syncAtrisAll wraps this.
+ */
+function buildSyncAllPlan({ root, pkgRoot, filesToSync = SYNC_ALL_FILES } = {}) {
   const projects = _findAtrisProjects(root);
-
-  if (projects.length === 0) {
-    console.log('No atris projects found under current directory.');
-    return;
-  }
-
-  // Canonical files shipped from the package root. Must match syncAtris's filesToSync.
-  const filesToSync = [
-    { source: 'atris.md', target: 'atris.md' },
-    { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
-    { source: 'PERSONA.md', target: 'PERSONA.md' },
-    { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
-    { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
-  ];
-
-  // Pre-scan: build per-project plan so we can show totals before writing.
   const plan = [];
   for (const projectRoot of projects) {
     const atrisDir = path.join(projectRoot, 'atris');
     const bizFile = path.join(projectRoot, '.atris', 'business.json');
-    // atris-cli itself always dogfoods canonical files, even if business context is loaded.
     const isSelf = path.resolve(projectRoot) === path.resolve(pkgRoot);
-    // Business detection, three layers:
-    // 1. Anything under atris-business/ is always a real customer workspace.
-    //    These often have customized atris.md files that do NOT start with
-    //    "# Atris Boot Protocol" but still carry business-specific context
-    //    (e.g., Pallet, atris-labs-1, vitalize). Never overwrite these.
-    // 2. Outside atris-business/: business.json + boot-protocol atris.md = real business.
-    // 3. Dev repos with business.json loaded for testing (atris-cli, atrisos-backend)
-    //    have "# atris" canonical atris.md and should sync.
     const isInBusinessDir = projectRoot.split(path.sep).includes('atris-business');
     let isBusiness = isInBusinessDir || (fs.existsSync(bizFile) && !isSelf);
     if (isBusiness && !isInBusinessDir) {
@@ -746,9 +732,6 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
         if (!/^#\s+Atris Boot Protocol/i.test(head)) isBusiness = false;
       } catch {}
     }
-    // Additional safety: if existing atris.md is customized (not the new
-    // canonical `# atris\n` nor the old generic template), skip it. Overwriting
-    // customized context destroys per-project knowledge.
     let isCustomized = false;
     if (!isSelf && !isBusiness) {
       try {
@@ -769,6 +752,25 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
     }
     plan.push({ projectRoot, isBusiness, isCustomized, changes });
   }
+  return { projects, plan };
+}
+
+function syncAtrisAll({ dryRun = false, force = false } = {}) {
+  const root = process.cwd();
+  const pkgRoot = path.join(__dirname, '..');
+
+  console.log('');
+  console.log(`Scanning ${root} for atris projects...`);
+
+  const filesToSync = SYNC_ALL_FILES;
+  const { projects, plan: initialPlan } = buildSyncAllPlan({ root, pkgRoot, filesToSync });
+
+  if (projects.length === 0) {
+    console.log('No atris projects found under current directory.');
+    return;
+  }
+
+  const plan = initialPlan;
 
   // Report.
   console.log(`Found ${projects.length} project(s).`);
@@ -847,6 +849,8 @@ function _executeSyncAll(plan, pkgRoot, filesToSync, root) {
 module.exports = {
   syncAtris,
   syncAtrisAll,
+  buildSyncAllPlan,
+  SYNC_ALL_FILES,
   syncSkills,
   syncBusinessCanonical,
   syncWorkspaceTemplate,
