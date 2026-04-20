@@ -180,6 +180,38 @@ test('parseVerdict treats garbage output as REJECT with parse-fail reason', () =
   assert.match(r.reason, /did not contain.*SIGNOFF|did not contain.*REJECT/i);
 });
 
+test('parseVerdict extracts PROPOSED block fields on REJECT', () => {
+  const out =
+    'Reviewing...\n\n' +
+    'REJECT: Verify is trivial and Rollback is missing.\n' +
+    'FIX: Point Verify at a runnable rubric and name a rollback.\n' +
+    'PROPOSED:\n' +
+    '  Files: commands/foo.js, test/foo.test.js\n' +
+    '  Verify: atris verify foo --section preflight\n' +
+    '  Rollback: git revert <sha>\n';
+  const r = parseVerdict(out);
+  assert.strictEqual(r.verdict, 'REJECT');
+  assert.ok(r.proposed, 'proposed block must be captured');
+  assert.strictEqual(r.proposed.files, 'commands/foo.js, test/foo.test.js');
+  assert.strictEqual(r.proposed.verify, 'atris verify foo --section preflight');
+  assert.strictEqual(r.proposed.rollback, 'git revert <sha>');
+  assert.strictEqual(r.proposed.exit, undefined, 'Exit was not proposed; should be absent');
+});
+
+test('parseVerdict returns null proposed when REJECT has no PROPOSED block', () => {
+  const out = 'REJECT: Scope is unclear.\nFIX: Split into two tasks.';
+  const r = parseVerdict(out);
+  assert.strictEqual(r.verdict, 'REJECT');
+  assert.strictEqual(r.proposed, null);
+});
+
+test('SIGNOFF never carries a proposed block', () => {
+  const out = 'SIGNOFF: Looks good.';
+  const r = parseVerdict(out);
+  assert.strictEqual(r.verdict, 'SIGNOFF');
+  assert.strictEqual(r.proposed, null);
+});
+
 // --- runTaskOnce integration: REJECT halts with plan-rejected-at-review ---
 
 test('REJECT from plan-review halts runTaskOnce before do phase', () => {
@@ -203,6 +235,34 @@ test('REJECT from plan-review halts runTaskOnce before do phase', () => {
     assert.match(journal, /Fixture task/);
     const lessons = fs.readFileSync(path.join(cwd, 'atris', 'lessons.md'), 'utf8');
     assert.doesNotMatch(lessons, /plan-rejected/i);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('REJECT with PROPOSED draft journals the proposed fields', () => {
+  const { cwd, logFile } = setupWorkspace();
+  try {
+    const result = runTaskOnce(
+      { task: 'Fixture task', kind: 'endgame', files: ['stub.txt'] },
+      {
+        cwd,
+        verbose: false,
+        skipFalsifiability: true,
+        phaseExec: (phase) => ({ prompt: `stub ${phase}`, output: `stub output for ${phase}` }),
+        planReviewExec: () =>
+          'REJECT: Verify is trivial.\n' +
+          'FIX: Point at a rubric.\n' +
+          'PROPOSED:\n' +
+          '  Verify: atris verify fixture --section preflight\n' +
+          '  Rollback: git revert <sha>\n',
+      }
+    );
+    assert.strictEqual(result.outcome, 'halted');
+    const journal = fs.readFileSync(logFile, 'utf8');
+    assert.match(journal, /Proposed draft/);
+    assert.match(journal, /atris verify fixture --section preflight/);
+    assert.match(journal, /git revert <sha>/);
   } finally {
     cleanup(cwd);
   }
