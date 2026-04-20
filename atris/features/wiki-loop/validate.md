@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-04-08
+last_compiled: 2026-04-20
 sources:
   - commands/loop.js
   - commands/wiki.js
