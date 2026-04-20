@@ -197,6 +197,15 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
   // Required delimiter [(,[,—,-] prevents bleeding into adjacent refs on same line
   const refPattern = /(`?)([a-zA-Z0-9_\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[—\-][^\S\n]*([^)\]\n]+))?/g;
 
+  // Function Inventory form: `symbolName()` → `file:line[-line]`
+  // Pre-scan to build a (file:line) → symbol map so refs with the symbol BEFORE them still verify.
+  const preRefSymbols = {};
+  const preRefPattern = /`([a-zA-Z_][a-zA-Z0-9_]*)\s*\(?\s*\)?`\s*(?:→|->)\s*`([a-zA-Z0-9_\-./\\]+\.(?:js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-\d+)?`/g;
+  let preMatch;
+  while ((preMatch = preRefPattern.exec(mapContent)) !== null) {
+    preRefSymbols[`${preMatch[2]}:${preMatch[3]}`] = preMatch[1];
+  }
+
   // Cache file reads
   const fileCache = {};
   function readFileCached(filePath) {
@@ -228,7 +237,8 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
       continue;
     }
 
-    const symbol = extractSymbol(contextPart);
+    let symbol = extractSymbol(contextPart);
+    if (!symbol) symbol = preRefSymbols[`${filePath}:${startLine}`] || null;
 
     // Check if reference is still accurate
     const outOfBounds = startLine > file.lines.length || (endLine && endLine > file.lines.length);

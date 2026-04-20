@@ -36,14 +36,12 @@ then /endgame picks the next horizon at the boundary.
   **Exit:** scripted test runs agent select + chat + plan and exits 0
   **Verify:** `node tests/agent-e2e.js` exits 0
   **After:** T2
-## In Progress
-
-- **T11:** Fixture task — append stamp line to today's journal Notes section [execute]
-  **Exit:** `atris/logs/2026/2026-04-19.md` contains a new `### Fixture T11 — YYYY-MM-DD HH:MM` heading under `## Notes`
-  **Verify:** `grep -c "Fixture T11" atris/logs/2026/2026-04-19.md | grep -v "^0$"`
+- **T6:** Fixture task — no-op placeholder for navigator/executor/validator pipeline smoke test [explore]
+  **Exit:** task round-trips through plan→do→review without side effects
+  **Verify:** `true`
   **After:** none
-  **Claimed by:** Executor at 2026-04-19T22:51:47.716Z
-  **Stage:** DO
+
+## In Progress
 
 ---
 
