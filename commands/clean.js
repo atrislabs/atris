@@ -455,9 +455,15 @@ function checkPageStaleness(cwd, filePath) {
     .map(line => line.replace(/^\s+-\s+/, '').trim())
     .filter(Boolean);
 
-  // Check each source's mtime against last_compiled
+  // Check each source's mtime against last_compiled.
+  // Source entries can include a line range and/or a parenthesized annotation,
+  // e.g. "bin/atris.js:199-340 (showHelp function)" — strip both before stat.
   for (const source of sources) {
-    const sourcePath = path.isAbsolute(source) ? source : path.join(cwd, source);
+    const filePart = source
+      .replace(/\s*\([^)]*\)\s*$/, '')   // drop trailing "(annotation)"
+      .replace(/:\d+(-\d+)?$/, '')        // drop trailing ":N" or ":N-M"
+      .trim();
+    const sourcePath = path.isAbsolute(filePart) ? filePart : path.join(cwd, filePart);
     try {
       const stat = fs.statSync(sourcePath);
       if (stat.mtime > compiledDate) {

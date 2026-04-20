@@ -1,14 +1,14 @@
 ---
-last_compiled: 2026-04-13
+last_compiled: 2026-04-20
 validated_by: executor
-validation_notes: Re-verified (2026-04-13T10:03) — all 6 source refs confirmed current, zero drift. showHelp 199-338, init TODO 398-422, planAtris TODO read 83-92, planAtris TODO prompt 280-281, doAtris TODO load 427-437, reviewAtris TODO read 746-755. All 6 check sections line refs match source. No changes needed.
+validation_notes: Re-verified 2026-04-20 after v3.6/v3.9 shipping. showHelp drifted 338→340 (2 lines, noise); planAtris TODO read 83→84; doAtris load 427→433 (token-refresh additions); reviewAtris read 746→758 (same cause). All routing and behavior intact. Updated refs below.
 sources:
-  - bin/atris.js:199-338 (showHelp function — core workflow section)
+  - bin/atris.js:199-340 (showHelp function — core workflow section)
   - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
-  - commands/workflow.js:83-92 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - commands/workflow.js:280-281 (planAtris — include TODO.md in user prompt)
-  - commands/workflow.js:427-437 (doAtris — load and read TODO.md)
-  - commands/workflow.js:746-755 (reviewAtris — read TODO.md)
+  - commands/workflow.js:84-94 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:286 (planAtris — include TODO.md in user prompt)
+  - commands/workflow.js:433-443 (doAtris — load and read TODO.md)
+  - commands/workflow.js:758 (reviewAtris — read TODO.md)
   - atris/features/cli-ux-simplification/idea.md
   - atris/features/cli-ux-simplification/build.md
 ---
@@ -21,7 +21,7 @@ sources:
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, lines 220-335)
+- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, `bin/atris.js:199-340`)
 - [x] Core workflow grouped: plan, do, review, run (lines 226-230)
 - [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 250)
 - [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 248-249)
@@ -32,10 +32,10 @@ sources:
 - [x] init calls console.log summary after creation (init.js:423)
 
 ### 3. Commands Read TODO.md
-- [x] **plan**: Loads TODO.md for current state (workflow.js:83-92)
-- [x] **plan**: Includes TODO.md in user prompt when present (workflow.js:280-281, 293)
-- [x] **do**: Reads TODO.md to find tasks to execute (workflow.js:427-437)
-- [x] **review**: Reads TODO.md for task context (workflow.js:746-755)
+- [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:84-94`)
+- [x] **plan**: Includes TODO.md in user prompt when present (`commands/workflow.js:286`, 298)
+- [x] **do**: Reads TODO.md to find tasks to execute (`commands/workflow.js:433-443`)
+- [x] **review**: Reads TODO.md for task context (`commands/workflow.js:758`)
 - [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js with parseTodo)
 
 ### 4. Backwards Compatibility

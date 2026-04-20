@@ -5,9 +5,9 @@ title: Plan Do Review Loop
 sources:
   - README.md
   - atris/atris.md
-last_compiled: 2026-04-08
+last_compiled: 2026-04-20
 created: 2026-04-07
-updated: 2026-04-08
+updated: 2026-04-20
 tags:
   - workflow
   - core-loop
