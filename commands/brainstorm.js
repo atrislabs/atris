@@ -3,7 +3,7 @@ const path = require('path');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { loadConfig } = require('../utils/config');
-const { loadCredentials } = require('../utils/auth');
+const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { planAtris, doAtris, reviewAtris } = require('./workflow');
 
@@ -58,8 +58,9 @@ async function brainstormAtris() {
   // Optional: fetch journal context from backend (for hints only)
   let remoteJournalContext = '';
   const config = loadConfig();
-  const credentials = loadCredentials();
-  
+  const ensured1 = await ensureValidCredentials(apiRequestJson);
+  const credentials = ensured1.error ? null : ensured1.credentials;
+
   if (useCloudJournal && config.agent_id && credentials && credentials.token) {
     try {
       console.log('📖 Fetching latest journal entry from AtrisOS...');
@@ -623,8 +624,9 @@ async function autopilotAtris(initialIdea = null) {
   // Try to fetch latest journal entry from backend
   let journalContext = '';
   const config = loadConfig();
-  const credentials = loadCredentials();
-  
+  const ensured2 = await ensureValidCredentials(apiRequestJson);
+  const credentials = ensured2.error ? null : ensured2.credentials;
+
   if (config.agent_id && credentials && credentials.token) {
     try {
       const journalResult = await apiRequestJson(`/agents/${config.agent_id}/journal/today`, {

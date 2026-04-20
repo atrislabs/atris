@@ -103,6 +103,19 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
     });
   }
 
+  // --- Self-healing: unresolved fail lessons (bug still present per grep) ---
+  if (!skipped.has('self-heal')) {
+    const failLesson = pickUnresolvedFailLesson(cwd);
+    if (failLesson && !skipped.has(`self-heal:${failLesson.slug}`)) {
+      suggestions.push({
+        task: `Fix unresolved fail lesson: ${failLesson.slug}`,
+        why: `Lesson from ${failLesson.date} tagged \`fail\` and grep confirms the bug pattern is still present in-repo. Self-heal before taking new work. Lesson: ${failLesson.line}`,
+        kind: 'self-heal',
+        priority: 4.5
+      });
+    }
+  }
+
   // --- Backlog tasks ---
   for (const t of todo.backlog) {
     if (t.tags && t.tags.includes('unverified')) continue;
@@ -1816,6 +1829,47 @@ function isLessonResolved(lessonLine, cwd) {
 }
 
 /**
+ * Pick the oldest unresolved `fail` lesson whose bug pattern is still present.
+ * Returns { date, slug, line } for the top candidate, or null if none.
+ *
+ * Self-healing seed: instead of imagining new horizons via LLM, use what the
+ * system already wrote down about itself. A `fail` lesson with `isLessonResolved
+ * === false` means grep confirms the bug pattern is still present — actionable.
+ */
+function pickUnresolvedFailLesson(cwd) {
+  const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
+  if (!fs.existsSync(lessonsPath)) return null;
+
+  const content = fs.readFileSync(lessonsPath, 'utf8');
+  const lines = content.split('\n');
+
+  const candidates = [];
+  for (const line of lines) {
+    if (!line.trim().startsWith('- **[')) continue;
+    if (line.includes('[resolved]')) continue;
+    // Match `— fail —` or `— fail ` as the verdict marker
+    if (!/\s[—-]\s*fail\s*[—-\s]/.test(line)) continue;
+
+    const slugMatch = line.match(/\*\*\[(\d{4}-\d{2}-\d{2})\]\s+([\w-]+)\*\*/);
+    if (!slugMatch) continue;
+
+    if (isLessonResolved(line, cwd)) continue;
+
+    candidates.push({
+      date: slugMatch[1],
+      slug: slugMatch[2],
+      line: line.trim()
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Oldest first — longest-standing fails get priority
+  candidates.sort((a, b) => a.date.localeCompare(b.date));
+  return candidates[0];
+}
+
+/**
  * Propose 3 candidate next horizons for the autopilot loop. Combines
  * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
  * to imagine what to work on next, spawns `claude -p`, and parses the
@@ -2512,6 +2566,7 @@ module.exports = {
   autopilotFromTodo,
   buildPrompt,
   isLessonResolved,
+  pickUnresolvedFailLesson,
   isStillTrue,
   getTaskAgeDays,
   getIdleTickCount,
