@@ -1,0 +1,40 @@
+{
+  "_schema": {
+    "description": "Typed lesson metadata sidecar. Keyed by lesson slug (id).",
+    "fields": {
+      "scope": "which repo/surface this lesson applies to",
+      "applies_to": "array of file paths the bug pattern lives in",
+      "detector": "shell command — exits 0 when the lesson is resolved (bug pattern gone), non-zero when still present",
+      "status": "one of: observed | open | attempted | resolved"
+    },
+    "note": "If a lesson has no detector, self-heal falls back to keyword grep and never auto-promotes status. Observation-only lessons (process rules, not fixable bugs) should carry status:observed and no detector."
+  },
+
+  "clean-absolute-source-paths": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/clean.js"],
+    "detector": "grep -q 'path.isAbsolute' commands/clean.js",
+    "status": "resolved"
+  },
+
+  "benchmark-prompt-paths": {
+    "scope": "atris-cli",
+    "applies_to": ["test/experiments.test.js"],
+    "detector": "grep -q 'assert.match(prompt' test/experiments.test.js",
+    "status": "resolved"
+  },
+
+  "map-line-drift": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/workflow.js", "commands/init.js", "commands/brainstorm.js"],
+    "status": "observed",
+    "notes": "Process rule, not a fixable code state. clean.js healer partially mitigates but end-line drift still needs human verification post-feature."
+  },
+
+  "human-output-t21-fail": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/autopilot.js", "commands/status.js", "commands/workflow.js"],
+    "status": "observed",
+    "notes": "Output-budget rule. Needs a real end-to-end runner to turn into a detector; deferring to v3.9."
+  }
+}
