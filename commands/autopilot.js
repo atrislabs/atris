@@ -771,6 +771,13 @@ or
 
 REJECT: <one sentence on what is wrong>
 FIX: <one sentence on what must change>
+PROPOSED:
+  Files: <concrete path list, or omit this line if original is fine>
+  Exit: <sharp observable done condition, or omit this line if original is fine>
+  Verify: <falsifiable shell command, or omit this line if original is fine>
+  Rollback: <git revert <sha> or concrete checkpoint, or omit this line if original is fine>
+
+Be a drafting partner, not just a critic. When you REJECT, write the PROPOSED block as a concrete draft the human can accept as-is, edit, or reject. Include each PROPOSED line only for fields that need changing; skip a line if the original is correct. Omit the entire PROPOSED block only if the rejection is about scope or intent rather than a draftable field.
 `;
 }
 
@@ -782,26 +789,57 @@ FIX: <one sentence on what must change>
  */
 function parseVerdict(output) {
   const text = String(output || '');
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const rawLines = text.split('\n');
+  const lines = rawLines.map((l) => l.trim()).filter(Boolean);
   // Scan from the end backwards — the verdict is supposed to be LAST.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (/^SIGNOFF\s*:/i.test(line)) {
-      return { verdict: 'SIGNOFF', reason: line.replace(/^SIGNOFF\s*:\s*/i, ''), fix: '' };
+      return { verdict: 'SIGNOFF', reason: line.replace(/^SIGNOFF\s*:\s*/i, ''), fix: '', proposed: null };
     }
     if (/^REJECT\s*:/i.test(line)) {
       const reason = line.replace(/^REJECT\s*:\s*/i, '');
       // Fix line is usually immediately after REJECT.
-      const fixLine = lines.slice(i).find((l) => /^FIX\s*:/i.test(l));
+      const tail = lines.slice(i);
+      const fixLine = tail.find((l) => /^FIX\s*:/i.test(l));
       const fix = fixLine ? fixLine.replace(/^FIX\s*:\s*/i, '') : '';
-      return { verdict: 'REJECT', reason, fix };
+      const proposed = parseProposedBlock(rawLines.slice(rawLines.findIndex((l) => /PROPOSED\s*:/i.test(l))));
+      return { verdict: 'REJECT', reason, fix, proposed };
     }
   }
   return {
     verdict: 'REJECT',
     reason: 'validator output did not contain SIGNOFF or REJECT',
     fix: 'ensure validator emits machine-parseable verdict as the last line',
+    proposed: null,
   };
+}
+
+/**
+ * Parse the PROPOSED block: 4 optional indented fields (Files, Exit, Verify,
+ * Rollback). Returns null if no block, or an object with only the fields the
+ * validator chose to propose.
+ */
+function parseProposedBlock(lines) {
+  if (!lines || !lines.length || !/PROPOSED\s*:/i.test(lines[0] || '')) return null;
+  const proposed = {};
+  const fieldMatchers = {
+    files: /^\s*Files\s*:\s*(.+)$/i,
+    exit: /^\s*Exit\s*:\s*(.+)$/i,
+    verify: /^\s*Verify\s*:\s*(.+)$/i,
+    rollback: /^\s*Rollback\s*:\s*(.+)$/i,
+  };
+  for (let j = 1; j < lines.length; j++) {
+    const raw = lines[j];
+    // Stop at a blank line or a new top-level marker (no leading whitespace
+    // and a known verb). Keep scanning through indented lines.
+    if (/^\S/.test(raw) && !/^(Files|Exit|Verify|Rollback)\s*:/i.test(raw)) break;
+    for (const [key, matcher] of Object.entries(fieldMatchers)) {
+      const m = raw.match(matcher);
+      if (m) proposed[key] = m[1].trim();
+    }
+  }
+  return Object.keys(proposed).length ? proposed : null;
 }
 
 /**
@@ -894,7 +932,7 @@ function runPlanReview({ cwd, context, planOutput, options = {} }) {
     tags.includes('high-risk');
 
   if (!codexOptIn) {
-    return { ...primary, signers: ['validator'] };
+    return { ...primary, signers: ['validator'], proposed: primary.proposed || null };
   }
 
   const codexCheck = options.hasCodex != null ? options.hasCodex : hasCodex();
@@ -902,6 +940,7 @@ function runPlanReview({ cwd, context, planOutput, options = {} }) {
     return {
       ...primary,
       signers: ['validator'],
+      proposed: primary.proposed || null,
       notes: 'codex was requested but not on PATH; skipped gracefully',
     };
   }
@@ -924,15 +963,19 @@ function runPlanReview({ cwd, context, planOutput, options = {} }) {
       verdict: 'SIGNOFF',
       reason: primary.reason,
       fix: '',
+      proposed: null,
       signers: ['validator', 'codex'],
     };
   }
 
   // Any disagreement or joint reject → halt with both opinions surfaced.
+  // If either signer wrote a PROPOSED draft, surface the validator's first
+  // (or codex's if validator didn't propose one).
   return {
     verdict: 'REJECT',
     reason: `Split verdict. validator=${primary.verdict} (${primary.reason || 'no reason'}); codex=${codex.verdict} (${codex.reason || 'no reason'}).`,
     fix: primary.fix || codex.fix || 'reconcile the two signers before re-planning',
+    proposed: primary.proposed || codex.proposed || null,
     signers: ['validator', 'codex'],
     split: true,
   };
@@ -956,12 +999,20 @@ function appendPlanRejection(cwd, context, review) {
     if (!fs.existsSync(logFile)) return;
     const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
     const signers = (review.signers || []).join(' + ');
+    const proposedBlock = review.proposed
+      ? `**Proposed draft:**\n` +
+        (review.proposed.files ? `- Files: ${review.proposed.files}\n` : '') +
+        (review.proposed.exit ? `- Exit: ${review.proposed.exit}\n` : '') +
+        (review.proposed.verify ? `- Verify: ${review.proposed.verify}\n` : '') +
+        (review.proposed.rollback ? `- Rollback: ${review.proposed.rollback}\n` : '')
+      : '';
     const block =
       `\n### Plan rejected — ${now}\n\n` +
       `**Task:** ${context.task}\n` +
       `**Signers:** ${signers}\n` +
       `**Reason:** ${review.reason}\n` +
       (review.fix ? `**Fix:** ${review.fix}\n` : '') +
+      (proposedBlock ? `${proposedBlock}` : '') +
       (review.notes ? `**Notes:** ${review.notes}\n` : '');
     let content = fs.readFileSync(logFile, 'utf8');
     const notesIdx = content.indexOf('## Notes');
