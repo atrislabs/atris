@@ -27,40 +27,17 @@ function getAuth() {
   return { token: creds.token, email: creds.email || 'unknown' };
 }
 
-function getBusinessId() {
-  // 1. Check .atris/business.json in current directory
-  const bizFile = path.join(process.cwd(), '.atris', 'business.json');
-  if (fs.existsSync(bizFile)) {
-    try {
-      const biz = JSON.parse(fs.readFileSync(bizFile, 'utf8'));
-      if (biz.business_id) return biz.business_id;
-    } catch {}
-  }
-
-  // 2. Check ~/.atris/businesses.json (first connected business)
-  const home = require('os').homedir();
-  const globalBizFile = path.join(home, '.atris', 'businesses.json');
-  if (fs.existsSync(globalBizFile)) {
-    try {
-      const businesses = JSON.parse(fs.readFileSync(globalBizFile, 'utf8'));
-      const slugs = Object.keys(businesses);
-      if (slugs.length > 0 && businesses[slugs[0]].business_id) {
-        return businesses[slugs[0]].business_id;
-      }
-    } catch {}
-  }
-
-  return null;
-}
-
-async function submitFeedback(message) {
+async function submitFeedback(message, opts = {}) {
   if (!message) {
-    console.error('Usage: atris feedback "your message here"');
+    console.error('Usage: atris feedback "your message here" [--business <slug|id>]');
     process.exit(1);
   }
 
   const { token } = getAuth();
-  const businessId = getBusinessId();
+  // Only attach business_id when the user explicitly asked for it via --business.
+  // Auto-scoping to "first business in businesses.json" silently hid feedback
+  // from every other workspace the user belongs to.
+  const businessId = opts.businessId || null;
 
   const body = {
     message,
@@ -232,7 +209,8 @@ async function deleteFeedback(idPrefix) {
 function printHelp() {
   console.log('');
   console.log('Usage:');
-  console.log('  atris feedback "message"               Submit feedback');
+  console.log('  atris feedback "message"               Submit feedback (global)');
+  console.log('  atris feedback "msg" --business <slug> Submit feedback tagged to a business');
   console.log('  atris feedback                         List feedback');
   console.log('  atris feedback list                    List feedback');
   console.log('  atris feedback resolve <id> "<note>"   Mark resolved (admin)');
@@ -240,11 +218,54 @@ function printHelp() {
   console.log('  atris feedback delete <id>             Delete feedback (admin)');
   console.log('');
   console.log('IDs may be the first 8 chars of the UUID.');
+  console.log('Business slugs come from ~/.atris/businesses.json (e.g. pallet, atris-labs-1).');
   console.log('');
 }
 
+function resolveBusinessArg(value) {
+  if (!value) return null;
+  // Full UUID — trust it
+  if (/^[0-9a-f-]{32,}$/i.test(value)) return value;
+  // Otherwise treat as slug and look up in ~/.atris/businesses.json
+  const home = require('os').homedir();
+  const file = path.join(home, '.atris', 'businesses.json');
+  if (!fs.existsSync(file)) return null;
+  try {
+    const map = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const hit = map[value] || Object.values(map).find(b => b.slug === value);
+    return hit ? hit.business_id : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractFlag(args, ...names) {
+  // Returns [value, remainingArgs]. Supports "--flag val" and "--flag=val".
+  const remaining = [];
+  let value = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const eq = a.indexOf('=');
+    const key = eq >= 0 ? a.slice(0, eq) : a;
+    if (names.includes(key)) {
+      value = eq >= 0 ? a.slice(eq + 1) : args[++i];
+    } else {
+      remaining.push(a);
+    }
+  }
+  return [value, remaining];
+}
+
 async function feedbackCommand() {
-  const subcommand = process.argv[3];
+  const rawArgs = process.argv.slice(3);
+  const [businessArg, args] = extractFlag(rawArgs, '--business', '-b');
+  const businessId = resolveBusinessArg(businessArg);
+  if (businessArg && !businessId) {
+    console.error(`Error: unknown business "${businessArg}". Check ~/.atris/businesses.json`);
+    process.exit(1);
+  }
+
+  const subcommand = args[0];
 
   if (!subcommand || subcommand === 'list') {
     await listFeedback();
@@ -257,25 +278,25 @@ async function feedbackCommand() {
   }
 
   if (subcommand === 'resolve') {
-    const id = process.argv[4];
-    const resolution = process.argv.slice(5).join(' ');
+    const id = args[1];
+    const resolution = args.slice(2).join(' ');
     await resolveFeedback(id, resolution);
     return;
   }
 
   if (subcommand === 'close') {
-    await closeFeedback(process.argv[4]);
+    await closeFeedback(args[1]);
     return;
   }
 
   if (subcommand === 'delete') {
-    await deleteFeedback(process.argv[4]);
+    await deleteFeedback(args[1]);
     return;
   }
 
   // Everything else is a feedback message
-  const message = process.argv.slice(3).join(' ');
-  await submitFeedback(message);
+  const message = args.join(' ');
+  await submitFeedback(message, { businessId });
 }
 
 module.exports = { feedbackCommand };
