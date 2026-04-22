@@ -435,7 +435,7 @@ const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brain
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'pull', 'push', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -1186,6 +1186,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'feedback') {
   require('../commands/feedback').feedbackCommand()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'errors') {
+  require('../commands/errors').errorsCommand()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else {
