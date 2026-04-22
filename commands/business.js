@@ -13,6 +13,20 @@ function getBusinessConfigPath() {
   return path.join(dir, 'businesses.json');
 }
 
+function slugify(name) {
+  return String(name || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function isHelpToken(arg) {
+  return arg === '--help' || arg === '-h' || arg === 'help' || arg === '-?';
+}
+
 function loadBusinesses() {
   const p = getBusinessConfigPath();
   if (!fs.existsSync(p)) return {};
@@ -774,7 +788,45 @@ function detectBusinessSlug(explicitSlug) {
   }
 }
 
+async function findExistingBusinessBySlug(slug, token) {
+  if (!slug) return null;
+
+  // Local cache first — no network round-trip needed.
+  const local = loadBusinesses();
+  if (local[slug]) {
+    return { id: local[slug].business_id, name: local[slug].name, slug, source: 'local' };
+  }
+  for (const v of Object.values(local)) {
+    if (v && v.slug === slug) {
+      return { id: v.business_id, name: v.name, slug, source: 'local' };
+    }
+  }
+
+  if (!token) return null;
+
+  // Cloud lookup — covers businesses the user is a member of but hasn't added.
+  const direct = await apiRequestJson(`/business/by-slug/${encodeURIComponent(slug)}`, {
+    method: 'GET',
+    token,
+  });
+  if (direct.ok && direct.data && direct.data.id) {
+    return { id: direct.data.id, name: direct.data.name, slug: direct.data.slug || slug, source: 'cloud' };
+  }
+
+  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  if (list.ok && Array.isArray(list.data)) {
+    const match = list.data.find(b => b && b.slug === slug);
+    if (match) return { id: match.id, name: match.name, slug: match.slug, source: 'cloud' };
+  }
+
+  return null;
+}
+
 async function addBusiness(slug) {
+  if (!slug || isHelpToken(slug)) {
+    console.error('Usage: atris business add <slug>');
+    process.exit(1);
+  }
   if (!slug) {
     console.error('Usage: atris business add <slug>');
     process.exit(1);
@@ -1008,7 +1060,7 @@ function listBusinessesLocal(opts = {}) {
 }
 
 async function removeBusiness(slug) {
-  if (!slug) {
+  if (!slug || isHelpToken(slug)) {
     console.error('Usage: atris business remove <slug>');
     process.exit(1);
   }
@@ -1262,8 +1314,11 @@ async function businessAudit() {
 }
 
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
-  if (!name) {
+  if (!name || isHelpToken(name) || String(name).startsWith('-')) {
     console.error('Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]');
+    if (name && String(name).startsWith('-') && !isHelpToken(name)) {
+      console.error(`\n  Refusing to create a business named "${name}" — looks like a flag, not a name.`);
+    }
     process.exit(1);
   }
 
@@ -1275,6 +1330,29 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
 
   const options = parseCreateBusinessFlags(flags);
   const description = options.description;
+  const force = flags.includes('--force') || flags.includes('--allow-duplicate');
+
+  // Pre-flight: refuse to create a duplicate by slug. The backend will silently
+  // suffix `-1`, `-2`, etc., which produces ghost businesses when users actually
+  // wanted to attach to an existing one. Guide them to `atris pull` instead.
+  if (!force) {
+    const desiredSlug = slugify(name);
+    if (desiredSlug) {
+      const existing = await findExistingBusinessBySlug(desiredSlug, creds.token);
+      if (existing) {
+        console.error(`\nA business with slug "${desiredSlug}" already exists.`);
+        console.error(`  Name: ${existing.name || desiredSlug}`);
+        if (existing.id) console.error(`  ID:   ${existing.id}`);
+        console.error('');
+        console.error('To set up a local workspace for it, run:');
+        console.error(`  atris pull ${desiredSlug}                       # into ./${desiredSlug}`);
+        console.error(`  atris pull ${desiredSlug} --into <path>         # into a custom path`);
+        console.error('');
+        console.error(`To create a NEW business anyway (will be slugged "${desiredSlug}-1"), pass --force.`);
+        process.exit(1);
+      }
+    }
+  }
 
   console.log(`Creating business: ${name}...`);
 
@@ -1837,7 +1915,43 @@ async function quickstart() {
 }
 
 
+function printBusinessHelp() {
+  console.log('Usage: atris business <command> [args]');
+  console.log('');
+  console.log('  quickstart           ← Start here! 3-command guide');
+  console.log('');
+  console.log('  init <name>          Create a business environment (cloud + local)');
+  console.log('  workspace <name>     Alias for init');
+  console.log('  create <name>        Create the cloud business; add --workspace for a local business environment');
+  console.log('  add <slug>           Register an existing cloud business');
+  console.log('  list                 Show registered businesses');
+  console.log('  team [slug]          Show members, roles, and admin access');
+  console.log('  status <slug>        Quick status check');
+  console.log('  health [slug]        Full health dashboard');
+  console.log('  audit                Audit all businesses');
+  console.log('  connect <service>    Connect a skill/integration');
+  console.log('  notify <mode>        Set notification mode (digest/silent/push)');
+  console.log('  deploy <slug>        Push local business to cloud');
+  console.log('  onboard              Seed brief, person, first loop, safe next action, and one-pager from sparse input');
+  console.log('  record <report>      Append recap state into events, episodes, and scorecards');
+  console.log('  remove <slug>        Unregister locally');
+  console.log('');
+  console.log('  Already-attached business? Run `atris pull <slug>` to scaffold a local workspace.');
+}
+
 async function businessCommand(subcommand, ...args) {
+  // Help intercept — without this, `atris business init --help` would treat
+  // `--help` as a business name and create one. Same for any subcommand that
+  // takes a positional name/slug.
+  if (!subcommand || isHelpToken(subcommand)) {
+    printBusinessHelp();
+    return;
+  }
+  if (args.length > 0 && isHelpToken(args[0])) {
+    printBusinessHelp();
+    return;
+  }
+
   switch (subcommand) {
     case 'add':
       await addBusiness(args[0]);
@@ -1907,25 +2021,10 @@ async function businessCommand(subcommand, ...args) {
       await quickstart();
       break;
     default:
-      console.log('Usage: atris business <command> [args]');
-      console.log('');
-      console.log('  quickstart           ← Start here! 3-command guide');
-      console.log('');
-      console.log('  init <name>          Create a business environment (cloud + local)');
-      console.log('  workspace <name>     Alias for init');
-      console.log('  create <name>        Create the cloud business; add --workspace for a local business environment');
-      console.log('  add <slug>           Register an existing cloud business');
-      console.log('  list                 Show registered businesses');
-      console.log('  team [slug]          Show members, roles, and admin access');
-      console.log('  status <slug>        Quick status check');
-      console.log('  health [slug]        Full health dashboard');
-      console.log('  audit                Audit all businesses');
-      console.log('  connect <service>    Connect a skill/integration');
-      console.log('  notify <mode>        Set notification mode (digest/silent/push)');
-      console.log('  deploy <slug>        Push local business to cloud');
-      console.log('  onboard              Seed brief, person, first loop, safe next action, and one-pager from sparse input');
-      console.log('  record <report>      Append recap state into events, episodes, and scorecards');
-      console.log('  remove <slug>        Unregister locally');
+      console.error(`Unknown subcommand: ${subcommand}`);
+      console.error('');
+      printBusinessHelp();
+      process.exitCode = 1;
   }
 }
 
