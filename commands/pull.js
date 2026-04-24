@@ -703,8 +703,10 @@ async function pullBusiness(slug) {
     name: businessName,
   }, null, 2));
 
-  // Wire skills → .claude/skills/ so they work as slash commands
-  const skillsDir = path.join(outputDir, 'skills');
+  // Wire skills → .claude/skills/ so they work as slash commands.
+  // Source of truth is atris/skills/ (vendor-neutral, syncs to cloud).
+  // .claude/skills/ is a locally-generated adapter Claude Code reads from.
+  const skillsDir = path.join(outputDir, 'atris', 'skills');
   const claudeSkillsDir = path.join(outputDir, '.claude', 'skills');
 
   if (fs.existsSync(skillsDir)) {
