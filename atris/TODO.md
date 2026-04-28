@@ -40,6 +40,9 @@ _(none — v3.11.0 shipped proactive scanner. Oracle's 3 prescriptions + proacti
 
 ## Completed
 
+- **T113 (shipped 2026-04-27):** Exposed the Owner -> Computer model in public CLI surfaces without schema changes.
+  - Updated `README.md`, `bin/atris.js` help text, and `commands/computer.js` help so readers see `Owner = User | Business`, typed computers, and `atris business init` as shared owner + first/default computer.
+  - Verified with grep and a public-surface cheap-agent eval; see `atris/reports/2026-04-27-owner-computer-model-eval.md`.
 - **T1 (retired):** Guard token expiry — shipped in v3.6.0. Verify `grep -c "ensureValidCredentials" commands/workflow.js` returns 6.
 - **T2/T3 (retired):** Agent-commands-solid endgame superseded by self-heal work (v3.6/v3.7) + typed-lessons (v3.8). `--agent` flag + e2e agent test deferred.
 - **T30/T31/T32 (shipped in v3.8.0):** typed-lessons endgame

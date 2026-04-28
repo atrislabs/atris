@@ -2405,6 +2405,15 @@ async function runComputer() {
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
+    console.log('Atris computers are persistent AI workspaces for scoped jobs.');
+    console.log('');
+    console.log('  Owner = User | Business');
+    console.log('  Owner has many Computers');
+    console.log('  Computer = workspace + files + tools + secrets + memory + agents + validation');
+    console.log('');
+    console.log('Common types: codeops, research, CRM, reporting, recruiting, event ops, support, business ops.');
+    console.log('A business can be a company, lab, collective, community, artist, team, or project.');
+    console.log('');
     console.log('First use:');
     console.log('  cd ~/arena/atris-business/<business>');
     console.log('  atris computer');
@@ -2443,6 +2452,7 @@ async function runComputer() {
     console.log('');
     console.log('Examples:');
     console.log('  atris computer');
+    console.log('  atris business init "My Lab"     # shared owner + first/default computer');
     console.log('  atris computer proof');
     console.log('  atris computer local');
     console.log('  atris computer codex');
