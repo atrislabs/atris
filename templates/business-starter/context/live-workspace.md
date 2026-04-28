@@ -8,9 +8,10 @@
 ## Product Model
 
 - Owner type: `Business`
-- Display type: business, lab, collective, community, artist, team, or project depending on packaging
+- Entity type: `business`
 - Computer type: `business_ops` by default
 - Computer shape: workspace + files + tools + secrets + memory + agents + validation loop
+- Group role: people, chat, membership, approvals, and visibility live in groups, not in the computer memory
 
 ## Workspace
 
