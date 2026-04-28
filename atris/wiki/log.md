@@ -1,5 +1,13 @@
 # Atris Wiki Log
 
+## 2026-04-27
+
+- PRODUCT MEMORY owner -> computer model -> `concepts/owner-computer-model.md`
+  - durable: keep `business` as the shared owner in schema, but explain the product as owners having typed computers
+  - model: `Owner = User | Business`; `Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop`
+  - implication: `atris business init` creates a business owner plus the first/default business computer; future `atris computer create <type>` can add typed computers under the owner
+  - updated `systems/atris-business.md` and `index.md`
+
 ## 2026-04-08
 
 - INGEST atris-labs/MEMBER.md -> systems/atris-labs.md

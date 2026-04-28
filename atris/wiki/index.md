@@ -15,6 +15,7 @@
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
 - [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — reward, scorecards, and why the repo now acts like an RL-style environment
+- [[atris/wiki/concepts/owner-computer-model.md]] — Owner = User | Business; owners have typed computers for code, research, CRM, reporting, recruiting, event ops, and business ops
 
 ## Briefs
 

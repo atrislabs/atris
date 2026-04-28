@@ -12,6 +12,23 @@ tags: [product, cloud, atris]
 
 The productized "AI-native company workspace" inside atris-cli. A `business` in Atris is a self-contained workspace + agent team + connected integrations that runs on Atris cloud. This is the vehicle Keshav is betting on for the Dorsey thesis.
 
+## Product Model Update — 2026-04-27
+
+Treat `business` as the shared owner/container, not as the only kind of customer language.
+Under the product model in [[atris/wiki/concepts/owner-computer-model.md]], owners have computers:
+
+```
+Owner = User | Business
+Business owns many Computers
+User owns many Computers
+```
+
+The schema can keep `business` as the shared owner for companies, labs, collectives, communities, artists, teams, and projects.
+The outward packaging should adapt: "your business runs on Atris," "your lab runs on Atris," or "your collective runs on Atris."
+
+Computer type carries the function: codeops, research, CRM, reporting, recruiting, event ops, support, or business ops.
+`atris business init <name>` should be understood as creating the business owner plus its first/default business computer.
+
 ## Local shape
 
 ```

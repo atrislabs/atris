@@ -4,6 +4,16 @@
 
 It turns any repo into an AI workspace with shared context, a `plan -> do -> review` loop, daily logs, feature packs, and reusable skills.
 
+Atris gives every owner persistent AI computers.
+
+```text
+Owner = User | Business
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation loop
+```
+
+A computer can be personal or shared by a business. It can run a job like code, research, CRM, reporting, recruiting, event ops, support, or business ops.
+
 ## For Coding Agents
 
 If you're an agent, run:
@@ -19,6 +29,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 ## What Atris Gives You
 
 - An AI workspace on top of any repo
+- Persistent AI computers for scoped jobs
 - A strict `plan -> do -> review` loop
 - Daily logs, task tracking, feature packs, and project memory
 - Skills, team members, integrations, and cloud sync when you need them
@@ -75,7 +86,7 @@ Integrates with any agent.
 
 ## Business Workspaces
 
-If you want a real business workspace, use the business command instead of raw `atris init`.
+If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.
 
 ```bash
 atris business init "BLOND:ISH" --owner-email joel@blondish.world
@@ -84,9 +95,17 @@ atris business onboard --website https://blondish.world --contact "Joel Zimmerma
 atris align --fix
 ```
 
-That creates the cloud business, writes `.atris/business.json`, initializes `.atris/state/` for events and run history, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter roles, a default recap template, and an initial task queue in `atris/TODO.md`.
+That creates the shared owner, creates its first/default computer, writes `.atris/business.json`, initializes `.atris/state/` for events and run history, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter roles, a default recap template, and an initial task queue in `atris/TODO.md`.
 
 If you do not have a neat source pack yet, `atris business onboard` is the easiest intake step: give it a website, a named human, a few notes, or run it in a folder with loose files. Atris turns that into raw intake, a starter brief, a first workflow, a safe next action, and a short operator brief.
+
+Use the owner's language when you talk about it:
+
+```text
+Your business runs on Atris.
+Your lab runs on Atris.
+Your collective runs on Atris.
+```
 
 You can also use bare input:
 
