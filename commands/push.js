@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
-const { loadBusinesses, saveBusinesses } = require('./business');
+const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
@@ -92,7 +92,7 @@ async function pushAtris() {
   const businesses = loadBusinesses();
   const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (listResult.ok) {
-    const match = (listResult.data || []).find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
+    const match = (listResult.data || []).find(b => businessMatchesSlug(b, slug, { includeName: true }));
     if (!match) { console.error(`Business "${slug}" not found.`); process.exit(1); }
     businessId = match.id;
     workspaceId = match.workspace_id;
