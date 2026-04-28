@@ -6,7 +6,7 @@ const { findAllMembers } = require('./member');
 const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
-const { loadBusinesses } = require('./business');
+const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
@@ -204,6 +204,7 @@ async function pullBusiness(slug) {
 
   // Resolve business ID — always refresh from API to avoid stale workspace_id
   let businessId, workspaceId, businessName, resolvedSlug;
+  let localSlug = slug;
   const businesses = loadBusinesses();
 
   const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
@@ -220,7 +221,7 @@ async function pullBusiness(slug) {
     }
   } else {
     const match = (listResult.data || []).find(
-      b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase()
+      b => businessMatchesSlug(b, slug, { includeName: true })
     );
     if (!match) {
       console.error(`Business "${slug}" not found.`);
@@ -230,13 +231,15 @@ async function pullBusiness(slug) {
     workspaceId = match.workspace_id;
     businessName = match.name;
     resolvedSlug = match.slug;
+    localSlug = businessMatchesSlug(match, slug) ? slug : match.slug;
 
     // Update local cache
     businesses[slug] = {
       business_id: businessId,
       workspace_id: workspaceId,
       name: businessName,
-      slug: match.slug,
+      slug: localSlug,
+      canonical_slug: match.slug,
       added_at: new Date().toISOString(),
     };
     const { saveBusinesses } = require('./business');
@@ -697,7 +700,8 @@ async function pullBusiness(slug) {
   const atrisDir = path.join(outputDir, '.atris');
   fs.mkdirSync(atrisDir, { recursive: true });
   fs.writeFileSync(path.join(atrisDir, 'business.json'), JSON.stringify({
-    slug: resolvedSlug || slug,
+    slug: localSlug,
+    canonical_slug: resolvedSlug || slug,
     business_id: businessId,
     workspace_id: workspaceId,
     name: businessName,
