@@ -51,6 +51,274 @@ function saveBusinesses(data) {
   fs.writeFileSync(getBusinessConfigPath(), JSON.stringify(data, null, 2));
 }
 
+function buildBusinessCacheEntry(business, localSlug, existing = {}) {
+  const aliases = businessAliases(business);
+  const entry = {
+    business_id: business.id || business.business_id,
+    workspace_id: business.workspace_id,
+    name: business.name || localSlug,
+    slug: localSlug || business.slug,
+    added_at: existing.added_at || new Date().toISOString(),
+  };
+  if (business.slug && business.slug !== entry.slug) entry.canonical_slug = business.slug;
+  else if (business.slug) entry.canonical_slug = business.slug;
+  if (aliases.length > 0) entry.aliases = aliases;
+  return entry;
+}
+
+function readBusinessFolderBindings(rootDir = path.join(os.homedir(), 'arena', 'atris-business')) {
+  const skip = new Set([
+    '.git', '.DS_Store', 'archive', 'archives', '_archive', 'bench', 'deals',
+    'node_modules', 'shelf', '_shelf', 'templates',
+  ]);
+  if (!fs.existsSync(rootDir)) return [];
+
+  return fs.readdirSync(rootDir, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith('.') && !skip.has(entry.name))
+    .map((entry) => {
+      const fullPath = path.join(rootDir, entry.name);
+      let isDirectory = entry.isDirectory();
+      const isSymlink = entry.isSymbolicLink();
+      let symlinkTarget = null;
+      if (isSymlink) {
+        try {
+          symlinkTarget = fs.readlinkSync(fullPath);
+          isDirectory = fs.statSync(fullPath).isDirectory();
+        } catch {
+          isDirectory = false;
+        }
+      }
+      if (!isDirectory) return null;
+
+      const businessJsonPath = path.join(fullPath, '.atris', 'business.json');
+      const atrisDir = path.join(fullPath, 'atris');
+      const binding = {
+        name: entry.name,
+        path: fullPath,
+        isSymlink,
+        symlinkTarget,
+        hasAtris: fs.existsSync(atrisDir) && fs.statSync(atrisDir).isDirectory(),
+        hasBusinessJson: fs.existsSync(businessJsonPath),
+        businessJsonPath,
+        meta: null,
+        error: null,
+      };
+
+      if (binding.hasBusinessJson) {
+        try {
+          binding.meta = JSON.parse(fs.readFileSync(businessJsonPath, 'utf8'));
+        } catch (err) {
+          binding.error = err.message || 'invalid JSON';
+        }
+      }
+      return binding;
+    })
+    .filter(Boolean);
+}
+
+function analyzeBusinessDoctor({ cache = {}, cloudBusinesses = [], folderBindings = [] } = {}) {
+  const issues = [];
+  const cacheUpdates = {};
+  const activeById = new Map();
+  const activeBySlug = new Map();
+  const realFolderIds = new Map();
+
+  for (const business of cloudBusinesses || []) {
+    const id = business.id || business.business_id;
+    if (!id) continue;
+    activeById.set(id, business);
+    if (business.slug) {
+      const lower = String(business.slug).toLowerCase();
+      if (activeBySlug.has(lower)) {
+        issues.push({
+          level: 'fail',
+          code: 'duplicate-active-slug',
+          subject: business.slug,
+          message: `multiple active cloud businesses use slug ${business.slug}`,
+        });
+      }
+      activeBySlug.set(lower, business);
+    }
+  }
+
+  const findActiveMatch = (key, entry = {}) => {
+    if (entry.business_id && activeById.has(entry.business_id)) return activeById.get(entry.business_id);
+    const candidates = [key, entry.slug, entry.canonical_slug, entry.name].filter(Boolean);
+    return cloudBusinesses.find((business) =>
+      candidates.some((candidate) => businessMatchesSlug(business, candidate, { includeName: true }))
+    ) || null;
+  };
+
+  for (const [key, entry] of Object.entries(cache || {})) {
+    const active = findActiveMatch(key, entry);
+    if (!active) {
+      issues.push({
+        level: 'fail',
+        code: 'stale-cache',
+        subject: key,
+        message: `${key} points at a deleted/inaccessible business (${entry.business_id || 'missing id'})`,
+      });
+      continue;
+    }
+
+    if (entry.business_id && entry.business_id !== active.id) {
+      issues.push({
+        level: 'fail',
+        code: 'stale-cache-repoint',
+        subject: key,
+        message: `${key} points at ${entry.business_id}; active cloud row is ${active.id}`,
+        fixable: true,
+      });
+      cacheUpdates[key] = buildBusinessCacheEntry(active, key, entry);
+    }
+
+    if (!businessMatchesSlug({ ...active, aliases: businessAliases(active) }, key, { includeName: true }) && key !== active.slug) {
+      issues.push({
+        level: 'warn',
+        code: 'cache-key-not-alias',
+        subject: key,
+        message: `${key} is cached but is not the canonical slug, alias, or name for ${active.slug}`,
+      });
+    }
+  }
+
+  for (const business of cloudBusinesses || []) {
+    const canonicalKey = business.slug;
+    if (canonicalKey && (!cache[canonicalKey] || cache[canonicalKey].business_id !== business.id)) {
+      issues.push({
+        level: 'warn',
+        code: 'missing-canonical-cache',
+        subject: canonicalKey,
+        message: `${canonicalKey} is active in cloud but missing/stale in local cache`,
+        fixable: true,
+      });
+      cacheUpdates[canonicalKey] = buildBusinessCacheEntry(business, canonicalKey, cache[canonicalKey]);
+    }
+
+    for (const alias of businessAliases(business)) {
+      if (!cache[alias] || cache[alias].business_id !== business.id) {
+        issues.push({
+          level: 'warn',
+          code: 'missing-alias-cache',
+          subject: alias,
+          message: `${alias} is an active alias for ${business.slug} but missing/stale in local cache`,
+          fixable: true,
+        });
+        cacheUpdates[alias] = buildBusinessCacheEntry(business, alias, cache[alias]);
+      }
+    }
+  }
+
+  for (const binding of folderBindings || []) {
+    if (binding.error) {
+      issues.push({
+        level: 'fail',
+        code: 'invalid-business-json',
+        subject: binding.name,
+        message: `${binding.name}/.atris/business.json is invalid: ${binding.error}`,
+      });
+      continue;
+    }
+
+    if (!binding.hasBusinessJson) {
+      if (binding.hasAtris && !binding.isSymlink) {
+        issues.push({
+          level: 'warn',
+          code: 'folder-unbound',
+          subject: binding.name,
+          message: `${binding.name} has atris/ but no .atris/business.json`,
+        });
+      }
+      continue;
+    }
+
+    const meta = binding.meta || {};
+    const active = findActiveMatch(binding.name, {
+      business_id: meta.business_id,
+      slug: meta.slug,
+      canonical_slug: meta.canonical_slug,
+      name: meta.name,
+    });
+
+    if (!active) {
+      issues.push({
+        level: 'fail',
+        code: 'stale-folder-binding',
+        subject: binding.name,
+        message: `${binding.name} is bound to deleted/inaccessible business ${meta.business_id || meta.slug || 'unknown'}`,
+      });
+      continue;
+    }
+
+    if (meta.business_id && meta.business_id !== active.id) {
+      issues.push({
+        level: 'fail',
+        code: 'folder-id-mismatch',
+        subject: binding.name,
+        message: `${binding.name} points at ${meta.business_id}; active cloud row is ${active.id}`,
+      });
+    }
+
+    if (meta.slug && !businessMatchesSlug(active, meta.slug, { includeName: true })) {
+      issues.push({
+        level: 'fail',
+        code: 'folder-slug-mismatch',
+        subject: binding.name,
+        message: `${binding.name} uses slug ${meta.slug}, which is not ${active.slug} or an alias`,
+      });
+    }
+
+    if (!businessMatchesSlug(active, binding.name, { includeName: false }) && !binding.isSymlink) {
+      issues.push({
+        level: 'warn',
+        code: 'folder-name-not-slug-or-alias',
+        subject: binding.name,
+        message: `${binding.name} is not a canonical slug or alias for ${active.slug}`,
+      });
+    }
+
+    if (!binding.isSymlink) {
+      const existing = realFolderIds.get(active.id) || [];
+      existing.push(binding.name);
+      realFolderIds.set(active.id, existing);
+    }
+
+    const cacheKey = meta.slug || binding.name;
+    if (!cache[cacheKey] || cache[cacheKey].business_id !== active.id) {
+      issues.push({
+        level: 'warn',
+        code: 'folder-cache-missing',
+        subject: cacheKey,
+        message: `${binding.name} is bound locally but ${cacheKey} is missing/stale in local cache`,
+        fixable: true,
+      });
+      cacheUpdates[cacheKey] = buildBusinessCacheEntry(active, cacheKey, cache[cacheKey]);
+    }
+  }
+
+  for (const [businessId, names] of realFolderIds.entries()) {
+    if (names.length > 1) {
+      issues.push({
+        level: 'fail',
+        code: 'duplicate-real-folders',
+        subject: businessId,
+        message: `business ${businessId} has multiple real folders: ${names.join(', ')}`,
+      });
+    }
+  }
+
+  return {
+    issues,
+    cacheUpdates,
+    stats: {
+      cache_entries: Object.keys(cache || {}).length,
+      cloud_active: cloudBusinesses.length,
+      folders: folderBindings.length,
+      fixable_cache_entries: Object.keys(cacheUpdates).length,
+    },
+  };
+}
+
 function parseCreateBusinessFlags(flags, cwd = process.cwd()) {
   const options = {
     description: '',
@@ -1327,6 +1595,103 @@ async function businessAudit() {
   console.log('');
 }
 
+function parseBusinessDoctorOptions(args = []) {
+  const options = {
+    fix: args.includes('--fix'),
+    json: args.includes('--json'),
+    root: path.join(os.homedir(), 'arena', 'atris-business'),
+  };
+  const rootIdx = args.indexOf('--root');
+  if (rootIdx !== -1 && args[rootIdx + 1]) {
+    options.root = path.resolve(args[rootIdx + 1]);
+  }
+  return options;
+}
+
+function printBusinessDoctorHelp() {
+  console.log('Usage: atris business doctor [--fix] [--root <dir>] [--json]');
+  console.log('');
+  console.log('Checks cloud-active businesses against:');
+  console.log('  - ~/.atris/businesses.json');
+  console.log('  - ~/arena/atris-business/*/.atris/business.json');
+  console.log('  - canonical slug + alias bindings');
+  console.log('');
+  console.log('--fix rewrites only safe local cache entries. It does not rename folders or touch cloud data.');
+}
+
+async function businessDoctor(...args) {
+  if (args.some(isHelpToken)) {
+    printBusinessDoctorHelp();
+    return;
+  }
+
+  const options = parseBusinessDoctorOptions(args);
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('Not logged in. Run: atris login');
+    process.exit(1);
+  }
+
+  const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
+  if (!listResult.ok || !Array.isArray(listResult.data)) {
+    console.error(`Failed to fetch businesses: ${listResult.errorMessage || listResult.error || listResult.status || 'unknown error'}`);
+    process.exit(1);
+  }
+
+  let cache = loadBusinesses();
+  const folderBindings = readBusinessFolderBindings(options.root);
+  let analysis = analyzeBusinessDoctor({
+    cache,
+    cloudBusinesses: listResult.data,
+    folderBindings,
+  });
+
+  const cacheUpdateKeys = Object.keys(analysis.cacheUpdates);
+  let fixed = [];
+  if (options.fix && cacheUpdateKeys.length > 0) {
+    cache = { ...cache, ...analysis.cacheUpdates };
+    saveBusinesses(cache);
+    fixed = cacheUpdateKeys;
+    analysis = analyzeBusinessDoctor({
+      cache,
+      cloudBusinesses: listResult.data,
+      folderBindings,
+    });
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      root: options.root,
+      stats: analysis.stats,
+      fixed,
+      issues: analysis.issues,
+    }, null, 2));
+  } else {
+    console.log('');
+    console.log('Business Doctor');
+    console.log('---------------');
+    console.log(`cloud active: ${analysis.stats.cloud_active}`);
+    console.log(`cache entries: ${analysis.stats.cache_entries}`);
+    console.log(`folders scanned: ${analysis.stats.folders}`);
+    if (fixed.length > 0) console.log(`fixed cache entries: ${fixed.join(', ')}`);
+    console.log('');
+
+    if (analysis.issues.length === 0) {
+      console.log('OK no business binding drift found.');
+    } else {
+      for (const issue of analysis.issues) {
+        const label = issue.level === 'fail' ? 'FAIL' : 'WARN';
+        const fixHint = issue.fixable ? ' (run with --fix)' : '';
+        console.log(`${label} ${issue.code}: ${issue.message}${fixHint}`);
+      }
+    }
+    console.log('');
+  }
+
+  const failures = analysis.issues.filter((issue) => issue.level === 'fail');
+  if (failures.length > 0) process.exitCode = 1;
+}
+
 async function createBusinessInternal(name, flags = [], mode = 'auto') {
   if (!name || isHelpToken(name) || String(name).startsWith('-')) {
     console.error('Usage: atris business create <name> [--description "..."] [--workspace] [--here|--root <dir>]');
@@ -1947,6 +2312,7 @@ function printBusinessHelp() {
   console.log('  status <slug>        Quick status check');
   console.log('  health [slug]        Full health dashboard');
   console.log('  audit                Audit all businesses');
+  console.log('  doctor [--fix]       Find stale business cache, alias, and folder bindings');
   console.log('  connect <service>    Connect a skill/integration');
   console.log('  notify <mode>        Set notification mode (digest/silent/push)');
   console.log('  deploy <slug>        Push local business to cloud');
@@ -1965,7 +2331,7 @@ async function businessCommand(subcommand, ...args) {
     printBusinessHelp();
     return;
   }
-  if (args.length > 0 && isHelpToken(args[0])) {
+  if (args.length > 0 && isHelpToken(args[0]) && subcommand !== 'doctor') {
     printBusinessHelp();
     return;
   }
@@ -2015,6 +2381,9 @@ async function businessCommand(subcommand, ...args) {
     case 'audit':
       await businessAudit();
       break;
+    case 'doctor':
+      await businessDoctor(...args);
+      break;
     case 'connect':
       await connectService(args[0], ...args.slice(1));
       break;
@@ -2050,11 +2419,14 @@ module.exports = {
   businessCommand,
   businessHealth,
   businessAudit,
+  businessDoctor,
   businessTeam,
   loadBusinesses,
   saveBusinesses,
   getBusinessConfigPath,
   businessMatchesSlug,
+  analyzeBusinessDoctor,
+  readBusinessFolderBindings,
   createCanonicalBusinessWorkspace,
   initBusinessWorkspace,
   onboardBusiness,

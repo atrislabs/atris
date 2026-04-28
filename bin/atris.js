@@ -285,6 +285,7 @@ function showHelp() {
   console.log('  business team [slug]   - Show members, roles, and admin access');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
   console.log('  business audit         - One-line health summary of all businesses');
+  console.log('  business doctor        - Catch stale cache, alias, and folder bindings');
   console.log('  business create <name> - Cloud-only business record; add --workspace to also scaffold local');
   console.log('  business connect <svc> - Wire a skill/integration');
   console.log('  business notify <mode> - Set notification mode (digest/silent/push)');
