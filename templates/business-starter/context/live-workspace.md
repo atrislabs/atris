@@ -5,6 +5,13 @@
 - ID: `{{business_id}}`
 - Slug: `{{slug}}`
 
+## Product Model
+
+- Owner type: `Business`
+- Display type: business, lab, collective, community, artist, team, or project depending on packaging
+- Computer type: `business_ops` by default
+- Computer shape: workspace + files + tools + secrets + memory + agents + validation loop
+
 ## Workspace
 
 - ID: `{{workspace_id}}`

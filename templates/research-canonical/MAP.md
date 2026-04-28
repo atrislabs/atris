@@ -5,6 +5,9 @@
 
 ## Atris System
 
+This folder is a research computer for the `{{name}}` shared business owner.
+Keep owner metadata in `.atris/business.json`; keep research memory, files, tools, evals, and validation state in this workspace.
+
 | Path | What |
 |------|------|
 | `atris/atris.md` | Boot protocol |
@@ -38,7 +41,7 @@
 
 | Path | What |
 |------|------|
-| `atris/context/live-workspace.md` | Live ids, template, and separation rule |
+| `atris/context/live-workspace.md` | Live ids, owner/computer model, template, and separation rule |
 | `atris/context/README.md` | Raw-source rules |
 
 ## Skills
