@@ -13,6 +13,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+__pycache__/
+*.pyc
 
 # Logs
 *.log
