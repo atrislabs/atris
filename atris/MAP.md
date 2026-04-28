@@ -6,6 +6,24 @@
 
 ## Quick Reference Index
 
+## Product Model: Owners Have Computers
+
+This repo is the public CLI surface, so product language matters here.
+
+Core model:
+
+```text
+Owner = User | Business
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
+```
+
+Keep `business` as the shared owner in the schema and CLI internals.
+Externally, a business owner may be a company, lab, collective, community, artist, team, or project.
+Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `recruiting`, `event_ops`, or `support`.
+
+For details, read `atris/wiki/concepts/owner-computer-model.md` before changing business/computer commands or public help text.
+
 **Search Patterns (ripgrep shortcuts):**
 
 ```bash
