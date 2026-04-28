@@ -27,7 +27,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 
 | File | Purpose |
 |------|---------|
-| `atris/atris.md` | God file. Protocol and source of truth |
+| `atris/atris.md` | Main instructions for agents working in this repo |
 | `atris/MAP.md` | Navigation index with file:line refs |
 | `atris/TODO.md` | Shared task queue |
 | `atris/logs/YYYY/YYYY-MM-DD.md` | Daily log, inbox, notes, completions |
@@ -67,7 +67,7 @@ atris
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
 
-If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want the repo brain kept honest, use `atris loop`. `atris activate` now surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
+If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 
 Core loop: `plan` -> `do` -> `review`
 
@@ -84,9 +84,9 @@ atris business onboard --website https://blondish.world --contact "Joel Zimmerma
 atris align --fix
 ```
 
-That creates the cloud business, writes `.atris/business.json`, initializes `.atris/state/` for events, episodes, and scorecards, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter team lanes, a default recap artifact, and a first-loop starter queue in `atris/TODO.md`.
+That creates the cloud business, writes `.atris/business.json`, initializes `.atris/state/` for events and run history, and scaffolds the local `atris/` workspace under `~/arena/atris-business/<slug>/` with starter roles, a default recap template, and an initial task queue in `atris/TODO.md`.
 
-If you do not have a neat source pack yet, `atris business onboard` is the low-friction intake step: give it a website, a named human, a few notes, or even just run it in a folder with loose files, and it seeds raw intake, a starter brief, a first loop, a safe next action, and an operator one-pager for you.
+If you do not have a neat source pack yet, `atris business onboard` is the easiest intake step: give it a website, a named human, a few notes, or run it in a folder with loose files. Atris turns that into raw intake, a starter brief, a first workflow, a safe next action, and a short operator brief.
 
 You can also use bare input:
 
@@ -120,26 +120,26 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
-| `atris experiments` | Run Karpathy-style keep/revert packs |
+| `atris experiments` | Run small experiments and compare results |
 
 ## Built-In Systems
 
 - `atris learn` stores structured project memory in `atris/learnings.jsonl`
 - `atris wiki` keeps repo memory in `atris/wiki/` by default, with `--cloud` when you want the remote workspace path
 - `atris ingest` now stages local source packs under `atris/context/_ingest/`, writes a manifest receipt, and refreshes `atris/wiki/STATUS.md` plus `log.md`
-- `atris wiki --private` uses `.atris/presidio/` for local-only sensitive notes and operating memory
+- `atris wiki --private` stores local-only sensitive notes under `.atris/presidio/`
 - `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
-- `atris experiments` runs Karpathy-style keep/revert loops in `atris/experiments/`
+- `atris experiments` runs small test packs in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 
 ## Verifiable Feedback Loop
 
 Under the hood, Atris can keep score on real repo work.
 
-- Endgame tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
-- `atris autopilot` can run that check after review, record a reward in the journal, and append a local scorecard when a horizon closes.
-- Future horizon picks can weight against recent scorecards, so the loop learns from repo-local history without claiming model retraining.
+- Tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
+- `atris autopilot` can run that check after review and record the result in the journal.
+- Future task picks can use recent results, so Atris learns from repo-local history without claiming model retraining.
 
 ## Benchmark Harness
 
@@ -167,7 +167,7 @@ What to inspect:
 - receipts land in `atris/experiments/endstate-baseline/artifacts/` and
   `atris/experiments/endstate-stack/artifacts/`
 - scores append to each pack's `results.tsv`
-- `atris experiments compare endstate` prints the latest side-by-side scorecard
+- `atris experiments compare endstate` prints the latest side-by-side comparison
 - `atris experiments replay endstate` runs the full public dry-run rehearsal
 - the benchmark contract lives at `atris/features/endstate/contract.md`
 - the verification log lives at `atris/features/endstate/validate.md`
@@ -198,7 +198,7 @@ For Codex, copy any skill folder into `~/.codex/skills/`.
 ## v3.2.0
 
 - **Staleness gate** — tasks tagged `[unverified]` are skipped at the moment of use, not pruned eagerly. Three-state model: actionable / unverified / deleted.
-- **Lesson gate** — `isLessonResolved` checks whether a lesson already shipped before proposing new horizons from it. Prevents the loop from re-solving solved problems.
+- **Lesson gate** — `isLessonResolved` checks whether a lesson already shipped before proposing new work from it. Prevents the loop from re-solving solved problems.
 - **`atris release`** — new command: tags the version, bumps package.json, creates a GitHub release, and drafts a `/launch` post in one shot.
 - **Shell injection fix** — `checkStaleness` switched from `execSync` string interpolation to `execFileSync` with args arrays. Markdown-derived content (task titles, inbox items) no longer reaches a shell.
 - **Codex hardening** — `atris activate` and `atris` entry point detect Codex environments and write `AGENTS.md` so Codex sessions start with workspace context.
