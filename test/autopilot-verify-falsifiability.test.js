@@ -47,18 +47,16 @@ function cleanup(cwd) {
   try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
 }
 
-// Stub out plan/do/review phase execution so the test doesn't spawn claude -p.
-// runTaskOnce calls executePhaseDetailed internally; we monkey-patch via an
-// env var that the module honors (adding a thin hook is the minimal change).
-// Instead, we simply test the halt paths which never reach phases: those are
-// triggered BEFORE executePhaseDetailed runs, so stubs aren't needed.
+function stubPhaseExec(phase) {
+  return { prompt: `${phase} prompt`, output: `${phase} ok` };
+}
 
 test('trivial Verify (true) halts with verify-not-falsifiable', () => {
   const cwd = setupFixture({ verify: 'true' });
   try {
     const result = runTaskOnce(
       { task: 'Fixture task', kind: 'endgame', files: [] },
-      { cwd, verbose: false }
+      { cwd, verbose: false, skipPlanReview: true, phaseExec: stubPhaseExec }
     );
     assert.strictEqual(result.outcome, 'halted');
     assert.strictEqual(result.reason, 'verify-not-falsifiable');
@@ -101,19 +99,14 @@ test('non-falsifiable Verify via test -f on existing file halts', () => {
 });
 
 test('falsifiable Verify (test -f missing file) would proceed past gate', () => {
-  // We can't run full plan/do/review in tests (no claude CLI); we assert that
-  // the gate lets the tick through — i.e., runTaskOnce does NOT halt with
-  // verify-not-falsifiable for this case. It will halt or fail later when it
-  // tries to spawn claude, but the gate itself is passed. We detect that by
-  // checking the halt reason is anything other than verify-not-falsifiable.
+  // Stub plan/do/review so the test checks only the gate and never spawns an
+  // external agent process.
   const cwd = setupFixture({ verify: 'test -f created-by-work.txt' });
   try {
     const result = runTaskOnce(
       { task: 'Fixture task', kind: 'endgame', files: [] },
-      { cwd, verbose: false }
+      { cwd, verbose: false, skipPlanReview: true, phaseExec: stubPhaseExec }
     );
-    // If the test environment has no claude CLI, outcome may be 'halted' or
-    // phases may throw. What matters is the falsifiability gate let it through.
     if (result.outcome === 'halted') {
       assert.notStrictEqual(result.reason, 'verify-not-falsifiable');
     }
@@ -130,11 +123,8 @@ test('non-endgame task is exempt from the gate', () => {
   try {
     const result = runTaskOnce(
       { task: 'Fixture task', kind: 'inbox', files: [] },
-      { cwd, verbose: false }
+      { cwd, verbose: false, skipPlanReview: true, phaseExec: stubPhaseExec }
     );
-    // Reactive kind means the explicit verify guard doesn't trigger; the gate
-    // doesn't run either. The tick will still fail later (no claude CLI) but
-    // not for verify-not-falsifiable.
     if (result.outcome === 'halted') {
       assert.notStrictEqual(result.reason, 'verify-not-falsifiable');
     }
