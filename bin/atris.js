@@ -214,6 +214,8 @@ function showHelp() {
   console.log('  atris business init "My Company"');
   console.log('  atris run');
   console.log('  atris status');
+  console.log('  atris soul');
+  console.log('  atris fleet status');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
@@ -242,6 +244,7 @@ function showHelp() {
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
+  console.log('  task       - Local agent task plane (atomic claims, TODO import)');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
@@ -299,6 +302,8 @@ function showHelp() {
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
+  console.log('  soul       - Show, snapshot, or fork workspace identity');
+  console.log('  fleet      - Inspect local fleet status');
   console.log('  agent      - Select which Atris agent to use');
   console.log('  chat       - Chat with the selected Atris agent');
   console.log('  login      - Sign in or add another account');
@@ -440,7 +445,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop',
+                       'ingest', 'query', 'lint', 'loop', 'task',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -786,6 +791,11 @@ if (command === 'init') {
       console.error(`✗ Error: ${error.message || error}`);
       process.exit(1);
     });
+} else if (command === 'task') {
+  // SQLite-backed task plane. ~/.atris/tasks.db, gitignored, per-workspace.
+  Promise.resolve(require('../commands/task').run(process.argv.slice(3)))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agent') {
   agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'log') {
