@@ -4,13 +4,13 @@ slug: atris-business
 title: atris business (shared owner + computers)
 sources: [/Users/keshavrao/arena/atris-cli/commands/business.js]
 created: 2026-04-07
-updated: 2026-04-27
-tags: [product, cloud, atris, computer]
+updated: 2026-04-28
+tags: [product, cloud, atris, computer, groups]
 ---
 
 # atris business
 
-Atris business is the shared-owner layer inside atris-cli. A `business` is the schema owner for a persistent fleet of computers: workspaces with files, tools, secrets, memory, agents, integrations, and validation loops. The customer-facing language can be business, lab, collective, community, artist, team, or project; the internal primitive stays `business`.
+Atris business is the shared-owner layer inside atris-cli. A `business` is the schema owner for a persistent fleet of computers: workspaces with files, tools, secrets, memory, agents, integrations, and validation loops. The internal owner primitive stays `business`; `entity_type` defines the operating mode, `computer_type` defines the function, and groups define the human surface.
 
 ## Product Model Update — 2026-04-27
 
@@ -23,11 +23,20 @@ Business owns many Computers
 User owns many Computers
 ```
 
-The schema can keep `business` as the shared owner for companies, labs, collectives, communities, artists, teams, and projects.
-The outward packaging should adapt: "your business runs on Atris," "your lab runs on Atris," or "your collective runs on Atris."
+The schema can keep `business` as the shared owner while `entity_type` stays constrained to three modes:
+
+- `business` — profit generation
+- `research` — truth generation
+- `project` — artifact generation
+
+The outward packaging can say business, lab, collective, artist, team, or community, but those are display language or tags.
+Do not turn them into base entity types without a distinct reward function.
 
 Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `recruiting`, `event_ops`, or `support`.
 `atris business init <name>` should be understood as creating the business owner plus its first/default business computer.
+
+Groups carry people, chat, membership, posts, approvals, and visibility.
+They attach to owners/computers; they do not replace either one.
 
 ## Local shape
 

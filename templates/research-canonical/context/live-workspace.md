@@ -9,9 +9,10 @@
 ## Product Model
 
 - Owner type: `Business`
-- Display type: lab
+- Entity type: `research`
 - Computer type: `research`
 - Computer shape: workspace + files + tools + secrets + memory + agents + validation loop
+- Group role: PIs, students, reviewers, and collaborators belong in groups; hypotheses, evidence, and eval state belong in this computer
 
 ## Workspace
 
