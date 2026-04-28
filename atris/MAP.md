@@ -143,6 +143,17 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "experimentsCommand|experimentsRun|experimentsCompare|experimentsReplay|buildBenchmarkArtifact|ensureExperimentsFramework" commands/experiments.js commands/init.js`
 
+### Feature: Receipts (`atris receipt`)
+
+**Purpose:** Save simple evidence from agent/business-computer work: task -> commands -> checks -> receipt.
+
+- **Entry point:** `bin/atris.js` command routing for `receipt` (`proof` and `openclaw` remain quiet aliases).
+- **Handler:** `commands/proof.js`
+- **Core flows:** `doctor` checks business binding + `.atris/receipts`; `init <slug>` scaffolds `.atris/tasks/<slug>.json` and `.atris/receipts/`; `run --dry-run` prints the two commands without backend calls.
+- **Value:** Gives users receipts instead of asking them to trust agent claims.
+
+**Search:** `rg "proofCommand|Receipt check|Receipt run" commands/proof.js bin/atris.js`
+
 ### Feature: Spec Update (`atris update`, `atris update --all`)
 
 **Purpose:** Updates local atris.md to latest package version. `--all` propagates across every atris project under cwd.
@@ -394,20 +405,17 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "analyticsAtris" bin/atris.js`
 
-### Feature: Visualize Ideas (`atris visualize`)
+### Feature: Visualize Artifacts (`atris visualize`)
 
-**Purpose:** Break down inbox ideas with ASCII diagram - approval gate for agents
+**Purpose:** Generate Slack/deck-ready business visuals from a prompt, using workspace context and backend `gpt-image-2`.
 
-- **Entry point:** `commands/visualize.js:5-72` (visualizeAtris function)
-- **Input:** Reads `## Inbox` from today's journal
-- **Process:**
-- Extracts inbox items (format: `- **I#: Description**`)
-- Shows agent prompt with ASCII example
-- Waits for human approval
-- **Purpose:** Confirms understanding before building
-- **Value:** Prevents wasted work on misunderstood tasks
+- **Entry point:** `commands/visualize.js` (`visualizeAtris`, `generateVisual`, `buildImagePrompt`)
+- **Prompt mode:** `atris visualize "<prompt>"` builds a structured image prompt, calls `/api/agent/{agent_id}/image/generate`, and saves PNGs under `atris/reports/visuals/`.
+- **Defaults:** model `gpt-image-2`, size `1536x1024`, quality `high`; supports `--dry-run`, `--out`, `--agent`, `--open`, `--raw`.
+- **Legacy mode:** no prompt still reads today's journal `## Inbox` and prints the old ASCII approval helper.
+- **Value:** Turns workspace knowledge into polished visual artifacts without leaving the CLI.
 
-**Search:** `rg "visualizeAtris" commands/visualize.js`
+**Search:** `rg "generateVisual|buildImagePrompt|visualizeAtris" commands/visualize.js`
 
 ### Feature: Autopilot (`atris autopilot`)
 

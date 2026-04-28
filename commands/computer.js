@@ -52,7 +52,39 @@ const KNOWN_CHAT_COMMANDS = new Set([
   '/start',
   '/status',
   '/worker',
+  '/workflow',
 ]);
+
+const CODEOPS_WORKFLOW_PROMPT = `
+## Atris CodeOps Workflow
+
+You are running inside Atris CodeOps with full computer permissions (permission_mode=bypassPermissions).
+Use those permissions to inspect, edit, test, commit, push, and open PRs when the task calls for it.
+
+Do not behave like an open-ended chat.
+Every coding or repo operation must follow the scientific workflow:
+OBSERVE -> HYPOTHESIS -> PLAN -> ACTION -> VALIDATION -> EVIDENCE -> NEXT STATE.
+
+For a new coding request, first show a concise PLAN with Files, Checks, Risk, and Merge policy.
+If the user has not clearly approved execution, ask for approval before editing.
+If the user explicitly says to execute, proceed after the concise plan.
+
+After work, always report:
+- edited_files
+- commands_run
+- validation_result
+- evidence
+- pr_url if any
+- pr_state
+- merge_state
+- next_task
+
+Use one of these next states:
+planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, merge_blocked_policy, merged, failed, needs_human.
+
+Never hide failures.
+A blocked check or missing permission is evidence, not success.
+`.trim();
 
 function color(code, value) {
   if (process.env.NO_COLOR || !process.stdout.isTTY) return String(value);
@@ -165,6 +197,7 @@ function printCloudHelp() {
   console.log('  /start               Show the beginner flow again');
   console.log('  /help                Show this menu');
   console.log('  /status              Show cloud computer status');
+  console.log('  /workflow            Show the CodeOps workflow contract');
   console.log('  /files [path]        List files in the workspace');
   console.log('  /run <cmd>           Run shell without the model');
   console.log('  /audit [n]           Show recent runs, output, and charges');
@@ -199,6 +232,48 @@ function printCloudStartPanel(ctx, worker, model, billingLabel, authSummary = nu
   console.log('  /audit 5 recent runs      /exit leave cloud mode');
   console.log('');
   console.log(ui.dim('Plain English goes to Atris. Slash commands control the computer.'));
+}
+
+function appendSystemPrompt(basePrompt, extraPrompt) {
+  if (!extraPrompt) return basePrompt || null;
+  if (basePrompt && basePrompt.includes('## Atris CodeOps Workflow')) return basePrompt;
+  if (!basePrompt) return extraPrompt;
+  return `${String(basePrompt).trim()}\n\n${extraPrompt}`;
+}
+
+function codeOpsCloudOptions(options = {}) {
+  return {
+    ...options,
+    worker: options.worker || 'claude',
+    mode: 'codeops',
+    systemPrompt: appendSystemPrompt(options.systemPrompt, CODEOPS_WORKFLOW_PROMPT),
+  };
+}
+
+function printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary = null) {
+  console.log('');
+  console.log(ui.bold('Atris CodeOps Computer'));
+  console.log(`${ctx.businessName}  ${ui.dim('/workspace persists, full permissions enabled')}`);
+  console.log(`Lane: ${ui.bold(formatWorkerName(worker))}  ${ui.dim(formatCloudSelection({ worker, model }))}`);
+  console.log(`Billing: ${billingLabel}`);
+  if (authSummary) console.log(`${authSummary.label}  ${ui.dim(authSummary.detail)}`);
+  console.log(`${ui.green('Workflow locked')}  ${ui.dim('observe -> plan -> act -> validate -> evidence -> next')}`);
+  console.log('');
+  console.log(ui.bold('Start here'));
+  console.log('  Type a coding goal in plain English.');
+  console.log('  CodeOps will plan first, then execute after approval or explicit proceed language.');
+  console.log('  Use /workflow to see the contract, /run for shell, /audit for run history, /exit to leave.');
+  console.log('');
+}
+
+function printCodeOpsWorkflowContract() {
+  console.log('');
+  console.log(ui.bold('CodeOps workflow'));
+  console.log('  observe -> hypothesis -> plan -> action -> validation -> evidence -> next state');
+  console.log('');
+  console.log('  Required final evidence: edited_files, commands_run, validation_result, pr_url, pr_state, merge_state, next_task.');
+  console.log('  Allowed states: planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, merge_blocked_policy, merged, failed, needs_human.');
+  console.log('  Full permissions stay on; the workflow contract controls how the computer uses them.');
 }
 
 function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
@@ -1386,6 +1461,8 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
         workspace_id: ctx.workspaceId,
         ...(options.worker ? { worker: options.worker } : {}),
         ...(options.model ? { model: options.model } : {}),
+        ...(options.systemPrompt ? { system_prompt: options.systemPrompt } : {}),
+        ...(options.allowedTools ? { allowed_tools: options.allowedTools } : {}),
       },
       timeoutMs: 40000,
     });
@@ -1742,6 +1819,10 @@ async function computerChat(token, ctx, initialOptions = {}) {
     return;
   }
 
+  const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const chatSystemPrompt = isCodeOps
+    ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
+    : initialOptions.systemPrompt;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   printCloudWordmark();
   const selection = await chooseCloudLane(token, ctx, initialOptions);
@@ -1758,12 +1839,16 @@ async function computerChat(token, ctx, initialOptions = {}) {
     return;
   }
 
-  printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+  if (isCodeOps) {
+    printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+  } else {
+    printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+  }
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: 'cloud> ',
+    prompt: isCodeOps ? 'codeops> ' : 'cloud> ',
   });
 
   rl.prompt();
@@ -1782,7 +1867,11 @@ async function computerChat(token, ctx, initialOptions = {}) {
       if (line === '/start') {
         billingLabel = await describeBillingMode(token, ctx, worker);
         authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
-        printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+        if (isCodeOps) {
+          printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+        } else {
+          printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+        }
         rl.prompt();
         continue;
       }
@@ -1793,6 +1882,11 @@ async function computerChat(token, ctx, initialOptions = {}) {
       }
       if (line === '/status') {
         await printCloudSessionStatus(token, ctx, worker, model);
+        rl.prompt();
+        continue;
+      }
+      if (line === '/workflow') {
+        printCodeOpsWorkflowContract();
         rl.prompt();
         continue;
       }
@@ -1889,7 +1983,12 @@ async function computerChat(token, ctx, initialOptions = {}) {
         }
       }
 
-      sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, rl, { worker, model });
+      sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, rl, {
+        worker,
+        model,
+        systemPrompt: chatSystemPrompt,
+        allowedTools: initialOptions.allowedTools,
+      });
       rl.prompt();
     }
   } catch (error) {
@@ -2318,7 +2417,7 @@ async function runComputer() {
     console.log('  local-byo       Open LOCAL BYO Claude mode; Anthropic tokens, no cloud audit');
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
-    console.log('  codeops         Open Atris CodeOps cloud workspace if your account has access');
+    console.log('  codeops         Open Atris CodeOps workflow computer if your account has access');
     console.log('  --worker        Cloud worker override: claude | openai');
     console.log('  --model         Cloud model override');
     console.log('  claude|codex    Legacy local console backends');
@@ -2351,6 +2450,9 @@ async function runComputer() {
     console.log('  atris computer --cloud --worker openai --model gpt-5.4');
     console.log('  atris computer cloud');
     console.log('  atris computer codeops');
+    console.log('  atris computer codeops status');
+    console.log('  atris computer codeops run "pwd"');
+    console.log('  atris computer codeops exec "Plan a safe repo fix"');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');
@@ -2370,7 +2472,44 @@ async function runComputer() {
       console.error('Ask an Atris CodeOps admin to add you to the atris-codeops business.');
       return;
     }
-    await computerChat(token, codeopsCtx, { worker: 'claude', ...cloudOptions });
+    const codeopsOptions = codeOpsCloudOptions(cloudOptions);
+    const codeopsSub = args[1];
+    const codeopsRest = args.slice(2).join(' ');
+    if (!codeopsSub || codeopsSub === 'chat') {
+      await computerChat(token, codeopsCtx, codeopsOptions);
+      return;
+    }
+    switch (codeopsSub) {
+      case '--help':
+      case 'help':
+        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow]');
+        console.log('');
+        console.log('Examples:');
+        console.log('  atris computer codeops');
+        console.log('  atris computer codeops status');
+        console.log('  atris computer codeops run "pwd && git status --short"');
+        console.log('  atris computer codeops exec "Plan the smallest safe fix, then wait"');
+        return;
+      case 'status': return computerStatus(token, codeopsCtx);
+      case 'wake': return computerWake(token, codeopsCtx);
+      case 'sleep': return computerSleep(token, codeopsCtx);
+      case 'run': return computerRun(token, codeopsRest, codeopsCtx);
+      case 'grep': return computerGrep(token, codeopsRest, codeopsCtx);
+      case 'ls': return computerLs(token, codeopsRest || undefined, codeopsCtx);
+      case 'cat': return computerCat(token, codeopsRest, codeopsCtx);
+      case 'exec': return computerExec(token, codeopsRest, codeopsCtx, codeopsOptions);
+      case 'audit': {
+        const limit = codeopsRest ? Number.parseInt(codeopsRest, 10) : 10;
+        return computerAudit(token, codeopsCtx, Number.isFinite(limit) ? limit : 10);
+      }
+      case 'workflow':
+        printCodeOpsWorkflowContract();
+        return;
+      default:
+        console.error(`Unknown CodeOps subcommand: ${codeopsSub}`);
+        console.log('Run: atris computer codeops help');
+        return;
+    }
     return;
   }
 

@@ -382,6 +382,43 @@ test('visualize renders breakdown for inbox items', () => {
   }
 });
 
+test('visualize dry-run accepts any prompt without requiring inbox', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['visualize', 'show the connect-api workflow for onboarding', '--dry-run'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris Visualize dry run/);
+    assert.match(res.stdout, /gpt-image-2/);
+    assert.match(res.stdout, /connect-api workflow/);
+    assert.match(res.stdout, /Artifact type: workflow/);
+    assert.match(res.stdout, /atris\/reports\/visuals/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('visualize dry-run supports custom output and raw prompt', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli([
+      'visualize',
+      'exact raw diagram prompt',
+      '--dry-run',
+      '--raw',
+      '--out',
+      'custom/path.png',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /custom\/path\.png/);
+    assert.match(res.stdout, /exact raw diagram prompt/);
+    assert.doesNotMatch(res.stdout, /Workspace context to respect/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ============================================
 // clean
 // ============================================
@@ -852,6 +889,76 @@ test('business onboard bootstraps from bare directory with --name flag', async (
     const todoContent = fs.readFileSync(todoPath, 'utf8');
     assert.match(todoContent, /Backlog/);
     assert.match(todoContent, /\[execute\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// receipt
+// ============================================
+
+test('receipt doctor prints readiness without requiring auth', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['receipt', 'doctor'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Receipt check/);
+    assert.match(res.stdout, /business binding/);
+    assert.match(res.stdout, /atris receipt init business-workflow/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('receipt init scaffolds task and receipt directory', () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-receipt',
+      workspace_id: 'ws-receipt',
+      name: 'Receipt Co',
+      slug: 'receipt-co',
+      owner_email: 'team@receipt.dev',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const res = runCli(['receipt', 'init', 'support-agent'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Receipt task ready/);
+
+    const taskPath = path.join(dir, '.atris', 'tasks', 'support-agent.json');
+    assert.ok(fs.existsSync(taskPath));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'receipts', '.gitkeep')));
+
+    const task = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    assert.equal(task.workspace.slug, 'receipt-co');
+    assert.equal(task.runtime.proof_command, 'atris computer proof');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('receipt run dry-run prints commands and writes nothing', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['receipt', 'run', '--dry-run'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /atris computer proof/);
+    assert.match(res.stdout, /atris experiments replay endstate/);
+    assert.match(res.stdout, /Dry run only/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'receipts')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('proof remains a quiet alias for receipt', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['proof', 'doctor'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Receipt check/);
   } finally {
     cleanupTempDir(dir);
   }

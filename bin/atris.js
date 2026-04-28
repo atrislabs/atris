@@ -247,7 +247,7 @@ function showHelp() {
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
-  console.log('  visualize  - Legacy visualization helper (prefer "atris plan")');
+  console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('');
   console.log('Experiments:');
   console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
@@ -272,7 +272,7 @@ function showHelp() {
   console.log('  wake [business]    - Resume workspace (agents restart)');
   console.log('');
   console.log('Business:');
-  console.log('  business init <name>   - Create canonical business workspace (cloud + local)');
+  console.log('  business init <name>   - RECOMMENDED: create business environment (cloud + local)');
   console.log('  business onboard       - Onboard from sparse input (--name, --website, --contact)');
   console.log('  business add <slug>    - Connect a business');
   console.log('  business list          - Show connected businesses');
@@ -280,7 +280,7 @@ function showHelp() {
   console.log('  business team [slug]   - Show members, roles, and admin access');
   console.log('  business health <slug> - Health report (members, workspace, issues)');
   console.log('  business audit         - One-line health summary of all businesses');
-  console.log('  business create <name> - Create new business; add --workspace for canonical local scaffold');
+  console.log('  business create <name> - Cloud-only business record; add --workspace to also scaffold local');
   console.log('  business connect <svc> - Wire a skill/integration');
   console.log('  business notify <mode> - Set notification mode (digest/silent/push)');
   console.log('  business deploy <slug> - Push local business to cloud');
@@ -291,6 +291,7 @@ function showHelp() {
   console.log('');
   console.log('Cloud & agents:');
   console.log('  computer   - Talk directly to the AI computer (bash or agent exec)');
+  console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  agent      - Select which Atris agent to use');
   console.log('  chat       - Chat with the selected Atris agent');
@@ -432,7 +433,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'pull', 'push', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop',
                        'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
@@ -868,10 +869,9 @@ if (command === 'init') {
 } else if (command === 'shell-init') {
   require('../commands/auth').shellInit();
 } else if (command === 'visualize') {
-  console.log('ℹ️  "atris visualize" is a legacy helper. Visualization is now built into "atris plan".');
-  console.log('   Prefer: atris plan');
-  console.log('');
-  require('../commands/visualize').visualizeAtris();
+  require('../commands/visualize').visualizeAtris(process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'run') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h')) {
@@ -1160,6 +1160,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
+} else if (command === 'receipt' || command === 'proof' || command === 'openclaw') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/proof').proofCommand(subcommand, ...args);
 } else if (command === 'setup') {
   require('../commands/setup').setupAtris()
     .then(() => process.exit(0))
