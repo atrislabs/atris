@@ -84,7 +84,7 @@ Core loop: `plan` -> `do` -> `review`
 
 Integrates with any agent.
 
-## Business Workspaces
+## Business Owners
 
 If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.
 
