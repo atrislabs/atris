@@ -367,6 +367,12 @@ async function pushAtris() {
 
     if (!result.ok) {
       if (result.status === 403) {
+        const detail = result.errorMessage || result.error || (result.data && result.data.detail) || '';
+        if (detail && /plan required|business, max, or enterprise/i.test(detail)) {
+          console.error(`\n  Access denied: ${detail}`);
+          await emit('access_denied', { error_detail: detail });
+          process.exit(1);
+        }
         // Permission denied — retry with only team/ and journal/ files
         const allowed = filesToPush.filter(f => f.path.startsWith('/team/') || f.path.startsWith('/journal/'));
         skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
