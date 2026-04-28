@@ -120,6 +120,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
+| `atris receipt` | Save evidence from an agent run |
 | `atris experiments` | Run small experiments and compare results |
 
 ## Built-In Systems

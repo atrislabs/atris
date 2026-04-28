@@ -8,7 +8,14 @@ const { checkPageStaleness } = require('../commands/clean');
 function makeTempPage(sourceLines, compiledDate = '2026-04-20') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-stale-parse-'));
   fs.mkdirSync(path.join(dir, 'commands'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'commands', 'foo.js'), '// stub\n');
+  const sourceFile = path.join(dir, 'commands', 'foo.js');
+  fs.writeFileSync(sourceFile, '// stub\n');
+  // Pin mtime so behavior is independent of the wall clock. Without this,
+  // fresh-write mtime moves past the default compiledDate and the test rots.
+  // 2020-06-01 sits below the default 2026-04-20 but above the "stale" test's
+  // 2020-01-01 compiledDate, satisfying both polarities.
+  const fixedMtime = new Date('2020-06-01T00:00:00Z');
+  fs.utimesSync(sourceFile, fixedMtime, fixedMtime);
   const page = path.join(dir, 'page.md');
   const sources = sourceLines.map((s) => `  - ${s}`).join('\n');
   fs.writeFileSync(

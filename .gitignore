@@ -1,6 +1,11 @@
 # Local files (not for public repo)
 .local/
 .atris/
+.claude/
+
+# Local scratch workspaces (created by `atris init` in subdirs for testing)
+atris-labs-*/
+atris/business/
 
 # Dependencies
 node_modules/
