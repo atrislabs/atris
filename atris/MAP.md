@@ -53,10 +53,13 @@ rg "releaseAtris" commands/release.js      # Release command
 rg "searchJournal" bin/atris.js             # Search command (inline)
 rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
-rg "computerLocal|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud
+rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
+rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
+rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "gmailCommand" commands/integrations.js  # Integration commands
 rg "memberCommand|memberPush|memberPull" commands/member.js  # Team member cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
+rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
 
 # Utilities
 rg "ensureValidCredentials" utils/auth.js   # Auth flow
@@ -75,8 +78,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
-- **Entry point:** `bin/atris.js:426-437` (knownCommands dispatch)
-- **Handler:** `bin/atris.js:1453-1583` (atrisDevEntry function)
+- **Entry point:** `bin/atris.js:443-449` (knownCommands dispatch)
+- **Handler:** `bin/atris.js:1508-1638` (atrisDevEntry function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -205,6 +208,18 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
+### Feature: Live Brain Sync (`atris live`)
+
+**Purpose:** Keeps a business workspace fresh for nontechnical operators.
+
+- **Entry point:** `bin/atris.js` dispatch for `live`
+- **Handler:** `commands/live.js`
+- **Core flow:** `business doctor --fix` → `push <business>` → `pull <business>` → watch local files → debounced `push <business>` → periodic pull
+- **Safety:** `--dry-run` prints the planned commands without cloud writes; failures stop the loop instead of auto-merging conflicts.
+- **Value:** Operators can live inside the workspace without remembering pull/push hygiene.
+
+**Search:** `rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js`
+
 ### Feature: Business Owners + Computers (`atris business`)
 
 **Purpose:** Create, inspect, and sync shared business owners and their default computers, including the standalone `.atris/business.json` + `atris/` shape used for local-first business environments
@@ -221,6 +236,40 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Makes shared owners and their computers a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
 **Search:** `rg "initBusinessWorkspace|onboardBusiness|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
+
+### Feature: Computer Card (`atris computer card`)
+
+**Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
+
+- **Entry point:** `commands/computer.js:2501` (`runComputer` dispatch handles `card` before auth)
+- **Builder:** `commands/computer.js:752` (`buildComputerCard`)
+- **Writer:** `commands/computer.js:847` (`computerCard`)
+- **How it works:**
+- Reads `.atris/business.json` when present for owner/workspace metadata
+- Falls back to `package.json` and folder name for project workspaces
+- Detects memory paths (`atris/MAP.md`, `atris/TODO.md`, wiki, logs), validation command, proof command, and visual command
+- `--write` saves markdown to `atris/reports/computer-card.md`
+- **Value:** Turns the owner/computer model into a concrete artifact a teammate can inspect.
+
+**Search:** `rg "buildComputerCard|computerCard" commands/computer.js`
+
+### Feature: Agent Task Plane (`atris task`)
+
+**Purpose:** Provide a local SQLite task plane for agents while keeping `atris/TODO.md` as the human-readable project board.
+
+- **Entry point:** `bin/atris.js:794` (`task` command dispatch)
+- **Handler:** `commands/task.js:194` (`run` dispatch)
+- **Store:** `lib/task-db.js:150` (`addTask`), `lib/task-db.js:183` (`listTasks`), `lib/task-db.js:207` (`claimTask`), `lib/task-db.js:231` (`doneTask`)
+- **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
+- **How it works:**
+- `atris task add` creates a workspace-scoped row in `~/.atris/tasks.db` (or `ATRIS_TASKS_DB`)
+- `atris task claim` uses a single guarded SQLite update so only one agent wins an open task
+- `atris task import atris/TODO.md` imports backlog and in-progress tasks with source keys for idempotent re-runs
+- `atris/TODO.md` remains the readable board; SQLite is the compact local/sync layer
+- **Runtime note:** `node:sqlite` requires Node.js 22+; older Node versions keep using the markdown TODO flow
+- **Value:** Gives multi-agent work atomic claims and a backend-syncable row without hiding task state in chat.
+
+**Search:** `rg "cmdAdd|cmdImport|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js`
 
 ### Feature: Daily Logging (`atris log`)
 
@@ -493,8 +542,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Post-cycle clean:** `commands/run.js:319` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:328` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:92-105` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:214`
-- **Known commands:** `bin/atris.js:425` (knownCommands array)
+- **Help text:** `bin/atris.js:199` (showHelp function)
+- **Known commands:** `bin/atris.js:443` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
   - `--once` — Single plan→do→review cycle
@@ -738,10 +787,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Logic:**
 
-- Lines 150-212: Help text (showHelp function)
-- Lines 313-316: Known commands list (knownCommands array)
-- Lines 330-341: Natural language routing (cold/hot start)
-- Lines 601-797: Command dispatch (if/else chain)
+- Lines 199-353: Help text (showHelp function)
+- Lines 443-449: Known commands list (knownCommands array)
+- Lines 525-669: Natural language routing (cold/hot start)
+- Lines 783-1212: Command dispatch (if/else chain)
 
 **Pattern:** Modular commands (commands/\*.js) + monolithic bin/atris.js
 
@@ -962,11 +1011,11 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Key functions (in bin/atris.js):**
 
-- Command routing (lines 644-852)
-- `interactiveEntry()` — Natural language entry (line 386)
-- `showWelcomeVisualization()` — Spec file trigger (line 533)
-- `upgradeAtris()` — npm upgrade (line 861)
-- `atrisDevEntry()` — Dev entry point (line 1833)
+- Command routing (lines 783-1212)
+- `interactiveEntry()` — Natural language entry (line 525)
+- `showWelcomeVisualization()` — Spec file trigger (line 672)
+- `upgradeAtris()` — npm upgrade (line 1214)
+- `atrisDevEntry()` — Dev entry point (line 1508)
 **Modular commands (in commands/):**
 
 - `planAtris()` → `commands/workflow.js:5-306`
@@ -1089,7 +1138,7 @@ atris fix the auth bug
 atris build user dashboard
 ```
 
-**Flow:** `bin/atris.js:138` → `atrisDevEntry()` → loads context → shows protocol
+**Flow:** `bin/atris.js:525` → `atrisDevEntry()` → loads context → shows protocol
 
 ### Entry Point 4: AI Agent Execution
 
