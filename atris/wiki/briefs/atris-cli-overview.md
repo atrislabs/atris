@@ -11,21 +11,34 @@ sources:
   - atris/TODO.md
   - .atris/presidio/scorecards.md
   - package.json
-last_compiled: 2026-04-20
+last_compiled: 2026-04-27
 created: 2026-04-07
-updated: 2026-04-20
+updated: 2026-04-27
 tags:
   - cli
   - overview
   - workspace
+  - computer
 ---
 # Atris CLI Overview
 
-`atris` (v3.1.0) is a Node.js CLI that turns any repository into an AI workspace with a strict operating loop and shared local context. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and the workspace conventions live under `atris/`. The `atris.md` spec at the workspace root is the protocol agents read — everything else in the loop points back to it.
+`atris` is a Node.js CLI that turns any repository into a persistent AI computer with a strict operating loop and shared local context. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and the workspace conventions live under `atris/`. The `atris.md` spec at the workspace root is the protocol agents read — everything else in the loop points back to it.
+
+## Owner/computer model
+
+The public product model is:
+
+```text
+Owner = User | Business
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
+```
+
+`atris init` creates a repo-level computer for the current owner. `atris business init <name>` creates a shared business owner plus its first/default computer. A business owner can present as a company, lab, collective, community, artist, team, or project; the schema still uses `business` as the shared owner primitive.
 
 ## Workspace layers
 
-The working set is split across seven layers that compound across sessions:
+The computer's working set is split across seven layers that compound across sessions:
 
 - `atris/MAP.md` — navigation index with file:line refs
 - `atris/TODO.md` — current task queue (target state = 0)
@@ -49,6 +62,7 @@ The self-improvement rail is `atris/features/endstate/` and the `experiments/` p
 ## Cross-References
 
 - [[atris/wiki/systems/atris-cli.md]] — the CLI as a system, its capability surface, and what it doesn't do
+- [[atris/wiki/concepts/owner-computer-model.md]] — owner/computer model and language guardrails
 - [[atris/wiki/concepts/plan-do-review-loop.md]] — the core workflow that shapes every Atris task
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is for and how it sits under the loop
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — public description of the verify-and-score loop

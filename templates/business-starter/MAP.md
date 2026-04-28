@@ -5,6 +5,9 @@
 
 ## Atris System
 
+This folder is the default computer for the `{{name}}` business owner.
+Keep owner metadata in `.atris/business.json`; keep computer memory, files, tools, and validation state in this workspace.
+
 | Path | What |
 |------|------|
 | `atris/atris.md` | Boot protocol |
@@ -39,7 +42,7 @@
 
 | Path | What |
 |------|------|
-| `atris/context/live-workspace.md` | Live ids and workspace separation rule |
+| `atris/context/live-workspace.md` | Live ids, owner/computer model, and workspace separation rule |
 | `atris/context/README.md` | Raw-source rules |
 
 ## Skills

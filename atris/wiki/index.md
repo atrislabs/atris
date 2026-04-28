@@ -4,8 +4,8 @@
 
 - [[atris/wiki/people/jack-dorsey.md]] — Block / Twitter founder; AI-native company thesis
 - [[atris/wiki/systems/atris-cli.md]] — this project; dev-tool layer of the Atris stack
-- [[atris/wiki/systems/atris-business.md]] — sibling product; AI-native company workspaces
-- [[atris/wiki/systems/atris-labs.md]] — reference workspace in the Atris fleet; company-as-member identity
+- [[atris/wiki/systems/atris-business.md]] — sibling product; shared owners with persistent AI computers
+- [[atris/wiki/systems/atris-labs.md]] — reference business owner in the Atris fleet; default computer dogfood
 
 ## Concepts
 
@@ -19,5 +19,5 @@
 
 ## Briefs
 
-- [[atris/wiki/briefs/atris-cli-overview.md]] — summary of CLI, workspace layers, and why `atris/wiki/` exists
+- [[atris/wiki/briefs/atris-cli-overview.md]] — summary of CLI, owner/computer model, workspace layers, and why `atris/wiki/` exists
 - [[atris/wiki/briefs/atris-labs-workspace-protocol.md]] — atris-labs workspace protocol: on-load sequence, layout, surfaces, north star

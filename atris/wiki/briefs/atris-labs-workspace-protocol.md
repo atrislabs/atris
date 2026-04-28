@@ -4,18 +4,27 @@ slug: atris-labs-workspace-protocol
 title: Atris Labs Workspace Protocol
 sources:
   - /Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md
-last_compiled: 2026-04-08
+last_compiled: 2026-04-27
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-27
 tags:
   - atris-labs
   - workspace
+  - computer
   - protocol
   - dogfooding
 ---
 # Atris Labs Workspace Protocol
 
-Atris Labs is the operating workspace for the company that builds Atris. It dogfoods the AI-native company shape on itself so the pattern is battle-tested before customers touch it — the workspace is the reference implementation of what Atris ships.
+Atris Labs is the business owner for the company that builds Atris. Its default computer lives at `arena/atris-business/atris-labs-1/atris/` and dogfoods the AI-native operating shape before customers touch it. Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
+
+Model mapping:
+
+```text
+Owner: Atris Labs business
+Computer: default business_ops computer
+Workspace: the files and folders under atris/
+```
 
 ## On Load
 
@@ -72,3 +81,8 @@ Surfaces are owned by team members (Head of Revenue, CMO, Head of Talent). New s
 ## North Star
 
 When a Sequoia partner walks in, you open `STATUS.md` and they interrogate the company in real time. That is the demo. That is the fundraise unlock. Every choice in the workspace is judged against whether it makes that future possible.
+
+## Cross-References
+
+- [[atris/wiki/concepts/owner-computer-model.md]] — owner/computer model used by this protocol
+- [[atris/wiki/systems/atris-labs.md]] — Atris Labs as the dogfood business owner

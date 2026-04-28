@@ -1,25 +1,25 @@
 ---
 type: entity
 slug: atris-labs
-title: atris labs (company workspace dogfood)
+title: atris labs (business owner dogfood)
 sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]
 created: 2026-04-08
-updated: 2026-04-08
-last_compiled: 2026-04-08
-tags: [company, workspace, dogfood, atris]
+updated: 2026-04-27
+last_compiled: 2026-04-27
+tags: [company, workspace, computer, dogfood, atris]
 ---
 
 # atris labs
 
-The reference implementation of company-as-workspace. Atris Labs builds Atris and runs itself on Atris. Every customer who buys Atris is buying the shape Atris Labs already lives inside.
+The reference implementation of a business owner with persistent computers. Atris Labs builds Atris and runs itself on Atris. Every customer who buys Atris is buying the shape Atris Labs already lives inside.
 
 ## Mission
 
-Be the dogfood. Prove the operating model by living in it. The company's brain — status, pipeline, customers, financials, team, knowledge, sales/marketing/recruiting surfaces — sits inside a standalone Atris workspace so any agent can answer "what is the company doing right now?" in 60 seconds via `STATUS.md`.
+Be the dogfood. Prove the operating model by living in it. The company's brain — status, pipeline, customers, financials, team, knowledge, sales/marketing/recruiting surfaces — sits inside a standalone Atris computer so any agent can answer "what is the company doing right now?" in 60 seconds via `STATUS.md`.
 
 ## What it is
 
-A standalone Atris workspace at `arena/atris-business/atris-labs-1/atris/`. Holds:
+A standalone Atris business computer at `arena/atris-business/atris-labs-1/atris/`. Holds:
 
 - company state (pipeline, financials, customers)
 - team identities (`team/<member>/MEMBER.md`)
@@ -60,4 +60,5 @@ atris-labs is the proof that the operating model survives contact with a real co
 ## Cross-references
 
 - [[atris/wiki/systems/atris-business.md]] — the productized version of this shape
+- [[atris/wiki/concepts/owner-computer-model.md]] — why Atris Labs remains a business owner even when packaging changes
 - [[atris/wiki/concepts/atris-labs-goals.md]] — the goals layer that sits on top

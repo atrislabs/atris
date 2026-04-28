@@ -7,12 +7,16 @@
   - model: `Owner = User | Business`; `Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop`
   - implication: `atris business init` creates a business owner plus the first/default business computer; future `atris computer create <type>` can add typed computers under the owner
   - updated `systems/atris-business.md` and `index.md`
+- WIKI PROPAGATION owner/computer model -> overview, systems, labs protocol, and templates
+  - durable: CLI wiki now leads with "persistent AI computer" instead of only "workspace"; business/lab pages map workspace language to the computer runtime
+  - templates: `business-starter` and `research-canonical` now seed owner type, display type, computer type, and the computer shape into generated workspaces
+  - validation target: a fresh agent should recover `Owner = User | Business`, business as shared owner, and computer type as function preset from docs alone
 
 ## 2026-04-08
 
 - INGEST atris-labs/MEMBER.md -> systems/atris-labs.md
   - source: /Users/keshavrao/arena/atris-business/atris-labs/MEMBER.md
-  - durable: company-as-workspace identity, what atris-labs is/isn't, operating principles, fleet position
+  - durable: Atris Labs identity, what atris-labs is/isn't, operating principles, fleet position (old source used workspace language; current model maps that to default business computer)
   - linked from index.md (Entities)
 - INGEST atris-labs/goals.md -> concepts/atris-labs-goals.md
   - source: /Users/keshavrao/arena/atris-business/atris-labs/goals.md

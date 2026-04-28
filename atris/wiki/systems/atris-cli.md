@@ -8,13 +8,25 @@ sources:
   - /Users/keshavrao/arena/atris-cli/lib/scorecard.js
   - /Users/keshavrao/arena/atris-cli/commands/business.js
 created: 2026-04-07
-updated: 2026-04-09
+updated: 2026-04-27
 tags: [project, cli, atris]
 ---
 
 # atris-cli
 
-Node.js CLI that turns any codebase into an AI-navigable workspace. The dev-tool layer of the Atris stack — sibling to atris-business (AI-native company workspaces) and atrisos-backend/web (cloud).
+Node.js CLI that turns any codebase into an AI-navigable computer. The dev-tool layer of the Atris stack — sibling to atris-business (shared owners with persistent computers) and atrisos-backend/web (cloud).
+
+## Product model
+
+The CLI is the public place where the model must be obvious:
+
+```text
+Owner = User | Business
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
+```
+
+Use `business` as the shared owner primitive in commands and metadata. Use `computer` for the persistent execution environment. Use display language like lab, collective, community, artist, team, or project only as packaging around the same business owner.
 
 ## What it does
 
@@ -36,7 +48,7 @@ Three primary moves:
 | Private memory | `.atris/presidio/` | Local-only scorecards, reward notes, and sensitive operating docs |
 | Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
 | Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
-| Sibling | `commands/business.js` | Cloud-side AI-native company productization |
+| Sibling | `commands/business.js` | Cloud-side shared-owner and computer productization |
 
 ## Verifiable reward rail
 
@@ -53,7 +65,7 @@ This is the "capabilities" side of the intent→capability→composition loop. H
 - ingest sources into a structured wiki
 - query the wiki via local agent prompts
 - lint the wiki for broken refs / orphans / contradictions
-- create + deploy a business (team + workspace + context) to cloud
+- create + deploy a business owner with a default computer (team + workspace + context) to cloud
 - connect skills (slack, github, notion, etc) to a business
 - set notification mode (digest/silent/push) on a business
 - self-heal MAP.md drift after each run cycle
@@ -70,6 +82,7 @@ This is the "capabilities" side of the intent→capability→composition loop. H
 ## Cross-References
 
 - [[atris/wiki/systems/atris-business.md]] — productized cloud version, has the proactive layer
+- [[atris/wiki/concepts/owner-computer-model.md]] — owner/computer vocabulary and schema guidance
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-cli implements partially
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is for
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — the reward, scorecard, and horizon-weighting rail

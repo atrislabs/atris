@@ -205,20 +205,20 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
-### Feature: Business Workspaces (`atris business`)
+### Feature: Business Owners + Computers (`atris business`)
 
-**Purpose:** Create, inspect, and sync real business workspaces, including the default standalone `.atris/business.json` + `atris/` shape used for local-first business environments
+**Purpose:** Create, inspect, and sync shared business owners and their default computers, including the standalone `.atris/business.json` + `atris/` shape used for local-first business environments
 
 - **Entry point:** `commands/business.js`
 - **Key flows:**
 - `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
-- `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`
+- `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`; product meaning is "create shared owner + first/default computer"
 - `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, and a starter task in `atris/TODO.md`. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
 - `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
 - `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
 - `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files
 - **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
-- **Value:** Makes business workspaces a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
+- **Value:** Makes shared owners and their computers a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
 **Search:** `rg "initBusinessWorkspace|onboardBusiness|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
 
