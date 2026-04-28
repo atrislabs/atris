@@ -12,6 +12,12 @@ const {
   onboardBusiness,
   recordBusinessRun
 } = require('../commands/business');
+const {
+  collectSnapshot,
+  parseLiveOptions,
+  shouldIgnore,
+  snapshotsDiffer,
+} = require('../commands/live');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -38,7 +44,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd, input } = {}) {
+function runCli(args, { cwd, input, env } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     input,
@@ -47,10 +53,19 @@ function runCli(args, { cwd, input } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...(env || {}),
     },
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function hasNodeSqlite() {
+  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+  });
+  return result.status === 0;
 }
 
 function runGit(args, cwd) {
@@ -89,6 +104,176 @@ test('version prints atris v<semver>', () => {
     const res = runCli(['version'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout.trim(), /^atris v\d+\.\d+\.\d+$/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// live
+// ============================================
+
+test('live help exposes fresh brain command', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['live', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris live \[business\]/);
+    assert.match(res.stdout, /Keeps a business brain fresh/);
+    assert.match(res.stdout, /--debounce/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('live dry-run prints doctor pull push plan without credentials', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['live', 'atris-labs', '--dry-run', '--once', '--only', 'atris/MAP.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris Live: atris-labs/);
+    assert.match(res.stdout, /dry-run: atris business doctor --fix/);
+    assert.match(res.stdout, /dry-run: atris push atris-labs --from/);
+    assert.match(res.stdout, /dry-run: atris pull atris-labs --timeout 600 --only atris\/MAP\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('live options infer slug from business workspace and parse timing', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'parked' }), 'utf8');
+    const options = parseLiveOptions(['--once', '--interval=7', '--debounce', '3', '--timeout=44'], dir);
+    assert.equal(options.slug, 'parked');
+    assert.equal(options.once, true);
+    assert.equal(options.intervalSec, 7);
+    assert.equal(options.debounceSec, 3);
+    assert.equal(options.timeoutSec, 44);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('live snapshot detects meaningful file changes and ignores runtime state', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', '_sync.json'), '{}', 'utf8');
+
+    const before = collectSnapshot(dir);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', '_sync.json'), '{"x":1}', 'utf8');
+    assert.equal(snapshotsDiffer(before, collectSnapshot(dir)), false);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Map\n\nupdated\n', 'utf8');
+    assert.equal(snapshotsDiffer(before, collectSnapshot(dir)), true);
+    assert.equal(shouldIgnore(path.join('.atris', 'state', '_sync.json')), true);
+    assert.equal(shouldIgnore(path.join('atris', 'MAP.md')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// task
+// ============================================
+
+test('task command adds, claims, and completes workspace-scoped rows', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Ship task plane', '--tag', 'launch'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const id = add.stdout.trim().split('\t')[0];
+    assert.match(id, /^[0-9A-Z]{26}$/);
+
+    const open = runCli(['task', 'list'], { cwd: dir, env });
+    assert.equal(open.status, 0, open.stderr);
+    assert.match(open.stdout, new RegExp(`open\\s+${id}`));
+    assert.match(open.stdout, /#launch\s+Ship task plane/);
+
+    const claim = runCli(['task', 'claim', id, '--as', 'codex'], { cwd: dir, env });
+    assert.equal(claim.status, 0, claim.stderr);
+    assert.match(claim.stdout, new RegExp(`claimed ${id} as codex`));
+
+    const claimed = runCli(['task', 'list', '--status', 'claimed'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+    assert.match(claimed.stdout, new RegExp(`claimed\\s+${id}\\s+\\[codex\\]`));
+
+    const done = runCli(['task', 'done', id], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    assert.match(done.stdout, new RegExp(`done ${id}`));
+
+    const completed = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
+    assert.equal(completed.status, 0, completed.stderr);
+    assert.match(completed.stdout, new RegExp(`done\\s+${id}`));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task import preserves Verify metadata through DB-backed TODO shim', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    const todoPath = path.join(atrisDir, 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** Task plane import keeps proof [endgame] [execute]',
+      '  **Verify:** test -f done.txt',
+      '',
+      '## In Progress',
+      '',
+      '- **T2:** Claimed task keeps section [execute]',
+      '  **Claimed by:** codex at 2026-04-28T07:29:42Z',
+      '  **Verify:** test -f claimed.txt',
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const imported = runCli(['task', 'import', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(imported.status, 0, imported.stderr);
+    assert.match(imported.stdout, /imported 2 new, skipped 0/);
+
+    const script = [
+      "const { parseTodo } = require('./lib/todo');",
+      "const { getVerifyCommand } = require('./commands/autopilot');",
+      `const todo = parseTodo(${JSON.stringify(todoPath)});`,
+      `const verify = getVerifyCommand(${JSON.stringify(dir)}, 'Task plane import keeps proof');`,
+      "console.log(JSON.stringify({ todo, verify }));",
+    ].join('\n');
+    const parsed = spawnSync(process.execPath, ['-e', script], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 15000,
+      env: {
+        ...process.env,
+        ATRIS_TASK_DB: '1',
+        ATRIS_TASKS_DB: dbPath,
+        NODE_NO_WARNINGS: '1',
+      },
+    });
+    assert.equal(parsed.status, 0, parsed.stderr);
+    const out = JSON.parse(parsed.stdout);
+    assert.equal(out.todo.backlog[0].verify, 'test -f done.txt');
+    assert.equal(out.todo.inProgress[0].verify, 'test -f claimed.txt');
+    assert.equal(out.todo.inProgress[0].claimed, 'codex at 2026-04-28T07:29:42Z');
+    assert.deepEqual(out.verify, { cmd: 'test -f done.txt', explicit: true });
   } finally {
     cleanupTempDir(dir);
   }
@@ -1033,6 +1218,53 @@ test('receipt run dry-run prints commands and writes nothing', () => {
     assert.match(res.stdout, /atris experiments replay endstate/);
     assert.match(res.stdout, /Dry run only/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'receipts')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// computer
+// ============================================
+
+test('computer card prints local workspace card without auth', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'demo-workspace', bin: { demo: 'bin/demo.js' }, scripts: { test: 'node --test' } }, null, 2),
+      'utf8'
+    );
+    initWorkspace(dir);
+
+    const res = runCli(['computer', 'card'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris Computer Card/);
+    assert.match(res.stdout, /Owner:\s+demo-workspace \(project\)/);
+    assert.match(res.stdout, /Type:\s+codeops/);
+    assert.match(res.stdout, /Memory:\s+atris\/MAP\.md/);
+    assert.match(res.stdout, /Validate:\s+npm test/);
+    assert.doesNotMatch(res.stderr, /Not logged in/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('computer card --write saves an inspectable markdown artifact', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+
+    const res = runCli(['computer', 'card', '--write'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Wrote atris\/reports\/computer-card\.md/);
+
+    const cardPath = path.join(dir, 'atris', 'reports', 'computer-card.md');
+    assert.ok(fs.existsSync(cardPath));
+    const card = fs.readFileSync(cardPath, 'utf8');
+    assert.match(card, /^# Atris Computer Card/);
+    assert.match(card, /- Loop: plan -> do -> review/);
+    assert.match(card, /- Proof: atris proof run/);
   } finally {
     cleanupTempDir(dir);
   }
