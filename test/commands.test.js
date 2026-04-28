@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const {
+  analyzeBusinessDoctor,
   businessMatchesSlug,
   createCanonicalBusinessWorkspace,
   onboardBusiness,
@@ -131,6 +132,72 @@ test('business slug matcher accepts config aliases', () => {
   assert.equal(businessMatchesSlug(business, 'atris-labs-1'), true);
   assert.equal(businessMatchesSlug(business, 'Atris Labs'), false);
   assert.equal(businessMatchesSlug(business, 'Atris Labs', { includeName: true }), true);
+});
+
+test('business doctor plans safe cache repoints for stale duplicate rows', () => {
+  const active = {
+    id: 'active-pallet',
+    slug: 'pallet-recruiting',
+    name: 'pallet-recruiting',
+    workspace_id: 'active-workspace',
+    config: {},
+  };
+  const analysis = analyzeBusinessDoctor({
+    cloudBusinesses: [active],
+    cache: {
+      'pallet-recruiting': {
+        business_id: 'deleted-duplicate',
+        workspace_id: 'deleted-workspace',
+        name: 'pallet-recruiting',
+        slug: 'pallet-recruiting-1',
+      },
+    },
+    folderBindings: [],
+  });
+
+  assert.ok(analysis.issues.some((issue) => issue.code === 'stale-cache-repoint'));
+  assert.equal(analysis.cacheUpdates['pallet-recruiting'].business_id, 'active-pallet');
+  assert.equal(analysis.cacheUpdates['pallet-recruiting'].workspace_id, 'active-workspace');
+  assert.equal(analysis.cacheUpdates['pallet-recruiting'].slug, 'pallet-recruiting');
+});
+
+test('business doctor accepts clean alias folders and asks for missing alias cache', () => {
+  const atrisLabs = {
+    id: 'biz-atris-labs',
+    slug: 'atris-labs-1',
+    name: 'Atris Labs',
+    workspace_id: 'workspace-atris-labs',
+    config: { aliases: ['atris-labs'] },
+  };
+  const analysis = analyzeBusinessDoctor({
+    cloudBusinesses: [atrisLabs],
+    cache: {
+      'atris-labs-1': {
+        business_id: 'biz-atris-labs',
+        workspace_id: 'workspace-atris-labs',
+        name: 'Atris Labs',
+        slug: 'atris-labs-1',
+      },
+    },
+    folderBindings: [{
+      name: 'atris-labs',
+      isSymlink: false,
+      hasAtris: true,
+      hasBusinessJson: true,
+      meta: {
+        business_id: 'biz-atris-labs',
+        workspace_id: 'workspace-atris-labs',
+        name: 'Atris Labs',
+        slug: 'atris-labs',
+        canonical_slug: 'atris-labs-1',
+      },
+    }],
+  });
+
+  assert.equal(analysis.issues.some((issue) => issue.code === 'folder-name-not-slug-or-alias'), false);
+  assert.equal(analysis.issues.some((issue) => issue.code === 'folder-slug-mismatch'), false);
+  assert.equal(analysis.cacheUpdates['atris-labs'].business_id, 'biz-atris-labs');
+  assert.equal(analysis.cacheUpdates['atris-labs'].canonical_slug, 'atris-labs-1');
 });
 
 test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
