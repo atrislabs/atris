@@ -6,6 +6,8 @@ test
 personal_docs
 .claude/
 *.pdf
+__pycache__/
+*.pyc
 
 # Ship all template .md files in atris/
 # Only block user-generated runtime files
