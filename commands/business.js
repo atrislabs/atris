@@ -33,6 +33,20 @@ function loadBusinesses() {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; }
 }
 
+function businessAliases(business) {
+  const aliases = business?.aliases || business?.config?.aliases || [];
+  return Array.isArray(aliases) ? aliases : [];
+}
+
+function businessMatchesSlug(business, slug, { includeName = false } = {}) {
+  if (!business || !slug) return false;
+  const wanted = String(slug).toLowerCase();
+  const canonical = String(business.slug || '').toLowerCase();
+  const aliases = businessAliases(business).map((alias) => String(alias).toLowerCase());
+  if (canonical === wanted || aliases.includes(wanted)) return true;
+  return includeName && String(business.name || '').toLowerCase() === wanted;
+}
+
 function saveBusinesses(data) {
   fs.writeFileSync(getBusinessConfigPath(), JSON.stringify(data, null, 2));
 }
@@ -797,7 +811,7 @@ async function findExistingBusinessBySlug(slug, token) {
     return { id: local[slug].business_id, name: local[slug].name, slug, source: 'local' };
   }
   for (const v of Object.values(local)) {
-    if (v && v.slug === slug) {
+    if (businessMatchesSlug(v, slug)) {
       return { id: v.business_id, name: v.name, slug, source: 'local' };
     }
   }
@@ -815,7 +829,7 @@ async function findExistingBusinessBySlug(slug, token) {
 
   const list = await apiRequestJson('/business/', { method: 'GET', token });
   if (list.ok && Array.isArray(list.data)) {
-    const match = list.data.find(b => b && b.slug === slug);
+    const match = list.data.find(b => businessMatchesSlug(b, slug));
     if (match) return { id: match.id, name: match.name, slug: match.slug, source: 'cloud' };
   }
 
@@ -848,7 +862,7 @@ async function addBusiness(slug) {
     // Try listing all and matching
     const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
     if (listResult.ok && Array.isArray(listResult.data)) {
-      const match = listResult.data.find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
+      const match = listResult.data.find(b => businessMatchesSlug(b, slug, { includeName: true }));
       if (match) {
         const businesses = loadBusinesses();
         businesses[slug] = {
@@ -1099,7 +1113,7 @@ async function resolveSlug(slug, creds) {
   // Fallback: list all and match
   const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
   if (listResult.ok && Array.isArray(listResult.data)) {
-    const match = listResult.data.find(b => b.slug === slug || b.name.toLowerCase() === slug.toLowerCase());
+    const match = listResult.data.find(b => businessMatchesSlug(b, slug, { includeName: true }));
     if (match) {
       return { business_id: match.id, workspace_id: match.workspace_id, name: match.name, slug: match.slug };
     }
@@ -1778,7 +1792,7 @@ async function deployBusiness(slug) {
     // Try to find by slug in cloud
     const listResult = await apiRequestJson('/business/', { method: 'GET', token: creds.token });
     if (listResult.ok && Array.isArray(listResult.data)) {
-      const match = listResult.data.find(b => b.slug === slug);
+      const match = listResult.data.find(b => businessMatchesSlug(b, slug));
       if (match) {
         bizConfig = { business_id: match.id, workspace_id: match.workspace_id, name: match.name, slug: match.slug };
         businesses[slug] = { ...bizConfig, added_at: new Date().toISOString() };
@@ -2040,6 +2054,7 @@ module.exports = {
   loadBusinesses,
   saveBusinesses,
   getBusinessConfigPath,
+  businessMatchesSlug,
   createCanonicalBusinessWorkspace,
   initBusinessWorkspace,
   onboardBusiness,

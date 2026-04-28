@@ -5,7 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
-const { createCanonicalBusinessWorkspace, onboardBusiness, recordBusinessRun } = require('../commands/business');
+const {
+  businessMatchesSlug,
+  createCanonicalBusinessWorkspace,
+  onboardBusiness,
+  recordBusinessRun
+} = require('../commands/business');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -113,6 +118,19 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('business slug matcher accepts config aliases', () => {
+  const business = {
+    slug: 'atris-labs-1',
+    name: 'Atris Labs',
+    config: { aliases: ['atris-labs'] },
+  };
+
+  assert.equal(businessMatchesSlug(business, 'atris-labs'), true);
+  assert.equal(businessMatchesSlug(business, 'atris-labs-1'), true);
+  assert.equal(businessMatchesSlug(business, 'Atris Labs'), false);
+  assert.equal(businessMatchesSlug(business, 'Atris Labs', { includeName: true }), true);
 });
 
 test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
