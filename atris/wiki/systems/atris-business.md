@@ -1,16 +1,16 @@
 ---
 type: entity
 slug: atris-business
-title: atris business (AI-native company workspace)
+title: atris business (shared owner + computers)
 sources: [/Users/keshavrao/arena/atris-cli/commands/business.js]
 created: 2026-04-07
-updated: 2026-04-07
-tags: [product, cloud, atris]
+updated: 2026-04-27
+tags: [product, cloud, atris, computer]
 ---
 
 # atris business
 
-The productized "AI-native company workspace" inside atris-cli. A `business` in Atris is a self-contained workspace + agent team + connected integrations that runs on Atris cloud. This is the vehicle Keshav is betting on for the Dorsey thesis.
+Atris business is the shared-owner layer inside atris-cli. A `business` is the schema owner for a persistent fleet of computers: workspaces with files, tools, secrets, memory, agents, integrations, and validation loops. The customer-facing language can be business, lab, collective, community, artist, team, or project; the internal primitive stays `business`.
 
 ## Product Model Update — 2026-04-27
 
@@ -26,24 +26,29 @@ User owns many Computers
 The schema can keep `business` as the shared owner for companies, labs, collectives, communities, artists, teams, and projects.
 The outward packaging should adapt: "your business runs on Atris," "your lab runs on Atris," or "your collective runs on Atris."
 
-Computer type carries the function: codeops, research, CRM, reporting, recruiting, event ops, support, or business ops.
+Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `recruiting`, `event_ops`, or `support`.
 `atris business init <name>` should be understood as creating the business owner plus its first/default business computer.
 
 ## Local shape
 
 ```
-atris/business/<slug>/
-├── BUSINESS.md   problem the business solves + revenue model
-├── context/      knowledge base (the wiki for THIS business)
-├── team/         agent personas
-└── workspace/    files agents read/write
+~/arena/atris-business/<slug>/
+├── .atris/business.json   owner/computer binding metadata
+├── .atris/state/          events, episodes, scorecards, sync receipts
+└── atris/                 the default computer workspace
+    ├── MAP.md
+    ├── TODO.md
+    ├── context/
+    ├── team/
+    ├── wiki/
+    └── reports/
 ```
 
-`atris business deploy <slug>` pushes this folder to the cloud business; the cloud-side agent loop runs against the deployed workspace.
+`atris business deploy <slug>` pushes this folder to the cloud business owner; the cloud-side computer loop runs against the deployed workspace.
 
-## Templates
+## Legacy template presets
 
-Each template ships predefined agents:
+Older product docs describe template presets that ship predefined agents:
 
 | Template | Agents |
 |---|---|
@@ -55,7 +60,11 @@ Each template ships predefined agents:
 
 ## Capabilities surface
 
-- `atris business create <name> [--template ...]` — scaffold local + cloud
+- `atris business init <name> [--template ...]` — create the shared owner and first/default computer
+- `atris business create <name> [--template ...]` — create the cloud business record; add `--workspace` for local scaffold
+- `atris business onboard ...` — turn sparse intake or loose files into raw context, starter brief, first workflow, safe next action, and operator brief
+- `atris business record <report-path>` — append a completed recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
+- `atris business status <slug>` — inspect local/cloud binding state
 - `atris business connect <skill> --business <slug>` — wire up integrations (slack, github, notion, etc)
 - `atris business notify <digest|silent|push>` — control proactive notification
 - `atris business deploy <slug>` — push local workspace to cloud
@@ -89,4 +98,5 @@ What's still missing here vs Dorsey:
 ## Cross-References
 
 - [[atris/wiki/systems/atris-cli.md]] — the dev tool that scaffolds these
+- [[atris/wiki/concepts/owner-computer-model.md]] — schema/product language guardrail
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-business runs partially

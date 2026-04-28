@@ -6,6 +6,13 @@
 - Slug: `{{slug}}`
 - Template: `{{workspace_template}}`
 
+## Product Model
+
+- Owner type: `Business`
+- Display type: lab
+- Computer type: `research`
+- Computer shape: workspace + files + tools + secrets + memory + agents + validation loop
+
 ## Workspace
 
 - ID: `{{workspace_id}}`
