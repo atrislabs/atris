@@ -30,6 +30,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 
 - An AI workspace on top of any repo
 - Persistent AI computers for scoped jobs
+- A local computer card that makes each workspace inspectable
 - A strict `plan -> do -> review` loop
 - Daily logs, task tracking, feature packs, and project memory
 - Skills, team members, integrations, and cloud sync when you need them
@@ -65,6 +66,7 @@ atris --version
 ```
 
 Requires Node.js 18+.
+`atris task` uses built-in SQLite and requires Node.js 22+.
 
 If you want Atris cloud workspaces, businesses, or integrations, run `atris setup` after install.
 
@@ -135,12 +137,14 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris autopilot` | Guided loop with approvals |
 | `atris log` | Add inbox items to today's journal |
 | `atris status` | Show active work and completions |
+| `atris task` | Local agent task plane with atomic claims and TODO import |
 | `atris learn` | Manage structured learnings |
 | `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
 | `atris receipt` | Save evidence from an agent run |
 | `atris experiments` | Run small experiments and compare results |
+| `atris computer card` | Show or write the local owner/computer card |
 
 ## Built-In Systems
 
@@ -150,8 +154,10 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris wiki --private` stores local-only sensitive notes under `.atris/presidio/`
 - `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
+- `atris task` keeps a local SQLite task plane for agents while `atris/TODO.md` remains the readable project board
 - `atris experiments` runs small test packs in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
+- `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
 
 ## Verifiable Feedback Loop
 

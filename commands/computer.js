@@ -5,6 +5,7 @@
  *   atris computer --cloud          — Open CLOUD workspace mode
  *   atris computer wake             — Start the computer
  *   atris computer sleep            — Stop (files persist)
+ *   atris computer card             — Show the local computer card
  *   atris computer run <command>    — Run bash on EC2 (no LLM)
  *   atris computer grep <pattern>   — Search files on EC2
  *   atris computer ls [path]        — List files
@@ -705,14 +706,168 @@ async function runLocalBridgeOp(token, sessionId, op, timeoutSeconds = 30) {
   return data;
 }
 
-function readBusinessBinding() {
-  const bindingPath = path.join(process.cwd(), '.atris', 'business.json');
+function readBusinessBinding(cwd = process.cwd()) {
+  const bindingPath = path.join(cwd, '.atris', 'business.json');
   if (!fs.existsSync(bindingPath)) return null;
   try {
     return JSON.parse(fs.readFileSync(bindingPath, 'utf8'));
   } catch {
     return null;
   }
+}
+
+function readPackageMeta(cwd = process.cwd()) {
+  const packagePath = path.join(cwd, 'package.json');
+  if (!fs.existsSync(packagePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function relIfExists(cwd, target) {
+  return fs.existsSync(path.join(cwd, target)) ? target : null;
+}
+
+function detectValidationCommand(cwd = process.cwd(), pkg = null) {
+  const meta = pkg || readPackageMeta(cwd);
+  const testScript = meta?.scripts?.test;
+  if (testScript && !/no test specified/i.test(testScript)) return 'npm test';
+  if (fs.existsSync(path.join(cwd, 'pytest.ini')) || fs.existsSync(path.join(cwd, 'pyproject.toml'))) return 'pytest';
+  if (fs.existsSync(path.join(cwd, 'Cargo.toml'))) return 'cargo test';
+  if (fs.existsSync(path.join(cwd, 'go.mod'))) return 'go test ./...';
+  return 'none detected';
+}
+
+function detectComputerType(cwd = process.cwd(), pkg = null, binding = null) {
+  if (binding?.computer_type) return binding.computer_type;
+  if (binding?.workspace_type) return binding.workspace_type;
+  const meta = pkg || readPackageMeta(cwd);
+  if (meta?.bin || fs.existsSync(path.join(cwd, 'bin')) || fs.existsSync(path.join(cwd, 'commands'))) return 'codeops';
+  if (fs.existsSync(path.join(cwd, 'docs')) || fs.existsSync(path.join(cwd, 'atris', 'wiki'))) return 'research';
+  return 'workspace';
+}
+
+function buildComputerCard(cwd = process.cwd()) {
+  const binding = readBusinessBinding(cwd);
+  const pkg = readPackageMeta(cwd);
+  const folderName = path.basename(cwd);
+  const ownerName = binding?.name || pkg?.name || folderName;
+  const ownerType = binding ? 'business' : 'project';
+  const computerName = binding?.computer_name || binding?.workspace_name || `${ownerName} computer`;
+  const computerType = detectComputerType(cwd, pkg, binding);
+  const memory = [
+    relIfExists(cwd, 'atris/MAP.md'),
+    relIfExists(cwd, 'atris/TODO.md'),
+    relIfExists(cwd, 'atris/wiki'),
+    relIfExists(cwd, 'atris/logs'),
+  ].filter(Boolean);
+  const artifacts = [
+    fs.existsSync(path.join(cwd, 'atris')) ? 'atris/reports/' : null,
+    relIfExists(cwd, '.atris/receipts'),
+  ].filter(Boolean);
+
+  return {
+    ownerName,
+    ownerType,
+    computerName,
+    computerType,
+    workspace: cwd,
+    loop: 'plan -> do -> review',
+    memory,
+    validation: detectValidationCommand(cwd, pkg),
+    proof: binding ? 'atris computer proof' : 'atris proof run',
+    visual: 'atris visualize "<prompt>"',
+    artifacts,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function renderList(items) {
+  return items.length ? items.join(', ') : 'none detected';
+}
+
+function renderComputerCard(card) {
+  return [
+    'Atris Computer Card',
+    '',
+    `  Owner:      ${card.ownerName} (${card.ownerType})`,
+    `  Computer:   ${card.computerName}`,
+    `  Type:       ${card.computerType}`,
+    `  Workspace:  ${card.workspace}`,
+    `  Loop:       ${card.loop}`,
+    `  Memory:     ${renderList(card.memory)}`,
+    `  Validate:   ${card.validation}`,
+    `  Proof:      ${card.proof}`,
+    `  Visual:     ${card.visual}`,
+    `  Artifacts:  ${renderList(card.artifacts)}`,
+  ].join('\n');
+}
+
+function renderComputerCardMarkdown(card) {
+  return [
+    '# Atris Computer Card',
+    '',
+    `Generated: ${card.generatedAt}`,
+    '',
+    `- Owner: ${card.ownerName} (${card.ownerType})`,
+    `- Computer: ${card.computerName}`,
+    `- Type: ${card.computerType}`,
+    `- Workspace: ${card.workspace}`,
+    `- Loop: ${card.loop}`,
+    `- Memory: ${renderList(card.memory)}`,
+    `- Validate: ${card.validation}`,
+    `- Proof: ${card.proof}`,
+    `- Visual: ${card.visual}`,
+    `- Artifacts: ${renderList(card.artifacts)}`,
+    '',
+  ].join('\n');
+}
+
+function parseComputerCardArgs(args = []) {
+  const options = { write: false, out: null, help: false };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h') options.help = true;
+    else if (arg === '--write') options.write = true;
+    else if (arg === '--out' && args[i + 1]) options.out = args[++i];
+    else if (arg.startsWith('--out=')) options.out = arg.slice('--out='.length);
+  }
+  return options;
+}
+
+function defaultComputerCardPath(cwd = process.cwd()) {
+  if (fs.existsSync(path.join(cwd, 'atris'))) {
+    return path.join(cwd, 'atris', 'reports', 'computer-card.md');
+  }
+  return path.join(cwd, 'computer-card.md');
+}
+
+function computerCard(args = [], cwd = process.cwd()) {
+  const options = parseComputerCardArgs(args);
+  if (options.help) {
+    console.log('Usage: atris computer card [--write] [--out <path>]');
+    console.log('');
+    console.log('Show the local owner/computer card for this workspace.');
+    return null;
+  }
+
+  const card = buildComputerCard(cwd);
+  console.log(renderComputerCard(card));
+
+  if (options.write || options.out) {
+    const outputPath = options.out
+      ? (path.isAbsolute(options.out) ? options.out : path.join(cwd, options.out))
+      : defaultComputerCardPath(cwd);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, renderComputerCardMarkdown(card), 'utf8');
+    console.log('');
+    console.log(`Wrote ${path.relative(cwd, outputPath) || outputPath}`);
+    return outputPath;
+  }
+
+  return card;
 }
 
 async function resolveBusinessContext(token) {
@@ -2397,6 +2552,11 @@ async function runComputer() {
     return;
   }
 
+  if (sub === 'card') {
+    computerCard(args.slice(1));
+    return;
+  }
+
   if (sub === 'claude' || sub === 'codex') {
     computerLocalLegacy(args);
     return;
@@ -2421,6 +2581,7 @@ async function runComputer() {
     console.log('');
     console.log('Modes:');
     console.log('  (default)       Choose CLOUD vs LOCAL when both are available');
+    console.log('  card            Show the local owner/computer card, no login required');
     console.log('  local           Open LOCAL Atris mode; cloud brain edits this folder');
     console.log('  proof           Run the local-edit + cloud-isolation + audit proof');
     console.log('  local-byo       Open LOCAL BYO Claude mode; Anthropic tokens, no cloud audit');
@@ -2452,6 +2613,7 @@ async function runComputer() {
     console.log('');
     console.log('Examples:');
     console.log('  atris computer');
+    console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # shared owner + first/default computer');
     console.log('  atris computer proof');
     console.log('  atris computer local');
@@ -2532,6 +2694,7 @@ async function runComputer() {
 
   switch (sub) {
     case 'chat': return computerChat(token, ctx, cloudOptions);
+    case 'card': return computerCard(args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'wake': return computerWake(token, ctx);
@@ -2554,4 +2717,9 @@ async function runComputer() {
   }
 }
 
-module.exports = { runComputer };
+module.exports = {
+  runComputer,
+  buildComputerCard,
+  renderComputerCard,
+  renderComputerCardMarkdown,
+};
