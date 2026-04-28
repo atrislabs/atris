@@ -2,6 +2,11 @@
 
 ## 2026-04-27
 
+- PRODUCT MEMORY owner -> computer -> group boundary tightened
+  - durable: `entity_type` is now a strict operating mode, not loose customer language
+  - allowed base modes: `business` (profit generation), `research` (truth generation), `project` (artifact generation)
+  - groups are the social/access layer: people, chat, membership, posts, approvals, visibility
+  - invariant: groups attach to owners/computers; groups are not owners and not computers
 - PRODUCT MEMORY owner -> computer model -> `concepts/owner-computer-model.md`
   - durable: keep `business` as the shared owner in schema, but explain the product as owners having typed computers
   - model: `Owner = User | Business`; `Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop`
