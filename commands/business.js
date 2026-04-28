@@ -1910,6 +1910,10 @@ async function quickstart() {
      (get 1 email/day instead of every notification)
 
   Templates: saas, agency, ecommerce, content, restaurant
+
+  Rule of thumb:
+     atris business init "<name>"    = cloud + local business computer workspace
+     atris business create "<name>"  = cloud-only unless you pass --workspace
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 }
@@ -1920,9 +1924,9 @@ function printBusinessHelp() {
   console.log('');
   console.log('  quickstart           ← Start here! 3-command guide');
   console.log('');
-  console.log('  init <name>          Create a business environment (cloud + local)');
+  console.log('  init <name>          RECOMMENDED: create a business environment (cloud + local)');
   console.log('  workspace <name>     Alias for init');
-  console.log('  create <name>        Create the cloud business; add --workspace for a local business environment');
+  console.log('  create <name>        Cloud-only business record; add --workspace to also scaffold local');
   console.log('  add <slug>           Register an existing cloud business');
   console.log('  list                 Show registered businesses');
   console.log('  team [slug]          Show members, roles, and admin access');

@@ -15,13 +15,24 @@ then /endgame picks the next horizon at the boundary.
 
 ## Endgame
 
-_(none — v3.11.0 shipped proactive scanner. Oracle's 3 prescriptions + proactive-surprise inspired by OpenClaw TED talk all delivered. Next horizon TBD.)_
+_(none — v3.11.0 shipped proactive scanner. Oracle's 3 prescriptions + proactive-surprise inspired by the Proof talk all delivered. Next horizon TBD.)_
 
 ---
 
 ## Backlog
 
-_(empty — target state reached for v3.11.0 shipping window)_
+- **T100:** Fixture task — navigator smoke test placeholder, no source files touched [explore]
+- **T101:** Fixture task — navigator smoke test sibling; exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T102:** Fixture task — navigator smoke test (2026-04-26 run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T103:** Fixture task — navigator smoke test (2026-04-26 sibling run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T105:** Fixture task — navigator smoke test (2026-04-26 follow-up); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T106:** Fixture task — navigator smoke test (2026-04-26 inbox-driven run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T107:** Fixture task — navigator smoke test (2026-04-26 navigator-invoked); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T108:** Fixture task — navigator smoke test (2026-04-26 follow-up navigator run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T109:** Fixture task — navigator smoke test (2026-04-26 next run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T110:** Fixture task — navigator smoke test (2026-04-27 run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T111:** Fixture task — navigator smoke test (2026-04-27 follow-up run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
+- **T112:** Fixture task — navigator smoke test (2026-04-27 next run); exit condition: this line exists in TODO.md Backlog. No source files touched. [explore]
 
 ## In Progress
 
