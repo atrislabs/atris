@@ -41,7 +41,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 |------|---------|
 | `atris/atris.md` | Main instructions for agents working in this repo |
 | `atris/MAP.md` | Navigation index with file:line refs |
-| `atris/TODO.md` | Shared task queue |
+| `atris/TODO.md` | Human-readable task view |
 | `atris/logs/YYYY/YYYY-MM-DD.md` | Daily log, inbox, notes, completions |
 | `atris/features/` | Feature packs with `idea.md`, `build.md`, `validate.md` |
 | `atris/skills/` | Reusable skills for agents |
@@ -137,7 +137,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris autopilot` | Guided loop with approvals |
 | `atris log` | Add inbox items to today's journal |
 | `atris status` | Show active work and completions |
-| `atris task` | Local agent task plane with atomic claims and TODO import |
+| `atris task` | Durable local task state with claims, dialogue, review episodes, JSON export, TODO import, TODO render, board, and sync dry-run |
 | `atris learn` | Manage structured learnings |
 | `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
 | `atris loop` | Refresh wiki health, stale/orphan signals, and next ingest candidates |
@@ -154,7 +154,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris wiki --private` stores local-only sensitive notes under `.atris/presidio/`
 - `atris loop` refreshes `atris/wiki/STATUS.md` and `atris/wiki/log.md`, flags stale/orphan pages, and suggests the next ingest
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
-- `atris task` keeps a local SQLite task plane for agents while `atris/TODO.md` remains the readable project board
+- `atris task` keeps durable local task state and append-only events for agents while `atris/TODO.md` remains a readable regenerated project board. Use `atris task new`, `atris task delegate "..." --to <owner>`, `atris task day`, `atris task next`, `atris task say`, and `atris task finish` for the natural loop; add `--json` for headless agents. Use `atris task serve` to open the local Task Factory board with goals, work streams, lineage, proof, lessons, and the compounding chain. Every change refreshes `.atris/state/tasks.projection.json` for web/desktop. Use `atris task sync --dry-run` to preview the canonical Supabase/Swarlo task writes before any cloud mutation. Use `--via swarlo` on delegation when the live coordination layer should claim/report from the same task record. Use `--create-next` with review/finish to turn a `--next` suggestion into the next durable task. Use `atris task setup --import-todo` to bootstrap, `atris task review` to write an RSI episode, and `atris task render` to rebuild markdown if it gets clobbered. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo is the live claim/report layer.
 - `atris experiments` runs small test packs in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet

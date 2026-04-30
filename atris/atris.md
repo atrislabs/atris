@@ -58,18 +58,43 @@ Labels used below:
 - `guarded` — checked by code or a pre-commit hook; bypassing is a bug
 - `expected` — convention; honor it or stop
 
-## task shape
+## task source of truth
 
-Every task in `TODO.md`:
+Use `atris task` as the source of truth for active work. It stores durable local
+SQLite state plus append-only task events, and refreshes
+`.atris/state/tasks.projection.json` for desktop/web UIs. `atris/TODO.md` is a
+rendered/legacy view and can be rebuilt with `atris task render`; do not rely on
+manual TODO.md edits for ownership.
+
+Core loop:
+
+```bash
+atris task list
+atris task delegate "<title>" --to <owner> --tag <tag>
+atris task delegate "<title>" --to <owner> --via swarlo --tag <tag>
+atris task day
+atris task next
+atris task claim <id> --as <agent>
+atris task note <id> "<context, blocker, decision, or handoff>"
+atris task finish <id> --proof "<tests, screenshot, diff, or receipt>"
+atris task review <id> --lesson "<what improved>" --next "<next task>"
+```
+
+Headless agents should add `--json` where available and read
+`.atris/state/tasks.projection.json` for a compact board view.
+Swarlo is the live coordination layer for claims, heartbeats, and reports; the
+task row/event stream remains the durable source of truth.
+
+Every task record should carry:
 
 ```
-- **T#:** <title> [tier] [kind]
-  **Owner:** <slug>
-  **Files:** <paths touched>
-  **Exit:** <observable done condition>
-  **Verify:** <shell command, exits 0 on success>
-  **After:** <T# deps or none>
-  **Rollback:** <commit/checkpoint or "none (gray)">
+Title: <small work packet>
+Owner: <agent or unclaimed>
+Objective: <why this matters>
+Context: <links/files/decisions>
+Exit: <observable done condition>
+Verify: <shell command or concrete proof>
+Next: <suggested follow-up task>
 ```
 
 | Field | Meaning | Enforcement |
@@ -87,7 +112,7 @@ Verify cannot be a raw shell shortcut; it must call a rubric or test that can fa
 ## routing
 
 Before picking up work, decide scope:
-- single project → route to that project's `atris/team/` and `TODO.md`
+- single project → route to that project's `atris/team/` and `atris task` queue
 - crosses projects → route to `atris/team/cross-project-architect/` and plan the dependency order first
 
 The human is the constructor. You multiply. Handoff fidelity lives in the files, not in context.
@@ -98,8 +123,8 @@ Move one task at a time through plan → do → review.
 
 - **plan** — read relevant files, produce an ASCII visualization, wait for approval. No code.
 - **plan-review** — the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:\nFIX:`. Plan does not move to do without signoff. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
-- **do** — claim the task (move it to In Progress with `Claimed by:` and a timestamp), execute step by step, update `MAP.md` and the journal as reality changes.
-- **review** — run the task's `Verify:` command, read the diff, run the relevant tests, append a one-line lesson to `lessons.md`, move the task to Completed.
+- **do** — claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
+- **review** — run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
 
 State the next stage:
 
@@ -149,7 +174,7 @@ Context is a cache. Disk is truth. Route discoveries as they happen:
 | You discover... | Write to... |
 |---|---|
 | a code location | `MAP.md` (file:line) |
-| a new task | `TODO.md` |
+| a new task | `atris task new "<title>"` |
 | a decision or tradeoff | journal `## Notes` |
 | something learned | `lessons.md` (one line) |
 | work finished | journal `## Completed` (C#) |
