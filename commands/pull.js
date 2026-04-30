@@ -640,6 +640,12 @@ async function pullBusiness(slug) {
   if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflict${conflictCount > 1 ? 's' : ''}`);
   if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
+  if (remoteFiles['atris/now.md'] || remoteFiles['/atris/now.md']) {
+    const nowLocal = path.join(outputDir, 'atris', 'now.md');
+    if (fs.existsSync(nowLocal)) {
+      console.log('  now: atris/now.md is current.');
+    }
+  }
 
   // Get current commit hash from remote (for manifest)
   let commitHash = null;
