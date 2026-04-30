@@ -190,6 +190,51 @@ Desktop and web apps should read the projection, not the SQLite file directly.
 
 That keeps local DB details private while giving every UI a stable task board contract.
 
+## Goals And Self-Improvement
+
+Tasks should connect to `atris/goals.md`.
+
+The projection reads goals from:
+
+```text
+atris/goals.md
+goals.md
+atris/wiki/concepts/atris-labs-goals.md
+```
+
+Each task gets mapped to an objective.
+
+The projection also groups tasks into work streams, so an agent or UI can answer:
+
+```text
+Which goal is this task serving?
+What is active under that goal?
+What has been completed?
+What is blocked or waiting for review?
+What should we do next?
+```
+
+The recursive self-improvement loop is:
+
+```text
+atris task next --as <agent>
+  -> work the task
+  -> atris task finish <id> --proof "..."
+  -> atris task review <id> --reward 1 --lesson "..." --next "..." --create-next
+  -> atris task --json
+```
+
+That produces:
+
+```text
+task event trace
+review episode
+goal-linked projection
+next task suggestion
+```
+
+This is the nightly compounding loop.
+
 ## Atris Desktop Command Center
 
 Atris Desktop reads `.atris/state/tasks.projection.json` from each local project.
