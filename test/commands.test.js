@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const {
   analyzeBusinessDoctor,
@@ -18,6 +18,7 @@ const {
   shouldIgnore,
   snapshotsDiffer,
 } = require('../commands/live');
+const { collectState } = require('../commands/brain');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -66,6 +67,27 @@ function hasNodeSqlite() {
     env: { ...process.env, NODE_NO_WARNINGS: '1' },
   });
   return result.status === 0;
+}
+
+function waitForOutput(child, pattern, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${pattern}; output=${output}`)), timeoutMs);
+    const onData = (chunk) => {
+      output += chunk.toString();
+      const match = output.match(pattern);
+      if (match) {
+        clearTimeout(timer);
+        resolve({ output, match });
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`process exited ${code}; output=${output}`));
+    });
+  });
 }
 
 function runGit(args, cwd) {
@@ -156,6 +178,23 @@ test('live options infer slug from business workspace and parse timing', () => {
   }
 });
 
+test('live options resolve explicit slug to child workspace from portfolio root', () => {
+  const dir = makeTempDir();
+  try {
+    const child = path.join(dir, 'atris-labs');
+    fs.mkdirSync(path.join(child, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(child, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(child, '.atris', 'business.json'), JSON.stringify({ slug: 'atris-labs-1' }), 'utf8');
+
+    const options = parseLiveOptions(['atris-labs', '--once'], dir);
+    assert.equal(options.slug, 'atris-labs');
+    assert.equal(options.cwd, child);
+    assert.equal(options.root, dir);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('live snapshot detects meaningful file changes and ignores runtime state', () => {
   const dir = makeTempDir();
   try {
@@ -172,6 +211,260 @@ test('live snapshot detects meaningful file changes and ignores runtime state', 
     assert.equal(snapshotsDiffer(before, collectSnapshot(dir)), true);
     assert.equal(shouldIgnore(path.join('.atris', 'state', '_sync.json')), true);
     assert.equal(shouldIgnore(path.join('atris', 'MAP.md')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// brain
+// ============================================
+
+function seedBrainWorkspace(dir) {
+  fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'atris', 'team', 'justin'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({
+    slug: 'demo-lab',
+    business_id: 'biz_123',
+    workspace_id: 'ws_123',
+    name: 'Demo Lab',
+  }), 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n\n| Path | What |\n|---|---|\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n- [ ] Ship one thing\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'MEMBER.md'), '# Justin McDonald\n\nForward Deployed GTM Operator\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'START_HERE.md'), '# Justin Start Here\n\nPick one customer-moving GTM rep.\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'goals.md'), '# Goals\n\nRun one customer-moving rep each work block.\n', 'utf8');
+  fs.mkdirSync(path.join(dir, 'atris', 'team', 'keshav'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'keshav', 'MEMBER.md'), '# Keshav Rao\n\nCEO and Builder\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'team', 'keshav', 'START_HERE.md'), '# Keshav Start Here\n\nOpen the CEO lab loop.\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), '# Wiki Status\n\n- Health: seeded\n', 'utf8');
+  fs.writeFileSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), JSON.stringify({
+    ts: '2026-04-29T00:00:00Z',
+    subject: 'hello',
+  }) + '\n', 'utf8');
+}
+
+test('brain compile writes loadable status and ledger artifacts', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris brain compiled/);
+    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'self_improvement_ledger.md')), true);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8'), /sync-language\.md/);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8'), /First-message rule/);
+    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /Atris Brain Compile/);
+    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /sync-language\.md/);
+    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /activation\/SKILL\.md/);
+    const state = collectState(dir);
+    assert.equal(state.totalRows, 1);
+    assert.equal(state.validRows, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate prints a mission card from the compiled brain', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const res = runCli(['brain', 'activate', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
+    assert.match(res.stdout, /OPERATOR: unknown/);
+    assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
+    assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
+    assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
+    assert.match(res.stdout, /VERIFY: brain artifacts present/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate can target a member and print their next work block', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
+    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
+    assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
+    assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
+    const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));
+    assert.equal(remembered.member, 'justin');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate remembers the last operator after the first member run', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli(['brain', 'activate', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
+    assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain gallery previews activation cards for every team member', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: Justin McDonald/);
+    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
+    assert.match(res.stdout, /Justin McDonald: run one customer-moving GTM rep/);
+    assert.match(res.stdout, /Keshav Rao: make one high-leverage CEO move/);
+    assert.match(res.stdout, /---/);
+    assert.match(res.stdout, /VERIFY: brain artifacts present/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate supports founder lab mode for Keshav', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const res = runCli([
+      'brain', 'activate',
+      '--member', 'keshav',
+      '--mode', 'founder-lab',
+      '--root', dir,
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
+    assert.match(res.stdout, /MODE: founder lab/);
+    assert.match(res.stdout, /crazy company idea/);
+    assert.match(res.stdout, /customer wedge hypothesis/);
+    assert.match(res.stdout, /delegated next action/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain feedback appends linked scorecard and episode rows', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli([
+      'brain', 'feedback',
+      '--root', dir,
+      '--rating', 'edit',
+      '--recommendation', 'Send the customer follow-up',
+      '--note', 'Tone was right, pricing was stale',
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris brain feedback recorded/);
+
+    const scorecard = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8').trim());
+    const episode = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), 'utf8').trim());
+    assert.equal(scorecard.human_rating, 'edit');
+    assert.equal(scorecard.reward, 0.5);
+    assert.equal(episode.episode_id, scorecard.decision_id);
+    assert.equal(episode.feedback.note, 'Tone was right, pricing was stale');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain yes records approval with a plain note', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli([
+      'brain', 'yes',
+      'ship the simple version',
+      '--root', dir,
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Rating: approve/);
+    assert.match(res.stdout, /Next: atris brain compile/);
+
+    const scorecard = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), 'utf8').trim());
+    assert.equal(scorecard.human_rating, 'approve');
+    assert.equal(scorecard.human_note, 'ship the simple version');
+    assert.equal(scorecard.reward, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain go records an approval row without writing feedback rows', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli([
+      'brain', 'go',
+      'proceed with contract engineering unblock',
+      '--root', dir,
+      '--recommendation', 'Justin: unblock contract engineering',
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Atris brain approval recorded/);
+    assert.match(res.stdout, /Decision: go/);
+    assert.match(res.stdout, /Status: approved_to_proceed/);
+
+    const approval = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'approvals.jsonl'), 'utf8').trim());
+    assert.equal(approval.human_decision, 'go');
+    assert.equal(approval.recommendation, 'Justin: unblock contract engineering');
+    assert.equal(approval.human_note, 'proceed with contract engineering unblock');
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'episodes.jsonl')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain approval edit records approval edit without changing brain edit feedback', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    const res = runCli([
+      'brain', 'approval', 'edit',
+      'change the owner before proceeding',
+      '--root', dir,
+      '--recommendation', 'Justin: unblock contract engineering',
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Decision: edit/);
+    assert.match(res.stdout, /Status: needs_adjustment_before_action/);
+
+    const approval = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'approvals.jsonl'), 'utf8').trim());
+    assert.equal(approval.human_decision, 'edit');
+    assert.equal(approval.human_note, 'change the owner before proceeding');
+
+    const feedback = runCli([
+      'brain', 'edit',
+      'tone needs work',
+      '--root', dir,
+      '--verify',
+    ], { cwd: dir });
+    assert.equal(feedback.status, 0, feedback.stderr);
+    assert.match(feedback.stdout, /Atris brain feedback recorded/);
+    assert.match(feedback.stdout, /Rating: edit/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -214,6 +507,521 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     const completed = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
     assert.equal(completed.status, 0, completed.stderr);
     assert.match(completed.stdout, new RegExp(`done\\s+${id}`));
+
+    const events = runCli(['task', 'events', id], { cwd: dir, env });
+    assert.equal(events.status, 0, events.stderr);
+    assert.match(events.stdout, new RegExp(`1\\tcreated\\t${id}`));
+    assert.match(events.stdout, new RegExp(`2\\tclaimed\\t${id}`));
+    assert.match(events.stdout, new RegExp(`3\\tcompleted\\t${id}`));
+
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, 'clobbered\n', 'utf8');
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(render.status, 0, render.stderr);
+    assert.match(render.stdout, /rendered 1 task/);
+    const regenerated = fs.readFileSync(todoPath, 'utf8');
+    assert.match(regenerated, /Regenerated from durable Atris task state/);
+    assert.match(regenerated, new RegExp(`\\*\\*\\[${id}\\]\\*\\* Ship task plane`));
+    assert.match(regenerated, /## Completed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task note, show, and export expose a dialogue projection for UI surfaces', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Design task dialogue cards', '--tag', 'ui'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const id = add.stdout.trim().split('\t')[0];
+
+    const note = runCli(['task', 'note', id, 'User wants Cursor-like task chat', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(note.status, 0, note.stderr);
+    assert.match(note.stdout, new RegExp(`noted ${id} v2`));
+
+    const show = runCli(['task', 'show', id], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    assert.match(show.stdout, new RegExp(`OPEN ${id} v2 #ui`));
+    assert.match(show.stdout, /Dialogue:/);
+    assert.match(show.stdout, /codex: User wants Cursor-like task chat/);
+
+    const showJson = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
+    assert.equal(showJson.status, 0, showJson.stderr);
+    const task = JSON.parse(showJson.stdout);
+    assert.equal(task.current_version, 2);
+    assert.equal(task.messages[0].content, 'User wants Cursor-like task chat');
+
+    const out = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const exported = runCli(['task', 'export', '--out', out], { cwd: dir, env });
+    assert.equal(exported.status, 0, exported.stderr);
+    assert.match(exported.stdout, /exported 1 task/);
+    const projection = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(projection.schema, 'atris.task_projection.v1');
+    assert.equal(projection.tasks[0].id, id);
+    assert.equal(projection.tasks[0].messages[0].actor, 'codex');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review writes a reviewed event and RSI episode jsonl', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const id = add.stdout.trim().split('\t')[0];
+    assert.equal(runCli(['task', 'done', id], { cwd: dir, env }).status, 0);
+
+    const review = runCli([
+      'task', 'review', id,
+      '--reward', '1',
+      '--lesson', 'Small task events compound',
+      '--next', 'Sync task events to Swarlo',
+      '--proof', 'npm test',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+    assert.match(review.stdout, new RegExp(`reviewed ${id} v3 reward=1`));
+    assert.match(review.stdout, /next: Sync task events to Swarlo/);
+
+    const events = runCli(['task', 'events', id], { cwd: dir, env });
+    assert.equal(events.status, 0, events.stderr);
+    assert.match(events.stdout, new RegExp(`3\\treviewed\\t${id}`));
+
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episode = JSON.parse(fs.readFileSync(episodePath, 'utf8').trim());
+    assert.equal(episode.schema, 'atris.task_episode.v1');
+    assert.equal(episode.task_id, id);
+    assert.equal(episode.reward.value, 1);
+    assert.equal(episode.action.actor, 'codex');
+    assert.equal(episode.lesson, 'Small task events compound');
+    assert.equal(episode.proof, 'npm test');
+    assert.equal(episode.next_task_suggestion, 'Sync task events to Swarlo');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task setup initializes projection and can import TODO view', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- Make task setup one command',
+      '  **Tag:** tasks',
+      '',
+    ].join('\n'), 'utf8');
+
+    const setup = runCli(['task', 'setup', '--import-todo'], { cwd: dir, env });
+    assert.equal(setup.status, 0, setup.stderr);
+    assert.match(setup.stdout, /tasks ready: 1 task/);
+    assert.match(setup.stdout, /imported 1 new, skipped 0/);
+
+    const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
+    assert.equal(projection.schema, 'atris.task_projection.v1');
+    assert.equal(projection.tasks.length, 1);
+    assert.equal(projection.tasks[0].title, 'Make task setup one command');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task natural flow creates, picks, talks, finishes, and refreshes projection', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli(['task', 'new', 'Make tasks feel natural', '--tag', 'ux'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = created.stdout.trim().split('\t')[0];
+    const shortId = id.slice(0, 8);
+
+    const desk = runCli(['task'], { cwd: dir, env });
+    assert.equal(desk.status, 0, desk.stderr);
+    assert.match(desk.stdout, /TASK DESK/);
+    assert.match(desk.stdout, new RegExp(`open\\s+${shortId}`));
+    assert.match(desk.stdout, /next: atris task next/);
+
+    const next = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    assert.match(next.stdout, new RegExp(`next ${shortId} @codex`));
+
+    const said = runCli(['task', 'say', shortId, 'This should feel like a tiny task chat', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(said.status, 0, said.stderr);
+    assert.match(said.stdout, new RegExp(`noted ${id} v3`));
+
+    const finish = runCli([
+      'task', 'finish', shortId,
+      '--proof', 'npm test',
+      '--lesson', 'Natural task verbs reduce coordination tax',
+      '--next', 'Show task cards in every surface',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(finish.status, 0, finish.stderr);
+    assert.match(finish.stdout, new RegExp(`finished ${id} reward=1`));
+
+    const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
+    assert.equal(projection.tasks[0].id, id);
+    assert.equal(projection.tasks[0].status, 'done');
+    assert.equal(projection.tasks[0].current_version, 5);
+    assert.equal(projection.tasks[0].messages[0].content, 'This should feel like a tiny task chat');
+
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episode = JSON.parse(fs.readFileSync(episodePath, 'utf8').trim());
+    assert.equal(episode.action.actor, 'codex');
+    assert.equal(episode.lesson, 'Natural task verbs reduce coordination tax');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task headless JSON contract supports create, claim, note, finish, and events', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli(['task', 'new', 'Headless agents need JSON', '--tag', 'headless', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const createPayload = JSON.parse(created.stdout);
+    assert.equal(createPayload.ok, true);
+    assert.equal(createPayload.action, 'created');
+    assert.equal(createPayload.task.title, 'Headless agents need JSON');
+    assert.ok(fs.existsSync(createPayload.projection_path));
+    const id = createPayload.task_id;
+    const shortId = id.slice(0, 8);
+
+    const desk = runCli(['task', '--json'], { cwd: dir, env });
+    assert.equal(desk.status, 0, desk.stderr);
+    const deskPayload = JSON.parse(desk.stdout);
+    assert.equal(deskPayload.ok, true);
+    assert.equal(deskPayload.active_count, 1);
+    assert.equal(deskPayload.projection.tasks[0].id, id);
+
+    const next = runCli(['task', 'next', '--as', 'bot', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.equal(nextPayload.action, 'next');
+    assert.equal(nextPayload.owner, 'bot');
+    assert.equal(nextPayload.task.claimed_by, 'bot');
+
+    const note = runCli(['task', 'say', shortId, 'machine-readable context', '--as', 'bot', '--json'], { cwd: dir, env });
+    assert.equal(note.status, 0, note.stderr);
+    const notePayload = JSON.parse(note.stdout);
+    assert.equal(notePayload.action, 'noted');
+    assert.equal(notePayload.version, 3);
+    assert.equal(notePayload.task.messages[0].content, 'machine-readable context');
+
+    const finish = runCli([
+      'task', 'finish', shortId,
+      '--proof', 'node --test',
+      '--lesson', 'Headless workers need JSON, not terminal prose',
+      '--next', 'Sync JSON task events to Supabase',
+      '--as', 'bot',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(finish.status, 0, finish.stderr);
+    const finishPayload = JSON.parse(finish.stdout);
+    assert.equal(finishPayload.action, 'finished');
+    assert.equal(finishPayload.reviewed, true);
+    assert.equal(finishPayload.task.status, 'done');
+    assert.equal(finishPayload.episode.action.actor, 'bot');
+
+    const events = runCli(['task', 'events', shortId, '--json'], { cwd: dir, env });
+    assert.equal(events.status, 0, events.stderr);
+    const eventsPayload = JSON.parse(events.stdout);
+    assert.deepEqual(eventsPayload.events.map(e => e.event_type), ['created', 'claimed', 'message', 'completed', 'reviewed']);
+
+    const where = runCli(['task', 'where', '--json'], { cwd: dir, env });
+    assert.equal(where.status, 0, where.stderr);
+    const wherePayload = JSON.parse(where.stdout);
+    assert.equal(wherePayload.ok, true);
+    assert.equal(wherePayload.db, dbPath);
+    assert.equal(wherePayload.workspace, fs.realpathSync(dir));
+
+    const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json'], { cwd: dir, env });
+    assert.equal(missing.status, 2);
+    const missingPayload = JSON.parse(missing.stderr);
+    assert.equal(missingPayload.ok, false);
+    assert.equal(missingPayload.command, 'atris task show');
+    assert.equal(missingPayload.reason, 'not_found');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task status gives web and Swarlo a compact live contract', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'goals.md'), [
+      '# Goals',
+      '',
+      '- Connect tasks to Swarlo and web command surfaces',
+      '',
+    ].join('\n'), 'utf8');
+
+    const created = runCli(['task', 'new', 'Show live task status in Atris Web', '--tag', 'swarlo', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+
+    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'status');
+    assert.equal(payload.status.schema, 'atris.task_status.v1');
+    assert.equal(payload.status.counts.do, 1);
+    assert.equal(payload.status.current.id, id);
+    assert.equal(payload.status.next, null);
+    assert.equal(payload.status.goals.items[0], 'Connect tasks to Swarlo and web command surfaces');
+    assert.equal(payload.status.swarlo.feed[0].kind, 'claim');
+    assert.equal(payload.status.swarlo.feed[0].metadata.swarlo.task_key, id);
+    assert.match(payload.status.swarlo.realtime_contract.web, /atrisos-web/);
+
+    const text = runCli(['task', 'status'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /TASK STATUS/);
+    assert.match(text.stdout, /plan 0 \/ do 1 \/ review 0 \/ done 0/);
+    assert.match(text.stdout, /swarlo feed 2 events/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review can create the next RSI task from the review suggestion', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli(['task', 'new', 'Improve task loop', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+
+    const finished = runCli([
+      'task', 'finish', id,
+      '--proof', 'node --test',
+      '--lesson', 'Each task review can seed the next sharper task',
+      '--next', 'Make the next task editable from UI',
+      '--create-next',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(finished.status, 0, finished.stderr);
+    const payload = JSON.parse(finished.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.task.status, 'done');
+    assert.ok(payload.next_task_id);
+
+    const next = payload.projection.tasks.find(t => t.id === payload.next_task_id);
+    assert.equal(next.title, 'Make the next task editable from UI');
+    assert.equal(next.status, 'open');
+    assert.equal(next.tag, 'rsi');
+    assert.equal(next.metadata.parent_task_id, id);
+    assert.equal(next.metadata.source, 'task_review_next');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task serve exposes a local task factory API', async () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  let child = null;
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
+      cwd: dir,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
+    const base = ready.match[1];
+
+    const html = await fetch(base).then(r => r.text());
+    assert.match(html, /Atris Task Factory/);
+
+    const created = await fetch(`${base}/api/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Ship the task factory board', tag: 'factory' }),
+    }).then(r => r.json());
+    assert.equal(created.ok, true);
+    assert.equal(created.task.title, 'Ship the task factory board');
+
+    const claimed = await fetch(`${base}/api/tasks/${created.task_id.slice(0, 8)}/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ owner: 'swarlo' }),
+    }).then(r => r.json());
+    assert.equal(claimed.ok, true);
+    assert.equal(claimed.task.claimed_by, 'swarlo');
+
+    const noted = await fetch(`${base}/api/tasks/${created.task_id}/message`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator', content: 'Looks good in the board' }),
+    }).then(r => r.json());
+    assert.equal(noted.ok, true);
+    assert.equal(noted.task.messages[0].content, 'Looks good in the board');
+
+    const finished = await fetch(`${base}/api/tasks/${created.task_id}/finish`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'operator',
+        proof: 'browser API smoke',
+        lesson: 'Task factory API can drive the board',
+        next: 'Connect the board to Swarlo leases',
+        createNext: true,
+      }),
+    }).then(r => r.json());
+    assert.equal(finished.ok, true);
+    assert.equal(finished.task.status, 'done');
+    assert.ok(finished.next_task_id);
+
+    const listed = await fetch(`${base}/api/tasks`).then(r => r.json());
+    assert.equal(listed.ok, true);
+    assert.ok(listed.projection.tasks.some(t => t.id === finished.next_task_id && t.title === 'Connect the board to Swarlo leases'));
+  } finally {
+    if (child) child.kill('SIGTERM');
+    cleanupTempDir(dir);
+  }
+});
+
+test('task sync dry-run maps local tasks to canonical cloud task writes', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-task-sync',
+      slug: 'task-sync-lab',
+    }), 'utf8');
+
+    const created = runCli(['task', 'new', 'Sync local task to cloud control plane', '--tag', 'swarlo', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+
+    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    const noted = runCli(['task', 'say', id, 'Use dry-run before cloud writes', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(noted.status, 0, noted.stderr);
+
+    const sync = runCli(['task', 'sync', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(sync.status, 0, sync.stderr);
+    const payload = JSON.parse(sync.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.business_id, 'biz-task-sync');
+    assert.equal(payload.planned_writes, 1);
+    assert.equal(payload.plan[0].method, 'POST');
+    assert.equal(payload.plan[0].endpoint, '/business/biz-task-sync/work/tasks');
+    assert.equal(payload.plan[0].body.type, 'improvement');
+    assert.equal(payload.plan[0].body.owner_member_id, 'agent:codex');
+    assert.equal(payload.plan[0].body.metadata.source, 'atris_cli_task');
+    assert.equal(payload.plan[0].body.metadata.local_task_id, id);
+    assert.equal(payload.plan[0].body.metadata.swarlo.lease_owner, 'codex');
+    assert.equal(payload.plan[0].body.metadata.swarlo.lease_state, 'held');
+    assert.equal(payload.plan[0].after_create[0].body.state, 'doing');
+    assert.match(payload.plan[0].body.description, /Use dry-run before cloud writes/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task projection exposes goals, review proof, and task lineage for visual boards', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'goals.md'), [
+      '---',
+      'type: goals',
+      '---',
+      '',
+      '# Goals',
+      '',
+      '- Build the task factory into a compounding autonomous development surface',
+      '- Connect tasks to Swarlo and Supabase',
+      '',
+    ].join('\n'), 'utf8');
+
+    const created = runCli(['task', 'new', 'Improve task factory lineage view', '--tag', 'tasks', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+
+    const finished = runCli([
+      'task', 'finish', id,
+      '--proof', 'board shows lineage',
+      '--lesson', 'Visual tasks need goal and proof context',
+      '--next', 'Render lineage in Task Factory board',
+      '--create-next',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(finished.status, 0, finished.stderr);
+    const donePayload = JSON.parse(finished.stdout);
+    const nextId = donePayload.next_task_id;
+
+    const exported = runCli(['task', 'export', '--json'], { cwd: dir, env });
+    assert.equal(exported.status, 0, exported.stderr);
+    const projection = JSON.parse(exported.stdout).projection;
+    assert.equal(projection.goals.items[0], 'Build the task factory into a compounding autonomous development surface');
+    assert.ok(projection.streams.some(stream => stream.objective === 'Build the task factory into a compounding autonomous development surface'));
+    const parent = projection.tasks.find(t => t.id === id);
+    const child = projection.tasks.find(t => t.id === nextId);
+    assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
+    assert.equal(parent.review.proof, 'board shows lineage');
+    assert.equal(parent.review.lesson, 'Visual tasks need goal and proof context');
+    assert.deepEqual(parent.lineage.child_task_ids, [nextId]);
+    assert.equal(parent.lineage.next_task_suggestion, 'Render lineage in Task Factory board');
+    assert.equal(child.lineage.parent_task_id, id);
+    assert.equal(child.lineage.parent_title, 'Improve task factory lineage view');
+    const stream = projection.streams.find(s => s.objective === parent.objective);
+    assert.equal(stream.done_count, 1);
+    assert.equal(stream.open_count, 1);
+    assert.ok(stream.tasks.some(t => t.id === nextId && t.parent_task_id === id));
   } finally {
     cleanupTempDir(dir);
   }
