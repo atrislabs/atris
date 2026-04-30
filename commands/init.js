@@ -423,6 +423,13 @@ function initAtris() {
     console.log('✓ Created TODO.md placeholder');
   }
 
+  const nowFile = path.join(targetDir, 'now.md');
+  if (!fs.existsSync(nowFile)) {
+    const { renderDefaultNow } = require('./now');
+    fs.writeFileSync(nowFile, renderDefaultNow(cwd), 'utf8');
+    console.log('✓ Created now.md');
+  }
+
   // Create lessons.md (feedback loop for learning across features)
   const lessonsFile = path.join(targetDir, 'lessons.md');
   if (!fs.existsSync(lessonsFile)) {
