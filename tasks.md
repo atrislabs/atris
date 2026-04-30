@@ -157,6 +157,12 @@ Use `--json` for headless agents:
 atris task next --as codex --json
 ```
 
+Get the compact live status for agents, web apps, and Swarlo:
+
+```bash
+atris task status --json
+```
+
 ## UI Projection
 
 Every state change refreshes:
@@ -295,6 +301,51 @@ metadata.swarlo.lease_started_at
 This is the bridge from local repo work to the Atris company OS.
 
 The next production step is authenticated apply mode with idempotent `cloud_task_id` mapping.
+
+## Atris Web
+
+Atris Web should not invent a second task model.
+
+It already has the right proxy shape:
+
+```text
+personal agent tasks       /api/agent/:agentId/tasks
+business/company tasks     /api/business/*
+public live activity       /b/:slug
+```
+
+The task bridge should flow like this:
+
+```text
+local atris task event
+  -> task sync apply
+  -> canonical cloud task
+  -> Swarlo claim/report feed
+  -> atrisos-web task board + public business activity
+```
+
+Use `atris task status --json` when a web or desktop surface needs the small live card:
+
+```text
+counts
+current task
+next task
+needs review
+goal streams
+recent Swarlo-shaped feed events
+```
+
+Use the full `.atris/state/tasks.projection.json` only when rendering a detailed task room.
+
+The web UI should show the same work loop:
+
+```text
+Plan -> Do -> Review -> Done
+```
+
+Swarlo is the realtime layer, not the durable task DB.
+
+That keeps live comms fast while SQLite/cloud tasks remain the durable truth.
 
 ## Swarlo
 
