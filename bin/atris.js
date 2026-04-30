@@ -238,6 +238,7 @@ function showHelp() {
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
+  console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  analytics  - Show recent productivity from journals');
@@ -443,7 +444,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // All other commands are lazy-loaded inline (require() only when invoked)
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'aeo',
@@ -821,6 +822,8 @@ if (command === 'init') {
   } else {
     logCmd();
   }
+} else if (command === 'now') {
+  require('../commands/now').nowAtris(process.argv.slice(3));
 } else if (command === 'activate') {
   activateCmd();
 } else if (command === 'update' || command === 'sync') {
