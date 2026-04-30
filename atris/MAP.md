@@ -45,6 +45,7 @@ rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris" commands/auth.js            # Auth commands
 rg "activateAtris" commands/activate.js     # Activate command + wiki status
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
+rg "brainCommand|collectState|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval" commands/brain.js  # Brain compile/activate/gallery/feedback/approval: MAP/TODO/wiki/state + remembered team member/mode -> operating card -> scorecard/episode or approval row
 rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport" commands/loop.js # Wiki upkeep loop
 rg "runAtris" commands/run.js               # Run command (autonomous loop)
@@ -255,21 +256,53 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Agent Task Plane (`atris task`)
 
-**Purpose:** Provide a local SQLite task plane for agents while keeping `atris/TODO.md` as the human-readable project board.
+**Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
 - **Entry point:** `bin/atris.js:794` (`task` command dispatch)
 - **Handler:** `commands/task.js:194` (`run` dispatch)
 - **Store:** `lib/task-db.js:150` (`addTask`), `lib/task-db.js:183` (`listTasks`), `lib/task-db.js:207` (`claimTask`), `lib/task-db.js:231` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
+- `atris task` opens the compact task desk and refreshes `.atris/state/tasks.projection.json`
+- `atris task new|next|say|finish` are the natural create/pick/talk/complete loop
+- `atris task delegate "<title>" --to <owner>` creates assigned work without hand-editing TODO.md
+- `atris task delegate "<title>" --to <owner> --via swarlo` prepares a live Swarlo handoff while keeping the task DB canonical
+- `atris task day` shows the owner-grouped day list for a human or headless swarm coordinator
+- `--json` on task commands emits stable machine-readable output for headless agents
+- `--create-next` on `task finish|review` converts the review `--next` suggestion into the next durable task
 - `atris task add` creates a workspace-scoped row in `~/.atris/tasks.db` (or `ATRIS_TASKS_DB`)
+- `atris task note <id> "<message>"` appends task dialogue/context as an event
+- `atris task review <id> --reward <n> --lesson "..." --next "..."` appends a reviewed event and `.atris/state/task_episodes.jsonl`
+- `atris task show <id> --json` emits one task card with dialogue and events
+- `atris task setup --import-todo` bootstraps durable state and writes `.atris/state/tasks.projection.json`
+- `atris task serve` starts the local Task Factory board backed by the same task events and projection; the board shows goals, work streams, task objectives, parent/child lineage, proof, lessons, and the compounding chain
+- task projections are enriched with `goals`, `streams`, `objective`, `review`, and `lineage` fields for visual surfaces
+- `atris task sync --dry-run` maps local projection rows to canonical backend `/business/{business_id}/work/tasks` POST/PATCH plans, including Swarlo lease metadata from `claimed_by`
+- `atris task export --out .atris/state/tasks.projection.json` writes the web/desktop projection (`atris.task_projection.v1`)
+- `atris task events [id]` prints the append-only event trail for a task or workspace
+- `atris task render --out atris/TODO.md` regenerates the markdown board from durable task state
 - `atris task claim` uses a single guarded SQLite update so only one agent wins an open task
 - `atris task import atris/TODO.md` imports backlog and in-progress tasks with source keys for idempotent re-runs
-- `atris/TODO.md` remains the readable board; SQLite is the compact local/sync layer
+- `atris/TODO.md` remains the readable rendered board; SQLite is the compact local/sync layer and wins if the markdown view is clobbered
+- In cloud business workspaces, backend Supabase `tasks` is the source of truth and Swarlo is the live claim/report layer
 - **Runtime note:** `node:sqlite` requires Node.js 22+; older Node versions keep using the markdown TODO flow
-- **Value:** Gives multi-agent work atomic claims and a backend-syncable row without hiding task state in chat.
+- **Value:** Gives multi-agent work atomic local claims without hiding task state in chat or competing with the cloud task record.
 
-**Search:** `rg "cmdAdd|cmdImport|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js`
+**Search:** `rg "cmdAdd|cmdServe|cmdSync|syncPlanForProjection|handleTaskApi|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js`
+
+### Feature: Task Production Readiness
+
+**Purpose:** Make tasks production-ready as the shared work object across CLI, Obelisk/web, Supabase, Swarlo, CodeOps, and RL episodes.
+
+- **Plan:** `atris/features/task-production-readiness/idea.md`
+- **Build:** `atris/features/task-production-readiness/build.md`
+- **Validate:** `atris/features/task-production-readiness/validate.md`
+- **Task room:** `atris/features/task-production-readiness/task-room-v1.md`
+- **Short update:** `atris/reports/task-production-update.md`
+- **Core rule:** durable task/event state is truth; UI, markdown, Swarlo, and cloud views are projections.
+- **Launch gate:** one task moves from creation -> claim -> proof -> review -> RL episode -> next task, with local and cloud projections intact.
+
+**Search:** `rg "Task Production Readiness|production-ready|--create-next|task_projection" atris/features/task-production-readiness commands/task.js lib/task-db.js`
 
 ### Feature: Daily Logging (`atris log`)
 

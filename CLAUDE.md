@@ -20,11 +20,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working on the 
 
 2. **Execute first, research only if needed** — Run commands/tools directly. Don't search docs first—see what happens, then investigate if it fails. Saves context.
 
-3. **Load context** — Run `atris activate` to load your journal, MAP.md (navigation), and TODO.md (current work). No login required.
+3. **Load context** — Run `atris activate` to load your journal, MAP.md (navigation), and task projection. No login required.
 
 4. **Find what you need** — Always reference `atris/MAP.md` before making changes. It has exact file:line references for every component.
 
-5. **Claim and complete tasks** — Check `atris/TODO.md`, claim a task, build it, then delete it when done (validator cleans up the final state).
+5. **Claim and complete tasks** — Use `atris task day`, `atris task next`, `atris task claim <id> --as <agent>`, and `atris task finish <id> --proof "..."`. `atris/TODO.md` is only a rendered fallback view.
 
 6. **Use the agent workflow** — Navigator (plan) → Executor (build) → Validator (review). Each has specific responsibilities in `atris/team/`.
 
@@ -67,10 +67,12 @@ Atris is a Node.js CLI package (see `package.json` for version) that transforms 
 - Critical files marked ⭐
 - Entry points and architecture flows
 
-**atris/TODO.md** (task bank, formerly `TODO.md`) — AI-generated from MAP.md insights. Format:
-- **Backlog** — Unclaimed tasks ready for work
-- **In Progress** — Tasks claimed with "Claimed by: [Name] at [Time]"
-- Target state: 0 (all tasks deleted after completion by validator)
+**`atris task` / `.atris/state/tasks.projection.json`** — Durable task source of truth. Use:
+- `atris task delegate "..." --to <owner>` to assign work
+- `atris task day` to see the owner-grouped day list
+- `atris task next|claim|say|finish|review` for the work loop
+- `atris task status --json` for headless agents and Swarlo/web status
+- `atris task render --out atris/TODO.md` only to regenerate the readable fallback view
 
 **atris/logs/2025/YYYY-MM-DD.md** (daily journal) — Markdown files with sections:
 - `## Inbox` — Raw ideas from brain dumps (format: `- **I#: Description**`)
@@ -220,7 +222,7 @@ project/
 │   ├── GETTING_STARTED.md    (user guide)
 │   ├── PERSONA.md            (personality/workflow)
 │   ├── MAP.md                (navigation - AI generates)
-│   ├── TODO.md      (task bank - AI generates)
+│   ├── TODO.md      (rendered task view - regenerated from `atris task`)
 │   ├── logs/
 │   │   └── 2025/
 │   │       ├── 2025-10-23.md (daily journals)
@@ -282,7 +284,7 @@ This is how the system is meant to be used:
 2. Navigator Plans
    └─ Run: atris plan (or atris brainstorm → atris visualize)
    └─ AI reads Inbox + MAP.md
-   └─ Output: Creates tasks in TODO.md Backlog
+   └─ Output: Creates small durable tasks with `atris task new|delegate`
 
 3. Visualize & Approve
    └─ Run: atris visualize
@@ -291,8 +293,8 @@ This is how the system is meant to be used:
 
 4. Executor Builds
    └─ Run: atris do
-   └─ AI reads task from Backlog
-   └─ Moves to In Progress (claims with timestamp)
+   └─ AI reads `atris task day` or `atris task next`
+   └─ Claims with `atris task claim <id> --as <agent>`
    └─ Builds step-by-step, validates alignment
    └─ Output: Code changes + updated MAP.md/docs
 
@@ -300,11 +302,11 @@ This is how the system is meant to be used:
    └─ Run: atris review
    └─ AI ultrathinks (3x before deciding)
    └─ Runs tests, fixes bugs, updates docs
-   └─ Cleans up: moves task to Completed, deletes from TODO.md
+   └─ Finishes with `atris task finish <id> --proof "..."` and records review/next task
    └─ Output: Tests pass, docs fresh, system clean
 
 6. Target State
-   └─ All sections in TODO.md empty (tasks deleted)
+   └─ `atris task day` shows only useful active/assigned work
    └─ Inbox items moved to Completed
    └─ Journal updated with lessons learned
 ```
@@ -358,7 +360,7 @@ atris run --no-push        # Skip auto-push after each cycle
 2. **Markdown is the Interface** — All outputs are human-readable markdown, no binary formats.
 3. **Zero External Dependencies** — CLI uses only Node.js built-ins (fs, path, child_process, readline, https, crypto).
 4. **Folder Structure is a Contract** — `atris/` folder location and subfolder names never change.
-5. **Delete When Done** — Keep workspace clean. Completed tasks deleted from TODO.md by validator.
+5. **Task DB Wins** — Keep workspace clean by finishing/reviewing durable tasks; regenerate TODO.md only as a view.
 6. **Pareto Over Perfection** — 80/20 mindset. Ship fast, iterate faster. Mistakes are fine if you fix them quickly.
 
 ---
@@ -371,8 +373,8 @@ atris run --no-push        # Skip auto-push after each cycle
 **Q: MAP.md out of sync after architecture change?**
 → Update it manually (you're the validator) or re-run AI with fresh codebase scan
 
-**Q: TODO.md growing (tasks not deleted)?**
-→ Validator should delete completed tasks. Check completion format in journal
+**Q: TODO.md looks stale or clobbered?**
+→ Run `atris task render --out atris/TODO.md`; do not recover ownership from markdown.
 
 **Q: Token refresh failing?**
 → Run `atris logout` then `atris login` again. Tokens stored in `~/.atris/credentials.json`
@@ -401,9 +403,9 @@ These are anti-patterns. Don't do them:
 ❌ Generate verbose documentation nobody reads
 ❌ Add features "just in case"
 ❌ Make assumptions without checking MAP.md
-❌ Leave TODOs scattered in code (put them in TODO.md)
+❌ Leave TODOs scattered in code (put work in `atris task`)
 ❌ Overthink simple problems
-❌ Leave tasks in TODO.md after completion
+❌ Use TODO.md as task truth after completion
 ❌ Modify MAP.md without updating line numbers
 
 ---
@@ -421,3 +423,18 @@ These are anti-patterns. Don't do them:
 ---
 
 **Next step:** Read `atris/PERSONA.md` and adopt that mindset. Then run `atris activate` to load context. You're ready to work.
+
+<!-- ATRIS_BRAIN_COMPILE:START -->
+## Atris Brain Compile
+
+This workspace has a compiled agent brain.
+
+Load these first:
+- `atris/brain/STATUS.md`
+- `atris/brain/self_improvement_ledger.md`
+- `atris/MAP.md`
+- `atris task day`
+
+Re-run after meaningful work:
+`atris brain compile --root /Users/keshavrao/arena/atris-cli`
+<!-- ATRIS_BRAIN_COMPILE:END -->
