@@ -117,6 +117,24 @@ Create a task:
 atris task new "Make the task board show active work" --tag ui
 ```
 
+Delegate work before sleep:
+
+```bash
+atris task delegate "Review launch copy" --to justin --tag launch
+```
+
+Route the handoff through Swarlo while keeping the task DB canonical:
+
+```bash
+atris task delegate "Run overnight validation" --to codex --via swarlo --tag tasks
+```
+
+See the day list grouped by owner:
+
+```bash
+atris task day
+```
+
 Claim the next task:
 
 ```bash
@@ -162,6 +180,16 @@ Get the compact live status for agents, web apps, and Swarlo:
 ```bash
 atris task status --json
 ```
+
+## Delegation
+
+Delegation is assignment, not another task database.
+
+`atris task delegate` writes `assigned_to`, `delegate_via`, and the day key into task metadata.
+
+`--via swarlo` prepares the live coordination handoff, but SQLite remains the durable truth.
+
+That means the same task can show up in CLI, Desktop, web, Swarlo, and later cloud sync without splitting into competing records.
 
 ## UI Projection
 

@@ -569,6 +569,88 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
   }
 });
 
+test('task delegate creates assigned work and day view groups by owner', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'Review launch draft',
+      '--to',
+      'justin',
+      '--tag',
+      'launch',
+      '--note',
+      'Need clear copy before posting',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+    const body = JSON.parse(delegated.stdout);
+    assert.equal(body.action, 'delegated');
+    assert.equal(body.owner, 'justin');
+    assert.equal(body.via, 'local');
+    assert.equal(body.task.status, 'open');
+    assert.equal(body.task.metadata.assigned_to, 'justin');
+    assert.equal(body.task.metadata.delegate_via, 'local');
+    assert.equal(body.task.messages[0].content, 'Need clear copy before posting');
+    assert.match(body.handoff.command, /^atris task claim [0-9A-Z]{8} --as justin$/);
+
+    const day = runCli(['task', 'day', '--json'], { cwd: dir, env });
+    assert.equal(day.status, 0, day.stderr);
+    const dayBody = JSON.parse(day.stdout);
+    assert.equal(dayBody.action, 'day');
+    assert.equal(dayBody.counts.active, 1);
+    assert.equal(dayBody.groups[0].owner, 'justin');
+    assert.equal(dayBody.groups[0].tasks[0].id, body.task_id);
+
+    const textDay = runCli(['task', 'day'], { cwd: dir, env });
+    assert.equal(textDay.status, 0, textDay.stderr);
+    assert.match(textDay.stdout, /TASK DAY/);
+    assert.match(textDay.stdout, /justin/);
+    assert.match(textDay.stdout, /Review launch draft/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task delegate can prepare a Swarlo handoff without changing task truth', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'Run overnight validation',
+      '--to',
+      'codex',
+      '--via',
+      'swarlo',
+      '--tag',
+      'tasks',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+    const body = JSON.parse(delegated.stdout);
+    assert.equal(body.task.metadata.assigned_to, 'codex');
+    assert.equal(body.task.metadata.delegate_via, 'swarlo');
+    assert.equal(body.task.metadata.swarlo_channel, 'tasks');
+    assert.equal(body.handoff.swarlo.action, 'claim');
+    assert.equal(body.handoff.swarlo.channel, 'tasks');
+    assert.equal(body.handoff.swarlo.task_key, body.task_id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review writes a reviewed event and RSI episode jsonl', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
