@@ -46,6 +46,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task finish <id> [--proof "..."]  Complete, optionally review
 
   atris task add "<title>" [--tag <tag>]   Create a task
+  atris task delegate "<title>" --to <id>  Create an assigned task
+  atris task day [--json]                  Show today's owner-grouped task list
   atris task list [--all] [--status <s>]   List tasks (default: this workspace)
   atris task claim <id> [--as <owner>]     Atomic claim
   atris task note <id> "<message>"         Append dialogue/context to a task
@@ -205,6 +207,11 @@ function taskReviewSummary(task) {
   };
 }
 
+function taskAssignee(task) {
+  const metadata = task && task.metadata || {};
+  return metadata.assigned_to || task.claimed_by || null;
+}
+
 function scoreGoalMatch(task, goal) {
   const haystack = `${task.title} ${task.tag || ''}`.toLowerCase();
   const words = String(goal || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [];
@@ -254,6 +261,7 @@ function buildTaskStreams(tasks, goals) {
       status: task.status,
       tag: task.tag,
       claimed_by: task.claimed_by,
+      assigned_to: taskAssignee(task),
       parent_task_id: task.lineage && task.lineage.parent_task_id || null,
       child_task_ids: task.lineage && task.lineage.child_task_ids || [],
       proof: task.review && task.review.proof || null,
@@ -333,8 +341,9 @@ function taskStateForCloud(task) {
 }
 
 function ownerMemberIdForCloud(task) {
-  if (!task.claimed_by) return null;
-  const owner = String(task.claimed_by).trim();
+  const ownerValue = task.claimed_by || taskAssignee(task);
+  if (!ownerValue) return null;
+  const owner = String(ownerValue).trim();
   if (!owner) return null;
   if (owner.includes(':')) return owner;
   return `agent:${owner}`;
@@ -510,8 +519,9 @@ function humanEventType(type) {
 function formatTaskLine(task) {
   if (!task) return 'none';
   const owner = task.claimed_by ? ` @${task.claimed_by}` : '';
+  const assigned = !task.claimed_by && taskAssignee(task) ? ` -> ${taskAssignee(task)}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
-  return `${task.id.slice(0, 8)}${owner}${tag} ${task.title}`;
+  return `${task.id.slice(0, 8)}${owner}${assigned}${tag} ${task.title}`;
 }
 
 function cmdStatus(args) {
@@ -577,8 +587,9 @@ function renderTaskDesk(rows) {
   console.log('');
   for (const r of active.slice(0, 12)) {
     const owner = r.claimed_by ? ` @${r.claimed_by}` : '';
+    const assigned = !r.claimed_by && taskAssignee(r) ? ` -> ${taskAssignee(r)}` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
-    console.log(`${r.status.padEnd(7)} ${r.id.slice(0, 8)}${owner}${tag}`);
+    console.log(`${r.status.padEnd(7)} ${r.id.slice(0, 8)}${owner}${assigned}${tag}`);
     console.log(`        ${r.title}`);
   }
   if (active.length === 0) console.log('clear   no active tasks');
@@ -616,6 +627,148 @@ function cmdAdd(args) {
     return;
   }
   console.log(`${result.id}\t${title}`);
+}
+
+function delegateHandoff(taskId, owner, via, tag) {
+  const shortId = taskId.slice(0, 8);
+  const handoff = {
+    command: `atris task claim ${shortId} --as ${owner}`,
+  };
+  if (via === 'swarlo') {
+    handoff.swarlo = {
+      task_key: taskId,
+      action: 'claim',
+      channel: tag || 'tasks',
+      assignee: owner,
+    };
+  }
+  return handoff;
+}
+
+function cmdDelegate(args) {
+  const pos = positional(args);
+  const title = pos.join(' ').trim();
+  const owner = flag(args, '--to') || flag(args, '--as');
+  if (!title) {
+    console.error('atris task delegate: title required');
+    process.exit(2);
+  }
+  if (!owner || owner === true) {
+    console.error('atris task delegate: --to <owner> required');
+    process.exit(2);
+  }
+  const viaFlag = flag(args, '--via');
+  const via = viaFlag === 'swarlo' ? 'swarlo' : 'local';
+  const tag = flag(args, '--tag');
+  const note = flag(args, '--note');
+  const claimNow = hasFlag(args, '--claim');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const ws = taskDb.workspaceRoot();
+  const metadata = {
+    assigned_to: String(owner),
+    delegate_via: via,
+    swarlo_channel: via === 'swarlo' ? String(tag || 'tasks') : null,
+    created_for_day: new Date().toISOString().slice(0, 10),
+  };
+  const result = taskDb.addTask(db, {
+    title,
+    tag: typeof tag === 'string' ? tag : null,
+    workspaceRoot: ws,
+    status: claimNow ? 'claimed' : 'open',
+    claimedBy: claimNow ? String(owner) : null,
+    metadata,
+  });
+  if (typeof note === 'string' && note.trim()) {
+    taskDb.noteTask(db, { id: result.id, actor: DEFAULT_OWNER, content: note });
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = taskFromProjection(projection, result.id);
+  const handoff = delegateHandoff(result.id, String(owner), via, typeof tag === 'string' ? tag : null);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'delegated',
+      task_id: result.id,
+      inserted: result.inserted !== false,
+      owner: String(owner),
+      via,
+      handoff,
+      projection_path: outPath,
+      task,
+    });
+    return;
+  }
+  const tagText = tag && tag !== true ? ` #${tag}` : '';
+  console.log(`delegated ${result.id.slice(0, 8)} -> ${owner}${tagText} via=${via}`);
+  console.log(`claim: ${handoff.command}`);
+  if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
+}
+
+function taskDayGroups(tasks) {
+  const active = tasks.filter(task => task.status !== 'done');
+  const groups = new Map();
+  for (const task of active) {
+    const owner = taskAssignee(task) || 'unassigned';
+    if (!groups.has(owner)) groups.set(owner, []);
+    groups.get(owner).push(task);
+  }
+  return Array.from(groups.entries())
+    .sort((a, b) => {
+      if (a[0] === 'unassigned') return 1;
+      if (b[0] === 'unassigned') return -1;
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([owner, ownerTasks]) => ({
+      owner,
+      tasks: ownerTasks.sort((a, b) => {
+        const statusOrder = { claimed: 0, open: 1, failed: 2, done: 3 };
+        return (statusOrder[a.status] - statusOrder[b.status]) || (b.updated_at - a.updated_at);
+      }),
+    }));
+}
+
+function cmdDay(args) {
+  const all = hasFlag(args, '--all');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  const groups = taskDayGroups(projection.tasks || []);
+  const counts = {
+    active: groups.reduce((sum, group) => sum + group.tasks.length, 0),
+    owners: groups.length,
+    open: (projection.tasks || []).filter(task => task.status === 'open').length,
+    claimed: (projection.tasks || []).filter(task => task.status === 'claimed').length,
+    review: (projection.tasks || []).filter(task => task.status === 'failed' || (task.status === 'done' && task.review && task.review.reward === null)).length,
+  };
+  const date = new Date().toISOString().slice(0, 10);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'day',
+      date,
+      projection_path: outPath,
+      counts,
+      groups,
+    });
+    return;
+  }
+  console.log('TASK DAY');
+  console.log(`${date}  active ${counts.active} / owners ${counts.owners} / review ${counts.review}`);
+  console.log('');
+  if (!groups.length) {
+    console.log('clear   no active tasks');
+  }
+  for (const group of groups) {
+    console.log(`${group.owner}`);
+    for (const task of group.tasks.slice(0, 8)) {
+      const tag = task.tag ? ` #${task.tag}` : '';
+      const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
+      console.log(`  ${task.status.padEnd(7)} ${task.id.slice(0, 8)}${claim}${tag} ${task.title}`);
+    }
+  }
+  console.log('');
+  console.log('add: atris task delegate "..." --to codex --tag tasks');
 }
 
 function cmdHome(args) {
@@ -1663,9 +1816,12 @@ async function run(args) {
   const rest = !first || first.startsWith('--') ? raw : raw.slice(1);
   switch (sub) {
     case 'desk':   return cmdHome(rest);
-    case 'today':  return cmdHome(rest);
+    case 'today':  return cmdDay(rest);
+    case 'day':    return cmdDay(rest);
     case 'add':    return cmdAdd(rest);
     case 'new':    return cmdAdd(rest);
+    case 'delegate': return cmdDelegate(rest);
+    case 'assign': return cmdDelegate(rest);
     case 'list':   return cmdList(rest);
     case 'ls':     return cmdList(rest);
     case 'claim':  return cmdClaim(rest);
