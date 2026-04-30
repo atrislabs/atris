@@ -25,7 +25,7 @@ Workspace projection     .atris/state/tasks.projection.json
 Human fallback view      atris/TODO.md
 Review episodes          .atris/state/task_episodes.jsonl
 CLI surface              atris task ...
-Desktop surface          Obelisk Tasks / Command Center
+Desktop surface          Atris Desktop Tasks / Command Center
 Cloud sync               atris task sync --dry-run
 ```
 
@@ -146,7 +146,7 @@ Record review, lesson, and the next task:
 ```bash
 atris task review <task_id> \
   --reward 1 \
-  --proof "verified in Obelisk" \
+  --proof "verified in Atris Desktop" \
   --lesson "small task rooms beat global TODO files" \
   --next "Add voice task creation"
 ```
@@ -190,9 +190,9 @@ Desktop and web apps should read the projection, not the SQLite file directly.
 
 That keeps local DB details private while giving every UI a stable task board contract.
 
-## Obelisk Command Center
+## Atris Desktop Command Center
 
-Obelisk reads `.atris/state/tasks.projection.json` from each local project.
+Atris Desktop reads `.atris/state/tasks.projection.json` from each local project.
 
 It shows the same task loop as a board:
 
