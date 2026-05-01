@@ -34,6 +34,7 @@ const {
   resolveLatestConflict,
   resolveBusinessSyncOptions,
   safeLineMerge,
+  safeMarkdownMerge,
   shouldIgnoreWatchPath,
   snapshotsDiffer: brainSnapshotsDiffer,
   writeSyncStatus,
@@ -438,6 +439,26 @@ test('business sync safe merge refuses overlapping conflict artifacts', () => {
   );
   assert.equal(merge.ok, false);
   assert.match(merge.reason, /overlap/);
+});
+
+test('business sync markdown merge accepts different section edits', () => {
+  const base = '# Ops\n\n## Sales\n\nOld sales.\n\nMiddle note.\n\n## Support\n\nOld support.\n';
+  const local = '# Ops\n\n## Sales\n\nNew sales.\n\nMiddle note.\n\n## Support\n\nOld support.\n';
+  const remote = '# Ops\n\n## Sales\n\nOld sales.\n\nMiddle note changed.\n\n## Support\n\nNew support.\n';
+
+  const merge = safeMarkdownMerge(base, local, remote);
+  assert.equal(merge.ok, true);
+  assert.equal(merge.content, '# Ops\n\n## Sales\n\nNew sales.\n\nMiddle note changed.\n\n## Support\n\nNew support.\n');
+});
+
+test('business sync markdown merge refuses same section edits', () => {
+  const base = '# Ops\n\n## Sales\n\nOld sales.\n';
+  const local = '# Ops\n\n## Sales\n\nLocal sales.\n';
+  const remote = '# Ops\n\n## Sales\n\nCloud sales.\n';
+
+  const merge = safeMarkdownMerge(base, local, remote);
+  assert.equal(merge.ok, false);
+  assert.match(merge.reason, /sales/);
 });
 
 test('business sync resolve command is local-only and works without credentials', () => {
