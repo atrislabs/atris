@@ -45,21 +45,43 @@ function firstPositionalArg(args) {
   return null;
 }
 
-function readBusinessSlugFromCwd(cwd) {
+function readBusinessMetaFromCwd(cwd) {
   const file = path.join(cwd, '.atris', 'business.json');
   if (!fs.existsSync(file)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return data.slug || data.canonical_slug || data.name || null;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
     return null;
   }
 }
 
+function readBusinessSlugFromCwd(cwd) {
+  const data = readBusinessMetaFromCwd(cwd);
+  return data ? data.slug || data.canonical_slug || data.name || null : null;
+}
+
+function resolveWorkspaceCwd(slug, cwd) {
+  if (!slug) return cwd;
+
+  const currentSlug = readBusinessSlugFromCwd(cwd);
+  if (currentSlug === slug) return cwd;
+
+  const child = path.join(cwd, slug);
+  if (fs.existsSync(child) && fs.statSync(child).isDirectory()) {
+    const childSlug = readBusinessSlugFromCwd(child);
+    const hasAtris = fs.existsSync(path.join(child, 'atris'));
+    if (childSlug || hasAtris) return child;
+  }
+
+  return cwd;
+}
+
 function parseLiveOptions(args, cwd = process.cwd()) {
   const first = firstPositionalArg(args);
+  const slug = first || readBusinessSlugFromCwd(cwd);
+  const workspaceCwd = resolveWorkspaceCwd(slug, cwd);
   return {
-    slug: first || readBusinessSlugFromCwd(cwd),
+    slug,
     once: args.includes('--once'),
     dryRun: args.includes('--dry-run'),
     noDoctor: args.includes('--no-doctor'),
@@ -68,8 +90,8 @@ function parseLiveOptions(args, cwd = process.cwd()) {
     debounceSec: parseNumberFlag(args, 'debounce', DEFAULT_DEBOUNCE_SEC),
     timeoutSec: parseNumberFlag(args, 'timeout', DEFAULT_TIMEOUT_SEC),
     only: parseStringFlag(args, 'only'),
-    root: parseStringFlag(args, 'root') || path.dirname(cwd),
-    cwd,
+    root: parseStringFlag(args, 'root') || path.dirname(workspaceCwd),
+    cwd: workspaceCwd,
   };
 }
 
