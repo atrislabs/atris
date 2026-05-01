@@ -24,6 +24,7 @@ Covered classifier cases:
 - conflict summary rendering
 - conflict review packet generation with local and remote artifacts
 - conflict review packet writing to disk
+- command-path pull conflict packet builder includes `.base`, `.local`, and `.remote` artifacts
 - local `atris sync --status` command works without credentials
 - local `atris sync --review` command prints the latest conflict packet without credentials
 - local `atris sync --resolve local|cloud|both|merge` applies conflict artifacts into local `atris/` files without credentials
@@ -216,7 +217,6 @@ Missing validation:
 - remote-only update pulls cleanly end-to-end
 - local delete does not delete cloud without `--delete` end-to-end
 - remote delete does not destroy local modified work end-to-end
-- command-path conflict artifact creation with `.base` still needs an end-to-end fixture with mocked pull state
 - parent folder junk is ignored by the push planner; still needs a full command fixture
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
 - Pallet shipped-command smoke test from a real Pallet-shaped workspace

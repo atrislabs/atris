@@ -41,6 +41,37 @@ function syncTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+function buildPullConflictReviewPacket(outputDir, conflictChanges, remoteContents = {}, timestamp = syncTimestamp()) {
+  const baseContents = {};
+  const localContents = {};
+  const normalizedRemoteContents = {};
+
+  for (const change of conflictChanges) {
+    const p = change.path;
+    const localPath = path.join(outputDir, p.replace(/^\//, ''));
+    try {
+      localContents[p] = fs.readFileSync(localPath, 'utf8');
+    } catch {
+      localContents[p] = '';
+    }
+
+    const baseContent = readBaseContent(outputDir, p);
+    if (baseContent !== null) baseContents[p] = baseContent;
+
+    normalizedRemoteContents[p] = Object.prototype.hasOwnProperty.call(remoteContents, p)
+      ? remoteContents[p]
+      : '';
+  }
+
+  return buildConflictReviewPacket({
+    plan: { changes: conflictChanges },
+    baseContents,
+    localContents,
+    remoteContents: normalizedRemoteContents,
+    timestamp,
+  });
+}
+
 async function pullAtris() {
   let arg = process.argv[3];
 
@@ -557,8 +588,6 @@ async function pullBusiness(slug) {
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
   const conflictChanges = [];
-  const conflictBaseContents = {};
-  const conflictLocalContents = {};
   const conflictRemoteContents = {};
 
   console.log('');
@@ -590,14 +619,6 @@ async function pullBusiness(slug) {
     } else {
       // Save remote version alongside local
       const content = remoteContent[p];
-      const localPathForPacket = path.join(outputDir, p.replace(/^\//, ''));
-      try {
-        conflictLocalContents[p] = fs.readFileSync(localPathForPacket, 'utf8');
-      } catch {
-        conflictLocalContents[p] = '';
-      }
-      const baseContent = readBaseContent(outputDir, p);
-      if (baseContent !== null) conflictBaseContents[p] = baseContent;
       conflictRemoteContents[p] = content || '';
       conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
       if (content || content === '') {
@@ -627,14 +648,6 @@ async function pullBusiness(slug) {
       deleted++;
     } else {
       console.log(`  \u26A0 ${p.replace(/^\//, '')}  deleted on computer, but you changed it locally`);
-      const localPathForPacket = path.join(outputDir, p.replace(/^\//, ''));
-      try {
-        conflictLocalContents[p] = fs.readFileSync(localPathForPacket, 'utf8');
-      } catch {
-        conflictLocalContents[p] = '';
-      }
-      const baseContent = readBaseContent(outputDir, p);
-      if (baseContent !== null) conflictBaseContents[p] = baseContent;
       conflictRemoteContents[p] = '';
       conflictChanges.push({ path: p, status: 'conflict_remote_deleted_local_updated', action: 'review' });
       conflictCount++;
@@ -726,13 +739,7 @@ async function pullBusiness(slug) {
   if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
   if (failOnConflict && conflictCount > 0) {
     const timestamp = syncTimestamp();
-    const packet = buildConflictReviewPacket({
-      plan: { changes: conflictChanges },
-      baseContents: conflictBaseContents,
-      localContents: conflictLocalContents,
-      remoteContents: conflictRemoteContents,
-      timestamp,
-    });
+    const packet = buildPullConflictReviewPacket(outputDir, conflictChanges, conflictRemoteContents, timestamp);
     writeConflictReviewPacket(outputDir, packet);
     console.log('');
     console.log(`  Sync paused: ${conflictCount} conflict${conflictCount === 1 ? '' : 's'} need review before publishing.`);
@@ -1009,4 +1016,4 @@ async function pullMemberJournal(token, agentId, memberName, memberDir) {
   return synced;
 }
 
-module.exports = { pullAtris };
+module.exports = { buildPullConflictReviewPacket, pullAtris };
