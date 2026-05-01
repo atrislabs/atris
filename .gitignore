@@ -2,6 +2,7 @@
 .local/
 .atris/
 .claude/
+atris/brain/
 
 # Local scratch workspaces (created by `atris init` in subdirs for testing)
 atris-labs-*/
@@ -52,6 +53,8 @@ atris/features/*
 !atris/features/verify-falsifiability/**
 !atris/features/plan-review-by-validator/
 !atris/features/plan-review-by-validator/**
+!atris/features/company-brain-sync/
+!atris/features/company-brain-sync/**
 # Legacy location (deprecated)
 docs/features/
 

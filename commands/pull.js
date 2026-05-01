@@ -11,6 +11,7 @@ const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocal
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
+const { buildConflictReviewPacket, writeConflictReviewPacket } = require('../lib/company-brain-sync');
 
 function pruneEmptyParentDirs(filePath, stopDir) {
   let current = path.dirname(filePath);
@@ -26,11 +27,19 @@ function pruneEmptyParentDirs(filePath, stopDir) {
   }
 }
 
+function isBusinessWorkspaceRoot(dir) {
+  return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
+}
+
+function syncTimestamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
 async function pullAtris() {
   let arg = process.argv[3];
 
   if (arg === '--help') {
-    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>]');
+    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>] [--dry-run]');
     console.log('');
     console.log('  Pull is force-overwrite by default. Cloud is the source of truth.');
     console.log('  Local files that conflict with cloud are replaced by the cloud version.');
@@ -40,6 +49,7 @@ async function pullAtris() {
     console.log('  atris pull doordash --into /tmp/doordash');
     console.log('  atris pull doordash --only atris/wiki/');
     console.log('  atris pull --keep-local      Preserve conflicting local edits as .remote files (legacy)');
+    console.log('  atris pull --dry-run         Preview pull changes without writing local files');
     return;
   }
 
@@ -127,6 +137,8 @@ async function pullBusiness(slug) {
   // --keep-local opts back into the legacy three-way merge with .remote conflict files.
   // --force is still accepted as an alias for the default for muscle-memory.
   const force = !process.argv.includes('--keep-local');
+  const failOnConflict = process.argv.includes('--fail-on-conflict');
+  const dryRun = process.argv.includes('--dry-run');
 
   // Parse --only flag: comma-separated directory prefixes to filter
   // Supports both --only=team/,context/ and --only team/,context/
@@ -140,7 +152,7 @@ async function pullBusiness(slug) {
       onlyRaw = process.argv[onlyIdx + 1];
     }
   }
-  const onlyPrefixes = onlyRaw
+  let onlyPrefixes = onlyRaw
     ? onlyRaw.split(',').map(p => {
         let norm = p.replace(/^\//, '');
         const wikiPrefix = normalizeWikiOnlyPrefix(norm);
@@ -201,6 +213,10 @@ async function pullBusiness(slug) {
   // Paired with the manifest-scoped sweep below, this makes it impossible
   // for a stray cwd to cause atris to delete user files.
   ({ dir: outputDir } = resolveSafeOutputDir(outputDir, { slug, op: 'pull into' }));
+
+  if (!onlyPrefixes && isBusinessWorkspaceRoot(outputDir)) {
+    onlyPrefixes = ['atris/'];
+  }
 
   // Resolve business ID — always refresh from API to avoid stale workspace_id
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -283,6 +299,14 @@ async function pullBusiness(slug) {
   // Load manifest (last sync state)
   const manifest = loadManifest(resolvedSlug || slug);
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
+  const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
+  const manifestRootMatchesOutput = !manifest || !manifest.workspace_root || (() => {
+    try {
+      return fs.realpathSync(manifest.workspace_root) === fs.realpathSync(outputDir);
+    } catch {
+      return path.resolve(manifest.workspace_root || '') === path.resolve(outputDir);
+    }
+  })();
 
   console.log('');
   console.log(`Pulling ${businessName}...` + (timeSince ? `  (last synced ${timeSince})` : ''));
@@ -297,7 +321,12 @@ async function pullBusiness(slug) {
   }, 250);
 
   // Smart pull: if we have a manifest (not first sync), fetch hashes first, then only changed content
-  const hasManifest = manifest && manifest.files && Object.keys(manifest.files).length > 0 && !force;
+  const hasManifest = manifest
+    && manifest.files
+    && Object.keys(manifest.files).length > 0
+    && Object.keys(localFilesBeforePull).length > 0
+    && manifestRootMatchesOutput
+    && !force;
   let result;
 
   const pathsParam = onlyPrefixes ? `&paths=${encodeURIComponent(onlyPrefixes.map(p => p.replace(/\/$/, '')).join(','))}` : '';
@@ -483,7 +512,7 @@ async function pullBusiness(slug) {
   }
 
   // Compute local file hashes
-  const localFiles = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
+  const localFiles = localFilesBeforePull;
 
   // If output dir is empty (fresh clone) or --force, treat as first sync — pull everything
   const effectiveManifest = (Object.keys(localFiles).length === 0 || force) ? null : manifest;
@@ -491,11 +520,39 @@ async function pullBusiness(slug) {
   // Three-way compare
   const diff = threeWayCompare(localFiles, remoteFiles, effectiveManifest);
 
+  if (dryRun) {
+    console.log('');
+    for (const p of [...diff.toPull, ...diff.newRemote]) {
+      const label = diff.newRemote.includes(p) ? 'new on computer' : 'updated on computer';
+      const icon = diff.newRemote.includes(p) ? '+' : '\u2193';
+      console.log(`  ${icon} ${p.replace(/^\//, '')}  ${label}  (dry run)`);
+    }
+    for (const p of diff.conflicts) {
+      console.log(`  ! ${p.replace(/^\//, '')}  conflict  (dry run)`);
+    }
+    for (const p of diff.deletedRemote) {
+      console.log(`  - ${p.replace(/^\//, '')}  deleted on computer  (dry run)`);
+    }
+
+    const parts = [];
+    const pullCount = diff.toPull.length + diff.newRemote.length;
+    if (pullCount > 0) parts.push(`${pullCount} would be pulled`);
+    if (diff.deletedRemote.length > 0) parts.push(`${diff.deletedRemote.length} local file${diff.deletedRemote.length === 1 ? '' : 's'} would be removed`);
+    if (diff.unchanged.length > 0) parts.push(`${diff.unchanged.length} unchanged`);
+    if (diff.conflicts.length > 0) parts.push(`${diff.conflicts.length} conflict${diff.conflicts.length === 1 ? '' : 's'}`);
+    if (parts.length === 0) parts.push('no changes');
+    console.log(`\n  ${parts.join(', ')}. (--dry-run, nothing written)\n`);
+    return;
+  }
+
   // Apply changes
   let pulled = 0;
   let deleted = 0;
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
+  const conflictChanges = [];
+  const conflictLocalContents = {};
+  const conflictRemoteContents = {};
 
   console.log('');
 
@@ -526,6 +583,14 @@ async function pullBusiness(slug) {
     } else {
       // Save remote version alongside local
       const content = remoteContent[p];
+      const localPathForPacket = path.join(outputDir, p.replace(/^\//, ''));
+      try {
+        conflictLocalContents[p] = fs.readFileSync(localPathForPacket, 'utf8');
+      } catch {
+        conflictLocalContents[p] = '';
+      }
+      conflictRemoteContents[p] = content || '';
+      conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
       if (content || content === '') {
         const localPath = path.join(outputDir, p.replace(/^\//, '') + '.remote');
         fs.mkdirSync(path.dirname(localPath), { recursive: true });
@@ -553,6 +618,14 @@ async function pullBusiness(slug) {
       deleted++;
     } else {
       console.log(`  \u26A0 ${p.replace(/^\//, '')}  deleted on computer, but you changed it locally`);
+      const localPathForPacket = path.join(outputDir, p.replace(/^\//, ''));
+      try {
+        conflictLocalContents[p] = fs.readFileSync(localPathForPacket, 'utf8');
+      } catch {
+        conflictLocalContents[p] = '';
+      }
+      conflictRemoteContents[p] = '';
+      conflictChanges.push({ path: p, status: 'conflict_remote_deleted_local_updated', action: 'review' });
       conflictCount++;
     }
   }
@@ -640,6 +713,21 @@ async function pullBusiness(slug) {
   if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflict${conflictCount > 1 ? 's' : ''}`);
   if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
+  if (failOnConflict && conflictCount > 0) {
+    const timestamp = syncTimestamp();
+    const packet = buildConflictReviewPacket({
+      plan: { changes: conflictChanges },
+      localContents: conflictLocalContents,
+      remoteContents: conflictRemoteContents,
+      timestamp,
+    });
+    writeConflictReviewPacket(outputDir, packet);
+    console.log('');
+    console.log(`  Sync paused: ${conflictCount} conflict${conflictCount === 1 ? '' : 's'} need review before publishing.`);
+    console.log(`  Review packet: .atris/sync/conflicts/${timestamp}/summary.md`);
+    console.log('  Resolve the conflict, then run sync again.');
+    process.exit(2);
+  }
   if (remoteFiles['atris/now.md'] || remoteFiles['/atris/now.md']) {
     const nowLocal = path.join(outputDir, 'atris', 'now.md');
     if (fs.existsSync(nowLocal)) {
@@ -699,7 +787,7 @@ async function pullBusiness(slug) {
     }
     manifestFiles = merged;
   }
-  const newManifest = buildManifest(manifestFiles, commitHash);
+  const newManifest = buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir });
   saveManifest(resolvedSlug || slug, newManifest);
 
   // Save business config in the output dir so push/status work without args
