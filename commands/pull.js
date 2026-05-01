@@ -11,7 +11,13 @@ const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocal
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
-const { buildConflictReviewPacket, writeConflictReviewPacket } = require('../lib/company-brain-sync');
+const {
+  buildConflictReviewPacket,
+  readBaseContent,
+  removeBaseContents,
+  writeBaseContents,
+  writeConflictReviewPacket,
+} = require('../lib/company-brain-sync');
 
 function pruneEmptyParentDirs(filePath, stopDir) {
   let current = path.dirname(filePath);
@@ -551,6 +557,7 @@ async function pullBusiness(slug) {
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
   const conflictChanges = [];
+  const conflictBaseContents = {};
   const conflictLocalContents = {};
   const conflictRemoteContents = {};
 
@@ -589,6 +596,8 @@ async function pullBusiness(slug) {
       } catch {
         conflictLocalContents[p] = '';
       }
+      const baseContent = readBaseContent(outputDir, p);
+      if (baseContent !== null) conflictBaseContents[p] = baseContent;
       conflictRemoteContents[p] = content || '';
       conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
       if (content || content === '') {
@@ -624,6 +633,8 @@ async function pullBusiness(slug) {
       } catch {
         conflictLocalContents[p] = '';
       }
+      const baseContent = readBaseContent(outputDir, p);
+      if (baseContent !== null) conflictBaseContents[p] = baseContent;
       conflictRemoteContents[p] = '';
       conflictChanges.push({ path: p, status: 'conflict_remote_deleted_local_updated', action: 'review' });
       conflictCount++;
@@ -717,6 +728,7 @@ async function pullBusiness(slug) {
     const timestamp = syncTimestamp();
     const packet = buildConflictReviewPacket({
       plan: { changes: conflictChanges },
+      baseContents: conflictBaseContents,
       localContents: conflictLocalContents,
       remoteContents: conflictRemoteContents,
       timestamp,
@@ -789,6 +801,8 @@ async function pullBusiness(slug) {
   }
   const newManifest = buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir });
   saveManifest(resolvedSlug || slug, newManifest);
+  writeBaseContents(outputDir, remoteContent);
+  removeBaseContents(outputDir, diff.deletedRemote);
 
   // Save business config in the output dir so push/status work without args
   const atrisDir = path.join(outputDir, '.atris');
