@@ -90,9 +90,21 @@ if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'u
 }
 
 const command = process.argv[2];
+const commandArgs = process.argv.slice(3);
+const firstCommandArg = process.argv[3];
+const isBusinessSyncSafetyCommand = command === 'sync'
+  && (
+    commandArgs.includes('--status')
+    || commandArgs.includes('--review')
+    || commandArgs.includes('--resolve')
+    || firstCommandArg === 'status'
+    || firstCommandArg === 'doctor'
+    || firstCommandArg === 'review'
+    || firstCommandArg === 'resolve'
+  );
 
 // Auto-sync skills only for commands that modify workspace state
-if (['init', 'update', 'sync', 'upgrade'].includes(command)) {
+if (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand)) {
   try {
     const { syncSkills } = require('../commands/sync');
     const skillsUpdated = syncSkills({ silent: true });
@@ -836,6 +848,7 @@ if (command === 'init') {
   const isBusinessSync = command === 'sync'
     && (
       fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))
+      || isBusinessSyncSafetyCommand
       || (firstSyncArg && !firstSyncArg.startsWith('-'))
     )
     && firstSyncArg !== 'all';
