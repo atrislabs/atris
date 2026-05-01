@@ -25,7 +25,7 @@ function parseBusinessSyncArgs(args = []) {
   const resolveIdx = positional.indexOf('resolve');
   const resolveFlag = parseFlagValue(args, '--resolve', null);
   const resolve = resolveFlag || (resolveIdx !== -1 ? positional[resolveIdx + 1] : null);
-  const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud']);
+  const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud', 'both']);
   const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
@@ -311,9 +311,18 @@ function collectConflictResolutionEntries(cwd = process.cwd()) {
   return entries.sort((a, b) => a.targetRel.localeCompare(b.targetRel));
 }
 
+function assertWorkspaceTarget(cwd, targetRel) {
+  const targetPath = path.resolve(cwd, targetRel);
+  const root = path.resolve(cwd);
+  if (!targetPath.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`Refusing to resolve outside workspace: ${targetRel}`);
+  }
+  return targetPath;
+}
+
 function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
-  if (!['local', 'cloud'].includes(strategy)) {
-    throw new Error('Use `atris sync --resolve local` or `atris sync --resolve cloud`.');
+  if (!['local', 'cloud', 'both'].includes(strategy)) {
+    throw new Error('Use `atris sync --resolve local`, `atris sync --resolve cloud`, or `atris sync --resolve both`.');
   }
 
   const entries = collectConflictResolutionEntries(cwd);
@@ -326,12 +335,23 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
 
   const resolved = [];
   for (const entry of entries) {
-    const sourcePath = strategy === 'local' ? entry.localPath : entry.remotePath;
-    const targetPath = path.resolve(cwd, entry.targetRel);
-    const root = path.resolve(cwd);
-    if (!targetPath.startsWith(`${root}${path.sep}`)) {
-      throw new Error(`Refusing to resolve outside workspace: ${entry.targetRel}`);
+    const targetPath = assertWorkspaceTarget(cwd, entry.targetRel);
+    if (strategy === 'both') {
+      if (fs.existsSync(entry.localPath)) {
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.copyFileSync(entry.localPath, targetPath);
+      }
+      if (fs.existsSync(entry.remotePath)) {
+        const remoteCopyRel = `${entry.targetRel}.cloud`;
+        const remoteCopyPath = assertWorkspaceTarget(cwd, remoteCopyRel);
+        fs.mkdirSync(path.dirname(remoteCopyPath), { recursive: true });
+        fs.copyFileSync(entry.remotePath, remoteCopyPath);
+      }
+      resolved.push(entry.targetRel);
+      continue;
     }
+
+    const sourcePath = strategy === 'local' ? entry.localPath : entry.remotePath;
     if (!fs.existsSync(sourcePath)) continue;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
@@ -341,7 +361,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
   return {
     resolved,
     message: [
-      `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'local' ? 'local' : 'cloud'} version.`,
+      `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'both' ? 'both versions' : `${strategy === 'local' ? 'local' : 'cloud'} version`}.`,
       ...resolved.map((rel) => `  - ${rel}`),
       '',
       'Next: run `atris sync --dry-run` before publishing.',

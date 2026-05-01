@@ -409,6 +409,12 @@ test('business sync resolve applies local or cloud conflict artifacts to atris f
     assert.deepEqual(cloud.resolved, ['atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
     assert.match(cloud.message, /atris sync --dry-run/);
+
+    const both = resolveLatestConflict(dir, 'both');
+    assert.deepEqual(both.resolved, ['atris/wiki/a.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
+    assert.match(both.message, /both versions/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -425,10 +431,11 @@ test('business sync resolve command is local-only and works without credentials'
     fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
 
-    const res = runCli(['sync', '--resolve', 'cloud'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    const res = runCli(['sync', '--resolve', 'both'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Resolved 1 conflict/);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
   } finally {
     cleanupTempDir(dir);
   }
