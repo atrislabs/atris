@@ -17,6 +17,7 @@ The immediate DoorDash lane now follows the correct company-brain model:
 - `atris sync --watch` watches the local `atris/` brain, debounces local edits, periodically checks cloud using the same safe sync cycle, and keeps retrying after transient failures
 - `atris sync --status` gives a local, nonengineer-readable status card: detected business, brain file count, manifest health, conflict packets, and watcher heartbeat
 - `atris sync --review` prints the latest local conflict review packet without credentials or cloud calls
+- `atris sync --resolve local|cloud` applies the latest conflict packet's chosen side back into the local `atris/` file, then tells the operator to dry-run before publishing
 - real sync/watch cycles write `.atris/sync/status.json` as the local heartbeat; `--dry-run` still writes nothing
 
 ## Desired Sync Engine
@@ -94,10 +95,17 @@ atris sync --review
 
 It prints the latest conflict summary and tells the operator to resolve locally, then run `atris sync --dry-run`.
 
-Later it should let the user choose:
+The first resolution command exists:
 
-- accept local
-- accept cloud
+```bash
+atris sync --resolve local
+atris sync --resolve cloud
+```
+
+It applies the selected side into local `atris/` files and keeps the conflict packet as the audit trail.
+
+Later it should also let the user choose:
+
 - keep both
 - ask Atris to merge semantically
 
