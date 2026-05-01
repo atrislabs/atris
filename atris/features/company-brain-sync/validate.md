@@ -24,6 +24,10 @@ Covered classifier cases:
 - conflict summary rendering
 - conflict review packet generation with local and remote artifacts
 - conflict review packet writing to disk
+- local `atris sync --status` command works without credentials
+- status rendering shows business, brain file count, conflict packets, and watcher heartbeat
+- watch failure policy keeps the alive loop retrying on transient failures
+- watch failure policy treats conflict exits as review state instead of process death
 - watch-mode snapshot detects `atris/` changes
 - watch-mode ignores runtime and OS noise
 
@@ -141,9 +145,27 @@ Syncing doordash knowledge wiki...
 scope: atris/
 ```
 
+Local status surface:
+
+```bash
+atris sync --status
+```
+
+Observed shape:
+
+```text
+Company brain status
+  business: doordash
+  brain: atris/ (...)
+  conflicts: none
+  watcher: ...
+```
+
+This command is local-only and does not require credentials.
+
 ## Still Needed
 
-This feature is not complete until the dedicated sync engine exists.
+This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and a first-class conflict resolution command.
 
 Missing validation:
 
@@ -156,7 +178,11 @@ Missing validation:
 - command-path conflict artifact behavior needs an end-to-end fixture with mocked pull state
 - parent folder junk is ignored under normal business sync
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
+- Pallet shipped-command smoke test from a real Pallet-shaped workspace
+- npm publication after refreshing the invalid npm token
 
 ## Release Gate
 
-Do not call this Notion/Drive/GitHub-grade until the above cases are fixture-tested and the conflict review flow exists.
+It is fair to call this safer than raw Notion/GitHub-style customer-brain editing for scoped markdown sync after the shipped-command smoke passes.
+
+Do not call the syncs "perfect" until the missing fixture cases and conflict resolution flow are complete.
