@@ -97,6 +97,44 @@ test('remote delete plus local update requires review', () => {
   );
 });
 
+test('classifies the safe and unsafe merge matrix for company brain docs', () => {
+  const cases = [
+    {
+      name: 'same final content records convergence',
+      input: { base: h('base'), local: h('same'), remote: h('same') },
+      expected: ['converged', 'record'],
+    },
+    {
+      name: 'cloud-only delete pulls delete locally',
+      input: { base: h('base'), local: h('base'), remote: null },
+      expected: ['remote_deleted', 'pull_delete'],
+    },
+    {
+      name: 'both deleted records convergence',
+      input: { base: h('base'), local: null, remote: null },
+      expected: ['deleted_both', 'record'],
+    },
+    {
+      name: 'local delete plus cloud edit needs review',
+      input: { base: h('base'), local: null, remote: h('remote') },
+      expected: ['conflict_local_deleted_remote_updated', 'review'],
+    },
+    {
+      name: 'new local and cloud files with different content need review',
+      input: { base: null, local: h('local'), remote: h('remote') },
+      expected: ['conflict_created', 'review'],
+    },
+  ];
+
+  for (const item of cases) {
+    const result = classifyPath({
+      path: '/atris/wiki/ops.md',
+      ...item.input,
+    });
+    assert.deepEqual([result.status, result.action], item.expected, item.name);
+  }
+});
+
 test('renders conflict summary for operator review', () => {
   const plan = classifyBrainSync({
     baseFiles: { '/atris/wiki/a.md': h('base') },
