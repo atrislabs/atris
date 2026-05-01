@@ -21,7 +21,8 @@ function parseFlagValue(args, name, fallback) {
 function parseBusinessSyncArgs(args = []) {
   const positional = args.filter((arg) => arg && !arg.startsWith('-'));
   const status = args.includes('--status') || positional[0] === 'status' || positional[0] === 'doctor';
-  const slug = positional.find((arg) => arg !== 'status' && arg !== 'doctor') || null;
+  const review = args.includes('--review') || positional[0] === 'review';
+  const slug = positional.find((arg) => arg !== 'status' && arg !== 'doctor' && arg !== 'review') || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
   const allowDelete = args.includes('--delete');
@@ -29,7 +30,7 @@ function parseBusinessSyncArgs(args = []) {
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -247,6 +248,25 @@ function renderLocalSyncStatus(status) {
   return `${lines.join('\n')}\n`;
 }
 
+function renderLatestConflictReview(cwd = process.cwd()) {
+  const summaries = listConflictSummaries(cwd);
+  if (summaries.length === 0) {
+    return 'No sync conflicts need review.\n';
+  }
+
+  const latest = summaries[summaries.length - 1];
+  const fullPath = path.join(cwd, latest);
+  const content = fs.readFileSync(fullPath, 'utf8');
+  return [
+    `Latest sync conflict review: ${latest}`,
+    '',
+    content.trimEnd(),
+    '',
+    'Resolve the local file, then run `atris sync --dry-run` before publishing.',
+    '',
+  ].join('\n');
+}
+
 function describeWatchFailure(err) {
   const isConflict = err && err.status === 2;
   return {
@@ -312,13 +332,18 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const plan = buildBusinessSyncPlan(options);
 
   if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--timeout 120]');
+    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--timeout 120]');
     console.error('Run inside a business workspace or pass a business slug.');
     process.exit(1);
   }
 
   if (options.status) {
     process.stdout.write(renderLocalSyncStatus(collectLocalSyncStatus(cwd, options)));
+    return;
+  }
+
+  if (options.review) {
+    process.stdout.write(renderLatestConflictReview(cwd));
     return;
   }
 
@@ -409,6 +434,7 @@ module.exports = {
   describeWatchFailure,
   parseBusinessSyncArgs,
   readBusinessSlug,
+  renderLatestConflictReview,
   renderLocalSyncStatus,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,

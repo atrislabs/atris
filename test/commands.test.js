@@ -28,6 +28,7 @@ const {
   collectLocalSyncStatus,
   describeWatchFailure,
   parseBusinessSyncArgs,
+  renderLatestConflictReview,
   renderLocalSyncStatus,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,
@@ -307,6 +308,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     intervalSec: 60,
     debounceSec: 5,
     status: false,
+    review: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
@@ -333,10 +335,44 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
   assert.equal(options.intervalSec, 30);
   assert.equal(options.debounceSec, 2);
   assert.equal(options.status, false);
+  assert.equal(options.review, false);
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
     pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
   });
+});
+
+test('business sync review prints the latest conflict packet without cloud calls', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n\n- atris/wiki/a.md\n', 'utf8');
+
+    const rendered = renderLatestConflictReview(dir);
+    assert.match(rendered, /Latest sync conflict review/);
+    assert.match(rendered, /# Review/);
+    assert.match(rendered, /atris\/wiki\/a\.md/);
+    assert.match(rendered, /atris sync --dry-run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync review command is local-only and works without credentials', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n\n- atris/wiki/a.md\n', 'utf8');
+
+    const res = runCli(['sync', '--review'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Latest sync conflict review/);
+    assert.match(res.stdout, /# Review/);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('business sync status renders a nonengineer-safe local brain readout', () => {
