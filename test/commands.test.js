@@ -25,11 +25,13 @@ const {
   buildBusinessSyncPlan,
   canPreviewPush,
   collectBrainSnapshot,
+  collectConflictResolutionEntries,
   collectLocalSyncStatus,
   describeWatchFailure,
   parseBusinessSyncArgs,
   renderLatestConflictReview,
   renderLocalSyncStatus,
+  resolveLatestConflict,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,
   snapshotsDiffer: brainSnapshotsDiffer,
@@ -352,6 +354,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     debounceSec: 5,
     status: false,
     review: false,
+    resolve: null,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
@@ -379,10 +382,56 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
   assert.equal(options.debounceSec, 2);
   assert.equal(options.status, false);
   assert.equal(options.review, false);
+  assert.equal(options.resolve, null);
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
     pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
   });
+});
+
+test('business sync resolve applies local or cloud conflict artifacts to atris files', () => {
+  const dir = makeTempDir();
+  try {
+    const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
+    fs.mkdirSync(packetDir, { recursive: true });
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
+
+    const entries = collectConflictResolutionEntries(dir);
+    assert.deepEqual(entries.map(entry => entry.targetRel), ['atris/wiki/a.md']);
+
+    const local = resolveLatestConflict(dir, 'local');
+    assert.deepEqual(local.resolved, ['atris/wiki/a.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+
+    const cloud = resolveLatestConflict(dir, 'cloud');
+    assert.deepEqual(cloud.resolved, ['atris/wiki/a.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
+    assert.match(cloud.message, /atris sync --dry-run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync resolve command is local-only and works without credentials', () => {
+  const dir = makeTempDir();
+  try {
+    const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
+    fs.mkdirSync(packetDir, { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
+
+    const res = runCli(['sync', '--resolve', 'cloud'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Resolved 1 conflict/);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('business sync review prints the latest conflict packet without cloud calls', () => {

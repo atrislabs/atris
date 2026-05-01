@@ -26,6 +26,7 @@ Covered classifier cases:
 - conflict review packet writing to disk
 - local `atris sync --status` command works without credentials
 - local `atris sync --review` command prints the latest conflict packet without credentials
+- local `atris sync --resolve local|cloud` applies conflict artifacts into local `atris/` files without credentials
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
 - watch failure policy keeps the alive loop retrying on transient failures
 - watch failure policy treats conflict exits as review state instead of process death
@@ -181,6 +182,20 @@ Latest sync conflict review: .atris/sync/conflicts/.../summary.md
 Resolve the local file, then run `atris sync --dry-run` before publishing.
 ```
 
+Local conflict resolution surface:
+
+```bash
+atris sync --resolve local
+atris sync --resolve cloud
+```
+
+Validated behavior:
+
+- reads the latest `.atris/sync/conflicts/...` packet
+- writes the chosen `.local` or `.remote` artifact back to the target `atris/...` file
+- does not require credentials or cloud calls
+- tells the operator to run `atris sync --dry-run` before publishing
+
 ## Still Needed
 
 This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and a first-class conflict resolution command.
@@ -193,7 +208,7 @@ Missing validation:
 - remote-only update pulls cleanly end-to-end
 - local delete does not delete cloud without `--delete` end-to-end
 - remote delete does not destroy local modified work end-to-end
-- command-path conflict artifact behavior needs an end-to-end fixture with mocked pull state
+- command-path conflict artifact creation still needs an end-to-end fixture with mocked pull state
 - parent folder junk is ignored by the push planner; still needs a full command fixture
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
 - Pallet shipped-command smoke test from a real Pallet-shaped workspace
@@ -203,4 +218,4 @@ Missing validation:
 
 It is fair to call this safer than raw Notion/GitHub-style customer-brain editing for scoped markdown sync after the shipped-command smoke passes.
 
-Do not call the syncs "perfect" until the missing fixture cases and full accept-local/accept-cloud/semantic-merge conflict resolution flow are complete.
+Do not call the syncs "perfect" until the missing fixture cases and semantic-merge conflict resolution flow are complete.
