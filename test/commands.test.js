@@ -441,6 +441,38 @@ test('business sync resolve command is local-only and works without credentials'
   }
 });
 
+test('business sync local safety commands do not require business slug detection', () => {
+  const dir = makeTempDir();
+  try {
+    const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
+    fs.mkdirSync(packetDir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n\n- atris/wiki/a.md\n', 'utf8');
+
+    const status = runCli(['sync', '--status'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(status.status, 0, status.stderr);
+    assert.doesNotMatch(status.stdout, /skills updated/);
+    assert.match(status.stdout, /business: not detected/);
+    assert.match(status.stdout, /conflicts: 1 review packet/);
+
+    const review = runCli(['sync', '--review'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(review.status, 0, review.stderr);
+    assert.doesNotMatch(review.stdout, /skills updated/);
+    assert.match(review.stdout, /Latest sync conflict review/);
+
+    const resolve = runCli(['sync', '--resolve', 'both'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(resolve.status, 0, resolve.stderr);
+    assert.doesNotMatch(resolve.stdout, /skills updated/);
+    assert.match(resolve.stdout, /both versions/);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('business sync review prints the latest conflict packet without cloud calls', () => {
   const dir = makeTempDir();
   try {
