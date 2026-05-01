@@ -49,6 +49,46 @@ function isBusinessWorkspaceRoot(dir) {
   return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
 }
 
+function pathInScope(filePath, onlyPrefixes) {
+  if (!onlyPrefixes) return true;
+  return onlyPrefixes.some(prefix => filePath.startsWith(prefix));
+}
+
+function buildPushChangePlan({
+  localFiles = {},
+  baseFiles = {},
+  onlyPrefixes = null,
+  readFileContent,
+} = {}) {
+  const filesToPush = [];
+  const deletedPaths = [];
+
+  for (const [filePath, fileInfo] of Object.entries(localFiles)) {
+    if (!pathInScope(filePath, onlyPrefixes)) continue;
+    const baseHash = baseFiles[filePath] ? baseFiles[filePath].hash : null;
+    if (!baseHash || fileInfo.hash !== baseHash) {
+      try {
+        const content = readFileContent ? readFileContent(filePath) : '';
+        filesToPush.push({ path: filePath, content });
+      } catch {
+        // File moved or became unreadable while planning; skip this cycle.
+      }
+    }
+  }
+
+  for (const filePath of Object.keys(baseFiles)) {
+    if (!pathInScope(filePath, onlyPrefixes)) continue;
+    if (basenameOfManifestPath(filePath).startsWith('.')) continue;
+    if (!localFiles[filePath]) {
+      deletedPaths.push(filePath);
+    }
+  }
+
+  const filteredLocalCount = Object.keys(localFiles).filter(filePath => pathInScope(filePath, onlyPrefixes)).length;
+  const unchangedCount = Math.max(0, filteredLocalCount - filesToPush.length);
+  return { filesToPush, deletedPaths, unchangedCount };
+}
+
 async function pushAtris() {
   const elapsedMs = startTimer();
   let slug = process.argv[3];
@@ -294,35 +334,12 @@ async function pushAtris() {
   // Compare local hashes to manifest — NO server call needed
   // Files where local hash differs from manifest = changed locally
   const baseFiles = (manifest && manifest.files) ? manifest.files : {};
-  const filesToPush = [];
-  const deletedPaths = [];
-
-  for (const [filePath, fileInfo] of Object.entries(localFiles)) {
-    if (onlyPrefixes && !onlyPrefixes.some(p => filePath.startsWith(p))) continue;
-    const baseHash = baseFiles[filePath] ? baseFiles[filePath].hash : null;
-    if (!baseHash || fileInfo.hash !== baseHash) {
-      // Changed or new — push it
-      const localPath = path.join(sourceDir, filePath.replace(/^\//, ''));
-      try {
-        const content = fs.readFileSync(localPath, 'utf8');
-        filesToPush.push({ path: filePath, content });
-      } catch {}
-    }
-  }
-
-  for (const filePath of Object.keys(baseFiles)) {
-    if (onlyPrefixes && !onlyPrefixes.some(p => filePath.startsWith(p))) continue;
-    if (basenameOfManifestPath(filePath).startsWith('.')) continue;
-    if (!localFiles[filePath]) {
-      deletedPaths.push(filePath);
-    }
-  }
-
-  const filteredLocalCount = Object.keys(localFiles).filter(filePath => {
-    if (!onlyPrefixes) return true;
-    return onlyPrefixes.some(prefix => filePath.startsWith(prefix));
-  }).length;
-  const unchangedCount = Math.max(0, filteredLocalCount - filesToPush.length);
+  const { filesToPush, deletedPaths, unchangedCount } = buildPushChangePlan({
+    localFiles,
+    baseFiles,
+    onlyPrefixes,
+    readFileContent: (filePath) => fs.readFileSync(path.join(sourceDir, filePath.replace(/^\//, '')), 'utf8'),
+  });
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
     console.log('\n  Already up to date.\n');
@@ -632,4 +649,11 @@ async function pushAtris() {
   });
 }
 
-module.exports = { pushAtris, resolvePushSourceDir, canonicalWorkspaceRoot, basenameOfManifestPath, isBusinessWorkspaceRoot };
+module.exports = {
+  pushAtris,
+  buildPushChangePlan,
+  resolvePushSourceDir,
+  canonicalWorkspaceRoot,
+  basenameOfManifestPath,
+  isBusinessWorkspaceRoot,
+};
