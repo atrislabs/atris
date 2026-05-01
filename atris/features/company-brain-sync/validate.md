@@ -31,6 +31,9 @@ Covered classifier cases:
 - watch failure policy treats conflict exits as review state instead of process death
 - watch-mode snapshot detects `atris/` changes
 - watch-mode ignores runtime and OS noise
+- push planner publishes only scoped local `atris/` creates and updates
+- push planner treats scoped local deletes as gated deletes
+- push planner ignores parent-folder junk outside `atris/`
 
 Syntax checks pass:
 
@@ -191,7 +194,7 @@ Missing validation:
 - local delete does not delete cloud without `--delete` end-to-end
 - remote delete does not destroy local modified work end-to-end
 - command-path conflict artifact behavior needs an end-to-end fixture with mocked pull state
-- parent folder junk is ignored under normal business sync
+- parent folder junk is ignored by the push planner; still needs a full command fixture
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
 - Pallet shipped-command smoke test from a real Pallet-shaped workspace
 - npm publication after refreshing the invalid npm token

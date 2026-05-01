@@ -19,7 +19,7 @@ const {
   shouldIgnore,
   snapshotsDiffer,
 } = require('../commands/live');
-const { basenameOfManifestPath, isBusinessWorkspaceRoot, resolvePushSourceDir } = require('../commands/push');
+const { basenameOfManifestPath, buildPushChangePlan, isBusinessWorkspaceRoot, resolvePushSourceDir } = require('../commands/push');
 const { collectState } = require('../commands/brain');
 const {
   buildBusinessSyncPlan,
@@ -271,6 +271,49 @@ test('push source resolver honors explicit --from path', () => {
 test('push ignores dotfile basenames when considering cloud deletes', () => {
   assert.equal(basenameOfManifestPath('/journal/.gitkeep'), '.gitkeep');
   assert.equal(basenameOfManifestPath('/atris/MAP.md'), 'MAP.md');
+});
+
+test('push planner publishes only scoped local brain creates and updates', () => {
+  const plan = buildPushChangePlan({
+    onlyPrefixes: ['/atris/'],
+    baseFiles: {
+      '/atris/wiki/existing.md': { hash: 'base', size: 4 },
+      '/README.md': { hash: 'outside-base', size: 12 },
+    },
+    localFiles: {
+      '/atris/wiki/existing.md': { hash: 'changed', size: 7 },
+      '/atris/wiki/new.md': { hash: 'new', size: 3 },
+      '/README.md': { hash: 'outside-changed', size: 15 },
+    },
+    readFileContent: (filePath) => `content:${filePath}`,
+  });
+
+  assert.deepEqual(plan.filesToPush.map(file => file.path).sort(), [
+    '/atris/wiki/existing.md',
+    '/atris/wiki/new.md',
+  ]);
+  assert.equal(plan.filesToPush[0].content.startsWith('content:/atris/'), true);
+  assert.deepEqual(plan.deletedPaths, []);
+  assert.equal(plan.unchangedCount, 0);
+});
+
+test('push planner treats scoped local deletes as gated deletes and ignores parent junk', () => {
+  const plan = buildPushChangePlan({
+    onlyPrefixes: ['/atris/'],
+    baseFiles: {
+      '/atris/wiki/delete-me.md': { hash: 'base', size: 4 },
+      '/atris/.shadow': { hash: 'dot', size: 3 },
+      '/TODO.md': { hash: 'parent', size: 6 },
+    },
+    localFiles: {
+      '/TODO.md': { hash: 'parent-changed', size: 9 },
+    },
+    readFileContent: () => '',
+  });
+
+  assert.deepEqual(plan.filesToPush, []);
+  assert.deepEqual(plan.deletedPaths, ['/atris/wiki/delete-me.md']);
+  assert.equal(plan.unchangedCount, 0);
 });
 
 test('business workspace root detection requires .atris binding and atris folder', () => {
