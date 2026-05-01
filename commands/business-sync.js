@@ -25,7 +25,7 @@ function parseBusinessSyncArgs(args = []) {
   const resolveIdx = positional.indexOf('resolve');
   const resolveFlag = parseFlagValue(args, '--resolve', null);
   const resolve = resolveFlag || (resolveIdx !== -1 ? positional[resolveIdx + 1] : null);
-  const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud', 'both']);
+  const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud', 'both', 'merge']);
   const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
@@ -300,6 +300,7 @@ function collectConflictResolutionEntries(cwd = process.cwd()) {
         if (!targetRel.startsWith('atris/')) continue;
         entries.push({
           targetRel,
+          basePath: full.replace(/\.local$/, '.base'),
           localPath,
           remotePath,
         });
@@ -320,9 +321,60 @@ function assertWorkspaceTarget(cwd, targetRel) {
   return targetPath;
 }
 
+function changedRange(baseLines, changedLines) {
+  let start = 0;
+  while (start < baseLines.length && start < changedLines.length && baseLines[start] === changedLines[start]) {
+    start += 1;
+  }
+
+  let baseEnd = baseLines.length;
+  let changedEnd = changedLines.length;
+  while (
+    baseEnd > start
+    && changedEnd > start
+    && baseLines[baseEnd - 1] === changedLines[changedEnd - 1]
+  ) {
+    baseEnd -= 1;
+    changedEnd -= 1;
+  }
+
+  return {
+    start,
+    end: baseEnd,
+    replacement: changedLines.slice(start, changedEnd),
+  };
+}
+
+function safeLineMerge(baseContent, localContent, remoteContent) {
+  if (localContent === remoteContent) return { ok: true, content: localContent };
+  if (localContent === baseContent) return { ok: true, content: remoteContent };
+  if (remoteContent === baseContent) return { ok: true, content: localContent };
+
+  const baseLines = baseContent.split('\n');
+  const localRange = changedRange(baseLines, localContent.split('\n'));
+  const remoteRange = changedRange(baseLines, remoteContent.split('\n'));
+  const sameRange = localRange.start === remoteRange.start && localRange.end === remoteRange.end;
+  const sameReplacement = localRange.replacement.join('\n') === remoteRange.replacement.join('\n');
+  if (sameRange && sameReplacement) return { ok: true, content: localContent };
+
+  const overlaps = localRange.start < remoteRange.end && remoteRange.start < localRange.end;
+  const sameInsertionPoint = localRange.start === localRange.end
+    && remoteRange.start === remoteRange.end
+    && localRange.start === remoteRange.start;
+  if (overlaps || sameInsertionPoint) {
+    return { ok: false, reason: 'local and cloud edits overlap' };
+  }
+
+  const merged = baseLines.slice();
+  for (const range of [localRange, remoteRange].sort((a, b) => b.start - a.start)) {
+    merged.splice(range.start, range.end - range.start, ...range.replacement);
+  }
+  return { ok: true, content: merged.join('\n') };
+}
+
 function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
-  if (!['local', 'cloud', 'both'].includes(strategy)) {
-    throw new Error('Use `atris sync --resolve local`, `atris sync --resolve cloud`, or `atris sync --resolve both`.');
+  if (!['local', 'cloud', 'both', 'merge'].includes(strategy)) {
+    throw new Error('Use `atris sync --resolve local`, `atris sync --resolve cloud`, `atris sync --resolve both`, or `atris sync --resolve merge`.');
   }
 
   const entries = collectConflictResolutionEntries(cwd);
@@ -334,6 +386,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
   }
 
   const resolved = [];
+  const unresolved = [];
   for (const entry of entries) {
     const targetPath = assertWorkspaceTarget(cwd, entry.targetRel);
     if (strategy === 'both') {
@@ -351,6 +404,26 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
       continue;
     }
 
+    if (strategy === 'merge') {
+      if (!fs.existsSync(entry.basePath) || !fs.existsSync(entry.localPath) || !fs.existsSync(entry.remotePath)) {
+        unresolved.push(`${entry.targetRel} (missing base/local/cloud artifact)`);
+        continue;
+      }
+      const merged = safeLineMerge(
+        fs.readFileSync(entry.basePath, 'utf8'),
+        fs.readFileSync(entry.localPath, 'utf8'),
+        fs.readFileSync(entry.remotePath, 'utf8')
+      );
+      if (!merged.ok) {
+        unresolved.push(`${entry.targetRel} (${merged.reason})`);
+        continue;
+      }
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, merged.content, 'utf8');
+      resolved.push(entry.targetRel);
+      continue;
+    }
+
     const sourcePath = strategy === 'local' ? entry.localPath : entry.remotePath;
     if (!fs.existsSync(sourcePath)) continue;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -360,9 +433,11 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
 
   return {
     resolved,
+    unresolved,
     message: [
-      `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'both' ? 'both versions' : `${strategy === 'local' ? 'local' : 'cloud'} version`}.`,
+      `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'both' ? 'both versions' : `${strategy === 'merge' ? 'safe merge' : `${strategy === 'local' ? 'local' : 'cloud'} version`}`}.`,
       ...resolved.map((rel) => `  - ${rel}`),
+      ...(unresolved.length ? ['', 'Still needs review:', ...unresolved.map((rel) => `  - ${rel}`)] : []),
       '',
       'Next: run `atris sync --dry-run` before publishing.',
       '',
@@ -451,7 +526,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const plan = buildBusinessSyncPlan(options);
 
   if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both] [--timeout 120]');
+    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--timeout 120]');
     console.error('Run inside a business workspace or pass a business slug.');
     process.exit(1);
   }
@@ -548,6 +623,7 @@ module.exports = {
   renderLocalSyncStatus,
   resolveLatestConflict,
   resolveBusinessSyncOptions,
+  safeLineMerge,
   shouldIgnoreWatchPath,
   snapshotsDiffer,
   writeSyncStatus,

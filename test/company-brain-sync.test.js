@@ -7,7 +7,10 @@ const {
   buildConflictReviewPacket,
   classifyBrainSync,
   classifyPath,
+  readBaseContent,
   renderSyncSummary,
+  removeBaseContents,
+  writeBaseContents,
   writeConflictReviewPacket,
 } = require('../lib/company-brain-sync');
 
@@ -157,12 +160,17 @@ test('builds conflict review packet with local and remote artifacts', () => {
 
   const packet = buildConflictReviewPacket({
     plan,
+    baseContents: { '/atris/wiki/a.md': 'base truth\n' },
     localContents: { '/atris/wiki/a.md': 'local draft\n' },
     remoteContents: { '/atris/wiki/a.md': 'cloud truth\n' },
     timestamp: '2026-05-01T12-00-00Z',
   });
 
   assert.equal(packet.conflicts.length, 1);
+  assert.equal(
+    packet.files['.atris/sync/conflicts/2026-05-01T12-00-00Z/atris/wiki/a.md.base'],
+    'base truth\n'
+  );
   assert.equal(
     packet.files['.atris/sync/conflicts/2026-05-01T12-00-00Z/atris/wiki/a.md.local'],
     'local draft\n'
@@ -173,7 +181,7 @@ test('builds conflict review packet with local and remote artifacts', () => {
   );
   assert.match(
     packet.files['.atris/sync/conflicts/2026-05-01T12-00-00Z/summary.md'],
-    /atris\/wiki\/a\.md \(conflict_updated\)/
+    /base: \.atris\/sync\/conflicts\/2026-05-01T12-00-00Z\/atris\/wiki\/a\.md\.base/
   );
 });
 
@@ -192,6 +200,25 @@ test('writes conflict review packet to disk', () => {
     assert.equal(written.length, 3);
     assert.equal(fs.readFileSync(path.join(dir, '.atris/sync/conflicts/t/atris/wiki/a.md.local'), 'utf8'), 'local\n');
     assert.equal(fs.readFileSync(path.join(dir, '.atris/sync/conflicts/t/summary.md'), 'utf8'), '# Summary\n');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stores base contents for future semantic conflict resolution', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-base-'));
+  try {
+    const written = writeBaseContents(dir, {
+      '/atris/wiki/a.md': 'base\n',
+      'atris/wiki/b.md': 'base b\n',
+    });
+    assert.equal(written.length, 2);
+    assert.equal(readBaseContent(dir, '/atris/wiki/a.md'), 'base\n');
+    assert.equal(readBaseContent(dir, 'atris/wiki/b.md'), 'base b\n');
+
+    removeBaseContents(dir, ['/atris/wiki/a.md']);
+    assert.equal(readBaseContent(dir, '/atris/wiki/a.md'), null);
+    assert.equal(readBaseContent(dir, 'atris/wiki/b.md'), 'base b\n');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

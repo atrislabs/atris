@@ -33,6 +33,7 @@ const {
   renderLocalSyncStatus,
   resolveLatestConflict,
   resolveBusinessSyncOptions,
+  safeLineMerge,
   shouldIgnoreWatchPath,
   snapshotsDiffer: brainSnapshotsDiffer,
   writeSyncStatus,
@@ -394,6 +395,7 @@ test('business sync resolve applies local or cloud conflict artifacts to atris f
   try {
     const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
     fs.mkdirSync(packetDir, { recursive: true });
+    fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'base copy\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
@@ -415,9 +417,27 @@ test('business sync resolve applies local or cloud conflict artifacts to atris f
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
     assert.match(both.message, /both versions/);
+
+    fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'A\nB\nC\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'A\nB local\nC\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'A\nB\nC cloud\n', 'utf8');
+    const merge = resolveLatestConflict(dir, 'merge');
+    assert.deepEqual(merge.resolved, ['atris/wiki/a.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'A\nB local\nC cloud\n');
+    assert.match(merge.message, /safe merge/);
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('business sync safe merge refuses overlapping conflict artifacts', () => {
+  const merge = safeLineMerge(
+    'A\nB\nC\n',
+    'A\nlocal B\nC\n',
+    'A\ncloud B\nC\n'
+  );
+  assert.equal(merge.ok, false);
+  assert.match(merge.reason, /overlap/);
 });
 
 test('business sync resolve command is local-only and works without credentials', () => {
@@ -427,15 +447,16 @@ test('business sync resolve command is local-only and works without credentials'
     fs.mkdirSync(packetDir, { recursive: true });
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'A\nB\nC\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'A\nB local\nC\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'A\nB\nC cloud\n', 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
 
-    const res = runCli(['sync', '--resolve', 'both'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    const res = runCli(['sync', '--resolve', 'merge'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Resolved 1 conflict/);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
-    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
+    assert.match(res.stdout, /safe merge/);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'A\nB local\nC cloud\n');
   } finally {
     cleanupTempDir(dir);
   }
