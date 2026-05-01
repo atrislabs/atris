@@ -28,7 +28,7 @@ Covered classifier cases:
 - local `atris sync --review` command prints the latest conflict packet without credentials
 - local `atris sync --resolve local|cloud|both|merge` applies conflict artifacts into local `atris/` files without credentials
 - conflict packets can include `.base` artifacts, and successful pulls cache base content under `.atris/sync/base/`
-- safe merge resolution writes only non-overlapping local/cloud line edits and refuses overlapping edits
+- safe merge resolution writes non-overlapping local/cloud line edits, can merge different markdown heading sections, and refuses overlapping or same-section edits
 - local safety commands route correctly even when business slug detection is unavailable
 - safe/unsafe merge-matrix cases are covered: converged same content, cloud delete, deleted both, local delete plus cloud edit, and conflicting created files
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
@@ -200,7 +200,7 @@ Validated behavior:
 - reads the latest `.atris/sync/conflicts/...` packet
 - writes the chosen `.local` or `.remote` artifact back to the target `atris/...` file
 - `both` keeps the local artifact at the original path and writes the cloud artifact as `<file>.cloud`
-- `merge` requires `.base`, `.local`, and `.remote`, writes non-overlapping line edits, and leaves overlapping edits in review
+- `merge` requires `.base`, `.local`, and `.remote`, writes non-overlapping line edits or different markdown sections, and leaves overlapping or same-section edits in review
 - does not require credentials or cloud calls
 - tells the operator to run `atris sync --dry-run` before publishing
 
