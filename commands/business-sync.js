@@ -19,7 +19,9 @@ function parseFlagValue(args, name, fallback) {
 }
 
 function parseBusinessSyncArgs(args = []) {
-  const slug = args.find((arg) => arg && !arg.startsWith('-')) || null;
+  const positional = args.filter((arg) => arg && !arg.startsWith('-'));
+  const status = args.includes('--status') || positional[0] === 'status' || positional[0] === 'doctor';
+  const slug = positional.find((arg) => arg !== 'status' && arg !== 'doctor') || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
   const allowDelete = args.includes('--delete');
@@ -27,7 +29,7 @@ function parseBusinessSyncArgs(args = []) {
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -123,6 +125,139 @@ function canPreviewPush(cwd, slug) {
   return sameRealPath(manifest.workspace_root, cwd);
 }
 
+function syncStatusPath(cwd) {
+  return path.join(cwd, '.atris', 'sync', 'status.json');
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeSyncStatus(cwd, payload = {}) {
+  const statusPath = syncStatusPath(cwd);
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  fs.writeFileSync(statusPath, JSON.stringify({
+    schema: 'atris.company_brain_sync.status.v1',
+    updated_at: new Date().toISOString(),
+    ...payload,
+  }, null, 2) + '\n', 'utf8');
+}
+
+function countBrainFiles(cwd) {
+  const brainDir = path.join(cwd, 'atris');
+  let count = 0;
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(brainDir, full);
+      if (shouldIgnoreWatchPath(rel)) continue;
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) count += 1;
+    }
+  }
+
+  walk(brainDir);
+  return count;
+}
+
+function listConflictSummaries(cwd) {
+  const conflictsDir = path.join(cwd, '.atris', 'sync', 'conflicts');
+  const summaries = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name === 'summary.md') {
+        summaries.push(path.relative(cwd, full).replace(/\\/g, '/'));
+      }
+    }
+  }
+
+  walk(conflictsDir);
+  return summaries.sort();
+}
+
+function collectLocalSyncStatus(cwd = process.cwd(), options = {}) {
+  const slug = options.slug || readBusinessSlug(cwd);
+  const manifest = slug ? loadManifest(slug) : null;
+  const heartbeat = readJsonFile(syncStatusPath(cwd));
+  const conflictSummaries = listConflictSummaries(cwd);
+  const brainDir = path.join(cwd, 'atris');
+  const manifestRootMatches = !manifest || !manifest.workspace_root || sameRealPath(manifest.workspace_root, cwd);
+
+  return {
+    slug,
+    cwd,
+    brainDir,
+    brainExists: fs.existsSync(brainDir),
+    brainFileCount: countBrainFiles(cwd),
+    conflictCount: conflictSummaries.length,
+    latestConflict: conflictSummaries[conflictSummaries.length - 1] || null,
+    lastSync: manifest && manifest.last_sync ? manifest.last_sync : null,
+    manifestRoot: manifest && manifest.workspace_root ? manifest.workspace_root : null,
+    manifestRootMatches,
+    heartbeat,
+  };
+}
+
+function renderLocalSyncStatus(status) {
+  const lines = [];
+  const fileLabel = status.brainFileCount === 1 ? 'file' : 'files';
+  lines.push('Company brain status');
+  lines.push(`  business: ${status.slug || 'not detected'}`);
+  lines.push(`  folder: ${status.cwd}`);
+  lines.push(`  brain: ${status.brainExists ? `atris/ (${status.brainFileCount} ${fileLabel})` : 'missing atris/'}`);
+  lines.push(`  last cloud sync: ${status.lastSync || 'never on this machine'}`);
+  if (status.manifestRoot && !status.manifestRootMatches) {
+    lines.push(`  manifest: from another folder (${status.manifestRoot})`);
+  } else {
+    lines.push(`  manifest: ${status.manifestRoot ? 'matches this folder' : 'not created yet'}`);
+  }
+  if (status.conflictCount > 0) {
+    lines.push(`  conflicts: ${status.conflictCount} review packet${status.conflictCount === 1 ? '' : 's'}`);
+    lines.push(`  latest: ${status.latestConflict}`);
+  } else {
+    lines.push('  conflicts: none');
+  }
+  if (status.heartbeat && status.heartbeat.updated_at) {
+    lines.push(`  watcher: last heartbeat ${status.heartbeat.updated_at} (${status.heartbeat.state || 'unknown'})`);
+  } else {
+    lines.push('  watcher: no heartbeat yet');
+  }
+  lines.push('');
+  lines.push('Next: run `atris sync --dry-run` to preview, or `atris sync --watch` to keep this brain live.');
+  return `${lines.join('\n')}\n`;
+}
+
+function describeWatchFailure(err) {
+  const isConflict = err && err.status === 2;
+  return {
+    state: isConflict ? 'conflict' : 'retrying',
+    headline: `Sync ${isConflict ? 'paused for review' : 'will retry'}: ${err && err.message ? err.message : err}`,
+    detail: isConflict
+      ? 'Resolve the review packet, then the watcher will pick up the next clean cycle.'
+      : 'The watcher is still running and will check again.',
+  };
+}
+
 function runCli(args, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], {
@@ -133,7 +268,12 @@ function runCli(args, cwd = process.cwd()) {
     child.on('error', reject);
     child.on('exit', (status) => {
       if (status === 0) resolve({ status });
-      else reject(new Error(`${commandLine(args)} exited ${status}`));
+      else {
+        const err = new Error(`${commandLine(args)} exited ${status}`);
+        err.status = status;
+        err.args = args;
+        reject(err);
+      }
     });
   });
 }
@@ -157,6 +297,14 @@ async function runSyncCycle(plan, cwd, options = {}) {
     return;
   }
   await runCli(plan.pushArgs, cwd);
+  if (options.writeStatus) {
+    writeSyncStatus(cwd, {
+      slug: options.slug,
+      state: 'current',
+      mode: options.watch ? 'watch' : 'sync',
+      last_error: null,
+    });
+  }
 }
 
 async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
@@ -164,9 +312,14 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const plan = buildBusinessSyncPlan(options);
 
   if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--timeout 120]');
+    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--timeout 120]');
     console.error('Run inside a business workspace or pass a business slug.');
     process.exit(1);
+  }
+
+  if (options.status) {
+    process.stdout.write(renderLocalSyncStatus(collectLocalSyncStatus(cwd, options)));
+    return;
   }
 
   console.log('');
@@ -177,7 +330,12 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   }
   console.log('');
 
-  await runSyncCycle(plan, cwd, { dryRun: options.dryRun, slug: options.slug });
+  await runSyncCycle(plan, cwd, {
+    dryRun: options.dryRun,
+    slug: options.slug,
+    writeStatus: !options.dryRun,
+    watch: options.watch,
+  });
   if (!options.watch) return;
 
   let lastSnapshot = collectBrainSnapshot(cwd);
@@ -213,14 +371,29 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
     try {
       console.log('');
       console.log(shouldLocalSync ? 'Local brain changed. Syncing...' : 'Checking cloud brain...');
-      await runSyncCycle(plan, cwd, { dryRun: options.dryRun, slug: options.slug });
+      await runSyncCycle(plan, cwd, {
+        dryRun: options.dryRun,
+        slug: options.slug,
+        writeStatus: !options.dryRun,
+        watch: true,
+      });
       lastSnapshot = collectBrainSnapshot(cwd);
       pendingLocal = false;
       quietTicks = 0;
     } catch (err) {
-      console.error(`\nSync paused: ${err.message || err}`);
-      console.error('Resolve the issue, then restart `atris sync --watch`.');
-      process.exit(1);
+      const failure = describeWatchFailure(err);
+      console.error(`\n${failure.headline}`);
+      console.error(failure.detail);
+      if (!options.dryRun) {
+        writeSyncStatus(cwd, {
+          slug: options.slug,
+          state: failure.state,
+          mode: 'watch',
+          last_error: err.message || String(err),
+        });
+      }
+      pendingLocal = false;
+      quietTicks = 0;
     } finally {
       running = false;
     }
@@ -232,9 +405,13 @@ module.exports = {
   buildBusinessSyncPlan,
   canPreviewPush,
   collectBrainSnapshot,
+  collectLocalSyncStatus,
+  describeWatchFailure,
   parseBusinessSyncArgs,
   readBusinessSlug,
+  renderLocalSyncStatus,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,
   snapshotsDiffer,
+  writeSyncStatus,
 };

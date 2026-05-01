@@ -14,7 +14,9 @@ The immediate Acme lane now follows the correct company-brain model:
 - `lib/company-brain-sync.js` contains the pure classification core for Notion/Drive/GitHub-style sync decisions
 - conflict review packet generation exists as a pure artifact builder
 - `pull --fail-on-conflict` writes the conflict review packet before `atris sync` stops
-- `atris sync <business> --watch` watches the local `atris/` brain, debounces local edits, and periodically checks cloud using the same safe sync cycle
+- `atris sync --watch` watches the local `atris/` brain, debounces local edits, periodically checks cloud using the same safe sync cycle, and keeps retrying after transient failures
+- `atris sync --status` gives a local, nonengineer-readable status card: detected business, brain file count, manifest health, conflict packets, and watcher heartbeat
+- real sync/watch cycles write `.atris/sync/status.json` as the local heartbeat; `--dry-run` still writes nothing
 
 ## Desired Sync Engine
 
@@ -98,15 +100,17 @@ This should open or print the conflict summary and let the user choose:
 
 ### Watch UX
 
-`atris live doordash` should use the same engine:
+`atris sync --watch` is the current always-on lane:
 
 - watch `doordash/atris/`
 - debounce local edits
 - fetch cloud hashes periodically
 - sync clean changes
 - pause on conflicts with a clear review summary
+- keep the process alive on transient network/API failures and retry on the next cycle
+- record a heartbeat under `.atris/sync/status.json`
 
-An initial watch mode now exists on `atris sync --watch`. `atris live` should eventually delegate to the same sync engine instead of carrying a parallel implementation.
+`atris live` should eventually delegate to the same sync engine instead of carrying a parallel implementation.
 
 ## Quality Bar
 
@@ -116,6 +120,8 @@ Required before broad customer use:
 
 - fixture tests for every change class
 - fixture tests for conflict artifact creation
+- status/heartbeat tests for the nonengineer "am I current?" surface
+- retry-policy tests proving watch failures do not kill the alive loop
 - fixture tests proving parent-folder junk is ignored
 - fixture tests proving no cloud deletes without explicit opt-in
 - end-to-end dry-run against a real Acme-shaped workspace
