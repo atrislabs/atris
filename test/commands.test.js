@@ -19,6 +19,7 @@ const {
   shouldIgnore,
   snapshotsDiffer,
 } = require('../commands/live');
+const { buildPullConflictReviewPacket } = require('../commands/pull');
 const { basenameOfManifestPath, buildPushChangePlan, isBusinessWorkspaceRoot, resolvePushSourceDir } = require('../commands/push');
 const { collectState } = require('../commands/brain');
 const {
@@ -39,6 +40,7 @@ const {
   snapshotsDiffer: brainSnapshotsDiffer,
   writeSyncStatus,
 } = require('../commands/business-sync');
+const { writeBaseContents, writeConflictReviewPacket } = require('../lib/company-brain-sync');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -526,6 +528,34 @@ test('business sync review prints the latest conflict packet without cloud calls
     assert.match(rendered, /# Review/);
     assert.match(rendered, /atris\/wiki\/a\.md/);
     assert.match(rendered, /atris sync --dry-run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business pull conflict packet includes base, local, and remote artifacts', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'local edit\n', 'utf8');
+    writeBaseContents(dir, { '/atris/wiki/a.md': 'base copy\n' });
+
+    const packet = buildPullConflictReviewPacket(
+      dir,
+      [{ path: '/atris/wiki/a.md', status: 'conflict_updated', action: 'review' }],
+      { '/atris/wiki/a.md': 'cloud edit\n' },
+      '2026-05-01T12-00-00Z'
+    );
+    writeConflictReviewPacket(dir, packet);
+
+    const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
+    assert.equal(fs.readFileSync(path.join(packetDir, 'a.md.base'), 'utf8'), 'base copy\n');
+    assert.equal(fs.readFileSync(path.join(packetDir, 'a.md.local'), 'utf8'), 'local edit\n');
+    assert.equal(fs.readFileSync(path.join(packetDir, 'a.md.remote'), 'utf8'), 'cloud edit\n');
+    assert.match(
+      fs.readFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), 'utf8'),
+      /a\.md\.base/
+    );
   } finally {
     cleanupTempDir(dir);
   }
