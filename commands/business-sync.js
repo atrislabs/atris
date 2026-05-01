@@ -22,7 +22,11 @@ function parseBusinessSyncArgs(args = []) {
   const positional = args.filter((arg) => arg && !arg.startsWith('-'));
   const status = args.includes('--status') || positional[0] === 'status' || positional[0] === 'doctor';
   const review = args.includes('--review') || positional[0] === 'review';
-  const slug = positional.find((arg) => arg !== 'status' && arg !== 'doctor' && arg !== 'review') || null;
+  const resolveIdx = positional.indexOf('resolve');
+  const resolveFlag = parseFlagValue(args, '--resolve', null);
+  const resolve = resolveFlag || (resolveIdx !== -1 ? positional[resolveIdx + 1] : null);
+  const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud']);
+  const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
   const allowDelete = args.includes('--delete');
@@ -30,7 +34,7 @@ function parseBusinessSyncArgs(args = []) {
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -267,6 +271,85 @@ function renderLatestConflictReview(cwd = process.cwd()) {
   ].join('\n');
 }
 
+function latestConflictDir(cwd = process.cwd()) {
+  const summaries = listConflictSummaries(cwd);
+  if (summaries.length === 0) return null;
+  return path.dirname(path.join(cwd, summaries[summaries.length - 1]));
+}
+
+function collectConflictResolutionEntries(cwd = process.cwd()) {
+  const dir = latestConflictDir(cwd);
+  if (!dir) return [];
+  const entries = [];
+
+  function walk(current) {
+    let items;
+    try {
+      items = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const full = path.join(current, item.name);
+      if (item.isDirectory()) {
+        walk(full);
+      } else if (item.isFile() && item.name.endsWith('.local')) {
+        const localPath = full;
+        const remotePath = full.replace(/\.local$/, '.remote');
+        const targetRel = path.relative(dir, full).replace(/\\/g, '/').replace(/\.local$/, '');
+        if (!targetRel.startsWith('atris/')) continue;
+        entries.push({
+          targetRel,
+          localPath,
+          remotePath,
+        });
+      }
+    }
+  }
+
+  walk(dir);
+  return entries.sort((a, b) => a.targetRel.localeCompare(b.targetRel));
+}
+
+function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
+  if (!['local', 'cloud'].includes(strategy)) {
+    throw new Error('Use `atris sync --resolve local` or `atris sync --resolve cloud`.');
+  }
+
+  const entries = collectConflictResolutionEntries(cwd);
+  if (entries.length === 0) {
+    return {
+      resolved: [],
+      message: 'No sync conflicts need resolution.\n',
+    };
+  }
+
+  const resolved = [];
+  for (const entry of entries) {
+    const sourcePath = strategy === 'local' ? entry.localPath : entry.remotePath;
+    const targetPath = path.resolve(cwd, entry.targetRel);
+    const root = path.resolve(cwd);
+    if (!targetPath.startsWith(`${root}${path.sep}`)) {
+      throw new Error(`Refusing to resolve outside workspace: ${entry.targetRel}`);
+    }
+    if (!fs.existsSync(sourcePath)) continue;
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    resolved.push(entry.targetRel);
+  }
+
+  return {
+    resolved,
+    message: [
+      `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'local' ? 'local' : 'cloud'} version.`,
+      ...resolved.map((rel) => `  - ${rel}`),
+      '',
+      'Next: run `atris sync --dry-run` before publishing.',
+      '',
+    ].join('\n'),
+  };
+}
+
 function describeWatchFailure(err) {
   const isConflict = err && err.status === 2;
   return {
@@ -332,7 +415,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const plan = buildBusinessSyncPlan(options);
 
   if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--timeout 120]');
+    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud] [--timeout 120]');
     console.error('Run inside a business workspace or pass a business slug.');
     process.exit(1);
   }
@@ -344,6 +427,11 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
 
   if (options.review) {
     process.stdout.write(renderLatestConflictReview(cwd));
+    return;
+  }
+
+  if (options.resolve) {
+    process.stdout.write(resolveLatestConflict(cwd, options.resolve).message);
     return;
   }
 
@@ -431,11 +519,13 @@ module.exports = {
   canPreviewPush,
   collectBrainSnapshot,
   collectLocalSyncStatus,
+  collectConflictResolutionEntries,
   describeWatchFailure,
   parseBusinessSyncArgs,
   readBusinessSlug,
   renderLatestConflictReview,
   renderLocalSyncStatus,
+  resolveLatestConflict,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,
   snapshotsDiffer,
