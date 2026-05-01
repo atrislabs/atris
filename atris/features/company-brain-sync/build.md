@@ -17,7 +17,7 @@ The immediate Acme lane now follows the correct company-brain model:
 - `atris sync --watch` watches the local `atris/` brain, debounces local edits, periodically checks cloud using the same safe sync cycle, and keeps retrying after transient failures
 - `atris sync --status` gives a local, nonengineer-readable status card: detected business, brain file count, manifest health, conflict packets, and watcher heartbeat
 - `atris sync --review` prints the latest local conflict review packet without credentials or cloud calls
-- `atris sync --resolve local|cloud` applies the latest conflict packet's chosen side back into the local `atris/` file, then tells the operator to dry-run before publishing
+- `atris sync --resolve local|cloud|both` applies the latest conflict packet's chosen side back into local `atris/` files, then tells the operator to dry-run before publishing
 - real sync/watch cycles write `.atris/sync/status.json` as the local heartbeat; `--dry-run` still writes nothing
 
 ## Desired Sync Engine
@@ -100,9 +100,10 @@ The first resolution command exists:
 ```bash
 atris sync --resolve local
 atris sync --resolve cloud
+atris sync --resolve both
 ```
 
-It applies the selected side into local `atris/` files and keeps the conflict packet as the audit trail.
+It applies the selected side into local `atris/` files and keeps the conflict packet as the audit trail. `both` keeps the local version at the original path and writes the cloud version beside it as `<file>.cloud`.
 
 Later it should also let the user choose:
 

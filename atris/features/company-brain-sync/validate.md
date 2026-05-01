@@ -26,7 +26,7 @@ Covered classifier cases:
 - conflict review packet writing to disk
 - local `atris sync --status` command works without credentials
 - local `atris sync --review` command prints the latest conflict packet without credentials
-- local `atris sync --resolve local|cloud` applies conflict artifacts into local `atris/` files without credentials
+- local `atris sync --resolve local|cloud|both` applies conflict artifacts into local `atris/` files without credentials
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
 - watch failure policy keeps the alive loop retrying on transient failures
 - watch failure policy treats conflict exits as review state instead of process death
@@ -187,12 +187,14 @@ Local conflict resolution surface:
 ```bash
 atris sync --resolve local
 atris sync --resolve cloud
+atris sync --resolve both
 ```
 
 Validated behavior:
 
 - reads the latest `.atris/sync/conflicts/...` packet
 - writes the chosen `.local` or `.remote` artifact back to the target `atris/...` file
+- `both` keeps the local artifact at the original path and writes the cloud artifact as `<file>.cloud`
 - does not require credentials or cloud calls
 - tells the operator to run `atris sync --dry-run` before publishing
 
