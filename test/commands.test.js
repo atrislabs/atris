@@ -25,10 +25,14 @@ const {
   buildBusinessSyncPlan,
   canPreviewPush,
   collectBrainSnapshot,
+  collectLocalSyncStatus,
+  describeWatchFailure,
   parseBusinessSyncArgs,
+  renderLocalSyncStatus,
   resolveBusinessSyncOptions,
   shouldIgnoreWatchPath,
   snapshotsDiffer: brainSnapshotsDiffer,
+  writeSyncStatus,
 } = require('../commands/business-sync');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
@@ -302,6 +306,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     watch: false,
     intervalSec: 60,
     debounceSec: 5,
+    status: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
@@ -327,10 +332,71 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
   assert.equal(options.watch, true);
   assert.equal(options.intervalSec, 30);
   assert.equal(options.debounceSec, 2);
+  assert.equal(options.status, false);
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
     pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
   });
+});
+
+test('business sync status renders a nonengineer-safe local brain readout', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), '# Index\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
+    writeSyncStatus(dir, { slug: 'doordash', state: 'current', mode: 'watch' });
+
+    const status = collectLocalSyncStatus(dir, { slug: 'doordash' });
+    assert.equal(status.slug, 'doordash');
+    assert.equal(status.brainExists, true);
+    assert.equal(status.brainFileCount, 1);
+    assert.equal(status.conflictCount, 1);
+    assert.match(status.latestConflict, /summary\.md$/);
+
+    const rendered = renderLocalSyncStatus(status);
+    assert.match(rendered, /Company brain status/);
+    assert.match(rendered, /business: doordash/);
+    assert.match(rendered, /brain: atris\/ \(1 file\)/);
+    assert.match(rendered, /conflicts: 1 review packet/);
+    assert.match(rendered, /watcher: last heartbeat/);
+    assert.match(rendered, /atris sync --dry-run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync status command is local-only and works without credentials', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), '# Index\n', 'utf8');
+
+    const res = runCli(['sync', '--status'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Company brain status/);
+    assert.match(res.stdout, /business: doordash/);
+    assert.match(res.stdout, /Next: run `atris sync --dry-run`/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync watch failures retry instead of killing the alive loop', () => {
+  const transient = describeWatchFailure(new Error('network timeout'));
+  assert.equal(transient.state, 'retrying');
+  assert.match(transient.detail, /still running/);
+
+  const conflictErr = new Error('atris pull doordash exited 2');
+  conflictErr.status = 2;
+  const conflict = describeWatchFailure(conflictErr);
+  assert.equal(conflict.state, 'conflict');
+  assert.match(conflict.detail, /review packet/);
 });
 
 test('business sync watch snapshot detects atris folder changes only', () => {
