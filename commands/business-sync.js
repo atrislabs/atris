@@ -432,13 +432,6 @@ async function runSyncCycle(plan, cwd, options = {}) {
 
 async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const options = resolveBusinessSyncOptions(args, cwd);
-  const plan = buildBusinessSyncPlan(options);
-
-  if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud] [--timeout 120]');
-    console.error('Run inside a business workspace or pass a business slug.');
-    process.exit(1);
-  }
 
   if (options.status) {
     process.stdout.write(renderLocalSyncStatus(collectLocalSyncStatus(cwd, options)));
@@ -453,6 +446,14 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   if (options.resolve) {
     process.stdout.write(resolveLatestConflict(cwd, options.resolve).message);
     return;
+  }
+
+  const plan = buildBusinessSyncPlan(options);
+
+  if (!plan) {
+    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both] [--timeout 120]');
+    console.error('Run inside a business workspace or pass a business slug.');
+    process.exit(1);
   }
 
   console.log('');

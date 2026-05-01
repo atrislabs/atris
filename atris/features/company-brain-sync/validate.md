@@ -27,6 +27,8 @@ Covered classifier cases:
 - local `atris sync --status` command works without credentials
 - local `atris sync --review` command prints the latest conflict packet without credentials
 - local `atris sync --resolve local|cloud|both` applies conflict artifacts into local `atris/` files without credentials
+- local safety commands route correctly even when business slug detection is unavailable
+- safe/unsafe merge-matrix cases are covered: converged same content, cloud delete, deleted both, local delete plus cloud edit, and conflicting created files
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
 - watch failure policy keeps the alive loop retrying on transient failures
 - watch failure policy treats conflict exits as review state instead of process death
@@ -200,7 +202,7 @@ Validated behavior:
 
 ## Still Needed
 
-This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and a first-class conflict resolution command.
+This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and semantic merge support.
 
 Missing validation:
 
