@@ -473,7 +473,7 @@ async function alignHardLocalToCloud(token, biz, localDir) {
     console.log(`  Manifest NOT updated. Re-run \`atris align ${resolvedSlug} --fix --hard\` to retry.`);
     process.exit(1);
   }
-  saveManifest(resolvedSlug, buildManifest(localFiles, null));
+  saveManifest(resolvedSlug, buildManifest(localFiles, null, { workspaceRoot: localDir }));
   console.log(`  Force-push complete: ${written}/${fileObjs.length} pushed, ${toDelete.length} cloud-only entries deleted.`);
   console.log(`  ${businessName} is now mirrored from local.`);
 }

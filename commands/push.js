@@ -9,6 +9,46 @@ const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { assertSafeWorkspaceRoot } = require('../lib/workspace-safety');
 
+function resolvePushSourceDir({ slug, argv = process.argv, cwd = process.cwd() }) {
+  const fromIdx = argv.indexOf('--from');
+  if (fromIdx !== -1 && argv[fromIdx + 1]) {
+    return path.resolve(cwd, argv[fromIdx + 1]);
+  }
+
+  if (fs.existsSync(path.join(cwd, '.atris', 'business.json'))) {
+    // A pulled business folder is the workspace root. Its cloud paths include
+    // the top-level `atris/` directory, so pushing from `<business>/atris`
+    // strips that prefix and makes a force push look like "delete atris/* and
+    // recreate everything at root". Keep the business folder itself as root.
+    return cwd;
+  }
+
+  const atrisDir = path.join(cwd, 'atris', slug);
+  const cwdDir = path.join(cwd, slug);
+  if (fs.existsSync(atrisDir)) return atrisDir;
+  if (fs.existsSync(cwdDir)) return cwdDir;
+
+  return null;
+}
+
+function canonicalWorkspaceRoot(dir) {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+function basenameOfManifestPath(filePath) {
+  const cleaned = String(filePath || '').replace(/\/+$/, '');
+  const idx = cleaned.lastIndexOf('/');
+  return idx === -1 ? cleaned : cleaned.slice(idx + 1);
+}
+
+function isBusinessWorkspaceRoot(dir) {
+  return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
+}
+
 async function pushAtris() {
   const elapsedMs = startTimer();
   let slug = process.argv[3];
@@ -27,7 +67,7 @@ async function pushAtris() {
   }
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force]');
+    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete]');
     console.log('');
     console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
@@ -36,11 +76,14 @@ async function pushAtris() {
     console.log('  atris push pallet            Push pallet/ or atris/pallet/');
     console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
+    console.log('  atris push --delete          Allow cloud deletes shown by --dry-run');
     process.exit(0);
   }
 
   const force = process.argv.includes('--force');
   const dryRun = process.argv.includes('--dry-run');
+  const allowDelete = process.argv.includes('--delete');
+  const allowCrossRootManifest = process.argv.includes('--allow-cross-root-manifest');
 
   // Parse --only
   let onlyRaw = null;
@@ -50,7 +93,7 @@ async function pushAtris() {
     const oi = process.argv.indexOf('--only');
     if (oi !== -1 && process.argv[oi + 1] && !process.argv[oi + 1].startsWith('-')) onlyRaw = process.argv[oi + 1];
   }
-  const onlyPrefixes = onlyRaw
+  let onlyPrefixes = onlyRaw
     ? onlyRaw.split(',').map(p => {
         const wikiPrefix = normalizeWikiOnlyPrefix(p);
         if (wikiPrefix) return `/${wikiPrefix.replace(/^\//, '')}`;
@@ -64,28 +107,21 @@ async function pushAtris() {
   if (!creds || !creds.token) { console.error('Not logged in. Run: atris login'); process.exit(1); }
 
   // Determine source directory
-  const fromIdx = process.argv.indexOf('--from');
-  let sourceDir;
-  if (fromIdx !== -1 && process.argv[fromIdx + 1]) {
-    sourceDir = path.resolve(process.argv[fromIdx + 1]);
-  } else if (fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))) {
-    sourceDir = process.cwd();
-  } else {
-    const atrisDir = path.join(process.cwd(), 'atris', slug);
-    const cwdDir = path.join(process.cwd(), slug);
-    if (fs.existsSync(atrisDir)) sourceDir = atrisDir;
-    else if (fs.existsSync(cwdDir)) sourceDir = cwdDir;
-    else {
-      console.error(`No local folder found for "${slug}".`);
-      console.error('Run from inside a pulled folder, or: atris push pallet --from ./path');
-      process.exit(1);
-    }
+  const sourceDir = resolvePushSourceDir({ slug });
+  if (!sourceDir) {
+    console.error(`No local folder found for "${slug}".`);
+    console.error('Run from inside a pulled folder, or: atris push pallet --from ./path');
+    process.exit(1);
   }
 
   if (!fs.existsSync(sourceDir)) { console.error(`Source not found: ${sourceDir}`); process.exit(1); }
 
   // Refuse to walk/upload dangerous paths ($HOME, /, /Users, system dirs).
   assertSafeWorkspaceRoot(sourceDir, { slug, op: 'push from' });
+
+  if (!onlyPrefixes && isBusinessWorkspaceRoot(sourceDir)) {
+    onlyPrefixes = ['/atris/'];
+  }
 
   // Resolve business — always refresh from API
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -144,6 +180,24 @@ async function pushAtris() {
   // Load manifest and compute local hashes
   const manifest = loadManifest(resolvedSlug || slug);
   const localFiles = computeLocalHashes(sourceDir);
+
+  if (manifest && manifest.workspace_root && !allowCrossRootManifest) {
+    const manifestRoot = canonicalWorkspaceRoot(manifest.workspace_root);
+    const currentRoot = canonicalWorkspaceRoot(sourceDir);
+    if (manifestRoot !== currentRoot) {
+      console.log('');
+      console.log('  ✗ This folder has not been pulled since the current sync manifest was created.');
+      console.log('');
+      console.log(`    Manifest folder: ${manifest.workspace_root}`);
+      console.log(`    Current folder:  ${sourceDir}`);
+      console.log('');
+      console.log('    To sync safely, run these from the folder you want to push:');
+      console.log(`      atris pull ${resolvedSlug || slug} --keep-local --timeout 120`);
+      console.log(`      atris push ${resolvedSlug || slug} --dry-run`);
+      console.log(`      atris push ${resolvedSlug || slug}`);
+      process.exit(1);
+    }
+  }
 
   if (Object.keys(localFiles).length === 0) {
     console.log(`\nNo files to push from ${sourceDir}`);
@@ -258,6 +312,7 @@ async function pushAtris() {
 
   for (const filePath of Object.keys(baseFiles)) {
     if (onlyPrefixes && !onlyPrefixes.some(p => filePath.startsWith(p))) continue;
+    if (basenameOfManifestPath(filePath).startsWith('.')) continue;
     if (!localFiles[filePath]) {
       deletedPaths.push(filePath);
     }
@@ -290,7 +345,26 @@ async function pushAtris() {
     if (deletedPaths.length > 0) parts.push(`${deletedPaths.length} would be deleted`);
     if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
     console.log(`\n  ${parts.join(', ')}. (--dry-run, nothing sent)\n`);
+    if (deletedPaths.length > 0) {
+      console.log('  Deletes require an explicit real push with --delete.');
+      console.log('  If these deletes are unexpected, run `atris pull --keep-local` first.\n');
+    }
     return;
+  }
+
+  if (deletedPaths.length > 0 && !allowDelete) {
+    console.log('');
+    console.log(`  ✗ Refusing to delete ${deletedPaths.length} cloud file${deletedPaths.length === 1 ? '' : 's'} without --delete.`);
+    console.log('');
+    console.log('    Preview first:');
+    console.log(`      atris push ${resolvedSlug || slug} --dry-run`);
+    console.log('');
+    console.log('    If the deletes are intentional:');
+    console.log(`      atris push ${resolvedSlug || slug} --delete`);
+    console.log('');
+    console.log('    If the deletes are surprising, pull cloud truth first:');
+    console.log(`      atris pull ${resolvedSlug || slug} --keep-local --timeout 120`);
+    process.exit(1);
   }
 
   let pushed = 0;
@@ -526,7 +600,7 @@ async function pushAtris() {
   for (const filePath of deletedConfirmed) {
     delete updatedFiles[filePath];
   }
-  saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null));
+  saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null, { workspaceRoot: sourceDir }));
 
   // Telemetry — outcome reflects actual run quality, not just exit-code-zero.
   // Partial delete failures or rate-limit retries mean the run was NOT a clean win;
@@ -558,4 +632,4 @@ async function pushAtris() {
   });
 }
 
-module.exports = { pushAtris };
+module.exports = { pushAtris, resolvePushSourceDir, canonicalWorkspaceRoot, basenameOfManifestPath, isBusinessWorkspaceRoot };

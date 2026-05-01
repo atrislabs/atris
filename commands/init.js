@@ -612,7 +612,9 @@ This is the Atris boot sequence. Show the output to the user, then respond natur
 | File | Purpose |
 |------|---------|
 | \`atris/PERSONA.md\` | Communication style (read first) |
-| \`atris/TODO.md\` | Current tasks |
+| \`atris task\` | Current tasks, claims, dialogue, proof |
+| \`.atris/state/tasks.projection.json\` | Readable task projection for UIs/agents |
+| \`atris/TODO.md\` | Rendered/legacy task view only |
 | \`atris/MAP.md\` | Navigation (where is X?) |
 
 ## Workflow
@@ -628,14 +630,17 @@ CHECK → atris review (verify + cleanup)
 - [ ] 3-4 sentences max per response
 - [ ] Use ASCII visuals for planning
 - [ ] Check MAP.md before touching code
-- [ ] Claim tasks in TODO.md before working
-- [ ] Delete tasks when done
+- [ ] Run \`atris task list\` or \`atris task next\` before picking work
+- [ ] Claim tasks with \`atris task claim <id> --as <agent>\`
+- [ ] Finish tasks with proof via \`atris task finish <id> --proof "..."\`
+- [ ] Treat \`atris/TODO.md\` as a rendered view; do not manually use it as the source of truth
 
 ## Anti-patterns
 
 - Don't explore codebase manually (use MAP.md)
 - Don't skip visualization step
 - Don't leave stale tasks
+- Don't hand-edit TODO.md for active task ownership
 - Don't write verbose docs
 
 ---

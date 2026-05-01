@@ -248,6 +248,7 @@ function showHelp() {
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
+  console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
@@ -444,7 +445,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // All other commands are lazy-loaded inline (require() only when invoked)
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'aeo',
@@ -803,6 +804,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'brain') {
+  Promise.resolve(require('../commands/brain').brainCommand(process.argv.slice(3)))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'agent') {
   agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'log') {
@@ -827,7 +832,18 @@ if (command === 'init') {
 } else if (command === 'activate') {
   activateCmd();
 } else if (command === 'update' || command === 'sync') {
-  if (process.argv.includes('--all')) {
+  const firstSyncArg = process.argv[3];
+  const isBusinessSync = command === 'sync'
+    && (
+      fs.existsSync(path.join(process.cwd(), '.atris', 'business.json'))
+      || (firstSyncArg && !firstSyncArg.startsWith('-'))
+    )
+    && firstSyncArg !== 'all';
+  if (isBusinessSync) {
+    Promise.resolve(require('../commands/business-sync').businessSync(process.argv.slice(3)))
+      .then(() => process.exit(0))
+      .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+  } else if (process.argv.includes('--all')) {
     const dryRun = process.argv.includes('--dry-run');
     const force = process.argv.includes('--force') || process.argv.includes('--yes') || process.argv.includes('-y');
     Promise.resolve(syncAllCmd({ dryRun, force }))

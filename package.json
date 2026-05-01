@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.15.0",
+  "version": "3.15.1",
   "description": "Atris — an operating system for intelligence. Integrates with any agent.",
   "main": "bin/atris.js",
   "bin": {
@@ -29,6 +29,7 @@
     "atris/team/researcher/MEMBER.md",
     "atris/team/_template/MEMBER.md",
     "atris/features/_templates/",
+    "atris/features/company-brain-sync/",
     "atris/policies/",
     "atris/skills/"
   ],
@@ -56,5 +57,14 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/atrislabs/atris.git"
-  }
+  },
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/atrislabs/atris/issues"
+  },
+  "homepage": "https://github.com/atrislabs/atris#readme"
 }
