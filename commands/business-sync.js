@@ -372,6 +372,91 @@ function safeLineMerge(baseContent, localContent, remoteContent) {
   return { ok: true, content: merged.join('\n') };
 }
 
+function markdownSectionRanges(content) {
+  const lines = content.split('\n');
+  const ranges = [];
+  const headingPattern = /^(#{1,6})\s+(.+?)\s*$/;
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(headingPattern);
+    if (!match) continue;
+    const level = match[1].length;
+    let end = lines.length;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = lines[j].match(headingPattern);
+      if (next && next[1].length <= level) {
+        end = j;
+        break;
+      }
+    }
+    ranges.push({
+      key: lines[i].trim().toLowerCase(),
+      level,
+      start: i,
+      end,
+    });
+  }
+  return ranges;
+}
+
+function changedMarkdownSections(baseContent, changedContent) {
+  const baseLines = baseContent.split('\n');
+  const changedLines = changedContent.split('\n');
+  const range = changedRange(baseLines, changedLines);
+  if (range.start === range.end && range.replacement.length === 0) return new Set();
+  const touchedStart = range.start;
+  const touchedEnd = Math.max(range.end, range.start + 1);
+  const touched = markdownSectionRanges(baseContent)
+    .filter((section) => section.start < touchedEnd && touchedStart < section.end);
+  const deepestLevel = touched.reduce((max, section) => Math.max(max, section.level), 0);
+  const sections = touched
+    .filter((section) => section.level === deepestLevel)
+    .map((section) => section.key);
+  return new Set(sections.length ? sections : ['__preamble__']);
+}
+
+function replaceMarkdownSection(content, sectionKey, replacementContent) {
+  const lines = content.split('\n');
+  const ranges = markdownSectionRanges(content);
+  const range = ranges.find((section) => section.key === sectionKey);
+  if (!range) return null;
+  const replacementRange = markdownSectionRanges(replacementContent)
+    .find((section) => section.key === sectionKey);
+  if (!replacementRange) return null;
+  const replacementLines = replacementContent.split('\n').slice(replacementRange.start, replacementRange.end);
+  const merged = lines.slice();
+  merged.splice(range.start, range.end - range.start, ...replacementLines);
+  return merged.join('\n');
+}
+
+function safeMarkdownMerge(baseContent, localContent, remoteContent) {
+  const lineMerge = safeLineMerge(baseContent, localContent, remoteContent);
+  if (lineMerge.ok) return { ...lineMerge, mode: 'line' };
+
+  const localSections = changedMarkdownSections(baseContent, localContent);
+  const remoteSections = changedMarkdownSections(baseContent, remoteContent);
+  if (localSections.has('__preamble__') || remoteSections.has('__preamble__')) {
+    return { ok: false, reason: 'local and cloud edits overlap outside markdown sections' };
+  }
+  for (const section of localSections) {
+    if (remoteSections.has(section)) {
+      return { ok: false, reason: `local and cloud both edited ${section}` };
+    }
+  }
+
+  let merged = baseContent;
+  for (const section of localSections) {
+    const next = replaceMarkdownSection(merged, section, localContent);
+    if (next === null) return { ok: false, reason: `could not apply local section ${section}` };
+    merged = next;
+  }
+  for (const section of remoteSections) {
+    const next = replaceMarkdownSection(merged, section, remoteContent);
+    if (next === null) return { ok: false, reason: `could not apply cloud section ${section}` };
+    merged = next;
+  }
+  return { ok: true, content: merged, mode: 'markdown' };
+}
+
 function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
   if (!['local', 'cloud', 'both', 'merge'].includes(strategy)) {
     throw new Error('Use `atris sync --resolve local`, `atris sync --resolve cloud`, `atris sync --resolve both`, or `atris sync --resolve merge`.');
@@ -409,7 +494,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
         unresolved.push(`${entry.targetRel} (missing base/local/cloud artifact)`);
         continue;
       }
-      const merged = safeLineMerge(
+      const merged = safeMarkdownMerge(
         fs.readFileSync(entry.basePath, 'utf8'),
         fs.readFileSync(entry.localPath, 'utf8'),
         fs.readFileSync(entry.remotePath, 'utf8')
@@ -624,6 +709,7 @@ module.exports = {
   resolveLatestConflict,
   resolveBusinessSyncOptions,
   safeLineMerge,
+  safeMarkdownMerge,
   shouldIgnoreWatchPath,
   snapshotsDiffer,
   writeSyncStatus,
