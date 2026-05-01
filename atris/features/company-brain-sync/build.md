@@ -17,8 +17,9 @@ The immediate Acme lane now follows the correct company-brain model:
 - `atris sync --watch` watches the local `atris/` brain, debounces local edits, periodically checks cloud using the same safe sync cycle, and keeps retrying after transient failures
 - `atris sync --status` gives a local, nonengineer-readable status card: detected business, brain file count, manifest health, conflict packets, and watcher heartbeat
 - `atris sync --review` prints the latest local conflict review packet without credentials or cloud calls
-- `atris sync --resolve local|cloud|both` applies the latest conflict packet's chosen side back into local `atris/` files, then tells the operator to dry-run before publishing
+- `atris sync --resolve local|cloud|both|merge` applies the latest conflict packet's chosen side or a safe line merge back into local `atris/` files, then tells the operator to dry-run before publishing
 - local safety commands (`--status`, `--review`, `--resolve`) route to company-brain sync even if business slug detection is missing or broken
+- successful pulls cache base content under `.atris/sync/base/` so future conflict packets can include `.base` files for safe merge resolution
 - real sync/watch cycles write `.atris/sync/status.json` as the local heartbeat; `--dry-run` still writes nothing
 
 ## Desired Sync Engine
@@ -102,11 +103,12 @@ The first resolution command exists:
 atris sync --resolve local
 atris sync --resolve cloud
 atris sync --resolve both
+atris sync --resolve merge
 ```
 
-It applies the selected side into local `atris/` files and keeps the conflict packet as the audit trail. `both` keeps the local version at the original path and writes the cloud version beside it as `<file>.cloud`.
+It applies the selected side into local `atris/` files and keeps the conflict packet as the audit trail. `both` keeps the local version at the original path and writes the cloud version beside it as `<file>.cloud`. `merge` requires `.base`, `.local`, and `.remote` artifacts and only writes a merged file when local and cloud edited non-overlapping line ranges.
 
-Later it should also let the user ask Atris to merge semantically.
+Later it should also let the user ask Atris to merge semantically with model assistance when the conservative line merge refuses.
 
 ### Watch UX
 

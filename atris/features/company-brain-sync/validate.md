@@ -26,7 +26,9 @@ Covered classifier cases:
 - conflict review packet writing to disk
 - local `atris sync --status` command works without credentials
 - local `atris sync --review` command prints the latest conflict packet without credentials
-- local `atris sync --resolve local|cloud|both` applies conflict artifacts into local `atris/` files without credentials
+- local `atris sync --resolve local|cloud|both|merge` applies conflict artifacts into local `atris/` files without credentials
+- conflict packets can include `.base` artifacts, and successful pulls cache base content under `.atris/sync/base/`
+- safe merge resolution writes only non-overlapping local/cloud line edits and refuses overlapping edits
 - local safety commands route correctly even when business slug detection is unavailable
 - safe/unsafe merge-matrix cases are covered: converged same content, cloud delete, deleted both, local delete plus cloud edit, and conflicting created files
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
@@ -190,6 +192,7 @@ Local conflict resolution surface:
 atris sync --resolve local
 atris sync --resolve cloud
 atris sync --resolve both
+atris sync --resolve merge
 ```
 
 Validated behavior:
@@ -197,12 +200,13 @@ Validated behavior:
 - reads the latest `.atris/sync/conflicts/...` packet
 - writes the chosen `.local` or `.remote` artifact back to the target `atris/...` file
 - `both` keeps the local artifact at the original path and writes the cloud artifact as `<file>.cloud`
+- `merge` requires `.base`, `.local`, and `.remote`, writes non-overlapping line edits, and leaves overlapping edits in review
 - does not require credentials or cloud calls
 - tells the operator to run `atris sync --dry-run` before publishing
 
 ## Still Needed
 
-This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and semantic merge support.
+This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and model-assisted semantic merge support.
 
 Missing validation:
 
@@ -212,7 +216,7 @@ Missing validation:
 - remote-only update pulls cleanly end-to-end
 - local delete does not delete cloud without `--delete` end-to-end
 - remote delete does not destroy local modified work end-to-end
-- command-path conflict artifact creation still needs an end-to-end fixture with mocked pull state
+- command-path conflict artifact creation with `.base` still needs an end-to-end fixture with mocked pull state
 - parent folder junk is ignored by the push planner; still needs a full command fixture
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
 - Pallet shipped-command smoke test from a real Pallet-shaped workspace
@@ -222,4 +226,4 @@ Missing validation:
 
 It is fair to call this safer than raw Notion/GitHub-style customer-brain editing for scoped markdown sync after the shipped-command smoke passes.
 
-Do not call the syncs "perfect" until the missing fixture cases and semantic-merge conflict resolution flow are complete.
+Do not call the syncs "perfect" until the missing fixture cases and model-assisted semantic-merge conflict resolution flow are complete.
