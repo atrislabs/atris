@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { buildManifest } = require('../lib/manifest');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const {
   analyzeBusinessDoctor,
@@ -18,7 +19,17 @@ const {
   shouldIgnore,
   snapshotsDiffer,
 } = require('../commands/live');
+const { basenameOfManifestPath, isBusinessWorkspaceRoot, resolvePushSourceDir } = require('../commands/push');
 const { collectState } = require('../commands/brain');
+const {
+  buildBusinessSyncPlan,
+  canPreviewPush,
+  collectBrainSnapshot,
+  parseBusinessSyncArgs,
+  resolveBusinessSyncOptions,
+  shouldIgnoreWatchPath,
+  snapshotsDiffer: brainSnapshotsDiffer,
+} = require('../commands/business-sync');
 const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
 const {
   computeTickReward,
@@ -211,6 +222,146 @@ test('live snapshot detects meaningful file changes and ignores runtime state', 
     assert.equal(snapshotsDiffer(before, collectSnapshot(dir)), true);
     assert.equal(shouldIgnore(path.join('.atris', 'state', '_sync.json')), true);
     assert.equal(shouldIgnore(path.join('atris', 'MAP.md')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// push
+// ============================================
+
+test('push source resolver keeps pulled business folder as root', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Map\n', 'utf8');
+
+    assert.equal(
+      resolvePushSourceDir({ slug: 'doordash', cwd: dir, argv: ['node', 'atris', 'push', 'doordash'] }),
+      dir
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('push source resolver honors explicit --from path', () => {
+  const dir = makeTempDir();
+  try {
+    const source = path.join(dir, 'custom-root');
+    fs.mkdirSync(source, { recursive: true });
+
+    assert.equal(
+      resolvePushSourceDir({ slug: 'doordash', cwd: dir, argv: ['node', 'atris', 'push', 'doordash', '--from', './custom-root'] }),
+      source
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('push ignores dotfile basenames when considering cloud deletes', () => {
+  assert.equal(basenameOfManifestPath('/journal/.gitkeep'), '.gitkeep');
+  assert.equal(basenameOfManifestPath('/atris/MAP.md'), 'MAP.md');
+});
+
+test('business workspace root detection requires .atris binding and atris folder', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(isBusinessWorkspaceRoot(dir), false);
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), '{}', 'utf8');
+    assert.equal(isBusinessWorkspaceRoot(dir), false);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(isBusinessWorkspaceRoot(dir), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('manifest records workspace root metadata', () => {
+  const manifest = buildManifest({ '/atris/MAP.md': { hash: 'abc', size: 3 } }, 'commit123', {
+    workspaceRoot: '/tmp/doordash',
+  });
+
+  assert.equal(manifest.workspace_root, '/tmp/doordash');
+  assert.equal(manifest.last_commit, 'commit123');
+  assert.equal(manifest.files['/atris/MAP.md'].hash, 'abc');
+});
+
+test('business sync plan pulls safely then pushes wiki scope through normal push', () => {
+  const options = parseBusinessSyncArgs(['doordash']);
+  assert.deepEqual(options, {
+    slug: 'doordash',
+    dryRun: false,
+    timeout: '120',
+    allowDelete: false,
+    watch: false,
+    intervalSec: 60,
+    debounceSec: 5,
+  });
+  assert.deepEqual(buildBusinessSyncPlan(options), {
+    pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
+    pushArgs: ['push', 'doordash'],
+  });
+});
+
+test('business sync auto-detects slug from business workspace', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    const options = resolveBusinessSyncOptions(['--dry-run'], dir);
+    assert.equal(options.slug, 'doordash');
+    assert.equal(options.dryRun, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync plan supports dry-run and explicit delete opt-in', () => {
+  const options = parseBusinessSyncArgs(['doordash', '--timeout', '240', '--dry-run', '--delete', '--watch', '--interval=30', '--debounce', '2']);
+  assert.equal(options.watch, true);
+  assert.equal(options.intervalSec, 30);
+  assert.equal(options.debounceSec, 2);
+  assert.deepEqual(buildBusinessSyncPlan(options), {
+    pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
+    pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
+  });
+});
+
+test('business sync watch snapshot detects atris folder changes only', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'one\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'ignored.json'), '{}', 'utf8');
+
+    const before = collectBrainSnapshot(dir);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'ignored.json'), '{"x":1}', 'utf8');
+    assert.equal(brainSnapshotsDiffer(before, collectBrainSnapshot(dir)), false);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'two longer\n', 'utf8');
+    assert.equal(brainSnapshotsDiffer(before, collectBrainSnapshot(dir)), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync watch ignore rules skip runtime and OS files', () => {
+  assert.equal(shouldIgnoreWatchPath(path.join('.atris', 'state.json')), true);
+  assert.equal(shouldIgnoreWatchPath('.DS_Store'), true);
+  assert.equal(shouldIgnoreWatchPath(path.join('wiki', 'index.md')), false);
+});
+
+test('business sync push preview is skipped when manifest belongs to another folder', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(canPreviewPush(dir, 'definitely-missing-test-business'), true);
   } finally {
     cleanupTempDir(dir);
   }
