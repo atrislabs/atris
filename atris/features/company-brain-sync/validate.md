@@ -25,6 +25,7 @@ Covered classifier cases:
 - conflict review packet generation with local and remote artifacts
 - conflict review packet writing to disk
 - local `atris sync --status` command works without credentials
+- local `atris sync --review` command prints the latest conflict packet without credentials
 - status rendering shows business, brain file count, conflict packets, and watcher heartbeat
 - watch failure policy keeps the alive loop retrying on transient failures
 - watch failure policy treats conflict exits as review state instead of process death
@@ -163,6 +164,20 @@ Company brain status
 
 This command is local-only and does not require credentials.
 
+Local conflict review surface:
+
+```bash
+atris sync --review
+```
+
+Observed shape:
+
+```text
+Latest sync conflict review: .atris/sync/conflicts/.../summary.md
+...
+Resolve the local file, then run `atris sync --dry-run` before publishing.
+```
+
 ## Still Needed
 
 This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and a first-class conflict resolution command.
@@ -185,4 +200,4 @@ Missing validation:
 
 It is fair to call this safer than raw Notion/GitHub-style customer-brain editing for scoped markdown sync after the shipped-command smoke passes.
 
-Do not call the syncs "perfect" until the missing fixture cases and conflict resolution flow are complete.
+Do not call the syncs "perfect" until the missing fixture cases and full accept-local/accept-cloud/semantic-merge conflict resolution flow are complete.

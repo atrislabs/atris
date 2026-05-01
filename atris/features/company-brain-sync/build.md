@@ -16,6 +16,7 @@ The immediate Acme lane now follows the correct company-brain model:
 - `pull --fail-on-conflict` writes the conflict review packet before `atris sync` stops
 - `atris sync --watch` watches the local `atris/` brain, debounces local edits, periodically checks cloud using the same safe sync cycle, and keeps retrying after transient failures
 - `atris sync --status` gives a local, nonengineer-readable status card: detected business, brain file count, manifest health, conflict packets, and watcher heartbeat
+- `atris sync --review` prints the latest local conflict review packet without credentials or cloud calls
 - real sync/watch cycles write `.atris/sync/status.json` as the local heartbeat; `--dry-run` still writes nothing
 
 ## Desired Sync Engine
@@ -85,13 +86,15 @@ Recommended summary language:
 
 ### Publish UX
 
-Add a review command:
+The first local review command exists:
 
 ```bash
-atris sync doordash --review
+atris sync --review
 ```
 
-This should open or print the conflict summary and let the user choose:
+It prints the latest conflict summary and tells the operator to resolve locally, then run `atris sync --dry-run`.
+
+Later it should let the user choose:
 
 - accept local
 - accept cloud
