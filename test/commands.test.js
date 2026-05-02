@@ -1593,6 +1593,44 @@ test('task projection exposes goals, review proof, and task lineage for visual b
   }
 });
 
+test('TODO fallback parser handles nested groups and modern task ids', () => {
+  const dir = makeTempDir();
+  try {
+    const todoPath = path.join(dir, 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '### UX',
+      '- [ ] **Fast idea dump** — capture rough thoughts before running agents.',
+      '- **windows-public-release-T1:** Publish signed Windows installer [agent] [execute]',
+      '  **Verify:** npm run release:gate:win',
+      '',
+      '## In Progress',
+      '',
+      '- **prod-first-install-hotfix-T1:** Fix first-install failures [agent] [execute]',
+      '  **Claimed by:** Codex at 2026-05-02T12:34:00Z',
+      '  **Verify:** npm run update:smoke',
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const { parseTodoFile } = require('../lib/todo-fallback');
+    const parsed = parseTodoFile(todoPath);
+    assert.equal(parsed.backlog.length, 2);
+    assert.equal(parsed.backlog[0].title, 'Fast idea dump — capture rough thoughts before running agents.');
+    assert.equal(parsed.backlog[1].id, 'windows-public-release-T1');
+    assert.equal(parsed.backlog[1].verify, 'npm run release:gate:win');
+    assert.equal(parsed.inProgress[0].id, 'prod-first-install-hotfix-T1');
+    assert.equal(parsed.inProgress[0].claimed, 'Codex at 2026-05-02T12:34:00Z');
+    assert.equal(parsed.inProgress[0].verify, 'npm run update:smoke');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task import preserves Verify metadata through DB-backed TODO shim', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
