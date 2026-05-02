@@ -109,6 +109,21 @@ async function pushAtris() {
   let slug = process.argv[3];
   let _coldWake = false;
 
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
+    console.log('');
+    console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
+    console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
+    console.log('');
+    console.log('  atris push                   Push from current folder (auto-detect business)');
+    console.log('  atris push pallet            Push pallet/ or atris/pallet/');
+    console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
+    console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
+    console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
+    console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
+    process.exit(0);
+  }
+
   // Auto-detect business from .atris/business.json in current dir
   if (!slug || slug.startsWith('-')) {
     const bizFile = path.join(process.cwd(), '.atris', 'business.json');
