@@ -349,7 +349,7 @@ async function pushAtris() {
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
     console.log('\n  Already up to date.\n');
-    await emit('success', { files_unchanged: filteredLocalCount });
+    await emit('success', { files_unchanged: unchangedCount });
     return;
   }
 
