@@ -303,6 +303,25 @@ test('push planner publishes only scoped local brain creates and updates', () =>
   assert.equal(plan.unchangedCount, 0);
 });
 
+test('push planner reports unchanged scoped files when already up to date', () => {
+  const plan = buildPushChangePlan({
+    onlyPrefixes: ['/atris/wiki/'],
+    baseFiles: {
+      '/atris/wiki/index.md': { hash: 'same', size: 10 },
+      '/atris/TODO.md': { hash: 'outside', size: 8 },
+    },
+    localFiles: {
+      '/atris/wiki/index.md': { hash: 'same', size: 10 },
+      '/atris/TODO.md': { hash: 'changed-outside', size: 14 },
+    },
+    readFileContent: () => '',
+  });
+
+  assert.deepEqual(plan.filesToPush, []);
+  assert.deepEqual(plan.deletedPaths, []);
+  assert.equal(plan.unchangedCount, 1);
+});
+
 test('push planner treats scoped local deletes as gated deletes and ignores parent junk', () => {
   const plan = buildPushChangePlan({
     onlyPrefixes: ['/atris/'],
@@ -2913,6 +2932,7 @@ test('wiki sync alias normalizes --only wiki to atris/wiki', () => {
 test('agent-readable wiki contract requires sources, verification, dependencies, confidence, and actionability', () => {
   const dir = makeTempDir();
   try {
+    const today = new Date().toISOString().slice(0, 10);
     fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'concepts'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'README.md'), '# Source\n', 'utf8');
     fs.writeFileSync(
@@ -2921,8 +2941,8 @@ test('agent-readable wiki contract requires sources, verification, dependencies,
         '---',
         'sources:',
         '  - README.md',
-        'last_compiled: 2026-05-01',
-        'last_verified: 2026-05-01',
+        `last_compiled: ${today}`,
+        `last_verified: ${today}`,
         'confidence: 0.8',
         'dependencies: []',
         'actionability: "use this in weekly review"',
