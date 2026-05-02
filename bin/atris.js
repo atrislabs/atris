@@ -333,6 +333,7 @@ function showHelp() {
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');
+  console.log('  imessage   - Local Mac iMessage commands (doctor, recent)');
   console.log('  integrations - Show integration status');
   console.log('');
   console.log('Skills:');
@@ -461,7 +462,7 @@ const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'aeo',
-                       'gmail', 'calendar', 'twitter', 'slack', 'integrations', 'setup', 'clean-workspace', 'cw',
+                       'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
@@ -1111,6 +1112,13 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   slackCommand(subcommand, ...args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'imessage') {
+  const { imessageCommand } = require('../commands/integrations');
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  imessageCommand(subcommand, ...args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'integrations') {
