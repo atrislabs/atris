@@ -12,6 +12,10 @@
 
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
 async function getAuth() {
   const ensured = await ensureValidCredentials(apiRequestJson);
@@ -311,6 +315,133 @@ async function slackCommand(subcommand, ...args) {
 }
 
 // ============================================================================
+// IMESSAGE
+// ============================================================================
+
+function imessageDoctor() {
+  const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+  const checks = {
+    macos: process.platform === 'darwin',
+    chat_db_exists: false,
+    chat_db_readable: false,
+    sqlite3_available: false,
+    osascript_available: false,
+    messages_automation: false,
+  };
+  const issues = [];
+
+  checks.chat_db_exists = fs.existsSync(chatDb);
+  if (checks.chat_db_exists) {
+    try {
+      fs.accessSync(chatDb, fs.constants.R_OK);
+      checks.chat_db_readable = true;
+    } catch {
+      issues.push('Messages database exists but is not readable. Grant Full Disk Access to this terminal or Atris.');
+    }
+  } else {
+    issues.push('Messages database not found on this Mac.');
+  }
+
+  checks.sqlite3_available = spawnSync('sqlite3', ['--version'], { encoding: 'utf8' }).status === 0;
+  if (!checks.sqlite3_available) issues.push('sqlite3 is not available.');
+
+  checks.osascript_available = spawnSync('osascript', ['-e', 'return "ok"'], { encoding: 'utf8' }).status === 0;
+  if (!checks.osascript_available) issues.push('osascript is not available.');
+  if (checks.osascript_available) {
+    checks.messages_automation = spawnSync('osascript', ['-e', 'tell application "Messages" to count services'], {
+      encoding: 'utf8',
+      timeout: 4000,
+    }).status === 0;
+  }
+  if (!checks.messages_automation) issues.push('Messages automation permission is not available yet.');
+
+  if (!checks.macos) issues.push('Local iMessage requires macOS.');
+
+  const connected = checks.macos && checks.chat_db_exists && checks.chat_db_readable && checks.sqlite3_available && checks.osascript_available && checks.messages_automation;
+  return {
+    connected,
+    provider: 'local_imessage',
+    mode: 'local',
+    checks,
+    issues,
+    next_step: connected
+      ? 'iMessage is available on this Mac.'
+      : 'Open System Settings -> Privacy & Security -> Full Disk Access and allow your terminal or Atris, then run this check again.',
+  };
+}
+
+function printImessageDoctor(result, json = false) {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log('iMessage local check\n');
+  console.log(`Status: ${result.connected ? 'Connected on this Mac' : 'Needs permission or setup'}`);
+  for (const [name, ok] of Object.entries(result.checks)) {
+    console.log(`  ${ok ? '✓' : '✗'} ${name.replace(/_/g, ' ')}`);
+  }
+  if (result.issues.length) {
+    console.log('\nNext:');
+    for (const issue of result.issues) console.log(`  - ${issue}`);
+    console.log(`  - ${result.next_step}`);
+  }
+}
+
+function imessageRecent(handle, options = {}) {
+  if (!handle) {
+    console.error('Usage: atris imessage recent <phone-or-email> [--limit 20]');
+    process.exit(1);
+  }
+  const doctor = imessageDoctor();
+  if (!doctor.connected) {
+    printImessageDoctor(doctor, Boolean(options.json));
+    process.exit(1);
+  }
+
+  const limit = Number(options.limit || 20);
+  const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+  const sql = `
+    SELECT datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime') AS ts,
+           CASE m.is_from_me WHEN 1 THEN 'me' ELSE h.id END AS sender,
+           replace(replace(COALESCE(m.text,''), char(10), ' '), char(13), ' ') AS text
+    FROM message m
+    JOIN handle h ON h.rowid = m.handle_id
+    WHERE h.id = '${String(handle).replace(/'/g, "''")}'
+    ORDER BY m.date DESC
+    LIMIT ${Math.max(1, Math.min(100, limit))};
+  `;
+  const result = spawnSync('sqlite3', ['-readonly', chatDb, sql], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    console.error(result.stderr || 'Failed to read Messages database.');
+    process.exit(1);
+  }
+  console.log(result.stdout.trim() || 'No recent messages found.');
+}
+
+async function imessageCommand(subcommand, ...args) {
+  switch (subcommand) {
+    case 'doctor': {
+      const json = args.includes('--json');
+      const result = imessageDoctor();
+      printImessageDoctor(result, json);
+      if (!result.connected && args.includes('--strict')) process.exit(1);
+      break;
+    }
+    case 'recent': {
+      const handle = args[0];
+      const limitFlag = args.findIndex((x) => x === '--limit');
+      const limit = limitFlag >= 0 ? args[limitFlag + 1] : 20;
+      imessageRecent(handle, { limit, json: args.includes('--json') });
+      break;
+    }
+    default:
+      console.log('iMessage commands:');
+      console.log('  atris imessage doctor [--json]   - Check local Messages access');
+      console.log('  atris imessage recent <handle>   - Read recent local messages');
+  }
+}
+
+// ============================================================================
 // STATUS
 // ============================================================================
 
@@ -337,6 +468,9 @@ async function integrationsStatus() {
     }
   }
 
+  const imessage = imessageDoctor();
+  console.log(`  ${imessage.connected ? '✅' : '❌'} iMessage (local Mac)`);
+
   console.log('\nConnect integrations at: https://atris.ai/dashboard/settings');
 }
 
@@ -345,5 +479,7 @@ module.exports = {
   calendarCommand,
   twitterCommand,
   slackCommand,
+  imessageCommand,
+  imessageDoctor,
   integrationsStatus,
 };
