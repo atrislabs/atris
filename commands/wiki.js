@@ -16,6 +16,7 @@ const {
   buildLintPrompt,
   writeWikiStatus,
   appendWikiLog,
+  validateAgentReadableWikiPages,
 } = require('../lib/wiki');
 
 function autoDetectSlug() {
@@ -331,6 +332,32 @@ function wikiLog(mode, slug, limit) {
   console.log('');
 }
 
+function wikiVerify(mode, slug) {
+  const wikiMode = mode === 'private' ? 'private' : 'public';
+  const wikiDir = findLocalWikiDir(process.cwd(), slug, wikiMode);
+  if (!wikiDir) {
+    console.error(`No local wiki found at ${getWikiRoot(wikiMode)}.`);
+    process.exit(1);
+  }
+
+  const report = validateAgentReadableWikiPages(process.cwd(), wikiMode);
+  console.log('');
+  console.log(`Agent-readable wiki contract: ${report.ok ? 'pass' : 'fail'}`);
+  console.log(`  pages: ${report.pageCount}`);
+  console.log(`  findings: ${report.findingCount}`);
+  if (!report.ok) {
+    for (const finding of report.findings.slice(0, 20)) {
+      console.log(`  - ${finding.page}: ${finding.code} - ${finding.message}`);
+    }
+    if (report.findings.length > 20) {
+      console.log(`  ... +${report.findings.length - 20} more`);
+    }
+    console.log('');
+    process.exit(1);
+  }
+  console.log('');
+}
+
 async function wikiCommand(subcommand, ...args) {
   const { mode, args: cleanArgs } = parseModeArgs(args);
 
@@ -392,8 +419,18 @@ async function wikiCommand(subcommand, ...args) {
       await loopAtris(cleanArgs);
       break;
     }
+    case 'verify':
+    case 'contract': {
+      const slug = mode === 'cloud' ? (cleanArgs[0] || autoDetectSlug()) : null;
+      if (mode === 'cloud') {
+        console.error('Cloud wiki verify is local-first. Run after `atris pull --only atris/wiki --no-manifest` or inside a workspace.');
+        process.exit(1);
+      }
+      wikiVerify(mode, slug);
+      break;
+    }
     default:
-      console.log('Usage: atris wiki <ingest|query|lint|search|log|loop> [business] [args]');
+      console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify> [business] [args]');
       console.log('');
       console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
       console.log('  query  "question"             Local-first query against atris/wiki/');
@@ -401,6 +438,7 @@ async function wikiCommand(subcommand, ...args) {
       console.log('  search [business] <term>      Search local atris/wiki/index.md');
       console.log('  log    [business] [N]         Show recent atris/wiki/log.md entries');
       console.log('  loop                          Run local wiki upkeep analysis and refresh STATUS/log');
+      console.log('  verify                        Check agent-readable source/verification metadata');
       console.log('');
       console.log('Flags:');
       console.log('  --cloud                       Route ingest/query/lint to the cloud workspace');
@@ -418,4 +456,5 @@ module.exports = {
   wikiLint,
   wikiSearch,
   wikiLog,
+  wikiVerify,
 };

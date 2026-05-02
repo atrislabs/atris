@@ -207,6 +207,27 @@ Validated behavior:
 
 ## Still Needed
 
+- Publish `atris@3.15.12`.
+- Deploy the backend workspace snapshot patch from `atrisos-backend`.
+- After deploy, run a Pallet smoke:
+
+```bash
+npm i -g atris@3.15.12
+cd ~/arena/atris-business/pallet
+atris pull pallet --keep-local --only atris/wiki --timeout 120
+atris push pallet --only atris/wiki --dry-run
+```
+
+- Acme post-publish smoke:
+
+```bash
+cd ~/arena/atris-business/doordash
+atris wiki verify
+atris push doordash --dry-run
+```
+
+- Packaged CLI smoke already passed locally for `3.15.12`: tarball install exposes `atris pull --no-manifest` and `atris wiki verify`.
+
 This feature is safer and usable, but the "perfect sync" bar still requires more command-path fixtures and model-assisted semantic merge support.
 
 Missing validation:

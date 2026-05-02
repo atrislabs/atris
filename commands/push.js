@@ -89,6 +89,12 @@ function buildPushChangePlan({
   return { filesToPush, deletedPaths, unchangedCount };
 }
 
+function shouldRetrySyncIndividually(result, filesToPush) {
+  if (!result || result.ok) return false;
+  if (!Array.isArray(filesToPush) || filesToPush.length <= 1) return false;
+  return result.status !== 403 && result.status !== 409;
+}
+
 async function pushAtris() {
   const elapsedMs = startTimer();
   let slug = process.argv[3];
@@ -398,6 +404,7 @@ async function pushAtris() {
   let failedToLand = [];
   const landedPaths = new Set();
   let result = { ok: true };
+  let batchFailureDetail = null;
 
   // Server-canonical path format for the /sync endpoint: NO leading slash.
   // The warm runner's _safe_path rejects `/atris/...` with "Absolute path
@@ -410,6 +417,10 @@ async function pushAtris() {
     return s.startsWith('/') ? s : `/${s}`;
   };
   const wireFiles = (files) => files.map((f) => ({ path: toWirePath(f.path), content: f.content }));
+  const syncFiles = (files) => apiRequestJson(
+    `/business/${businessId}/workspaces/${workspaceId}/sync`,
+    { method: 'POST', token: creds.token, body: { files: wireFiles(files) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+  );
 
   // Inspect per-file results from a /sync response. Treat "written" and
   // "unchanged" as success; everything else (including missing-from-results,
@@ -451,10 +462,7 @@ async function pushAtris() {
 
   if (filesToPush.length > 0) {
     // Push files to server (strip leading slash — server requires workspace-relative paths)
-    result = await apiRequestJson(
-      `/business/${businessId}/workspaces/${workspaceId}/sync`,
-      { method: 'POST', token: creds.token, body: { files: wireFiles(filesToPush) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
-    );
+    result = await syncFiles(filesToPush);
 
     if (!result.ok) {
       if (result.status === 403) {
@@ -469,10 +477,7 @@ async function pushAtris() {
         skipped = filesToPush.filter(f => !f.path.startsWith('/team/') && !f.path.startsWith('/journal/'));
 
         if (allowed.length > 0) {
-          const retry = await apiRequestJson(
-            `/business/${businessId}/workspaces/${workspaceId}/sync`,
-            { method: 'POST', token: creds.token, body: { files: wireFiles(allowed) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
-          );
+          const retry = await syncFiles(allowed);
           if (retry.ok) {
             recordSyncResults(allowed, retry);
             pushed = landedPaths.size;
@@ -490,6 +495,23 @@ async function pushAtris() {
         console.error('\n  Computer is sleeping. Wake it first.');
         await emit('cold_wake', { error_detail: 'computer sleeping (409)' });
         process.exit(1);
+      } else if (shouldRetrySyncIndividually(result, filesToPush)) {
+        batchFailureDetail = `${result.status || 'unknown'}: ${result.errorMessage || result.error || 'batch sync failed'}`;
+        console.log('');
+        console.log(`  Batch push failed (${result.errorMessage || result.error || result.status}). Retrying one file at a time...`);
+        for (const f of filesToPush) {
+          const single = await syncFiles([f]);
+          if (single.ok) {
+            recordSyncResults([f], single);
+          } else {
+            failedToLand.push({
+              path: f.path,
+              status: single.status || 'error',
+              error: single.errorMessage || single.error || '',
+            });
+          }
+        }
+        pushed = landedPaths.size;
       } else {
         console.error(`\n  Push failed: ${result.errorMessage || result.error || result.status}`);
         await emit('status_unknown', { error_detail: `sync status ${result.status}` });
@@ -631,6 +653,9 @@ async function pushAtris() {
   } else if (deleteFailed.length > 0) {
     finalOutcome = 'status_unknown';
     finalDetail = `${deleteFailed.length} delete(s) failed (statuses: ${[...new Set(deleteFailed.map(f => f.status))].join(',')})`;
+  } else if (batchFailureDetail) {
+    finalOutcome = 'status_unknown';
+    finalDetail = `batch sync failed but individual retry landed all files (${batchFailureDetail})`;
   } else if (_rateLimitedDeletes > 0) {
     finalOutcome = 'rate_limited';
     finalDetail = `${_rateLimitedDeletes} delete(s) hit 429 (recovered)`;
@@ -652,6 +677,7 @@ async function pushAtris() {
 module.exports = {
   pushAtris,
   buildPushChangePlan,
+  shouldRetrySyncIndividually,
   resolvePushSourceDir,
   canonicalWorkspaceRoot,
   basenameOfManifestPath,

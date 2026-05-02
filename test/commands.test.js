@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest } = require('../lib/manifest');
-const { ensureWikiScaffold, normalizeWikiOnlyPrefix } = require('../lib/wiki');
+const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const {
   analyzeBusinessDoctor,
   businessMatchesSlug,
@@ -20,7 +20,7 @@ const {
   snapshotsDiffer,
 } = require('../commands/live');
 const { buildPullConflictReviewPacket } = require('../commands/pull');
-const { basenameOfManifestPath, buildPushChangePlan, isBusinessWorkspaceRoot, resolvePushSourceDir } = require('../commands/push');
+const { basenameOfManifestPath, buildPushChangePlan, isBusinessWorkspaceRoot, resolvePushSourceDir, shouldRetrySyncIndividually } = require('../commands/push');
 const { collectState } = require('../commands/brain');
 const {
   buildBusinessSyncPlan,
@@ -320,6 +320,15 @@ test('push planner treats scoped local deletes as gated deletes and ignores pare
   assert.deepEqual(plan.filesToPush, []);
   assert.deepEqual(plan.deletedPaths, ['/atris/wiki/delete-me.md']);
   assert.equal(plan.unchangedCount, 0);
+});
+
+test('push retries multi-file server failures individually but not access or sleeping states', () => {
+  assert.equal(shouldRetrySyncIndividually({ ok: false, status: 500 }, [{ path: '/a.md' }, { path: '/b.md' }]), true);
+  assert.equal(shouldRetrySyncIndividually({ ok: false, status: 502 }, [{ path: '/a.md' }, { path: '/b.md' }]), true);
+  assert.equal(shouldRetrySyncIndividually({ ok: false, status: 500 }, [{ path: '/a.md' }]), false);
+  assert.equal(shouldRetrySyncIndividually({ ok: false, status: 403 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
+  assert.equal(shouldRetrySyncIndividually({ ok: false, status: 409 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
+  assert.equal(shouldRetrySyncIndividually({ ok: true, status: 200 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
 });
 
 test('business workspace root detection requires .atris binding and atris folder', () => {
@@ -2899,6 +2908,103 @@ test('wiki sync alias normalizes --only wiki to atris/wiki', () => {
   assert.equal(normalizeWikiOnlyPrefix('wiki'), 'atris/wiki/');
   assert.equal(normalizeWikiOnlyPrefix('wiki/'), 'atris/wiki/');
   assert.equal(normalizeWikiOnlyPrefix('atris/wiki'), 'atris/wiki/');
+});
+
+test('agent-readable wiki contract requires sources, verification, dependencies, confidence, and actionability', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'concepts'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Source\n', 'utf8');
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'concepts', 'good.md'),
+      [
+        '---',
+        'sources:',
+        '  - README.md',
+        'last_compiled: 2026-05-01',
+        'last_verified: 2026-05-01',
+        'confidence: 0.8',
+        'dependencies: []',
+        'actionability: "use this in weekly review"',
+        '---',
+        '# Good',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    assert.deepEqual(validateAgentReadableWikiPages(dir).findings, []);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'concepts', 'bad.md'), '# Bad\n', 'utf8');
+    const report = validateAgentReadableWikiPages(dir);
+    assert.equal(report.ok, false);
+    assert.equal(report.findings.some((finding) => finding.page.endsWith('bad.md') && finding.code === 'missing-sources'), true);
+    assert.equal(report.findings.some((finding) => finding.page.endsWith('bad.md') && finding.code === 'missing-actionability'), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki stale checks accept external source labels and legacy context paths', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'context', 'calls'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'context', 'calls', 'README.md'), '# Calls\n', 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'systems'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'systems', 'pallet.md'),
+      [
+        '---',
+        'sources: [hubspot, chorus, context/calls]',
+        'last_compiled: 2999-01-01',
+        'last_verified: 2999-01-01',
+        'confidence: 0.7',
+        'dependencies: []',
+        'actionability: "route account questions"',
+        '---',
+        '# Pallet',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    assert.deepEqual(validateAgentReadableWikiPages(dir).findings, []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki orphan checks accept markdown links in legacy indexes', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'people'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'index.md'),
+      '# Index\n\n- [Jane](people/jane.md)\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'wiki', 'people', 'jane.md'),
+      [
+        '---',
+        'sources: [hubspot]',
+        'last_compiled: 2999-01-01',
+        'last_verified: 2999-01-01',
+        'confidence: 0.7',
+        'dependencies: []',
+        'actionability: "route stakeholder questions"',
+        '---',
+        '# Jane',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const { findWikiOrphans } = require('../lib/wiki');
+    assert.deepEqual(findWikiOrphans(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('loop flags stale wiki pages and refreshes status/log', () => {
