@@ -76,7 +76,7 @@ async function pullAtris() {
   let arg = process.argv[3];
 
   if (arg === '--help') {
-    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>] [--dry-run]');
+    console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>] [--dry-run] [--no-manifest]');
     console.log('');
     console.log('  Pull is force-overwrite by default. Cloud is the source of truth.');
     console.log('  Local files that conflict with cloud are replaced by the cloud version.');
@@ -87,6 +87,7 @@ async function pullAtris() {
     console.log('  atris pull doordash --only atris/wiki/');
     console.log('  atris pull --keep-local      Preserve conflicting local edits as .remote files (legacy)');
     console.log('  atris pull --dry-run         Preview pull changes without writing local files');
+    console.log('  atris pull --no-manifest     Pull for inspection without changing this machine\'s sync anchor');
     return;
   }
 
@@ -176,6 +177,7 @@ async function pullBusiness(slug) {
   const force = !process.argv.includes('--keep-local');
   const failOnConflict = process.argv.includes('--fail-on-conflict');
   const dryRun = process.argv.includes('--dry-run');
+  const noManifest = process.argv.includes('--no-manifest');
 
   // Parse --only flag: comma-separated directory prefixes to filter
   // Supports both --only=team/,context/ and --only team/,context/
@@ -485,6 +487,19 @@ async function pullBusiness(slug) {
   let files = result.data.files || [];
   if (files.length === 0) {
     console.log('  Workspace is empty.');
+    const inScopeLocalBeforePull = Object.keys(localFilesBeforePull).filter((p) => {
+      if (!onlyPrefixes) return true;
+      const rel = p.replace(/^\//, '');
+      return onlyPrefixes.some((pref) => rel.startsWith(pref));
+    }).length;
+    if (!force && inScopeLocalBeforePull > 0) {
+      console.error('');
+      console.error('  Pull stopped: cloud returned zero files while local has in-scope content.');
+      console.error('  This usually means the snapshot endpoint is unhealthy or still warming.');
+      console.error('  No local files or sync manifest were changed.');
+      await emit('status_unknown', { error_detail: 'empty snapshot with local in-scope content' });
+      process.exit(1);
+    }
     // Don't early-return in force mode: we still need to fall through to the
     // mirror sweep so a genuinely-emptied cloud can clear local files. The
     // sweep itself has a safety guard that refuses to wipe local content
@@ -806,12 +821,16 @@ async function pullBusiness(slug) {
     }
     manifestFiles = merged;
   }
-  const newManifest = buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir });
-  saveManifest(resolvedSlug || slug, newManifest);
-  writeBaseContents(outputDir, remoteContent);
-  removeBaseContents(outputDir, diff.deletedRemote);
+  if (!noManifest) {
+    const newManifest = buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir });
+    saveManifest(resolvedSlug || slug, newManifest);
+    writeBaseContents(outputDir, remoteContent);
+    removeBaseContents(outputDir, diff.deletedRemote);
+  }
 
-  // Save business config in the output dir so push/status work without args
+  // Save business config in the output dir so push/status work without args.
+  // Inspection pulls should not re-bind the global sync anchor, but the pulled
+  // folder still benefits from a local business marker for navigation.
   const atrisDir = path.join(outputDir, '.atris');
   fs.mkdirSync(atrisDir, { recursive: true });
   fs.writeFileSync(path.join(atrisDir, 'business.json'), JSON.stringify({
