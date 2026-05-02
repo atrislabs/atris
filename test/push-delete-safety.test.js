@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isMassDeletePlan } = require('../commands/push');
+const { isMassDeletePlan, parsePushTimeoutSec } = require('../commands/push');
 
 test('mass delete safety allows small explicit deletes', () => {
   assert.equal(isMassDeletePlan({
@@ -25,4 +25,15 @@ test('mass delete safety blocks large cleanup even with surviving files', () => 
     filesToPush: [{ path: '/wiki/new.md', content: '' }],
     unchangedCount: 40,
   }), true);
+});
+
+test('push timeout parser supports equals and space forms', () => {
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=240']), 240);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout', '180']), 180);
+});
+
+test('push timeout parser clamps unsafe values', () => {
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=1']), 5);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=999']), 300);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=bad'], 120), 120);
 });

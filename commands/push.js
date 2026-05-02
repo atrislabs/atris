@@ -104,6 +104,20 @@ function isMassDeletePlan({ deletedPaths = [], filesToPush = [], unchangedCount 
   return deleteCount >= 10 && deleteCount > survivingCount;
 }
 
+function parsePushTimeoutSec(argv = process.argv, defaultSec = 120) {
+  let raw = null;
+  const eqArg = argv.find(a => a.startsWith('--timeout='));
+  if (eqArg) raw = eqArg.slice('--timeout='.length);
+  else {
+    const idx = argv.indexOf('--timeout');
+    if (idx !== -1 && argv[idx + 1]) raw = argv[idx + 1];
+  }
+
+  const parsed = raw == null ? defaultSec : Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return defaultSec;
+  return Math.max(5, Math.min(300, parsed));
+}
+
 async function pushAtris() {
   const elapsedMs = startTimer();
   let slug = process.argv[3];
@@ -156,6 +170,7 @@ async function pushAtris() {
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
   const allowCrossRootManifest = process.argv.includes('--allow-cross-root-manifest');
+  const timeoutSec = parsePushTimeoutSec(process.argv);
 
   // Parse --only
   let onlyRaw = null;
@@ -462,8 +477,14 @@ async function pushAtris() {
   };
   const wireFiles = (files) => files.map((f) => ({ path: toWirePath(f.path), content: f.content }));
   const syncFiles = (files) => apiRequestJson(
-    `/business/${businessId}/workspaces/${workspaceId}/sync`,
-    { method: 'POST', token: creds.token, body: { files: wireFiles(files) }, headers: { 'X-Atris-Actor-Source': 'cli' } }
+    `/business/${businessId}/workspaces/${workspaceId}/sync?timeout=${timeoutSec}`,
+    {
+      method: 'POST',
+      token: creds.token,
+      body: { files: wireFiles(files) },
+      headers: { 'X-Atris-Actor-Source': 'cli' },
+      timeoutMs: (timeoutSec + 15) * 1000,
+    }
   );
 
   // Inspect per-file results from a /sync response. Treat "written" and
@@ -727,4 +748,5 @@ module.exports = {
   basenameOfManifestPath,
   isBusinessWorkspaceRoot,
   isMassDeletePlan,
+  parsePushTimeoutSec,
 };
