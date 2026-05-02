@@ -566,11 +566,35 @@ async function pullBusiness(slug) {
   // Compute local file hashes
   const localFiles = localFilesBeforePull;
 
+  function isPullPathInScope(filePath) {
+    if (!onlyPrefixes) return true;
+    const rel = filePath.replace(/^\//, '');
+    return onlyPrefixes.some((pref) => rel.startsWith(pref));
+  }
+
+  function filterFilesToPullScope(filesMap = {}) {
+    if (!onlyPrefixes) return filesMap;
+    return Object.fromEntries(
+      Object.entries(filesMap).filter(([p]) => isPullPathInScope(p))
+    );
+  }
+
+  function filterManifestToPullScope(existingManifest) {
+    if (!onlyPrefixes || !existingManifest || !existingManifest.files) return existingManifest;
+    return {
+      ...existingManifest,
+      files: filterFilesToPullScope(existingManifest.files),
+    };
+  }
+
   // If output dir is empty (fresh clone) or --force, treat as first sync — pull everything
-  const effectiveManifest = (Object.keys(localFiles).length === 0 || force) ? null : manifest;
+  const scopedLocalFiles = filterFilesToPullScope(localFiles);
+  const scopedRemoteFiles = filterFilesToPullScope(remoteFiles);
+  const scopedManifest = filterManifestToPullScope(manifest);
+  const effectiveManifest = (Object.keys(scopedLocalFiles).length === 0 || force) ? null : scopedManifest;
 
   // Three-way compare
-  const diff = threeWayCompare(localFiles, remoteFiles, effectiveManifest);
+  const diff = threeWayCompare(scopedLocalFiles, scopedRemoteFiles, effectiveManifest);
 
   if (dryRun) {
     console.log('');

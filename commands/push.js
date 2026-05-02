@@ -95,6 +95,15 @@ function shouldRetrySyncIndividually(result, filesToPush) {
   return result.status !== 403 && result.status !== 409;
 }
 
+function isMassDeletePlan({ deletedPaths = [], filesToPush = [], unchangedCount = 0 } = {}) {
+  const deleteCount = deletedPaths.length;
+  if (deleteCount === 0) return false;
+  const survivingCount = filesToPush.length + unchangedCount;
+  if (deleteCount >= 10 && survivingCount === 0) return true;
+  if (deleteCount >= 25) return true;
+  return deleteCount >= 10 && deleteCount > survivingCount;
+}
+
 async function pushAtris() {
   const elapsedMs = startTimer();
   let slug = process.argv[3];
@@ -113,7 +122,7 @@ async function pushAtris() {
   }
 
   if (!slug || slug === '--help') {
-    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete]');
+    console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
     console.log('');
     console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
@@ -122,13 +131,15 @@ async function pushAtris() {
     console.log('  atris push pallet            Push pallet/ or atris/pallet/');
     console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
-    console.log('  atris push --delete          Allow cloud deletes shown by --dry-run');
+    console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
+    console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
     process.exit(0);
   }
 
   const force = process.argv.includes('--force');
   const dryRun = process.argv.includes('--dry-run');
   const allowDelete = process.argv.includes('--delete');
+  const allowMassDelete = process.argv.includes('--delete-all');
   const allowCrossRootManifest = process.argv.includes('--allow-cross-root-manifest');
 
   // Parse --only
@@ -386,6 +397,24 @@ async function pushAtris() {
     console.log(`      atris push ${resolvedSlug || slug} --delete`);
     console.log('');
     console.log('    If the deletes are surprising, pull cloud truth first:');
+    console.log(`      atris pull ${resolvedSlug || slug} --keep-local --timeout 120`);
+    process.exit(1);
+  }
+
+  if (deletedPaths.length > 0 && allowDelete && !allowMassDelete && isMassDeletePlan({ deletedPaths, filesToPush, unchangedCount })) {
+    console.log('');
+    console.log(`  ✗ Refusing mass delete of ${deletedPaths.length} cloud files with --delete alone.`);
+    console.log('');
+    console.log('    This looks like a missing local folder or wrong source root.');
+    console.log('    No cloud files were deleted.');
+    console.log('');
+    console.log('    First inspect the plan:');
+    console.log(`      atris push ${resolvedSlug || slug} --dry-run`);
+    console.log('');
+    console.log('    If this is truly an intentional full cleanup, rerun with both flags:');
+    console.log(`      atris push ${resolvedSlug || slug} --delete --delete-all`);
+    console.log('');
+    console.log('    If this is surprising, pull cloud truth first:');
     console.log(`      atris pull ${resolvedSlug || slug} --keep-local --timeout 120`);
     process.exit(1);
   }
@@ -682,4 +711,5 @@ module.exports = {
   canonicalWorkspaceRoot,
   basenameOfManifestPath,
   isBusinessWorkspaceRoot,
+  isMassDeletePlan,
 };
