@@ -132,7 +132,9 @@ function displaySoul(soul) {
   console.log(`  │ ${'IDENTITY'.padEnd(W - 1)}│`);
   if (soul.identity['PERSONA.md']) {
     const preview = soul.identity['PERSONA.md'].split('\n').find(l => l.trim() && !l.startsWith('#')) || '';
-    console.log(`  │   persona: ${preview.slice(0, W - 15).padEnd(W - 14)}│`);
+    const max = W - 15;
+    const text = preview.length > max ? preview.slice(0, max - 1) + '…' : preview;
+    console.log(`  │   persona: ${text.padEnd(W - 14)}│`);
   }
   if (soul.identity.team) {
     console.log(`  │   team: ${soul.identity.team.length} members${' '.repeat(Math.max(0, W - 20 - String(soul.identity.team.length).length))}│`);
