@@ -1351,6 +1351,18 @@ function showVersion() {
 // ============================================
 
 async function agentAtris() {
+  // Respect -h / --help before any auth/state work
+  const firstArg = process.argv[3];
+  if (firstArg === '-h' || firstArg === '--help') {
+    console.log('Usage: atris agent');
+    console.log('');
+    console.log('  Pick which cloud agent to chat with from this workspace.');
+    console.log('  Requires `atris login` first.');
+    console.log('');
+    console.log('  After selecting, use: atris chat ["message"]');
+    process.exit(0);
+  }
+
   const targetDir = path.join(process.cwd(), 'atris');
 
   // Check if atris/ folder exists
