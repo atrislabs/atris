@@ -21,6 +21,8 @@ this is the "distribution center" — statistically average, aesthetically dead.
 
 **avoid:** inter, roboto, open sans, lato, arial, montserrat, system defaults. also avoid monospace as lazy shorthand for "technical/developer" vibes.
 
+**never:** all-caps UI labels, tracked-uppercase labels, faux small-caps, or eyebrow-style metadata on ordinary product surfaces. Keshav strongly dislikes this style. Use natural title case or sentence case instead: `Threads`, `Active tasks`, `Team`, not `THREADS`, `ACTIVE TASKS`, or letter-spaced microcopy.
+
 **try instead:**
 - instead of inter → instrument sans, plus jakarta sans, outfit
 - instead of roboto → onest, figtree, urbanist

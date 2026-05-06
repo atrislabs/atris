@@ -58,7 +58,7 @@ rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBu
 rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "gmailCommand" commands/integrations.js  # Integration commands
-rg "memberCommand|memberPush|memberPull" commands/member.js  # Team member cloud sync
+rg "memberCommand|memberGoal|memberTick|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, goal loop, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
 
@@ -258,8 +258,8 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
-- **Entry point:** `bin/atris.js:794` (`task` command dispatch)
-- **Handler:** `commands/task.js:194` (`run` dispatch)
+- **Entry point:** command routing in `bin/atris.js:803`
+- **Handler:** `commands/task.js:2029` (`run` dispatch)
 - **Store:** `lib/task-db.js:150` (`addTask`), `lib/task-db.js:183` (`listTasks`), `lib/task-db.js:207` (`claimTask`), `lib/task-db.js:231` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
@@ -276,10 +276,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - `atris task show <id> --json` emits one task card with dialogue and events
 - `atris task setup --import-todo` bootstraps durable state and writes `.atris/state/tasks.projection.json`
 - `atris task serve` starts the local Task Factory board backed by the same task events and projection; the board shows goals, work streams, task objectives, parent/child lineage, proof, lessons, and the compounding chain
-- task projections are enriched with `goals`, `streams`, `objective`, `review`, and `lineage` fields for visual surfaces
+- task projections are enriched with `goals`, `streams`, `objective`, `review`, `lineage`, `history`, and `surface` fields for compact visual surfaces; older done rows and long event/message trails stay behind explicit task history commands
 - `atris task sync --dry-run` maps local projection rows to canonical backend `/business/{business_id}/work/tasks` POST/PATCH plans, including Swarlo lease metadata from `claimed_by`
-- `atris task export --out .atris/state/tasks.projection.json` writes the web/desktop projection (`atris.task_projection.v1`)
-- `atris task events [id]` prints the append-only event trail for a task or workspace
+- `atris task export --out .atris/state/tasks.projection.json` writes the compact web/desktop projection (`atris.task_projection.v1`)
+- `atris task events [id]` prints the append-only event trail for a task; `atris task events --all` prints the full workspace ledger
 - `atris task render --out atris/TODO.md` regenerates the markdown board from durable task state
 - `atris task claim` uses a single guarded SQLite update so only one agent wins an open task
 - `atris task import atris/TODO.md` imports backlog and in-progress tasks with source keys for idempotent re-runs
@@ -289,6 +289,21 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Gives multi-agent work atomic local claims without hiding task state in chat or competing with the cloud task record.
 
 **Search:** `rg "cmdAdd|cmdServe|cmdSync|syncPlanForProjection|handleTaskApi|claimTask|dbToShimRow" commands/task.js lib/task-db.js lib/todo.js`
+
+### Feature: Member Goal Loop (`atris member`)
+
+**Purpose:** Give each team member a local identity contract, structured goals, inspectable progress, and a proof-scored review loop before Obelisk or cloud agents automate it.
+
+- **Entry point:** `commands/member.js` (`memberCommand` dispatch)
+- **Identity:** `atris/team/<member>/MEMBER.md`
+- **Goal state:** `atris/team/<member>/goals.json` (`atris.member_goals.v1`)
+- **Human readout:** `atris/team/<member>/goals.md`
+- **Learning log:** `atris/team/<member>/logs/YYYY-MM-DD.md`
+- **Loop:** `atris member goal` -> `atris member tick` -> `atris member status` -> `atris member review --accept|--discard --proof ... --value 1..5`
+- **Blocked path:** `atris member block <member> <experiment> --reason ... --ask ... --orchestrator ...`; later ticks pause instead of creating more work until the ask is resolved.
+- **Value:** Tests whether a member is actually creating useful progress, not just activity, while keeping the operator able to chime in at any point.
+
+**Search:** `rg "memberGoal|memberTick|memberStatus|memberBlock|memberReview" commands/member.js test/commands.test.js`
 
 ### Feature: Task Production Readiness
 

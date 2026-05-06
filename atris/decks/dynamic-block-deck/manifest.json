@@ -1,0 +1,36 @@
+{
+  "id": "dynamic-block-deck",
+  "version": "0.1.0",
+  "title": "Atris Dynamic Deck",
+  "styleRef": "../../brand/product-surface.v1.json",
+  "blockRef": "../../brand/block-system.v1.json",
+  "deckRef": "../../brand/deck-manifest.v1.json",
+  "format": "interactive-html",
+  "slides": [
+    {
+      "id": "brain",
+      "type": "narrative",
+      "headline": "The brain becomes the product"
+    },
+    {
+      "id": "pixels-vs-blocks",
+      "type": "comparison",
+      "headline": "Pixels are magic. Blocks are leverage."
+    },
+    {
+      "id": "app-md",
+      "type": "app",
+      "headline": "APP.md says what the customer gets"
+    },
+    {
+      "id": "generate",
+      "type": "structuredUi",
+      "headline": "The surface appears on demand"
+    },
+    {
+      "id": "receipts",
+      "type": "proof",
+      "headline": "Every spectacle has receipts"
+    }
+  ]
+}

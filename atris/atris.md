@@ -122,7 +122,7 @@ The human is the constructor. You multiply. Handoff fidelity lives in the files,
 Move one task at a time through plan → do → review.
 
 - **plan** — read relevant files, produce an ASCII visualization, wait for approval. No code.
-- **plan-review** — the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:\nFIX:`. Plan does not move to do without signoff. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
+- **plan-review** — the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:` + `FIX:` + an optional `PROPOSED:` block (concrete draft of Files / Exit / Verify / Rollback to replace). Plan does not move to do without signoff. The validator is a drafting partner, not just a critic — on REJECT it proposes the sharper rubric rather than leaving the human to guess. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
 - **do** — claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
 - **review** — run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
 
