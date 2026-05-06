@@ -112,7 +112,7 @@ function verifyWorkspace(cwd, atrisDir) {
     console.log('Result: VERIFIED ✓');
     console.log('Workspace is healthy. Ready for production.');
   } else {
-    console.log(`Result: ${results.issues.length} issue(s) found`);
+    console.log(`Result: ${results.issues.length} ${results.issues.length === 1 ? 'issue' : 'issues'} found`);
     console.log('Fix issues before marking work complete.');
   }
   console.log('');

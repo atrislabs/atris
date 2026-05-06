@@ -60,7 +60,7 @@ function cleanAtris(options = {}) {
 
   // Stale tasks
   if (staleTasks.length > 0) {
-    console.log(`⚠ ${staleTasks.length} stale task(s) (claimed >3 days, not completed):`);
+    console.log(`⚠ ${staleTasks.length} stale ${staleTasks.length === 1 ? 'task' : 'tasks'} (claimed >3 days, not completed):`);
     staleTasks.forEach(task => {
       console.log(`   • ${task.title.substring(0, 50)}${task.title.length > 50 ? '...' : ''}`);
     });
@@ -72,7 +72,7 @@ function cleanAtris(options = {}) {
   // Healed refs
   if (healed > 0) {
     const verb = options.dryRun ? 'Would heal' : 'Healed';
-    console.log(`✓ ${verb} ${healed} MAP.md reference(s)`);
+    console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'}`);
   }
 
   // Unhealable refs
@@ -108,7 +108,7 @@ function cleanAtris(options = {}) {
 
   // Stale pages
   if (stalePages.length > 0) {
-    console.log(`⚠ ${stalePages.length} stale page(s) (source changed since last compiled):`);
+    console.log(`⚠ ${stalePages.length} stale ${stalePages.length === 1 ? 'page' : 'pages'} (source changed since last compiled):`);
     stalePages.forEach(sp => {
       console.log(`   • ${path.relative(cwd, sp.page)} — stale source: ${sp.staleSource}`);
     });
