@@ -189,7 +189,12 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     } else {
       where.push('No active endgame is set.');
     }
-    where.push(`There are ${todo.inProgress.length} tasks in progress, ${todo.backlog.length} queued, and ${todo.completed.length} completed items still sitting in TODO.`);
+    const ipCount = todo.inProgress.length;
+    const bkCount = todo.backlog.length;
+    const cpCount = todo.completed.length;
+    const ipWord = ipCount === 1 ? 'task' : 'tasks';
+    const verb = ipCount === 1 ? 'is' : 'are';
+    where.push(`There ${verb} ${ipCount} ${ipWord} in progress, ${bkCount} queued, and ${cpCount} completed items still sitting in TODO.`);
 
     const queueParts = [];
     if (todo.inProgress[0]) {
