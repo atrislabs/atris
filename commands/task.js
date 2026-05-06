@@ -13,6 +13,27 @@ const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || os.userInfo().username
   || 'unknown';
 
+const STATUS_PLAN_TAGS = new Set([
+  'agent',
+  'autopilot',
+  'cron',
+  'endgame',
+  'execute',
+  'explore',
+  'feature',
+  'goal',
+  'goal-step',
+  'loop',
+  'plan',
+  'planned',
+  'schedule',
+  'scheduled',
+  'shape',
+  'shaping',
+  'ui',
+  'ux',
+]);
+
 let taskDbModule = null;
 
 function getTaskDb() {
@@ -52,22 +73,28 @@ atris task - durable local task state (SQLite, gitignored)
   atris task claim <id> [--as <owner>]     Atomic claim
   atris task note <id> "<message>"         Append dialogue/context to a task
   atris task show <id> [--json]            Show a task card + dialogue
-  atris task done <id> [--failed]          Mark complete (or failed)
+  atris task done <id> [--failed] [--proof "..."]  Mark complete (or failed), optionally reviewed
   atris task review <id> --reward <n>      Write review event + RSI episode
-  atris task status [--json]               Compact live status for web/Swarlo
+  atris task status [--json] [--history]   Compact live status for web/Swarlo
   atris task setup [--import-todo]         Create/refresh task projection
   atris task serve [--port <n>]            Open local task factory board
   atris task sync --dry-run                Plan cloud/Swarlo task sync writes
   atris task import <file>                 One-shot import from TODO.md
-  atris task events [id]                   Print append-only task events
+  atris task events [id] [--limit <n>]     Print recent task events
+  atris task events --all                  Print the full append-only ledger
   atris task export [--out <file>]         Write web/desktop JSON projection
-  atris task render [--out <file>]         Regenerate TODO.md view from state
+  atris task render [--out <file>]         Regenerate compact TODO.md view from state
   atris task where                          Print db path + workspace scope
   atris task help                           This help
 
 Env:
   ATRIS_TASKS_DB    Override db path (default ~/.atris/tasks.db)
   ATRIS_AGENT_ID    Owner id for claim/done (default: $USER)
+
+Refs:
+  Human views use semantic refs like OBL-18. Commands accept OBL-18,
+  OBL18, full 26-char task IDs, and any unique legacy prefix. JSON/API
+  keep the full id as canonical and also expose display_id + legacy_ref.
 
 Headless:
   Add --json to task commands for machine-readable output and stable automation.
@@ -131,6 +158,12 @@ function writeDefaultProjection(taskDb, db, { all = false } = {}) {
 
 function taskFromProjection(projection, id) {
   return projection.tasks.find(t => t.id === id) || null;
+}
+
+function taskRef(taskOrId) {
+  if (!taskOrId) return 'TASK';
+  if (typeof taskOrId === 'string') return taskOrId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
+  return taskOrId.display_id || taskOrId.legacy_ref || taskRef(taskOrId.id);
 }
 
 function createNextTaskIfRequested(taskDb, db, args, currentTask, title) {
@@ -439,9 +472,84 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
-function taskStatusSummary(projection) {
+function compactTaskForStatus(task) {
+  if (!task) return null;
+  const metadata = task.metadata || {};
+  const out = {
+    id: task.id,
+    display_id: task.display_id || null,
+    legacy_ref: task.legacy_ref || taskRef(task.id),
+    title: clipStatusText(task.title, 140),
+    status: task.status,
+    updated_at: task.updated_at,
+  };
+  if (task.tag) out.tag = task.tag;
+  if (task.claimed_by) out.claimed_by = task.claimed_by;
+  const assignedTo = taskAssignee(task);
+  if (assignedTo) out.assigned_to = assignedTo;
+  if (task.latest_event_type) out.latest_event_type = task.latest_event_type;
+  if (task.objective) out.objective = clipStatusText(task.objective, 180);
+  if (task.review) {
+    const review = {};
+    if (typeof task.review.reward === 'number') review.reward = task.review.reward;
+    if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
+    if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
+    if (task.review.next_task) review.next_task = clipStatusText(task.review.next_task, 140);
+    if (Object.keys(review).length) out.review = review;
+  }
+  if (task.lineage) {
+    const lineage = {};
+    if (task.lineage.parent_task_id) lineage.parent_task_id = task.lineage.parent_task_id;
+    if (task.lineage.child_task_ids && task.lineage.child_task_ids.length) lineage.child_task_ids = task.lineage.child_task_ids;
+    if (task.lineage.next_task_suggestion) lineage.next_task_suggestion = clipStatusText(task.lineage.next_task_suggestion, 140);
+    if (Object.keys(lineage).length) out.lineage = lineage;
+  }
+  const compactMetadata = {};
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via']) {
+    if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
+  }
+  if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
+  return out;
+}
+
+function compactTaskFromProjection(projection, id) {
+  return compactTaskForStatus(taskFromProjection(projection, id));
+}
+
+function compactEventPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const out = {};
+  for (const key of ['title', 'status', 'tag', 'content', 'proof', 'lesson', 'reward', 'next_task']) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') out[key] = payload[key];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function compactTaskEvent(event) {
+  if (!event) return null;
+  return {
+    event_id: event.event_id,
+    task_id: event.task_id,
+    version: event.version,
+    actor: event.actor || null,
+    event_type: event.event_type,
+    created_at: event.created_at,
+    payload: compactEventPayload(event.payload),
+  };
+}
+
+function clipStatusText(value, max = 180) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function taskStatusSummary(projection, { history = false } = {}) {
   const tasks = projection.tasks || [];
+  const hiddenDoneCount = Math.max(0, Number(projection.surface && projection.surface.hidden_done_count || 0));
+  const fullTaskCount = Math.max(tasks.length + hiddenDoneCount, Number(projection.surface && projection.surface.full_task_count || 0));
   const columns = {
+    backlog: tasks.filter(task => taskColumn(task) === 'backlog'),
     plan: tasks.filter(task => taskColumn(task) === 'open'),
     do: tasks.filter(task => taskColumn(task) === 'doing'),
     review: tasks.filter(task => taskColumn(task) === 'review' || taskColumn(task) === 'blocked'),
@@ -449,10 +557,10 @@ function taskStatusSummary(projection) {
   };
   const active = [...columns.do, ...columns.review, ...columns.plan];
   const lastUpdated = tasks.reduce((max, task) => Math.max(max, Number(task.updated_at || 0)), 0);
-  const swarloFeed = tasks
+  const swarloFeed = history ? tasks
     .flatMap(task => (task.events || []).map(event => ({
       task_id: task.id,
-      task_title: task.title,
+      task_title: clipStatusText(task.title, 120),
       actor: event.actor || task.claimed_by || null,
       kind: event.event_type === 'claimed'
         ? 'claim'
@@ -460,8 +568,11 @@ function taskStatusSummary(projection) {
           ? 'result'
           : 'note',
       channel: task.tag || 'tasks',
-      content: event.payload && (event.payload.content || event.payload.proof || event.payload.lesson)
-        || humanEventType(event.event_type),
+      content: clipStatusText(
+        event.payload && (event.payload.content || event.payload.proof || event.payload.lesson)
+          || humanEventType(event.event_type),
+        180,
+      ),
       created_at: event.created_at,
       metadata: {
         swarlo: {
@@ -472,23 +583,24 @@ function taskStatusSummary(projection) {
       },
     })))
     .sort((a, b) => b.created_at - a.created_at)
-    .slice(0, 12);
-  return {
+    .slice(0, 12) : [];
+  const status = {
     schema: 'atris.task_status.v1',
     generated_at: projection.generated_at,
     workspace_root: projection.workspace_root,
     goals: projection.goals || { source_path: null, items: [] },
     counts: {
-      total: tasks.length,
-      active: tasks.filter(task => task.status !== 'done').length,
+      total: fullTaskCount,
+      active: columns.plan.length + columns.do.length + columns.review.length,
+      backlog: columns.backlog.length,
       plan: columns.plan.length,
       do: columns.do.length,
       review: columns.review.length,
-      done: columns.done.length,
+      done: tasks.filter(task => task.status === 'done').length + hiddenDoneCount,
     },
-    current: columns.do[0] || columns.review[0] || null,
-    next: columns.plan[0] || null,
-    needs_review: columns.review.slice(0, 5),
+    current: compactTaskForStatus(columns.do[0] || columns.review[0] || null),
+    next: compactTaskForStatus(columns.plan[0] || null),
+    needs_review: columns.review.slice(0, 5).map(compactTaskForStatus),
     streams: (projection.streams || []).slice(0, 8).map(stream => ({
       objective: stream.objective,
       active_count: stream.active_count,
@@ -498,22 +610,50 @@ function taskStatusSummary(projection) {
       review_count: stream.review_count,
       blocked_count: stream.blocked_count,
     })),
-    last_event: active.map(task => ({ task, event: latestTaskEvent(task) })).filter(row => row.event)
-      .sort((a, b) => b.event.created_at - a.event.created_at)[0] || null,
     last_updated_at: lastUpdated ? new Date(lastUpdated).toISOString() : null,
-    swarlo: {
+  };
+  if (history) {
+    status.last_event = active.map(task => ({ task: compactTaskForStatus(task), event: compactTaskEvent(latestTaskEvent(task)) })).filter(row => row.event)
+      .sort((a, b) => b.event.created_at - a.event.created_at)[0] || null;
+    status.swarlo = {
       feed: swarloFeed,
       realtime_contract: {
         claim: 'Swarlo claim -> canonical task state=doing + lease metadata',
         report_done: 'Swarlo report(done) -> canonical task state=done + proof metadata',
         web: 'atrisos-web reads canonical tasks through /api/agent/:id/tasks or /api/business/* and live activity through public business/Swarlo posts',
       },
-    },
-  };
+    };
+  }
+  return status;
 }
 
 function humanEventType(type) {
   return String(type || 'event').replace(/_/g, ' ');
+}
+
+function taskEventSummary(event) {
+  const payload = event && event.payload || {};
+  const raw = payload.content || payload.proof || payload.lesson || payload.title || payload.status || humanEventType(event && event.event_type);
+  return clipStatusText(raw, 140);
+}
+
+function formatTaskEventCompact(event, refById = new Map()) {
+  const actor = event.actor ? ` @${event.actor}` : '';
+  const when = event.created_at ? new Date(Number(event.created_at)).toISOString() : '';
+  return `${when}\t${event.event_type.padEnd(9)}\t${refById.get(event.task_id) || taskRef(event.task_id)}${actor}\t${taskEventSummary(event)}`;
+}
+
+function normalizedStatusPart(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+function taskIsPlannedOpen(task) {
+  const metadata = task && task.metadata || {};
+  const tag = normalizedStatusPart(task && task.tag);
+  const stage = normalizedStatusPart(metadata.stage);
+  return STATUS_PLAN_TAGS.has(tag)
+    || STATUS_PLAN_TAGS.has(stage)
+    || Boolean(metadata.verify || metadata.goal || metadata.loop || metadata.cron || metadata.next_run_at);
 }
 
 function formatTaskLine(task) {
@@ -521,15 +661,24 @@ function formatTaskLine(task) {
   const owner = task.claimed_by ? ` @${task.claimed_by}` : '';
   const assigned = !task.claimed_by && taskAssignee(task) ? ` -> ${taskAssignee(task)}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
-  return `${task.id.slice(0, 8)}${owner}${assigned}${tag} ${task.title}`;
+  return `${taskRef(task)}${owner}${assigned}${tag} ${task.title}`;
 }
 
 function cmdStatus(args) {
   const all = hasFlag(args, '--all');
+  const history = hasFlag(args, '--history');
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
-  const status = taskStatusSummary(projection);
+  const compact = writeDefaultProjection(taskDb, db, { all });
+  const projection = history
+    ? enrichTaskProjection(taskDb.taskProjection(db, {
+      workspaceRoot: all ? null : taskDb.workspaceRoot(),
+      limit: 500,
+      includeHistory: true,
+    }))
+    : compact.projection;
+  const outPath = compact.outPath;
+  const status = taskStatusSummary(projection, { history });
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -541,14 +690,14 @@ function cmdStatus(args) {
   }
   console.log('TASK STATUS');
   console.log(`workspace ${status.workspace_root || '(all)'}`);
-  console.log(`plan ${status.counts.plan} / do ${status.counts.do} / review ${status.counts.review} / done ${status.counts.done}`);
+  console.log(`plan ${status.counts.plan} / do ${status.counts.do} / review ${status.counts.review} / backlog ${status.counts.backlog} / done ${status.counts.done}`);
   console.log(`current ${formatTaskLine(status.current)}`);
   console.log(`next    ${formatTaskLine(status.next)}`);
   if (status.needs_review.length) {
     console.log('review');
     for (const task of status.needs_review.slice(0, 3)) console.log(`  ${formatTaskLine(task)}`);
   }
-  console.log(`swarlo feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
+  if (history) console.log(`history feed ${status.swarlo.feed.length} event${status.swarlo.feed.length === 1 ? '' : 's'}`);
 }
 
 function resolveTaskRef(taskDb, db, ref) {
@@ -556,8 +705,18 @@ function resolveTaskRef(taskDb, db, ref) {
   if (!token) return { ok: false, reason: 'missing' };
   const exact = taskDb.getTask(db, token);
   if (exact) return { ok: true, id: exact.id, row: exact };
-  const rows = taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot(), limit: 500 });
-  const matches = rows.filter(r => r.id.startsWith(token));
+  const normalized = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(token) : token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot: taskDb.workspaceRoot() }));
+  const seen = new Set();
+  const matches = rows.filter(r => {
+    const id = String(r.id || '').toUpperCase();
+    const display = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.display_id) : String(r.display_id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const legacy = taskDb.normalizeTaskRef ? taskDb.normalizeTaskRef(r.legacy_ref) : String(r.legacy_ref || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const matched = id.startsWith(normalized) || display === normalized || legacy === normalized;
+    if (!matched || seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
   if (matches.length === 1) return { ok: true, id: matches[0].id, row: matches[0] };
   if (matches.length > 1) return { ok: false, reason: 'ambiguous', matches };
   return { ok: false, reason: 'not_found' };
@@ -575,9 +734,14 @@ function requireTaskId(taskDb, db, ref, label) {
   }
 }
 
-function renderTaskDesk(rows) {
-  const active = rows.filter(r => r.status !== 'done');
-  const done = rows.filter(r => r.status === 'done');
+function workspaceRefRows(taskDb, db, all = false) {
+  return taskDb.listTasks(db, { workspaceRoot: all ? null : taskDb.workspaceRoot() });
+}
+
+function renderTaskDesk(rows, refRows = rows) {
+  const displayRows = getTaskDb().withTaskDisplayRefs(rows, refRows);
+  const active = displayRows.filter(r => r.status !== 'done');
+  const done = displayRows.filter(r => r.status === 'done');
   if (rows.length === 0) {
     console.log('No tasks yet.');
     console.log('Start with: atris task new "Ship the smallest useful thing"');
@@ -589,7 +753,7 @@ function renderTaskDesk(rows) {
     const owner = r.claimed_by ? ` @${r.claimed_by}` : '';
     const assigned = !r.claimed_by && taskAssignee(r) ? ` -> ${taskAssignee(r)}` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
-    console.log(`${r.status.padEnd(7)} ${r.id.slice(0, 8)}${owner}${assigned}${tag}`);
+    console.log(`${r.status.padEnd(7)} ${taskRef(r)}${owner}${assigned}${tag}`);
     console.log(`        ${r.title}`);
   }
   if (active.length === 0) console.log('clear   no active tasks');
@@ -615,6 +779,7 @@ function cmdAdd(args) {
     workspaceRoot: ws,
   });
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = compactTaskFromProjection(projection, result.id);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -622,21 +787,21 @@ function cmdAdd(args) {
       task_id: result.id,
       inserted: result.inserted !== false,
       projection_path: outPath,
-      task: taskFromProjection(projection, result.id),
+      task,
     });
     return;
   }
-  console.log(`${result.id}\t${title}`);
+  console.log(`${taskRef(task)}\t${title}`);
 }
 
-function delegateHandoff(taskId, owner, via, tag) {
-  const shortId = taskId.slice(0, 8);
+function delegateHandoff(task, owner, via, tag) {
+  const ref = taskRef(task);
   const handoff = {
-    command: `atris task claim ${shortId} --as ${owner}`,
+    command: `atris task claim ${ref} --as ${owner}`,
   };
   if (via === 'swarlo') {
     handoff.swarlo = {
-      task_key: taskId,
+      task_key: task.id,
       action: 'claim',
       channel: tag || 'tasks',
       assignee: owner,
@@ -683,8 +848,8 @@ function cmdDelegate(args) {
     taskDb.noteTask(db, { id: result.id, actor: DEFAULT_OWNER, content: note });
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
-  const task = taskFromProjection(projection, result.id);
-  const handoff = delegateHandoff(result.id, String(owner), via, typeof tag === 'string' ? tag : null);
+  const task = compactTaskFromProjection(projection, result.id);
+  const handoff = delegateHandoff(task, String(owner), via, typeof tag === 'string' ? tag : null);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -700,7 +865,7 @@ function cmdDelegate(args) {
     return;
   }
   const tagText = tag && tag !== true ? ` #${tag}` : '';
-  console.log(`delegated ${result.id.slice(0, 8)} -> ${owner}${tagText} via=${via}`);
+  console.log(`delegated ${taskRef(task)} -> ${owner}${tagText} via=${via}`);
   console.log(`claim: ${handoff.command}`);
   if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
 }
@@ -764,7 +929,7 @@ function cmdDay(args) {
     for (const task of group.tasks.slice(0, 8)) {
       const tag = task.tag ? ` #${task.tag}` : '';
       const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
-      console.log(`  ${task.status.padEnd(7)} ${task.id.slice(0, 8)}${claim}${tag} ${task.title}`);
+      console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag} ${task.title}`);
     }
   }
   console.log('');
@@ -791,7 +956,7 @@ function cmdHome(args) {
     });
     return;
   }
-  renderTaskDesk(rows);
+  renderTaskDesk(rows, rows);
 }
 
 function cmdList(args) {
@@ -804,18 +969,19 @@ function cmdList(args) {
     status: typeof status === 'string' ? status : null,
     limit: 200,
   });
+  const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, all));
   if (wantsJson(args)) {
-    printJson({ ok: true, action: 'list', tasks: rows });
+    printJson({ ok: true, action: 'list', tasks: displayRows });
     return;
   }
   if (rows.length === 0) {
     console.log('(no tasks)');
     return;
   }
-  for (const r of rows) {
+  for (const r of displayRows) {
     const claim = r.claimed_by ? ` [${r.claimed_by}]` : '';
     const tag = r.tag ? ` #${r.tag}` : '';
-    console.log(`${r.status.padEnd(8)} ${r.id}${claim}${tag}\t${r.title}`);
+    console.log(`${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}\t${r.title}`);
   }
 }
 
@@ -840,11 +1006,11 @@ function cmdClaim(args) {
         task_id: taskId,
         owner: String(owner),
         projection_path: outPath,
-        task: taskFromProjection(projection, taskId),
+        task: compactTaskFromProjection(projection, taskId),
       });
       return;
     }
-    console.log(`claimed ${taskId} as ${owner}`);
+    console.log(`claimed ${taskRef(compactTaskFromProjection(projection, taskId))} as ${owner}`);
   } else {
     console.error(`claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`);
     process.exit(1);
@@ -870,11 +1036,11 @@ function cmdNext(args) {
         task_id: claimed[0].id,
         owner: String(owner),
         projection_path: outPath,
-        task: taskFromProjection(projection, claimed[0].id),
+        task: compactTaskFromProjection(projection, claimed[0].id),
       });
       return;
     }
-    console.log(`current ${claimed[0].id.slice(0, 8)} @${owner}`);
+    console.log(`current ${taskRef(compactTaskFromProjection(projection, claimed[0].id))} @${owner}`);
     console.log(claimed[0].title);
     return;
   }
@@ -912,11 +1078,11 @@ function cmdNext(args) {
       task_id: open[0].id,
       owner: String(owner),
       projection_path: outPath,
-      task: taskFromProjection(projection, open[0].id),
+      task: compactTaskFromProjection(projection, open[0].id),
     });
     return;
   }
-  console.log(`next ${open[0].id.slice(0, 8)} @${owner}`);
+  console.log(`next ${taskRef(compactTaskFromProjection(projection, open[0].id))} @${owner}`);
   console.log(open[0].title);
 }
 
@@ -945,11 +1111,11 @@ function cmdNote(args) {
       task_id: taskId,
       version: result.event.version,
       projection_path: outPath,
-      task: taskFromProjection(projection, taskId),
+      task: compactTaskFromProjection(projection, taskId),
     });
     return;
   }
-  console.log(`noted ${taskId} v${result.event.version}`);
+  console.log(`noted ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
 }
 
 function cmdShow(args) {
@@ -962,7 +1128,7 @@ function cmdShow(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task show');
-  const projection = taskDb.taskProjection(db, { taskId });
+  const projection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
   const task = projection.tasks[0];
   if (!task) {
     console.error(`task not found: ${id}`);
@@ -974,7 +1140,7 @@ function cmdShow(args) {
   }
   const owner = task.claimed_by ? ` / ${task.claimed_by}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
-  console.log(`${task.status.toUpperCase()} ${task.id} v${task.current_version}${owner}${tag}`);
+  console.log(`${task.status.toUpperCase()} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
   if (task.messages.length) {
     console.log('');
@@ -999,18 +1165,35 @@ function cmdDone(args) {
   const taskId = requireTaskId(taskDb, db, id, 'atris task done');
   const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done' });
   if (result.updated) {
+    const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+    const review = hasReview ? taskDb.reviewTask(db, {
+      id: taskId,
+      actor: String(flag(args, '--as') || DEFAULT_OWNER),
+      reward: flag(args, '--reward') || (failed ? 0 : 1),
+      lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
+      nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
+      proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+    }) : null;
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
       printJson({
         ok: true,
         action: failed ? 'failed' : 'done',
         task_id: taskId,
+        reviewed: Boolean(review && review.reviewed),
+        reward: review && review.episode ? review.episode.reward.value : null,
+        episode: review && review.episode || null,
         projection_path: outPath,
-        task: taskFromProjection(projection, taskId),
+        task: compactTaskFromProjection(projection, taskId),
       });
       return;
     }
-    console.log(`${failed ? 'failed' : 'done'} ${taskId}`);
+    const task = compactTaskFromProjection(projection, taskId);
+    if (review && review.reviewed) {
+      console.log(`${failed ? 'failed' : 'done'} ${taskRef(task)} reward=${review.episode.reward.value}`);
+    } else {
+      console.log(`${failed ? 'failed' : 'done'} ${taskRef(task)}`);
+    }
   } else {
     console.error(`done failed: ${taskId} not in open|claimed`);
     process.exit(1);
@@ -1055,14 +1238,14 @@ function cmdFinish(args) {
         episode: result.episode,
         next_task_id: nextCreated ? nextCreated.id : null,
         projection_path: outPath,
-        projection,
-        task: taskFromProjection(projection, taskId),
+        task: compactTaskFromProjection(projection, taskId),
+        next_task: nextCreated ? compactTaskFromProjection(projection, nextCreated.id) : null,
       });
       return;
     }
-    console.log(`finished ${taskId} reward=${result.episode.reward.value}`);
+    console.log(`finished ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${result.episode.reward.value}`);
     if (result.episode.next_task_suggestion) console.log(`next: ${result.episode.next_task_suggestion}`);
-    if (nextCreated) console.log(`created next ${nextCreated.id}`);
+    if (nextCreated) console.log(`created next ${taskRef(compactTaskFromProjection(projection, nextCreated.id))}`);
     return;
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -1073,11 +1256,11 @@ function cmdFinish(args) {
       task_id: taskId,
       reviewed: false,
       projection_path: outPath,
-      task: taskFromProjection(projection, taskId),
+      task: compactTaskFromProjection(projection, taskId),
     });
     return;
   }
-  console.log(`finished ${taskId}`);
+  console.log(`finished ${taskRef(compactTaskFromProjection(projection, taskId))}`);
 }
 
 function cmdReview(args) {
@@ -1120,14 +1303,14 @@ function cmdReview(args) {
       episode: result.episode,
       next_task_id: nextCreated ? nextCreated.id : null,
       projection_path: outPath,
-      projection,
-      task: taskFromProjection(projection, taskId),
+      task: compactTaskFromProjection(projection, taskId),
+      next_task: nextCreated ? compactTaskFromProjection(projection, nextCreated.id) : null,
     });
     return;
   }
-  console.log(`reviewed ${taskId} v${result.event.version} reward=${result.episode.reward.value}`);
+  console.log(`reviewed ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} reward=${result.episode.reward.value}`);
   if (result.episode.next_task_suggestion) console.log(`next: ${result.episode.next_task_suggestion}`);
-  if (nextCreated) console.log(`created next ${nextCreated.id}`);
+  if (nextCreated) console.log(`created next ${taskRef(compactTaskFromProjection(projection, nextCreated.id))}`);
 }
 
 function importTodoFile(taskDb, db, target) {
@@ -1207,25 +1390,48 @@ function cmdEvents(args) {
   const pos = positional(args);
   let taskId = pos[0] || null;
   const all = hasFlag(args, '--all');
+  const rawLimit = flag(args, '--limit');
+  const explicitLimit = rawLimit && rawLimit !== true ? Number(rawLimit) : null;
+  const defaultRecentLimit = 24;
+  const limit = explicitLimit || (taskId ? 500 : (all ? null : defaultRecentLimit));
   const taskDb = getTaskDb();
   const db = taskDb.open();
   if (taskId) taskId = requireTaskId(taskDb, db, taskId, 'atris task events');
   const events = taskDb.listTaskEvents(db, {
     taskId,
     workspaceRoot: all || taskId ? null : taskDb.workspaceRoot(),
-    limit: 500,
+    limit,
+    order: taskId || all ? 'asc' : 'desc',
   });
+  const refRows = taskDb.listTasks(db, {
+    workspaceRoot: all ? null : (taskId ? (taskDb.getTask(db, taskId) || {}).workspace_root : taskDb.workspaceRoot()),
+  });
+  const refById = taskDb.taskDisplayRefMap(refRows);
   if (wantsJson(args)) {
-    printJson({ ok: true, action: 'events', events });
+    printJson({
+      ok: true,
+      action: 'events',
+      task_id: taskId,
+      mode: taskId ? 'task' : (all ? 'ledger' : 'recent'),
+      limit,
+      events,
+    });
     return;
   }
   if (events.length === 0) {
     console.log('(no task events)');
     return;
   }
+  if (!taskId && !all) {
+    console.log('TASK EVENTS');
+    console.log(`recent ${events.length} event${events.length === 1 ? '' : 's'} (use --all for the full ledger, --limit N to adjust)`);
+    console.log('');
+    for (const e of events) console.log(formatTaskEventCompact(e, refById));
+    return;
+  }
   for (const e of events) {
     const actor = e.actor ? ` actor=${e.actor}` : '';
-    console.log(`${e.version}\t${e.event_type}\t${e.task_id}${actor}\t${JSON.stringify(e.payload || {})}`);
+    console.log(`${e.version}\t${e.event_type}\t${refById.get(e.task_id) || taskRef(e.task_id)}${actor}\t${JSON.stringify(e.payload || {})}`);
   }
 }
 
@@ -1292,13 +1498,15 @@ function cmdSetup(args) {
 function cmdRender(args) {
   const out = flag(args, '--out') || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
+  const doneLimitRaw = flag(args, '--done-limit');
+  const doneLimit = doneLimitRaw && doneLimitRaw !== true ? Number(doneLimitRaw) : undefined;
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const rows = taskDb.listTasks(db, {
     workspaceRoot: all ? null : taskDb.workspaceRoot(),
     limit: 500,
   });
-  const markdown = taskDb.renderTodoMarkdown(rows);
+  const markdown = taskDb.renderTodoMarkdown(rows, { doneLimit });
   const outPath = path.resolve(String(out));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, markdown, 'utf8');
@@ -1358,8 +1566,9 @@ function cmdSync(args) {
 
   console.log(`task sync dry-run: ${plan.length} planned write${plan.length === 1 ? '' : 's'}`);
   console.log(`business: ${businessId}`);
+  const refById = taskDb.taskDisplayRefMap(projection.tasks || []);
   for (const item of plan) {
-    console.log(`${item.method.padEnd(5)} ${item.endpoint} <= ${item.local_task_id.slice(0, 8)} ${item.body.title}`);
+    console.log(`${item.method.padEnd(5)} ${item.endpoint} <= ${refById.get(item.local_task_id) || taskRef(item.local_task_id)} ${item.body.title}`);
     for (const followup of item.after_create || []) {
       console.log(`      then ${followup.method} ${followup.endpoint} state=${followup.body.state}`);
     }
@@ -1367,7 +1576,7 @@ function cmdSync(args) {
 }
 
 function taskColumn(task) {
-  if (task.status === 'open') return 'open';
+  if (task.status === 'open') return taskIsPlannedOpen(task) ? 'open' : 'backlog';
   if (task.status === 'claimed') return 'doing';
   if (task.status === 'failed') return 'blocked';
   if (task.status === 'done' && task.latest_event_type !== 'reviewed') return 'review';
@@ -1441,7 +1650,7 @@ function taskBoardHtml() {
   <header>
     <div>
       <h1>Atris Task Factory</h1>
-      <div class="sub">local durable tasks / Swarlo-ready event stream</div>
+      <div class="sub" data-smoke="hello-from-ui">hello from UI</div>
     </div>
     <button id="refresh">Refresh</button>
   </header>
@@ -1466,12 +1675,14 @@ function taskBoardHtml() {
   </main>
   <script>
     const columns = [
+      ['backlog', 'Backlog'],
       ['open', 'Open'],
       ['doing', 'Doing'],
       ['review', 'Review'],
       ['blocked', 'Blocked'],
       ['done', 'Done']
     ];
+    const planTags = new Set(${JSON.stringify(Array.from(STATUS_PLAN_TAGS))});
     let state = { tasks: [] };
     let selected = null;
     const $ = (id) => document.getElementById(id);
@@ -1487,7 +1698,13 @@ function taskBoardHtml() {
     }
 
     function taskColumn(task) {
-      if (task.status === 'open') return 'open';
+      if (task.status === 'open') {
+        const metadata = task.metadata || {};
+        const tag = String(task.tag || '').trim().toLowerCase().replace(/\\s+/g, '-');
+        const stage = String(metadata.stage || '').trim().toLowerCase().replace(/\\s+/g, '-');
+        const planned = planTags.has(tag) || planTags.has(stage) || metadata.verify || metadata.goal || metadata.loop || metadata.cron || metadata.next_run_at;
+        return planned ? 'open' : 'backlog';
+      }
       if (task.status === 'claimed') return 'doing';
       if (task.status === 'failed') return 'blocked';
       if (task.status === 'done' && task.latest_event_type !== 'reviewed') return 'review';
@@ -1531,7 +1748,7 @@ function taskBoardHtml() {
         : '<div class="empty">No atris/goals.md found. Add goals to give tasks a north star.</div>';
       const latest = reviewed.slice(0, 3);
       const chainHtml = latest.length
-        ? latest.map((task) => '<div class="chainitem"><span>' + task.id.slice(0, 8) + '</span><strong></strong></div>').join('')
+        ? latest.map((task) => '<div class="chainitem"><span>' + (task.display_id || task.id.slice(0, 8)) + '</span><strong></strong></div>').join('')
         : '<div class="empty">Complete a task with proof to start the chain.</div>';
       $('overview').innerHTML = [
         '<div class="goalbox"><h2>Goals</h2>' + goalHtml + '</div>',
@@ -1562,7 +1779,7 @@ function taskBoardHtml() {
         };
         const tasks = stream.tasks.filter((task) => task.status !== 'done').slice(0, 3);
         const taskHtml = tasks.length
-          ? tasks.map((task) => '<div class="streamtask"><span>' + task.id.slice(0, 8) + '</span><strong></strong></div>').join('')
+          ? tasks.map((task) => '<div class="streamtask"><span>' + (task.display_id || task.id.slice(0, 8)) + '</span><strong></strong></div>').join('')
           : '<div class="empty">No active tasks in this stream.</div>';
         return [
           '<div class="stream">',
@@ -1588,7 +1805,7 @@ function taskBoardHtml() {
       btn.innerHTML = '<div class="title"></div><div class="meta"><span class="pill"></span><span class="pill"></span><span class="pill"></span></div><div class="why"></div>';
       btn.querySelector('.title').textContent = task.title;
       const pills = btn.querySelectorAll('.pill');
-      pills[0].textContent = task.id.slice(0, 8);
+      pills[0].textContent = task.display_id || task.id.slice(0, 8);
       pills[1].textContent = owner;
       pills[2].textContent = 'v' + task.current_version;
       const why = task.objective || (task.lineage && task.lineage.parent_title) || (task.review && task.review.proof) || '';
@@ -1811,6 +2028,7 @@ function cmdServe(args) {
 
 async function run(args) {
   const raw = args || [];
+  if (raw.includes('--help') || raw.includes('-h')) return help();
   const first = raw[0];
   const sub = !first || first.startsWith('--') ? 'desk' : first;
   const rest = !first || first.startsWith('--') ? raw : raw.slice(1);

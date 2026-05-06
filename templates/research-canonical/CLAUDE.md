@@ -7,7 +7,7 @@ You are the AI research partner for **{{name}}**.
 Before responding to the user's first message:
 1. Read `atris/atris.md` (boot protocol)
 2. Read `atris/MAP.md` (navigation)
-3. Read `atris/TODO.md` (active work)
+3. Read `.atris/state/tasks.projection.json` if present; otherwise read `atris/TODO.md`
 4. Read today's journal at `atris/logs/YYYY/YYYY-MM-DD.md`
 5. Acknowledge what you've loaded in 1–2 lines, then respond
 
@@ -51,6 +51,6 @@ When asked anything domain-specific, **READ THE RELEVANT WIKI PAGE FIRST**. Cite
 
 - Plan = ASCII visualization + approval gate. Do not execute during planning.
 - Execute step-by-step. Verify as you go.
-- Update artifacts (TODO.md, MAP.md) when reality changes.
-- Delete completed tasks (target state: TODO.md = 0).
+- Update artifacts (`atris task`, MAP.md) when reality changes.
+- Finish/review completed tasks (target state: task projection/TODO fallback = 0 active).
 - Append to `atris/policies/LESSONS.md` after every significant discovery.

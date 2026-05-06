@@ -111,6 +111,11 @@ This lets the UI stay intuitive without changing the durable contract too early.
 
 ## CLI Usage
 
+`<task_ref>` can be a semantic human ref like `OBL-18`, the same ref without
+the dash (`OBL18`), the full 26-character task ID, or any unique legacy prefix.
+Human views should show semantic refs; JSON/API callers should keep using the
+full `id` as canonical and treat `display_id` / `legacy_ref` as aliases.
+
 Create a task:
 
 ```bash
@@ -144,25 +149,25 @@ atris task next --as codex
 Claim a specific task:
 
 ```bash
-atris task claim <task_id> --as codex
+atris task claim <task_ref> --as codex
 ```
 
 Add context to the task thread:
 
 ```bash
-atris task say <task_id> "User wants to see who is doing what" --as codex
+atris task say <task_ref> "User wants to see who is doing what" --as codex
 ```
 
 Finish with proof:
 
 ```bash
-atris task finish <task_id> --proof "npm run typecheck && npm run build passed" --as codex
+atris task finish <task_ref> --proof "npm run typecheck && npm run build passed" --as codex
 ```
 
 Record review, lesson, and the next task:
 
 ```bash
-atris task review <task_id> \
+atris task review <task_ref> \
   --reward 1 \
   --proof "verified in Atris Desktop" \
   --lesson "small task rooms beat global TODO files" \
@@ -180,6 +185,14 @@ Get the compact live status for agents, web apps, and Swarlo:
 ```bash
 atris task status --json
 ```
+
+Regenerate `TODO.md` as a current-work fallback, not a history dump:
+
+```bash
+atris task render --out atris/TODO.md
+```
+
+Completed tasks are capped in the rendered view by default; use `atris task list --status done`, `atris task show <id>`, or `atris task events <id>` for the durable record.
 
 ## Delegation
 
@@ -201,6 +214,8 @@ Every state change refreshes:
 
 That projection is intentionally compact and UI-friendly.
 
+It is the cockpit, not the ledger: older completed tasks are hidden behind `surface.hidden_done_count`, per-task events are capped, and per-task dialogue is capped.
+
 It includes:
 
 ```text
@@ -210,6 +225,8 @@ tag
 claimed_by
 current_version
 latest_event_type
+history counts
+surface archive counts
 messages
 events
 review proof
@@ -358,12 +375,18 @@ Use `atris task status --json` when a web or desktop surface needs the small liv
 counts
 current task
 next task
+parked backlog count
 needs review
 goal streams
-recent Swarlo-shaped feed events
 ```
 
-Use the full `.atris/state/tasks.projection.json` only when rendering a detailed task room.
+The default status card omits task thread bodies, events, recent feed records, empty review fields, empty lineage, empty metadata, and workspace-level archival detail.
+It is for the operator glance, not for rendering the full task room.
+Open tasks without an explicit plan/agent/goal/schedule signal count as backlog, not the next decision.
+Task action JSON such as `new`, `claim`, `finish`, and `review` returns the same compact task card plus `projection_path`; consumers that need the full room should read the projection explicitly.
+
+Use `atris task status --json --history` only when a worker/debug surface needs recent Swarlo-shaped feed events and the last event card.
+Use `atris task show <id> --json`, `atris task events <id>`, or `atris task events --all` when a validator needs the full trail.
 
 The web UI should show the same work loop:
 

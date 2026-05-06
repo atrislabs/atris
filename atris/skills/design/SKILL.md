@@ -54,6 +54,8 @@ Font alternatives: instead of Inter → Instrument Sans, Plus Jakarta Sans, Outf
 
 **Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
+**Labels:** never use all-caps UI labels, tracked-uppercase labels, faux small-caps, or eyebrow-style microcopy for ordinary product surfaces. Keshav strongly dislikes this style. Prefer natural title case or sentence case for labels like "Threads", "Active tasks", and "Team"; do not write them as `THREADS`, `ACTIVE TASKS`, or letter-spaced metadata.
+
 **Visual anti-patterns:** no glassmorphism, no gradient text, no sparklines as decoration, no rounded-rect-with-colored-border, no large icons with rounded corners above headings, no hero metric layout (big number + small label), no modals unless truly necessary.
 
 ## The AI Slop Test

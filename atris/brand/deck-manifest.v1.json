@@ -1,0 +1,84 @@
+{
+  "id": "atris-deck-manifest",
+  "version": "1.0.0",
+  "purpose": "Contract for turning the Atris brain into a spectacle-grade pitch deck and explorable dynamic page.",
+  "styleRef": "atris/brand/product-surface.v1.json",
+  "blockRef": "atris/brand/block-system.v1.json",
+  "positioning": {
+    "oneLine": "Atris turns brain state into working software surfaces.",
+    "deckMetaphor": "The deck is the creation and manifestation from the brain.",
+    "productMetaphor": "A dynamic page is a living deck where each claim is backed by blocks.",
+    "flipbookContrast": "Pure pixels are magic; blocks are magic you can edit, rerun, verify, and turn into an app."
+  },
+  "slideBlocks": [
+    {
+      "id": "origin",
+      "type": "deck",
+      "headline": "The brain becomes the product",
+      "purpose": "Show that context, memory, tasks, apps, and generated media become one rendered surface."
+    },
+    {
+      "id": "blocks",
+      "type": "deck",
+      "headline": "Blocks are manifestation units",
+      "purpose": "Explain app, code, image, deck, and receipt blocks as composable primitives."
+    },
+    {
+      "id": "apps",
+      "type": "app",
+      "headline": "APP.md says what the customer gets",
+      "purpose": "Connect app manifests to rendered product blocks."
+    },
+    {
+      "id": "generative-ui",
+      "type": "code",
+      "headline": "The surface appears on demand",
+      "purpose": "Show generated UI assembled from block schemas, not hand-made static pages."
+    },
+    {
+      "id": "imagegen",
+      "type": "image",
+      "headline": "The product can visualize itself",
+      "purpose": "Use AtrisOS-theme image generation as a first-class block output."
+    },
+    {
+      "id": "proof",
+      "type": "receipt",
+      "headline": "Every spectacle has receipts",
+      "purpose": "Show prompts, code, assets, checks, and lineage behind the deck."
+    }
+  ],
+  "prototypeFlow": [
+    "User states the pitch or product idea.",
+    "Atris loads memory, APP.md manifests, and block schemas.",
+    "Code blocks extract the story and build live UI.",
+    "Image blocks create AtrisOS-theme visuals.",
+    "Deck blocks compose the spectacle presentation.",
+    "Receipt blocks prove each artifact and action."
+  ],
+  "dynamicDeck": {
+    "definition": "A presentation that behaves like a live product surface: each slide is a block-backed scene that can explain, generate, execute, inspect, and transform while the viewer watches.",
+    "interactionModel": [
+      "Presenter can ask the deck to explain any claim.",
+      "Audience can click a region and reveal the block behind it.",
+      "A slide can generate a new visual or UI state live.",
+      "A code block can run and update the slide output.",
+      "A receipt pane can show provenance for prompts, files, assets, and checks."
+    ],
+    "sceneTypes": {
+      "narrative": "Founder story, market insight, product thesis.",
+      "modelGenerated": "AtrisOS-theme image or video-like visual generated from the current idea.",
+      "structuredUi": "Real UI panel generated from block schemas.",
+      "liveCode": "Runnable prototype or transform shown inside the deck.",
+      "appManifest": "APP.md-backed customer app surface.",
+      "proof": "Receipts and validation state."
+    },
+    "antiGoal": "Do not make a static slide deck with pretty screenshots. The deck should be the product performing."
+  },
+  "nonNegotiables": [
+    "The deck must feel like the product, not a document about the product.",
+    "The dynamic page must be explorable, with visible block lineage.",
+    "The image style must use the AtrisOS product-surface contract.",
+    "Every slide should be representable as a block."
+  ]
+}

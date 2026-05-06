@@ -3,6 +3,7 @@
  *
  * Usage:
  *   atris feedback "message here"              Submit feedback
+ *   atris feedback submit "message here"       Submit feedback
  *   atris feedback                              List feedback
  *   atris feedback list                         List feedback
  *   atris feedback resolve <id> "<resolution>"  Mark resolved (admin)
@@ -17,6 +18,17 @@ const fs = require('fs');
 const path = require('path');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+
+const KNOWN_FEEDBACK_COMMANDS = new Set([
+  'list',
+  'submit',
+  'resolve',
+  'close',
+  'delete',
+  'help',
+  '--help',
+  '-h',
+]);
 
 function getAuth() {
   const creds = loadCredentials();
@@ -206,20 +218,21 @@ async function deleteFeedback(idPrefix) {
   console.log(`Deleted ${lookup.id.substring(0, 8)}`);
 }
 
-function printHelp() {
-  console.log('');
-  console.log('Usage:');
-  console.log('  atris feedback "message"               Submit feedback (global)');
-  console.log('  atris feedback "msg" --business <slug> Submit feedback tagged to a business');
-  console.log('  atris feedback                         List feedback');
-  console.log('  atris feedback list                    List feedback');
-  console.log('  atris feedback resolve <id> "<note>"   Mark resolved (admin)');
-  console.log('  atris feedback close <id>              Close as wontfix (admin)');
-  console.log('  atris feedback delete <id>             Delete feedback (admin)');
-  console.log('');
-  console.log('IDs may be the first 8 chars of the UUID.');
-  console.log('Business slugs come from ~/.atris/businesses.json (e.g. pallet, atris-labs-1).');
-  console.log('');
+function printHelp(write = console.log) {
+  write('');
+  write('Usage:');
+  write('  atris feedback "message"               Submit quoted feedback (global)');
+  write('  atris feedback submit "message"        Submit feedback (global)');
+  write('  atris feedback submit "msg" --business <slug>');
+  write('  atris feedback                         List feedback');
+  write('  atris feedback list                    List feedback');
+  write('  atris feedback resolve <id> "<note>"   Mark resolved (admin)');
+  write('  atris feedback close <id>              Close as wontfix (admin)');
+  write('  atris feedback delete <id>             Delete feedback (admin)');
+  write('');
+  write('IDs may be the first 8 chars of the UUID.');
+  write('Business slugs come from ~/.atris/businesses.json (e.g. pallet, atris-labs-1).');
+  write('');
 }
 
 function resolveBusinessArg(value) {
@@ -256,6 +269,21 @@ function extractFlag(args, ...names) {
   return [value, remaining];
 }
 
+function directFeedbackMessage(args) {
+  if (args.length !== 1) return null;
+  const message = String(args[0] || '').trim();
+  if (!message || KNOWN_FEEDBACK_COMMANDS.has(message)) return null;
+  // The direct form is intentionally only for quoted prose. Otherwise tokens
+  // like "show <id>" or "bogus-subcommand" look like commands and must fail.
+  return /\s/.test(message) ? message : null;
+}
+
+function rejectUnknownFeedbackCommand(subcommand) {
+  console.error(`Unknown feedback command: ${subcommand || '(empty)'}`);
+  printHelp(console.error);
+  process.exit(1);
+}
+
 async function feedbackCommand() {
   const rawArgs = process.argv.slice(3);
   const [businessArg, args] = extractFlag(rawArgs, '--business', '-b');
@@ -277,6 +305,12 @@ async function feedbackCommand() {
     return;
   }
 
+  if (subcommand === 'submit') {
+    const message = args.slice(1).join(' ');
+    await submitFeedback(message, { businessId });
+    return;
+  }
+
   if (subcommand === 'resolve') {
     const id = args[1];
     const resolution = args.slice(2).join(' ');
@@ -294,9 +328,13 @@ async function feedbackCommand() {
     return;
   }
 
-  // Everything else is a feedback message
-  const message = args.join(' ');
-  await submitFeedback(message, { businessId });
+  const message = directFeedbackMessage(args);
+  if (message) {
+    await submitFeedback(message, { businessId });
+    return;
+  }
+
+  rejectUnknownFeedbackCommand(subcommand);
 }
 
 module.exports = { feedbackCommand };
