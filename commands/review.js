@@ -131,15 +131,16 @@ function runReview(args) {
 
 async function reviewCommand(...args) {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    console.log('Usage: atris review [file] [options]');
+    console.log('Usage: atris code-review [file] [options]   (alias: atris cr)');
     console.log('');
-    console.log('  atris review                   Review staged changes');
-    console.log('  atris review <file.py>         Review a specific file');
-    console.log('  atris review --diff HEAD~1     Review last commit');
-    console.log('  atris review --all             Audit all backend services');
-    console.log('  atris review --json            Machine-readable output');
+    console.log('  atris code-review                   Review staged changes');
+    console.log('  atris code-review <file.py>         Review a specific file');
+    console.log('  atris code-review --diff HEAD~1     Review last commit');
+    console.log('  atris code-review --all             Audit all backend services');
+    console.log('  atris code-review --json            Machine-readable output');
     console.log('');
     console.log('6 specialists: Security, Testing, Performance, Maintainability, Database, Async');
+    console.log('Note: this is distinct from `atris review` (the workflow validator step).');
     return;
   }
 
