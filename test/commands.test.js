@@ -629,7 +629,7 @@ test('member wake creates a missing task from member-room evidence', () => {
     fs.mkdirSync(threadDir, { recursive: true });
     fs.writeFileSync(path.join(threadDir, 'room.json'), JSON.stringify({
       id: 'room-one',
-      updatedAt: 1778058300000,
+      updatedAt: Date.now(),
       atrisContext: {
         teamMember: 'command-leader',
         linkedTasks: [],

@@ -71,7 +71,8 @@ function cleanAtris(options = {}) {
 
   // Healed refs
   if (healed > 0) {
-    console.log(`✓ Healed ${healed} MAP.md reference(s)`);
+    const verb = options.dryRun ? 'Would heal' : 'Healed';
+    console.log(`✓ ${verb} ${healed} MAP.md reference(s)`);
   }
 
   // Unhealable refs
@@ -90,14 +91,16 @@ function cleanAtris(options = {}) {
 
   // Archived journals
   if (archived > 0) {
-    console.log(`✓ Archived ${archived} old journal(s)`);
+    const verb = options.dryRun ? 'Would archive' : 'Archived';
+    console.log(`✓ ${verb} ${archived} old journal(s)`);
   } else {
     console.log('✓ No journals need archiving');
   }
 
   // Cleaned sections
   if (cleaned > 0) {
-    console.log(`✓ Cleaned ${cleaned} empty section(s)`);
+    const verb = options.dryRun ? 'Would clean' : 'Cleaned';
+    console.log(`✓ ${verb} ${cleaned} empty section(s)`);
   }
 
   console.log('');

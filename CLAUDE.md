@@ -430,7 +430,7 @@ These are anti-patterns. Don't do them:
 This workspace has a compiled agent brain.
 
 On session start, activate it first:
-`atris brain activate --root /Users/keshavrao/arena/atris-cli --verify`
+`atris brain activate --root /Users/keshavrao/arena/empire/atris-cli --verify`
 
 Load these first:
 - `atris/now.md`
@@ -447,5 +447,5 @@ Shape: `<operator>, today is about <move>` -> `I picked this because <why now>` 
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 
 Re-run after meaningful work:
-`atris brain compile --root /Users/keshavrao/arena/atris-cli`
+`atris brain compile --root /Users/keshavrao/arena/empire/atris-cli`
 <!-- ATRIS_BRAIN_COMPILE:END -->
