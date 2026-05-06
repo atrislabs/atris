@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { execFileSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -331,6 +332,87 @@ function missionPurpose(paths) {
   };
 }
 
+function loadTeamScoreEvidence(scoreJsonPath) {
+  const sourcePath = String(scoreJsonPath || '').trim();
+  try {
+    if (sourcePath) {
+      const raw = sourcePath === '-'
+        ? fs.readFileSync(0, 'utf8')
+        : fs.readFileSync(path.resolve(process.cwd(), sourcePath), 'utf8');
+      return {
+        ok: true,
+        source: sourcePath === '-' ? 'stdin' : path.relative(process.cwd(), path.resolve(process.cwd(), sourcePath)),
+        parsed: JSON.parse(raw),
+      };
+    }
+    const scoreScript = path.join(process.cwd(), 'scripts', 'team-overall-score.mjs');
+    if (!fs.existsSync(scoreScript)) {
+      return {
+        ok: false,
+        source: null,
+        error: 'No --score-json was provided and scripts/team-overall-score.mjs was not found.',
+      };
+    }
+    const raw = execFileSync(process.execPath, [scoreScript, '--json'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return {
+      ok: true,
+      source: 'scripts/team-overall-score.mjs --json',
+      parsed: JSON.parse(raw),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: sourcePath || null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function normalizeTeamScoreEvidence(parsed, source) {
+  const score = parsed?.score || parsed || {};
+  const dimensions = Array.isArray(score.dimensions) ? score.dimensions : [];
+  const weakest = score.weakest || dimensions.slice().sort((a, b) => Number(a.score || 0) - Number(b.score || 0))[0] || null;
+  const nextMove = compactSentence(
+    score.nextMove
+      || (weakest ? `Raise ${weakest.label || weakest.id || 'Team Overall'}: ${weakest.recommendation || 'Run one verified improvement loop.'}` : ''),
+    220,
+  );
+  if (!nextMove || !weakest) return null;
+  const latestReward = parsed?.taskLedger?.latestReward || parsed?.latestReward || null;
+  return {
+    source: source || 'unknown',
+    overall: Number.isFinite(Number(score.overall)) ? Number(score.overall) : null,
+    formula: score.formula || null,
+    next_move: nextMove,
+    weakest: {
+      id: weakest.id || null,
+      label: weakest.label || weakest.id || 'Team Overall',
+      score: Number.isFinite(Number(weakest.score)) ? Number(weakest.score) : null,
+      recommendation: weakest.recommendation || null,
+      evidence: weakest.evidence || null,
+    },
+    latest_reward: latestReward ? {
+      ref: latestReward.ref || latestReward.display_id || latestReward.id || null,
+      title: latestReward.title || null,
+      reward: latestReward.reward == null ? null : Number.isFinite(Number(latestReward.reward)) ? Number(latestReward.reward) : null,
+      proof: latestReward.proof || null,
+    } : null,
+    generated_at: parsed?.generated_at || parsed?.generatedAt || parsed?.created_at || null,
+  };
+}
+
+function latestRewardLine(latestReward) {
+  if (!latestReward) return 'no latest reward receipt';
+  const ref = latestReward.ref ? `${latestReward.ref} ` : '';
+  const reward = latestReward.reward == null ? '' : ` reward ${latestReward.reward}`;
+  const proof = latestReward.proof ? ` - ${compactSentence(latestReward.proof, 120)}` : '';
+  return `${ref}${latestReward.title || 'latest reviewed task'}${reward}${proof}`.trim();
+}
+
 function readSteeringMemory(paths, name) {
   if (!fs.existsSync(paths.steeringJsonl)) return [];
   const records = [];
@@ -346,6 +428,7 @@ function readSteeringMemory(paths, name) {
         id: record.id,
         kind: record.kind || 'preference',
         created_at: record.created_at || null,
+        raw: record.raw || null,
         memory: Array.isArray(record.memory) ? record.memory.filter(Boolean).slice(0, 8) : [],
         anti_patterns: Array.isArray(record.anti_patterns) ? record.anti_patterns.filter(Boolean).slice(0, 8) : [],
         applies_to: Array.isArray(record.applies_to) ? record.applies_to.filter(Boolean).slice(0, 8) : [],
@@ -355,6 +438,385 @@ function readSteeringMemory(paths, name) {
     return [];
   }
   return records.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 12);
+}
+
+const WAKE_DIRECTIVE_DECISIONS = new Set(['close_loop', 'report_proof', 'create_missing_task', 'ask', 'wait']);
+const CLOSED_TASK_STATUSES = new Set(['done', 'complete', 'completed', 'reviewed', 'failed', 'stopped', 'closed', 'cancelled', 'canceled']);
+
+function parseWakeDirectiveLine(line) {
+  const match = String(line || '').match(/\bwake directive:\s*(close_loop|report_proof|create_missing_task|ask|wait)\b(?:\s*[-:]\s*(.*))?/i);
+  if (!match) return null;
+  return {
+    decision: match[1].toLowerCase(),
+    note: compactSentence(match[2] || '', 180),
+  };
+}
+
+function commandForWakeDirective(name, directive, goal) {
+  const note = directive.note || goal?.title || 'self-improvement loop';
+  if (directive.decision === 'close_loop') return `atris task next --json`;
+  if (directive.decision === 'report_proof') return `atris task note ${note}`;
+  if (directive.decision === 'create_missing_task') return `atris task delegate "${note}" --to ${name} --tag agent`;
+  if (directive.decision === 'ask') return `ask: ${note}`;
+  return `atris member loop ${name} --status --json`;
+}
+
+function taskRefsFromText(text) {
+  return [...new Set(String(text || '').match(/\b[A-Z]{2,10}-\d+\b/gi)?.map((ref) => ref.toUpperCase()) || [])];
+}
+
+function steeringWakeDirective(steering, name, goal) {
+  for (const record of steering || []) {
+    const lines = [...(record.memory || []), record.raw || ''];
+    const task_refs = taskRefsFromText(lines.join('\n'));
+    for (const line of lines) {
+      const parsed = parseWakeDirectiveLine(line);
+      if (!parsed || !WAKE_DIRECTIVE_DECISIONS.has(parsed.decision)) continue;
+      return {
+        ...parsed,
+        steering_id: record.id || null,
+        task_refs,
+        next_command: commandForWakeDirective(name, parsed, goal),
+      };
+    }
+  }
+  return null;
+}
+
+function taskRef(task) {
+  return task?.display_id || task?.displayId || task?.legacy_ref || task?.legacyRef || task?.ref || task?.id || null;
+}
+
+function lowerCompact(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function taskCandidateOwnerValues(task) {
+  return [
+    task?.claimed_by,
+    task?.claimedBy,
+    task?.assigned_to,
+    task?.assignedTo,
+    task?.owner,
+    task?.metadata?.assigned_to,
+    task?.metadata?.assignedTo,
+    task?.metadata?.owner,
+    task?.atrisContext?.teamMember,
+  ].filter(Boolean).map(lowerCompact);
+}
+
+function taskBelongsToMember(task, name) {
+  return taskCandidateOwnerValues(task).includes(lowerCompact(name));
+}
+
+function taskHasReviewProof(task) {
+  if (task?.review?.proof) return true;
+  if (task?.proof) return true;
+  return (task?.events || []).some((event) => event?.payload?.proof || event?.payload?.review?.proof);
+}
+
+function taskCandidateFromSource(task, source, sourcePath = '') {
+  const ref = taskRef(task);
+  if (!ref) return null;
+  const status = lowerCompact(task.status || task.state || 'open');
+  const title = compactSentence(task.title || task.summary || ref, 120);
+  const base = {
+    source,
+    source_path: sourcePath || null,
+    task_ref: ref,
+    title,
+    status,
+    claimed_by: task.claimed_by || task.claimedBy || null,
+    assigned_to: task.assigned_to || task.assignedTo || task.owner || task.metadata?.assigned_to || task.metadata?.owner || null,
+    proof: task.review?.proof || task.proof || null,
+    updated_at: task.updated_at || task.updatedAt || task.done_at || task.created_at || task.createdAt || null,
+  };
+
+  if (['blocked', 'needs_you', 'needs-user', 'needs_user'].includes(status)) {
+    return {
+      ...base,
+      decision: 'ask',
+      ask: compactSentence(task.blocker || task.block?.ask || task.review?.next_task || `Need operator input for ${ref}.`, 180),
+      next_command: `atris task show ${ref} --json`,
+    };
+  }
+
+  if (['open', 'backlog', 'claimed', 'in_progress', 'in-progress', 'working', 'plan', 'do', 'review', 'ready'].includes(status)) {
+    const alreadyClaimedByMember = lowerCompact(base.claimed_by) === lowerCompact(base.assigned_to);
+    return {
+      ...base,
+      decision: 'close_loop',
+      ask: null,
+      next_command: alreadyClaimedByMember
+        ? `atris task note ${ref} "Closing nearest open loop: ${title}"`
+        : `atris task claim ${ref} --as ${base.assigned_to || 'member'}`,
+    };
+  }
+
+  if (status === 'done' && !taskHasReviewProof(task)) {
+    return {
+      ...base,
+      decision: 'report_proof',
+      ask: null,
+      next_command: `atris task note ${ref} "Report proof for completed loop: ${title}"`,
+    };
+  }
+
+  return null;
+}
+
+function taskIsClosed(task) {
+  if (!task) return false;
+  const status = lowerCompact(task.status || task.state || '');
+  if (CLOSED_TASK_STATUSES.has(status)) return true;
+  return Boolean(task.done_at || task.doneAt) && !['open', 'backlog', 'claimed', 'in_progress', 'in-progress', 'working', 'plan', 'do', 'review', 'ready'].includes(status);
+}
+
+function taskProjectionRows() {
+  const projectionPath = path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json');
+  const projection = readJsonIfExists(projectionPath);
+  return Array.isArray(projection?.tasks) ? projection.tasks : [];
+}
+
+function findProjectionTaskByRef(ref) {
+  const wanted = String(ref || '').toUpperCase();
+  return taskProjectionRows().find((task) => String(taskRef(task) || '').toUpperCase() === wanted) || null;
+}
+
+function readTaskShowByRef(ref) {
+  try {
+    const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+    const output = execFileSync(process.execPath, [cliPath, 'task', 'show', ref, '--json'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+    });
+    const parsed = JSON.parse(output || '{}');
+    return parsed?.task || parsed || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveTaskRefStatus(ref) {
+  const projectionTask = findProjectionTaskByRef(ref);
+  if (projectionTask) {
+    return {
+      ref,
+      found: true,
+      source: 'task_projection',
+      status: projectionTask.status || projectionTask.state || null,
+      closed: taskIsClosed(projectionTask),
+    };
+  }
+  const shownTask = readTaskShowByRef(ref);
+  if (shownTask) {
+    return {
+      ref,
+      found: true,
+      source: 'task_show',
+      status: shownTask.status || shownTask.state || null,
+      closed: taskIsClosed(shownTask),
+    };
+  }
+  return {
+    ref,
+    found: false,
+    source: null,
+    status: null,
+    closed: false,
+  };
+}
+
+function steeringDirectiveClosure(directive) {
+  const refs = Array.isArray(directive?.task_refs) ? directive.task_refs : [];
+  const tasks = refs.map(resolveTaskRefStatus);
+  const missing_refs = tasks.filter((task) => !task.found).map((task) => task.ref);
+  const open_refs = tasks.filter((task) => task.found && !task.closed).map((task) => task.ref);
+  const closed_refs = tasks.filter((task) => task.found && task.closed).map((task) => task.ref);
+  return {
+    steering_id: directive?.steering_id || null,
+    task_refs: refs,
+    tasks,
+    closed_refs,
+    open_refs,
+    missing_refs,
+    all_closed: refs.length > 0 && open_refs.length === 0 && missing_refs.length === 0,
+  };
+}
+
+function candidatePriority(candidate) {
+  const decisionPriority = {
+    ask: 4,
+    close_loop: 3,
+    report_proof: 2,
+    create_missing_task: 1,
+  }[candidate?.decision] || 0;
+  const sourcePriority = {
+    task_projection: 3,
+    member_room: 2,
+    member_room_unlinked_request: 2,
+  }[candidate?.source] || 0;
+  return decisionPriority * 10 + sourcePriority;
+}
+
+function sortEvidenceCandidates(candidates) {
+  return candidates
+    .filter(Boolean)
+    .slice()
+    .sort((a, b) => {
+      const byPriority = candidatePriority(b) - candidatePriority(a);
+      if (byPriority) return byPriority;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    });
+}
+
+function readTaskProjectionEvidence(name) {
+  const projectionPath = path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json');
+  const projection = readJsonIfExists(projectionPath);
+  const tasks = taskProjectionRows();
+  const candidates = sortEvidenceCandidates(
+    tasks
+      .filter((task) => taskBelongsToMember(task, name))
+      .map((task) => taskCandidateFromSource(task, 'task_projection', projectionPath)),
+  );
+  return {
+    path: projectionPath,
+    exists: Boolean(projection),
+    task_count: tasks.length,
+    candidate_count: candidates.length,
+    nearest: candidates[0] || null,
+  };
+}
+
+function listThreadJsonFiles(root) {
+  if (!root || !fs.existsSync(root)) return [];
+  const out = [];
+  try {
+    for (const entry of fs.readdirSync(root)) {
+      const projectPath = path.join(root, entry);
+      let stat = null;
+      try {
+        stat = fs.statSync(projectPath);
+      } catch {
+        continue;
+      }
+      if (stat.isFile() && entry.endsWith('.json')) {
+        out.push({ path: projectPath, mtimeMs: stat.mtimeMs });
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
+      for (const file of fs.readdirSync(projectPath)) {
+        if (!file.endsWith('.json')) continue;
+        const fullPath = path.join(projectPath, file);
+        try {
+          const fileStat = fs.statSync(fullPath);
+          out.push({ path: fullPath, mtimeMs: fileStat.mtimeMs });
+        } catch {
+          // ignore unreadable thread files
+        }
+      }
+    }
+  } catch {
+    return [];
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 80);
+}
+
+function latestActionableUserLine(thread) {
+  const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+  for (const message of messages.slice().reverse()) {
+    if (message?.role !== 'user') continue;
+    const text = compactSentence(message.text || message.content || '', 140);
+    if (!text) continue;
+    if (/\b(did you|was it|status|check if|quick check|what happened|what's happening)\b/i.test(text)) continue;
+    if (/\b(fix|build|add|wire|prove|ship|close|make|implement|update|create)\b/i.test(text)) return text;
+  }
+  return '';
+}
+
+function readMemberRoomEvidence(name) {
+  const roots = [path.join(process.cwd(), '.obelisk', 'threads')];
+  const projectsPath = path.join(os.homedir(), '.obelisk', 'projects.json');
+  const projects = readJsonIfExists(projectsPath);
+  if (Array.isArray(projects)) {
+    const cwd = path.resolve(process.cwd());
+    const project = projects.find((item) => item?.path && path.resolve(item.path) === cwd && item.id);
+    if (project) roots.push(path.join(os.homedir(), '.obelisk', 'threads', project.id));
+  }
+  const seen = new Set();
+  const candidates = [];
+  let files_checked = 0;
+  for (const root of roots) {
+    for (const item of listThreadJsonFiles(root)) {
+      if (seen.has(item.path)) continue;
+      seen.add(item.path);
+      const thread = readJsonIfExists(item.path);
+      files_checked += 1;
+      const context = thread?.atrisContext || {};
+      const linkedTasks = Array.isArray(context.linkedTasks) ? context.linkedTasks : [];
+      const threadMember = lowerCompact(context.teamMember) === lowerCompact(name);
+      for (const linked of linkedTasks) {
+        const owned = lowerCompact(linked?.owner || linked?.teamMember || context.teamMember) === lowerCompact(name);
+        if (!owned) continue;
+        const candidate = taskCandidateFromSource(linked, 'member_room', item.path);
+        if (candidate) candidates.push(candidate);
+      }
+      if (threadMember && linkedTasks.length === 0) {
+        const updatedAtMs = Number(thread.updatedAt || thread.updated_at || item.mtimeMs || 0);
+        if (updatedAtMs && Date.now() - updatedAtMs > 60 * 60 * 1000) continue;
+        const request = latestActionableUserLine(thread);
+        if (request) {
+          candidates.push({
+            source: 'member_room_unlinked_request',
+            source_path: item.path,
+            task_ref: null,
+            title: request,
+            status: 'missing_task',
+            decision: 'create_missing_task',
+            ask: null,
+            next_command: `atris task delegate "${request}" --to ${name} --tag agent`,
+            updated_at: thread.updatedAt || thread.updated_at || item.mtimeMs,
+          });
+        }
+      }
+    }
+  }
+  const sorted = sortEvidenceCandidates(candidates);
+  return {
+    files_checked,
+    candidate_count: sorted.length,
+    nearest: sorted[0] || null,
+  };
+}
+
+function readRecentWakeReceiptEvidence(name) {
+  const latestLoop = readJsonIfExists(memberLoopPaths(name).latestPath);
+  const receiptPath = Array.isArray(latestLoop?.tick_receipts)
+    ? latestLoop.tick_receipts.slice().reverse().find(Boolean)
+    : null;
+  const latestWake = receiptPath ? readJsonIfExists(receiptPath) : null;
+  return {
+    latest_loop_path: memberLoopPaths(name).latestPath,
+    latest_loop_status: latestLoop?.status || null,
+    latest_wake_receipt_path: receiptPath || null,
+    latest_wake_decision: latestWake?.decision || null,
+    latest_wake_reason: latestWake?.reason || null,
+  };
+}
+
+function collectWakeEvidence(name) {
+  const taskProjection = readTaskProjectionEvidence(name);
+  const memberRoom = readMemberRoomEvidence(name);
+  const receipt = readRecentWakeReceiptEvidence(name);
+  const nearest = sortEvidenceCandidates([taskProjection.nearest, memberRoom.nearest])[0] || null;
+  return {
+    task_projection: taskProjection,
+    member_room: memberRoom,
+    receipt,
+    nearest_open_loop: nearest,
+  };
 }
 
 function memberValueSummary(state) {
@@ -375,6 +837,28 @@ function memberOpenExperiment(state) {
   return latestByTime(allExperiments(state)
     .map(({ goal, experiment }) => ({ ...experiment, goal_id: goal.id, goal_title: goal.title }))
     .filter((experiment) => ['blocked', 'proposed', 'running'].includes(experiment.status)));
+}
+
+function supersedeOtherOpenExperiments(state, activeGoal, proof) {
+  const superseded = [];
+  for (const goal of state.goals || []) {
+    if (goal === activeGoal || goal.id === activeGoal?.id) continue;
+    for (const experiment of goal.experiments || []) {
+      if (!['proposed', 'running'].includes(experiment.status)) continue;
+      experiment.status = 'superseded';
+      experiment.superseded_at = stampIso();
+      experiment.proof = proof;
+      experiment.lesson = 'Direction changed by score-derived goal evidence.';
+      experiment.source = experiment.source || 'previous_goal';
+      superseded.push({
+        goal_id: goal.id,
+        goal_title: goal.title,
+        experiment_id: experiment.id,
+        experiment_title: experiment.title,
+      });
+    }
+  }
+  return superseded;
 }
 
 function memberLastReviewedExperiment(state) {
@@ -417,8 +901,7 @@ function renderMemberGoalsMarkdown(state) {
     lines.push('');
   }
   if (state.goals.length === 0) lines.push('No goals yet.');
-  lines.push('');
-  return lines.join('\n');
+  return `${lines.join('\n').trimEnd()}\n`;
 }
 
 function writeMemberGoals(paths, state) {
@@ -718,9 +1201,17 @@ function memberList() {
 
 // --- CREATE subcommand ---
 
+function printMemberCreateUsage(stream = console.log) {
+  stream('Usage: atris member create <name> [--role="Title"] [--description="..."] [--push]');
+}
+
 async function memberCreate(name, ...flags) {
-  if (!name) {
-    console.error('Usage: atris member create <name> [--role="Title"] [--push]');
+  if (name === '--help' || name === '-h' || flags.includes('--help') || flags.includes('-h')) {
+    printMemberCreateUsage();
+    return;
+  }
+  if (!name || String(name).startsWith('-')) {
+    printMemberCreateUsage(console.error);
     process.exit(1);
   }
 
@@ -1367,6 +1858,126 @@ function memberGoalFromMission(name, ...args) {
   );
 }
 
+function memberGoalFromScore(name, ...args) {
+  const paths = requireMemberDir(name);
+  const asJson = hasFlag(args, '--json');
+  const force = hasFlag(args, '--force');
+  const cadence = readFlag(args, '--cadence', 'manual') || 'manual';
+  const scoreJsonPath = readFlag(args, '--score-json', readFlag(args, '--score', ''));
+  const purpose = missionPurpose(paths);
+  if (!purpose.meaningful) {
+    const ask = `Define atris/team/${name}/MISSION.md with a concrete North Star before this member creates a score-derived goal.`;
+    const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-score blocked', {
+      ask,
+      mission_file: path.relative(process.cwd(), paths.missionFile),
+    });
+    printJsonOrText(
+      { ok: true, action: 'needs_user', member: name, needs_user: true, ask, mission_file: paths.missionFile, log_path: logPath },
+      [
+        `Blocked for ${name}: MISSION.md needs a concrete North Star.`,
+        `Ask: ${ask}`,
+      ],
+      asJson,
+    );
+    return;
+  }
+
+  const loaded = loadTeamScoreEvidence(scoreJsonPath);
+  if (!loaded.ok) {
+    console.error(`Could not load Team score evidence: ${loaded.error || 'unknown error'}`);
+    process.exit(1);
+  }
+  const scoreEvidence = normalizeTeamScoreEvidence(loaded.parsed, loaded.source);
+  if (!scoreEvidence) {
+    console.error('Team score evidence must include score.nextMove plus a weakest dimension.');
+    process.exit(1);
+  }
+
+  const state = loadMemberGoals(name, paths);
+  const title = compactSentence(scoreEvidence.next_move, 120);
+  const goalId = makeGoalId(title);
+  const existing = state.goals.find((goal) => (
+    goal.source === 'team_score'
+    && goal.status === 'active'
+    && (
+      goal.id === goalId
+      || goal.team_score?.next_move === scoreEvidence.next_move
+      || goal.title.toLowerCase() === title.toLowerCase()
+    )
+  ));
+  const acceptance = [
+    `One bounded experiment targets the score-selected next move: ${scoreEvidence.next_move}`,
+    `The goal records weakest dimension ${scoreEvidence.weakest.label} and latest reward receipt ${latestRewardLine(scoreEvidence.latest_reward)}.`,
+    'Review proof or ask the human before replacing this with another score-derived goal.',
+  ];
+  const goal = existing || {
+    id: goalId,
+    title,
+    status: 'active',
+    cadence,
+    why: compactSentence(`Team Overall ${scoreEvidence.overall == null ? 'score' : scoreEvidence.overall} selected this from proof: ${scoreEvidence.next_move}`, 240),
+    acceptance,
+    source: 'team_score',
+    mission_file: path.relative(process.cwd(), paths.missionFile),
+    mission_north_star: purpose.northStar,
+    team_score: scoreEvidence,
+    created_at: stampIso(),
+    experiments: [],
+    history: [],
+  };
+  goal.status = 'active';
+  goal.cadence = cadence || goal.cadence || 'manual';
+  goal.source = 'team_score';
+  goal.why = compactSentence(`Team Overall ${scoreEvidence.overall == null ? 'score' : scoreEvidence.overall} selected this from proof: ${scoreEvidence.next_move}`, 240);
+  goal.acceptance = acceptance;
+  goal.mission_file = path.relative(process.cwd(), paths.missionFile);
+  goal.mission_north_star = purpose.northStar;
+  goal.team_score = scoreEvidence;
+  goal.history = Array.isArray(goal.history) ? goal.history : [];
+  goal.history.push({
+    at: stampIso(),
+    event: existing ? 'goal_from_score_reused' : 'goal_from_score_created',
+    score_source: scoreEvidence.source,
+    weakest_dimension: scoreEvidence.weakest.label,
+    latest_reward_ref: scoreEvidence.latest_reward?.ref || null,
+  });
+  if (!existing) state.goals.push(goal);
+  state.goals = [goal, ...state.goals.filter((item) => item !== goal)];
+  const supersedeProof = `Score-derived goal selected ${scoreEvidence.next_move}; superseding older open experiments so the member can change direction.`;
+  const supersededExperiments = supersedeOtherOpenExperiments(state, goal, supersedeProof);
+  writeMemberGoals(paths, state);
+  const logPath = appendMemberGoalLog(paths.memberDir, name, existing ? 'Member goal reused from Team score' : 'Member goal created from Team score', {
+    goal: goal.title,
+    score: scoreEvidence.overall == null ? '' : scoreEvidence.overall,
+    weakest: `${scoreEvidence.weakest.label}${scoreEvidence.weakest.score == null ? '' : ` ${scoreEvidence.weakest.score}`}`,
+    latest_reward: latestRewardLine(scoreEvidence.latest_reward),
+    superseded: supersededExperiments.map((item) => item.experiment_id).join(', '),
+    source: scoreEvidence.source,
+    next: `atris member tick ${name} --goal ${goal.id}`,
+  });
+  printJsonOrText(
+    {
+      ok: true,
+      action: existing ? 'goal_from_score_reused' : 'goal_from_score_created',
+      member: name,
+      goal,
+      score: scoreEvidence,
+      superseded_experiments: supersededExperiments,
+      goals_path: paths.goalsJson,
+      goals_md_path: paths.goalsMd,
+      log_path: logPath,
+      next_command: `atris member tick ${name} --goal ${goal.id}`,
+    },
+    [
+      `${existing ? 'Reused' : 'Created'} score-derived goal for ${name}: ${goal.title}`,
+      `Weakest: ${scoreEvidence.weakest.label}${scoreEvidence.weakest.score == null ? '' : ` ${scoreEvidence.weakest.score}`}`,
+      `Latest reward: ${latestRewardLine(scoreEvidence.latest_reward)}`,
+      `Next: atris member tick ${name} --goal ${goal.id}`,
+    ],
+    asJson,
+  );
+}
+
 function proposalForGoal(goal) {
   const criteria = Array.isArray(goal.acceptance) && goal.acceptance.length
     ? goal.acceptance[0]
@@ -1417,6 +2028,11 @@ function wakeDecision(name, paths, { force = false } = {}) {
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state);
   const current = memberOpenExperiment(state);
+  const rawDirective = steeringWakeDirective(steering, name, goal);
+  const directiveClosure = rawDirective ? steeringDirectiveClosure(rawDirective) : null;
+  const directive = directiveClosure?.all_closed ? null : rawDirective;
+  const evidence = collectWakeEvidence(name);
+  evidence.steering_directive_closure = directiveClosure;
   const blocked = allExperiments(state)
     .map(({ goal: experimentGoal, experiment }) => ({ ...experiment, goal_id: experimentGoal.id, goal_title: experimentGoal.title }))
     .filter((experiment) => experiment.status === 'blocked')
@@ -1430,6 +2046,12 @@ function wakeDecision(name, paths, { force = false } = {}) {
     has_open_experiment: Boolean(current),
     has_blocked_experiment: Boolean(blocked),
     has_steering: steering.length > 0,
+    has_steering_directive: Boolean(directive),
+    has_satisfied_steering_directive: Boolean(directiveClosure?.all_closed),
+    has_open_loop_evidence: Boolean(evidence.nearest_open_loop),
+    open_loop_source: evidence.nearest_open_loop?.source || null,
+    has_member_room_evidence: Number(evidence.member_room?.candidate_count || 0) > 0,
+    has_recent_receipt: Boolean(evidence.receipt?.latest_wake_receipt_path),
     workspace_clean: workspace.clean,
   };
 
@@ -1452,6 +2074,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
         runtime_next: purpose.runtimeMission.next || null,
       },
       steering,
+      evidence,
       workspace,
     };
   }
@@ -1474,6 +2097,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
         runtime_next: purpose.runtimeMission.next || null,
       },
       steering,
+      evidence,
       workspace,
     };
   }
@@ -1496,6 +2120,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
         runtime_next: purpose.runtimeMission.next || null,
       },
       steering,
+      evidence,
       workspace,
     };
   }
@@ -1518,6 +2143,57 @@ function wakeDecision(name, paths, { force = false } = {}) {
         runtime_next: purpose.runtimeMission.next || null,
       },
       steering,
+      evidence,
+      workspace,
+    };
+  }
+
+  if (evidence.nearest_open_loop) {
+    const openLoop = evidence.nearest_open_loop;
+    const needsUser = openLoop.decision === 'ask';
+    const evidenceRef = openLoop.task_ref || 'missing_task';
+    return {
+      decision: openLoop.decision,
+      reason: `nearest_open_loop:${openLoop.source}:${evidenceRef}`,
+      needs_user: needsUser,
+      ask: needsUser ? (openLoop.ask || `Need operator input for ${openLoop.title}.`) : null,
+      next_command: openLoop.next_command,
+      state,
+      goal,
+      current_experiment: null,
+      checks,
+      mission: {
+        north_star: purpose.northStar,
+        runtime_id: purpose.runtimeMission.id || null,
+        runtime_status: purpose.runtimeMission.status || null,
+        runtime_next: purpose.runtimeMission.next || null,
+      },
+      steering,
+      evidence,
+      workspace,
+    };
+  }
+
+  if (directive) {
+    const needsUser = directive.decision === 'ask';
+    return {
+      decision: directive.decision,
+      reason: `steering_directive:${directive.steering_id || 'unknown'}`,
+      needs_user: needsUser,
+      ask: needsUser ? (directive.note || 'Needs operator direction.') : null,
+      next_command: directive.next_command,
+      state,
+      goal,
+      current_experiment: null,
+      checks,
+      mission: {
+        north_star: purpose.northStar,
+        runtime_id: purpose.runtimeMission.id || null,
+        runtime_status: purpose.runtimeMission.status || null,
+        runtime_next: purpose.runtimeMission.next || null,
+      },
+      steering,
+      evidence,
       workspace,
     };
   }
@@ -1540,6 +2216,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
         runtime_next: purpose.runtimeMission.next || null,
       },
       steering,
+      evidence,
       workspace,
     };
   }
@@ -1561,6 +2238,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
       runtime_next: purpose.runtimeMission.next || null,
     },
     steering,
+    evidence,
     workspace,
   };
 }
@@ -1608,6 +2286,7 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
     next_command: nextCommand,
     mission: planned.mission,
     steering: planned.steering,
+    evidence: planned.evidence,
     checks: planned.checks,
     workspace: planned.workspace,
     active_goal: goal ? {
@@ -1643,6 +2322,7 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
     next_command: nextCommand,
     mission: planned.mission,
     steering: planned.steering,
+    evidence: planned.evidence,
     checks: planned.checks,
     workspace: planned.workspace,
     active_goal: receiptPayload.active_goal,
@@ -2164,6 +2844,9 @@ function memberCommand(subcommand, ...args) {
     case 'goal-from-mission':
     case 'mission-goal':
       return memberGoalFromMission(args[0], ...args.slice(1));
+    case 'goal-from-score':
+    case 'score-goal':
+      return memberGoalFromScore(args[0], ...args.slice(1));
     case 'tick':
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
@@ -2193,6 +2876,7 @@ function memberCommand(subcommand, ...args) {
       console.log('  pull <name|id>      Pull a cloud agent as a local team member');
       console.log('  goal <name> "..."   Create/update a member long-term goal');
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
+      console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
       console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
       console.log('  loop <name>         Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
@@ -2216,6 +2900,7 @@ function memberCommand(subcommand, ...args) {
       console.log('  atris member pull navigator           (reads agent-id from local MEMBER.md)');
       console.log('  atris member goal growth "Recover more customer revenue" --acceptance "one proof-backed action"');
       console.log('  atris member goal-from-mission growth --json');
+      console.log('  atris member goal-from-score growth --score-json team-score.json --json');
       console.log('  atris member wake growth --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member loop growth --minutes 10 --interval 60 --json');

@@ -1,0 +1,45 @@
+{
+  "id": "atrisos-product-surface",
+  "version": "1.0.0",
+  "purpose": "Default AtrisOS visual standard for generated product images, block previews, dynamic UI surfaces, and deck artifacts.",
+  "palette": {
+    "canvas": "#141110",
+    "card": "#1E1915",
+    "surface": "#2C2520",
+    "border": "#3D332D",
+    "text": "#EAE3D9",
+    "secondary": "#A39B92",
+    "tertiary": "#6B6360",
+    "accent": "#f59e0b",
+    "accentHover": "#d97706",
+    "highlight": "#fbbf24"
+  },
+  "typography": {
+    "primary": "TWK Lausanne",
+    "fallbackDescription": "premium clean sans",
+    "weights": [300, 400, 500, 600, 700],
+    "avoid": ["Inter default look", "Roboto default look", "generic monospace as primary type"]
+  },
+  "shape": {
+    "panelRadiusPx": [6, 8],
+    "largeRadiusPx": 12,
+    "borderStyle": "thin warm borders",
+    "density": "spacious, calm, product-native"
+  },
+  "composition": {
+    "defaultFormat": "1:1",
+    "surfaceLanguage": "real AtrisOS product panels, not abstract marketing art",
+    "allowedMotifs": ["blocks", "receipts", "thin amber connectors", "active states", "workspace cards", "deck slides"],
+    "avoidMotifs": ["huge cloud icon", "fake dashboard clutter", "glossy 3D", "cartoon icons", "bokeh", "glowing orbs"]
+  },
+  "negativePrompt": [
+    "purple gradients",
+    "cyan neon",
+    "blue startup palette",
+    "generic developer terminal art",
+    "glassmorphism everywhere",
+    "fake stock imagery",
+    "watermarks",
+    "misspelled text"
+  ]
+}
