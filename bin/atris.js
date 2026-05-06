@@ -1442,6 +1442,18 @@ async function chatAtris() {
   // Get message from command line args
   const message = process.argv.slice(3).join(' ').trim();
 
+  // Respect -h / --help before any auth/state checks
+  if (message === '-h' || message === '--help') {
+    console.log('Usage: atris chat ["message"]');
+    console.log('');
+    console.log('  Open an interactive session with the selected agent, or send a one-shot message.');
+    console.log('  Requires `atris login` and `atris agent` to be run first.');
+    console.log('');
+    console.log('  atris chat                  Interactive REPL with selected agent');
+    console.log('  atris chat "what now?"      One-shot message');
+    process.exit(0);
+  }
+
   // Check atris/ exists
   const targetDir = path.join(process.cwd(), 'atris');
   if (!fs.existsSync(targetDir)) {
