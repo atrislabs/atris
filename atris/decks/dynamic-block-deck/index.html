@@ -1,0 +1,1121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atris Dynamic Deck</title>
+  <style>
+    :root {
+      --canvas: #141110;
+      --card: #1E1915;
+      --surface: #2C2520;
+      --border: #3D332D;
+      --text: #EAE3D9;
+      --secondary: #A39B92;
+      --tertiary: #6B6360;
+      --accent: #f59e0b;
+      --accent-2: #d97706;
+      --highlight: #fbbf24;
+      --ok: #6ee7a8;
+      --danger: #fb7185;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font-family: "TWK Lausanne", "Aptos", "Helvetica Neue", system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 18% 16%, rgba(245, 158, 11, 0.12), transparent 28%),
+        radial-gradient(circle at 80% 84%, rgba(217, 119, 6, 0.10), transparent 32%),
+        linear-gradient(135deg, #141110 0%, #1a1512 54%, #0f0d0c 100%);
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    .deck {
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 22px;
+      left: 28px;
+      right: 28px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .brandmark,
+    .progress {
+      pointer-events: auto;
+      border: 1px solid color-mix(in srgb, var(--border), transparent 15%);
+      background: color-mix(in srgb, var(--card), transparent 8%);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(14px);
+    }
+
+    .brandmark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      color: var(--secondary);
+      font-size: 13px;
+    }
+
+    .glyph {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid;
+      place-items: center;
+      color: #17110b;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 999px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: width 220ms var(--ease), background 220ms var(--ease), border-color 220ms var(--ease);
+    }
+
+    .dot.active {
+      width: 28px;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .slides {
+      height: 100%;
+      width: 100%;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: minmax(360px, 0.92fr) minmax(440px, 1.08fr);
+      gap: clamp(28px, 5vw, 80px);
+      padding: clamp(82px, 10vh, 118px) clamp(32px, 6vw, 86px) clamp(70px, 8vh, 92px);
+      opacity: 0;
+      transform: translateY(24px) scale(0.985);
+      pointer-events: none;
+      transition: opacity 420ms var(--ease), transform 520ms var(--ease);
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .copy {
+      align-self: center;
+      max-width: 620px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--highlight);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin: 0 0 18px;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: var(--accent);
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(54px, 7.6vw, 118px);
+      line-height: 0.88;
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+
+    h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(42px, 5.8vw, 88px);
+      line-height: 0.92;
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+
+    .lead {
+      margin: 24px 0 0;
+      color: var(--secondary);
+      font-size: clamp(18px, 1.7vw, 25px);
+      line-height: 1.34;
+      max-width: 52ch;
+    }
+
+    .micro {
+      margin: 18px 0 0;
+      color: var(--tertiary);
+      font-size: 13px;
+      line-height: 1.55;
+      max-width: 52ch;
+    }
+
+    .stage {
+      align-self: center;
+      min-height: min(67vh, 690px);
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 42%),
+        var(--card);
+      box-shadow: 0 36px 120px rgba(0, 0, 0, 0.34);
+      overflow: hidden;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(234, 227, 217, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(234, 227, 217, 0.035) 1px, transparent 1px);
+      background-size: 38px 38px;
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), transparent 86%);
+      pointer-events: none;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface), transparent 4%);
+      border-radius: 8px;
+      position: relative;
+    }
+
+    .panel-head {
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0 9px;
+      color: var(--secondary);
+      background: var(--card);
+      font-size: 11px;
+    }
+
+    .pill.hot {
+      color: #1a1208;
+      border-color: var(--accent);
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .controls {
+      position: fixed;
+      z-index: 30;
+      right: 28px;
+      bottom: 24px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .nav {
+      height: 44px;
+      min-width: 44px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      background: color-mix(in srgb, var(--card), transparent 5%);
+      cursor: pointer;
+      transition: transform 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease);
+    }
+
+    .nav:hover {
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, var(--accent), var(--border) 35%);
+      background: var(--surface);
+    }
+
+    .nav.primary {
+      min-width: 118px;
+      color: #17110b;
+      border-color: var(--accent);
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .brain-stage {
+      padding: 28px;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 18px;
+    }
+
+    .brain-canvas {
+      position: relative;
+      border-radius: 10px;
+      overflow: hidden;
+      min-height: 470px;
+      background: #100d0c;
+      border: 1px solid var(--border);
+    }
+
+    #pixelField {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.84;
+    }
+
+    .brain-node {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(37vw, 330px);
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 1px solid rgba(245, 158, 11, 0.32);
+      background:
+        radial-gradient(circle at 44% 42%, rgba(245, 158, 11, 0.26), transparent 34%),
+        radial-gradient(circle at 62% 62%, rgba(234, 227, 217, 0.08), transparent 30%),
+        rgba(30, 25, 21, 0.72);
+      box-shadow: 0 0 80px rgba(245, 158, 11, 0.12);
+      display: grid;
+      place-items: center;
+      text-align: center;
+    }
+
+    .brain-node strong {
+      display: block;
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 0.94;
+      max-width: 7ch;
+    }
+
+    .brain-node span {
+      display: block;
+      margin-top: 12px;
+      color: var(--secondary);
+      font-size: 13px;
+    }
+
+    .block-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .mini-block {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--secondary);
+      font-size: 12px;
+      transition: transform 200ms var(--ease), border-color 200ms var(--ease);
+    }
+
+    .mini-block strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 7px;
+    }
+
+    .mini-block.live {
+      border-color: color-mix(in srgb, var(--accent), var(--border) 28%);
+      transform: translateY(-3px);
+    }
+
+    .compare-stage {
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .compare-card {
+      min-height: 560px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .pixel-window {
+      flex: 1;
+      min-height: 310px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background:
+        linear-gradient(115deg, transparent 0 22%, rgba(245, 158, 11, 0.12) 22% 23%, transparent 23% 100%),
+        radial-gradient(circle at 50% 34%, rgba(245, 158, 11, 0.20), transparent 34%),
+        #120f0e;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .pixel-window::before {
+      content: "";
+      position: absolute;
+      inset: -40%;
+      background: conic-gradient(from 0deg, transparent, rgba(245, 158, 11, 0.18), transparent 30%);
+      animation: rotate 8s linear infinite;
+    }
+
+    .region {
+      position: absolute;
+      border: 1px solid rgba(245, 158, 11, 0.7);
+      background: rgba(245, 158, 11, 0.08);
+      border-radius: 8px;
+      color: var(--highlight);
+      font-size: 11px;
+      padding: 7px;
+    }
+
+    .block-graph {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .graph-node {
+      min-height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      padding: 12px;
+      position: relative;
+    }
+
+    .graph-node::after {
+      content: "";
+      position: absolute;
+      left: 28px;
+      bottom: -11px;
+      width: 1px;
+      height: 10px;
+      background: var(--accent);
+    }
+
+    .graph-node:last-child::after { display: none; }
+
+    .graph-node b {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+
+    .graph-node span {
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .app-stage {
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 0.92fr 1.08fr;
+      gap: 16px;
+    }
+
+    .manifest {
+      padding: 18px;
+      min-height: 560px;
+      font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+      font-size: 13px;
+      line-height: 1.62;
+      color: var(--secondary);
+      white-space: pre-wrap;
+    }
+
+    .manifest .key { color: var(--highlight); }
+    .manifest .val { color: var(--text); }
+
+    .customer-app {
+      min-height: 560px;
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+    }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 15px;
+      min-height: 126px;
+    }
+
+    .metric span {
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .metric b {
+      display: block;
+      margin-top: 14px;
+      color: var(--text);
+      font-size: 32px;
+      line-height: 1;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 9px;
+      padding: 4px 0;
+    }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 80px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .generate-stage {
+      padding: 28px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+    }
+
+    .prompt-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+    }
+
+    .prompt {
+      height: 48px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0 14px;
+      outline: none;
+    }
+
+    .prompt:focus {
+      border-color: color-mix(in srgb, var(--accent), var(--border) 25%);
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.08);
+    }
+
+    .generated-grid {
+      display: grid;
+      grid-template-columns: 0.84fr 1.16fr;
+      gap: 16px;
+      min-height: 498px;
+    }
+
+    .source-stack {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .source-item {
+      min-height: 78px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--secondary);
+      font-size: 12px;
+      transition: opacity 220ms var(--ease), transform 220ms var(--ease), border-color 220ms var(--ease);
+    }
+
+    .source-item b {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    .source-item.ready {
+      opacity: 1;
+      transform: translateX(0);
+      border-color: color-mix(in srgb, var(--accent), var(--border) 35%);
+    }
+
+    .surface-preview {
+      padding: 16px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+    }
+
+    .preview-canvas {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #100d0c;
+      min-height: 310px;
+    }
+
+    .preview-card {
+      position: absolute;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(44, 37, 32, 0.92);
+      padding: 12px;
+      color: var(--secondary);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 320ms var(--ease), transform 320ms var(--ease);
+    }
+
+    .preview-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .preview-card b {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    .receipts-stage {
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .receipt-list {
+      padding: 18px;
+      min-height: 560px;
+    }
+
+    .receipt-row {
+      display: grid;
+      grid-template-columns: 26px 1fr auto;
+      gap: 12px;
+      align-items: start;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .receipt-row:last-child { border-bottom: 0; }
+
+    .check {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      color: #17110b;
+      background: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .receipt-row b {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .receipt-row span {
+      color: var(--secondary);
+      font-size: 12px;
+      line-height: 1.42;
+    }
+
+    .final-card {
+      padding: 22px;
+      min-height: 560px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+    }
+
+    .big-quote {
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 0.96;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .deck-map {
+      display: grid;
+      gap: 9px;
+      align-content: center;
+    }
+
+    .map-row {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 10px;
+      align-items: center;
+      color: var(--secondary);
+      font-size: 12px;
+    }
+
+    .map-line {
+      height: 9px;
+      border-radius: 99px;
+      background: var(--surface);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .map-line i {
+      display: block;
+      height: 100%;
+      width: var(--w);
+      background: linear-gradient(90deg, var(--accent), var(--highlight));
+    }
+
+    .caption {
+      color: var(--tertiary);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .kbd {
+      position: fixed;
+      left: 28px;
+      bottom: 28px;
+      z-index: 20;
+      color: var(--tertiary);
+      font-size: 12px;
+    }
+
+    @keyframes rotate {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 980px) {
+      html, body { overflow: auto; }
+      .deck { min-height: 100vh; height: auto; overflow: visible; }
+      .slides { min-height: 100vh; }
+      .slide {
+        position: relative;
+        display: none;
+        grid-template-columns: 1fr;
+        padding: 88px 18px 96px;
+      }
+      .slide.active { display: grid; }
+      .stage { min-height: 560px; }
+      .compare-stage,
+      .app-stage,
+      .generated-grid,
+      .receipts-stage {
+        grid-template-columns: 1fr;
+      }
+      .block-strip { grid-template-columns: 1fr 1fr; }
+      .topbar { left: 14px; right: 14px; top: 14px; }
+      .kbd { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="Atris dynamic deck">
+    <div class="topbar">
+      <div class="brandmark"><span class="glyph">A</span><span>Atris dynamic deck</span></div>
+      <div class="progress" aria-label="Slide progress"></div>
+    </div>
+
+    <section class="slides">
+      <article class="slide active" data-slide="brain">
+        <div class="copy">
+          <p class="eyebrow">scene 01 / origin</p>
+          <h1>The brain becomes the product.</h1>
+          <p class="lead">A pitch deck should not describe Atris from the outside. It should behave like Atris: memory, context, apps, code, images, and proof becoming one living surface.</p>
+          <p class="micro">This prototype treats each slide as a block-backed scene. It is closer to a live interface than a document.</p>
+        </div>
+        <div class="stage brain-stage">
+          <div class="brain-canvas">
+            <canvas id="pixelField"></canvas>
+            <div class="brain-node"><div><strong>brain state</strong><span>streaming into structure</span></div></div>
+          </div>
+          <div class="block-strip" id="brainBlocks">
+            <div class="mini-block live"><strong>memory</strong>project context</div>
+            <div class="mini-block"><strong>task</strong>what to build</div>
+            <div class="mini-block"><strong>app</strong>what customer gets</div>
+            <div class="mini-block"><strong>image</strong>visual output</div>
+            <div class="mini-block"><strong>receipt</strong>proof trail</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide="pixels-vs-blocks">
+        <div class="copy">
+          <p class="eyebrow">scene 02 / contrast</p>
+          <h2>Pixels are magic. Blocks are leverage.</h2>
+          <p class="lead">Flipbook points at the future: interfaces streamed directly from models. Atris keeps the magic, but preserves the structure needed to edit, rerun, verify, and ship.</p>
+          <p class="micro">The winning surface is not static HTML versus generated pixels. It is generated experience with inspectable block lineage.</p>
+        </div>
+        <div class="stage compare-stage">
+          <div class="panel compare-card">
+            <div class="panel-head"><span>model -&gt; pixels</span><span class="pill">fluid</span></div>
+            <div class="pixel-window">
+              <span class="region" style="left: 14%; top: 18%;">interactive region</span>
+              <span class="region" style="right: 12%; top: 48%;">visual state</span>
+              <span class="region" style="left: 24%; bottom: 14%;">reshaped</span>
+            </div>
+            <p class="caption">Beautiful, immediate, shape-shifting. Harder to inspect, reuse, validate, or turn into durable software.</p>
+          </div>
+          <div class="panel compare-card">
+            <div class="panel-head"><span>brain -&gt; blocks</span><span class="pill hot">shippable</span></div>
+            <div class="block-graph">
+              <div class="graph-node"><b>app block</b><span>customer-facing workflow from APP.md</span></div>
+              <div class="graph-node"><b>code block</b><span>executes, transforms, prototypes</span></div>
+              <div class="graph-node"><b>image block</b><span>generates AtrisOS visual artifacts</span></div>
+              <div class="graph-node"><b>deck block</b><span>composes the presentation surface</span></div>
+              <div class="graph-node"><b>receipt block</b><span>proves prompts, files, checks, outputs</span></div>
+            </div>
+            <p class="caption">Still alive on screen, but each part can be edited, rerun, audited, shared, and composed into an app.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide="app-md">
+        <div class="copy">
+          <p class="eyebrow">scene 03 / app manifest</p>
+          <h2>APP.md says what the customer gets.</h2>
+          <p class="lead">A manifest is not documentation. It is an instruction sheet for materializing software across web, Slack, voice, mobile, CLI, and deck surfaces.</p>
+          <p class="micro">Member says who. Skill says how. APP.md says what gets delivered. Blocks render it.</p>
+        </div>
+        <div class="stage app-stage">
+          <div class="panel manifest" aria-label="APP.md manifest"><span class="key">schema_version:</span> <span class="val">1</span>
+<span class="key">name:</span> <span class="val">launch-room</span>
+<span class="key">runtime:</span> <span class="val">ec2</span>
+<span class="key">surfaces:</span> <span class="val">[web, deck, slack]</span>
+<span class="key">render:</span> <span class="val">inline</span>
+<span class="key">capabilities:</span>
+  - extract_release
+  - generate_visual
+  - draft_post
+  - record_receipt
+
+Every launch turns into a room:
+context, generated visuals, social copy,
+proof, and a shareable surface.</div>
+          <div class="panel customer-app">
+            <div class="panel-head"><span>launch-room.app</span><span class="pill hot">live surface</span></div>
+            <div class="app-grid">
+              <div class="panel metric"><span>release context</span><b>3.15</b></div>
+              <div class="panel metric"><span>visual system</span><b>blocks</b></div>
+              <div class="panel metric"><span>outputs</span><b>4</b></div>
+              <div class="panel metric"><span>receipt state</span><b>ok</b></div>
+            </div>
+            <div class="timeline">
+              <div class="timeline-row"><span>code</span><span>extract shipped change</span><span class="pill">done</span></div>
+              <div class="timeline-row"><span>image</span><span>render AtrisOS graphic</span><span class="pill">done</span></div>
+              <div class="timeline-row"><span>app</span><span>draft launch flow</span><span class="pill hot">active</span></div>
+              <div class="timeline-row"><span>receipt</span><span>save lineage</span><span class="pill">ready</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide="generate">
+        <div class="copy">
+          <p class="eyebrow">scene 04 / generate</p>
+          <h2>The surface appears on demand.</h2>
+          <p class="lead">This is the core spectacle: ask for a product surface, and the deck grows the right blocks while you are still presenting.</p>
+          <p class="micro">Try the prompt. It simulates a block graph creating UI, image, code, and receipt output in the AtrisOS style.</p>
+        </div>
+        <div class="stage generate-stage">
+          <div class="prompt-row">
+            <input class="prompt" id="deckPrompt" value="Show how blocks turn a pitch into a living app" aria-label="Dynamic deck prompt" />
+            <button class="nav primary" id="generateBtn">Generate</button>
+          </div>
+          <div class="generated-grid">
+            <div class="panel source-stack" id="sourceStack">
+              <div class="source-item"><b>intent</b><span>waiting for presenter prompt</span></div>
+              <div class="source-item"><b>app block</b><span>waiting for APP.md mapping</span></div>
+              <div class="source-item"><b>code block</b><span>waiting for prototype surface</span></div>
+              <div class="source-item"><b>image block</b><span>waiting for AtrisOS visual</span></div>
+              <div class="source-item"><b>receipt block</b><span>waiting for evidence trail</span></div>
+            </div>
+            <div class="panel surface-preview">
+              <div class="panel-head"><span>generated surface</span><span class="pill" id="genStatus">idle</span></div>
+              <div class="preview-canvas" id="previewCanvas">
+                <div class="preview-card" style="left: 7%; top: 11%; width: 42%;"><b>Pitch brain</b><span>context loaded from deck manifest</span></div>
+                <div class="preview-card" style="right: 7%; top: 18%; width: 38%;"><b>Live app</b><span>APP.md-backed action surface</span></div>
+                <div class="preview-card" style="left: 12%; bottom: 14%; width: 37%;"><b>Generated image</b><span>coffee/amber product visual</span></div>
+                <div class="preview-card" style="right: 9%; bottom: 10%; width: 36%;"><b>Receipt</b><span>prompt, files, checks, output</span></div>
+              </div>
+              <p class="caption" id="surfaceCaption">A dynamic deck is a product surface that can keep making itself more specific.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide" data-slide="receipts">
+        <div class="copy">
+          <p class="eyebrow">scene 05 / proof</p>
+          <h2>Every spectacle has receipts.</h2>
+          <p class="lead">The deck can be beautiful because the underlying system is disciplined. Every generated scene keeps its prompt, files, assets, checks, and app lineage.</p>
+          <p class="micro">This is the difference between a demo and a product: the magic leaves behind structure.</p>
+        </div>
+        <div class="stage receipts-stage">
+          <div class="panel receipt-list">
+            <div class="panel-head"><span>receipt trail</span><span class="pill hot">verified</span></div>
+            <div class="receipt-row"><span class="check">OK</span><div><b>style contract</b><span>Loaded product-surface.v1.json for every visual scene.</span></div><span class="pill">brand</span></div>
+            <div class="receipt-row"><span class="check">OK</span><div><b>block contract</b><span>App, code, image, deck, and receipt blocks share one graph.</span></div><span class="pill">schema</span></div>
+            <div class="receipt-row"><span class="check">OK</span><div><b>APP.md bridge</b><span>Manifest fields map to customer-facing app blocks.</span></div><span class="pill">app</span></div>
+            <div class="receipt-row"><span class="check">OK</span><div><b>dynamic page</b><span>The deck is rendered as an explorable product surface.</span></div><span class="pill">ui</span></div>
+            <div class="receipt-row"><span class="check">OK</span><div><b>deck graph</b><span>Each slide is representable as a block-backed scene.</span></div><span class="pill">deck</span></div>
+          </div>
+          <div class="panel final-card">
+            <div class="big-quote">The pitch is Atris performing the deck.</div>
+            <div class="deck-map">
+              <div class="map-row"><span>brain</span><span class="map-line"><i style="--w: 94%"></i></span></div>
+              <div class="map-row"><span>blocks</span><span class="map-line"><i style="--w: 88%"></i></span></div>
+              <div class="map-row"><span>apps</span><span class="map-line"><i style="--w: 76%"></i></span></div>
+              <div class="map-row"><span>images</span><span class="map-line"><i style="--w: 82%"></i></span></div>
+              <div class="map-row"><span>proof</span><span class="map-line"><i style="--w: 98%"></i></span></div>
+            </div>
+            <p class="caption">Next step: port this into AtrisOS/Craftpad as a block composition type where a deck, page, and app are the same graph rendered through different surfaces.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <div class="kbd">Use left / right arrows or click Next. Press G on scene 04.</div>
+    <div class="controls">
+      <button class="nav" id="prevBtn" aria-label="Previous slide">&lt;</button>
+      <button class="nav primary" id="nextBtn">Next &gt;</button>
+    </div>
+  </main>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const progress = document.querySelector('.progress');
+    const prevBtn = document.querySelector('#prevBtn');
+    const nextBtn = document.querySelector('#nextBtn');
+    let index = 0;
+
+    slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'dot' + (i === 0 ? ' active' : '');
+      dot.type = 'button';
+      dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+      dot.addEventListener('click', () => go(i));
+      progress.appendChild(dot);
+    });
+
+    const dots = [...document.querySelectorAll('.dot')];
+
+    function go(next) {
+      index = Math.max(0, Math.min(slides.length - 1, next));
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+      prevBtn.disabled = index === 0;
+      nextBtn.textContent = index === slides.length - 1 ? 'Start over' : 'Next >';
+      if (slides[index].dataset.slide === 'generate') setTimeout(runGenerate, 360);
+    }
+
+    prevBtn.addEventListener('click', () => go(index - 1));
+    nextBtn.addEventListener('click', () => index === slides.length - 1 ? go(0) : go(index + 1));
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight') go(index + 1);
+      if (event.key === 'ArrowLeft') go(index - 1);
+      if (event.key.toLowerCase() === 'g' && slides[index].dataset.slide === 'generate') runGenerate();
+    });
+
+    go(0);
+
+    const canvas = document.querySelector('#pixelField');
+    const ctx = canvas.getContext('2d');
+    const blocks = [...document.querySelectorAll('#brainBlocks .mini-block')];
+    let tick = 0;
+
+    function sizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * devicePixelRatio));
+      canvas.height = Math.max(1, Math.floor(rect.height * devicePixelRatio));
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    }
+
+    window.addEventListener('resize', sizeCanvas);
+    sizeCanvas();
+
+    function drawPixels() {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#100d0c';
+      ctx.fillRect(0, 0, w, h);
+
+      const cols = 34;
+      const rows = 24;
+      const cellW = w / cols;
+      const cellH = h / rows;
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const dx = x / cols - 0.5;
+          const dy = y / rows - 0.5;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const wave = Math.sin(tick * 0.055 + x * 0.45 + y * 0.32);
+          const pulse = Math.max(0, 1 - distance * 2.2) + wave * 0.16;
+          if (pulse > 0.18 || Math.random() > 0.982) {
+            const alpha = Math.max(0.03, Math.min(0.36, pulse * 0.24));
+            ctx.fillStyle = `rgba(245, 158, 11, ${alpha})`;
+            ctx.fillRect(x * cellW + 1, y * cellH + 1, Math.max(1, cellW - 2), Math.max(1, cellH - 2));
+          }
+        }
+      }
+
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.20)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 10; i++) {
+        const angle = tick * 0.01 + i * Math.PI * 0.2;
+        const x1 = w * 0.5 + Math.cos(angle) * 90;
+        const y1 = h * 0.5 + Math.sin(angle) * 70;
+        const x2 = w * 0.5 + Math.cos(angle + 1.9) * (w * 0.44);
+        const y2 = h * 0.5 + Math.sin(angle + 1.9) * (h * 0.38);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      blocks.forEach((block, i) => block.classList.toggle('live', i === Math.floor(tick / 55) % blocks.length));
+      tick++;
+      requestAnimationFrame(drawPixels);
+    }
+
+    drawPixels();
+
+    const generateBtn = document.querySelector('#generateBtn');
+    const sourceItems = [...document.querySelectorAll('.source-item')];
+    const previewCards = [...document.querySelectorAll('.preview-card')];
+    const genStatus = document.querySelector('#genStatus');
+    const surfaceCaption = document.querySelector('#surfaceCaption');
+    const promptInput = document.querySelector('#deckPrompt');
+    let generating = false;
+
+    function resetGenerate() {
+      sourceItems.forEach(item => item.classList.remove('ready'));
+      previewCards.forEach(card => card.classList.remove('visible'));
+      genStatus.textContent = 'idle';
+      genStatus.classList.remove('hot');
+    }
+
+    function runGenerate() {
+      if (generating) return;
+      generating = true;
+      resetGenerate();
+      genStatus.textContent = 'building';
+      genStatus.classList.add('hot');
+      surfaceCaption.textContent = `Generating: "${promptInput.value}"`;
+
+      sourceItems.forEach((item, i) => {
+        setTimeout(() => {
+          item.classList.add('ready');
+          const label = item.querySelector('span');
+          const states = [
+            'intent parsed into scene graph',
+            'APP.md fields mapped to product actions',
+            'prototype surface assembled',
+            'AtrisOS visual generated as block output',
+            'prompt, checks, and files recorded'
+          ];
+          label.textContent = states[i];
+        }, 240 + i * 260);
+      });
+
+      previewCards.forEach((card, i) => {
+        setTimeout(() => card.classList.add('visible'), 760 + i * 300);
+      });
+
+      setTimeout(() => {
+        genStatus.textContent = 'live';
+        surfaceCaption.textContent = 'The slide is no longer just a slide. It is a generated product surface with lineage.';
+        generating = false;
+      }, 2300);
+    }
+
+    generateBtn.addEventListener('click', runGenerate);
+  </script>
+</body>
+</html>

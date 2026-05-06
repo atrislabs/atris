@@ -1,0 +1,50 @@
+{
+  "id": "atris-block-system",
+  "version": "1.0.0",
+  "purpose": "Shared block contract connecting APP.md manifests, generated UI, code execution, image generation, decks, and receipts.",
+  "thesis": "A block is a manifestation unit: inspectable, rerunnable, editable, validated, and composable.",
+  "appMdBridge": {
+    "source": "/Users/keshavrao/arena/app.md/SPEC.md",
+    "mapping": {
+      "APP.md name": "appBlock.title",
+      "APP.md slug": "appBlock.slug",
+      "APP.md runtime": "appBlock.runtime",
+      "APP.md surfaces": "appBlock.surfaces",
+      "APP.md render": "appBlock.renderMode",
+      "APP.md capabilities": "appBlock.capabilities",
+      "APP.md body": "appBlock.instructions"
+    }
+  },
+  "blockTypes": {
+    "app": {
+      "description": "Customer-facing app or workflow declared by APP.md.",
+      "inputs": ["manifest", "context", "secretsRef"],
+      "outputs": ["surface", "actions", "state", "receipt"]
+    },
+    "code": {
+      "description": "Executable code, query, transform, test, or prototype.",
+      "inputs": ["prompt", "files", "data", "runtime"],
+      "outputs": ["files", "stdout", "artifact", "status", "receipt"]
+    },
+    "image": {
+      "description": "Generated visual artifact using the AtrisOS product-surface theme.",
+      "inputs": ["intent", "headline", "subtitle", "styleRef", "promptRecipe"],
+      "outputs": ["assetPath", "prompt", "variants", "selectedAsset", "receipt"]
+    },
+    "deck": {
+      "description": "Narrative presentation composed from slides, images, code demos, and app surfaces.",
+      "inputs": ["story", "blocks", "styleRef", "audience"],
+      "outputs": ["slides", "dynamicPage", "pdfOrPptx", "speakerNotes", "receipt"]
+    },
+    "receipt": {
+      "description": "Proof block for generation, execution, validation, and final artifact lineage.",
+      "inputs": ["blockId", "commands", "prompts", "assets", "checks"],
+      "outputs": ["status", "evidence", "timestamp", "shareableSummary"]
+    }
+  },
+  "composition": {
+    "deckAsGraph": ["idea", "app", "code", "image", "deck", "receipt"],
+    "dynamicPageAsGraph": ["APP.md manifest", "block graph", "rendered surface", "interactive actions", "receipt trail"],
+    "rule": "No generated artifact should be orphaned; every artifact belongs to a block with inputs and outputs."
+  }
+}

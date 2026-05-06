@@ -107,6 +107,24 @@ test('member create initializes MEMBER.md and dated logs', () => {
   }
 });
 
+test('member create --help prints usage without creating a --help member', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const help = runCli(['member', 'create', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris member create <name>/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', '--help')), false);
+
+    const missingName = runCli(['member', 'create', '--role=Member Trainer'], { cwd: dir });
+    assert.notEqual(missingName.status, 0);
+    assert.match(missingName.stderr, /Usage: atris member create <name>/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', '--role=Member Trainer')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member archive preserves files under _archived', () => {
   const dir = makeTempDir();
   try {
@@ -288,6 +306,77 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   }
 });
 
+test('member goal-from-score creates the active self-improvement goal from Team score evidence', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions turn proof into self-generated goals"'], { cwd: dir }).status, 0);
+    const oldGoal = runCli(['member', 'goal', 'mission-lead', 'Old broad mission goal', '--json'], { cwd: dir });
+    assert.equal(oldGoal.status, 0, oldGoal.stderr || oldGoal.stdout);
+    const oldGoalPayload = JSON.parse(oldGoal.stdout);
+    const oldTick = runCli(['member', 'tick', 'mission-lead', '--goal', oldGoalPayload.goal.id, '--json'], { cwd: dir });
+    assert.equal(oldTick.status, 0, oldTick.stderr || oldTick.stdout);
+    const oldExperimentId = JSON.parse(oldTick.stdout).experiment.id;
+    const scorePath = path.join(dir, 'team-score.json');
+    fs.writeFileSync(scorePath, JSON.stringify({
+      score: {
+        overall: 74,
+        formula: 'Team Overall = Task Output + Knowledge Health + Member Performance',
+        nextMove: 'Raise Member Performance: Train the weakest member attribute with one verified loop.',
+        weakest: {
+          id: 'member_performance',
+          label: 'Member Performance',
+          score: 60,
+          recommendation: 'Train the weakest member attribute with one verified loop.',
+          evidence: '14 scored members / proof avg 51 / loop avg 63',
+        },
+      },
+      taskLedger: {
+        latestReward: {
+          ref: 'OBL-157',
+          title: 'Show latest reward receipt in Team score CLI',
+          reward: 5,
+          proof: 'latestReward present in JSON and text output',
+        },
+      },
+    }, null, 2), 'utf8');
+
+    const goal = runCli(['member', 'goal-from-score', 'mission-lead', '--score-json', scorePath, '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'goal_from_score_created');
+    assert.equal(payload.goal.source, 'team_score');
+    assert.match(payload.goal.title, /Raise Member Performance/);
+    assert.equal(payload.goal.team_score.weakest.label, 'Member Performance');
+    assert.equal(payload.goal.team_score.latest_reward.ref, 'OBL-157');
+    assert.match(payload.goal.acceptance[0], /score-selected next move/);
+    assert.equal(payload.superseded_experiments.length, 1);
+    assert.equal(payload.superseded_experiments[0].experiment_id, oldExperimentId);
+    assert.match(payload.next_command, /atris member tick mission-lead --goal/);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(state.goals[0].id, payload.goal.id);
+    assert.equal(state.goals[0].source, 'team_score');
+    assert.equal(state.goals[1].title, 'Old broad mission goal');
+    assert.equal(state.goals[1].experiments[0].status, 'superseded');
+
+    const tick = runCli(['member', 'tick', 'mission-lead', '--goal', payload.goal.id, '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.goal_id, payload.goal.id);
+    assert.match(tickPayload.experiment.proof_target, /score-selected next move/);
+
+    const reused = runCli(['member', 'goal-from-score', 'mission-lead', '--score-json', scorePath, '--json'], { cwd: dir });
+    assert.equal(reused.status, 0, reused.stderr || reused.stdout);
+    const reusedPayload = JSON.parse(reused.stdout);
+    assert.equal(reusedPayload.action, 'goal_from_score_reused');
+    assert.equal(reusedPayload.goal.id, payload.goal.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member wake returns one finite decision and refuses to pile onto open work', () => {
   const dir = makeTempDir();
   try {
@@ -346,6 +435,255 @@ test('member wake returns one finite decision and refuses to pile onto open work
       .join('\n');
     assert.match(logText, /Member wake decision/);
     assert.match(logText, /Member wake executed tick/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake can change direction from scoped steering memory', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+
+    const baseline = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(baseline.status, 0, baseline.stderr || baseline.stdout);
+    const baselinePayload = JSON.parse(baseline.stdout);
+    assert.equal(baselinePayload.decision, 'tick');
+    assert.equal(baselinePayload.checks.has_steering_directive, false);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'steering.jsonl'), `${JSON.stringify({
+      schema: 'atris.steering.v1',
+      id: 'steer_test_report_proof',
+      created_at: '2026-05-06T00:00:00.000Z',
+      scope: { project: 'obelisk', member: 'command-leader' },
+      kind: 'operating_rule',
+      memory: ['Wake directive: report_proof - OBL-150 "Report the latest loop proof before creating new work."'],
+      status: 'active',
+    })}\n`, 'utf8');
+
+    const steered = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(steered.status, 0, steered.stderr || steered.stdout);
+    const steeredPayload = JSON.parse(steered.stdout);
+    assert.equal(steeredPayload.decision, 'report_proof');
+    assert.equal(steeredPayload.reason, 'steering_directive:steer_test_report_proof');
+    assert.equal(steeredPayload.checks.has_steering, true);
+    assert.equal(steeredPayload.checks.has_steering_directive, true);
+    assert.match(steeredPayload.next_command, /atris task note OBL-150/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake ignores steering directives whose task refs are all closed', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-05-06T00:00:00.000Z',
+      tasks: [
+        {
+          id: 'closed-failed',
+          display_id: 'OBL-146',
+          title: 'Failed source room proof',
+          status: 'failed',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          review: { reward: 0, proof: 'reviewed failure' },
+        },
+        {
+          id: 'closed-done',
+          display_id: 'OBL-147',
+          title: 'Done source room proof',
+          status: 'done',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          review: { reward: 1, proof: 'accepted proof' },
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'steering.jsonl'), `${JSON.stringify({
+      schema: 'atris.steering.v1',
+      id: 'steer_closed_refs',
+      created_at: '2026-05-06T00:00:00.000Z',
+      scope: { project: 'obelisk', member: 'command-leader' },
+      kind: 'operating_rule',
+      memory: ['Wake directive: close_loop - OBL-146 and OBL-147 were the referenced loops.'],
+      status: 'active',
+    })}\n`, 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'tick');
+    assert.equal(payload.reason, 'safe_next_bounded_step');
+    assert.equal(payload.checks.has_steering, true);
+    assert.equal(payload.checks.has_steering_directive, false);
+    assert.equal(payload.checks.has_satisfied_steering_directive, true);
+    assert.equal(payload.evidence.task_projection.candidate_count, 0);
+    assert.equal(payload.evidence.nearest_open_loop, null);
+    assert.equal(payload.evidence.steering_directive_closure.all_closed, true);
+    assert.deepEqual(payload.evidence.steering_directive_closure.closed_refs, ['OBL-146', 'OBL-147']);
+    assert.match(payload.next_command, /atris member tick command-leader --goal/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake closes the nearest open task from task projection evidence', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-05-06T00:00:00.000Z',
+      tasks: [
+        {
+          id: 'task-one',
+          display_id: 'OBL-200',
+          title: 'Close the live command loop',
+          status: 'claimed',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          current_version: 2,
+          messages: [],
+          events: [],
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'close_loop');
+    assert.equal(payload.reason, 'nearest_open_loop:task_projection:OBL-200');
+    assert.equal(payload.checks.has_open_loop_evidence, true);
+    assert.equal(payload.checks.open_loop_source, 'task_projection');
+    assert.equal(payload.evidence.nearest_open_loop.task_ref, 'OBL-200');
+    assert.match(payload.next_command, /atris task note OBL-200/);
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.evidence.nearest_open_loop.task_ref, 'OBL-200');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake reports proof for completed task evidence missing proof', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-05-06T00:00:00.000Z',
+      tasks: [
+        {
+          id: 'task-two',
+          display_id: 'OBL-201',
+          title: 'Report the loop closure proof',
+          status: 'done',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          review: { reward: null, proof: null },
+          current_version: 3,
+          messages: [],
+          events: [],
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'report_proof');
+    assert.equal(payload.reason, 'nearest_open_loop:task_projection:OBL-201');
+    assert.equal(payload.evidence.nearest_open_loop.task_ref, 'OBL-201');
+    assert.match(payload.next_command, /atris task note OBL-201/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake creates a missing task from member-room evidence', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+
+    const threadDir = path.join(dir, '.obelisk', 'threads', 'project-one');
+    fs.mkdirSync(threadDir, { recursive: true });
+    fs.writeFileSync(path.join(threadDir, 'room.json'), JSON.stringify({
+      id: 'room-one',
+      updatedAt: 1778058300000,
+      atrisContext: {
+        teamMember: 'command-leader',
+        linkedTasks: [],
+      },
+      messages: [
+        { role: 'user', text: 'build a proof card for the newest command loop' },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'create_missing_task');
+    assert.equal(payload.reason, 'nearest_open_loop:member_room_unlinked_request:missing_task');
+    assert.equal(payload.checks.has_member_room_evidence, true);
+    assert.match(payload.next_command, /atris task delegate "build a proof card/);
+    assert.equal(payload.evidence.nearest_open_loop.source, 'member_room_unlinked_request');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake picks nearest open loop from task projection evidence', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-05-06T00:00:00.000Z',
+      tasks: [
+        {
+          id: '01TESTOPENLOOP',
+          display_id: 'OBL-999',
+          title: 'Close the nearest member loop',
+          status: 'claimed',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          updated_at: 1778058000000,
+        },
+      ],
+    }), 'utf8');
+
+    const picked = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(picked.status, 0, picked.stderr || picked.stdout);
+    const payload = JSON.parse(picked.stdout);
+    assert.equal(payload.decision, 'close_loop');
+    assert.equal(payload.reason, 'nearest_open_loop:task_projection:OBL-999');
+    assert.equal(payload.checks.has_open_loop_evidence, true);
+    assert.equal(payload.checks.open_loop_source, 'task_projection');
+    assert.equal(payload.evidence.nearest_open_loop.task_ref, 'OBL-999');
+    assert.match(payload.next_command, /atris task note OBL-999/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3524,6 +3862,29 @@ test('review verbose mode keeps the legacy validator board', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review|Validator Agent Activated/);
     assert.match(res.stdout, /┌|└|│/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+// ============================================
+// feedback
+// ============================================
+
+test('feedback rejects unknown subcommands before submit fallback', () => {
+  const dir = makeTempDir();
+  try {
+    const bogus = runCli(['feedback', 'bogus-subcommand'], { cwd: dir });
+    assert.notEqual(bogus.status, 0);
+    assert.match(bogus.stderr, /Unknown feedback command: bogus-subcommand/);
+    assert.match(bogus.stderr, /Usage:/);
+    assert.doesNotMatch(bogus.stdout, /Feedback submitted/);
+
+    const show = runCli(['feedback', 'show', '0e136c15'], { cwd: dir });
+    assert.notEqual(show.status, 0);
+    assert.match(show.stderr, /Unknown feedback command: show/);
+    assert.match(show.stderr, /Usage:/);
+    assert.doesNotMatch(show.stdout, /Feedback submitted/);
   } finally {
     cleanupTempDir(dir);
   }
