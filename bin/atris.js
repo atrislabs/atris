@@ -1182,7 +1182,12 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'diff') {
   let diffSlug = process.argv[3];
+  if (diffSlug === '-h' || diffSlug === '--help') {
+    console.log('Usage: atris diff [business] [path]');
+    process.exit(0);
+  }
   if (!diffSlug || diffSlug.startsWith('-')) {
+    diffSlug = undefined;
     const bizFile = require('path').join(process.cwd(), '.atris', 'business.json');
     if (require('fs').existsSync(bizFile)) {
       try { diffSlug = JSON.parse(require('fs').readFileSync(bizFile, 'utf8')).slug; } catch {}
