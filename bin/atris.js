@@ -103,6 +103,15 @@ const isBusinessSyncSafetyCommand = command === 'sync'
     || firstCommandArg === 'resolve'
   );
 
+// Keep APP.md app-pack operations independent from the heavier workspace boot
+// path so `atris apps --json` stays machine-readable for agents.
+if (command === 'apps') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/apps').appsCommand(subcommand, ...args);
+  process.exit(0);
+}
+
 // Auto-sync skills only for commands that modify workspace state
 if (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand)) {
   try {
@@ -461,7 +470,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
