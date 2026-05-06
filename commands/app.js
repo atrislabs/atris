@@ -299,6 +299,8 @@ async function appCommand(subcommand, ...args) {
         await show(args[0]);
         break;
       case 'help':
+      case '-h':
+      case '--help':
       case undefined:
         await help();
         break;
