@@ -55,16 +55,25 @@ function activateAtris() {
     // Sort descending (most recent first)
     allLogs.sort().reverse();
 
-    // Extract C# items from logs until we have 3
+    // Extract C# items from logs until we have 3. Dedupe by ID across files
+    // since per-day numbering reuses C1, C2, etc. — the same ID appearing
+    // in two day-files would otherwise render as duplicate rows.
+    const seenIds = new Set();
     for (const logPath of allLogs) {
       if (recentCompletions.length >= 3) break;
       const content = fs.readFileSync(logPath, 'utf8');
       const completedSection = content.match(/## Completed ✅\n([\s\S]*?)(?=\n## |$)/);
       if (completedSection) {
-        const matches = completedSection[1].matchAll(/- \*\*C(\d+):\*?\*?\s*(.+?)(?:\s*\[.*\])?$/gm);
+        // Match `- **C#: Title**` (title between the bold markers). If extra
+        // prose follows after `**`, ignore it — the activation panel shows
+        // titles only, truncated to 59 chars.
+        const matches = completedSection[1].matchAll(/- \*\*C(\d+):\s*([^*\n]+?)\*\*/gm);
         for (const match of matches) {
           if (recentCompletions.length >= 3) break;
-          recentCompletions.push({ id: `C${match[1]}`, desc: match[2], file: path.basename(logPath) });
+          const id = `C${match[1]}`;
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+          recentCompletions.push({ id, desc: match[2].trim(), file: path.basename(logPath) });
         }
       }
     }
