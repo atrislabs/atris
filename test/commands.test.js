@@ -83,6 +83,436 @@ function runCli(args, { cwd, input, env } = {}) {
   return result;
 }
 
+test('member create initializes MEMBER.md and dated logs', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const res = runCli(['member', 'create', 'member-trainer', '--role="Member Trainer"', '--description="Trains teammates before autonomy"'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const memberPath = path.join(dir, 'atris', 'team', 'member-trainer', 'MEMBER.md');
+    const missionPath = path.join(dir, 'atris', 'team', 'member-trainer', 'MISSION.md');
+    const logsDir = path.join(dir, 'atris', 'team', 'member-trainer', 'logs');
+    assert.ok(fs.existsSync(memberPath));
+    assert.ok(fs.existsSync(missionPath));
+    assert.match(fs.readFileSync(missionPath, 'utf8'), /# Mission/);
+    assert.ok(fs.existsSync(logsDir));
+    const logs = fs.readdirSync(logsDir).filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name));
+    assert.equal(logs.length, 1);
+    const log = fs.readFileSync(path.join(logsDir, logs[0]), 'utf8');
+    assert.match(log, /Member initialized/);
+    assert.match(log, /Trains teammates before autonomy/);
+    assert.match(res.stdout, /logs\/\d{4}-\d{2}-\d{2}\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member archive preserves files under _archived', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'old-coach'], { cwd: dir }).status, 0);
+    const archive = runCli(['member', 'archive', 'old-coach'], { cwd: dir });
+    assert.equal(archive.status, 0, archive.stderr || archive.stdout);
+    const activePath = path.join(dir, 'atris', 'team', 'old-coach');
+    const archiveRoot = path.join(dir, 'atris', 'team', '_archived');
+    const archived = fs.readdirSync(archiveRoot).find((name) => name.startsWith('old-coach-'));
+    assert.equal(fs.existsSync(activePath), false);
+    assert.ok(archived);
+    assert.ok(fs.existsSync(path.join(archiveRoot, archived, 'MEMBER.md')));
+    const logs = fs.readdirSync(path.join(archiveRoot, archived, 'logs'));
+    assert.ok(logs.some((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name)));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member purge archived requires confirmation and age gate', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'stale-coach'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'archive', 'stale-coach'], { cwd: dir }).status, 0);
+    const archiveRoot = path.join(dir, 'atris', 'team', '_archived');
+    const archived = fs.readdirSync(archiveRoot).find((name) => name.startsWith('stale-coach-'));
+    const archivedPath = path.join(archiveRoot, archived);
+    const refused = runCli(['member', 'purge-archived', '--days=60'], { cwd: dir });
+    assert.notEqual(refused.status, 0);
+    assert.ok(fs.existsSync(archivedPath));
+    const recent = runCli(['member', 'purge-archived', '--days=60', '--confirm', 'delete archived members'], { cwd: dir });
+    assert.equal(recent.status, 0, recent.stderr || recent.stdout);
+    assert.ok(fs.existsSync(archivedPath));
+    const old = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(archivedPath, old, old);
+    const purged = runCli(['member', 'purge-archived', '--days=60', '--confirm', 'delete archived members'], { cwd: dir });
+    assert.equal(purged.status, 0, purged.stderr || purged.stdout);
+    assert.equal(fs.existsSync(archivedPath), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member goal tick review compounds structured goals and logs', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'growth'], { cwd: dir }).status, 0);
+
+    const goal = runCli([
+      'member', 'goal', 'growth', 'Recover more customer revenue',
+      '--why', 'prove member-owned business progress',
+      '--acceptance', 'one verified recovery action',
+      '--cadence', 'daily',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'goal_created');
+    assert.equal(goalPayload.goal.title, 'Recover more customer revenue');
+    assert.deepEqual(goalPayload.goal.acceptance, ['one verified recovery action']);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'growth', 'goals.json');
+    const goalsMdPath = path.join(dir, 'atris', 'team', 'growth', 'goals.md');
+    assert.ok(fs.existsSync(goalsPath));
+    assert.ok(fs.existsSync(goalsMdPath));
+    assert.match(fs.readFileSync(goalsMdPath, 'utf8'), /Recover more customer revenue/);
+
+    const tick = runCli(['member', 'tick', 'growth', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.action, 'tick');
+    assert.equal(tickPayload.reused, false);
+    assert.equal(tickPayload.experiment.status, 'proposed');
+    assert.match(tickPayload.experiment.proof_target, /verified recovery action/);
+
+    const secondTick = runCli(['member', 'tick', 'growth', '--json'], { cwd: dir });
+    assert.equal(secondTick.status, 0, secondTick.stderr || secondTick.stdout);
+    const secondTickPayload = JSON.parse(secondTick.stdout);
+    assert.equal(secondTickPayload.reused, true);
+    assert.equal(secondTickPayload.experiment.id, tickPayload.experiment.id);
+
+    const openStatus = runCli(['member', 'status', 'growth', '--json'], { cwd: dir });
+    assert.equal(openStatus.status, 0, openStatus.stderr || openStatus.stdout);
+    const openStatusPayload = JSON.parse(openStatus.stdout);
+    assert.equal(openStatusPayload.state, 'proposed');
+    assert.equal(openStatusPayload.current_experiment.id, tickPayload.experiment.id);
+    assert.match(openStatusPayload.next_command, /member review growth/);
+
+    const review = runCli([
+      'member', 'review', 'growth', tickPayload.experiment.id,
+      '--accept',
+      '--proof', 'dry run produced a verified recovery action',
+      '--value', '5',
+      '--lesson', 'small proof targets keep the member honest',
+      '--next', 'Prepare the next recovery experiment',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(review.status, 0, review.stderr || review.stdout);
+    const reviewPayload = JSON.parse(review.stdout);
+    assert.equal(reviewPayload.outcome, 'accepted');
+    assert.equal(reviewPayload.value, 5);
+    assert.equal(reviewPayload.experiment.proof, 'dry run produced a verified recovery action');
+    assert.equal(reviewPayload.experiment.value, 5);
+    assert.equal(reviewPayload.next_experiment.status, 'proposed');
+
+    const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(state.schema, 'atris.member_goals.v1');
+    assert.equal(state.goals[0].experiments[0].status, 'accepted');
+    assert.equal(state.goals[0].experiments[0].value, 5);
+    assert.equal(state.goals[0].experiments[1].title, 'Prepare the next recovery experiment');
+    const doneStatus = runCli(['member', 'status', 'growth', '--json'], { cwd: dir });
+    assert.equal(doneStatus.status, 0, doneStatus.stderr || doneStatus.stdout);
+    const doneStatusPayload = JSON.parse(doneStatus.stdout);
+    assert.equal(doneStatusPayload.value.average, 5);
+    assert.equal(doneStatusPayload.value.accepted, 1);
+    const logsDir = path.join(dir, 'atris', 'team', 'growth', 'logs');
+    const logText = fs.readdirSync(logsDir)
+      .filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name))
+      .map((name) => fs.readFileSync(path.join(logsDir, name), 'utf8'))
+      .join('\n');
+    assert.match(logText, /Member goal created/);
+    assert.match(logText, /Member tick proposed experiment/);
+    assert.match(logText, /Member experiment accepted/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member goal-from-mission creates a bounded goal without a human title', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions change the world with self-generated goals',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'goal_from_mission_created');
+    assert.equal(payload.goal.source, 'mission');
+    assert.match(payload.goal.title, /Prove one bounded step toward/);
+    assert.match(payload.goal.why, /Make Missions change the world/);
+    assert.equal(payload.goal.mission_file, 'atris/team/mission-lead/MISSION.md');
+    assert.equal(payload.goal.now_file, 'atris/team/mission-lead/now.md');
+    assert.ok(payload.goal.mission_id);
+    assert.match(payload.next_command, /atris member tick mission-lead --goal/);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const goalsMdPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.md');
+    assert.ok(fs.existsSync(goalsPath));
+    assert.ok(fs.existsSync(goalsMdPath));
+    const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(state.goals.length, 1);
+    assert.equal(state.goals[0].source, 'mission');
+    assert.match(fs.readFileSync(goalsMdPath, 'utf8'), /not hand-fed by the human/);
+
+    const tick = runCli(['member', 'tick', 'mission-lead', '--goal', payload.goal.id, '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.action, 'tick');
+    assert.equal(tickPayload.goal_id, payload.goal.id);
+    assert.equal(tickPayload.experiment.status, 'proposed');
+    assert.match(tickPayload.experiment.proof_target, /MISSION\.md/);
+
+    const reused = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(reused.status, 0, reused.stderr || reused.stdout);
+    const reusedPayload = JSON.parse(reused.stdout);
+    assert.equal(reusedPayload.action, 'goal_from_mission_reused');
+    assert.equal(reusedPayload.goal.id, payload.goal.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake returns one finite decision and refuses to pile onto open work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions wake up safely"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions wake up safely',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+    const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+
+    const dryRun = runCli(['member', 'wake', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+    const dryRunPayload = JSON.parse(dryRun.stdout);
+    assert.equal(dryRunPayload.action, 'wake');
+    assert.equal(dryRunPayload.mode, 'dry_run');
+    assert.equal(dryRunPayload.decision, 'tick');
+    assert.equal(dryRunPayload.executed, false);
+    assert.match(dryRunPayload.next_command, new RegExp(`member tick mission-lead --goal ${goalPayload.goal.id}`));
+    assert.ok(fs.existsSync(dryRunPayload.receipt_path));
+    const dryReceipt = JSON.parse(fs.readFileSync(dryRunPayload.receipt_path, 'utf8'));
+    assert.equal(dryReceipt.schema, 'atris.member_wake.v1');
+    assert.equal(dryReceipt.decision, 'tick');
+
+    const refused = runCli(['member', 'wake', 'mission-lead', '--execute', '--json'], { cwd: dir });
+    assert.equal(refused.status, 0, refused.stderr || refused.stdout);
+    const refusedPayload = JSON.parse(refused.stdout);
+    assert.equal(refusedPayload.decision, 'stop');
+    assert.equal(refusedPayload.reason, 'execute_requires_confirm_autonomy_policy');
+    let state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].experiments.length, 0);
+
+    const executed = runCli(['member', 'wake', 'mission-lead', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir });
+    assert.equal(executed.status, 0, executed.stderr || executed.stdout);
+    const executedPayload = JSON.parse(executed.stdout);
+    assert.equal(executedPayload.executed, true);
+    assert.equal(executedPayload.decision, 'wait');
+    assert.equal(executedPayload.reason, 'tick_executed_experiment_proposed');
+    assert.equal(executedPayload.current_experiment.status, 'proposed');
+    assert.ok(fs.existsSync(executedPayload.receipt_path));
+
+    const wait = runCli(['member', 'wake', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(wait.status, 0, wait.stderr || wait.stdout);
+    const waitPayload = JSON.parse(wait.stdout);
+    assert.equal(waitPayload.decision, 'wait');
+    assert.equal(waitPayload.reason, 'open_experiment_proposed');
+    assert.equal(waitPayload.current_experiment.id, executedPayload.current_experiment.id);
+    state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].experiments.length, 1);
+    const logText = fs.readdirSync(path.join(dir, 'atris', 'team', 'mission-lead', 'logs'))
+      .filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name))
+      .map((name) => fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'logs', name), 'utf8'))
+      .join('\n');
+    assert.match(logText, /Member wake decision/);
+    assert.match(logText, /Member wake executed tick/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member loop repeats wake quickly and skips an active lease', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions loop safely"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions loop safely',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir }).status, 0);
+
+    const loop = runCli([
+      'member', 'loop', 'mission-lead',
+      '--ticks', '2',
+      '--interval', '0',
+      '--execute',
+      '--confirm-autonomy-policy',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(loop.status, 0, loop.stderr || loop.stdout);
+    const payload = JSON.parse(loop.stdout);
+    assert.equal(payload.action, 'loop');
+    assert.equal(payload.status, 'completed');
+    assert.equal(payload.ticks, 2);
+    assert.equal(payload.mode, 'execute');
+    assert.equal(payload.decisions['wait:tick_executed_experiment_proposed'], 1);
+    assert.equal(payload.decisions['wait:open_experiment_proposed'], 1);
+    assert.ok(fs.existsSync(payload.receipt_path));
+    assert.ok(fs.existsSync(payload.log_path));
+    assert.ok(fs.existsSync(payload.latest_path));
+    const latest = JSON.parse(fs.readFileSync(payload.latest_path, 'utf8'));
+    assert.equal(latest.receipt_path, payload.receipt_path);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].experiments.length, 1);
+
+    const status = runCli(['member', 'loop', 'mission-lead', '--status', '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.active, false);
+    assert.equal(statusPayload.latest.receipt_path, payload.receipt_path);
+
+    const loopStateDir = path.join(dir, '.atris', 'state', 'member-loops');
+    fs.mkdirSync(loopStateDir, { recursive: true });
+    fs.writeFileSync(path.join(loopStateDir, 'mission-lead.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'mission-lead',
+      run_id: 'active-run',
+      pid: 12345,
+      started_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      expires_at_ms: Date.now() + 60000,
+    }, null, 2));
+
+    const skipped = runCli(['member', 'loop', 'mission-lead', '--ticks', '1', '--interval', '0', '--json'], { cwd: dir });
+    assert.equal(skipped.status, 0, skipped.stderr || skipped.stdout);
+    const skippedPayload = JSON.parse(skipped.stdout);
+    assert.equal(skippedPayload.status, 'skipped');
+    assert.equal(skippedPayload.reason, 'loop_already_active');
+    assert.equal(skippedPayload.ticks, 0);
+    assert.ok(fs.existsSync(skippedPayload.receipt_path));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member status exposes blocked asks before more loop work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'ops'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal', 'ops', 'Keep the business loop moving', '--acceptance', 'one operator-useful action'], { cwd: dir }).status, 0);
+    const tick = runCli(['member', 'tick', 'ops', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const experimentId = JSON.parse(tick.stdout).experiment.id;
+
+    const blocked = runCli([
+      'member', 'block', 'ops', experimentId,
+      '--reason', 'needs customer authority',
+      '--ask', 'Approve contacting the customer?',
+      '--orchestrator', 'team-hub',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
+    const blockedPayload = JSON.parse(blocked.stdout);
+    assert.equal(blockedPayload.needs_user, true);
+    assert.equal(blockedPayload.experiment.status, 'blocked');
+    assert.equal(blockedPayload.experiment.block.orchestrator, 'team-hub');
+
+    const status = runCli(['member', 'status', 'ops', '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.state, 'needs_user');
+    assert.equal(statusPayload.needs_user, true);
+    assert.equal(statusPayload.ask, 'Approve contacting the customer?');
+    assert.match(statusPayload.next_command, /member review ops/);
+    assert.ok(statusPayload.recent_log.some((line) => /Approve contacting the customer/.test(line)));
+
+    const paused = runCli(['member', 'tick', 'ops', '--json'], { cwd: dir });
+    assert.equal(paused.status, 0, paused.stderr || paused.stdout);
+    const pausedPayload = JSON.parse(paused.stdout);
+    assert.equal(pausedPayload.action, 'blocked');
+    assert.equal(pausedPayload.experiment.id, experimentId);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'ops', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].experiments.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start tick complete writes durable member-owned state', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const start = runCli([
+      'mission', 'start', 'Make Mission real',
+      '--owner', 'mission-lead',
+      '--runner', 'codex_goal',
+      '--lane', 'code',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(0)"',
+      '--stop', 'verifier passes',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const startPayload = JSON.parse(start.stdout);
+    assert.equal(startPayload.action, 'mission_started');
+    assert.equal(startPayload.mission.owner, 'mission-lead');
+    assert.equal(startPayload.mission.runner, 'codex_goal');
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MISSION.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md')));
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.md')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.json')), false);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md'), 'utf8'), /Make Mission real/);
+
+    const tick = runCli(['mission', 'tick', startPayload.mission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.action, 'mission_tick');
+    assert.equal(tickPayload.mission.status, 'ready');
+    assert.equal(tickPayload.verifier_result.passed, true);
+    assert.ok(fs.existsSync(path.join(dir, tickPayload.receipt_path)));
+
+    const complete = runCli(['mission', 'complete', startPayload.mission.id, '--proof', tickPayload.receipt_path, '--json'], { cwd: dir });
+    assert.equal(complete.status, 0, complete.stderr || complete.stdout);
+    const completePayload = JSON.parse(complete.stdout);
+    assert.equal(completePayload.mission.status, 'complete');
+
+    const status = runCli(['mission', 'status', startPayload.mission.id, '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.missions[0].status, 'complete');
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'status', 'now.md'), 'utf8'), /Make Mission real/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
@@ -966,37 +1396,40 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Ship task plane', '--tag', 'launch'], { cwd: dir, env });
+    const add = runCli(['task', 'add', 'Ship task plane', '--tag', 'launch', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
-    const id = add.stdout.trim().split('\t')[0];
+    const addPayload = JSON.parse(add.stdout);
+    const id = addPayload.task_id;
+    const ref = addPayload.task.display_id;
     assert.match(id, /^[0-9A-Z]{26}$/);
+    assert.match(ref, /^[A-Z0-9]{3}-1$/);
 
     const open = runCli(['task', 'list'], { cwd: dir, env });
     assert.equal(open.status, 0, open.stderr);
-    assert.match(open.stdout, new RegExp(`open\\s+${id}`));
+    assert.match(open.stdout, new RegExp(`open\\s+${ref}`));
     assert.match(open.stdout, /#launch\s+Ship task plane/);
 
-    const claim = runCli(['task', 'claim', id, '--as', 'codex'], { cwd: dir, env });
+    const claim = runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env });
     assert.equal(claim.status, 0, claim.stderr);
-    assert.match(claim.stdout, new RegExp(`claimed ${id} as codex`));
+    assert.match(claim.stdout, new RegExp(`claimed ${ref} as codex`));
 
     const claimed = runCli(['task', 'list', '--status', 'claimed'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
-    assert.match(claimed.stdout, new RegExp(`claimed\\s+${id}\\s+\\[codex\\]`));
+    assert.match(claimed.stdout, new RegExp(`claimed\\s+${ref}\\s+\\[codex\\]`));
 
-    const done = runCli(['task', 'done', id], { cwd: dir, env });
+    const done = runCli(['task', 'done', id.slice(0, 8)], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
-    assert.match(done.stdout, new RegExp(`done ${id}`));
+    assert.match(done.stdout, new RegExp(`done ${ref}`));
 
     const completed = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
     assert.equal(completed.status, 0, completed.stderr);
-    assert.match(completed.stdout, new RegExp(`done\\s+${id}`));
+    assert.match(completed.stdout, new RegExp(`done\\s+${ref}`));
 
     const events = runCli(['task', 'events', id], { cwd: dir, env });
     assert.equal(events.status, 0, events.stderr);
-    assert.match(events.stdout, new RegExp(`1\\tcreated\\t${id}`));
-    assert.match(events.stdout, new RegExp(`2\\tclaimed\\t${id}`));
-    assert.match(events.stdout, new RegExp(`3\\tcompleted\\t${id}`));
+    assert.match(events.stdout, new RegExp(`1\\tcreated\\t${ref}`));
+    assert.match(events.stdout, new RegExp(`2\\tclaimed\\t${ref}`));
+    assert.match(events.stdout, new RegExp(`3\\tcompleted\\t${ref}`));
 
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, 'clobbered\n', 'utf8');
@@ -1005,8 +1438,125 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     assert.match(render.stdout, /rendered 1 task/);
     const regenerated = fs.readFileSync(todoPath, 'utf8');
     assert.match(regenerated, /Regenerated from durable Atris task state/);
-    assert.match(regenerated, new RegExp(`\\*\\*\\[${id}\\]\\*\\* Ship task plane`));
+    assert.match(regenerated, new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Ship task plane`));
     assert.match(regenerated, /## Completed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task display refs use semantic IDs and collision-safe legacy prefixes', () => {
+  if (!hasNodeSqlite()) return;
+  const taskDb = require('../lib/task-db');
+  const rows = taskDb.withTaskDisplayRefs([
+    { id: '01KQMBKFFGKW9T4DGQ5BKW9T4D', title: 'First collision', workspace_root: '/tmp/project-obelisk', created_at: 1 },
+    { id: '01KQMBKFFGCMZQVCDFPECMZQVC', title: 'Second collision', workspace_root: '/tmp/project-obelisk', created_at: 2 },
+    { id: '01ABCDE1FGCMZQVCDFPECMZQVC', title: 'Plain legacy', workspace_root: '/tmp/project-obelisk', created_at: 3 },
+    { id: '01CUST01FGCMZQVCDFPECMZQVC', title: 'Other obelisk', workspace_root: '/tmp/customer-obelisk', created_at: 1 },
+  ]);
+
+  assert.deepEqual(rows.map(row => row.display_id), ['OBL-1', 'OBL-2', 'OBL-3', 'COB-1']);
+  assert.equal(rows[2].legacy_ref, '01ABCDE1');
+  assert.notEqual(rows[0].legacy_ref, rows[1].legacy_ref);
+  assert.ok(rows[0].legacy_ref.startsWith('01KQMBKF'));
+  assert.ok(rows[1].legacy_ref.startsWith('01KQMBKF'));
+});
+
+test('task display refs stay stable in filtered list views', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const older = JSON.parse(runCli(['task', 'add', 'Older closed task', '--json'], { cwd: dir, env }).stdout);
+    const current = JSON.parse(runCli(['task', 'add', 'Current open task', '--json'], { cwd: dir, env }).stdout);
+    assert.equal(runCli(['task', 'done', older.task.display_id], { cwd: dir, env }).status, 0);
+
+    const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });
+    assert.equal(open.status, 0, open.stderr);
+    assert.match(open.stdout, new RegExp(`open\\s+${current.task.display_id}\\s+Current open task`));
+    assert.doesNotMatch(open.stdout, new RegExp(`open\\s+${older.task.display_id}\\s+Current open task`));
+
+    const done = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    assert.match(done.stdout, new RegExp(`done\\s+${older.task.display_id}\\s+Older closed task`));
+
+    const openJson = runCli(['task', 'list', '--status', 'open', '--json'], { cwd: dir, env });
+    assert.equal(openJson.status, 0, openJson.stderr);
+    assert.equal(JSON.parse(openJson.stdout).tasks[0].display_id, current.task.display_id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task help flags never render the live desk', () => {
+  const dir = makeTempDir();
+  try {
+    const rootHelp = runCli(['task', '--help'], { cwd: dir });
+    assert.equal(rootHelp.status, 0, rootHelp.stderr);
+    assert.match(rootHelp.stdout, /atris task - durable local task state/);
+    assert.doesNotMatch(rootHelp.stdout, /TASK DESK/);
+
+    const eventsHelp = runCli(['task', 'events', '--help'], { cwd: dir });
+    assert.equal(eventsHelp.status, 0, eventsHelp.stderr);
+    assert.match(eventsHelp.stdout, /atris task events --all/);
+    assert.doesNotMatch(eventsHelp.stdout, /TASK EVENTS/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task events defaults to a recent compact view', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli(['task', 'new', 'Keep the ledger behind the cockpit', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+    for (let i = 0; i < 30; i += 1) {
+      const note = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex'], { cwd: dir, env });
+      assert.equal(note.status, 0, note.stderr);
+    }
+
+    const recent = runCli(['task', 'events'], { cwd: dir, env });
+    assert.equal(recent.status, 0, recent.stderr);
+    assert.match(recent.stdout, /TASK EVENTS/);
+    assert.match(recent.stdout, /recent 24 events/);
+    assert.match(recent.stdout, /status note 29/);
+    assert.doesNotMatch(recent.stdout, /status note 0/);
+    assert.doesNotMatch(recent.stdout, /"content"/);
+
+    const recentJson = runCli(['task', 'events', '--json'], { cwd: dir, env });
+    assert.equal(recentJson.status, 0, recentJson.stderr);
+    const payload = JSON.parse(recentJson.stdout);
+    assert.equal(payload.mode, 'recent');
+    assert.equal(payload.limit, 24);
+    assert.equal(payload.events.length, 24);
+
+    const all = runCli(['task', 'events', '--all'], { cwd: dir, env });
+    assert.equal(all.status, 0, all.stderr);
+    assert.match(all.stdout, /status note 0/);
+    assert.match(all.stdout, /"content":"status note 29"/);
+
+    const out = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const exported = runCli(['task', 'export', '--out', out], { cwd: dir, env });
+    assert.equal(exported.status, 0, exported.stderr);
+    const projection = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(projection.surface.compact, true);
+    assert.equal(projection.surface.full_task_count, 1);
+    assert.equal(projection.surface.full_ledger_command, 'atris task events --all');
+    assert.equal(projection.tasks[0].messages.length, 6);
+    assert.equal(projection.tasks[0].events.length, 8);
+    assert.equal(projection.tasks[0].history.message_count, 30);
+    assert.equal(projection.tasks[0].history.event_count, 31);
+    assert.equal(projection.tasks[0].history.messages_truncated, true);
+    assert.equal(projection.tasks[0].history.events_truncated, true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1020,17 +1570,19 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Design task dialogue cards', '--tag', 'ui'], { cwd: dir, env });
+    const add = runCli(['task', 'add', 'Design task dialogue cards', '--tag', 'ui', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
-    const id = add.stdout.trim().split('\t')[0];
+    const addPayload = JSON.parse(add.stdout);
+    const id = addPayload.task_id;
+    const ref = addPayload.task.display_id;
 
-    const note = runCli(['task', 'note', id, 'User wants Cursor-like task chat', '--as', 'codex'], { cwd: dir, env });
+    const note = runCli(['task', 'note', ref, 'User wants Cursor-like task chat', '--as', 'codex'], { cwd: dir, env });
     assert.equal(note.status, 0, note.stderr);
-    assert.match(note.stdout, new RegExp(`noted ${id} v2`));
+    assert.match(note.stdout, new RegExp(`noted ${ref} v2`));
 
-    const show = runCli(['task', 'show', id], { cwd: dir, env });
+    const show = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
-    assert.match(show.stdout, new RegExp(`OPEN ${id} v2 #ui`));
+    assert.match(show.stdout, new RegExp(`OPEN ${ref} v2 #ui`));
     assert.match(show.stdout, /Dialogue:/);
     assert.match(show.stdout, /codex: User wants Cursor-like task chat/);
 
@@ -1047,6 +1599,7 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
     const projection = JSON.parse(fs.readFileSync(out, 'utf8'));
     assert.equal(projection.schema, 'atris.task_projection.v1');
     assert.equal(projection.tasks[0].id, id);
+    assert.equal(projection.tasks[0].display_id, ref);
     assert.equal(projection.tasks[0].messages[0].actor, 'codex');
   } finally {
     cleanupTempDir(dir);
@@ -1079,10 +1632,10 @@ test('task delegate creates assigned work and day view groups by owner', () => {
     assert.equal(body.owner, 'justin');
     assert.equal(body.via, 'local');
     assert.equal(body.task.status, 'open');
-    assert.equal(body.task.metadata.assigned_to, 'justin');
+    assert.equal(body.task.assigned_to, 'justin');
     assert.equal(body.task.metadata.delegate_via, 'local');
-    assert.equal(body.task.messages[0].content, 'Need clear copy before posting');
-    assert.match(body.handoff.command, /^atris task claim [0-9A-Z]{8} --as justin$/);
+    assert.equal(body.task.latest_event_type, 'message');
+    assert.match(body.handoff.command, /^atris task claim [A-Z0-9]{3}-1 --as justin$/);
 
     const day = runCli(['task', 'day', '--json'], { cwd: dir, env });
     assert.equal(day.status, 0, day.stderr);
@@ -1124,9 +1677,8 @@ test('task delegate can prepare a Swarlo handoff without changing task truth', (
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
     const body = JSON.parse(delegated.stdout);
-    assert.equal(body.task.metadata.assigned_to, 'codex');
+    assert.equal(body.task.assigned_to, 'codex');
     assert.equal(body.task.metadata.delegate_via, 'swarlo');
-    assert.equal(body.task.metadata.swarlo_channel, 'tasks');
     assert.equal(body.handoff.swarlo.action, 'claim');
     assert.equal(body.handoff.swarlo.channel, 'tasks');
     assert.equal(body.handoff.swarlo.task_key, body.task_id);
@@ -1143,13 +1695,15 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi'], { cwd: dir, env });
+    const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
-    const id = add.stdout.trim().split('\t')[0];
-    assert.equal(runCli(['task', 'done', id], { cwd: dir, env }).status, 0);
+    const addPayload = JSON.parse(add.stdout);
+    const id = addPayload.task_id;
+    const ref = addPayload.task.display_id;
+    assert.equal(runCli(['task', 'done', ref], { cwd: dir, env }).status, 0);
 
     const review = runCli([
-      'task', 'review', id,
+      'task', 'review', ref,
       '--reward', '1',
       '--lesson', 'Small task events compound',
       '--next', 'Sync task events to Swarlo',
@@ -1157,12 +1711,12 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, new RegExp(`reviewed ${id} v3 reward=1`));
+    assert.match(review.stdout, new RegExp(`reviewed ${ref} v3 reward=1`));
     assert.match(review.stdout, /next: Sync task events to Swarlo/);
 
-    const events = runCli(['task', 'events', id], { cwd: dir, env });
+    const events = runCli(['task', 'events', ref], { cwd: dir, env });
     assert.equal(events.status, 0, events.stderr);
-    assert.match(events.stdout, new RegExp(`3\\treviewed\\t${id}`));
+    assert.match(events.stdout, new RegExp(`3\\treviewed\\t${ref}`));
 
     const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
     const episode = JSON.parse(fs.readFileSync(episodePath, 'utf8').trim());
@@ -1173,6 +1727,43 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     assert.equal(episode.lesson, 'Small task events compound');
     assert.equal(episode.proof, 'npm test');
     assert.equal(episode.next_task_suggestion, 'Sync task events to Swarlo');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task done with proof writes a reviewed proof event', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Validate done proof persistence', '--tag', 'rsi'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const id = add.stdout.trim().split('\t')[0];
+
+    const done = runCli([
+      'task', 'done', id,
+      '--proof', 'task show exposes reviewed proof',
+      '--lesson', 'done with proof should unlock review state',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    const donePayload = JSON.parse(done.stdout);
+    assert.equal(donePayload.reviewed, true);
+    assert.equal(donePayload.reward, 1);
+    assert.equal(donePayload.episode.proof, 'task show exposes reviewed proof');
+    assert.equal(donePayload.episode.lesson, 'done with proof should unlock review state');
+
+    const show = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    const task = JSON.parse(show.stdout);
+    assert.equal(task.status, 'done');
+    assert.deepEqual(task.events.map(e => e.event_type), ['created', 'completed', 'reviewed']);
+    assert.equal(task.review.proof, 'task show exposes reviewed proof');
+    assert.equal(task.review.reward, 1);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1218,38 +1809,42 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'new', 'Make tasks feel natural', '--tag', 'ux'], { cwd: dir, env });
+    const created = runCli(['task', 'new', 'Make tasks feel natural', '--tag', 'ux', '--json'], { cwd: dir, env });
     assert.equal(created.status, 0, created.stderr);
-    const id = created.stdout.trim().split('\t')[0];
-    const shortId = id.slice(0, 8);
+    const createdPayload = JSON.parse(created.stdout);
+    const id = createdPayload.task_id;
+    const ref = createdPayload.task.display_id;
+    const legacyRef = id.slice(0, 8);
 
     const desk = runCli(['task'], { cwd: dir, env });
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
-    assert.match(desk.stdout, new RegExp(`open\\s+${shortId}`));
+    assert.match(desk.stdout, new RegExp(`open\\s+${ref}`));
     assert.match(desk.stdout, /next: atris task next/);
 
     const next = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
-    assert.match(next.stdout, new RegExp(`next ${shortId} @codex`));
+    assert.match(next.stdout, new RegExp(`next ${ref} @codex`));
 
-    const said = runCli(['task', 'say', shortId, 'This should feel like a tiny task chat', '--as', 'codex'], { cwd: dir, env });
+    const said = runCli(['task', 'say', legacyRef, 'This should feel like a tiny task chat', '--as', 'codex'], { cwd: dir, env });
     assert.equal(said.status, 0, said.stderr);
-    assert.match(said.stdout, new RegExp(`noted ${id} v3`));
+    assert.match(said.stdout, new RegExp(`noted ${ref} v3`));
 
     const finish = runCli([
-      'task', 'finish', shortId,
+      'task', 'finish', ref,
       '--proof', 'npm test',
       '--lesson', 'Natural task verbs reduce coordination tax',
       '--next', 'Show task cards in every surface',
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(finish.status, 0, finish.stderr);
-    assert.match(finish.stdout, new RegExp(`finished ${id} reward=1`));
+    assert.match(finish.stdout, new RegExp(`finished ${ref} reward=1`));
 
     const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
     const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
     assert.equal(projection.tasks[0].id, id);
+    assert.equal(projection.tasks[0].display_id, ref);
+    assert.equal(projection.tasks[0].legacy_ref, legacyRef);
     assert.equal(projection.tasks[0].status, 'done');
     assert.equal(projection.tasks[0].current_version, 5);
     assert.equal(projection.tasks[0].messages[0].content, 'This should feel like a tiny task chat');
@@ -1300,7 +1895,12 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     const notePayload = JSON.parse(note.stdout);
     assert.equal(notePayload.action, 'noted');
     assert.equal(notePayload.version, 3);
-    assert.equal(notePayload.task.messages[0].content, 'machine-readable context');
+    assert.equal(notePayload.task.latest_event_type, 'message');
+
+    const shown = runCli(['task', 'show', shortId, '--json'], { cwd: dir, env });
+    assert.equal(shown.status, 0, shown.stderr);
+    const shownPayload = JSON.parse(shown.stdout);
+    assert.equal(shownPayload.messages[0].content, 'machine-readable context');
 
     const finish = runCli([
       'task', 'finish', shortId,
@@ -1358,6 +1958,13 @@ test('task status gives web and Swarlo a compact live contract', () => {
     assert.equal(created.status, 0, created.stderr);
     const id = JSON.parse(created.stdout).task_id;
 
+    const parked = runCli(['task', 'new', 'Old imported TODO record', '--json'], { cwd: dir, env });
+    assert.equal(parked.status, 0, parked.stderr);
+
+    const explicitNext = runCli(['task', 'new', 'Shape explicit agent goal', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(explicitNext.status, 0, explicitNext.stderr);
+    const explicitNextId = JSON.parse(explicitNext.stdout).task_id;
+
     const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
 
@@ -1367,19 +1974,119 @@ test('task status gives web and Swarlo a compact live contract', () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.action, 'status');
     assert.equal(payload.status.schema, 'atris.task_status.v1');
+    assert.equal(payload.status.counts.active, 2);
+    assert.equal(payload.status.counts.backlog, 1);
+    assert.equal(payload.status.counts.plan, 1);
     assert.equal(payload.status.counts.do, 1);
     assert.equal(payload.status.current.id, id);
-    assert.equal(payload.status.next, null);
+    assert.equal(Object.hasOwn(payload.status.current, 'events'), false);
+    assert.equal(Object.hasOwn(payload.status.current, 'messages'), false);
+    assert.equal(Object.hasOwn(payload.status.current, 'review'), false);
+    assert.equal(Object.hasOwn(payload.status.current, 'lineage'), false);
+    assert.equal(Object.hasOwn(payload.status.current, 'metadata'), false);
+    assert.equal(Object.hasOwn(payload.status.current, 'workspace_root'), false);
+    assert.equal(payload.status.next.id, explicitNextId);
     assert.equal(payload.status.goals.items[0], 'Connect tasks to Swarlo and web command surfaces');
-    assert.equal(payload.status.swarlo.feed[0].kind, 'claim');
-    assert.equal(payload.status.swarlo.feed[0].metadata.swarlo.task_key, id);
-    assert.match(payload.status.swarlo.realtime_contract.web, /atrisos-web/);
+    assert.equal(Object.hasOwn(payload.status, 'last_event'), false);
+    assert.equal(Object.hasOwn(payload.status, 'swarlo'), false);
 
     const text = runCli(['task', 'status'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /TASK STATUS/);
-    assert.match(text.stdout, /plan 0 \/ do 1 \/ review 0 \/ done 0/);
-    assert.match(text.stdout, /swarlo feed 2 events/);
+    assert.match(text.stdout, /plan 1 \/ do 1 \/ review 0 \/ backlog 1 \/ done 0/);
+    assert.doesNotMatch(text.stdout, /swarlo feed/);
+
+    const history = runCli(['task', 'status', '--json', '--history'], { cwd: dir, env });
+    assert.equal(history.status, 0, history.stderr);
+    const historyPayload = JSON.parse(history.stdout);
+    assert.equal(historyPayload.status.last_event.task.id, id);
+    assert.equal(Object.hasOwn(historyPayload.status.last_event.task, 'events'), false);
+    assert.equal(historyPayload.status.last_event.event.event_type, 'claimed');
+    assert.equal(historyPayload.status.swarlo.feed[0].kind, 'claim');
+    assert.equal(historyPayload.status.swarlo.feed[0].metadata.swarlo.task_key, id);
+    assert.match(historyPayload.status.swarlo.realtime_contract.web, /atrisos-web/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task status keeps history out of the default live card', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const created = runCli(['task', 'new', 'Keep operator status compact', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    for (let i = 0; i < 8; i += 1) {
+      const noted = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex', '--json'], { cwd: dir, env });
+      assert.equal(noted.status, 0, noted.stderr);
+    }
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(Object.hasOwn(payload.status, 'swarlo'), false);
+    assert.equal(Object.hasOwn(payload.status, 'last_event'), false);
+
+    const history = runCli(['task', 'status', '--json', '--history'], { cwd: dir, env });
+    assert.equal(history.status, 0, history.stderr);
+    const historyPayload = JSON.parse(history.stdout);
+    assert.equal(historyPayload.status.swarlo.feed.length, 10);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task render archives old completed records from TODO view', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    for (let i = 0; i < 12; i += 1) {
+      const created = runCli(['task', 'new', `Completed task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
+      assert.equal(created.status, 0, created.stderr);
+      const id = JSON.parse(created.stdout).task_id;
+      const done = runCli(['task', 'done', id, '--json'], { cwd: dir, env });
+      assert.equal(done.status, 0, done.stderr);
+    }
+
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(render.status, 0, render.stderr);
+    const regenerated = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    const completedLines = regenerated.match(/\*\*\[[^\]]+\]\*\* Completed task/g) || [];
+    assert.equal(completedLines.length, 8);
+    assert.match(regenerated, /4 older completed tasks archived/);
+
+    const exportOut = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const exported = runCli(['task', 'export', '--out', exportOut], { cwd: dir, env });
+    assert.equal(exported.status, 0, exported.stderr);
+    const projection = JSON.parse(fs.readFileSync(exportOut, 'utf8'));
+    assert.equal(projection.tasks.length, 8);
+    assert.equal(projection.surface.full_task_count, 12);
+    assert.equal(projection.surface.visible_task_count, 8);
+    assert.equal(projection.surface.hidden_done_count, 4);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.total, 12);
+    assert.equal(statusPayload.status.counts.done, 12);
+
+    const tightRender = runCli(['task', 'render', '--out', 'atris/TODO.md', '--done-limit', '2'], { cwd: dir, env });
+    assert.equal(tightRender.status, 0, tightRender.stderr);
+    const tight = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    const tightCompletedLines = tight.match(/\*\*\[[^\]]+\]\*\* Completed task/g) || [];
+    assert.equal(tightCompletedLines.length, 2);
+    assert.match(tight, /10 older completed tasks archived/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1410,14 +2117,14 @@ test('task review can create the next RSI task from the review suggestion', () =
     const payload = JSON.parse(finished.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.task.status, 'done');
+    assert.equal(Object.hasOwn(payload, 'projection'), false);
+    assert.equal(Object.hasOwn(payload.task, 'events'), false);
     assert.ok(payload.next_task_id);
-
-    const next = payload.projection.tasks.find(t => t.id === payload.next_task_id);
+    const next = payload.next_task;
     assert.equal(next.title, 'Make the next task editable from UI');
     assert.equal(next.status, 'open');
     assert.equal(next.tag, 'rsi');
-    assert.equal(next.metadata.parent_task_id, id);
-    assert.equal(next.metadata.source, 'task_review_next');
+    assert.equal(next.lineage.parent_task_id, id);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1441,6 +2148,7 @@ test('task serve exposes a local task factory API', async () => {
 
     const html = await fetch(base).then(r => r.text());
     assert.match(html, /Atris Task Factory/);
+    assert.match(html, /data-smoke="hello-from-ui">hello from UI/);
 
     const created = await fetch(`${base}/api/tasks`, {
       method: 'POST',
@@ -1586,7 +2294,7 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(child.lineage.parent_title, 'Improve task factory lineage view');
     const stream = projection.streams.find(s => s.objective === parent.objective);
     assert.equal(stream.done_count, 1);
-    assert.equal(stream.open_count, 1);
+    assert.equal(stream.active_count, 1);
     assert.ok(stream.tasks.some(t => t.id === nextId && t.parent_task_id === id));
   } finally {
     cleanupTempDir(dir);
