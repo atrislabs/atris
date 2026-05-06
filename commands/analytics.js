@@ -67,12 +67,17 @@ function analyticsAtris() {
       }
     }
 
-    // Parse timestamps for productivity hours
-    const timestampMatches = content.match(/\*\*(\d{2}):(\d{2}):(\d{2})\*\*/g);
+    // Parse timestamps for productivity hours. Match the journal heading
+    // format `### Title — HH:MM` and the legacy `**HH:MM:SS**` form.
+    const timestampMatches = content.match(/(?:—|--)\s*(\d{2}):\d{2}(?::\d{2})?\b|\*\*(\d{2}):\d{2}(?::\d{2})?\*\*/g);
     if (timestampMatches) {
       timestampMatches.forEach(ts => {
-        const hour = parseInt(ts.match(/\d{2}/)[0]);
-        hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+        const m = ts.match(/(\d{2}):/);
+        if (!m) return;
+        const hour = parseInt(m[1], 10);
+        if (Number.isFinite(hour) && hour >= 0 && hour < 24) {
+          hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+        }
       });
     }
   });
