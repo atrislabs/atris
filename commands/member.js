@@ -2824,6 +2824,13 @@ function memberStatus(name, ...args) {
 // --- Command Dispatcher ---
 
 function memberCommand(subcommand, ...args) {
+  // Subcommands that take a member name as args[0] otherwise treat `--help` as
+  // a name and error with "Member '--help' not found". `create`/`new` handle
+  // help themselves (with subcommand-specific usage) — leave those alone.
+  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new']);
+  if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
+    subcommand = undefined;
+  }
   switch (subcommand) {
     case 'list':
     case 'ls':
