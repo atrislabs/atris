@@ -199,7 +199,7 @@ function refreshNowFile(root = process.cwd()) {
 }
 
 function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
-  const help = args.includes('--help') || args.includes('-h');
+  const help = args.includes('--help') || args.includes('-h') || args[0] === 'help';
   if (help) {
     console.log('Usage: atris now [--init|--refresh|--all|--path]');
     console.log('');
