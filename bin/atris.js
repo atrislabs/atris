@@ -343,7 +343,7 @@ function showHelp() {
   console.log('  calendar   - Calendar commands (today, week)');
   console.log('  twitter    - Twitter commands (post)');
   console.log('  slack      - Slack commands (channels)');
-  console.log('  imessage   - Local Mac iMessage commands (doctor, recent, send)');
+  console.log('  imessage   - Local Mac iMessage commands (doctor, lookup, recent, send)');
   console.log('  integrations - Show integration status');
   console.log('');
   console.log('Skills:');
