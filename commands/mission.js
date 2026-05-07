@@ -433,6 +433,11 @@ function writeReceipt(mission, result, root = process.cwd()) {
   fs.mkdirSync(paths.runsDir, { recursive: true });
   const safeTime = stampIso().replace(/[:.]/g, '-');
   const receiptPath = path.join(paths.runsDir, `mission-${mission.id}-${safeTime}.json`);
+  // Back-compat: legacy consumers read receipt.result.passed (verifier-only shape).
+  // New shape nests verifier under result.verifier_result, so mirror .passed at top.
+  const finalResult = (result && typeof result === 'object' && result.verifier_result && !('passed' in result))
+    ? { ...result, passed: !!result.verifier_result.passed }
+    : result;
   fs.writeFileSync(receiptPath, JSON.stringify({
     schema: 'atris.mission_receipt.v1',
     mission_id: mission.id,
@@ -440,7 +445,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
     owner: mission.owner,
     at: stampIso(),
     verifier: mission.verifier || null,
-    result,
+    result: finalResult,
   }, null, 2) + '\n', 'utf8');
   return path.relative(root, receiptPath);
 }
@@ -747,8 +752,8 @@ async function runMission(args) {
   // Everything past lock acquisition runs inside try/finally so the lock + signal handlers
   // always get cleaned up — including saveMission failures during pending-session setup.
   let pauseReason = null;
-  let sessionId = mission.claude_session_id || null;
-  let pendingSessionId = mission.pending_session_id || null;
+  let sessionId = null;
+  let pendingSessionId = null;
   let ranTicks = 0;
   const ticks = [];
   let onSig = null;
@@ -759,6 +764,18 @@ async function runMission(args) {
     onSig = () => { controller.abort(); };
     process.on('SIGINT', onSig);
     process.on('SIGTERM', onSig);
+
+    // Re-read inside the lock. The initial resolveMission ran pre-lock, so a concurrent
+    // `mission tick` could have written between resolveMission and acquireMissionLock.
+    // Derive sessionId, pendingSessionId, and the frozen contract from the fresh record
+    // so a fast tick's writes can't be silently overwritten by this run loop.
+    mission = resolveMission(mission.id) || mission;
+    if (['complete', 'stopped'].includes(mission.status)) {
+      console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
+      return;
+    }
+    sessionId = mission.claude_session_id || null;
+    pendingSessionId = mission.pending_session_id || null;
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
     const frozen = {
@@ -989,58 +1006,114 @@ function tickMission(args) {
   const asJson = wantsJson(args);
   const verify = hasFlag(args, '--verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
-  const ref = stripKnownFlags(args, [], ['--json', '--verify', '--complete-on-pass'])[0] || '';
-  const mission = resolveMission(ref);
+  const summary = readFlag(args, '--summary', '');
+  const ref = stripKnownFlags(args, ['--summary'], ['--json', '--verify', '--complete-on-pass'])[0] || '';
+  let mission = resolveMission(ref);
   if (!mission) {
     console.error(ref ? `Mission "${ref}" not found.` : 'No mission found. Run: atris mission start "..."');
     process.exit(1);
   }
-  if (['complete', 'stopped'].includes(mission.status)) {
-    const { mission: saved } = saveMission({ ...mission, next_action: 'mission is closed' }, process.cwd(), 'mission_tick_skipped', { reason: mission.status });
-    printJsonOrText({ ok: true, action: 'tick_skipped', mission: saved }, [`Skipped ${mission.id}: ${mission.status}`], asJson);
-    return;
+
+  // Same per-mission flock that `mission run` uses. Without it, a tick could
+  // increment last_tick_index/receipt_path concurrently with a run loop and
+  // get its mutation overwritten by the run's saveMission on the next tick.
+  const lock = acquireMissionLock(mission.id);
+  if (!lock.ok) {
+    console.error(`[mission tick] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`);
+    process.exit(3);
   }
 
-  let verifierResult = null;
-  let receiptPath = mission.receipt_path || null;
-  let status = 'running';
-  let nextAction = mission.verifier ? `run verifier: ${mission.verifier}` : 'attach task, verifier, or proof';
-  if (verify) {
-    verifierResult = runVerifier(mission.verifier);
-    receiptPath = writeReceipt(mission, verifierResult);
+  try {
+    // Re-read inside the lock — the initial resolveMission ran before we held it.
+    mission = resolveMission(mission.id) || mission;
+
+    if (['complete', 'stopped'].includes(mission.status)) {
+      const { mission: saved } = saveMission({ ...mission, next_action: 'mission is closed' }, process.cwd(), 'mission_tick_skipped', { reason: mission.status });
+      printJsonOrText({ ok: true, action: 'tick_skipped', mission: saved }, [`Skipped ${mission.id}: ${mission.status}`], asJson);
+      return;
+    }
+
+    // Per the /mission skill design, the calling Claude session IS the per-tick LLM.
+    // This CLI subcommand records the tick: writes a structured receipt (matching the
+    // `mission_run_tick` envelope) and runs the verifier when asked. Always emit a
+    // receipt so every tick has its own audit row, not just verifier ticks.
+    const tickStart = stampIso();
+    const lastTickIndex = Number(mission.last_tick_index || 0);
+    const tickIdx = lastTickIndex + 1;
+
+    let verifierResult = null;
+    if (verify && mission.verifier) {
+      verifierResult = runVerifier(mission.verifier);
+    }
+
+    const tickRecord = {
+      status: 'ran',
+      reason: 'tick-recorded',
+      tick_index: tickIdx,
+      ran: true,
+      started_at: tickStart,
+      claude: { skipped: true, reason: 'orchestrator-is-caller-session' },
+      summary: summary || null,
+      verifier_passed: verifierResult ? !!verifierResult.passed : null,
+      finished_at: stampIso(),
+    };
+    const receiptPath = writeReceipt(mission, {
+      kind: 'mission_tick',
+      tick: tickRecord,
+      frozen: {
+        verifier: mission.verifier || '',
+        lane: mission.lane || 'workspace',
+        started_at: tickStart,
+      },
+      verifier_result: verifierResult,
+      rate_limit_info: null,
+    });
+
+    let status = 'running';
+    let nextAction = mission.verifier ? `run verifier: ${mission.verifier}` : 'attach task, verifier, or proof';
     if (verifierResult?.passed) {
       status = completeOnPass ? 'complete' : 'ready';
       nextAction = completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
-    } else {
+    } else if (verifierResult) {
       status = 'blocked';
       nextAction = 'fix verifier failure or revise mission';
     }
+    const nextMission = {
+      ...mission,
+      status,
+      receipt_path: receiptPath,
+      last_tick_at: tickRecord.finished_at,
+      last_tick_status: tickRecord.status,
+      last_tick_reason: tickRecord.reason,
+      last_tick_index: tickIdx,
+      verifier_result: verifierResult || mission.verifier_result || null,
+      next_action: nextAction,
+    };
+    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_tick', {
+      tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath,
+    });
+    const logPath = appendMemberLog(saved.owner, 'Mission tick', {
+      mission: saved.objective,
+      state: saved.status,
+      tick_index: tickIdx,
+      verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
+      receipt: receiptPath,
+      summary: summary || undefined,
+    });
+    printJsonOrText(
+      { ok: true, action: 'mission_tick', mission: saved, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath },
+      [
+        `Ticked mission: ${saved.objective}`,
+        `State: ${saved.status}`,
+        `Tick: ${tickIdx}`,
+        `Next: ${saved.next_action}`,
+        ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
+      ],
+      asJson,
+    );
+  } finally {
+    releaseMissionLock(lock);
   }
-  const nextMission = {
-    ...mission,
-    status,
-    receipt_path: receiptPath,
-    last_tick_at: stampIso(),
-    verifier_result: verifierResult,
-    next_action: nextAction,
-  };
-  const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_tick', { verify, verifier_result: verifierResult, receipt_path: receiptPath });
-  const logPath = appendMemberLog(saved.owner, 'Mission tick', {
-    mission: saved.objective,
-    state: saved.status,
-    verifier: verify ? (verifierResult?.passed ? 'passed' : 'failed') : 'not_run',
-    receipt: receiptPath,
-  });
-  printJsonOrText(
-    { ok: true, action: 'mission_tick', mission: saved, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath },
-    [
-      `Ticked mission: ${saved.objective}`,
-      `State: ${saved.status}`,
-      `Next: ${saved.next_action}`,
-      ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
-    ],
-    asJson,
-  );
 }
 
 function completeMission(args) {
@@ -1110,7 +1183,7 @@ atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."]
   atris mission status [id] [--json]
-  atris mission tick <id> [--verify] [--complete-on-pass] [--json]
+  atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
   atris mission run <id> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                           [--no-claude] [--no-verify] [--complete-on-pass] [--json]
   atris mission complete <id> --proof "..."
