@@ -77,7 +77,7 @@ function cleanAtris(options = {}) {
 
   // Unhealable refs
   if (unhealable.length > 0) {
-    console.log(`⚠ ${unhealable.length} MAP.md ref(s) couldn't be healed:`);
+    console.log(`⚠ ${unhealable.length} MAP.md ${unhealable.length === 1 ? 'ref' : 'refs'} couldn't be healed:`);
     unhealable.slice(0, 3).forEach(ref => {
       console.log(`   • ${ref.file}:${ref.line} — ${ref.reason}`);
     });
