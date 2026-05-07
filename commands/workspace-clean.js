@@ -30,7 +30,7 @@ async function cleanWorkspace() {
   const slug = process.argv[3];
   const autoConfirm = process.argv.includes('--yes');
 
-  if (!slug || slug === '--help') {
+  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
     console.log('');
     console.log('Usage: atris clean-workspace <business-slug> [--yes]');
     console.log('');
