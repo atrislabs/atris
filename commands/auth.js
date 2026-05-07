@@ -341,7 +341,7 @@ async function accountsCmd() {
       }
       profiles.forEach(p => deleteProfile(p));
       deleteCredentials();
-      console.log(`✓ Removed ${profiles.length} account(s).`);
+      console.log(`✓ Removed ${profiles.length} ${profiles.length === 1 ? 'account' : 'accounts'}.`);
       process.exit(0);
     }
     if (!target) {

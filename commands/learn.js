@@ -68,7 +68,7 @@ function showSearch(query) {
   }
 
   console.log('');
-  console.log(`  Search: "${query}" — ${results.length} result(s)`);
+  console.log(`  Search: "${query}" — ${results.length} ${results.length === 1 ? 'result' : 'results'}`);
   console.log('');
   for (const e of results) {
     const conf = e._effectiveConfidence;
@@ -316,7 +316,7 @@ function harvestFromJournals() {
   }
 
   console.log('');
-  console.log(`  Found ${fresh.length} new note(s) to harvest:`);
+  console.log(`  Found ${fresh.length} new ${fresh.length === 1 ? 'note' : 'notes'} to harvest:`);
   console.log('');
   for (let i = 0; i < fresh.length; i++) {
     const c = fresh[i];
