@@ -773,7 +773,7 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
   const plan = initialPlan;
 
   // Report.
-  console.log(`Found ${projects.length} project(s).`);
+  console.log(`Found ${projects.length} ${projects.length === 1 ? 'project' : 'projects'}.`);
   console.log('');
   let wouldUpdate = 0, unchanged = 0, skipped = 0;
   for (const p of plan) {
