@@ -29,7 +29,7 @@ function resolveSlug() {
 async function sleepAtris() {
   const slug = resolveSlug();
 
-  if (!slug || slug === '--help') {
+  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
     console.log('Usage: atris sleep [business]');
     console.log('');
     console.log('  Pause a workspace to save compute. Storage only.');
@@ -60,7 +60,7 @@ async function sleepAtris() {
 async function wakeAtris() {
   const slug = resolveSlug();
 
-  if (!slug || slug === '--help') {
+  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
     console.log('Usage: atris wake [business]');
     console.log('');
     console.log('  Wake a sleeping workspace. Agents resume automatically.');

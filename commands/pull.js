@@ -75,7 +75,7 @@ function buildPullConflictReviewPacket(outputDir, conflictChanges, remoteContent
 async function pullAtris() {
   let arg = process.argv[3];
 
-  if (arg === '--help') {
+  if (arg === '--help' || arg === '-h' || arg === 'help') {
     console.log('Usage: atris pull [business] [--into <path>] [--only <prefix>] [--keep-local] [--timeout <seconds>] [--dry-run] [--no-manifest]');
     console.log('');
     console.log('  Pull is force-overwrite by default. Cloud is the source of truth.');
