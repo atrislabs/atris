@@ -846,7 +846,14 @@ if (command === 'init') {
         console.error(`✗ Log sync failed: ${error.message || error}`);
         process.exit(1);
       });
-  } else if (subcommand && subcommand !== '--help' && !subcommand.startsWith('-')) {
+  } else if (subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+    console.log('Usage: atris log [business-slug | sync | help]');
+    console.log('');
+    console.log('  atris log                Open today\'s journal REPL (write to ## Inbox)');
+    console.log('  atris log <slug>         Show business log history');
+    console.log('  atris log sync           Sync the local journal to cloud');
+    process.exit(0);
+  } else if (subcommand && !subcommand.startsWith('-')) {
     // Business log: atris log <business-slug>
     require('../commands/context-sync').businessLog(subcommand)
       .then(() => process.exit(0))
