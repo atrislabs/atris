@@ -1196,7 +1196,7 @@ function memberList() {
   }
 
   console.log('');
-  console.log(`${members.length} member(s) found.`);
+  console.log(`${members.length} ${members.length === 1 ? 'member' : 'members'} found.`);
 }
 
 // --- CREATE subcommand ---
