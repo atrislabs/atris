@@ -28,9 +28,18 @@ atris imessage doctor --json
 atris imessage recent "+15555555555" --limit 20
 ```
 
-4. Never send a message unless the user approved the exact recipient and exact text.
+4. Resolve named contacts through the cached local lookup command. Use `--refresh` only when the cache is stale or the result looks wrong.
 
-5. For sending, use the fast local send command only after explicit approval.
+```bash
+atris imessage lookup --name "Exact Contact Name" --json
+atris imessage lookup --name "myself" --json
+```
+
+If lookup returns `unique: true`, use `primary.handle` for the send. If lookup returns `ambiguous: true`, ask one concise clarification with the candidate names. If it returns no matches, ask for a phone number or exact contact name. Do not scan Contacts manually or loop over AppleScript; the CLI caches lookup results in `~/.atris/cache/imessage-contacts.json`.
+
+5. Never send a message unless the user approved the exact recipient and exact text.
+
+6. For sending, use the fast local send command only after explicit approval.
 
 ```bash
 atris imessage send --to "+15555555555" --text "Exact approved text" --approved --json --receipt
