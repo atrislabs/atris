@@ -632,7 +632,7 @@ async function pushAtris() {
   }
   if (deleteFailed.length > 0) {
     console.log('');
-    console.log(`  ⚠ ${deleteFailed.length} delete(s) failed (NOT marked as deleted in manifest):`);
+    console.log(`  ⚠ ${deleteFailed.length} ${deleteFailed.length === 1 ? 'delete' : 'deletes'} failed (NOT marked as deleted in manifest):`);
     deleteFailed.slice(0, 10).forEach((f) => console.log(`    ${f.status} ${f.path.replace(/^\//, '')}`));
     if (deleteFailed.length > 10) console.log(`    ... +${deleteFailed.length - 10} more`);
   }
@@ -661,7 +661,7 @@ async function pushAtris() {
   // These did NOT land on cloud even though the HTTP call returned 200.
   if (failedToLand.length > 0) {
     console.log('');
-    console.log(`  ⚠ ${failedToLand.length} file(s) did NOT land on cloud (server returned 200 but`);
+    console.log(`  ⚠ ${failedToLand.length} ${failedToLand.length === 1 ? 'file' : 'files'} did NOT land on cloud (server returned 200 but`);
     console.log(`     dropped or rejected these files):`);
     const shown = failedToLand.slice(0, 15);
     for (const f of shown) {
