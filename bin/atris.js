@@ -125,6 +125,50 @@ if (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !i
   }
 }
 
+/**
+ * Load active missions from .atris/state/missions.jsonl (append-only event log).
+ * Walks lines in reverse, deduping by mission id, returns missions whose latest
+ * record has status in {ready, running, planning} sorted newest-first.
+ *
+ * Each mission: { id, owner, objective, status, verifier, verifier_passed, next_action, lane }.
+ *
+ * Returns [] if file missing or malformed — never throws.
+ */
+function loadActiveMissions(workspaceDir) {
+  try {
+    const file = path.join(workspaceDir, '.atris', 'state', 'missions.jsonl');
+    if (!fs.existsSync(file)) return [];
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    const seen = new Map(); // id -> mission record
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let rec;
+      try { rec = JSON.parse(lines[i]); } catch { continue; }
+      const id = rec.id || rec.mission_id;
+      if (!id || seen.has(id)) continue;
+      seen.set(id, rec);
+    }
+    const live = [];
+    for (const m of seen.values()) {
+      const status = m.status;
+      if (!['ready', 'running', 'planning'].includes(status)) continue;
+      live.push({
+        id: m.id || m.mission_id,
+        owner: m.owner || '?',
+        objective: m.objective || '',
+        status,
+        verifier: m.verifier || null,
+        verifier_passed: (m.verifier_result && m.verifier_result.passed) === true,
+        next_action: m.next_action || '',
+        lane: m.lane || null,
+      });
+    }
+    // Most recently started first (rough — relies on insertion order from reversed walk)
+    return live;
+  } catch {
+    return [];
+  }
+}
+
 function searchJournal(keyword) {
   if (!keyword) {
     console.log('Usage: atris search <keyword>');
@@ -580,11 +624,26 @@ async function interactiveEntry(userInput) {
     ? context.inProgressFeaturesCount
     : (context.inProgressFeatures || []).length;
 
+  // Pull active missions (durable goals) — these outrank dev-pipeline state
+  // because a mission with an unverified verifier is a Keshav-attributable
+  // commitment that hasn't been closed yet.
+  const activeMissions = loadActiveMissions(workspaceDir);
+  const liveMissionsCount = activeMissions.length;
+  // Mission needs a tick when: it has a verifier configured AND that verifier
+  // hasn't passed yet. Planning-state missions count too — first tick is what
+  // moves them to running.
+  const needsTickMission = activeMissions.find(
+    (m) => m.verifier && !m.verifier_passed
+  );
+
   // Build status line
   const parts = [];
   const wipCount = inProgressTasksCount + inProgressFeaturesCount;
   if (wipCount > 0) {
     parts.push(`WIP: ${wipCount}`);
+  }
+  if (liveMissionsCount > 0) {
+    parts.push(`Missions: ${liveMissionsCount}`);
   }
   if (inboxCount > 0) {
     parts.push(`Inbox: ${inboxCount}`);
@@ -637,7 +696,25 @@ async function interactiveEntry(userInput) {
     return;
   }
 
-  // Cold start - auto-advance based on current workspace state
+  // Surface live missions so the operator sees durable goals alongside dev WIP.
+  if (liveMissionsCount > 0) {
+    console.log('\nLive missions:');
+    for (const m of activeMissions.slice(0, 5)) {
+      const tickGate = m.verifier && !m.verifier_passed ? ' [needs tick]' : '';
+      const obj = m.objective.length > 70 ? `${m.objective.slice(0, 67)}...` : m.objective;
+      console.log(`- [${m.owner}] ${obj} (${m.status})${tickGate}`);
+    }
+  }
+
+  // Cold start auto-advance.
+  // ORDER MATTERS: missions outrank pipeline state because a mission's verifier
+  // is the contract that gates the Stop hook. Closing it unblocks everything else.
+  if (needsTickMission) {
+    console.log(`\nNext: atris mission tick (${needsTickMission.owner} mission has unverified verifier)`);
+    console.log(`Run: atris mission tick ${needsTickMission.id} --verify --complete-on-pass`);
+    return;
+  }
+
   if (completedTasksCount > 0) {
     const preview = context.completedTasks.slice(0, 3).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
     if (preview.length > 0) {
