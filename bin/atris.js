@@ -1365,9 +1365,9 @@ function showVersion() {
 // ============================================
 
 async function agentAtris() {
-  // Respect -h / --help before any auth/state work
+  // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
-  if (firstArg === '-h' || firstArg === '--help') {
+  if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
     console.log('Usage: atris agent');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
@@ -1469,7 +1469,7 @@ async function chatAtris() {
   const message = process.argv.slice(3).join(' ').trim();
 
   // Respect -h / --help before any auth/state checks
-  if (message === '-h' || message === '--help') {
+  if (message === '-h' || message === '--help' || message === 'help') {
     console.log('Usage: atris chat ["message"]');
     console.log('');
     console.log('  Open an interactive session with the selected agent, or send a one-shot message.');
