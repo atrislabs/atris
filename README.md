@@ -165,6 +165,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 Under the hood, Atris can keep score on real repo work.
 
 - Tasks can carry a `Verify:` command, so work can end on a deterministic check instead of pure prose.
+- Plan, do, and review now carry the same Confidence Gate: find every plausible loophole, patch it with source/proof/verifier/owner/rollback, or name it as residual risk before advancing.
 - `atris autopilot` can run that check after review and record the result in the journal.
 - Future task picks can use recent results, so Atris learns from repo-local history without claiming model retraining.
 

@@ -87,6 +87,10 @@ atris task - durable local task state (SQLite, gitignored)
   atris task where                          Print db path + workspace scope
   atris task help                           This help
 
+Confidence Gate:
+  Before plan/do/review advances, find loopholes, patch them with proof,
+  verifier, owner, rollback, or name the residual risk.
+
 Env:
   ATRIS_TASKS_DB    Override db path (default ~/.atris/tasks.db)
   ATRIS_AGENT_ID    Owner id for claim/done (default: $USER)
