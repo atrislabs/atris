@@ -41,6 +41,28 @@ function printWorkflowBrief(lines) {
   console.log('');
 }
 
+const CONFIDENCE_GATE_LINES = [
+  'Confidence Gate:',
+  '1) Ask: am I factually confident enough to move this forward?',
+  '2) Find loopholes: stale sources, missing owner, weak proof, bad rollback, hidden risk.',
+  '3) Patch every known loophole with proof, verifier, owner, rollback, or an explicit blocked note.',
+  '4) Only advance when confidence is earned; never use 100% as a vibe.'
+];
+
+function printConfidenceGate(indent = '') {
+  for (const line of CONFIDENCE_GATE_LINES) console.log(`${indent}${line}`);
+}
+
+function confidenceGatePrompt(stage) {
+  return [
+    `Confidence Gate (${stage}):`,
+    `- Ask whether you are factually confident enough to advance this ${stage}.`,
+    '- List every plausible loophole: stale source, missing owner, weak proof, bad rollback, hidden side effect, ambiguous done condition.',
+    '- Patch each loophole with a source read, verifier, proof requirement, owner, rollback, or explicit blocked note.',
+    '- Do not claim 100% confidence unless every known loophole is patched, verified, or named as residual risk.'
+  ].join('\n');
+}
+
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
   const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
@@ -224,11 +246,13 @@ async function planAtris(userInput = null) {
   }
   console.log('Workflow:');
   console.log('1) ASCII visualize + wait for approval');
-  console.log('2) Write tasks to atris/TODO.md under ## Backlog');
+  console.log('2) Run the Confidence Gate before writing tasks');
+  printConfidenceGate('   ');
+  console.log('3) Write tasks to atris/TODO.md under ## Backlog');
   console.log('   Format: - **T#:** Description [explore|execute]');
-  console.log('3) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
+  console.log('4) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, User reaction, Pattern)');
-  console.log('4) Stop. Do NOT execute (run `atris do` to build).');
+  console.log('5) Stop. Do NOT execute (run `atris do` to build).');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('💡 After planning: Run "atris do" to execute the build');
@@ -290,17 +314,19 @@ async function planAtris(userInput = null) {
     userPrompt += `STEP 1: Generate ASCII visualizations for user approval\n`;
     userPrompt += `   Create diagrams showing architecture, flows, schemas, UI/UX.\n`;
     userPrompt += `   SHOW these diagrams and wait for approval before proceeding.\n\n`;
-    userPrompt += `STEP 2: Break approved ideas into concrete tasks\n`;
+    userPrompt += `STEP 2: Run the Confidence Gate before writing tasks\n`;
+    userPrompt += confidenceGatePrompt('plan') + `\n\n`;
+    userPrompt += `STEP 3: Break approved ideas into concrete tasks\n`;
     userPrompt += `   - Each task should be: Specific, Measurable, Actionable\n`;
     userPrompt += `   - Include file:line references from MAP.md\n`;
     userPrompt += `   - List dependencies between tasks\n`;
     userPrompt += `   - Add acceptance criteria for each task\n\n`;
-    userPrompt += `STEP 3: Write tasks to atris/TODO.md\n`;
+    userPrompt += `STEP 4: Write tasks to atris/TODO.md\n`;
     userPrompt += `   - Add to ## Backlog section\n`;
     userPrompt += `   - Format: - **T#:** Description [explore|execute]\n`;
     userPrompt += `   - Each task: one job, clear exit condition\n`;
     userPrompt += `   - Include file:line references from MAP.md\n\n`;
-    userPrompt += `STEP 4: Log to your journal\n`;
+    userPrompt += `STEP 5: Log to your journal\n`;
     userPrompt += `   - Write to atris/team/navigator/journal/YYYY-MM-DD.md\n`;
     userPrompt += `   - Include: Task, Delivered, User reaction, Pattern\n`;
     userPrompt += `   - Your journal is how you learn — record what worked\n\n`;
@@ -560,9 +586,12 @@ async function doAtris() {
   console.log('Workflow:');
   console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
   console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
-  console.log('2) Execute step-by-step. Run tests as you go.');
-  console.log('3) When done, move task to ## Completed');
-  console.log('4) Log to atris/team/executor/journal/YYYY-MM-DD.md');
+  console.log('2) Run the Confidence Gate against the task before editing');
+  printConfidenceGate('   ');
+  console.log('3) Execute step-by-step. Run tests as you go.');
+  console.log('4) Before completion, rerun the gate against proof and residual risk');
+  console.log('5) When done, move task to ## Completed');
+  console.log('6) Log to atris/team/executor/journal/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, Errors hit, Learned)');
   console.log('');
   console.log('⛔ Do NOT plan — just execute what\'s written.');
@@ -646,11 +675,14 @@ async function doAtris() {
     userPrompt += `Your process (EXECUTE these steps):\n`;
     userPrompt += `1. Read tasks from TODO.md (shown above)\n`;
     userPrompt += `2. For each task: Show ASCII visualization first (especially complex changes)\n`;
-    userPrompt += `3. Execute task: Use file edit tools, terminal commands, etc.\n`;
-    userPrompt += `4. Move task to ## Completed in TODO.md\n`;
-    userPrompt += `5. Log to atris/team/executor/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `3. Run the Confidence Gate before editing\n`;
+    userPrompt += confidenceGatePrompt('do') + `\n`;
+    userPrompt += `4. Execute task: Use file edit tools, terminal commands, etc.\n`;
+    userPrompt += `5. Before completion, rerun the gate against proof and residual risk\n`;
+    userPrompt += `6. Move task to ## Completed in TODO.md\n`;
+    userPrompt += `7. Log to atris/team/executor/journal/YYYY-MM-DD.md\n`;
     userPrompt += `   (Task, Delivered, Errors hit, Learned)\n`;
-    userPrompt += `6. Use MAP.md to navigate codebase\n\n`;
+    userPrompt += `8. Use MAP.md to navigate codebase\n\n`;
     userPrompt += `DO NOT just describe what you would do - actually edit files and execute commands!\n`;
     userPrompt += `Context: ${context}\n`;
     userPrompt += `Start executing tasks now.`;
@@ -896,6 +928,7 @@ async function reviewAtris() {
       readinessBits.join(', ') + '.',
       '',
       'This step prepares the validator. It does not mean the change has passed review yet.',
+      'Confidence Gate: review must find loopholes, patch or name each one, and state residual risk before completion.',
       'Next I will run tests, walk each validate.md, and clear completed tasks out of TODO.',
       '',
       decision,
@@ -921,11 +954,13 @@ async function reviewAtris() {
     console.log('Workflow:');
     console.log('1) Run the project test suite (follow TESTING_GUIDE if present).');
     console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
-    console.log('3) Clean TODO.md: delete completed tasks. Target state = 0.');
+    console.log('3) Run the Confidence Gate before approving completion.');
+    printConfidenceGate('   ');
+    console.log('4) Clean TODO.md: delete completed tasks. Target state = 0.');
     console.log('   If a task fails validation, move back to ## Backlog with note.');
-    console.log('4) Log to atris/team/validator/journal/YYYY-MM-DD.md');
+    console.log('5) Log to atris/team/validator/journal/YYYY-MM-DD.md');
     console.log('   (Task, Result, Issues found, Learned)');
-    console.log('5) If anything surprised you, append to atris/lessons.md.');
+    console.log('6) If anything surprised you, append to atris/lessons.md.');
     console.log('');
     console.log('Done when: ✅ All good. TODO.md clean. Ready for human testing.');
     console.log('');
@@ -1003,9 +1038,11 @@ async function reviewAtris() {
     userPrompt += `  1. Ultrathink (say "ultrathink", think 3 times)\n`;
     userPrompt += `  2. Check requirements → build → edge cases → errors → integration\n`;
     userPrompt += `  3. Run tests (unit, integration, linting, type checking)\n`;
-    userPrompt += `  4. Detect Drift: Scan the Journal History below. Do you see the same friction 2x?\n`;
-    userPrompt += `  5. If issues found: report → "atris do" fixes → "atris review" again\n`;
-    userPrompt += `  6. Repeat until: "✅ All good. Ready for human testing."\n\n`;
+    userPrompt += `  4. Run the Confidence Gate before approving completion\n`;
+    userPrompt += confidenceGatePrompt('review') + `\n`;
+    userPrompt += `  5. Detect Drift: Scan the Journal History below. Do you see the same friction 2x?\n`;
+    userPrompt += `  6. If issues found: report → "atris do" fixes → "atris review" again\n`;
+    userPrompt += `  7. Repeat until: "✅ All good. Ready for human testing."\n\n`;
     
     if (taskContexts) {
       userPrompt += `## TODO.md:\n${taskContexts}\n\n`;
@@ -1017,6 +1054,7 @@ async function reviewAtris() {
     
     userPrompt += `Your job:\n`;
     userPrompt += `  • Verify everything works\n`;
+    userPrompt += `  • Find all plausible loopholes; patch them or name residual risk\n`;
     userPrompt += `  • Test thoroughly (unless user says no)\n`;
     userPrompt += `  • Clean TODO.md — DELETE completed tasks. Target state = 0.\n`;
     userPrompt += `    If a task fails, move it back to ## Backlog with a note.\n`;

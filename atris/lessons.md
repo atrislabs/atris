@@ -92,3 +92,5 @@
 - **[2026-04-30] approval-feedback-loops-stay-separate** — pass — `go/edit/hold` is approval before action; `yes/edit/no` is learning feedback after output. Do not reuse bare `edit` for approval because `atris brain edit` already records feedback. Use `atris brain approval edit` for approval edits and keep `atris brain edit` untouched.
 
 - **[2026-05-04] projection-is-not-ledger** — pass — `atris task` should keep SQLite events as the durable ledger, but `.atris/state/tasks.projection.json` and `TODO.md` are operator cockpits. Cap completed rows, task events, and task messages in projections; expose counts and full-history commands for validators.
+
+- **[2026-05-07] confidence-gate-must-be-wired** — pass — A 100% confidence prompt is only useful if Plan, Do, and Review all print it and agent prompts carry it. Put loophole search in the CLI workflow, not just strategy docs.
