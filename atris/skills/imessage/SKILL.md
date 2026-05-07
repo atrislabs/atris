@@ -30,7 +30,15 @@ atris imessage recent "+15555555555" --limit 20
 
 4. Never send a message unless the user approved the exact recipient and exact text.
 
-5. For sending, use the project-approved local iMessage path only after explicit approval.
+5. For sending, use the fast local send command only after explicit approval.
+
+```bash
+atris imessage send --to "+15555555555" --text "Exact approved text" --approved --json --receipt
+```
+
+The command normalizes US 10-digit phone numbers to `+1...`, checks `doctor`, sends through the local Messages AppleScript path using `service type = iMessage`, and returns JSON proof after the latest-outgoing Messages DB row settles. Use `--receipt` inside an Atris workspace when the action needs a durable `atris/runs/imessage-send-*.md` receipt.
+
+If the recipient name is ambiguous, ask one concise clarification before sending. If the user gave a phone number or exact resolved handle, do not search the repo first.
 
 ## Status Meaning
 
