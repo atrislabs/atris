@@ -41,6 +41,7 @@ function extractFlag(args, ...names) {
 async function listErrors(args) {
   const [hoursArg, r1] = extractFlag(args, '--hours', '-H');
   const [limitArg, r2] = extractFlag(r1, '--limit', '-L');
+  const json = r2.includes('--json');
   const hours = hoursArg ? parseInt(hoursArg, 10) : 24;
   const limit = limitArg ? parseInt(limitArg, 10) : 500;
 
@@ -51,12 +52,21 @@ async function listErrors(args) {
   });
 
   if (!result.ok) {
-    console.error(`Error: ${result.error || 'Failed to fetch errors'}`);
+    if (json) {
+      console.log(JSON.stringify({ ok: false, error: result.error || 'Failed to fetch errors' }));
+    } else {
+      console.error(`Error: ${result.error || 'Failed to fetch errors'}`);
+    }
     process.exit(1);
   }
 
   const data = result.data || {};
   const groups = data.groups || [];
+
+  if (json) {
+    console.log(JSON.stringify({ ok: true, ...data }, null, 2));
+    return;
+  }
 
   if (groups.length === 0) {
     console.log(`No errors in the last ${hours}h. Clean.`);
