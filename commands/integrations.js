@@ -422,6 +422,14 @@ function escapeSqlString(value) {
   return String(value || '').replace(/'/g, "''");
 }
 
+function normalizeLookupKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9@+]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function normalizeImessageHandle(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -430,6 +438,33 @@ function normalizeImessageHandle(value) {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
   return raw;
+}
+
+function normalizeContactLabel(value) {
+  return String(value || '')
+    .replace(/^_\$!<|>!\$_$/g, '')
+    .replace(/^\$!<|>!\$$/g, '')
+    .trim() || 'other';
+}
+
+function imessageLookupCachePath() {
+  return path.join(os.homedir(), '.atris', 'cache', 'imessage-contacts.json');
+}
+
+function readImessageLookupCache() {
+  const cachePath = imessageLookupCachePath();
+  try {
+    return JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  } catch {
+    return { version: 1, entries: {} };
+  }
+}
+
+function writeImessageLookupCache(cache) {
+  const cachePath = imessageLookupCachePath();
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+  fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf8');
+  return cachePath;
 }
 
 function sleepMs(ms) {
@@ -501,6 +536,242 @@ function imessageVerifyLatestOutgoing(handle, sinceMs, options = {}) {
     settled: Boolean(latest.matched && latest.message_error === 0 && (latest.is_sent || latest.is_delivered || latest.is_finished)),
     waited_ms: Date.now() - startedAt,
   };
+}
+
+function parseImessageLookupArgs(args) {
+  const options = {
+    json: false,
+    refresh: false,
+    name: '',
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+  };
+  const positional = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--refresh') {
+      options.refresh = true;
+    } else if (arg === '--name' || arg === '--query') {
+      options.name = args[i + 1] || '';
+      i += 1;
+    } else if (arg === '--max-age-minutes') {
+      options.maxAgeMs = Math.max(0, Number(args[i + 1] || 0) * 60 * 1000);
+      i += 1;
+    } else {
+      positional.push(arg);
+    }
+  }
+  if (!options.name && positional.length) options.name = positional.join(' ');
+  options.name = String(options.name || '').trim();
+  return options;
+}
+
+const CONTACT_LOOKUP_SCRIPT = `
+function run(argv) {
+  const query = String(argv[0] || '').trim();
+  const Contacts = Application('Contacts');
+  const selfAlias = /^(me|myself|self|my number|my phone|my contact)$/i.test(query);
+  function safe(fn) {
+    try {
+      const value = fn();
+      return value === null || value === undefined ? '' : String(value);
+    } catch (error) {
+      return '';
+    }
+  }
+  function propertyRows(rows) {
+    const out = [];
+    try {
+      const list = rows();
+      for (let i = 0; i < list.length; i += 1) {
+        const item = list[i];
+        out.push({
+          label: safe(function () { return item.label(); }),
+          value: safe(function () { return item.value(); })
+        });
+      }
+    } catch (error) {}
+    return out.filter(function (row) { return row.value; });
+  }
+  function contactRow(person) {
+    return {
+      id: safe(function () { return person.id(); }),
+      name: safe(function () { return person.name(); }),
+      first_name: safe(function () { return person.firstName(); }),
+      last_name: safe(function () { return person.lastName(); }),
+      organization: safe(function () { return person.organization(); }),
+      phones: propertyRows(function () { return person.phones(); }),
+      emails: propertyRows(function () { return person.emails(); })
+    };
+  }
+  let people = [];
+  if (selfAlias) {
+    if (Contacts.myCard.exists()) people = [Contacts.myCard];
+  } else {
+    people = Contacts.people.whose({ name: { _contains: query } })();
+    if (!people.length && query.indexOf(' ') > -1) {
+      people = Contacts.people.whose({ name: { _contains: query.split(/\\s+/)[0] } })();
+    }
+  }
+  const rows = [];
+  const limit = Math.min(20, people.length);
+  for (let i = 0; i < limit; i += 1) rows.push(contactRow(people[i]));
+  return JSON.stringify({ ok: true, query: query, self_alias: selfAlias, contacts_count: people.length, matches: rows });
+}
+`;
+
+function scoreImessageContact(query, match, selfAlias = false) {
+  if (selfAlias) return 100;
+  const q = normalizeLookupKey(query);
+  const name = normalizeLookupKey(match.name);
+  if (!q || !name) return 0;
+  if (name === q) return 95;
+  if (name.includes(q)) return 80;
+  const tokens = q.split(' ').filter(Boolean);
+  const nameTokens = new Set(name.split(' ').filter(Boolean));
+  if (tokens.length && tokens.every((token) => nameTokens.has(token))) return 75;
+  if (tokens.length === 1 && nameTokens.has(tokens[0])) return 65;
+  return 40;
+}
+
+function shapeImessageLookupPayload(raw, options, cached = false, cachedAt = null) {
+  const query = options.name;
+  const selfAlias = Boolean(raw.self_alias);
+  const matches = (raw.matches || [])
+    .map((match) => {
+      const phones = (match.phones || [])
+        .map((phone) => ({
+          label: normalizeContactLabel(phone.label),
+          value: String(phone.value || '').trim(),
+          handle: normalizeImessageHandle(phone.value),
+        }))
+        .filter((phone) => phone.handle);
+      const emails = (match.emails || [])
+        .map((email) => ({
+          label: normalizeContactLabel(email.label),
+          value: String(email.value || '').trim(),
+          handle: String(email.value || '').trim(),
+        }))
+        .filter((email) => email.handle);
+      const handles = [
+        ...phones.map((phone) => ({ type: 'phone', label: phone.label, handle: phone.handle })),
+        ...emails.map((email) => ({ type: 'email', label: email.label, handle: email.handle })),
+      ];
+      return {
+        id: match.id || '',
+        name: match.name || [match.first_name, match.last_name].filter(Boolean).join(' '),
+        phones,
+        emails,
+        handles,
+        primary_handle: handles[0]?.handle || '',
+        score: scoreImessageContact(query, match, selfAlias),
+      };
+    })
+    .filter((match) => match.primary_handle)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const exactMatches = matches.filter((match) => normalizeLookupKey(match.name) === normalizeLookupKey(query));
+  const primary = matches.length === 1
+    ? matches[0]
+    : exactMatches.length === 1
+      ? exactMatches[0]
+      : null;
+  return {
+    ok: true,
+    action: 'imessage_lookup',
+    provider: 'local_contacts',
+    query,
+    cached,
+    cached_at: cachedAt,
+    cache_path: imessageLookupCachePath(),
+    match_count: matches.length,
+    unique: Boolean(primary),
+    ambiguous: matches.length > 1 && !primary,
+    primary: primary ? {
+      name: primary.name,
+      handle: primary.primary_handle,
+      handles: primary.handles,
+    } : null,
+    matches,
+  };
+}
+
+function printImessageLookupPayload(payload, json = false) {
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  if (!payload.ok) {
+    console.error(payload.error || 'Contact lookup failed.');
+    return;
+  }
+  if (!payload.matches.length) {
+    console.log(`No iMessage contacts found for "${payload.query}".`);
+    return;
+  }
+  if (payload.primary) {
+    console.log(`${payload.primary.name}: ${payload.primary.handle}${payload.cached ? ' (cached)' : ''}`);
+    return;
+  }
+  console.log(`Multiple matches for "${payload.query}":`);
+  for (const match of payload.matches.slice(0, 8)) {
+    console.log(`  - ${match.name}: ${match.primary_handle}`);
+  }
+}
+
+function imessageLookup(args = []) {
+  const options = parseImessageLookupArgs(args);
+  if (!options.name) {
+    printImessageLookupPayload({
+      ok: false,
+      action: 'imessage_lookup',
+      error: 'Usage: atris imessage lookup --name <contact-name> [--json] [--refresh]',
+    }, options.json);
+    process.exit(1);
+  }
+
+  const key = normalizeLookupKey(options.name);
+  const cache = readImessageLookupCache();
+  const entry = cache.entries?.[key];
+  if (!options.refresh && entry && Date.now() - Number(entry.cached_at || 0) <= options.maxAgeMs) {
+    printImessageLookupPayload(shapeImessageLookupPayload(entry.raw, options, true, entry.cached_at), options.json);
+    return;
+  }
+
+  const result = spawnSync('osascript', ['-l', 'JavaScript', '-e', CONTACT_LOOKUP_SCRIPT, options.name], {
+    encoding: 'utf8',
+    timeout: 6000,
+  });
+  if (result.status !== 0) {
+    printImessageLookupPayload({
+      ok: false,
+      action: 'imessage_lookup',
+      query: options.name,
+      error: (result.stderr || 'Contacts lookup failed. Grant Contacts automation permission to this terminal or Atris.').trim(),
+    }, options.json);
+    process.exit(1);
+  }
+
+  let raw;
+  try {
+    raw = JSON.parse(String(result.stdout || '{}'));
+  } catch {
+    printImessageLookupPayload({
+      ok: false,
+      action: 'imessage_lookup',
+      query: options.name,
+      error: 'Contacts lookup returned invalid JSON.',
+    }, options.json);
+    process.exit(1);
+  }
+
+  const cachedAt = Date.now();
+  const latestCache = readImessageLookupCache();
+  latestCache.version = 1;
+  latestCache.entries = latestCache.entries || {};
+  latestCache.entries[key] = { cached_at: cachedAt, raw };
+  writeImessageLookupCache(latestCache);
+  printImessageLookupPayload(shapeImessageLookupPayload(raw, options, false, cachedAt), options.json);
 }
 
 function parseImessageSendArgs(args) {
@@ -677,6 +948,10 @@ async function imessageCommand(subcommand, ...args) {
       imessageRecent(handle, { limit, json: args.includes('--json') });
       break;
     }
+    case 'lookup': {
+      imessageLookup(args);
+      break;
+    }
     case 'send': {
       imessageSend(args);
       break;
@@ -684,6 +959,7 @@ async function imessageCommand(subcommand, ...args) {
     default:
       console.log('iMessage commands:');
       console.log('  atris imessage doctor [--json]   - Check local Messages access');
+      console.log('  atris imessage lookup --name <name> [--json] [--refresh]');
       console.log('  atris imessage recent <handle>   - Read recent local messages');
       console.log('  atris imessage send --to <handle> --text <text> --approved [--json] [--receipt]');
   }
