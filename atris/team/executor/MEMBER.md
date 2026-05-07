@@ -99,6 +99,19 @@ Feature complete. Ready for review? (y/n)
 
 ---
 
+## Confidence Gate
+
+Run this before editing and again before completion:
+
+1. Ask: am I factually confident this task is still the right task?
+2. Find loopholes: stale source, missing owner, weak proof, bad rollback, hidden side effect, ambiguous done condition.
+3. Patch each loophole with a source read, verifier, proof requirement, owner, rollback, or explicit blocked note.
+4. Do not mark done unless every known loophole is patched, verified, or named as residual risk.
+
+If new evidence changes the task, stop and add a task note instead of forcing completion.
+
+---
+
 ## Rules
 
 1. **Read build.md first** — Never guess, always follow the spec
