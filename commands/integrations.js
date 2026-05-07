@@ -418,6 +418,249 @@ function imessageRecent(handle, options = {}) {
   console.log(result.stdout.trim() || 'No recent messages found.');
 }
 
+function escapeSqlString(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function normalizeImessageHandle(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.includes('@')) return raw;
+  const digits = raw.replace(/[^\d]/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return raw;
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function readLatestOutgoingImessage(handle, sinceMs) {
+  const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+  const sinceUnix = Math.max(0, Math.floor(Number(sinceMs || Date.now()) / 1000) - 5);
+  const sql = `
+    SELECT m.rowid,
+           datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime') AS ts,
+           m.is_sent,
+           m.is_delivered,
+           m.is_finished,
+           COALESCE(m.error, 0) AS error,
+           length(COALESCE(m.text,'')) AS text_len
+    FROM message m
+    JOIN handle h ON h.rowid = m.handle_id
+    WHERE h.id = '${escapeSqlString(handle)}'
+      AND m.is_from_me = 1
+      AND (m.date/1000000000 + 978307200) >= ${sinceUnix}
+    ORDER BY m.date DESC
+    LIMIT 1;
+  `;
+  const result = spawnSync('sqlite3', ['-readonly', chatDb, sql], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    return {
+      matched: false,
+      error: (result.stderr || 'Failed to verify latest outgoing iMessage.').trim(),
+    };
+  }
+  const row = String(result.stdout || '').trim();
+  if (!row) {
+    return {
+      matched: false,
+      error: 'No outgoing Messages row found after send.',
+    };
+  }
+  const [rowid, ts, isSent, isDelivered, isFinished, messageError, textLen] = row.split('|');
+  return {
+    matched: true,
+    rowid,
+    timestamp: ts,
+    is_sent: Number(isSent) === 1,
+    is_delivered: Number(isDelivered) === 1,
+    is_finished: Number(isFinished) === 1,
+    message_error: Number(messageError) || 0,
+    text_readable: Number(textLen) > 0,
+  };
+}
+
+function imessageVerifyLatestOutgoing(handle, sinceMs, options = {}) {
+  const timeoutMs = Math.max(0, Number(options.timeoutMs || 2000));
+  const intervalMs = Math.max(25, Number(options.intervalMs || 150));
+  const startedAt = Date.now();
+  let latest = readLatestOutgoingImessage(handle, sinceMs);
+  while (
+    latest.matched
+    && latest.message_error === 0
+    && !(latest.is_sent || latest.is_delivered || latest.is_finished)
+    && Date.now() - startedAt < timeoutMs
+  ) {
+    sleepMs(intervalMs);
+    latest = readLatestOutgoingImessage(handle, sinceMs);
+  }
+  return {
+    ...latest,
+    settled: Boolean(latest.matched && latest.message_error === 0 && (latest.is_sent || latest.is_delivered || latest.is_finished)),
+    waited_ms: Date.now() - startedAt,
+  };
+}
+
+function parseImessageSendArgs(args) {
+  const options = {
+    approved: false,
+    json: false,
+    receipt: false,
+    to: '',
+    text: '',
+  };
+  const positional = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--approved' || arg === '--confirm-approved') {
+      options.approved = true;
+    } else if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--receipt') {
+      options.receipt = true;
+    } else if (arg === '--to' || arg === '--handle') {
+      options.to = args[i + 1] || '';
+      i += 1;
+    } else if (arg === '--text' || arg === '--message') {
+      options.text = args[i + 1] || '';
+      i += 1;
+    } else {
+      positional.push(arg);
+    }
+  }
+  if (!options.to && positional.length) options.to = positional.shift() || '';
+  if (!options.text && positional.length) options.text = positional.join(' ');
+  options.to = normalizeImessageHandle(options.to);
+  options.text = String(options.text || '').trim();
+  return options;
+}
+
+function printImessageSendPayload(payload, json = false) {
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  if (payload.ok) {
+    console.log(`Sent iMessage to ${payload.to}.`);
+    if (payload.receipt_path) console.log(`Receipt: ${payload.receipt_path}`);
+  } else {
+    console.error(payload.error || 'Failed to send iMessage.');
+  }
+}
+
+function writeImessageSendReceipt(payload) {
+  const atrisDir = path.join(process.cwd(), 'atris');
+  if (!fs.existsSync(atrisDir)) return '';
+  const runsDir = path.join(atrisDir, 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const receiptPath = path.join(runsDir, `imessage-send-${stamp}.md`);
+  const lines = [
+    '# iMessage Send Receipt',
+    '',
+    `- Sent at: ${payload.sent_at}`,
+    `- Provider: ${payload.provider}`,
+    `- To: ${payload.to}`,
+    `- Text: ${payload.text}`,
+    `- Doctor connected: ${payload.doctor?.connected === true}`,
+    `- Send exit: ${payload.osascript?.status}`,
+    `- DB verified: ${payload.db_verification?.matched === true}`,
+    `- DB settled: ${payload.db_verification?.settled === true}`,
+  ];
+  fs.writeFileSync(receiptPath, `${lines.join('\n')}\n`, 'utf8');
+  return receiptPath;
+}
+
+function imessageSend(args = []) {
+  const options = parseImessageSendArgs(args);
+  const basePayload = {
+    ok: false,
+    action: 'imessage_send',
+    provider: 'local_imessage',
+    to: options.to,
+    text: options.text,
+    approved: options.approved,
+  };
+
+  if (!options.to || !options.text) {
+    printImessageSendPayload({
+      ...basePayload,
+      error: 'Usage: atris imessage send --to <phone-or-email> --text <message> --approved [--json] [--receipt]',
+    }, options.json);
+    process.exit(1);
+  }
+
+  if (!options.approved) {
+    printImessageSendPayload({
+      ...basePayload,
+      error: 'Refusing to send without --approved after the exact recipient and exact text are confirmed.',
+    }, options.json);
+    process.exit(1);
+  }
+
+  const doctor = imessageDoctor();
+  if (!doctor.connected) {
+    printImessageSendPayload({
+      ...basePayload,
+      doctor,
+      error: 'iMessage is not available on this Mac.',
+    }, options.json);
+    process.exit(1);
+  }
+
+  const sendStartedAt = Date.now();
+  const result = spawnSync('osascript', [
+    '-e', 'on run argv',
+    '-e', 'set targetHandle to item 1 of argv',
+    '-e', 'set messageText to item 2 of argv',
+    '-e', 'tell application "Messages"',
+    '-e', 'set targetService to 1st service whose service type = iMessage',
+    '-e', 'set targetBuddy to buddy targetHandle of targetService',
+    '-e', 'send messageText to targetBuddy',
+    '-e', 'end tell',
+    '-e', 'return targetHandle',
+    '-e', 'end run',
+    options.to,
+    options.text,
+  ], {
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+
+  const payload = {
+    ...basePayload,
+    ok: result.status === 0,
+    sent_at: new Date().toISOString(),
+    doctor: {
+      connected: doctor.connected,
+      checks: doctor.checks,
+    },
+    osascript: {
+      status: result.status,
+      signal: result.signal || null,
+      stdout: String(result.stdout || '').trim(),
+      stderr: String(result.stderr || '').trim(),
+    },
+  };
+
+  if (payload.ok) {
+    payload.db_verification = imessageVerifyLatestOutgoing(options.to, sendStartedAt);
+  }
+
+  if (payload.ok && options.receipt) {
+    payload.receipt_path = writeImessageSendReceipt(payload);
+  }
+
+  if (!payload.ok) {
+    payload.error = payload.osascript.stderr || 'Messages AppleScript send failed.';
+  }
+
+  printImessageSendPayload(payload, options.json);
+  if (!payload.ok) process.exit(1);
+}
+
 async function imessageCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'doctor': {
@@ -434,10 +677,15 @@ async function imessageCommand(subcommand, ...args) {
       imessageRecent(handle, { limit, json: args.includes('--json') });
       break;
     }
+    case 'send': {
+      imessageSend(args);
+      break;
+    }
     default:
       console.log('iMessage commands:');
       console.log('  atris imessage doctor [--json]   - Check local Messages access');
       console.log('  atris imessage recent <handle>   - Read recent local messages');
+      console.log('  atris imessage send --to <handle> --text <text> --approved [--json] [--receipt]');
   }
 }
 
