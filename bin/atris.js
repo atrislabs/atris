@@ -809,6 +809,13 @@ function showWelcomeVisualization() {
 }
 
 if (command === 'init') {
+  // Help flag must short-circuit before initCmd() (which scaffolds files)
+  // and before interactiveEntry (which loads workspace context).
+  const initArg = process.argv[3];
+  if (initArg === '-h' || initArg === '--help' || initArg === 'help') {
+    initCmd();
+    process.exit(0);
+  }
   initCmd();
   // Flow directly into interactive prompt
   interactiveEntry()
