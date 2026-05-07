@@ -8,7 +8,7 @@ async function forkAtris() {
   const template = process.argv[3];
   const targetArg = process.argv[4];
 
-  if (!template || template === '--help') {
+  if (!template || template === '--help' || template === '-h' || template === 'help') {
     console.log('Usage: atris fork <template> [target-dir]');
     console.log('');
     console.log('  atris fork music-artist          Fork the music-artist template');

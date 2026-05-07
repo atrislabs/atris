@@ -5,7 +5,8 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
 async function publishAtris() {
-  if (process.argv[3] === '--help') {
+  const firstArg = process.argv[3];
+  if (firstArg === '--help' || firstArg === '-h' || firstArg === 'help') {
     console.log('Usage: atris publish [--name <name>] [--description <desc>]');
     console.log('');
     console.log('  atris publish                         Publish current workspace as a template');
