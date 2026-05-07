@@ -374,6 +374,7 @@ function loadTeamScoreEvidence(scoreJsonPath) {
 
 function normalizeTeamScoreEvidence(parsed, source) {
   const score = parsed?.score || parsed || {};
+  const learningPacket = parsed?.learningPacket || {};
   const dimensions = Array.isArray(score.dimensions) ? score.dimensions : [];
   const weakest = score.weakest || dimensions.slice().sort((a, b) => Number(a.score || 0) - Number(b.score || 0))[0] || null;
   const nextMove = compactSentence(
@@ -383,6 +384,7 @@ function normalizeTeamScoreEvidence(parsed, source) {
   );
   if (!nextMove || !weakest) return null;
   const latestReward = parsed?.taskLedger?.latestReward || parsed?.latestReward || null;
+  const targetMember = learningPacket.targetMember || parsed?.targetMember || null;
   return {
     source: source || 'unknown',
     overall: Number.isFinite(Number(score.overall)) ? Number(score.overall) : null,
@@ -401,6 +403,15 @@ function normalizeTeamScoreEvidence(parsed, source) {
       reward: latestReward.reward == null ? null : Number.isFinite(Number(latestReward.reward)) ? Number(latestReward.reward) : null,
       proof: latestReward.proof || null,
     } : null,
+    target_member: targetMember ? {
+      slug: targetMember.slug || null,
+      label: targetMember.label || targetMember.slug || null,
+      overall: Number.isFinite(Number(targetMember.overall)) ? Number(targetMember.overall) : null,
+      next: targetMember.next || null,
+      weakest_attribute: targetMember.weakestAttribute || targetMember.weakest_attribute || null,
+    } : null,
+    drill: learningPacket.drill || null,
+    verifier: learningPacket.verifier || null,
     generated_at: parsed?.generated_at || parsed?.generatedAt || parsed?.created_at || null,
   };
 }
@@ -1906,8 +1917,11 @@ function memberGoalFromScore(name, ...args) {
     )
   ));
   const acceptance = [
-    `One bounded experiment targets the score-selected next move: ${scoreEvidence.next_move}`,
+    `One bounded experiment targets the score-selected next move: ${scoreEvidence.drill || scoreEvidence.next_move}`,
     `The goal records weakest dimension ${scoreEvidence.weakest.label} and latest reward receipt ${latestRewardLine(scoreEvidence.latest_reward)}.`,
+    scoreEvidence.target_member
+      ? `Target member: ${scoreEvidence.target_member.label || scoreEvidence.target_member.slug}${scoreEvidence.target_member.weakest_attribute?.label ? `; weakest attribute: ${scoreEvidence.target_member.weakest_attribute.label}` : ''}.`
+      : 'Target member is recorded when the score packet provides one.',
     'Review proof or ask the human before replacing this with another score-derived goal.',
   ];
   const goal = existing || {
@@ -1982,12 +1996,27 @@ function proposalForGoal(goal) {
   const criteria = Array.isArray(goal.acceptance) && goal.acceptance.length
     ? goal.acceptance[0]
     : 'Return proof, risk, and next move.';
-  const title = `Run next proof step for ${goal.title}`;
+  const scoreEvidence = goal.team_score || null;
+  const target = scoreEvidence?.target_member || null;
+  const drill = scoreEvidence?.drill || null;
+  const title = drill && target
+    ? `Run ${target.label || target.slug} drill: ${compactSentence(drill, 96)}`
+    : drill
+      ? `Run score drill: ${compactSentence(drill, 108)}`
+      : `Run next proof step for ${goal.title}`;
+  const nextStep = drill
+    ? drill
+    : goal.source === 'mission'
+      ? `Use ${goal.mission_file || 'MISSION.md'} to produce one receipt-backed bounded proof step for: ${goal.title}`
+      : criteria;
   return {
     id: makeExperimentId(goal.id, title),
     title,
     status: 'proposed',
-    proof_target: criteria,
+    proof_target: drill ? `Concrete drill: ${drill}` : criteria,
+    next_step: nextStep,
+    target_member: target || null,
+    verifier: scoreEvidence?.verifier || null,
     stop_rule: 'Stop if proof is missing, risk is unclear, or the next move would require new authority.',
     created_at: stampIso(),
   };
@@ -2637,6 +2666,8 @@ function memberTick(name, ...args) {
     goal: goal.title,
     experiment: experiment.title,
     proof_target: experiment.proof_target,
+    next_step: experiment.next_step || '',
+    verifier: experiment.verifier || '',
   });
   printJsonOrText(
     { ok: true, action: 'tick', member: name, goal_id: goal.id, experiment, reused, goals_path: paths.goalsJson, log_path: logPath },
