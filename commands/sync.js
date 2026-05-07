@@ -788,7 +788,7 @@ function syncAtrisAll({ dryRun = false, force = false } = {}) {
       console.log(`  ·  ${rel} (up to date)`);
       unchanged++;
     } else {
-      console.log(`  →  ${rel} — ${p.changes.length} file(s): ${p.changes.join(', ')}`);
+      console.log(`  →  ${rel} — ${p.changes.length} ${p.changes.length === 1 ? 'file' : 'files'}: ${p.changes.join(', ')}`);
       wouldUpdate++;
     }
   }
