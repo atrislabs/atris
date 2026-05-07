@@ -233,6 +233,17 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 }
 
 function initAtris() {
+  // Print usage on -h / --help / help instead of running init (which scaffolds
+  // many files, including atris/now.md and atris/team/). Asking for help
+  // shouldn't have file-system side effects.
+  const args = process.argv.slice(3);
+  if (args[0] === '-h' || args[0] === '--help' || args[0] === 'help') {
+    console.log('Usage: atris init [--force]');
+    console.log('');
+    console.log('  Scaffold the atris/ workspace in the current directory.');
+    console.log('  Refuses to run inside an existing atris/ folder unless --force is passed.');
+    return;
+  }
   // GUARD: Refuse nested init.
   // Bug: running `atris init` inside an existing `atris/` folder creates
   // `atris/atris/` nesting hell. Cloud doordash had this exact problem.
