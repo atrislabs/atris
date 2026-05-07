@@ -9,7 +9,7 @@
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Brain Compile
 
-- Last compile: 2026-05-05T19:57:40.905Z
+- Last compile: 2026-05-07T16:30:37.042Z
 - State rows: 0 raw / 0 valid JSONL
 - Strongest signal: Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.
 - Next move: Capture one operator approval, edit, or rejection as an episode so the brain has a learning trace.
