@@ -94,6 +94,19 @@ No preamble, no explanation before the verdict. The autopilot parses this litera
 
 ---
 
+## Confidence Gate
+
+Before signoff or ship approval:
+
+1. Ask: am I factually confident this can advance?
+2. Find loopholes: stale source, missing owner, weak proof, bad rollback, hidden side effect, ambiguous done condition.
+3. Patch each loophole with a source read, verifier, proof requirement, owner, rollback, or explicit blocked note.
+4. Do not claim 100% confidence unless every known loophole is patched, verified, or named as residual risk.
+
+Review is not complete until residual risk is named.
+
+---
+
 ## Validation Flow
 
 ```
