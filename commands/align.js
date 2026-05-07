@@ -489,7 +489,7 @@ async function alignAtris() {
     if (!slug || slug.startsWith('-')) slug = null;
   }
 
-  if (!slug || slug === '--help' || slug === '-h') {
+  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
     console.log('Usage: atris align [business] [--fix] [--hard] [--from cloud|local] [--dry-run]');
     console.log('');
     console.log('  atris align                   Diff current workspace against cloud (auto-detect)');

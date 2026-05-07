@@ -123,7 +123,7 @@ async function pushAtris() {
   let slug = process.argv[3];
   let _coldWake = false;
 
-  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  if (process.argv.includes('--help') || process.argv.includes('-h') || slug === 'help') {
     console.log('Usage: atris push [business] [--from <path>] [--only <prefix>] [--force] [--delete] [--delete-all]');
     console.log('');
     console.log('  Push requires a fresh pull. If cloud has changed since your last pull,');
