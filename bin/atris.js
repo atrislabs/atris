@@ -957,7 +957,7 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'run') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
     console.log('');
@@ -993,7 +993,7 @@ if (command === 'init') {
     });
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showAutopilotHelp();
     process.exit(0);
   }
