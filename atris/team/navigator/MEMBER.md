@@ -62,6 +62,17 @@ Every task you create must be:
 
 If you can't write a clear exit condition, the task is too vague. Break it down further or start with an `[explore]` task to clarify.
 
+## Confidence Gate
+
+Before a plan leaves Navigator:
+
+1. Ask: am I factually confident enough for Executor to act?
+2. Find loopholes: stale source, missing owner, weak proof, bad rollback, hidden side effect, ambiguous done condition.
+3. Patch each loophole with a source read, verifier, proof requirement, owner, rollback, or explicit blocked note.
+4. Do not call the plan ready unless every known loophole is patched, verified, or named as residual risk.
+
+100% confidence is not a vibe. It means the known loopholes are closed or deliberately carried.
+
 ---
 
 ## atris Visualization Patterns
