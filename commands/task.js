@@ -372,6 +372,7 @@ function taskTypeForCloud(task) {
 
 function taskStateForCloud(task) {
   if (task.status === 'claimed') return 'doing';
+  if (task.status === 'failed' && taskHasReview(task)) return 'done';
   if (task.status === 'failed') return 'blocked';
   if (task.status === 'done') return 'done';
   return 'open';
@@ -600,7 +601,7 @@ function taskStatusSummary(projection, { history = false } = {}) {
       plan: columns.plan.length,
       do: columns.do.length,
       review: columns.review.length,
-      done: tasks.filter(task => task.status === 'done').length + hiddenDoneCount,
+      done: tasks.filter(task => task.status === 'done' || (task.status === 'failed' && taskHasReview(task))).length + hiddenDoneCount,
     },
     current: compactTaskForStatus(columns.do[0] || columns.review[0] || null),
     next: compactTaskForStatus(columns.plan[0] || null),
@@ -1582,9 +1583,16 @@ function cmdSync(args) {
 function taskColumn(task) {
   if (task.status === 'open') return taskIsPlannedOpen(task) ? 'open' : 'backlog';
   if (task.status === 'claimed') return 'doing';
+  if (task.status === 'failed' && taskHasReview(task)) return 'done';
   if (task.status === 'failed') return 'blocked';
-  if (task.status === 'done' && task.latest_event_type !== 'reviewed') return 'review';
+  if (task.status === 'done' && !taskHasReview(task)) return 'review';
   return 'done';
+}
+
+function taskHasReview(task) {
+  if (task.latest_event_type === 'reviewed') return true;
+  const review = task.review || {};
+  return review.reward != null || Boolean(review.proof || review.lesson || review.next_task);
 }
 
 function taskBoardHtml() {
@@ -1710,8 +1718,10 @@ function taskBoardHtml() {
         return planned ? 'open' : 'backlog';
       }
       if (task.status === 'claimed') return 'doing';
+      const reviewed = task.latest_event_type === 'reviewed' || !!(task.review && (task.review.reward != null || task.review.proof || task.review.lesson || task.review.next_task));
+      if (task.status === 'failed' && reviewed) return 'done';
       if (task.status === 'failed') return 'blocked';
-      if (task.status === 'done' && task.latest_event_type !== 'reviewed') return 'review';
+      if (task.status === 'done' && !reviewed) return 'review';
       return 'done';
     }
 

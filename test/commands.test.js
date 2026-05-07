@@ -295,6 +295,7 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     assert.equal(tickPayload.goal_id, payload.goal.id);
     assert.equal(tickPayload.experiment.status, 'proposed');
     assert.match(tickPayload.experiment.proof_target, /MISSION\.md/);
+    assert.match(tickPayload.experiment.next_step, /MISSION\.md/);
 
     const reused = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(reused.status, 0, reused.stderr || reused.stdout);
@@ -339,6 +340,22 @@ test('member goal-from-score creates the active self-improvement goal from Team 
           proof: 'latestReward present in JSON and text output',
         },
       },
+      learningPacket: {
+        targetMember: {
+          slug: 'brainstormer',
+          label: 'brainstormer',
+          overall: 60,
+          next: 'Upgrade proof: finish one run with receipt, test, review, or artifact evidence.',
+          weakestAttribute: {
+            id: 'proof',
+            label: 'Proof quality',
+            score: 48,
+            line: 'Proof status: no task proof yet.',
+          },
+        },
+        drill: 'Run one bounded loop for brainstormer: Upgrade proof: finish one run with receipt, test, review, or artifact evidence. Weakest attribute: Proof quality 48.',
+        verifier: 'npm run test:team-overall && node scripts/team-overall-score.mjs --json',
+      },
     }, null, 2), 'utf8');
 
     const goal = runCli(['member', 'goal-from-score', 'mission-lead', '--score-json', scorePath, '--json'], { cwd: dir });
@@ -349,7 +366,10 @@ test('member goal-from-score creates the active self-improvement goal from Team 
     assert.match(payload.goal.title, /Raise Member Performance/);
     assert.equal(payload.goal.team_score.weakest.label, 'Member Performance');
     assert.equal(payload.goal.team_score.latest_reward.ref, 'OBL-157');
+    assert.equal(payload.goal.team_score.target_member.slug, 'brainstormer');
+    assert.match(payload.goal.team_score.drill, /brainstormer/);
     assert.match(payload.goal.acceptance[0], /score-selected next move/);
+    assert.match(payload.goal.acceptance[2], /Target member: brainstormer/);
     assert.equal(payload.superseded_experiments.length, 1);
     assert.equal(payload.superseded_experiments[0].experiment_id, oldExperimentId);
     assert.match(payload.next_command, /atris member tick mission-lead --goal/);
@@ -365,7 +385,11 @@ test('member goal-from-score creates the active self-improvement goal from Team 
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.goal_id, payload.goal.id);
-    assert.match(tickPayload.experiment.proof_target, /score-selected next move/);
+    assert.match(tickPayload.experiment.title, /brainstormer drill/);
+    assert.match(tickPayload.experiment.proof_target, /Concrete drill: Run one bounded loop for brainstormer/);
+    assert.match(tickPayload.experiment.next_step, /Proof quality 48/);
+    assert.equal(tickPayload.experiment.target_member.slug, 'brainstormer');
+    assert.match(tickPayload.experiment.verifier, /test:team-overall/);
 
     const reused = runCli(['member', 'goal-from-score', 'mission-lead', '--score-json', scorePath, '--json'], { cwd: dir });
     assert.equal(reused.status, 0, reused.stderr || reused.stdout);
@@ -2343,6 +2367,36 @@ test('task status gives web and Swarlo a compact live contract', () => {
     assert.equal(historyPayload.status.swarlo.feed[0].kind, 'claim');
     assert.equal(historyPayload.status.swarlo.feed[0].metadata.swarlo.task_key, id);
     assert.match(historyPayload.status.swarlo.realtime_contract.web, /atrisos-web/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task status treats reviewed failures as closed task health', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    const created = runCli(['task', 'new', 'Goal: who r u', '--tag', 'goal', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).task_id;
+    const claimed = runCli(['task', 'claim', id, '--as', 'command-leader', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+    const failed = runCli(['task', 'done', id, '--failed', '--proof', 'Misrouted small talk; fixed by intake triage.', '--json'], { cwd: dir, env });
+    assert.equal(failed.status, 0, failed.stderr);
+    const failedPayload = JSON.parse(failed.stdout);
+    assert.equal(failedPayload.reviewed, true);
+
+    const status = runCli(['task', 'status', '--json', '--history'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.status.counts.active, 0);
+    assert.equal(payload.status.counts.review, 0);
+    assert.equal(payload.status.counts.done, 1);
+    assert.equal(payload.status.current, null);
+    assert.deepEqual(payload.status.needs_review, []);
+    assert.equal(payload.status.swarlo.feed[0].metadata.swarlo.status, 'done');
   } finally {
     cleanupTempDir(dir);
   }
