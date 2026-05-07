@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 
@@ -464,6 +464,527 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// `atris mission run <id>` — bounded local headless loop. v0.1.
+// Spawns `claude -p --resume <session>` per tick. Honors cadence, active-hours,
+// rate-limit info, and a flock per mission. Only consumes max-ticks on `ran`.
+// ---------------------------------------------------------------------------
+
+const MISSION_RUN_DEFAULTS = {
+  maxTicks: 4,
+  maxWallSeconds: 3600,
+  claudeTimeoutMs: 10 * 60 * 1000,
+  backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
+};
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (ms <= 0) return resolve();
+    const onAbort = () => { clearTimeout(timer); reject(Object.assign(new Error('aborted'), { code: 'ABORTED' })); };
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+function parseCadenceSeconds(cadence) {
+  const text = String(cadence || '').trim().toLowerCase();
+  if (!text || text === 'manual' || text === 'once') return 0;
+  const m = text.match(/^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hour|hours|d|day|days)$/);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  const unit = m[2];
+  if (/^d/.test(unit)) return n * 86400;
+  if (/^h/.test(unit)) return n * 3600;
+  if (/^m(?!s)/.test(unit)) return n * 60;
+  return n; // seconds
+}
+
+function computeBackoff(policy, attempt) {
+  const base = policy.initialMs * Math.pow(policy.factor, Math.max(attempt - 1, 0));
+  const jitter = base * policy.jitter * Math.random();
+  return Math.min(policy.maxMs, Math.round(base + jitter));
+}
+
+function consecutiveVerifierFails(ticks) {
+  let n = 0;
+  for (let i = ticks.length - 1; i >= 0; i--) {
+    const t = ticks[i];
+    if (t.status !== 'ran') break;
+    if (t.verifier_passed === false) n++;
+    else break;
+  }
+  return n;
+}
+
+function isWithinActiveHours(activeHours, now = new Date()) {
+  if (!activeHours || !activeHours.start || !activeHours.end) return true;
+  const tz = activeHours.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const map = Object.fromEntries(parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));
+  const cur = Number(map.hour) * 60 + Number(map.minute);
+  const [sh, sm] = String(activeHours.start).split(':').map(Number);
+  const [eh, em] = String(activeHours.end).split(':').map(Number);
+  const start = sh * 60 + (sm || 0);
+  const end = (eh === 24 ? 24 * 60 : eh * 60 + (em || 0));
+  if (start === end) return false;
+  if (end > start) return cur >= start && cur < end;
+  return cur >= start || cur < end;
+}
+
+function acquireMissionLock(missionId, root = process.cwd()) {
+  const dir = path.join(root, '.atris', 'state');
+  fs.mkdirSync(dir, { recursive: true });
+  const lockFile = path.join(dir, `mission-${missionId}.lock`);
+  let fd;
+  try {
+    fd = fs.openSync(lockFile, 'wx');
+    fs.writeSync(fd, JSON.stringify({ pid: process.pid, started_at: stampIso(), mission_id: missionId }));
+    return { ok: true, lockFile, fd };
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      let info = {};
+      try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+      return { ok: false, lockFile, busy: true, holder: info };
+    }
+    return { ok: false, lockFile, error: e.message };
+  }
+}
+
+function releaseMissionLock(lock) {
+  if (!lock || !lock.ok) return;
+  try { if (lock.fd != null) fs.closeSync(lock.fd); } catch {}
+  try { fs.unlinkSync(lock.lockFile); } catch {}
+}
+
+function probeClaudeBinary() {
+  const help = spawnSync('claude', ['--help'], { encoding: 'utf8', timeout: 8000 });
+  if (help.status !== 0) return { ok: false, error: 'claude --help failed' };
+  const text = String(help.stdout || '');
+  const required = ['--output-format', '--permission-mode', '--resume', '--session-id', '--include-partial-messages'];
+  const missing = required.filter((flag) => !text.includes(flag));
+  if (missing.length) return { ok: false, error: `claude binary missing flags: ${missing.join(', ')}` };
+  return { ok: true };
+}
+
+function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
+  const lines = [
+    `# Mission Tick ${tickIndex}/${maxTicks}`,
+    ``,
+    `**Objective:** ${mission.objective}`,
+    `**Owner:** ${mission.owner}`,
+    `**Lane:** ${frozen.lane}`,
+    `**Cadence:** ${mission.cadence}`,
+    `**Stop condition:** ${mission.stop_condition || 'human marks complete'}`,
+    `**Verifier (frozen):** ${frozen.verifier || '(none — receipt only)'}`,
+    `**Last status:** ${mission.status}`,
+    `**Last tick:** ${mission.last_tick_at || 'never'}`,
+    ``,
+    `## Your task`,
+    `Do ONE increment of work toward the stop condition. ONE. No more.`,
+    `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
+    `- Pick the smallest concrete action that moves the mission forward.`,
+    `- Edit / run / research as needed for the lane.`,
+    `- After your work, the harness runs the frozen verifier — make sure it'll pass.`,
+    `- If you can't make progress this tick, say why explicitly. Don't fake it.`,
+    ``,
+    `## Constraints`,
+    `- Lane = ${frozen.lane}: stay inside that lane.`,
+    `- Do NOT modify mission.verifier, mission.lane, or any tool policy.`,
+    `- Do NOT start new missions, modify other missions, or expand scope.`,
+    `- Do NOT run destructive commands without strong evidence they're correct.`,
+    ``,
+    `When done, output a short receipt: (1) the exact files edited / commands run / artifacts produced — name them, (2) the metric of progress, (3) what the next tick should pick up.`,
+  ];
+  if (mission.task_ids?.length) {
+    lines.push('', `## Task ids`, mission.task_ids.map((t) => `- ${t}`).join('\n'));
+  }
+  if (mission.human_asks?.length) {
+    lines.push('', `## Human asks (don't act on these — surface them)`, mission.human_asks.map((t) => `- ${t}`).join('\n'));
+  }
+  return lines.join('\n');
+}
+
+function spawnClaudeTick(mission, opts) {
+  const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt } = opts;
+  return new Promise((resolve) => {
+    const args = [
+      '-p', prompt,
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--permission-mode', 'bypassPermissions',
+      '--include-partial-messages',
+    ];
+    if (sessionMode === 'set') args.push('--session-id', sessionId);
+    else if (sessionMode === 'resume') args.push('--resume', sessionId);
+
+    const startedAt = Date.now();
+    const proc = spawn('claude', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdoutBuf = '';
+    let observedSessionIds = new Set();
+    let finalText = null;
+    let isError = false;
+    let costEstimate = null;
+    let durationApiMs = null;
+    let numTurns = null;
+    let rateLimitInfo = null;
+    let stopReason = null;
+    let parseErrors = 0;
+    let stderr = '';
+    let timedOut = false;
+    let aborted = false;
+
+    const kill = (reason) => {
+      try { proc.kill('SIGTERM'); } catch {}
+      setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3000).unref();
+    };
+    const timer = setTimeout(() => { timedOut = true; kill('timeout'); }, timeoutMs);
+    const onAbort = () => { aborted = true; kill('aborted'); };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    proc.stdout.on('data', (chunk) => {
+      stdoutBuf += chunk.toString();
+      let nl;
+      while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
+        const line = stdoutBuf.slice(0, nl).trim();
+        stdoutBuf = stdoutBuf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line);
+          if (ev.session_id) observedSessionIds.add(ev.session_id);
+          if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
+            rateLimitInfo = ev.rate_limit_info;
+          }
+          if (ev.type === 'result') {
+            if (typeof ev.result === 'string') finalText = ev.result;
+            if (ev.is_error) isError = true;
+            if (typeof ev.total_cost_usd === 'number') costEstimate = ev.total_cost_usd;
+            if (typeof ev.duration_api_ms === 'number') durationApiMs = ev.duration_api_ms;
+            if (typeof ev.num_turns === 'number') numTurns = ev.num_turns;
+            if (ev.stop_reason) stopReason = ev.stop_reason;
+          }
+        } catch {
+          parseErrors++;
+        }
+      }
+    });
+
+    proc.stderr.on('data', (c) => { stderr += c.toString(); });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener?.('abort', onAbort);
+      const ok = code === 0 && !isError && !timedOut && !aborted;
+      const errStr = stderr.slice(-2000);
+      const authExpired = /not authenticated|please log in|login required|auth(?:entication)? expired/i.test(errStr);
+      resolve({
+        ok,
+        timedOut,
+        aborted,
+        authExpired,
+        exitCode: code,
+        sessionIds: Array.from(observedSessionIds),
+        result: finalText,
+        summary: (finalText || '').split('\n').filter(Boolean)[0]?.slice(0, 240) || (ok ? 'no-text' : 'error'),
+        api_equivalent_estimate: costEstimate,
+        duration_api_ms: durationApiMs,
+        duration_total_ms: Date.now() - startedAt,
+        num_turns: numTurns,
+        stop_reason: stopReason,
+        is_error: isError,
+        rate_limit_info: rateLimitInfo,
+        stderr: errStr,
+        parse_errors: parseErrors,
+      });
+    });
+
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
+    });
+  });
+}
+
+async function runMission(args) {
+  const asJson = wantsJson(args);
+  const skipClaude = hasFlag(args, '--no-claude');
+  const verifyEach = !hasFlag(args, '--no-verify');
+  const completeOnPass = hasFlag(args, '--complete-on-pass');
+  const maxTicksFlag = readFlag(args, '--max-ticks', '');
+  const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
+  const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
+  const cadenceOverride = readFlag(args, '--cadence', '');
+  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--no-claude', '--no-verify', '--complete-on-pass'])[0] || '';
+
+  let mission = resolveMission(ref);
+  if (!mission) {
+    console.error(ref ? `Mission "${ref}" not found.` : 'Usage: atris mission run <id> [--max-ticks 4] [--max-wall 3600]');
+    process.exit(1);
+  }
+  if (['complete', 'stopped'].includes(mission.status)) {
+    console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
+    process.exit(0);
+  }
+
+  const probe = probeClaudeBinary();
+  if (!skipClaude && !probe.ok) {
+    console.error(`[mission run] claude probe failed: ${probe.error}`);
+    process.exit(2);
+  }
+
+  const lock = acquireMissionLock(mission.id);
+  if (!lock.ok) {
+    console.error(`[mission run] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`);
+    process.exit(3);
+  }
+
+  // Everything past lock acquisition runs inside try/finally so the lock + signal handlers
+  // always get cleaned up — including saveMission failures during pending-session setup.
+  let pauseReason = null;
+  let sessionId = mission.claude_session_id || null;
+  let pendingSessionId = mission.pending_session_id || null;
+  let ranTicks = 0;
+  const ticks = [];
+  let onSig = null;
+
+  try {
+    const cwd = process.cwd();
+    const controller = new AbortController();
+    onSig = () => { controller.abort(); };
+    process.on('SIGINT', onSig);
+    process.on('SIGTERM', onSig);
+
+    // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
+    const frozen = {
+      verifier: mission.verifier || '',
+      lane: mission.lane || 'workspace',
+      started_at: stampIso(),
+    };
+    const cadence = cadenceOverride || mission.cadence || 'manual';
+    let cadenceSeconds = parseCadenceSeconds(cadence);
+    // cadence=manual|once: exactly 1 tick unless user explicitly raised --max-ticks
+    const effectiveMaxTicks = (cadenceSeconds === 0 && !maxTicksFlag) ? 1 : maxTicks;
+
+    // Session setup: generate a UUID for tick 1, persist as pending; promote on first matching event.
+    if (!sessionId && !pendingSessionId) {
+      pendingSessionId = crypto.randomUUID();
+      mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
+    }
+
+    const startedAt = Date.now();
+    let backoffAttempt = 0;
+    let lastRateLimit = null;
+
+    console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionId || `pending=${pendingSessionId}`}`);
+
+    while (ranTicks < effectiveMaxTicks) {
+      const elapsedSec = (Date.now() - startedAt) / 1000;
+      const remainingWall = maxWallSeconds - elapsedSec;
+      if (remainingWall <= 0) { pauseReason = 'max-wall-reached'; break; }
+      if (controller.signal.aborted) { pauseReason = 'aborted'; break; }
+
+      // Re-read mission, detect mutation of frozen fields
+      mission = resolveMission(mission.id) || mission;
+      if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
+      if (mission.verifier !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
+      if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
+
+      const tickIdx = ticks.length + 1;
+      const tickStart = stampIso();
+      let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
+
+      // Active-hours gate
+      if (!isWithinActiveHours(mission.active_hours)) {
+        result = { ...result, status: 'skipped', reason: 'quiet-hours' };
+      }
+      // Rate-limit cooldown
+      else if (lastRateLimit && lastRateLimit.resetsAt && Date.now() / 1000 < Number(lastRateLimit.resetsAt)) {
+        const waitSec = Number(lastRateLimit.resetsAt) - Math.floor(Date.now() / 1000);
+        if (waitSec > remainingWall) { pauseReason = 'rate-limit-exceeded-wall'; break; }
+        result = { ...result, status: 'skipped', reason: 'rate-limited', resets_at: lastRateLimit.resetsAt };
+      }
+      // Real tick
+      else if (skipClaude) {
+        result = { ...result, status: 'ran', reason: 'no-claude-mode', ran: true, claude: { skipped: true } };
+      } else {
+        const sessionMode = sessionId ? 'resume' : 'set';
+        const useId = sessionId || pendingSessionId;
+        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
+        const claudeResult = await spawnClaudeTick(mission, {
+          sessionMode, sessionId: useId, cwd, signal: controller.signal,
+          timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
+        });
+        result.claude = {
+          ok: claudeResult.ok,
+          summary: claudeResult.summary,
+          stop_reason: claudeResult.stop_reason,
+          api_equivalent_estimate: claudeResult.api_equivalent_estimate,
+          duration_total_ms: claudeResult.duration_total_ms,
+          num_turns: claudeResult.num_turns,
+          observed_session_ids: claudeResult.sessionIds,
+          parse_errors: claudeResult.parse_errors,
+          stderr: claudeResult.stderr?.slice(-1000),
+          timed_out: claudeResult.timedOut,
+          aborted: claudeResult.aborted,
+        };
+        if (claudeResult.rate_limit_info) {
+          lastRateLimit = claudeResult.rate_limit_info;
+          if (lastRateLimit.status && lastRateLimit.status !== 'allowed') {
+            // throttled / overage
+          }
+        }
+        if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }
+        if (claudeResult.authExpired) { pauseReason = 'auth-required'; break; }
+
+        if (!claudeResult.ok) {
+          result = { ...result, status: 'errored', reason: claudeResult.timedOut ? 'claude-timeout' : 'claude-error' };
+        } else {
+          // Promote pending session id ONLY if claude confirmed the exact UUID we requested.
+          // Mismatch is an invariant failure (we sent --session-id X, got Y) → pause, don't rotate.
+          if (!sessionId && pendingSessionId) {
+            if (claudeResult.sessionIds.includes(pendingSessionId)) {
+              sessionId = pendingSessionId;
+              mission = saveMission({ ...mission, claude_session_id: sessionId, pending_session_id: null }, cwd, 'mission_session_started', { session_id: sessionId }).mission;
+            } else if (claudeResult.sessionIds.length > 0) {
+              const observed = claudeResult.sessionIds[0];
+              mission = saveMission({ ...mission, session_id_mismatch: { requested: pendingSessionId, observed } }, cwd, 'mission_session_mismatch', { requested: pendingSessionId, observed }).mission;
+              pauseReason = 'session-id-mismatch-first-tick';
+              break;
+            }
+          } else if (sessionId && claudeResult.sessionIds.length > 0 && !claudeResult.sessionIds.includes(sessionId)) {
+            // session_id mismatch on a resumed session — abort run
+            pauseReason = 'session-id-mismatch';
+            break;
+          }
+          result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
+        }
+      }
+
+      // Verifier (only if claude succeeded or no-claude mode)
+      let verifierResult = null;
+      let receiptPath = null;
+      if (result.status === 'ran' && verifyEach && frozen.verifier) {
+        verifierResult = runVerifier(frozen.verifier);
+        result.verifier_passed = verifierResult.passed;
+      }
+
+      // Persist tick to mission state + write structured receipt
+      const finishedAt = stampIso();
+      const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt };
+      ticks.push(tickRecord);
+      receiptPath = writeReceipt(mission, {
+        kind: 'mission_run_tick',
+        tick: tickRecord,
+        frozen,
+        verifier_result: verifierResult,
+        rate_limit_info: lastRateLimit,
+      });
+
+      const newStatus = (verifierResult?.passed && completeOnPass) ? 'complete' :
+                        (verifierResult?.passed ? 'ready' :
+                        (verifierResult ? 'blocked' :
+                        (result.status === 'ran' ? 'running' : mission.status)));
+      mission = saveMission({
+        ...mission,
+        status: newStatus,
+        last_tick_at: finishedAt,
+        last_tick_status: result.status,
+        last_tick_reason: result.reason,
+        verifier_result: verifierResult || mission.verifier_result || null,
+        receipt_path: receiptPath,
+      }, cwd, 'mission_tick', {
+        tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath,
+      }).mission;
+      appendMemberLog(mission.owner, `Mission run tick ${tickIdx}`, {
+        mission: mission.objective,
+        state: mission.status,
+        tick_status: result.status,
+        reason: result.reason,
+        verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
+        receipt: receiptPath,
+      });
+
+      console.error(`[tick ${tickIdx}] status=${result.status} reason=${result.reason} verifier=${verifierResult ? (verifierResult.passed ? 'pass' : 'fail') : 'skip'} -> ${receiptPath || '-'}`);
+
+      if (result.status === 'ran') {
+        ranTicks++;
+        backoffAttempt = 0;
+      } else if (result.status === 'errored') {
+        backoffAttempt++;
+      }
+
+      if (newStatus === 'complete' || newStatus === 'ready') break;
+      if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+
+      // Sleep until next tick
+      let sleepMs = 0;
+      if (result.status === 'errored') {
+        sleepMs = computeBackoff(MISSION_RUN_DEFAULTS.backoff, backoffAttempt);
+      } else if (cadenceSeconds > 0) {
+        sleepMs = cadenceSeconds * 1000;
+      } else if (result.status === 'skipped' && result.reason === 'quiet-hours') {
+        sleepMs = 60_000; // 1min poll while waiting for window
+      } else if (result.status === 'skipped' && result.reason === 'rate-limited') {
+        sleepMs = Math.min(60_000, (Number(lastRateLimit.resetsAt) * 1000) - Date.now());
+      }
+      const remainingMs = remainingWall * 1000 - 1;
+      sleepMs = Math.min(Math.max(0, sleepMs), Math.max(0, remainingMs));
+      if (sleepMs > 0 && ranTicks < effectiveMaxTicks) {
+        try { await sleep(sleepMs, controller.signal); }
+        catch (e) { if (e.code === 'ABORTED') { pauseReason = 'aborted'; break; } throw e; }
+      }
+    }
+
+    if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
+      mission = saveMission({
+        ...mission,
+        status: 'paused',
+        paused_at: stampIso(),
+        stop_reason: pauseReason,
+        next_action: `resume with: atris mission run ${mission.id}`,
+      }, cwd, 'mission_run_paused', { reason: pauseReason }).mission;
+    }
+
+    const finalReceipt = writeReceipt(mission, {
+      kind: 'mission_run_summary',
+      frozen,
+      pause_reason: pauseReason,
+      ran_ticks: ranTicks,
+      tick_count: ticks.length,
+      ticks,
+      session_id: sessionId,
+      pending_session_id: mission.pending_session_id || null,
+      elapsed_seconds: (Date.now() - startedAt) / 1000,
+    });
+
+    printJsonOrText(
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt },
+      [
+        `Ran mission ${mission.id}`,
+        `  objective: ${mission.objective}`,
+        `  ran_ticks: ${ranTicks}/${effectiveMaxTicks}  (skipped/errored: ${ticks.length - ranTicks})`,
+        `  final state: ${mission.status}`,
+        pauseReason ? `  pause: ${pauseReason}` : null,
+        `  session: ${sessionId || '(none)'}`,
+        `  summary receipt: ${finalReceipt}`,
+      ].filter(Boolean),
+      asJson,
+    );
+  } finally {
+    if (onSig) {
+      try { process.removeListener('SIGINT', onSig); } catch {}
+      try { process.removeListener('SIGTERM', onSig); } catch {}
+    }
+    releaseMissionLock(lock);
+  }
+}
+
 function tickMission(args) {
   const asJson = wantsJson(args);
   const verify = hasFlag(args, '--verify');
@@ -590,6 +1111,8 @@ atris mission - durable goal + loop + owner + proof state
   atris mission start "<objective>" --owner <member> [--verify "..."]
   atris mission status [id] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--json]
+  atris mission run <id> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
+                          [--no-claude] [--no-verify] [--complete-on-pass] [--json]
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
 
@@ -616,6 +1139,8 @@ function missionCommand(args) {
       return statusMission(rest);
     case 'tick':
       return tickMission(rest);
+    case 'run':
+      return runMission(rest);
     case 'complete':
     case 'done':
       return completeMission(rest);
