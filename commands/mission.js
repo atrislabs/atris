@@ -774,6 +774,15 @@ async function runMission(args) {
       console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
       return;
     }
+    if (mission.status === 'paused') {
+      mission = saveMission({
+        ...mission,
+        status: 'running',
+        resumed_at: stampIso(),
+        stop_reason: null,
+        next_action: `running: atris mission run ${mission.id}`,
+      }, cwd, 'mission_run_resumed', { reason: 'operator-resume' }).mission;
+    }
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
 
