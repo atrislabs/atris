@@ -332,6 +332,51 @@ function missionPurpose(paths) {
   };
 }
 
+function resolveMemberRunMissionId(name, args = []) {
+  const override = readFlag(args, '--mission', '') || readFlag(args, '--mission-id', '');
+  if (override) return override;
+
+  const paths = requireMemberDir(name);
+  const purpose = missionPurpose(paths);
+  if (purpose.runtimeMission?.id) return purpose.runtimeMission.id;
+
+  const goals = loadMemberGoals(name, paths);
+  const goal = activeGoal(goals);
+  return goal?.mission_id || '';
+}
+
+function memberRun(name, ...args) {
+  if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member run <name> [mission run flags]');
+    console.log('Example: atris member run block-builder --max-ticks 1 --max-wall 900 --json');
+    console.log('Override: atris member run block-builder --mission <mission-id> --json');
+    return;
+  }
+
+  const missionId = resolveMemberRunMissionId(name, args);
+  if (!missionId) {
+    console.error(`No active Mission Runtime found for member "${name}".`);
+    console.error(`Try: atris member goal-from-mission ${name} --json`);
+    console.error(`Or:  atris mission start "..." --owner ${name}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const runArgs = stripKnownFlags(args, ['--mission', '--mission-id']);
+  if (!readFlag(runArgs, '--max-ticks', '')) runArgs.push('--max-ticks', '1');
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', '900');
+
+  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  try {
+    execFileSync(process.execPath, [cliPath, 'mission', 'run', missionId, ...runArgs], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+  } catch (error) {
+    process.exitCode = Number(error?.status) || 1;
+  }
+}
+
 function loadTeamScoreEvidence(scoreJsonPath) {
   const sourcePath = String(scoreJsonPath || '').trim();
   try {
@@ -2022,7 +2067,29 @@ function proposalForGoal(goal) {
   };
 }
 
-function workspaceSnapshot() {
+function readMemberScope(name, paths) {
+  const scope = [`atris/team/${name}/`];
+  if (paths?.memberFile && fs.existsSync(paths.memberFile)) {
+    try {
+      const fm = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8'));
+      if (fm && Array.isArray(fm.scope)) {
+        for (const p of fm.scope) {
+          if (typeof p === 'string' && p.trim()) scope.push(p.trim());
+        }
+      }
+    } catch { /* ignore — fall through with default scope */ }
+  }
+  return scope;
+}
+
+function porcelainPath(line) {
+  // git status --porcelain entries are "XY path" or "XY old -> new"; we want the post-rename path.
+  const trimmed = String(line || '').slice(3);
+  const arrow = trimmed.indexOf(' -> ');
+  return arrow >= 0 ? trimmed.slice(arrow + 4) : trimmed;
+}
+
+function workspaceSnapshot(name = null, paths = null) {
   try {
     const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd: process.cwd(),
@@ -2034,19 +2101,36 @@ function workspaceSnapshot() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).split(/\r?\n/).filter(Boolean);
+    const memberScope = name ? readMemberScope(name, paths) : [];
+    const dirtyInScope = memberScope.length
+      ? porcelain.filter((line) => {
+          const p = porcelainPath(line);
+          return memberScope.some((s) => p.startsWith(s));
+        })
+      : [];
     return {
       kind: 'git',
       root,
       clean: porcelain.length === 0,
+      // Member-scoped clean: dirty files outside the member's scope don't block this member's loop.
+      // Only files inside scope (the member's own lane) gate the wake decision.
+      clean_for_member: dirtyInScope.length === 0,
+      member_scope: memberScope,
       dirty_count: porcelain.length,
+      dirty_count_in_scope: dirtyInScope.length,
       dirty_sample: porcelain.slice(0, 8),
+      dirty_in_scope_sample: dirtyInScope.slice(0, 8),
     };
   } catch {
     return {
       kind: 'none',
       clean: true,
+      clean_for_member: true,
+      member_scope: [],
       dirty_count: 0,
+      dirty_count_in_scope: 0,
       dirty_sample: [],
+      dirty_in_scope_sample: [],
     };
   }
 }
@@ -2066,7 +2150,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
     .map(({ goal: experimentGoal, experiment }) => ({ ...experiment, goal_id: experimentGoal.id, goal_title: experimentGoal.title }))
     .filter((experiment) => experiment.status === 'blocked')
     .sort((a, b) => String(b.blocked_at || b.created_at || '').localeCompare(String(a.blocked_at || a.created_at || '')))[0] || null;
-  const workspace = workspaceSnapshot();
+  const workspace = workspaceSnapshot(name, paths);
   const checks = {
     has_member: true,
     has_mission: Boolean(purpose.missionText),
@@ -2082,6 +2166,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
     has_member_room_evidence: Number(evidence.member_room?.candidate_count || 0) > 0,
     has_recent_receipt: Boolean(evidence.receipt?.latest_wake_receipt_path),
     workspace_clean: workspace.clean,
+    workspace_clean_for_member: workspace.clean_for_member,
   };
 
   if (!purpose.meaningful) {
@@ -2227,13 +2312,13 @@ function wakeDecision(name, paths, { force = false } = {}) {
     };
   }
 
-  if (!workspace.clean && !force) {
+  if (!workspace.clean_for_member && !force) {
     return {
       decision: 'wait',
-      reason: 'workspace_dirty',
+      reason: 'workspace_dirty_in_member_scope',
       needs_user: false,
       ask: null,
-      next_command: `review git status or rerun: atris member wake ${name} --force`,
+      next_command: `commit/stash files in atris/team/${name}/ (or member scope) — or rerun: atris member wake ${name} --force`,
       state,
       goal,
       current_experiment: null,
@@ -2889,6 +2974,8 @@ function memberCommand(subcommand, ...args) {
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
       return memberWake(args[0], ...args.slice(1));
+    case 'run':
+      return memberRun(args[0], ...args.slice(1));
     case 'loop':
       return memberLoop(args[0], ...args.slice(1));
     case 'review':
@@ -2916,6 +3003,7 @@ function memberCommand(subcommand, ...args) {
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
       console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
+      console.log("  run <name>          Run the member's active Mission Runtime");
       console.log('  loop <name>         Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
@@ -2940,6 +3028,7 @@ function memberCommand(subcommand, ...args) {
       console.log('  atris member goal-from-mission growth --json');
       console.log('  atris member goal-from-score growth --score-json team-score.json --json');
       console.log('  atris member wake growth --json');
+      console.log('  atris member run growth --max-ticks 1 --max-wall 900 --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member loop growth --minutes 10 --interval 60 --json');
       console.log('  atris member loop growth --ticks 2 --interval 0 --json');
