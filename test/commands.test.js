@@ -307,6 +307,40 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   }
 });
 
+test('member goal-from-mission promotes the mission goal before older active goals', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    const scoreGoal = runCli(['member', 'goal', 'mission-lead', 'Older score-derived goal', '--json'], { cwd: dir });
+    assert.equal(scoreGoal.status, 0, scoreGoal.stderr || scoreGoal.stdout);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions choose the next bounded goal',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const createdPayload = JSON.parse(created.stdout);
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    let state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(state.goals[0].id, createdPayload.goal.id);
+
+    state.goals.reverse();
+    fs.writeFileSync(goalsPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    const reused = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(reused.status, 0, reused.stderr || reused.stdout);
+    const reusedPayload = JSON.parse(reused.stdout);
+    state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(reusedPayload.action, 'goal_from_mission_reused');
+    assert.equal(state.goals[0].id, createdPayload.goal.id);
+    assert.equal(state.goals[1].title, 'Older score-derived goal');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member goal-from-score creates the active self-improvement goal from Team score evidence', () => {
   const dir = makeTempDir();
   try {
