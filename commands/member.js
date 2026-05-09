@@ -1880,7 +1880,10 @@ function memberGoalFromMission(name, ...args) {
     mission_id: runtime.id || null,
     mission_status: runtime.status || null,
   });
-  if (!existing) state.goals.push(goal);
+  state.goals = [
+    goal,
+    ...state.goals.filter((item) => item.id !== goal.id),
+  ];
   writeMemberGoals(paths, state);
   const logPath = appendMemberGoalLog(paths.memberDir, name, existing ? 'Member goal reused from Mission' : 'Member goal created from Mission', {
     goal: goal.title,
