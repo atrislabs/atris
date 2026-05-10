@@ -69,6 +69,23 @@ function readRepeatedFlag(args, name) {
   return values.filter(Boolean);
 }
 
+function lintMissionVerifier(command) {
+  const text = String(command || '').trim();
+  if (!text) return null;
+  const compact = text.replace(/\s+/g, ' ');
+  const staticNumericTest = /^test \d+ -(?:eq|ne|gt|ge|lt|le) \d+$/.test(compact)
+    || /^\[ \d+ -(?:eq|ne|gt|ge|lt|le) \d+ \]$/.test(compact);
+  if (!staticNumericTest) return null;
+  return 'looks like shell substitution expanded before Atris received it; quote dynamic verifiers with single quotes';
+}
+
+function assertMissionVerifier(command) {
+  const issue = lintMissionVerifier(command);
+  if (!issue) return;
+  console.error(`Invalid --verify: ${issue}. Example: --verify 'test $(wc -l < atris/learnings.jsonl) -ge 478'`);
+  process.exit(2);
+}
+
 function stripKnownFlags(args, valueNames, booleanNames = []) {
   const valueSet = new Set(valueNames);
   const booleanSet = new Set(booleanNames);
@@ -343,6 +360,7 @@ function missionFromArgs(args) {
   const runner = readFlag(args, '--runner', 'manual');
   const lane = readFlag(args, '--lane', 'workspace');
   const verifier = readFlag(args, '--verify', '');
+  assertMissionVerifier(verifier);
   const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
