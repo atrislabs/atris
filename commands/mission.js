@@ -510,6 +510,69 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
+function gitWorktreeSnapshot(root = process.cwd()) {
+  const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  if (inside.status !== 0 || String(inside.stdout || '').trim() !== 'true') {
+    return { available: false, reason: 'not-git-worktree' };
+  }
+  const status = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  if (status.status !== 0) {
+    return {
+      available: false,
+      reason: 'git-status-failed',
+      stderr: String(status.stderr || '').slice(-1000),
+    };
+  }
+  const entries = String(status.stdout || '').split(/\r?\n/).filter(Boolean).sort();
+  const digest = crypto.createHash('sha1').update(entries.join('\n')).digest('hex');
+  return {
+    available: true,
+    dirty_count: entries.length,
+    dirty_hash: digest,
+    dirty_sample: entries.slice(0, 25),
+    entries,
+  };
+}
+
+function worktreeReceipt(before, after, { verifier = '' } = {}) {
+  if (!before?.available || !after?.available) {
+    return {
+      available: false,
+      before_reason: before?.reason || null,
+      after_reason: after?.reason || null,
+    };
+  }
+  const beforeSet = new Set(before.entries || []);
+  const afterSet = new Set(after.entries || []);
+  const newDirty = (after.entries || []).filter((entry) => !beforeSet.has(entry));
+  const clearedDirty = (before.entries || []).filter((entry) => !afterSet.has(entry));
+  const changed = before.dirty_hash !== after.dirty_hash;
+  const hasVerifier = !!String(verifier || '').trim();
+  return {
+    available: true,
+    before_dirty_count: before.dirty_count,
+    after_dirty_count: after.dirty_count,
+    changed,
+    unverified_dirty: !hasVerifier && after.dirty_count > 0,
+    unverified_change: !hasVerifier && changed,
+    new_dirty_count: newDirty.length,
+    cleared_dirty_count: clearedDirty.length,
+    dirty_sample_after: after.dirty_sample,
+    new_dirty_sample: newDirty.slice(0, 25),
+    cleared_dirty_sample: clearedDirty.slice(0, 25),
+    before_dirty_hash: before.dirty_hash,
+    after_dirty_hash: after.dirty_hash,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // `atris mission run <id>` — bounded local headless loop. v0.1.
 // Spawns `claude -p --resume <session>` per tick. Honors cadence, active-hours,
@@ -846,6 +909,7 @@ async function runMission(args) {
       lane: mission.lane || 'workspace',
       started_at: stampIso(),
     };
+    const runWorktreeBefore = gitWorktreeSnapshot(cwd);
     const cadence = cadenceOverride || mission.cadence || 'manual';
     let cadenceSeconds = parseCadenceSeconds(cadence);
     // cadence=manual|once: exactly 1 tick unless user explicitly raised --max-ticks
@@ -878,6 +942,7 @@ async function runMission(args) {
 
       const tickIdx = ticks.length + 1;
       const tickStart = stampIso();
+      const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
 
       // Active-hours gate
@@ -960,10 +1025,11 @@ async function runMission(args) {
         verifierResult = runVerifier(frozen.verifier);
         result.verifier_passed = verifierResult.passed;
       }
+      const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier });
 
       // Persist tick to mission state + write structured receipt
       const finishedAt = stampIso();
-      const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt };
+      const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt, worktree: tickWorktree };
       ticks.push(tickRecord);
       receiptPath = writeReceipt(mission, {
         kind: 'mission_run_tick',
@@ -971,6 +1037,7 @@ async function runMission(args) {
         frozen,
         verifier_result: verifierResult,
         rate_limit_info: lastRateLimit,
+        worktree: tickWorktree,
       });
 
       const newStatus = (verifierResult?.passed && completeOnPass && !mission.always_on) ? 'complete' :
@@ -1049,6 +1116,7 @@ async function runMission(args) {
       }, cwd, 'mission_run_paused', { reason: pauseReason }).mission;
     }
 
+    const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier });
     const finalReceipt = writeReceipt(mission, {
       kind: 'mission_run_summary',
       frozen,
@@ -1059,10 +1127,11 @@ async function runMission(args) {
       session_id: sessionId,
       pending_session_id: mission.pending_session_id || null,
       elapsed_seconds: (Date.now() - startedAt) / 1000,
+      worktree: summaryWorktree,
     });
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt },
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree },
       [
         `Ran mission ${mission.id}`,
         `  objective: ${mission.objective}`,
@@ -1118,14 +1187,17 @@ function tickMission(args) {
     // This CLI subcommand records the tick: writes a structured receipt (matching the
     // `mission_run_tick` envelope) and runs the verifier when asked. Always emit a
     // receipt so every tick has its own audit row, not just verifier ticks.
+    const cwd = process.cwd();
     const tickStart = stampIso();
     const lastTickIndex = Number(mission.last_tick_index || 0);
     const tickIdx = lastTickIndex + 1;
+    const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
 
     let verifierResult = null;
     if (verify && mission.verifier) {
       verifierResult = runVerifier(mission.verifier);
     }
+    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: mission.verifier });
 
     const tickRecord = {
       status: 'ran',
@@ -1137,6 +1209,7 @@ function tickMission(args) {
       summary: summary || null,
       verifier_passed: verifierResult ? !!verifierResult.passed : null,
       finished_at: stampIso(),
+      worktree: tickWorktree,
     };
     const receiptPath = writeReceipt(mission, {
       kind: 'mission_tick',
@@ -1148,6 +1221,7 @@ function tickMission(args) {
       },
       verifier_result: verifierResult,
       rate_limit_info: null,
+      worktree: tickWorktree,
     });
 
     let status = 'running';
@@ -1171,7 +1245,7 @@ function tickMission(args) {
       verifier_result: verifierResult || mission.verifier_result || null,
       next_action: nextAction,
     };
-    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_tick', {
+    const { mission: saved } = saveMission(nextMission, cwd, 'mission_tick', {
       tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath,
     });
     const logPath = appendMemberLog(saved.owner, 'Mission tick', {
