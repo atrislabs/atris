@@ -2,6 +2,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 
 const PACKAGE_NAME = 'atris';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -191,6 +192,54 @@ function showUpdateNotification(updateInfo) {
   console.log(`${yellow}Update available: ${updateInfo.installed} → ${updateInfo.latest}. Run: npm install -g atris${reset}`);
 }
 
+function inspectInstallGitState(packageRoot = path.join(__dirname, '..')) {
+  const root = path.resolve(packageRoot);
+  const inRepo = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (inRepo.status !== 0 || inRepo.stdout.trim() !== 'true') {
+    return { isGitRepo: false, root };
+  }
+
+  const branchResult = spawnSync('git', ['branch', '--show-current'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const statusResult = spawnSync('git', ['status', '--porcelain'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const headResult = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const branch = branchResult.status === 0 ? branchResult.stdout.trim() : '';
+  const dirtyEntries = statusResult.status === 0
+    ? statusResult.stdout.split('\n').filter((line) => line.trim())
+    : [];
+
+  return {
+    isGitRepo: true,
+    root,
+    branch,
+    detached: branch === '',
+    dirty: dirtyEntries.length > 0,
+    dirtyCount: dirtyEntries.length,
+    dirtySample: dirtyEntries.slice(0, 5),
+    head: headResult.status === 0 ? headResult.stdout.trim() : '',
+  };
+}
+
+function formatInstallGitWarning(state) {
+  if (!state || !state.isGitRepo || (!state.detached && !state.dirty)) return null;
+  const flags = [];
+  if (state.detached) flags.push(`detached HEAD${state.head ? ` ${state.head}` : ''}`);
+  if (state.dirty) flags.push(`dirty worktree (${state.dirtyCount} file${state.dirtyCount === 1 ? '' : 's'})`);
+  return `WARNING: Atris is running from a ${flags.join(' + ')} at ${state.root}.\n` +
+    'npm update may not change the code currently on PATH; resolve that checkout before trusting upgrade status.';
+}
+
 function autoUpdate(updateInfo) {
   if (!updateInfo || !updateInfo.needsUpdate) return false;
 
@@ -227,5 +276,6 @@ module.exports = {
   checkForUpdates,
   showUpdateNotification,
   autoUpdate,
+  inspectInstallGitState,
+  formatInstallGitWarning,
 };
-
