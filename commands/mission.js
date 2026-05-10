@@ -54,6 +54,17 @@ function readFlag(args, name, fallback = '') {
   return fallback;
 }
 
+function readPositiveIntegerFlag(args, name, fallback = null) {
+  const raw = readFlag(args, name, '');
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    console.error(`${name} must be a positive integer`);
+    process.exit(2);
+  }
+  return value;
+}
+
 function readRepeatedFlag(args, name) {
   const values = [];
   const prefix = `${name}=`;
@@ -417,8 +428,16 @@ function startMission(args) {
 
 function statusMission(args) {
   const asJson = wantsJson(args);
-  const ref = stripKnownFlags(args, [], ['--json'])[0] || '';
-  const missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
+  const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json'])[0] || '';
+  const statusFilter = readFlag(args, '--status', '');
+  if (statusFilter && !VALID_STATUSES.has(statusFilter)) {
+    console.error(`Invalid --status: ${statusFilter}`);
+    process.exit(2);
+  }
+  const limit = readPositiveIntegerFlag(args, '--limit');
+  let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
+  if (!ref && statusFilter) missions = missions.filter((mission) => mission.status === statusFilter);
+  if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
     console.error(`Mission "${ref}" not found.`);
     process.exit(1);
