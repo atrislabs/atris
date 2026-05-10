@@ -77,3 +77,27 @@ test('mission start preserves dynamic verifier when quoted by caller', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('mission start warns when no verifier is attached', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const res = runCli([
+      'mission',
+      'start',
+      'unverified mission',
+      '--owner',
+      'mission-lead',
+      '--json',
+    ], { cwd: dir });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.mission.verifier, '');
+    assert.equal(payload.warnings.length, 1);
+    assert.equal(payload.warnings[0].code, 'missing_verifier');
+    assert.match(payload.warnings[0].message, /cannot complete automatically/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
