@@ -57,6 +57,7 @@ rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
 rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
 rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
+rg "missionCommand|lintMissionVerifier|runMission|tickMission" commands/mission.js test/mission-verifier.test.js  # Durable mission start/status/tick/run plus verifier lint
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "gmailCommand" commands/integrations.js  # Integration commands
 rg "memberCommand|memberGoal|memberTick|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, goal loop, status/block/review, and cloud sync
@@ -209,6 +210,18 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:688`)
 
 **Search:** `rg "pullAtris" commands/pull.js`
+
+### Feature: Missions (`atris mission`)
+
+**Purpose:** Durable objective loop with owner, verifier command, receipt, member now file, and status surface.
+
+- **Entry point:** `bin/atris.js` dispatch for `mission`
+- **Handler:** `commands/mission.js`
+- **Core flows:** `start` creates `.atris/state/missions.jsonl`; `status` renders `atris/status/now.md`; `tick --verify` runs the verifier command and writes a receipt; `run` executes bounded Claude ticks behind a mission lock; `complete`/`stop` close the mission.
+- **Verifier guard:** `lintMissionVerifier()` catches common shell-substitution mistakes before storing a verifier.
+- **Value:** Turns a broad goal into append-only state plus proof, so `atris` can surface the next concrete mission action.
+
+**Search:** `rg "missionCommand|lintMissionVerifier|runMission|tickMission" commands/mission.js test/mission-verifier.test.js`
 
 ### Feature: Live Brain Sync (`atris live`)
 
