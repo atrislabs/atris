@@ -73,3 +73,14 @@ test('mission status rejects invalid filters before listing history', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('mission help documents status filters', () => {
+  const dir = makeTempDir();
+  try {
+    const help = runCli(['mission', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--json\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
