@@ -401,9 +401,18 @@ function missionFromArgs(args) {
   return mission;
 }
 
+function missingVerifierWarning(mission) {
+  if (String(mission.verifier || '').trim()) return null;
+  return {
+    code: 'missing_verifier',
+    message: 'Mission has no verifier; it cannot complete automatically and future runs will report unverified worktree side effects.',
+  };
+}
+
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
+  const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
   const memberState = renderMemberMissionState(saved.owner);
@@ -415,11 +424,12 @@ function startMission(args) {
     verifier: saved.verifier,
   });
   printJsonOrText(
-    { ok: true, action: 'mission_started', mission: saved, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath },
+    { ok: true, action: 'mission_started', mission: saved, warnings, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath },
     [
       `Started mission: ${saved.objective}`,
       `Owner: ${saved.owner}`,
       `State: ${saved.status}`,
+      ...warnings.map((warning) => `Warning: ${warning.message}`),
       `Next: atris mission tick ${saved.id}`,
     ],
     asJson,
