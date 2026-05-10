@@ -218,10 +218,11 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Entry point:** `bin/atris.js` dispatch for `mission`
 - **Handler:** `commands/mission.js`
 - **Core flows:** `start` creates `.atris/state/missions.jsonl`; `status` renders `atris/status/now.md`; `tick --verify` runs the verifier command and writes a receipt; `run` executes bounded Claude ticks behind a mission lock; `complete`/`stop` close the mission.
+- **Worktree evidence:** receipts include capped git dirty counts/samples and flag unverified dirty work when no verifier exists.
 - **Verifier guard:** `lintMissionVerifier()` catches common shell-substitution mistakes before storing a verifier.
 - **Value:** Turns a broad goal into append-only state plus proof, so `atris` can surface the next concrete mission action.
 
-**Search:** `rg "missionCommand|lintMissionVerifier|runMission|tickMission" commands/mission.js test/mission-verifier.test.js`
+**Search:** `rg "missionCommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js`
 
 ### Feature: Live Brain Sync (`atris live`)
 
