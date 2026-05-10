@@ -1264,7 +1264,7 @@ function help() {
 atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on]
-  atris mission status [id] [--json]
+  atris mission status [id] [--status <state>] [--limit <n>] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
   atris mission run <id> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                           [--no-claude] [--no-verify] [--complete-on-pass] [--json]
