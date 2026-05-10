@@ -333,7 +333,7 @@ function missionFromArgs(args) {
     '--stop',
     '--task',
     '--ask',
-  ], ['--json']).join(' ').trim();
+  ], ['--json', '--always-on']).join(' ').trim();
   if (!objective) {
     console.error('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]');
     process.exit(1);
@@ -346,8 +346,9 @@ function missionFromArgs(args) {
   const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
+  const alwaysOn = hasFlag(args, '--always-on');
   const id = missionId(objective);
-  return {
+  const mission = {
     schema: 'atris.mission.v1',
     id,
     slug: slugify(objective),
@@ -358,6 +359,7 @@ function missionFromArgs(args) {
     runner,
     lane,
     verifier,
+    always_on: alwaysOn,
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
@@ -366,6 +368,8 @@ function missionFromArgs(args) {
     created_at: stampIso(),
     updated_at: stampIso(),
   };
+  if (alwaysOn) mission.next_action = nextCandidateTickAction(mission);
+  return mission;
 }
 
 function startMission(args) {
@@ -481,6 +485,14 @@ const MISSION_RUN_DEFAULTS = {
   claudeTimeoutMs: 10 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
+
+function runnerUsesCallerSession(runner) {
+  return new Set(['codex_goal', 'caller_session', 'current_agent']).has(String(runner || '').trim().toLowerCase());
+}
+
+function nextCandidateTickAction(mission) {
+  return `next move: run atris mission run ${mission.id} --complete-on-pass`;
+}
 
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -737,10 +749,13 @@ async function runMission(args) {
     process.exit(0);
   }
 
-  const probe = probeClaudeBinary();
-  if (!skipClaude && !probe.ok) {
-    console.error(`[mission run] claude probe failed: ${probe.error}`);
-    process.exit(2);
+  const preLockCallerSession = runnerUsesCallerSession(mission.runner);
+  if (!skipClaude && !preLockCallerSession) {
+    const probe = probeClaudeBinary();
+    if (!probe.ok) {
+      console.error(`[mission run] claude probe failed: ${probe.error}`);
+      process.exit(2);
+    }
   }
 
   const lock = acquireMissionLock(mission.id);
@@ -785,6 +800,8 @@ async function runMission(args) {
     }
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
+    const callerSessionRunner = runnerUsesCallerSession(mission.runner);
+    const skipWorker = skipClaude || callerSessionRunner;
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
     const frozen = {
@@ -797,8 +814,8 @@ async function runMission(args) {
     // cadence=manual|once: exactly 1 tick unless user explicitly raised --max-ticks
     const effectiveMaxTicks = (cadenceSeconds === 0 && !maxTicksFlag) ? 1 : maxTicks;
 
-    // Session setup: generate a UUID for tick 1, persist as pending; promote on first matching event.
-    if (!sessionId && !pendingSessionId) {
+    // Session setup: only Claude-backed workers need a persisted session id.
+    if (!skipWorker && !sessionId && !pendingSessionId) {
       pendingSessionId = crypto.randomUUID();
       mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
     }
@@ -807,7 +824,8 @@ async function runMission(args) {
     let backoffAttempt = 0;
     let lastRateLimit = null;
 
-    console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionId || `pending=${pendingSessionId}`}`);
+    const sessionLabel = skipWorker ? 'caller-session' : (sessionId || `pending=${pendingSessionId}`);
+    console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
 
     while (ranTicks < effectiveMaxTicks) {
       const elapsedSec = (Date.now() - startedAt) / 1000;
@@ -836,8 +854,14 @@ async function runMission(args) {
         result = { ...result, status: 'skipped', reason: 'rate-limited', resets_at: lastRateLimit.resetsAt };
       }
       // Real tick
-      else if (skipClaude) {
-        result = { ...result, status: 'ran', reason: 'no-claude-mode', ran: true, claude: { skipped: true } };
+      else if (skipWorker) {
+        result = {
+          ...result,
+          status: 'ran',
+          reason: callerSessionRunner ? 'caller-session-runner' : 'no-claude-mode',
+          ran: true,
+          claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
+        };
       } else {
         const sessionMode = sessionId ? 'resume' : 'set';
         const useId = sessionId || pendingSessionId;
@@ -912,10 +936,20 @@ async function runMission(args) {
         rate_limit_info: lastRateLimit,
       });
 
-      const newStatus = (verifierResult?.passed && completeOnPass) ? 'complete' :
+      const newStatus = (verifierResult?.passed && completeOnPass && !mission.always_on) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
+      let nextAction = mission.next_action;
+      if (verifierResult?.passed && mission.always_on) {
+        nextAction = nextCandidateTickAction(mission);
+      } else if (verifierResult?.passed && completeOnPass) {
+        nextAction = 'mission complete';
+      } else if (verifierResult?.passed) {
+        nextAction = `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
+      } else if (verifierResult) {
+        nextAction = 'fix verifier failure or revise mission';
+      }
       mission = saveMission({
         ...mission,
         status: newStatus,
@@ -924,6 +958,7 @@ async function runMission(args) {
         last_tick_reason: result.reason,
         verifier_result: verifierResult || mission.verifier_result || null,
         receipt_path: receiptPath,
+        next_action: nextAction,
       }, cwd, 'mission_tick', {
         tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath,
       }).mission;
@@ -1081,8 +1116,9 @@ function tickMission(args) {
     let status = 'running';
     let nextAction = mission.verifier ? `run verifier: ${mission.verifier}` : 'attach task, verifier, or proof';
     if (verifierResult?.passed) {
-      status = completeOnPass ? 'complete' : 'ready';
-      nextAction = completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
+      status = (completeOnPass && !mission.always_on) ? 'complete' : 'ready';
+      nextAction = mission.always_on ? nextCandidateTickAction(mission) :
+        (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`);
     } else if (verifierResult) {
       status = 'blocked';
       nextAction = 'fix verifier failure or revise mission';
@@ -1190,7 +1226,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on]
   atris mission status [id] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
   atris mission run <id> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
