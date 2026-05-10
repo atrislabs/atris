@@ -26,7 +26,13 @@ try {
 }
 
 // Update check utility
-const { checkForUpdates, showUpdateNotification, autoUpdate } = require('../utils/update-check');
+const {
+  checkForUpdates,
+  showUpdateNotification,
+  autoUpdate,
+  inspectInstallGitState,
+  formatInstallGitWarning,
+} = require('../utils/update-check');
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
@@ -1386,6 +1392,11 @@ async function upgradeAtris() {
   console.log('');
   console.log(`Current version: ${CLI_VERSION}`);
   console.log('');
+  const installWarning = formatInstallGitWarning(inspectInstallGitState(path.join(__dirname, '..')));
+  if (installWarning) {
+    console.log(installWarning);
+    console.log('');
+  }
   console.log('Checking for updates...');
 
   // Force check npm for latest version
