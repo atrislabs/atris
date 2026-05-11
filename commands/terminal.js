@@ -12,11 +12,11 @@
  * - Prints stdout, stderr, and exit_code so the caller knows what happened
  *
  * USAGE:
- *   atris terminal pallet "ls /workspace/atris/"
- *   atris terminal pallet "find /workspace -name '*.md' | wc -l" --timeout 60
+ *   atris terminal example-co "ls /workspace/atris/"
+ *   atris terminal example-co "find /workspace -name '*.md' | wc -l" --timeout 60
  *   atris terminal "rm -rf /workspace/cruft"   # auto-detects business from .atris/business.json
  *
- * Discovered the /terminal endpoint during overnight pallet cleanup — bulk
+ * Discovered the /terminal endpoint during overnight example-co cleanup — bulk
  * deleting 401 files via individual /file DELETE calls hit the rate limit
  * after request 60 and would have taken hours. One `rm -rf` via /terminal
  * finished in 1 second.
@@ -91,9 +91,9 @@ async function terminalAtris() {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log('Usage: atris terminal [business] <command> [--timeout N]');
     console.log('');
-    console.log('  atris terminal pallet "ls /workspace/atris/"');
+    console.log('  atris terminal example-co "ls /workspace/atris/"');
     console.log('  atris terminal "find /workspace -name \\"*.md\\""    # auto-detect business');
-    console.log('  atris terminal pallet "rm -rf /workspace/cruft" --timeout 30');
+    console.log('  atris terminal example-co "rm -rf /workspace/cruft" --timeout 30');
     console.log('');
     console.log('  --timeout N    seconds to wait for the command (default 30, max 120)');
     process.exit(0);

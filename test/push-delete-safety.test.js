@@ -28,12 +28,12 @@ test('mass delete safety blocks large cleanup even with surviving files', () => 
 });
 
 test('push timeout parser supports equals and space forms', () => {
-  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=240']), 240);
-  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout', '180']), 180);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'example-co', '--timeout=240']), 240);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'example-co', '--timeout', '180']), 180);
 });
 
 test('push timeout parser clamps unsafe values', () => {
-  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=1']), 5);
-  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=999']), 300);
-  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'pallet', '--timeout=bad'], 120), 120);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'example-co', '--timeout=1']), 5);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'example-co', '--timeout=999']), 300);
+  assert.equal(parsePushTimeoutSec(['node', 'atris', 'push', 'example-co', '--timeout=bad'], 120), 120);
 });

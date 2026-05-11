@@ -180,9 +180,9 @@ test('now dates use local calendar day near UTC boundary', () => {
 test('ensureNowFile creates a portfolio now.md for a parent of Atris workspaces', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'pallet', 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'pallet', 'atris', 'MAP.md'), '# Pallet Map\n', 'utf8');
-    fs.writeFileSync(path.join(dir, 'pallet', 'atris', 'TODO.md'), '# TODO\n\n- **P1:** Recruit\n', 'utf8');
+    fs.mkdirSync(path.join(dir, 'example-co', 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'example-co', 'atris', 'MAP.md'), '# ExampleCo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'example-co', 'atris', 'TODO.md'), '# TODO\n\n- **P1:** Recruit\n', 'utf8');
 
     fs.mkdirSync(path.join(dir, 'parked', 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'parked', 'atris', 'MAP.md'), '# Parked Map\n', 'utf8');
@@ -192,7 +192,7 @@ test('ensureNowFile creates a portfolio now.md for a parent of Atris workspaces'
 
     assert.equal(result.created, true);
     assert.match(content, /portfolio of Atris workspaces/);
-    assert.match(content, /pallet: Pallet Map; 1 open TODO item/);
+    assert.match(content, /example-co: ExampleCo Map; 1 open TODO item/);
     assert.match(content, /parked: Parked Map; 0 open TODO items/);
   } finally {
     cleanup(dir);
@@ -245,9 +245,9 @@ test('renderPortfolioNow refuses a parent with no child Atris workspaces', () =>
 test('now --all refreshes the parent portfolio and every child workspace', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'pallet', 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'pallet', 'atris', 'MAP.md'), '# Pallet Map\n', 'utf8');
-    fs.writeFileSync(path.join(dir, 'pallet', 'atris', 'TODO.md'), '# TODO\n\n- **P1:** Recruit\n', 'utf8');
+    fs.mkdirSync(path.join(dir, 'example-co', 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'example-co', 'atris', 'MAP.md'), '# ExampleCo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'example-co', 'atris', 'TODO.md'), '# TODO\n\n- **P1:** Recruit\n', 'utf8');
 
     fs.mkdirSync(path.join(dir, 'parked', 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'parked', 'atris', 'MAP.md'), '# Parked Map\n', 'utf8');
@@ -257,7 +257,7 @@ test('now --all refreshes the parent portfolio and every child workspace', () =>
 
     assert.match(output, /Refreshed 2 child workspaces/);
     assert.match(fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8'), /portfolio of Atris workspaces/);
-    assert.match(fs.readFileSync(path.join(dir, 'pallet', 'atris', 'now.md'), 'utf8'), /Pallet Map/);
+    assert.match(fs.readFileSync(path.join(dir, 'example-co', 'atris', 'now.md'), 'utf8'), /ExampleCo Map/);
     assert.match(fs.readFileSync(path.join(dir, 'parked', 'atris', 'now.md'), 'utf8'), /Parked Map/);
   } finally {
     cleanup(dir);

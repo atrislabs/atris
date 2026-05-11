@@ -13,7 +13,7 @@ async function forkAtris() {
     console.log('');
     console.log('  atris fork music-artist          Fork the music-artist template');
     console.log('  atris fork event-promoter myband  Fork into ./myband/');
-    console.log('  atris fork pallet                 Fork from a business slug');
+    console.log('  atris fork example-co                 Fork from a business slug');
     console.log('');
     console.log('Templates can be a name, business slug, or URL.');
     process.exit(0);
