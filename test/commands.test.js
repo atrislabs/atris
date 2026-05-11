@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest } = require('../lib/manifest');
-const { branchName, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
+const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
 const {
@@ -215,6 +215,118 @@ test('worktree start supports generic subagent checkout without a member persona
     assert.doesNotMatch(res.stderr, /no member persona/);
     assert.equal(fs.existsSync(path.join(worktreePath, 'README.md')), true);
     assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/codex-reviewer-smoke-task-/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree start defaults to upstream remote base and records ship metadata', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    assert.equal(defaultStartBase(repo), 'origin/master');
+    assert.equal(normalizeTargetRef(repo, 'master'), 'origin/master');
+    worktreePath = path.join(dir, 'agent-worktree');
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /base: origin\/master/);
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.match(branch, /^codex\/codex-shipper-ship-smoke-/);
+    assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/master');
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship commits verifies and pushes an isolated branch', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    worktreePath = path.join(dir, 'ship-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Ship Smoke',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--message',
+      'ship smoke',
+      '--verify',
+      'git status --short',
+      '--no-pr',
+    ], { cwd: worktreePath });
+
+    assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
+    assert.match(shipped.stdout, /merge_check: origin\/master clean/);
+    assert.match(shipped.stdout, /pr: skipped \(\-\-no-pr\)/);
+    assert.match(shipped.stdout, /done: worktree shipped/);
+    const branch = runGit(['branch', '--show-current'], worktreePath);
+    assert.match(
+      runGit(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
+      new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+    );
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
