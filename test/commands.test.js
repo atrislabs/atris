@@ -142,6 +142,45 @@ test('worktree swarlo claim is best-effort when local bridge is absent', () => {
   }
 });
 
+test('worktree start creates a member-scoped isolated checkout', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'security'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'security', 'MEMBER.md'), '# Security\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-security-worktree`);
+    const res = runCli([
+      'worktree',
+      'start',
+      '--member',
+      'security',
+      '--task',
+      'Smoke Task',
+      '--path',
+      worktreePath,
+    ], { cwd: dir });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, new RegExp(`path: ${worktreePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.equal(fs.existsSync(path.join(worktreePath, 'atris', 'team', 'security', 'MEMBER.md')), true);
+    assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/security-smoke-task-/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('member create --help prints usage without creating a --help member', () => {
   const dir = makeTempDir();
   try {
