@@ -228,12 +228,12 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 ### Feature: Member Worktrees (`atris worktree`)
 
-**Purpose:** Keep parallel members/agents out of one dirty checkout by creating member-scoped Git worktrees and branches, with optional Swarlo claim wiring.
+**Purpose:** Keep parallel members, subagents, and agents out of one dirty checkout by creating identity-scoped Git worktrees and branches, with optional Swarlo claim wiring.
 
 - **Entry point:** `bin/atris.js` dispatch for `worktree`
 - **Handler:** `commands/worktree.js`
-- **Core flows:** `start --member <slug> --task "<task>" --claim` creates a sibling `.agent-worktrees/<repo>/...` checkout; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
-- **Value:** Ties member identity, branch, isolated filesystem state, staging area, and live Swarlo claim together for multi-agent work.
+- **Core flows:** `start --member <slug> --task "<task>" --claim` and `start --agent <slug> --task "<task>"` create sibling `.agent-worktrees/<repo>/...` checkouts; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
+- **Value:** Ties member/agent identity, branch, isolated filesystem state, staging area, and live Swarlo claim together for multi-agent work.
 
 **Search:** `rg "worktreeCommand|startWorktree|parseWorktrees|swarloClaim" commands/worktree.js test/commands.test.js`
 

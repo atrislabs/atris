@@ -130,23 +130,25 @@ function printStatus() {
 
 function startWorktree(args) {
   const root = repoRoot();
-  const member = readFlag(args, '--member') || readFlag(args, '--agent');
+  const member = readFlag(args, '--member');
+  const agent = readFlag(args, '--agent');
+  const owner = member || agent;
   const task = readFlag(args, '--task');
-  if (!member || !task) {
-    console.error('Usage: atris worktree start --member <member> --task "<short task>" [--claim]');
+  if (!owner || !task) {
+    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim]');
     return 2;
   }
   const now = new Date();
-  const branch = readFlag(args, '--branch') || branchName(member, task, now);
-  const target = path.resolve(readFlag(args, '--path') || defaultWorktreePath(root, member, task, now));
+  const branch = readFlag(args, '--branch') || branchName(owner, task, now);
+  const target = path.resolve(readFlag(args, '--path') || defaultWorktreePath(root, owner, task, now));
   const base = readFlag(args, '--base') || 'HEAD';
-  const memberFile = path.join(root, 'atris', 'team', member, 'MEMBER.md');
+  const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
 
   if (fs.existsSync(target)) {
     console.error(`refusing: worktree path already exists: ${target}`);
     return 2;
   }
-  if (!fs.existsSync(memberFile)) {
+  if (memberFile && !fs.existsSync(memberFile)) {
     console.error(`warning: no member persona at ${path.relative(root, memberFile)}`);
   }
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -158,11 +160,11 @@ function startWorktree(args) {
   }
   console.log(`path: ${target}`);
   console.log(`branch: ${branch}`);
-  console.log(`member: ${member}`);
+  console.log(`${member ? 'member' : 'agent'}: ${owner}`);
   if (hasFlag(args, '--claim')) {
     const channel = readFlag(args, '--swarlo-channel', 'general');
-    const taskKey = readFlag(args, '--swarlo-task-key') || `${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}`;
-    const content = readFlag(args, '--swarlo-content') || `${member} owns ${task} in ${target}`;
+    const taskKey = readFlag(args, '--swarlo-task-key') || `${slugify(owner, 'agent', 24)}-${slugify(task, 'task', 36)}`;
+    const content = readFlag(args, '--swarlo-content') || `${owner} owns ${task} in ${target}`;
     console.log(`swarlo_channel: ${channel}`);
     console.log(`swarlo_claim: ${swarloClaim(target, { channel, taskKey, content })}`);
   }
@@ -177,7 +179,7 @@ function guard(args) {
   const primary = worktrees[0]?.path;
   if (path.resolve(root) === path.resolve(primary) && !hasFlag(args, '--allow-primary')) {
     console.error('blocked: this is the primary checkout; create an agent worktree first');
-    console.error('run: atris worktree start --member <member> --task "<short task>" --claim');
+    console.error('run: atris worktree start --member <member>|--agent <name> --task "<short task>" --claim');
     return 2;
   }
   const counts = statusCounts(root);
@@ -201,7 +203,7 @@ function prune(args) {
 function help() {
   console.log('Usage: atris worktree <start|status|guard|prune>');
   console.log('');
-  console.log('  atris worktree start --member <member> --task "<task>" [--claim]');
+  console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
