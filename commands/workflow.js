@@ -929,7 +929,7 @@ async function reviewAtris() {
       '',
       'This step prepares the validator. It does not mean the change has passed review yet.',
       'Confidence Gate: review must find loopholes, patch or name each one, and state residual risk before completion.',
-      'Next I will run tests, walk each validate.md, and clear completed tasks out of TODO.',
+      'Next I will run tests, walk each validate.md, and refresh the task projection/TODO view if durable state changed.',
       '',
       decision,
       'Run `atris review --verbose` for the full prompt and appendix.'
@@ -956,13 +956,14 @@ async function reviewAtris() {
     console.log('2) Execute any `atris/features/*/validate.md` scripts; if a step fails, fix + rerun.');
     console.log('3) Run the Confidence Gate before approving completion.');
     printConfidenceGate('   ');
-    console.log('4) Clean TODO.md: delete completed tasks. Target state = 0.');
-    console.log('   If a task fails validation, move back to ## Backlog with note.');
+    console.log('4) Confirm active task state is clean: no unresolved Backlog/In Progress/Blocked rows for the reviewed work.');
+    console.log('   If durable task state changed, regenerate the readable view with `atris task render --out atris/TODO.md`.');
+    console.log('   Do not hand-delete rendered completed history; use `atris task list --status done` for the ledger.');
     console.log('5) Log to atris/team/validator/journal/YYYY-MM-DD.md');
     console.log('   (Task, Result, Issues found, Learned)');
     console.log('6) If anything surprised you, append to atris/lessons.md.');
     console.log('');
-    console.log('Done when: ✅ All good. TODO.md clean. Ready for human testing.');
+    console.log('Done when: ✅ All good. Active task state clean. Ready for human testing.');
     console.log('');
   }
 
@@ -1056,8 +1057,9 @@ async function reviewAtris() {
     userPrompt += `  • Verify everything works\n`;
     userPrompt += `  • Find all plausible loopholes; patch them or name residual risk\n`;
     userPrompt += `  • Test thoroughly (unless user says no)\n`;
-    userPrompt += `  • Clean TODO.md — DELETE completed tasks. Target state = 0.\n`;
-    userPrompt += `    If a task fails, move it back to ## Backlog with a note.\n`;
+    userPrompt += `  • Confirm active task state is clean — no unresolved Backlog/In Progress/Blocked rows for reviewed work.\n`;
+    userPrompt += `    If durable task state changed, regenerate the readable view with \`atris task render --out atris/TODO.md\`.\n`;
+    userPrompt += `    Do not hand-delete rendered completed history; if a task fails, move or mark it blocked with a note.\n`;
     userPrompt += `  • Log to atris/team/validator/journal/YYYY-MM-DD.md\n`;
     userPrompt += `    (Task, Result, Issues found, Learned)\n`;
     userPrompt += `  • If anything surprised you, append to atris/lessons.md\n`;

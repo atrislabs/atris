@@ -725,12 +725,9 @@ async function interactiveEntry(userInput) {
   if (completedTasksCount > 0) {
     const preview = context.completedTasks.slice(0, 3).map((t) => (t.length > 70 ? `${t.slice(0, 67)}...` : t));
     if (preview.length > 0) {
-      console.log('\nCompleted (preview):');
+      console.log('\nCompleted (history):');
       preview.forEach((t) => console.log(`- ${t}`));
     }
-    console.log('\nNext: atris review (pending validation)');
-    await reviewCmd();
-    return;
   }
 
   if (wipCount > 0 || backlogCount > 0) {
@@ -761,6 +758,12 @@ async function interactiveEntry(userInput) {
     }
     console.log('\nNext: atris plan (Inbox has ideas)');
     await planCmd();
+    return;
+  }
+
+  if (completedTasksCount > 0) {
+    console.log('\nCompleted tasks are history, not pending review.');
+    console.log('Next: atris plan (new work)');
     return;
   }
 

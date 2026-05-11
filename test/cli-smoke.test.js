@@ -211,7 +211,7 @@ test('default entry auto-advances to do when backlog tasks exist', () => {
   }
 });
 
-test('default entry auto-advances to review when completed tasks exist', () => {
+test('default entry treats completed-only TODO rows as history', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
@@ -226,8 +226,33 @@ test('default entry auto-advances to review when completed tasks exist', () => {
 
     const res = runCli([], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /I checked the review setup\./);
-    assert.match(res.stdout, /Decision:/);
+    assert.match(res.stdout, /Completed \(history\):/);
+    assert.match(res.stdout, /Completed tasks are history, not pending review\./);
+    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('default entry routes active work before completed history', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(
+      todoPath,
+      `# TODO.md\n\n## Backlog\n\n- build the useful thing\n\n## In Progress\n\n(Empty)\n\n## Completed\n\n- validate old thing\n`,
+      'utf8'
+    );
+
+    const res = runCli([], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Completed \(history\):/);
+    assert.match(res.stdout, /Backlog \(preview\):/);
+    assert.match(res.stdout, /Next: atris do \(work ready to execute\)/);
+    assert.doesNotMatch(res.stdout, /Next: atris review|I checked the review setup\./);
   } finally {
     cleanupTempDir(dir);
   }
@@ -325,6 +350,8 @@ test('review prints concise validator prompt by default', () => {
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /I checked the review setup\./);
+    assert.match(res.stdout, /refresh the task\s+projection\/TODO view/);
+    assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
     assert.match(res.stdout, /Decision:/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
   } finally {
@@ -340,6 +367,8 @@ test('review --full includes full validator dumps', () => {
     const res = runCli(['review', '--full'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /VALIDATOR SPEC \(full\)/);
+    assert.match(res.stdout, /Confirm active task state is clean/);
+    assert.doesNotMatch(res.stdout, /delete completed tasks|DELETE completed tasks/);
   } finally {
     cleanupTempDir(dir);
   }

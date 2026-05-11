@@ -3932,6 +3932,8 @@ test('review default mode renders human validator brief', () => {
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /I checked the review setup\./);
+    assert.match(res.stdout, /refresh the task\s+projection\/TODO view/);
+    assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
     assert.match(res.stdout, /Decision: hold/);
     assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);
     for (const line of res.stdout.trimEnd().split('\n')) {
@@ -3949,6 +3951,8 @@ test('review verbose mode keeps the legacy validator board', () => {
     const res = runCli(['review', '--verbose'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review|Validator Agent Activated/);
+    assert.match(res.stdout, /Confirm active task state is clean/);
+    assert.doesNotMatch(res.stdout, /delete completed tasks|DELETE completed tasks/);
     assert.match(res.stdout, /┌|└|│/);
   } finally {
     cleanupTempDir(dir);
