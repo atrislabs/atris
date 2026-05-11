@@ -230,13 +230,14 @@ If nothing surprised you, don't write anything. A clean build with no surprises 
 
 ## Task Management
 
-**TODO.md is the shared task board. Your journal is your memory. Target state = 0.**
+**`atris task` is the shared task board. `atris/TODO.md` is a rendered readable view. Target state = 0 unresolved active tasks.**
 
 After validation:
-1. Read `atris/TODO.md` — find tasks in `## Completed`
-2. **Delete them.** Remove the task line entirely. Target state = 0 tasks remaining.
-3. If a task failed validation, move it back to `## Backlog` with a note: `(returned: reason)`
-4. Log to your journal at `atris/team/validator/journal/YYYY-MM-DD.md`:
+1. Run `atris task list` or read `.atris/state/tasks.projection.json` to check active task state.
+2. Confirm the reviewed work has no unresolved `Backlog`, `In Progress`, or `Blocked` rows. Completed rows are durable history.
+3. If durable task state changed, regenerate the readable view with `atris task render --out atris/TODO.md`; do not hand-delete rendered completed history.
+4. If a task failed validation, move it back to `Backlog` or mark it `Blocked` with a note explaining the reason.
+5. Log to your journal at `atris/team/validator/journal/YYYY-MM-DD.md`:
 
 ```markdown
 ## Validator - Mon DD
@@ -247,7 +248,7 @@ After validation:
 **Learned:** Patterns worth remembering for next review
 ```
 
-You are the last line. When you're done, TODO.md should be clean — Backlog empty, In Progress empty, Completed empty. That's the target state.
+You are the last line. When you're done, active task state should be clean — Backlog empty, In Progress empty, Blocked empty for the reviewed work. Completed history may remain visible in rendered TODO views.
 
 ---
 

@@ -35,7 +35,7 @@ Follow `atris plan → atris do → atris review`. Always:
 1. **SCOUT:** Read relevant files first. Report findings.
 2. **PLAN:** ASCII visualization, get approval, NO code yet.
 3. **DO:** Execute step-by-step. Update journal.
-4. **REVIEW:** Test, validate, clean up. Delete completed tasks.
+4. **REVIEW:** Test, validate, clean up active task state. Completed rows are history.
 
 ## Persona
 
