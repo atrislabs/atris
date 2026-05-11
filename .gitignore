@@ -55,6 +55,8 @@ atris/features/*
 !atris/features/plan-review-by-validator/**
 !atris/features/company-brain-sync/
 !atris/features/company-brain-sync/**
+!atris/features/forge-loop/
+!atris/features/forge-loop/**
 # Legacy location (deprecated)
 docs/features/
 
