@@ -37,7 +37,7 @@ The older source also carried a deeper mission: free enough human and machine ti
 | Nightly synthesis loop live | `STATUS.md` regenerates from state | Not started |
 | Fundraising workspace stood up | Separate workspace/security boundary | Not started |
 
-Local March evidence is lower-confidence and earlier: Pallet signed at $5K/mo, Rox contract sent at $2K/mo, and pipeline around $230K+ ARR potential. Do not reconcile those numbers without the live source.
+Local March evidence is lower-confidence and earlier: older revenue notes, contract drafts, and pipeline estimates exist, but they must not be treated as live company truth. Do not reconcile those numbers without the live source.
 
 ## Historical H2 2026 Direction
 

@@ -221,8 +221,8 @@ async function pullBusiness(slug) {
   // correct workspace for THIS business — i.e. it has a `.atris/business.json`
   // whose slug matches `slug`. Any other signal (a stray `atris/` folder, a
   // business.json for a different business, etc.) is NOT enough: pulling
-  // atris-labs-1 on top of a pallet workspace would mix two businesses into
-  // one directory and write pallet's manifest over atris-labs-1's (or vice
+  // atris-labs-1 on top of an example-co workspace would mix two businesses into
+  // one directory and write example-co's manifest over atris-labs-1's (or vice
   // versa), causing the next sync to do strange things.
   //
   // Fallback: create a fresh ./{slug}/ subdir. Always safe — even if cwd is

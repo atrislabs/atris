@@ -129,7 +129,7 @@ Atris defines the spec, open sources it, and builds the best tooling around it. 
 
 ## User Impact
 
-**For companies (Pallet, Mercury):** "Here's your SDR agent" is a folder, not a prompt chain. Onboard a new AI team member by dropping a directory. Fire one by deleting it. The team structure is visible, auditable, and version-controlled.
+**For companies (ExampleCo, Mercury):** "Here's your SDR agent" is a folder, not a prompt chain. Onboard a new AI team member by dropping a directory. Fire one by deleting it. The team structure is visible, auditable, and version-controlled.
 
 **For FDEs (Justin):** Build a complete team member in a customer session, not just a skill. "I set up your SDR agent with email outreach, CRM sync, and your sales playbook loaded. Here's the MEMBER.md."
 
