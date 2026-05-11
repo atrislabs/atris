@@ -1,64 +1,83 @@
 ---
-type: entity
+type: system
 slug: atris-labs
-title: atris labs (business owner dogfood)
-sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]
+title: Atris Labs Dogfood Workspace
+sources:
+  - atris/wiki/sources/atris-labs-2026-05-10.txt
 created: 2026-04-08
-updated: 2026-04-27
-last_compiled: 2026-04-27
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.68
+dependencies:
+  - atris/wiki/systems/atris-business.md
+  - atris/wiki/concepts/owner-computer-model.md
+  - atris/wiki/concepts/atris-labs-goals.md
+actionability: "Use as dogfood/workspace orientation only; verify live company state in the current atris-customers or business workspace before acting."
 tags: [company, workspace, computer, dogfood, atris]
 ---
 
-# atris labs
+# Atris Labs Dogfood Workspace
 
-The reference implementation of a business owner with persistent computers. Atris Labs builds Atris and runs itself on Atris. Every customer who buys Atris is buying the shape Atris Labs already lives inside.
+Atris Labs is the company that builds Atris and the first dogfood target for the owner/computer model. The useful idea is still valid: the company should run through the same memory, context, apps, and proof loops that customers buy.
+
+The old source path in this wiki page no longer exists. Current local evidence is split across:
+
+- `atris-customers/atris-labs/`: historical/customer-style operating context, pipeline, team member files, and fundraising notes.
+- `atris-business/atris-labs-1/apps/`: business app definitions such as revenue, customer pulse, burn rate, daily standup, pitch deck, and Atris app surfaces.
+- `atrisos-backend/backend/static/workspaces/atris-labs/instructions.md`: backend static workspace instructions.
+- `atrisos-backend/backend/atris-labs-1/.atris/business.json`: cloud binding metadata for an Atris Labs business workspace.
 
 ## Mission
 
-Be the dogfood. Prove the operating model by living in it. The company's brain — status, pipeline, customers, financials, team, knowledge, sales/marketing/recruiting surfaces — sits inside a standalone Atris computer so any agent can answer "what is the company doing right now?" in 60 seconds via `STATUS.md`.
+Prove the operating model by living in it. Atris Labs should be able to answer "what is the company doing right now?" from workspace artifacts instead of Slack archeology or founder memory.
 
-## What it is
+## Current Read
 
-A standalone Atris business computer at `arena/atris-business/atris-labs-1/atris/`. Holds:
+The latest available local status files are historical March 2026 artifacts, not fresh company truth. They still show the shape of the dogfood loop:
 
-- company state (pipeline, financials, customers)
-- team identities (`team/<member>/MEMBER.md`)
-- workspace surfaces (sales, marketing, recruiting)
-- knowledge synthesized from edge writes
+- company status and pipeline rollups in `context/`
+- team member priorities in `team/<person>/MEMBER.md`
+- customer/deal work as explicit pipeline rows
+- app surfaces for revenue, pulse, burn, standup, pitch deck, and Atris itself
+- backend workspace instructions for apps, groups, files, integrations, and member roles
 
-The front door is `STATUS.md` — always current, always derived, never source-of-truth.
+Do not treat the March pipeline or revenue numbers as current without rechecking the live business workspace.
 
-## What it is NOT
+## What It Is
 
-- **Not a fundraising vault.** Cap table and investor convos live in a separate workspace by design (security boundary).
-- **Not the product code.** That lives in `arena/atrisos-backend/` and `arena/atrisos-web/`.
-- **Not per-customer working files.** Those live under `arena/atris-business/<customer>/`.
-- **Not a dumping ground.** Every file justifies its own existence.
+Atris Labs is a reference shared owner with persistent computers and apps:
 
-## Operating principles
+```text
+Atris Labs owner
+  -> business workspace binding
+  -> app surfaces
+  -> context and team files
+  -> company state and pipeline
+  -> proof that Atris can run a real operating loop
+```
 
-1. **STATUS.md is the front door.** Always current. Always derived. Never source-of-truth.
-2. **Surfaces own work, state owns data.** Sales notes go in `workspace/sales/`. The pipeline rollup goes in `state/pipeline.md`.
-3. **Humans on the edge, world model in the center** (Dorsey). The synthesis loop reconciles edge writes into the center.
-4. **Standard atris layout, no inventions.** Match doordash/pallet shape so atris-cli works against it.
-5. **No new surfaces without real work to organize.** Three is enough until it isn't.
+## What It Is Not
 
-## Handoff protocol
+- Not the source of truth for product code. Product code lives in the Atris repos.
+- Not a guarantee that old pipeline numbers are current.
+- Not a single clean workspace today; local evidence is split across customer, business, and backend paths.
+- Not a dumping ground. Each surface should exist because a real operator loop needs it.
 
-When an agent loads this workspace:
+## Operating Principles
 
-1. Read `STATUS.md`
-2. Read `MAP.md`
-3. Read `TODO.md`
-4. If you have a team identity, read `team/<you>/MEMBER.md`
-5. Then act.
+1. Status is the front door, but only if it is freshly generated.
+2. Surfaces organize work; state files summarize reality.
+3. Team member files should expose priorities and accountability.
+4. Business apps should map to real company functions, not demos for their own sake.
+5. Sensitive fundraising or customer details require current-source verification before reuse.
 
-## Why this matters
+## Why This Matters
 
-atris-labs is the proof that the operating model survives contact with a real company. If atris-cli's MAP/TODO/journal/wiki shape can run the company that builds it, the same shape will run any customer's company. The dogfood IS the demo.
+Atris Labs is the proof case for the product claim: if the company can run itself through Atris, the same owner/computer shape can run a customer. The page should stay conservative because the source trail is split and some files are historical.
 
-## Cross-references
+## Cross-References
 
-- [[atris/wiki/systems/atris-business.md]] — the productized version of this shape
-- [[atris/wiki/concepts/owner-computer-model.md]] — why Atris Labs remains a business owner even when packaging changes
-- [[atris/wiki/concepts/atris-labs-goals.md]] — the goals layer that sits on top
+- [[atris/wiki/systems/atris-business.md]] - productized shared-owner workspace layer
+- [[atris/wiki/concepts/owner-computer-model.md]] - owner/computer schema and language
+- [[atris/wiki/concepts/atris-labs-goals.md]] - historical goals layer on top of this dogfood workspace

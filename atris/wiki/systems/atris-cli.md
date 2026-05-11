@@ -1,88 +1,117 @@
 ---
-type: entity
+type: system
 slug: atris-cli
-title: atris-cli
+title: Atris CLI
 sources:
-  - /Users/keshavrao/arena/atris-cli/README.md
-  - /Users/keshavrao/arena/atris-cli/commands/autopilot.js
-  - /Users/keshavrao/arena/atris-cli/lib/scorecard.js
-  - /Users/keshavrao/arena/atris-cli/commands/business.js
+  - README.md
+  - atris.md
+  - atris/MAP.md
+  - package.json
+  - bin/atris.js
+  - commands/task.js
+  - commands/autopilot.js
+  - commands/business.js
+  - commands/member.js
+  - commands/mission.js
+  - commands/loop.js
+  - lib/task-db.js
 created: 2026-04-07
-updated: 2026-04-27
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.9
+dependencies:
+  - atris/wiki/briefs/atris-cli-overview.md
+  - atris/wiki/systems/atris-business.md
+  - atris/wiki/concepts/owner-computer-model.md
+  - atris/wiki/concepts/plan-do-review-loop.md
+  - atris/wiki/concepts/verifiable-reward-loop.md
+actionability: "Use this as the system page for the CLI before changing public commands, workspace protocol, task ownership, wiki upkeep, business workspaces, or member/mission loops."
 tags: [project, cli, atris]
 ---
 
-# atris-cli
+# Atris CLI
 
-Node.js CLI that turns any codebase into an AI-navigable computer. The dev-tool layer of the Atris stack — sibling to atris-business (shared owners with persistent computers) and atrisos-backend/web (cloud).
+`atris` is a Node.js CLI, currently version `3.15.22`, that turns a repo into an AI workspace with context, task ownership, memory, verification, and optional cloud/business computers.
 
-## Product model
-
-The CLI is the public place where the model must be obvious:
+The public model is:
 
 ```text
 Owner = User | Business
 Owner has many Computers
-Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
+Computer = workspace + files + tools + secrets + memory + agents + validation loop
 ```
 
-Use `business` as the shared owner primitive in commands and metadata. Use `computer` for the persistent execution environment. Use display language like lab, collective, community, artist, team, or project only as packaging around the same business owner.
+## Workspace Contract
 
-## What it does
+The agent protocol lives in `atris/atris.md`. The operational shape is:
 
-Three primary moves:
+- `atris/MAP.md`: navigation index with file/line references
+- `atris task`: durable task source of truth, backed by SQLite/events/projection
+- `atris/TODO.md`: readable rendered task view, not the ownership ledger
+- `atris/logs/YYYY/YYYY-MM-DD.md`: journal notes, inbox, completed work
+- `atris/wiki/`: compiled project memory
+- `atris/features/`: idea/build/validate feature packs
+- `atris/skills/`: reusable agent skills
+- `atris/team/`: local member identities and runtime state
 
-1. **Scaffold** project memory: `atris init` creates `atris/` with MAP, TODO, journal, persona, agent specs
-2. **Run the loop**: `atris plan` → `atris do` → `atris review` (manual) or `atris run` / `atris autopilot` (autonomous)
-3. **Maintain memory**: `atris activate` loads context, `atris log` appends journal, `atris wiki ingest` builds durable knowledge
+## Command Surface
 
-## Architecture (the bones of the loop)
+Core local work:
 
-| Layer | File / dir | What it is |
-|---|---|---|
-| Spec | `atris.md` | The protocol agents read |
-| Navigation | `atris/MAP.md` | Hand/agent-curated index with file:line refs |
-| Tasks | `atris/TODO.md` | Current work queue (target = 0) |
-| Journal | `atris/logs/YYYY/YYYY-MM-DD.md` | Daily inbox + completed |
-| Memory | `atris/wiki/` | Durable knowledge (people/systems/concepts/briefs) |
-| Private memory | `.atris/presidio/` | Local-only scorecards, reward notes, and sensitive operating docs |
-| Team | `atris/team/` | Agent personas (navigator, executor, validator, etc) |
-| Loop | `commands/run.js`, `commands/autopilot.js` | Plan→do→review automation via `claude -p` subprocesses |
-| Sibling | `commands/business.js` | Cloud-side shared-owner and computer productization |
+- `atris init`: scaffold a workspace
+- `atris`: load context and start
+- `atris brainstorm`: shape ideas before planning
+- `atris plan`, `atris do`, `atris review`: manual workflow
+- `atris run` and `atris autopilot`: guided/autonomous loop
+- `atris status`, `atris log`, `atris search`: local operating view
+- `atris verify`: run deterministic completion checks
 
-## Verifiable reward rail
+Memory:
 
-As of 2026-04-09, atris-cli can close work on deterministic `Verify:` checks and keep local scorecards for future horizon selection. `autopilot` runs those checks after review, tick summaries store reward, and closed horizons append scorecards under `.atris/presidio/` so the history stays local to the operator.
+- `atris ingest`: stage raw evidence and compile wiki memory
+- `atris wiki`: ingest, query, lint, search, log, and loop namespace
+- `atris loop`: stale/orphan/suggestion upkeep for `atris/wiki/`
+- `atris activate`: load current context and wiki status
 
-The public surface should describe this modestly as a verifiable feedback loop. Sensitive operating notes, scorecards, and sharper internal framing belong in `.atris/presidio/`, not in the tracked repo wiki.
+Ownership and execution:
 
-## Capabilities surface (what atris-cli can do as primitives)
+- `atris task`: claims, dialogue, proof, review episodes, JSON projection, TODO import/render, and sync dry-run
+- `atris mission`: goal + verifier + member owner + receipt loop
+- `atris member`: member identity, goals, tick/review/block/status loop, and push/pull
+- `atris computer`: local/cloud computer surface, including `computer card`
+- `atris business`: shared owner + first/default computer workspace
 
-This is the "capabilities" side of the intent→capability→composition loop. Here's its capability set:
+Packaging and proof:
 
-- read/scan a codebase and produce MAP.md
-- run `claude -p` subprocesses for plan/do/review phases
-- ingest sources into a structured wiki
-- query the wiki via local agent prompts
-- lint the wiki for broken refs / orphans / contradictions
-- create + deploy a business owner with a default computer (team + workspace + context) to cloud
-- connect skills (slack, github, notion, etc) to a business
-- set notification mode (digest/silent/push) on a business
-- self-heal MAP.md drift after each run cycle
-- auto-push to git after each cycle
+- `atris receipt`: save evidence from agent work
+- `atris experiments`: validate and run experiment packs, including Endstate benchmark rehearsal
+- `atris release`: tag, bump, GitHub release, and launch draft
+- `atris skill`: list/audit/fix/create/link skills
+- `atris plugin`: package universal skills for Cowork
 
-## What it does not do (gaps vs Dorsey checklist)
+## What Changed Since The Old Page
 
-- No live world model — MAP and wiki are agent-curated docs, not embeddings
-- No proactive prompting — everything is pull, nothing pushes
-- No customer signal monitoring — there are no "customers" in the loop, only the user
-- No real-time composition — `do` runs one task at a time, sequentially
-- No causal model — wiki captures facts, not causes
+- `atris task` replaced manual `TODO.md` ownership as the durable task plane.
+- `TODO.md` is regenerated from task state and should not be treated as truth.
+- The wiki now has `loop` and `verify` contracts, with agent-readable frontmatter requirements.
+- Business workspaces now use `.atris/business.json` plus canonical `atris/` scaffolding.
+- Member runtime now has durable goals, experiments, reviews, blocks, and status files.
+- Mission runtime now has verifiers, receipts, member `now.md`, and status filters.
+- Experiments now include the public Endstate dry-run benchmark harness.
+
+## Current Limits
+
+- The CLI does not train models; it records local proof, score, and memory.
+- Some business/computer commands require login and cloud access.
+- Wiki memory is useful only when sources and `last_compiled` stay current.
+- External URLs should not be placed directly in wiki `sources`; use a local source receipt so staleness checks stay deterministic.
+- The task DB is local-first; cloud/Swarlo sync exists as an explicit dry-run or delegated path, not an invisible side effect.
 
 ## Cross-References
 
-- [[atris/wiki/systems/atris-business.md]] — productized cloud version, has the proactive layer
-- [[atris/wiki/concepts/owner-computer-model.md]] — owner/computer vocabulary and schema guidance
-- [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-cli implements partially
-- [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is for
-- [[atris/wiki/concepts/verifiable-reward-loop.md]] — the reward, scorecard, and horizon-weighting rail
+- [[atris/wiki/briefs/atris-cli-overview.md]] - shorter operator orientation
+- [[atris/wiki/systems/atris-business.md]] - shared-owner workspace layer
+- [[atris/wiki/concepts/owner-computer-model.md]] - owner/computer vocabulary
+- [[atris/wiki/concepts/plan-do-review-loop.md]] - workflow contract
+- [[atris/wiki/concepts/verifiable-reward-loop.md]] - proof and reward loop

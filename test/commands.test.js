@@ -7,6 +7,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest } = require('../lib/manifest');
 const { branchName, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
+const { formatLocalDate } = require('../commands/now');
 const {
   analyzeBusinessDoctor,
   businessMatchesSlug,
@@ -1668,6 +1669,16 @@ function seedBrainWorkspace(dir) {
   }) + '\n', 'utf8');
 }
 
+function advertisedAtrisPaths(text) {
+  return Array.from(String(text || '').matchAll(/`(atris\/[^`\s]+)`/g), match => match[1]);
+}
+
+function assertAdvertisedAtrisPathsExist(dir, text) {
+  const missing = advertisedAtrisPaths(text)
+    .filter(rel => !fs.existsSync(path.join(dir, rel)));
+  assert.deepEqual(missing, []);
+}
+
 test('brain compile writes loadable status and ledger artifacts', () => {
   const dir = makeTempDir();
   try {
@@ -1678,14 +1689,456 @@ test('brain compile writes loadable status and ledger artifacts', () => {
     assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'self_improvement_ledger.md')), true);
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8'), /sync-language\.md/);
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8'), /First-message rule/);
-    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /Atris Brain Compile/);
-    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /sync-language\.md/);
-    assert.match(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), /activation\/SKILL\.md/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'now.md')), true);
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /Now loaded: yes \(now\)/);
+    assert.match(status, /atris\/MAP\.md/);
+    assert.match(status, /atris\/TODO\.md/);
+    assert.doesNotMatch(status, /sync-language\.md|activation\/SKILL\.md/);
+    assert.match(status, /First-message rule/);
+    assertAdvertisedAtrisPathsExist(dir, status);
+    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /Atris Brain Compile/);
+    assert.doesNotMatch(agents, /sync-language\.md|activation\/SKILL\.md/);
+    assertAdvertisedAtrisPathsExist(dir, agents);
     const state = collectState(dir);
     assert.equal(state.totalRows, 1);
     assert.equal(state.validRows, 1);
+    assert.equal(state.hasNow, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile refreshes stale now.md before collecting state', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- **[P-1]** Fresh task [probe]',
+      '',
+    ].join('\n'), 'utf8');
+    const today = formatLocalDate(new Date());
+    const journalDir = path.join(dir, 'atris', 'logs', today.slice(0, 4));
+    fs.mkdirSync(journalDir, { recursive: true });
+    fs.writeFileSync(path.join(journalDir, `${today}.md`), [
+      '# Log',
+      '',
+      '## Notes',
+      '',
+      '- 9:00 am',
+      '  Proof: compiled fresh now state.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'now.md'), [
+      '# now',
+      '',
+      'Last updated: 1999-01-01',
+      '',
+      'Open TODO items: 0',
+      'Completed receipts today: 0',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const now = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
+    assert.match(now, new RegExp(`Last updated: ${today}`));
+    assert.match(now, /Open TODO items: 1/);
+    assert.match(now, /Completed receipts today: 1/);
+    assert.doesNotMatch(now, /1999-01-01|Open TODO items: 0|Completed receipts today: 0/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile --json returns machine-readable missing-workspace errors', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.equal(res.stderr, '');
+    const body = JSON.parse(res.stdout);
+    assert.equal(body.ok, false);
+    assert.match(body.error, /atris\/ folder not found/);
+    assert.doesNotMatch(res.stdout + res.stderr, /at ensureAtrisDir|Node\.js/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain unknown --json returns machine-readable usage errors', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const res = runCli(['brain', 'nope', '--root', dir, '--json'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.equal(res.stderr, '');
+    const body = JSON.parse(res.stdout);
+    assert.equal(body.ok, false);
+    assert.equal(body.error, 'unknown brain subcommand: nope');
+    assert.ok(Array.isArray(body.usage));
+    assert.ok(body.usage.some(line => line.includes('atris brain compile')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain state counts rendered open TODO rows without counting completed rows', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '- **[CLI-2]** Active task [brain]',
+      '',
+      '## Blocked',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '- **[CLI-1]** Completed task [brain]',
+      '',
+    ].join('\n'), 'utf8');
+
+    const state = collectState(dir);
+
+    assert.equal(state.todo.open, 1);
+    assert.equal(state.todo.done, 1);
+    assert.equal(state.todo.titled, 2);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile counts task review episodes as learning state', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+
+    const add = runCli(['task', 'add', 'Teach brain about reviewed tasks', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'done', ref], { cwd: dir, env }).status, 0);
+
+    const review = runCli([
+      'task', 'review', ref,
+      '--reward', '1',
+      '--lesson', 'Task episodes should feed brain compile',
+      '--proof', 'node --test',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
+    const taskEpisodes = state.stateFiles.find(item => item.path.endsWith('task_episodes.jsonl'));
+    assert.equal(taskEpisodes.rows, 1);
+    assert.equal(taskEpisodes.validRows, 1);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /1 episode row\(s\) are available/);
+    assert.doesNotMatch(status, /Capture one operator approval/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain scorecard derives deduped scorecards from task review episodes', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+
+    const add = runCli(['task', 'add', 'Score reviewed task episodes', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'done', ref], { cwd: dir, env }).status, 0);
+
+    const review = runCli([
+      'task', 'review', ref,
+      '--reward', '2',
+      '--lesson', 'Scorecards need task episode rewards',
+      '--proof', 'node --test',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+
+    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(scorecard.status, 0, scorecard.stderr);
+    const payload = JSON.parse(scorecard.stdout);
+    assert.equal(payload.taskEpisodes, 1);
+    assert.equal(payload.written, 1);
+    assert.equal(payload.scorecards[0].schema, 'atris.brain.task_scorecard.v1');
+    assert.equal(payload.scorecards[0].type, 'scorecard');
+    assert.equal(payload.scorecards[0].reward, 2);
+    assert.equal(payload.scorecards[0].source, 'task_review_episode');
+    assert.equal(payload.scorecards[0].task_title, 'Score reviewed task episodes');
+    assert.equal(payload.scorecards[0].workspace, 'demo-lab');
+
+    const repeat = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(repeat.status, 0, repeat.stderr);
+    assert.equal(JSON.parse(repeat.stdout).written, 0);
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.match(compile.stdout, /State rows: 2 raw \/ 2 valid/);
+    assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain scorecard uses latest review episode per task', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+
+    const add = runCli(['task', 'add', 'Avoid duplicate task scorecards', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const done = runCli(['task', 'done', ref, '--proof', 'first proof'], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+
+    const review = runCli([
+      'task', 'review', ref,
+      '--reward', '5',
+      '--lesson', 'Latest review is the task outcome',
+      '--proof', 'final proof',
+      '--next', 'Draft the Atris Labs operator one-pager from the latest recap',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+
+    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(scorecard.status, 0, scorecard.stderr);
+    const payload = JSON.parse(scorecard.stdout);
+    assert.equal(payload.taskEpisodes, 2);
+    assert.equal(payload.written, 1);
+    assert.equal(payload.scorecards[0].reward, 5);
+    assert.equal(payload.scorecards[0].lesson, 'Latest review is the task outcome');
+    assert.equal(payload.scorecards[0].proof, 'final proof');
+    assert.equal(payload.scorecards[0].next_task_suggestion, 'Draft the Atris Labs operator one-pager from the latest recap');
+
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.match(compile.stdout, /Draft the Atris Labs operator one-pager from the latest recap/);
+    assert.doesNotMatch(compile.stdout, /Run a business loop/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile rejects meta scorecard next suggestions', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      schema: 'atris.brain.episode.v1',
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+      summary: 'previous business loop',
+    }) + '\n', 'utf8');
+
+    const metaSuggestion = 'Run the compiled business reward next task instead of repeating the completed business loop.';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      schema: 'atris.brain.scorecard.v1',
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      task_title: 'Previous business loop',
+      next_task_suggestion: metaSuggestion,
+    }) + '\n', 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.doesNotMatch(compile.stdout, /Run the compiled business reward next task/);
+    assert.match(compile.stdout, /atris brain activate --member <name>/);
+    assert.doesNotMatch(compile.stdout, /Run a business loop/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile rejects brain housekeeping next suggestions', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const suggestion = 'Run brain scorecard and compile, then pick the next bounded verifier-backed mission step.';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: suggestion,
+    }) + '\n', 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.doesNotMatch(compile.stdout, /Run brain scorecard and compile/);
+    assert.match(compile.stdout, /atris brain activate --member <name>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile rejects completion-audit next suggestions', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const suggestion = 'Run one final completion audit across pull state, task queue, verifier, front-door signals, and dirty worktree before taking new work.';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: suggestion,
+    }) + '\n', 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.doesNotMatch(compile.stdout, /Run one final completion audit/);
+    assert.match(compile.stdout, /atris brain activate --member <name>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile rejects process-work next suggestions', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const suggestion = 'Activate the validator/reviewer path only when there is a new concrete artifact to review; otherwise stop creating process work.';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: suggestion,
+    }) + '\n', 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.doesNotMatch(compile.stdout, /Activate the validator\/reviewer path/);
+    assert.match(compile.stdout, /atris brain activate --member <name>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile accepts concrete replace or retire next suggestions', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const suggestion = 'Replace or retire placeholder member profiles before assigning them work';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: suggestion,
+    }) + '\n', 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.match(compile.stdout, /Replace or retire placeholder member profiles before assigning them work/);
+    assert.doesNotMatch(compile.stdout, /atris brain activate --member <name>/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile lets newer operator feedback supersede stale task next moves', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const staleSuggestion = 'Run one final completion audit across pull state, task queue, verifier, front-door signals, and dirty worktree before taking new work.';
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), [
+      JSON.stringify({
+        type: 'scorecard',
+        ts: '2026-05-10T00:01:00.000Z',
+        reward: 5,
+        next_task_suggestion: staleSuggestion,
+      }),
+      JSON.stringify({
+        schema: 'atris.brain.scorecard.v1',
+        ts: '2026-05-10T00:02:00.000Z',
+        recommendation: staleSuggestion,
+        human_rating: 'approve',
+        human_note: 'Audit completed with verifier proof.',
+        reward: 1,
+        source: 'operator_feedback',
+      }),
+      '',
+    ].join('\n'), 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.doesNotMatch(compile.stdout, /Run one final completion audit/);
+    assert.match(compile.stdout, /atris brain activate --member <name>/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1726,6 +2179,341 @@ test('brain activate can target a member and print their next work block', () =>
   }
 });
 
+test('brain activate --verify fails with a missing member setup card instead of scorecard next move', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: 'Draft the customer one-pager from the latest recap',
+    }) + '\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'missing-one', '--root', dir, '--verify'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stdout, /OPERATOR: missing-one \(missing\)/);
+    assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/missing-one\/MEMBER\.md or rerun with an existing member/);
+    assert.match(res.stdout, /AVAILABLE MEMBERS: justin, keshav/);
+    assert.doesNotMatch(res.stdout, /Draft the customer one-pager/);
+    assert.match(res.stderr, /brain activate non-executable member activation card: missing-one \(missing\)/);
+    assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate --json --verify returns machine-readable readiness failures', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+
+    const missing = runCli(['brain', 'activate', '--member', 'missing-one', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.notEqual(missing.status, 0);
+    assert.equal(missing.stderr, '');
+    const missingBody = JSON.parse(missing.stdout);
+    assert.equal(missingBody.ok, false);
+    assert.match(missingBody.error, /brain activate non-executable member activation card: missing-one \(missing\)/);
+    assert.match(missingBody.card, /OPERATOR: missing-one \(missing\)/);
+    assert.match(missingBody.card, /AVAILABLE MEMBERS: justin, keshav/);
+
+    const memberDir = path.join(dir, 'atris', 'team', 'placeholder');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), [
+      '# Placeholder Member',
+      '',
+      '## Persona',
+      '',
+      '(Define how this member communicates, their tone, and decision-making style)',
+      '',
+    ].join('\n'), 'utf8');
+
+    const notReady = runCli(['brain', 'activate', '--member', 'placeholder', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.notEqual(notReady.status, 0);
+    assert.equal(notReady.stderr, '');
+    const notReadyBody = JSON.parse(notReady.stdout);
+    assert.equal(notReadyBody.ok, false);
+    assert.match(notReadyBody.error, /brain activate non-executable member activation card: Placeholder Member \(not ready\)/);
+    assert.match(notReadyBody.card, /PROFILE ISSUES: persona is still template text/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate --verify fails with a placeholder member readiness card', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'placeholder');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), [
+      '# Placeholder Member',
+      '',
+      '## Persona',
+      '',
+      '(Define how this member communicates, their tone, and decision-making style)',
+      '',
+      '## Workflow',
+      '',
+      '1. Step one',
+      '',
+      '## Rules',
+      '',
+      '1. Rule one',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'placeholder', '--root', dir, '--verify'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stdout, /OPERATOR: Placeholder Member \(not ready\)/);
+    assert.match(res.stdout, /NEXT MOVE: Replace placeholder sections in atris\/team\/placeholder\/MEMBER\.md/);
+    assert.match(res.stdout, /PROFILE ISSUES: persona is still template text; workflow is still template text; rules are still template text/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+    assert.match(res.stderr, /brain activate non-executable member activation card: Placeholder Member \(not ready\)/);
+    assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate --verify fails with a member missing START_HERE readiness card', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stdout, /OPERATOR: Executor \(not ready\)/);
+    assert.match(res.stdout, /NEXT MOVE: Create atris\/team\/executor\/START_HERE\.md/);
+    assert.match(res.stdout, /first concrete work block, verifier, and proof target/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+    assert.match(res.stderr, /brain activate non-executable member activation card: Executor \(not ready\)/);
+    assert.doesNotMatch(res.stderr, /at verifyActivationCard|Node\.js/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes validator members to concrete review work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'validator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Validator — Reviewer\n\nValidates execution and blocks weak proof.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Review the highest-risk task and name residual risk.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Validator — Reviewer: review the highest-risk open or recently completed task/);
+    assert.match(res.stdout, /name residual risk/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes validator away from fake review work when nothing is reviewable', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'validator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Validator — Reviewer\n\nValidates execution and blocks weak proof.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Review the highest-risk task and name residual risk.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'validator', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Validator — Reviewer: wait for one concrete artifact or ask Navigator to create a reviewable task/);
+    assert.doesNotMatch(res.stdout, /review the highest-risk open or recently completed task/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes executor members to concrete build work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Executor — Builder: execute the highest-leverage claimed task one scoped step at a time/);
+    assert.match(res.stdout, /hand off proof for review/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes executor away from fake build work when no task is open', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Executor — Builder: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch/);
+    assert.doesNotMatch(res.stdout, /execute the highest-leverage claimed task/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes navigator members to concrete planning work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'navigator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Navigator — Planner\n\nPlans scoped work from MAP evidence.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Plan one scoped task with files, exit, verify, and rollback.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'navigator', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Navigator — Planner: turn one messy or unclaimed intent into a MAP-backed plan/);
+    assert.match(res.stdout, /review-ready task/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes launcher members to concrete closeout work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Completed',
+      '',
+      '- **[CLI-1]** Completed task [brain]',
+      '',
+    ].join('\n'), 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'launcher');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Launcher — The Closer: close one validated task into release-ready proof/);
+    assert.match(res.stdout, /name the publish step/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes launcher away from fake closeout work when no task receipt exists', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'launcher');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Launcher — The Closer: wait for one validated task receipt before closeout/);
+    assert.doesNotMatch(res.stdout, /close one validated task into release-ready proof/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes brainstormer members to concrete idea-shaping work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'brainstormer');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Brainstormer — Idea & Reality Shaper\n\nShapes raw ideas before planning.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Shape one raw idea into a navigator-ready vision.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'brainstormer', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Brainstormer — Idea & Reality Shaper: shape one raw idea into a concise vision/);
+    assert.match(res.stdout, /navigator-ready next step/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes researcher members to concrete research work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'researcher');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Researcher — Deep Researcher\n\nFinds primary-source truth.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Answer one explicit research question with sources.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'researcher', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Researcher — Deep Researcher: answer one explicit research question with primary sources/);
+    assert.match(res.stdout, /unverified gaps/);
+    assert.doesNotMatch(res.stdout, /\(not ready\)/);
+    assert.doesNotMatch(res.stdout, /use your START_HERE/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes mission and overnight members to concrete work blocks', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const missionDir = path.join(dir, 'atris', 'team', 'mission-lead');
+    fs.mkdirSync(missionDir, { recursive: true });
+    fs.writeFileSync(path.join(missionDir, 'MEMBER.md'), '# Mission Lead\n\nCoordinates bounded mission ticks.\n', 'utf8');
+    fs.writeFileSync(path.join(missionDir, 'START_HERE.md'), 'Pick one bounded mission step with a verifier and proof target.\n', 'utf8');
+
+    const opusDir = path.join(dir, 'atris', 'team', 'opus-overnight');
+    fs.mkdirSync(opusDir, { recursive: true });
+    fs.writeFileSync(path.join(opusDir, 'MEMBER.md'), '# Opus Overnight Worker\n\nRuns the rl-exp2 loop without spending money.\n', 'utf8');
+    fs.writeFileSync(path.join(opusDir, 'START_HERE.md'), 'Pick the next zero-spend rl-exp2 tick and name the 1% delta.\n', 'utf8');
+
+    const mission = runCli(['brain', 'activate', '--member', 'mission-lead', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(mission.status, 0, mission.stderr);
+    assert.match(mission.stdout, /Mission Lead: choose or create one bounded mission step, run its verifier/);
+
+    const opus = runCli(['brain', 'activate', '--member', 'opus-overnight', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(opus.status, 0, opus.stderr);
+    assert.match(opus.stdout, /Opus Overnight Worker: run the next zero-spend `rl-exp2` tick/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain activate remembers the last operator after the first member run', () => {
   const dir = makeTempDir();
   try {
@@ -1751,7 +2539,63 @@ test('brain gallery previews activation cards for every team member', () => {
     assert.match(res.stdout, /Justin McDonald: run one customer-moving GTM rep/);
     assert.match(res.stdout, /Keshav Rao: make one high-leverage CEO move/);
     assert.match(res.stdout, /---/);
-    assert.match(res.stdout, /VERIFY: brain artifacts present/);
+    assert.match(res.stdout, /VERIFY: brain artifacts and member readiness present/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain gallery does not overwrite the remembered operator', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const operatorPath = path.join(dir, '.atris', 'state', 'operator.json');
+    const activate = runCli(['brain', 'activate', '--member', 'justin', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(activate.status, 0, activate.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
+
+    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
+    assert.equal(JSON.parse(fs.readFileSync(operatorPath, 'utf8')).member, 'justin');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain gallery --verify fails on not-ready member cards', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
+
+    const res = runCli(['brain', 'gallery', '--root', dir, '--verify'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /brain gallery not-ready member activation cards: Executor/);
+    assert.doesNotMatch(res.stderr, /at verifyActivationGallery|Node\.js/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain gallery --json --verify returns machine-readable readiness failures', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor\n\nBuilder with real workflow text.\n', 'utf8');
+
+    const res = runCli(['brain', 'gallery', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    assert.equal(res.stderr, '');
+    const body = JSON.parse(res.stdout);
+    assert.equal(body.ok, false);
+    assert.match(body.error, /brain gallery not-ready member activation cards: Executor \(not ready\)/);
+    assert.deepEqual(body.members, ['executor', 'justin', 'keshav']);
+    assert.match(body.gallery, /OPERATOR: Executor \(not ready\)/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2399,6 +3243,20 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(nextPayload.owner, 'bot');
     assert.equal(nextPayload.task.claimed_by, 'bot');
 
+    const claimConflict = runCli(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env });
+    assert.equal(claimConflict.status, 1);
+    assert.equal(claimConflict.stderr, '');
+    const claimConflictPayload = JSON.parse(claimConflict.stdout);
+    assert.equal(claimConflictPayload.ok, false);
+    assert.equal(claimConflictPayload.command, 'atris task claim');
+    assert.equal(claimConflictPayload.reason, 'already_claimed');
+    assert.equal(claimConflictPayload.claimed_by, 'bot');
+
+    const humanClaimConflict = runCli(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env });
+    assert.equal(humanClaimConflict.status, 1);
+    assert.equal(humanClaimConflict.stdout, '');
+    assert.match(humanClaimConflict.stderr, /claim failed: already_claimed \(held by bot\)/);
+
     const note = runCli(['task', 'say', shortId, 'machine-readable context', '--as', 'bot', '--json'], { cwd: dir, env });
     assert.equal(note.status, 0, note.stderr);
     const notePayload = JSON.parse(note.stdout);
@@ -2426,6 +3284,29 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(finishPayload.task.status, 'done');
     assert.equal(finishPayload.episode.action.actor, 'bot');
 
+    const doneConflict = runCli(['task', 'done', shortId, '--json'], { cwd: dir, env });
+    assert.equal(doneConflict.status, 1);
+    assert.equal(doneConflict.stderr, '');
+    const doneConflictPayload = JSON.parse(doneConflict.stdout);
+    assert.equal(doneConflictPayload.ok, false);
+    assert.equal(doneConflictPayload.command, 'atris task done');
+    assert.equal(doneConflictPayload.reason, 'not_open_or_claimed');
+    assert.equal(doneConflictPayload.task_id, id);
+
+    const finishConflict = runCli(['task', 'finish', shortId, '--json'], { cwd: dir, env });
+    assert.equal(finishConflict.status, 1);
+    assert.equal(finishConflict.stderr, '');
+    const finishConflictPayload = JSON.parse(finishConflict.stdout);
+    assert.equal(finishConflictPayload.ok, false);
+    assert.equal(finishConflictPayload.command, 'atris task finish');
+    assert.equal(finishConflictPayload.reason, 'not_open_or_claimed');
+    assert.equal(finishConflictPayload.task_id, id);
+
+    const humanFinishConflict = runCli(['task', 'finish', shortId], { cwd: dir, env });
+    assert.equal(humanFinishConflict.status, 1);
+    assert.equal(humanFinishConflict.stdout, '');
+    assert.match(humanFinishConflict.stderr, /finish failed: .* not in open\|claimed/);
+
     const events = runCli(['task', 'events', shortId, '--json'], { cwd: dir, env });
     assert.equal(events.status, 0, events.stderr);
     const eventsPayload = JSON.parse(events.stdout);
@@ -2438,9 +3319,45 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(wherePayload.db, dbPath);
     assert.equal(wherePayload.workspace, fs.realpathSync(dir));
 
+    const unknown = runCli(['task', 'not-a-subcommand', '--json'], { cwd: dir, env });
+    assert.equal(unknown.status, 2);
+    assert.equal(unknown.stderr, '');
+    const unknownPayload = JSON.parse(unknown.stdout);
+    assert.equal(unknownPayload.ok, false);
+    assert.equal(unknownPayload.error, 'unknown task subcommand: not-a-subcommand');
+    assert.ok(Array.isArray(unknownPayload.usage));
+    assert.ok(unknownPayload.usage.some(line => line.includes('atris task add')));
+
+    const humanUnknown = runCli(['task', 'not-a-subcommand'], { cwd: dir, env });
+    assert.equal(humanUnknown.status, 2);
+    assert.match(humanUnknown.stderr, /atris task: unknown subcommand "not-a-subcommand"/);
+    assert.match(humanUnknown.stdout, /atris task - durable local task state/);
+
+    const missingTitle = runCli(['task', 'add', '--json'], { cwd: dir, env });
+    assert.equal(missingTitle.status, 2);
+    assert.equal(missingTitle.stderr, '');
+    const missingTitlePayload = JSON.parse(missingTitle.stdout);
+    assert.equal(missingTitlePayload.ok, false);
+    assert.equal(missingTitlePayload.command, 'atris task add');
+    assert.equal(missingTitlePayload.reason, 'missing_title');
+
+    const missingClaimId = runCli(['task', 'claim', '--json'], { cwd: dir, env });
+    assert.equal(missingClaimId.status, 2);
+    assert.equal(missingClaimId.stderr, '');
+    const missingClaimPayload = JSON.parse(missingClaimId.stdout);
+    assert.equal(missingClaimPayload.ok, false);
+    assert.equal(missingClaimPayload.command, 'atris task claim');
+    assert.equal(missingClaimPayload.reason, 'missing_id');
+
+    const humanMissingTitle = runCli(['task', 'add'], { cwd: dir, env });
+    assert.equal(humanMissingTitle.status, 2);
+    assert.equal(humanMissingTitle.stdout, '');
+    assert.match(humanMissingTitle.stderr, /title required/);
+
     const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json'], { cwd: dir, env });
     assert.equal(missing.status, 2);
-    const missingPayload = JSON.parse(missing.stderr);
+    assert.equal(missing.stderr, '');
+    const missingPayload = JSON.parse(missing.stdout);
     assert.equal(missingPayload.ok, false);
     assert.equal(missingPayload.command, 'atris task show');
     assert.equal(missingPayload.reason, 'not_found');
@@ -2954,6 +3871,120 @@ test('search with no keyword prints usage', () => {
   }
 });
 
+test('search help flags print usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const flag of ['--help', '-h']) {
+      const res = runCli(['search', flag], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `search ${flag}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, /Usage: atris search <keyword>/);
+      assert.doesNotMatch(res.stdout, /No atris\/logs\/ directory found/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `search ${flag} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `search ${flag} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('learn help prints usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const helpArg of ['--help', '-h', 'help']) {
+      const res = runCli(['learn', helpArg], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `learn ${helpArg}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, /Usage: atris learn \[command\]/);
+      assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `learn ${helpArg} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `learn ${helpArg} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('soul help prints usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const helpArg of ['--help', '-h', 'help']) {
+      const res = runCli(['soul', helpArg], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `soul ${helpArg}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, /atris soul/);
+      assert.doesNotMatch(res.stderr, /No atris\/ folder found/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `soul ${helpArg} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `soul ${helpArg} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('workspace-free help smoke sweep covers common entrypoints', () => {
+  const cases = [
+    ['--help'],
+    ['status', '--help'],
+    ['analytics', '--help'],
+    ['brain', '--help'],
+    ['brain', '-h'],
+    ['brainstorm', '--help'],
+    ['brainstorm', '-h'],
+    ['brainstorm', 'help'],
+    ['search', '--help'],
+    ['search', '-h'],
+    ['learn', '--help'],
+    ['learn', '-h'],
+    ['learn', 'help'],
+    ['soul', '--help'],
+    ['soul', '-h'],
+    ['soul', 'help'],
+    ['activate', '--help'],
+    ['next', '--help'],
+    ['now', '--help'],
+    ['clean', '--help'],
+    ['verify', '--help'],
+    ['loop', '--help'],
+    ['serve', '--help'],
+    ['update', '--help'],
+    ['sync', '--help'],
+    ['upgrade', '--help'],
+    ['release', '--help'],
+    ['login', '--help'],
+    ['logout', '--help'],
+    ['whoami', '--help'],
+    ['switch', '--help'],
+    ['use', '--help'],
+    ['accounts', '--help'],
+    ['integrations', '--help'],
+    ['skill', '--help'],
+    ['member', '--help'],
+    ['plugin', '--help'],
+    ['experiments', '--help'],
+    ['receipt', '--help'],
+    ['proof', '--help'],
+    ['code-review', '--help'],
+    ['cr', '--help'],
+  ];
+
+  for (const args of cases) {
+    const dir = makeTempDir();
+    try {
+      const home = path.join(dir, 'home');
+      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+      const label = args.join(' ');
+      assert.equal(res.status, 0, `${label}: ${res.stderr || res.stdout}`);
+      assert.ok((res.stdout + res.stderr).trim().length > 0, `${label} printed no help`);
+      assert.doesNotMatch(res.stdout + res.stderr, /folder not found|Run "atris init"|Not logged in|Checking for updates|Current Status|Atris Analytics|CONTEXT LOADED|Wiki Loop/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${label} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${label} created ~/.atris`);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+});
+
 test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
   const dir = makeTempDir();
   try {
@@ -3363,6 +4394,20 @@ test('clean exits 1 when no atris/ folder', () => {
   }
 });
 
+test('clean --help prints usage without touching workspace', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['clean', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris clean/);
+    assert.match(res.stdout, /--dry-run/);
+    assert.doesNotMatch(res.stdout, /Atris Clean/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('clean reports clean workspace on fresh init', () => {
   const dir = makeTempDir();
   try {
@@ -3439,6 +4484,268 @@ test('sync command works as alias for update', () => {
     const res = runCli(['sync'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /up to date|Updated/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('update and sync --help print usage without touching workspace', () => {
+  const dir = makeTempDir();
+  try {
+    for (const command of ['update', 'sync']) {
+      const res = runCli([command, '--help'], { cwd: dir });
+      assert.equal(res.status, 0, res.stderr);
+      assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.match(res.stdout, /--dry-run/);
+      assert.doesNotMatch(res.stdout, /Updating|Local workspace updated|up to date/i);
+    }
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('upgrade --help prints usage without npm update checks', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['upgrade', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris upgrade/);
+    assert.doesNotMatch(res.stdout, /Checking for updates|Installing update|npm update -g atris/);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('now --help prints usage without update-check side effects', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['now', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris now/);
+    assert.doesNotMatch(res.stdout, /Current operating truth|Created atris\/now\.md/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('help invocations skip background update-check cache writes', () => {
+  const dir = makeTempDir();
+  try {
+    const commands = [
+      ['skill', '--help'],
+      ['member', '--help'],
+      ['plugin', '--help'],
+      ['experiments', '--help'],
+      ['receipt', '--help'],
+      ['code-review', '--help'],
+    ];
+
+    for (const args of commands) {
+      const home = path.join(dir, `home-${args[0]}`);
+      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `${args.join(' ')}: ${res.stderr || res.stdout}`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${args.join(' ')} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('status and analytics --help print usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const command of ['status', 'analytics']) {
+      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.doesNotMatch(res.stdout, /atris\/ folder not found|Atris Analytics|Current Status/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${command} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${command} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain --help prints usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const flag of ['--help', '-h']) {
+      const res = runCli(['brain', flag], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `brain ${flag}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, /Usage: atris brain compile/);
+      assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `brain ${flag} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `brain ${flag} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brainstorm help prints usage without workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const helpArg of ['--help', '-h', 'help']) {
+      const res = runCli(['brainstorm', helpArg], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `brainstorm ${helpArg}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, /Usage: atris brainstorm/);
+      assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `brainstorm ${helpArg} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `brainstorm ${helpArg} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auth --help prints usage without auth side effects', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const command of ['login', 'whoami']) {
+      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, res.stderr);
+      assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.doesNotMatch(res.stdout, /Choose login method|Status: Not logged in|Run "atris login"/);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+    }
+
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    const credentialsPath = path.join(home, '.atris', 'credentials.json');
+    fs.writeFileSync(credentialsPath, JSON.stringify({
+      token: 'fake',
+      email: 'fake@example.com',
+      provider: 'manual',
+    }, null, 2), 'utf8');
+    const before = fs.readFileSync(credentialsPath, 'utf8');
+    const logout = runCli(['logout', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(logout.status, 0, logout.stderr);
+    assert.match(logout.stdout, /Usage: atris logout/);
+    assert.doesNotMatch(logout.stdout, /Signed out/);
+    assert.equal(fs.readFileSync(credentialsPath, 'utf8'), before);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('account and integrations --help print usage without session side effects', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const command of ['switch', 'use', 'accounts', 'integrations']) {
+      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.doesNotMatch(res.stdout, /No saved accounts|Not signed in|Set per-terminal account|Integration Status/);
+      assert.doesNotMatch(res.stderr, /Not logged in|Run: atris login/);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${command} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('setup --help prints usage without entering setup flow', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['setup', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris setup/);
+    assert.doesNotMatch(res.stdout, /Atris Setup|Starting login|Choose login method/);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('activate and next --help print usage without loading workflow context', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    for (const command of ['activate', 'next']) {
+      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      assert.doesNotMatch(res.stdout, /CONTEXT LOADED|Context Loaded|Atris Activate|Atris Plan|Completed \(preview\)/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${command} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${command} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('serve --help prints usage instead of entering planner or bridge', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['serve', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris serve/);
+    assert.doesNotMatch(res.stdout, /CONTEXT LOADED|Atris Plan|Local AI Computer Bridge|Not logged in/);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('loop --help prints usage without running wiki loop', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['loop', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris loop/);
+    assert.match(res.stdout, /--dry-run/);
+    assert.doesNotMatch(res.stdout, /Wiki Loop|Pages:|Health: wiki/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('verify --help prints usage without running verifier', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO.md\n\n## Completed\n- **[HELP-1]** verify help sentinel\n', 'utf8');
+    const res = runCli(['verify', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris verify/);
+    assert.match(res.stdout, /--section <name>/);
+    assert.doesNotMatch(res.stdout, /Atris Verify|Verifying:|Verifying workspace|Tests:/);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('release --help prints usage without changing package metadata', () => {
+  const dir = makeTempDir();
+  try {
+    const pkgPath = path.join(dir, 'package.json');
+    fs.writeFileSync(pkgPath, JSON.stringify({ name: 'demo-release', version: '1.2.3' }, null, 2), 'utf8');
+    const before = fs.readFileSync(pkgPath, 'utf8');
+    const res = runCli(['release', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris release/);
+    assert.match(res.stdout, /--dry-run/);
+    assert.doesNotMatch(res.stdout, /commits since|bump type|bumped package/);
+    assert.equal(fs.readFileSync(pkgPath, 'utf8'), before);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4112,9 +5419,52 @@ test('unknown single-word command shows warning', () => {
   }
 });
 
+test('unknown top-level command with --json returns JSON error', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['foobarxyz', '--json'], { cwd: dir });
+    assert.equal(res.status, 2, res.stderr);
+    assert.equal(res.stderr, '');
+    assert.deepEqual(JSON.parse(res.stdout), {
+      ok: false,
+      error: 'unknown command: foobarxyz',
+      command: 'foobarxyz',
+      input: 'foobarxyz --json',
+      usage: 'atris help',
+    });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 // ============================================
 // wiki
 // ============================================
+
+test('wiki help paths print usage without scaffolding workspace state', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const cases = [
+      { args: ['ingest', '--help'], usage: /Usage: atris ingest/ },
+      { args: ['query', '--help'], usage: /Usage: atris query/ },
+      { args: ['lint', '--help'], usage: /Usage: atris lint/ },
+      { args: ['wiki', '--help'], usage: /Usage: atris wiki/ },
+      { args: ['wiki', 'ingest', '--help'], usage: /Usage: atris wiki ingest/ },
+    ];
+
+    for (const item of cases) {
+      const res = runCli(item.args, { cwd: dir, env: { HOME: home } });
+      assert.equal(res.status, 0, `${item.args.join(' ')}: ${res.stderr || res.stdout}`);
+      assert.match(res.stdout, item.usage);
+      assert.doesNotMatch(res.stdout, /Local wiki ingest|Local wiki query|Local wiki lint|No local wiki|Target: atris\/wiki|Prompt for/);
+      assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${item.args.join(' ')} created atris/`);
+      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${item.args.join(' ')} created ~/.atris`);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
 test('ingest is local-first and scaffolds atris/wiki', () => {
   const dir = makeTempDir();

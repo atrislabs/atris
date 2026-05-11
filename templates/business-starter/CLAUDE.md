@@ -29,6 +29,20 @@ See `atris/PERSONA.md` for voice, tone, and style.
 
 `atris plan` → `atris do` → `atris review`
 
+## Mission Autonomy
+
+Use `atris mission` when work should survive this chat or run as an autonomous loop.
+
+```
+member -> mission start --verify -> status --status active -> one bounded step -> mission tick --verify -> receipt -> complete|run|stop
+```
+
+- Start current-agent work: `atris mission start "<objective>" --owner <member> --runner codex_goal --lane business --verify "<cmd>" --stop "<condition>"`
+- Start headless Claude work: add `--runner claude --cadence "15m" --always-on`, then use `atris mission run <id> --max-ticks 4 --complete-on-pass`.
+- Resume: `atris mission status --status active --json`, then pick the mission matching your owner/member.
+- Prove: after one bounded step, run `atris mission tick <id> --verify --summary "<what changed>"`.
+- Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
+
 ## Wiki Reads — REQUIRED for domain questions
 
 You have a compiled wiki at `atris/wiki/`:

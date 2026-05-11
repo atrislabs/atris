@@ -4,13 +4,21 @@ slug: verifiable-reward-loop
 title: Verifiable Feedback Loop
 sources:
   - README.md
+  - atris.md
   - atris/TODO.md
   - commands/autopilot.js
   - lib/scorecard.js
-  - .atris/presidio/scorecards.md
+  - commands/task.js
+  - lib/task-db.js
 created: 2026-04-09
-updated: 2026-04-20
-last_compiled: 2026-04-20
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.84
+dependencies:
+  - atris/wiki/concepts/plan-do-review-loop.md
+  - atris/wiki/briefs/atris-cli-overview.md
+actionability: "Use this when deciding whether a task, mission, or experiment has enough proof to count as useful work."
 tags:
   - reward
   - autopilot
@@ -21,34 +29,37 @@ tags:
 
 # Verifiable Feedback Loop
 
-Atris can close work on deterministic checks, record reward from those checks, and keep local scorecards for future horizon selection. That makes the loop more verifiable and more grounded in repo history without claiming model retraining.
+Atris can close work on deterministic checks, record reward from those checks, and keep local scorecards or review episodes for future routing. That makes the loop more grounded in repo history without claiming model retraining.
 
 ## Environment pieces
 
 - **Action surface** — `plan`, `do`, `review`, and `autopilot` act on real repo state.
-- **Truth substrate** — endgame tasks can carry `Verify:` commands that exit cleanly or fail mechanically.
-- **Reward substrate** — autopilot tick summaries write reward into the journal from observable signals.
-- **Episode memory** — closed horizons append scorecards to `.atris/presidio/scorecards.md`.
-- **Policy update** — future horizon picks can weight candidates against recent scorecard history.
+- **Truth substrate** — tasks and feature rubrics can carry `Verify:` commands that exit cleanly or fail mechanically.
+- **Confidence substrate** — plan, do, and review run the Confidence Gate so loopholes are patched or named before advancing.
+- **Task reward substrate** — `atris task review` and `finish` can record proof, reward, lessons, lineage, and next tasks in local state.
+- **Autopilot reward substrate** — autopilot tick summaries can write reward into the journal from observable signals.
+- **Scorecard memory** — closed endgame horizons can append `.atris/presidio/scorecards.md` when that rail is active.
+- **Policy update** — future horizon picks can weight candidates against recent scorecard history when enough history exists.
 
 ## Loop shape
 
-1. `/endgame` writes a horizon and backlog tasks with deterministic `Verify:` checks.
-2. `autopilot` executes one task and runs the verify command after review passes.
-3. The tick summary records reward in today's journal.
-4. When the horizon closes, a scorecard is appended with shipped work, reward, halt ratio, and lessons.
-5. The next horizon picker can read those scorecards and weight similar work higher or lower.
+1. Work enters `atris task` with an owner, context, exit condition, and proof target.
+2. The agent executes plan -> do -> review and runs the declared verification.
+3. The task is finished only with proof; review can add reward, lesson, and next task linkage.
+4. Autopilot/endgame runs add a second rail: tick reward, verify pass/fail, commit registry, and optional closed-horizon scorecards.
+5. Future routing can use recent task/reward history and scorecards, but the system stays local-first.
 
 ## Privacy boundary
 
 - `atris/wiki/` is the publishable knowledge surface.
-- `.atris/presidio/` is the local-only operating surface for scorecards and sensitive tuning notes.
-- Distilled lessons can graduate into the public wiki; live reward shaping should stay in Presidio.
+- `.atris/state/` is the local operating surface for task episodes, mission events, member loop state, and compiled projections.
+- `.atris/presidio/` is the local-only operating surface for endgame scorecards and sensitive tuning notes when that rail writes them.
+- Distilled lessons can graduate into the public wiki; raw reward shaping should stay in local state or Presidio.
 
 ## Honest limits
 
 - Reward shaping is still hand-authored and local to this repo.
-- Scorecard history is small, so weighting is useful but not magical.
+- Scorecard and episode history is small, so weighting is useful but not magical.
 - Verify coverage is only as strong as the checks the human or agent writes.
 - The loop can learn which work shapes close cleanly, but it is not doing model retraining.
 

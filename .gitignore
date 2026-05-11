@@ -57,6 +57,8 @@ atris/features/*
 !atris/features/company-brain-sync/**
 !atris/features/forge-loop/
 !atris/features/forge-loop/**
+!atris/features/codex-goal-replacement/
+!atris/features/codex-goal-replacement/**
 # Legacy location (deprecated)
 docs/features/
 
@@ -68,3 +70,6 @@ prd.json
 progress.txt
 .autopilot-prompt.tmp
 .autopilot-horizons-prompt.tmp
+
+# Backups created by atrisos-backend's atris-cli-overlays/apply.sh (chmod 444 prevents the actual clobber, but .bak still gets written)
+*.pre-overlay.bak

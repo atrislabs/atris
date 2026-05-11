@@ -3,10 +3,17 @@ type: brief
 slug: atris-labs-workspace-protocol
 title: Atris Labs Workspace Protocol
 sources:
-  - /Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md
-last_compiled: 2026-04-27
+  - atris/wiki/log.md
+  - atris/wiki/systems/atris-labs.md
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.55
+dependencies:
+  - atris/wiki/systems/atris-labs.md
+  - atris/wiki/concepts/owner-computer-model.md
+actionability: "Use as historical context only; do not treat the old atris-labs-1 absolute path as live."
 created: 2026-04-08
-updated: 2026-04-27
+updated: 2026-05-10
 tags:
   - atris-labs
   - workspace
@@ -16,14 +23,16 @@ tags:
 ---
 # Atris Labs Workspace Protocol
 
-Atris Labs is the business owner for the company that builds Atris. Its default computer lives at `arena/atris-business/atris-labs-1/atris/` and dogfoods the AI-native operating shape before customers touch it. Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
+Atris Labs is the business owner for the company that builds Atris. This page preserves the April 2026 workspace protocol that was ingested from a now-missing local path: `/Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md`. Treat it as historical context, not a live source of truth.
+
+Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
 
 Model mapping:
 
 ```text
 Owner: Atris Labs business
 Computer: default business_ops computer
-Workspace: the files and folders under atris/
+Workspace: the files and folders under the computer's atris/
 ```
 
 ## On Load

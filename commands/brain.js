@@ -1,9 +1,23 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { refreshNowFile } = require('./now');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
+const GENERATED_LOAD_ORDER_FILES = [
+  'atris/now.md',
+  'atris/brain/STATUS.md',
+  'atris/brain/self_improvement_ledger.md',
+];
+const OPTIONAL_LOAD_ORDER_FILES = [
+  'atris/wiki/concepts/agent-activation-contract.md',
+  'atris/skills/atris/SKILL.md',
+  'atris/PERSONA.md',
+  'atris/MAP.md',
+  'atris/TODO.md',
+  'atris/wiki/index.md',
+];
 
 function parseArgs(args) {
   const options = {
@@ -128,16 +142,56 @@ function readJsonlStats(filePath) {
   };
 }
 
+function readJsonlRows(filePath) {
+  const text = readText(filePath);
+  const rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      rows.push(JSON.parse(line));
+    } catch {
+      // Bad rows stay visible in stats; callers only use valid rows.
+    }
+  }
+  return rows;
+}
+
 function countTodoItems(todoText) {
-  const unchecked = (todoText.match(/^\s*-\s+\[[ ]\]/gm) || []).length;
-  const checked = (todoText.match(/^\s*-\s+\[[xX]\]/gm) || []).length;
-  const titled = (todoText.match(/^\s*-\s+\*\*[^*]+:\*\*/gm) || []).length;
-  const done = (todoText.match(/~~|DONE|✅/g) || []).length;
+  const text = String(todoText || '');
+  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\s*$/m.test(text);
+  let section = null;
+  let unchecked = 0;
+  let checked = 0;
+  let titled = 0;
+  let legacyOpen = 0;
+  let renderedOpen = 0;
+  let renderedDone = 0;
+
+  for (const line of text.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      section = heading[1];
+      continue;
+    }
+
+    const isUnchecked = /^\s*-\s+\[[ ]\]/.test(line);
+    const isChecked = /^\s*-\s+\[[xX]\]/.test(line);
+    const isTitled = /^\s*-\s+(?:\[[ xX]\]\s+)?\*\*[^*]+:?\*\*/.test(line);
+    if (isUnchecked) unchecked += 1;
+    if (isChecked) checked += 1;
+    if (!hasRenderedSections && (isUnchecked || (isTitled && !isChecked))) legacyOpen += 1;
+    if (!isTitled) continue;
+
+    titled += 1;
+    if (hasRenderedSections && ['Backlog', 'In Progress', 'Blocked'].includes(section)) renderedOpen += 1;
+    if (hasRenderedSections && section === 'Completed') renderedDone += 1;
+  }
+
   return {
-    open: unchecked + Math.max(0, titled - done),
+    open: hasRenderedSections ? renderedOpen : legacyOpen,
     checked,
     titled,
-    done,
+    done: hasRenderedSections ? renderedDone : checked + (text.match(/~~|DONE|✅/g) || []).length,
   };
 }
 
@@ -167,6 +221,16 @@ function firstHeading(text, fallback) {
   return match ? match[1].trim() : fallback;
 }
 
+function scorecardTs(row) {
+  return String(row?.ts || row?.episode_created_at || '');
+}
+
+function isNextMoveScorecard(row) {
+  if (!row) return false;
+  if (row.type === 'scorecard') return true;
+  return row.schema === 'atris.brain.scorecard.v1' && row.source === 'operator_feedback';
+}
+
 function collectState(root) {
   const atrisDir = path.join(root, 'atris');
   const stateDir = path.join(root, '.atris', 'state');
@@ -180,6 +244,7 @@ function collectState(root) {
   const stateFiles = [
     'events.jsonl',
     'episodes.jsonl',
+    'task_episodes.jsonl',
     'scorecards.jsonl',
     'agent_tasks.jsonl',
     'agent_mail.jsonl',
@@ -190,6 +255,10 @@ function collectState(root) {
 
   const totalRows = stateFiles.reduce((sum, item) => sum + item.rows, 0);
   const validRows = stateFiles.reduce((sum, item) => sum + item.validRows, 0);
+  const latestScorecard = readJsonlRows(path.join(stateDir, 'scorecards.jsonl'))
+    .filter(isNextMoveScorecard)
+    .sort((a, b) => scorecardTs(a).localeCompare(scorecardTs(b)))
+    .pop() || null;
   const latestStateTs = stateFiles
     .map(item => item.latestTs)
     .filter(Boolean)
@@ -212,31 +281,84 @@ function collectState(root) {
     stateFiles,
     totalRows,
     validRows,
+    latestScorecard: latestScorecard ? {
+      task_title: latestScorecard.task_title || latestScorecard.recommendation || null,
+      reward: latestScorecard.reward,
+      next_task_suggestion: latestScorecard.next_task_suggestion || null,
+      ts: scorecardTs(latestScorecard) || null,
+    } : null,
     latestStateTs,
   };
 }
 
+function prepareBrainState(root) {
+  refreshNowFile(root);
+  return collectState(root);
+}
+
+function countStateRows(state, names) {
+  const wanted = new Set(Array.isArray(names) ? names : [names]);
+  return state.stateFiles
+    .filter(item => wanted.has(path.basename(item.path)))
+    .reduce((sum, item) => sum + item.rows, 0);
+}
+
 function strongestSignal(state) {
-  const mail = state.stateFiles.find(item => item.path.endsWith('agent_mail.jsonl'))?.rows || 0;
-  const tasks = state.stateFiles.find(item => item.path.endsWith('agent_tasks.jsonl'))?.rows || 0;
-  const scorecards = state.stateFiles.find(item => item.path.endsWith('scorecards.jsonl'))?.rows || 0;
-  const episodes = state.stateFiles.find(item => item.path.endsWith('episodes.jsonl'))?.rows || 0;
+  const mail = countStateRows(state, 'agent_mail.jsonl');
+  const tasks = countStateRows(state, 'agent_tasks.jsonl');
+  const scorecards = countStateRows(state, 'scorecards.jsonl');
+  const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
   if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.`;
   if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.`;
+  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.`;
   if (mail > 0) return `${mail} agent-mail row(s) are available; compile them into decisions, follow-ups, and CRM memory.`;
   if (tasks > 0) return `${tasks} agent-task row(s) are available; use them to choose the next action.`;
   return 'Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.';
 }
 
+function isActionableScorecardNextMove(value) {
+  const text = String(value || '').trim();
+  if (text.length < 12) return false;
+
+  const metaPatterns = [
+    /\bcompiled business reward\b/i,
+    /\bcompleted business loop\b/i,
+    /\bfallback\b/i,
+    /\binstead of\b/i,
+    /\bbrain\s+(scorecard|compile|feedback|approval|yes|edit|no)\b/i,
+    /\bcompile the brain\b/i,
+    /\bcompletion audit\b/i,
+    /\bnext (move|task|action|operator loop)\b/i,
+    /\bonly when there is\b/i,
+    /\bprocess work\b/i,
+    /\bbefore taking new work\b/i,
+    /\brepeating? the completed\b/i,
+    /\bscorecard suggestion\b/i,
+  ];
+  if (metaPatterns.some(pattern => pattern.test(text))) return false;
+
+  return /\b(add|answer|archive|assign|build|call|choose|claim|clean|clear|close|compile|create|debug|delete|draft|edit|finish|fix|implement|ingest|open|patch|pick|pull|push|record|replace|resolve|retire|review|run|ship|sync|test|triage|update|validate|verify|write)\b/i.test(text);
+}
+
+function operatorActivationNextMove(state) {
+  return `Run \`atris brain activate --member <name> --root ${state.root} --verify\` to bind the operator and get a concrete work block.`;
+}
+
 function nextMove(state) {
-  if (state.totalRows > 0 && (state.stateFiles.find(item => item.path.endsWith('scorecards.jsonl'))?.rows || 0) === 0) {
+  const scorecards = countStateRows(state, 'scorecards.jsonl');
+  const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
+  if (state.totalRows > 0 && scorecards === 0) {
+    if (episodes > 0) return 'Turn existing episode rows into the first scorecard so the next run has reward, not just traces.';
     return 'Turn existing state rows into the first scorecard so the next run has a reward signal, not just memory.';
   }
-  if ((state.stateFiles.find(item => item.path.endsWith('episodes.jsonl'))?.rows || 0) === 0) {
+  if (episodes === 0) {
     return 'Capture one operator approval, edit, or rejection as an episode so the brain has a learning trace.';
   }
   if (state.todo.open > 0) return 'Pick the highest-leverage open TODO item and leave a scorecard when done.';
-  return 'Run a business loop, verify the result, then re-run `atris brain compile`.';
+  if (state.latestScorecard && isActionableScorecardNextMove(state.latestScorecard.next_task_suggestion)) {
+    return state.latestScorecard.next_task_suggestion;
+  }
+  return operatorActivationNextMove(state);
 }
 
 function rewardForRating(rating) {
@@ -257,9 +379,12 @@ function loadBrainState(root) {
   return readJson(path.join(root, 'atris', 'brain', 'state.json')) || collectState(root);
 }
 
+function normalizeMemberSlug(memberSlug) {
+  return String(memberSlug || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
+
 function readMemberContext(root, memberSlug) {
-  if (!memberSlug) return null;
-  const slug = String(memberSlug).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const slug = normalizeMemberSlug(memberSlug);
   if (!slug) return null;
   const memberDir = path.join(root, 'atris', 'team', slug);
   const memberText = readText(path.join(memberDir, 'MEMBER.md'));
@@ -267,6 +392,7 @@ function readMemberContext(root, memberSlug) {
   return {
     slug,
     name: firstHeading(memberText, slug),
+    profile: memberText,
     startHere: readText(path.join(memberDir, 'START_HERE.md')),
     goals: readText(path.join(memberDir, 'goals.md')),
   };
@@ -303,7 +429,7 @@ function rememberOperator(root, member) {
   }, null, 2) + '\n', 'utf8');
 }
 
-function memberNextMove(member) {
+function memberNextMove(member, state = null) {
   if (!member) return null;
   const name = member.name || member.slug;
   const context = `${member.startHere}\n${member.goals}`;
@@ -314,11 +440,55 @@ function memberNextMove(member) {
   if (member.slug === 'keshav' || /keshav/i.test(member.name || '')) {
     return `${name}: make one high-leverage CEO move: ship product, close a strategic loop, or make a queued decision; leave proof and a scorecard.`;
   }
+  if (/opus|overnight/i.test(identity)) {
+    return `${name}: run the next zero-spend ` +
+      '`rl-exp2` tick, land one artifact, name the 1% delta, and record the mission receipt.';
+  }
+  if (/mission[- ]lead|mission lead/i.test(identity)) {
+    return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
+  }
+  if (/validator|reviewer/i.test(identity)) {
+    if ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0) {
+      return `${name}: wait for one concrete artifact or ask Navigator to create a reviewable task with verifier, proof target, and residual-risk checklist.`;
+    }
+    return `${name}: review the highest-risk open or recently completed task, run its verifier, name residual risk, and approve or block with proof.`;
+  }
+  if (/executor|builder/i.test(identity)) {
+    if ((state?.todo?.open || 0) === 0) {
+      return `${name}: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch.`;
+    }
+    return `${name}: execute the highest-leverage claimed task one scoped step at a time, run the verifier after the patch, and hand off proof for review.`;
+  }
+  if (/navigator|planner/i.test(identity)) {
+    return `${name}: turn one messy or unclaimed intent into a MAP-backed plan with ASCII visualization, exact files, verifier, rollback, and a review-ready task.`;
+  }
+  if (/launcher|closer/i.test(identity)) {
+    if ((state?.todo?.done || 0) === 0) {
+      return `${name}: wait for one validated task receipt before closeout, or ask Validator to produce a review decision with proof.`;
+    }
+    return `${name}: close one validated task into release-ready proof: summarize the shipped change, capture the lesson, update MAP or journal if needed, and name the publish step.`;
+  }
+  if (/brainstormer|idea shaper|reality shaper/i.test(identity)) {
+    return `${name}: shape one raw idea into a concise vision: current reality, 1-2 options, constraints, success criteria, and a navigator-ready next step.`;
+  }
+  if (/researcher|research/i.test(identity)) {
+    return `${name}: answer one explicit research question with primary sources, source-backed findings, unverified gaps, and a short So What handoff.`;
+  }
   if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
   }
   if (/ceo|lab/i.test(identity) || /ceo|lab|synthesis loop|decision queue|building|closing|investor/i.test(context)) {
     return `${name}: make one high-leverage CEO move: ship product, close a strategic loop, or make a queued decision; leave proof and a scorecard.`;
+  }
+  if (/rl-exp2|zero-spend|zero spend|tick-prefixed|1%/i.test(context)) {
+    return `${name}: run the next zero-spend ` +
+      '`rl-exp2` tick, land one artifact, name the 1% delta, and record the mission receipt.';
+  }
+  if (/validation checklist|signoff|reject|falsifiable|residual risk|anti-slop|review/i.test(context)) {
+    return `${name}: review the highest-risk open or recently completed task, run its verifier, name residual risk, and approve or block with proof.`;
+  }
+  if (/bounded mission|mission step|proof target|verifier/i.test(context)) {
+    return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
   }
   return `${name}: use your START_HERE, complete the first concrete work block, and leave a scorecard.`;
 }
@@ -358,10 +528,56 @@ function modeNextMove(member, mode) {
   return null;
 }
 
+function memberProfileIssues(member) {
+  if (!member) return [];
+  const profile = String(member.profile || '');
+  const issues = [];
+  if (/\(Define how this member communicates/i.test(profile)) issues.push('persona is still template text');
+  if (/^\s*1\.\s+Step one\s*$/im.test(profile)) issues.push('workflow is still template text');
+  if (/^\s*1\.\s+Rule one\s*$/im.test(profile)) issues.push('rules are still template text');
+  return issues;
+}
+
+function renderMissingMemberCard(state, memberSlug) {
+  const slug = normalizeMemberSlug(memberSlug) || '<name>';
+  const members = listMemberSlugs(state.root);
+  const available = members.length > 0 ? members.join(', ') : 'none';
+  return `CONTEXT: ${state.name} Brain
+OPERATOR: ${slug} (missing)
+NEXT MOVE: Create atris/team/${slug}/MEMBER.md or rerun with an existing member.
+WHY: Activation can only route by operator after the member profile exists locally.
+PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
+AVAILABLE MEMBERS: ${available}
+FEEDBACK: yes / edit / no`;
+}
+
+function renderPlaceholderMemberCard(state, member, issues) {
+  const slug = member.slug || '<name>';
+  return `CONTEXT: ${state.name} Brain
+OPERATOR: ${member.name || slug} (not ready)
+NEXT MOVE: Replace placeholder sections in atris/team/${slug}/MEMBER.md with the member's real workflow, rules, and proof standard.
+WHY: Activation should not turn template text into fake operator work.
+PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
+PROFILE ISSUES: ${issues.join('; ')}
+FEEDBACK: yes / edit / no`;
+}
+
+function renderMissingStartHereCard(state, member) {
+  const slug = member.slug || '<name>';
+  return `CONTEXT: ${state.name} Brain
+OPERATOR: ${member.name || slug} (not ready)
+NEXT MOVE: Create atris/team/${slug}/START_HERE.md with the member's first concrete work block, verifier, and proof target.
+WHY: Activation should not tell an operator to use START_HERE until that local contract exists.
+PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
+FEEDBACK: yes / edit / no`;
+}
+
 function renderActivationCard(state, options = {}) {
   const requestedMember = options.member || readRememberedOperator(state.root);
   const member = readMemberContext(state.root, requestedMember);
-  const move = nextMove(state);
+  if (!member && requestedMember) {
+    return renderMissingMemberCard(state, requestedMember);
+  }
   if (!member && !options.member) {
     return `CONTEXT: ${state.name} Brain
 OPERATOR: unknown
@@ -370,9 +586,16 @@ WHY: The brain should route work by operator, customer, and proof path before it
 PROOF: Activation re-runs with a known operator and produces a specific work block.
 FEEDBACK: yes / edit / no`;
   }
-  rememberOperator(state.root, member);
+  const profileIssues = memberProfileIssues(member);
+  if (profileIssues.length > 0) {
+    return renderPlaceholderMemberCard(state, member, profileIssues);
+  }
+  if (!String(member.startHere || '').trim()) {
+    return renderMissingStartHereCard(state, member);
+  }
+  if (options.remember !== false) rememberOperator(state.root, member);
   const modeMove = modeNextMove(member, options.mode);
-  const next = modeMove?.move || memberNextMove(member) || move;
+  const next = modeMove?.move || memberNextMove(member, state) || nextMove(state);
   const proof = modeMove?.proof || `After the move, record feedback and recompile: atris brain yes|edit|no "note" --root ${state.root} --verify && atris brain compile --root ${state.root} --verify`;
   return `CONTEXT: ${state.name} Brain${member ? `\nOPERATOR: ${member.name}` : ''}${modeMove ? `\nMODE: ${modeMove.label}` : ''}
 NEXT MOVE: ${next}
@@ -389,7 +612,38 @@ TEAM: no members found
 NEXT MOVE: Add a member under atris/team/<name>/MEMBER.md, then run activation again.`;
   }
 
-  return slugs.map(slug => renderActivationCard(state, { member: slug })).join('\n\n---\n\n');
+  return slugs.map(slug => renderActivationCard(state, { member: slug, remember: false })).join('\n\n---\n\n');
+}
+
+function galleryReadinessIssues(gallery) {
+  return String(gallery || '')
+    .split(/\n---\n/)
+    .flatMap(card => activationCardReadinessIssues(card));
+}
+
+function activationCardReadinessIssues(card) {
+  const operator = (String(card || '').match(/^OPERATOR:\s*(.+)$/m) || [null, 'unknown member'])[1];
+  if (/\((missing|not ready)\)/.test(operator)) return [operator];
+  return [];
+}
+
+function verifyActivationGallery(gallery) {
+  const issues = galleryReadinessIssues(gallery);
+  if (issues.length > 0) {
+    throw new Error(`brain gallery not-ready member activation cards: ${issues.join(', ')}`);
+  }
+}
+
+function verifyActivationCard(card) {
+  const issues = activationCardReadinessIssues(card);
+  if (issues.length > 0) {
+    throw new Error(`brain activate non-executable member activation card: ${issues.join(', ')}`);
+  }
+}
+
+function printVerifyFailure(error) {
+  console.error(error && error.message ? error.message : String(error));
+  process.exit(1);
 }
 
 function recordFeedback(options) {
@@ -499,6 +753,90 @@ function recordApproval(options) {
   return approval;
 }
 
+function taskEpisodeScorecard(root, episode, workspace, ts = new Date().toISOString()) {
+  const episodeId = episode.episode_id || shortHash(JSON.stringify(episode));
+  const reward = Number(episode.reward && episode.reward.value);
+  return {
+    ts,
+    schema: 'atris.brain.task_scorecard.v1',
+    type: 'scorecard',
+    scorecard_id: `task-scorecard-${episodeId}`,
+    source: 'task_review_episode',
+    source_episode_id: episodeId,
+    workspace: workspace.slug || path.basename(root),
+    business_id: workspace.business_id || null,
+    workspace_id: workspace.workspace_id || null,
+    task_id: episode.task_id || null,
+    task_title: episode.state && episode.state.title || null,
+    task_tag: episode.state && episode.state.tag || null,
+    actor: episode.action && episode.action.actor || null,
+    reward: Number.isFinite(reward) ? reward : 0,
+    reward_source: episode.reward && episode.reward.source || 'task_review',
+    lesson: episode.lesson || '',
+    proof: episode.proof || '',
+    next_task_suggestion: episode.next_task_suggestion || null,
+    episode_created_at: episode.created_at || episode.ts || null,
+  };
+}
+
+function latestTaskEpisodes(taskEpisodes) {
+  const byTask = new Map();
+  for (const episode of taskEpisodes) {
+    const episodeId = episode.episode_id || shortHash(JSON.stringify(episode));
+    const key = episode.task_id || episodeId;
+    byTask.set(key, { ...episode, episode_id: episodeId });
+  }
+  return Array.from(byTask.values());
+}
+
+function recordTaskEpisodeScorecards(options) {
+  const root = options.root;
+  const stateDir = path.join(root, '.atris', 'state');
+  const taskEpisodesPath = path.join(stateDir, 'task_episodes.jsonl');
+  const scorecardsPath = path.join(stateDir, 'scorecards.jsonl');
+  const workspace = readJson(path.join(root, '.atris', 'business.json')) || {};
+  const taskEpisodes = readJsonlRows(taskEpisodesPath)
+    .filter(row => row && row.schema === 'atris.task_episode.v1');
+  const scoreableEpisodes = latestTaskEpisodes(taskEpisodes);
+  const existing = readJsonlRows(scorecardsPath);
+  const seenEpisodeIds = new Set(existing
+    .map(row => row.source_episode_id)
+    .filter(Boolean));
+
+  const written = [];
+  for (const episode of scoreableEpisodes) {
+    const episodeId = episode.episode_id;
+    if (seenEpisodeIds.has(episodeId)) continue;
+    const scorecard = taskEpisodeScorecard(root, episode, workspace);
+    appendJsonl(scorecardsPath, scorecard);
+    seenEpisodeIds.add(episodeId);
+    written.push(scorecard);
+  }
+
+  return {
+    taskEpisodes: taskEpisodes.length,
+    written: written.length,
+    scorecards: written,
+  };
+}
+
+function verifyTaskEpisodeScorecards(root) {
+  const stateDir = path.join(root, '.atris', 'state');
+  const taskEpisodes = readJsonlRows(path.join(stateDir, 'task_episodes.jsonl'))
+    .filter(row => row && row.schema === 'atris.task_episode.v1');
+  const scoreableEpisodes = latestTaskEpisodes(taskEpisodes);
+  const scorecards = readJsonlRows(path.join(stateDir, 'scorecards.jsonl'));
+  const scorecardEpisodeIds = new Set(scorecards
+    .map(row => row.source_episode_id)
+    .filter(Boolean));
+  const missing = scoreableEpisodes
+    .map(row => row.episode_id)
+    .filter(id => !scorecardEpisodeIds.has(id));
+  if (missing.length > 0) {
+    throw new Error(`task episode scorecards missing: ${missing.join(', ')}`);
+  }
+}
+
 function verifyFeedback(root, decisionId) {
   const scorecards = readText(path.join(root, '.atris', 'state', 'scorecards.jsonl'));
   const episodes = readText(path.join(root, '.atris', 'state', 'episodes.jsonl'));
@@ -512,6 +850,25 @@ function verifyApproval(root, approvalId) {
   if (!approvals.includes(approvalId)) {
     throw new Error(`approval row missing approval_id ${approvalId}`);
   }
+}
+
+function brainLoadOrderFiles(state) {
+  const root = state.root;
+  const existing = OPTIONAL_LOAD_ORDER_FILES
+    .filter(rel => fs.existsSync(path.join(root, rel)));
+  return [...GENERATED_LOAD_ORDER_FILES, ...existing];
+}
+
+function renderNumberedLoadOrder(state) {
+  return brainLoadOrderFiles(state)
+    .map((rel, index) => `${index + 1}. \`${rel}\``)
+    .join('\n');
+}
+
+function renderBulletedLoadOrder(state) {
+  return brainLoadOrderFiles(state)
+    .map(rel => `- \`${rel}\``)
+    .join('\n');
 }
 
 function renderStatus(state) {
@@ -549,16 +906,9 @@ ${nextMove(state)}
 
 ## Load Order For Future Agents
 
-1. \`atris/now.md\`
-2. \`atris/brain/STATUS.md\`
-3. \`atris/brain/self_improvement_ledger.md\`
-4. \`atris/wiki/concepts/sync-language.md\`
-5. \`atris/skills/activation/SKILL.md\`
-6. \`atris/MAP.md\`
-7. \`atris/TODO.md\`
-8. \`atris/wiki/index.md\`
+${renderNumberedLoadOrder(state)}
 
-First-message rule: follow the sync-language contract before writing to the operator.
+First-message rule: lead with the move before writing to the operator.
 Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
 Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
@@ -619,15 +969,9 @@ On session start, activate it first:
 \`atris brain activate --root ${state.root} --verify\`
 
 Load these first:
-- \`atris/now.md\`
-- \`atris/brain/STATUS.md\`
-- \`atris/brain/self_improvement_ledger.md\`
-- \`atris/wiki/concepts/sync-language.md\`
-- \`atris/skills/activation/SKILL.md\`
-- \`atris/MAP.md\`
-- \`atris/TODO.md\`
+${renderBulletedLoadOrder(state)}
 
-First-message rule: follow the sync-language contract before writing to the operator.
+First-message rule: lead with the move before writing to the operator.
 Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
 Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
@@ -707,16 +1051,27 @@ function verifyBrain(root) {
   }
 }
 
+function brainUsageLines() {
+  return [
+    'Usage: atris brain compile [--root <workspace>] [--verify] [--json]',
+    '       atris brain activate [--member <slug>] [--root <workspace>] [--verify] [--json]',
+    '       atris brain gallery [--root <workspace>] [--verify] [--json]',
+    '       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
+    '       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]',
+    '       atris brain scorecard [--root <workspace>] [--verify] [--json]',
+    '       atris brain feedback --rating approve|edit|reject [--recommendation <text>] [--note <text>] [--root <workspace>] [--verify]',
+    '       atris brain yes|edit|no [note] [--root <workspace>] [--verify]',
+  ];
+}
+
+function printBrainUsage(stream = console.log) {
+  for (const line of brainUsageLines()) stream(line);
+}
+
 function brainCommand(args = process.argv.slice(3)) {
   const { subcommand, options } = parseArgs(args);
-  if (subcommand === 'help' || subcommand === '--help') {
-    console.log('Usage: atris brain compile [--root <workspace>] [--verify] [--json]');
-    console.log('       atris brain activate [--member <slug>] [--root <workspace>] [--verify] [--json]');
-    console.log('       atris brain gallery [--root <workspace>] [--verify] [--json]');
-    console.log('       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]');
-    console.log('       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]');
-    console.log('       atris brain feedback --rating approve|edit|reject [--recommendation <text>] [--note <text>] [--root <workspace>] [--verify]');
-    console.log('       atris brain yes|edit|no [note] [--root <workspace>] [--verify]');
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h' || args.includes('--help') || args.includes('-h')) {
+    printBrainUsage();
     return;
   }
   if (subcommand === 'yes') {
@@ -766,48 +1121,112 @@ function brainCommand(args = process.argv.slice(3)) {
     console.log('');
     return;
   }
+
+  if (subcommand === 'scorecard' || subcommand === 'scorecards') {
+    const result = recordTaskEpisodeScorecards(options);
+    if (options.verify) verifyTaskEpisodeScorecards(options.root);
+    if (options.json) {
+      console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      return;
+    }
+    console.log('');
+    console.log('Atris brain scorecards recorded.');
+    console.log(`  Task episodes: ${result.taskEpisodes}`);
+    console.log(`  New scorecards: ${result.written}`);
+    console.log('  Wrote: .atris/state/scorecards.jsonl');
+    console.log('  Next: atris brain compile');
+    if (options.verify) console.log('  Verify: passed');
+    console.log('');
+    return;
+  }
+
   if (subcommand === 'activate') {
-    const state = collectState(options.root);
+    const state = prepareBrainState(options.root);
     writeBrain(state);
     if (options.verify) verifyBrain(options.root);
     const card = renderActivationCard(state, options);
     if (options.json) {
+      if (options.verify) {
+        try {
+          verifyActivationCard(card);
+        } catch (error) {
+          console.log(JSON.stringify({
+            ok: false,
+            error: error && error.message ? error.message : String(error),
+            state,
+            card,
+          }, null, 2));
+          process.exit(1);
+        }
+      }
       console.log(JSON.stringify({ ok: true, state, card }, null, 2));
       return;
     }
     console.log('');
     console.log(card);
-    if (options.verify) console.log('VERIFY: brain artifacts present');
+    if (options.verify) {
+      try {
+        verifyActivationCard(card);
+      } catch (error) {
+        printVerifyFailure(error);
+        return;
+      }
+      const operator = (card.match(/^OPERATOR:\s*(.+)$/m) || [null, 'unknown'])[1];
+      if (operator === 'unknown') {
+        console.log('VERIFY: brain artifacts present');
+      } else {
+        console.log('VERIFY: brain artifacts and member activation executable');
+      }
+    }
     console.log('');
     return;
   }
   if (subcommand === 'gallery') {
-    const state = collectState(options.root);
+    const state = prepareBrainState(options.root);
     writeBrain(state);
     if (options.verify) verifyBrain(options.root);
     const gallery = renderActivationGallery(state);
+    if (options.verify) {
+      try {
+        verifyActivationGallery(gallery);
+      } catch (error) {
+        if (options.json) {
+          console.log(JSON.stringify({
+            ok: false,
+            error: error && error.message ? error.message : String(error),
+            members: listMemberSlugs(options.root),
+            gallery,
+          }, null, 2));
+          process.exit(1);
+        }
+        printVerifyFailure(error);
+        return;
+      }
+    }
     if (options.json) {
       console.log(JSON.stringify({ ok: true, members: listMemberSlugs(options.root), gallery }, null, 2));
       return;
     }
     console.log('');
     console.log(gallery);
-    if (options.verify) console.log('\nVERIFY: brain artifacts present');
+    if (options.verify) console.log('\nVERIFY: brain artifacts and member readiness present');
     console.log('');
     return;
   }
   if (subcommand !== 'compile' && subcommand !== 'status') {
-    console.error('Usage: atris brain compile [--root <workspace>] [--verify] [--json]');
-    console.error('       atris brain activate [--member <slug>] [--root <workspace>] [--verify] [--json]');
-    console.error('       atris brain gallery [--root <workspace>] [--verify] [--json]');
-    console.error('       atris brain go|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]');
-    console.error('       atris brain approval go|edit|hold [note] [--recommendation <text>] [--root <workspace>] [--verify]');
-    console.error('       atris brain feedback --rating approve|edit|reject [--recommendation <text>] [--note <text>] [--root <workspace>] [--verify]');
-    console.error('       atris brain yes|edit|no [note] [--root <workspace>] [--verify]');
+    if (options.json) {
+      console.log(JSON.stringify({
+        ok: false,
+        error: `unknown brain subcommand: ${subcommand}`,
+        usage: brainUsageLines(),
+      }, null, 2));
+      process.exit(1);
+    }
+    printBrainUsage(console.error);
     process.exit(1);
   }
 
-  const state = collectState(options.root);
+  const state = prepareBrainState(options.root);
   const written = writeBrain(state);
   if (options.verify) verifyBrain(options.root);
 
@@ -830,11 +1249,15 @@ function brainCommand(args = process.argv.slice(3)) {
 module.exports = {
   brainCommand,
   collectState,
+  prepareBrainState,
   renderStatus,
   renderLedger,
   renderActivationCard,
   renderActivationGallery,
+  recordTaskEpisodeScorecards,
   recordFeedback,
   recordApproval,
+  verifyActivationCard,
+  verifyActivationGallery,
   verifyBrain,
 };

@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
+const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
+const STATUS_ALIASES = new Set(['active']);
 
 function stampIso() {
   return new Date().toISOString();
@@ -54,13 +56,18 @@ function readFlag(args, name, fallback = '') {
   return fallback;
 }
 
-function readPositiveIntegerFlag(args, name, fallback = null) {
+function exitMissionError(message, code = 1, asJson = false) {
+  if (asJson) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+  else console.error(message);
+  process.exit(code);
+}
+
+function readPositiveIntegerFlag(args, name, fallback = null, options = {}) {
   const raw = readFlag(args, name, '');
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1) {
-    console.error(`${name} must be a positive integer`);
-    process.exit(2);
+    exitMissionError(`${name} must be a positive integer`, 2, options.json);
   }
   return value;
 }
@@ -90,11 +97,10 @@ function lintMissionVerifier(command) {
   return 'looks like shell substitution expanded before Atris received it; quote dynamic verifiers with single quotes';
 }
 
-function assertMissionVerifier(command) {
+function assertMissionVerifier(command, asJson = false) {
   const issue = lintMissionVerifier(command);
   if (!issue) return;
-  console.error(`Invalid --verify: ${issue}. Example: --verify 'test $(wc -l < atris/learnings.jsonl) -ge 478'`);
-  process.exit(2);
+  exitMissionError(`Invalid --verify: ${issue}. Example: --verify 'test $(wc -l < atris/learnings.jsonl) -ge 478'`, 2, asJson);
 }
 
 function stripKnownFlags(args, valueNames, booleanNames = []) {
@@ -132,6 +138,8 @@ function statePaths(root = process.cwd()) {
     stateDir,
     missionsJsonl: path.join(stateDir, 'missions.jsonl'),
     eventsJsonl: path.join(stateDir, 'mission_events.jsonl'),
+    codexGoalJson: path.join(stateDir, 'codex_goal.json'),
+    codexGoalStatus: path.join(root, 'atris', 'status', 'codex-goal.md'),
     statusNow: path.join(root, 'atris', 'status', 'now.md'),
     runsDir: path.join(root, 'atris', 'runs'),
   };
@@ -157,9 +165,22 @@ function loadMissionMap(root = process.cwd()) {
   const paths = statePaths(root);
   const map = new Map();
   for (const mission of readJsonLines(paths.missionsJsonl)) {
-    if (mission && mission.id) map.set(mission.id, mission);
+    if (mission && mission.id) map.set(mission.id, normalizeMissionState(mission));
   }
   return map;
+}
+
+function terminalNextAction(status) {
+  if (status === 'complete') return 'mission complete';
+  if (status === 'stopped') return 'mission stopped';
+  return null;
+}
+
+function normalizeMissionState(mission) {
+  if (!mission) return mission;
+  const nextAction = terminalNextAction(mission.status);
+  if (!nextAction || mission.next_action === nextAction) return mission;
+  return { ...mission, next_action: nextAction };
 }
 
 function listMissions(root = process.cwd()) {
@@ -169,8 +190,13 @@ function listMissions(root = process.cwd()) {
 
 function resolveMission(ref, root = process.cwd()) {
   const missions = listMissions(root);
-  if (!ref) return missions.find((mission) => mission.status !== 'complete' && mission.status !== 'stopped') || missions[0] || null;
+  if (!ref) return missions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || missions[0] || null;
   return missions.find((mission) => mission.id === ref || mission.id.startsWith(ref) || mission.slug === ref) || null;
+}
+
+function missionMatchesStatusFilter(mission, statusFilter) {
+  if (statusFilter === 'active') return !TERMINAL_STATUSES.has(mission.status);
+  return mission.status === statusFilter;
 }
 
 function appendJsonLine(file, payload) {
@@ -194,11 +220,11 @@ function appendEvent(type, mission, payload = {}, root = process.cwd()) {
 
 function saveMission(mission, root = process.cwd(), eventType = 'mission_updated', payload = {}) {
   const paths = statePaths(root);
-  const next = {
+  const next = normalizeMissionState({
     ...mission,
     schema: 'atris.mission.v1',
     updated_at: stampIso(),
-  };
+  });
   appendJsonLine(paths.missionsJsonl, next);
   const event = appendEvent(eventType, next, payload, root);
   renderMissionStatus(root);
@@ -325,7 +351,7 @@ function renderMissionStatus(root = process.cwd()) {
   const paths = statePaths(root);
   const missions = listMissions(root);
   fs.mkdirSync(path.dirname(paths.statusNow), { recursive: true });
-  const active = missions.filter((mission) => !['complete', 'stopped'].includes(mission.status));
+  const active = missions.filter((mission) => !TERMINAL_STATUSES.has(mission.status));
   const lines = [
     '# Now',
     '',
@@ -363,15 +389,14 @@ function missionFromArgs(args) {
     '--ask',
   ], ['--json', '--always-on']).join(' ').trim();
   if (!objective) {
-    console.error('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]');
-    process.exit(1);
+    exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]', 1, wantsJson(args));
   }
   const owner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
   const lane = readFlag(args, '--lane', 'workspace');
   const verifier = readFlag(args, '--verify', '');
-  assertMissionVerifier(verifier);
+  assertMissionVerifier(verifier, wantsJson(args));
   const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
@@ -440,17 +465,15 @@ function statusMission(args) {
   const asJson = wantsJson(args);
   const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json'])[0] || '';
   const statusFilter = readFlag(args, '--status', '');
-  if (statusFilter && !VALID_STATUSES.has(statusFilter)) {
-    console.error(`Invalid --status: ${statusFilter}`);
-    process.exit(2);
+  if (statusFilter && !VALID_STATUSES.has(statusFilter) && !STATUS_ALIASES.has(statusFilter)) {
+    exitMissionError(`Invalid --status: ${statusFilter}`, 2, asJson);
   }
-  const limit = readPositiveIntegerFlag(args, '--limit');
+  const limit = readPositiveIntegerFlag(args, '--limit', null, { json: asJson });
   let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
-  if (!ref && statusFilter) missions = missions.filter((mission) => mission.status === statusFilter);
+  if (!ref && statusFilter) missions = missions.filter((mission) => missionMatchesStatusFilter(mission, statusFilter));
   if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
-    console.error(`Mission "${ref}" not found.`);
-    process.exit(1);
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
   for (const owner of new Set(missions.map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
@@ -602,6 +625,212 @@ function runnerUsesCallerSession(runner) {
 
 function nextCandidateTickAction(mission) {
   return `next move: run atris mission run ${mission.id} --complete-on-pass`;
+}
+
+function missionVerifierPassed(mission) {
+  return (mission && mission.verifier_result && mission.verifier_result.passed) === true;
+}
+
+function missionDueAt(mission, now = new Date()) {
+  const cadenceSeconds = parseCadenceSeconds(mission.cadence);
+  if (!mission.last_tick_at || cadenceSeconds === 0) return true;
+  const lastTickAt = Date.parse(mission.last_tick_at);
+  if (!Number.isFinite(lastTickAt)) return true;
+  return now.getTime() - lastTickAt >= cadenceSeconds * 1000;
+}
+
+function secondsUntilMissionDue(mission, now = new Date()) {
+  const cadenceSeconds = parseCadenceSeconds(mission?.cadence);
+  if (!mission || !mission.last_tick_at || cadenceSeconds === 0) return 0;
+  const lastTickAt = Date.parse(mission.last_tick_at);
+  if (!Number.isFinite(lastTickAt)) return 0;
+  const dueAt = lastTickAt + cadenceSeconds * 1000;
+  return Math.max(0, Math.ceil((dueAt - now.getTime()) / 1000));
+}
+
+function selectDueMission(root = process.cwd(), now = new Date()) {
+  const candidates = listMissions(root)
+    .filter((mission) => !TERMINAL_STATUSES.has(mission.status))
+    .filter((mission) => mission.verifier)
+    .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
+    .filter((mission) => missionDueAt(mission, now));
+
+  candidates.sort((a, b) => {
+    const aTime = Date.parse(a.last_tick_at || a.created_at || '') || 0;
+    const bTime = Date.parse(b.last_tick_at || b.created_at || '') || 0;
+    return aTime - bTime;
+  });
+  return candidates[0] || null;
+}
+
+function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
+  const due = selectDueMission(root, now);
+  if (due) return { mission: due, reason: 'due' };
+
+  const candidates = listMissions(root)
+    .filter((mission) => !TERMINAL_STATUSES.has(mission.status));
+
+  candidates.sort((a, b) => {
+    const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
+    const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
+    if (aCaller !== bCaller) return bCaller - aCaller;
+
+    const aVerifier = a.verifier ? 1 : 0;
+    const bVerifier = b.verifier ? 1 : 0;
+    if (aVerifier !== bVerifier) return bVerifier - aVerifier;
+
+    const aTime = Date.parse(a.updated_at || a.created_at || '') || 0;
+    const bTime = Date.parse(b.updated_at || b.created_at || '') || 0;
+    return bTime - aTime;
+  });
+
+  const mission = candidates[0] || null;
+  if (!mission) return null;
+  return { mission, reason: 'active' };
+}
+
+function codexGoalObjective(mission) {
+  return `Advance Atris mission ${mission.id}: ${mission.objective}`;
+}
+
+function codexGoalNextCommand(mission) {
+  if (mission.verifier && missionDueAt(mission)) {
+    return 'atris mission run --due --max-ticks 1 --complete-on-pass';
+  }
+  if (mission.verifier) {
+    return `atris mission tick ${mission.id} --verify --summary "<what changed>"`;
+  }
+  return `atris mission tick ${mission.id} --summary "<what changed>"`;
+}
+
+function codexGoalToolContract(mission) {
+  return {
+    current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
+    read_current_goal: 'get_goal',
+    complete_current_goal: 'update_goal({ status: "complete" })',
+    select_next_goal: 'atris mission goal --json',
+    set_next_goal: 'replace_goal(goal.objective) or create_goal(goal.objective) after the completed goal slot is reusable',
+    platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow create_goal after update_goal completes the prior goal.',
+    blocked_without_platform_goal_write: true,
+    mission_id: mission.id,
+  };
+}
+
+function codexGoalHeartbeat(goal, mission, now = new Date()) {
+  const secondsUntilDue = secondsUntilMissionDue(mission, now);
+  return {
+    due: mission ? missionDueAt(mission, now) : false,
+    seconds_until_due: secondsUntilDue,
+    recommended_sleep_seconds: secondsUntilDue === 0 ? 0 : Math.min(Math.max(secondsUntilDue, 15), 900),
+    heavy_work_performed: false,
+    next_heavy_command: goal?.next_command || null,
+  };
+}
+
+function writeCodexGoalState(payload, root = process.cwd()) {
+  const paths = statePaths(root);
+  const state = {
+    schema: 'atris.codex_goal_controller.v1',
+    updated_at: stampIso(),
+    ...payload,
+  };
+  fs.mkdirSync(path.dirname(paths.codexGoalJson), { recursive: true });
+  fs.writeFileSync(paths.codexGoalJson, JSON.stringify(state, null, 2) + '\n', 'utf8');
+
+  const lines = [
+    '# Codex Goal Controller',
+    '',
+    '<!-- Generated by Atris. Do not hand-edit. -->',
+    '',
+    `- updated: ${state.updated_at}`,
+    `- action: ${state.action}`,
+  ];
+  if (state.goal) {
+    lines.push(`- mission: ${state.goal.mission_id}`);
+    lines.push(`- status: ${state.goal.mission_status}`);
+    lines.push(`- reason: ${state.goal.reason}`);
+    lines.push(`- objective: ${state.goal.objective}`);
+    lines.push(`- next: ${state.goal.next_command}`);
+    lines.push(`- platform write blocked: ${state.goal.codex_tool_contract.blocked_without_platform_goal_write}`);
+  } else {
+    lines.push('- mission: none');
+  }
+  lines.push('');
+  fs.mkdirSync(path.dirname(paths.codexGoalStatus), { recursive: true });
+  fs.writeFileSync(paths.codexGoalStatus, lines.join('\n'), 'utf8');
+  return {
+    state_path: paths.codexGoalJson,
+    status_path: paths.codexGoalStatus,
+    state,
+  };
+}
+
+function buildCodexGoalPayload(root = process.cwd(), options = {}) {
+  const heartbeatMode = options.heartbeat === true;
+  const selected = selectCodexGoalMission(root);
+  if (!selected) {
+    const heartbeat = heartbeatMode ? codexGoalHeartbeat(null, null) : undefined;
+    return {
+      ok: true,
+      action: heartbeatMode ? 'codex_goal_heartbeat' : 'no_goal_candidate',
+      mission: null,
+      heartbeat,
+    };
+  }
+
+  const { mission, reason } = selected;
+  const goal = {
+    objective: codexGoalObjective(mission),
+    mission_id: mission.id,
+    mission_objective: mission.objective,
+    mission_status: mission.status,
+    reason,
+    next_command: codexGoalNextCommand(mission),
+    replace_after: 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.',
+    codex_tool_contract: codexGoalToolContract(mission),
+  };
+  const heartbeat = heartbeatMode ? codexGoalHeartbeat(goal, mission) : undefined;
+  return {
+    ok: true,
+    action: heartbeatMode ? 'codex_goal_heartbeat' : 'codex_goal_candidate',
+    goal,
+    mission,
+    heartbeat,
+  };
+}
+
+function refreshCodexGoalController(root = process.cwd(), options = {}) {
+  const payload = buildCodexGoalPayload(root, options);
+  const rendered = writeCodexGoalState(payload, root);
+  return {
+    ...payload,
+    state_path: rendered.state_path,
+    status_path: rendered.status_path,
+  };
+}
+
+function runMissionRunDueOnce(root = process.cwd(), options = {}) {
+  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
+  if (options.noClaude) args.push('--no-claude');
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 120000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  let payload = null;
+  try {
+    payload = JSON.parse(result.stdout || '{}');
+  } catch {}
+  return {
+    command: `atris ${args.join(' ')}`,
+    status: result.status,
+    ok: result.status === 0,
+    stdout: String(result.stdout || '').slice(-4000),
+    stderr: String(result.stderr || '').slice(-4000),
+    payload,
+  };
 }
 
 function sleep(ms, signal) {
@@ -840,6 +1069,7 @@ function spawnClaudeTick(mission, opts) {
 
 async function runMission(args) {
   const asJson = wantsJson(args);
+  const dueMode = hasFlag(args, '--due');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
@@ -847,14 +1077,29 @@ async function runMission(args) {
   const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
   const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
-  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--no-claude', '--no-verify', '--complete-on-pass'])[0] || '';
+  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass'])[0] || '';
 
-  let mission = resolveMission(ref);
+  let mission = dueMode && !ref ? selectDueMission() : resolveMission(ref);
+  if (!mission && dueMode && !ref) {
+    printJsonOrText(
+      { ok: true, action: 'run_skipped', reason: 'no_due_mission', mission: null },
+      ['No due mission found.'],
+      asJson,
+    );
+    return;
+  }
   if (!mission) {
-    console.error(ref ? `Mission "${ref}" not found.` : 'Usage: atris mission run <id> [--max-ticks 4] [--max-wall 3600]');
-    process.exit(1);
+    exitMissionError(ref ? `Mission "${ref}" not found.` : 'Usage: atris mission run <id> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
   }
   if (['complete', 'stopped'].includes(mission.status)) {
+    if (asJson) {
+      printJsonOrText(
+        { ok: true, action: 'run_skipped', reason: mission.status, mission },
+        [],
+        true,
+      );
+      return;
+    }
     console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
     process.exit(0);
   }
@@ -870,8 +1115,7 @@ async function runMission(args) {
 
   const lock = acquireMissionLock(mission.id);
   if (!lock.ok) {
-    console.error(`[mission run] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`);
-    process.exit(3);
+    exitMissionError(`[mission run] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
   }
 
   // Everything past lock acquisition runs inside try/finally so the lock + signal handlers
@@ -1084,6 +1328,7 @@ async function runMission(args) {
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         receipt: receiptPath,
       });
+      refreshCodexGoalController(cwd);
 
       console.error(`[tick ${tickIdx}] status=${result.status} reason=${result.reason} verifier=${verifierResult ? (verifierResult.passed ? 'pass' : 'fail') : 'skip'} -> ${receiptPath || '-'}`);
 
@@ -1139,9 +1384,10 @@ async function runMission(args) {
       elapsed_seconds: (Date.now() - startedAt) / 1000,
       worktree: summaryWorktree,
     });
+    const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree },
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, codex_goal_state: codexGoalState },
       [
         `Ran mission ${mission.id}`,
         `  objective: ${mission.objective}`,
@@ -1170,8 +1416,7 @@ function tickMission(args) {
   const ref = stripKnownFlags(args, ['--summary'], ['--json', '--verify', '--complete-on-pass'])[0] || '';
   let mission = resolveMission(ref);
   if (!mission) {
-    console.error(ref ? `Mission "${ref}" not found.` : 'No mission found. Run: atris mission start "..."');
-    process.exit(1);
+    exitMissionError(ref ? `Mission "${ref}" not found.` : 'No mission found. Run: atris mission start "..."', 1, asJson);
   }
 
   // Same per-mission flock that `mission run` uses. Without it, a tick could
@@ -1179,8 +1424,7 @@ function tickMission(args) {
   // get its mutation overwritten by the run's saveMission on the next tick.
   const lock = acquireMissionLock(mission.id);
   if (!lock.ok) {
-    console.error(`[mission tick] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`);
-    process.exit(3);
+    exitMissionError(`[mission tick] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
   }
 
   try {
@@ -1266,8 +1510,9 @@ function tickMission(args) {
       receipt: receiptPath,
       summary: summary || undefined,
     });
+    const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: saved, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath },
+      { ok: true, action: 'mission_tick', mission: saved, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, codex_goal_state: codexGoalState },
       [
         `Ticked mission: ${saved.objective}`,
         `State: ${saved.status}`,
@@ -1287,13 +1532,11 @@ function completeMission(args) {
   const proof = readFlag(args, '--proof', '');
   const ref = stripKnownFlags(args, ['--proof'], ['--json'])[0] || '';
   if (!ref || !proof) {
-    console.error('Usage: atris mission complete <id> --proof "..."');
-    process.exit(1);
+    exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
   }
   const mission = resolveMission(ref);
   if (!mission) {
-    console.error(`Mission "${ref}" not found.`);
-    process.exit(1);
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
   const next = {
     ...mission,
@@ -1304,8 +1547,9 @@ function completeMission(args) {
   };
   const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof });
   const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
+  const codexGoalState = refreshCodexGoalController(process.cwd());
   printJsonOrText(
-    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath },
+    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath, codex_goal_state: codexGoalState },
     [`Completed mission: ${saved.objective}`, `Proof: ${proof}`],
     asJson,
   );
@@ -1317,13 +1561,11 @@ function stopMission(args) {
   const pause = hasFlag(args, '--pause');
   const ref = stripKnownFlags(args, ['--reason'], ['--json', '--pause'])[0] || '';
   if (!ref) {
-    console.error('Usage: atris mission stop <id> [--pause] [--reason "..."]');
-    process.exit(1);
+    exitMissionError('Usage: atris mission stop <id> [--pause] [--reason "..."]', 1, asJson);
   }
   const mission = resolveMission(ref);
   if (!mission) {
-    console.error(`Mission "${ref}" not found.`);
-    process.exit(1);
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
   const status = pause ? 'paused' : 'stopped';
   const next = {
@@ -1343,21 +1585,143 @@ function stopMission(args) {
   );
 }
 
+function goalMission(args) {
+  const asJson = wantsJson(args);
+  const heartbeatMode = hasFlag(args, '--heartbeat');
+  const payload = refreshCodexGoalController(process.cwd(), { heartbeat: heartbeatMode });
+  if (!payload.goal) {
+    printJsonOrText(
+      payload,
+      ['No active mission found for Codex /goal.'],
+      asJson,
+    );
+    return;
+  }
+
+  printJsonOrText(
+    payload,
+    [
+      `Codex /goal: ${payload.goal.objective}`,
+      `Reason: ${payload.goal.reason}`,
+      `Next: ${payload.goal.next_command}`,
+      payload.goal.replace_after,
+    ],
+    asJson,
+  );
+}
+
+async function goalLoopMission(args) {
+  const asJson = wantsJson(args);
+  const noClaude = hasFlag(args, '--no-claude');
+  const dryRun = hasFlag(args, '--dry-run');
+  const once = hasFlag(args, '--once');
+  const maxIterations = once ? 1 : Math.max(1, Number(readFlag(args, '--max-iterations', '')) || 32);
+  const maxWallSeconds = Math.max(1, Number(readFlag(args, '--max-wall', '')) || 8 * 60 * 60);
+  const root = process.cwd();
+  const startedAt = Date.now();
+  const events = [];
+
+  for (let index = 0; index < maxIterations; index += 1) {
+    const heartbeat = refreshCodexGoalController(root, { heartbeat: true });
+    const event = {
+      iteration: index + 1,
+      heartbeat,
+      ran_heavy_work: false,
+      dry_run: dryRun,
+    };
+
+    if (heartbeat.heartbeat?.due && heartbeat.goal) {
+      if (dryRun) {
+        event.ran_heavy_work = false;
+        event.run = { skipped: true, reason: 'dry-run', command: 'atris mission run --due --max-ticks 1 --complete-on-pass --json' };
+      } else {
+        event.run = runMissionRunDueOnce(root, { noClaude });
+        event.ran_heavy_work = event.run.ok === true;
+        event.after_run = refreshCodexGoalController(root, { heartbeat: true });
+      }
+    }
+    events.push(event);
+
+    if (index + 1 >= maxIterations) break;
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    const remainingSeconds = maxWallSeconds - elapsedSeconds;
+    if (remainingSeconds <= 0) break;
+
+    const sleepSeconds = Math.min(
+      Number(event.after_run?.heartbeat?.recommended_sleep_seconds ?? event.heartbeat?.heartbeat?.recommended_sleep_seconds ?? 15) || 15,
+      remainingSeconds,
+    );
+    if (sleepSeconds <= 0) continue;
+    await sleep(sleepSeconds * 1000);
+  }
+
+  const finalState = refreshCodexGoalController(root, { heartbeat: true });
+  const payload = {
+    ok: true,
+    action: 'codex_goal_loop',
+    iterations: events.length,
+    max_iterations: maxIterations,
+    max_wall_seconds: maxWallSeconds,
+    heavy_runs: events.filter((event) => event.ran_heavy_work).length,
+    events,
+    final_state: finalState,
+  };
+  printJsonOrText(
+    payload,
+    [
+      `Codex goal loop iterations: ${payload.iterations}`,
+      `Heavy runs: ${payload.heavy_runs}`,
+      `Final action: ${finalState.action}`,
+      finalState.goal ? `Final mission: ${finalState.goal.mission_id}` : 'Final mission: none',
+    ],
+    asJson,
+  );
+}
+
 function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on]
   atris mission status [id] [--status <state>] [--limit <n>] [--json]
+  atris mission goal [--heartbeat] [--json]
+  atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
-  atris mission run <id> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
-                          [--no-claude] [--no-verify] [--complete-on-pass] [--json]
+  atris mission run <id|--due> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
+                                [--no-claude] [--no-verify] [--complete-on-pass] [--json]
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
+
+Autonomy recipe:
+  1. Pick an owner member: atris member create <member>  (if missing)
+  2. Start a current-agent mission with a verifier:
+     atris mission start "ship one proof" --owner <member> --runner codex_goal --lane code --verify "npm test" --stop "verifier passes"
+  3. Codex sessions: atris mission goal --json, then set /goal to goal.objective
+     Overnight controller: atris mission goal --heartbeat --json
+     Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json
+  4. Do one bounded step, then record it:
+     atris mission tick <id> --verify --summary "what changed"
+  5. Close or continue from the receipt:
+     atris mission complete <id> --proof "<receipt_path>"
+     repeat status -> step -> tick for current-agent work
+     atris mission run <id> --max-ticks 4 --complete-on-pass  (Claude/always-on runner)
+     atris mission run --due --max-ticks 1 --complete-on-pass  (/loop heartbeat)
+  Headless: start with --runner claude --cadence "15m" --always-on, then run.
+
+Backend/web agents:
+  In atrisos-backend and atrisos-web, check active missions before choosing work.
+  If no active mission exists and autonomy was requested, create one with owner,
+  verifier, lane, and stop condition before starting the loop.
+
+Filters:
+  --status active shows planning/running/ready/paused/blocked missions.
+  --status complete|stopped|planning|running|ready|paused|blocked shows that exact state.
 
 State:
   .atris/state/missions.jsonl
   .atris/state/mission_events.jsonl
+  .atris/state/codex_goal.json
+  atris/status/codex-goal.md
   atris/team/<owner>/MISSION.md
   atris/team/<owner>/now.md
   atris/status/now.md
@@ -1376,6 +1740,12 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'goal':
+    case 'codex-goal':
+      return goalMission(rest);
+    case 'goal-loop':
+    case 'codex-goal-loop':
+      return goalLoopMission(rest);
     case 'tick':
       return tickMission(rest);
     case 'run':
@@ -1400,4 +1770,6 @@ module.exports = {
   listMissions,
   loadMissionMap,
   renderMissionStatus,
+  selectDueMission,
+  selectCodexGoalMission,
 };

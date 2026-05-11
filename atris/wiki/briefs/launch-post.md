@@ -2,12 +2,17 @@
 type: brief
 slug: launch-post
 title: LinkedIn launch — atris/wiki/ as personal memory substrate
-sources: [
-  atris/wiki/concepts/wiki-as-memory-substrate.md,
-  atris/features/wiki/idea.md
-]
+sources:
+  - atris/wiki/concepts/wiki-as-memory-substrate.md
+  - atris/features/wiki/idea.md
 created: 2026-04-07
-updated: 2026-04-07
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.7
+dependencies:
+  - atris/wiki/concepts/wiki-as-memory-substrate.md
+actionability: "Use only as a historical launch-draft pack for the wiki feature; review current product claims before posting."
 tags: [launch, marketing]
 ---
 
@@ -99,4 +104,4 @@ Three drafts. Personal angle is recommended.
 
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — the architectural argument
 - [[atris/features/wiki/idea.md]] — what shipped
-- [[atris/features/wiki-v2/idea.md]] — what's next
+- [[atris/features/wiki-loop/idea.md]] — the follow-up upkeep loop

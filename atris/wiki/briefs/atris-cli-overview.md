@@ -8,12 +8,22 @@ sources:
   - atris/MAP.md
   - commands/autopilot.js
   - lib/scorecard.js
+  - commands/task.js
+  - lib/task-db.js
   - atris/TODO.md
-  - .atris/presidio/scorecards.md
   - package.json
-last_compiled: 2026-04-27
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.88
+dependencies:
+  - atris/wiki/systems/atris-cli.md
+  - atris/wiki/concepts/owner-computer-model.md
+  - atris/wiki/concepts/plan-do-review-loop.md
+  - atris/wiki/concepts/wiki-as-memory-substrate.md
+  - atris/wiki/concepts/verifiable-reward-loop.md
+actionability: "Use this as the short repo orientation before choosing between task, wiki, member, mission, or experiment work."
 created: 2026-04-07
-updated: 2026-04-27
+updated: 2026-05-10
 tags:
   - cli
   - overview
@@ -22,7 +32,7 @@ tags:
 ---
 # Atris CLI Overview
 
-`atris` is a Node.js CLI that turns any repository into a persistent AI computer with a strict operating loop and shared local context. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and the workspace conventions live under `atris/`. The `atris.md` spec at the workspace root is the protocol agents read — everything else in the loop points back to it.
+`atris` is a Node.js CLI that turns any repository into an AI workspace with shared context, durable task state, project memory, and a `plan -> do -> review` loop. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and package metadata currently reports version `3.15.22`. The repo protocol agents read is `atris/atris.md`; the root `atris.md` explains the generic workspace rules.
 
 ## Owner/computer model
 
@@ -34,30 +44,34 @@ Owner has many Computers
 Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
 ```
 
-`atris init` creates a repo-level computer for the current owner. `atris business init <name>` creates a shared business owner plus its first/default computer. A business owner can present as a company, lab, collective, community, artist, team, or project; the schema still uses `business` as the shared owner primitive.
+`atris init` creates a repo-level computer for the current owner. `atris business init <name>` creates a shared business owner plus its first/default computer. A business owner can present as a company, lab, collective, community, artist, team, or project; internal schema and command language still use `business` as the shared owner primitive.
 
 ## Workspace layers
 
-The computer's working set is split across seven layers that compound across sessions:
+The computer's working set is split across local layers that compound across sessions:
 
 - `atris/MAP.md` — navigation index with file:line refs
-- `atris/TODO.md` — current task queue (target state = 0)
+- `atris task` / `.atris/state/tasks.projection.json` — durable local task ledger and compact UI projection
+- `atris/TODO.md` — human-readable rendered task board, not the source of truth
 - `atris/logs/YYYY/YYYY-MM-DD.md` — daily journal (inbox, notes, completions)
 - `atris/features/` — feature packs (`idea.md` → `build.md` → `validate.md`)
 - `atris/skills/` — reusable skills agents can invoke
-- `atris/team/` — agent personas (navigator, executor, validator, brainstormer, launcher, researcher)
+- `atris/team/` — member identity, `MEMBER.md`, `MISSION.md`, goals, logs, and local skills
 - `atris/wiki/` — durable memory (people, systems, concepts, briefs)
-- `.atris/presidio/` — local-only operating memory for scorecards and sensitive loop notes
+- `.atris/state/` — append-only mission/task/member runtime state
+- `.atris/presidio/` — local-only operating memory when scorecards or sensitive loop notes are generated
 
 `atris/lessons.md` sits alongside as an append-only record the validator harvests after every feature, so failures compound into guidance instead of being forgotten.
 
 ## The extended loop
 
-The base move is still `plan` → `do` → `review`: navigator plans, executor builds, validator checks. Around that core, the CLI now wires a longer loop: `brainstorm` shapes raw inbox ideas into tasks, `plan`/`do`/`review` executes them step by step, `autopilot` and `run` drive the loop autonomously via `claude -p` subprocesses, and `loop` schedules the recurring heartbeat that keeps the repo brain honest. `autopilot` is endgame-driven — it reads the current horizon from `TODO.md`'s `## Endgame` section and prefers `[endgame]`-tagged backlog tasks over reactive signals, so progress stays pointed at a real target.
+The base move is still `plan -> do -> review`: plan the work, execute it, then validate and capture learning. Around that core, the CLI now wires a broader operating surface: `brainstorm` shapes raw ideas, `task` stores claims/proof/dialogue in SQLite, `autopilot` and `run` can drive loop work through agent subprocesses, `mission` turns durable objectives into verifier-backed receipts, and `loop` checks wiki health for stale pages, orphan pages, and next ingest candidates.
 
-As of 2026-04-09, the loop also has a verifiable feedback rail. Endgame tasks can carry `Verify:` commands, `autopilot` runs those checks after review, tick summaries record reward, closed horizons append scorecards under `.atris/presidio/`, and future horizon picks can weight against recent scorecards. The public repo should describe that plainly and keep the sensitive operating notes in Presidio.
+The team-member surface is now part of the usefulness loop. `atris member` keeps `MEMBER.md` as the role contract, `MISSION.md` as the durable purpose, `goals.json` as machine-readable goal/experiment state, `goals.md` as the human readout, and `logs/YYYY-MM-DD.md` as proof history. `goal`, `wake`, `tick`, `block`, `status`, and `review --value 1..5` are the member loop for testing whether a role is producing useful progress or needs operator input.
 
-The self-improvement rail is `atris/features/endstate/` and the `experiments/` packs beside it: `atris experiments run <slug>` drives focused benchmark tracks (baseline vs. stack) through the same autopilot primitives that ship real work, emitting receipts and `results.tsv` rows so improvements can be measured instead of claimed. The wiki loop (`atris wiki ingest` / `query` / `lint`, scheduled by `atris loop`) keeps durable knowledge fresh by detecting stale sources and orphan pages, which is how this brief got recompiled in the first place.
+The verifiable feedback rail is broader than the original endgame-only path. Tasks can carry `Verify:` commands, plan/do/review use the Confidence Gate, autopilot can run checks after review, and scorecard helpers still exist for closed horizons when that rail is active. Current task truth lives in `atris task`; `atris/TODO.md` can be rebuilt with `atris task render`.
+
+The self-improvement rail is `atris/features/endstate/` and the `experiments/` packs beside it: `atris experiments run <slug>` drives focused benchmark tracks (baseline vs. stack) through the same autopilot primitives that ship real work, emitting receipts and `results.tsv` rows so improvements can be measured instead of claimed. The wiki loop (`atris wiki ingest` / `query` / `lint`, checked by `atris loop`) keeps durable knowledge fresh by detecting stale sources and orphan pages, which is how this brief got recompiled in the first place.
 
 ## Cross-References
 

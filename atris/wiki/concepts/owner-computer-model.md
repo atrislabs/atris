@@ -1,54 +1,61 @@
 ---
 type: concept
 slug: owner-computer-model
-title: Owner -> Computer Model
+title: Owner Computer Model
 sources:
-  - in-session product synthesis, 2026-04-27
+  - README.md
+  - atris/MAP.md
+  - bin/atris.js
+  - commands/business.js
+  - commands/computer.js
 created: 2026-04-27
-updated: 2026-04-28
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.88
+dependencies:
+  - atris/wiki/systems/atris-cli.md
+  - atris/wiki/systems/atris-business.md
+actionability: "Use this before changing owner/computer language, business workspace scaffolding, computer card fields, or public help text."
 tags: [product, schema, computer, business, groups]
 ---
 
-# Owner -> Computer Model
+# Owner Computer Model
 
-Atris should keep the current business-centered schema, but explain the product as owners having computers.
+Atris product language should stay simple: owners have persistent AI computers.
 
-## Primitive
-
-```
+```text
 Owner = User | Business
-
-Owner has many Computers.
-
-Computer = workspace + files + tools + secrets + memory + agents + validation/RL loop
+Owner has many Computers
+Computer = workspace + files + tools + secrets + memory + agents + validation loop
 ```
+
+The CLI implementation has one wrinkle: `atris computer card` reports unbound local repos as owner type `project`. Treat that as a local fallback/display state, not a new top-level owner in the product model.
 
 ## Owner Boundary
 
-- A user-owned computer is personal: research, coding, chief-of-staff, life ops, personal experiments.
-- A business-owned computer is shared: business data, team permissions, business secrets, workflows, customers, reporting.
+- User-owned computer: personal research, coding, chief-of-staff, life ops, experiments.
+- Business-owned computer: shared business data, team permissions, business secrets, workflows, customers, reporting.
+- Project fallback: local repo without `.atris/business.json`; useful for a computer card, not a product owner class.
 
-Keep `business` as the shared owner in the schema.
+Keep `business` as the shared owner primitive in CLI internals and metadata.
 
-## Entity Type
+## Shared Owner Language
 
-`entity_type` is the owner's operating mode, not a new owner table.
+External language can follow the customer:
 
-Keep it brutally constrained:
+```text
+Your business runs on Atris.
+Your lab runs on Atris.
+Your collective runs on Atris.
+Your artist team runs on Atris.
+```
 
-- `business` — profit generation; customers, revenue, operations, reporting, support, growth
-- `research` — truth generation; hypotheses, experiments, evidence, papers, benchmarks, grants
-- `project` — artifact generation; milestones, scope, tasks, demos, releases
-
-Everything else is display language or tags.
-Artist, community, collective, venue, nonprofit, school, and team should not become base entity types until a reward function demands it.
-
-This field can start optional.
-If missing, treat the owner as `business` for defaults and filtering.
+Those labels should not become base entity types without a distinct reward function and storage need.
 
 ## Computer Types
 
-Computer type is the function preset, not a new owner class.
+Computer type is the function preset, not an owner class:
 
 - `business_ops`
 - `codeops`
@@ -59,43 +66,42 @@ Computer type is the function preset, not a new owner class.
 - `event_ops`
 - `support`
 
-Each type should define default folders, skills, tools, guardrails, secret requirements, validation templates, and first-loop TODOs.
+Each type can imply default folders, skills, tools, guardrails, secrets, validation templates, and first-loop tasks.
+
+## Business Workspace Implication
+
+`atris business init "<name>"` means:
+
+1. create the shared business owner
+2. create or bind the first/default computer workspace
+3. write `.atris/business.json`
+4. scaffold the local `atris/` workspace under `~/arena/atris-business/<slug>/`, `--here`, or `--root <dir>`
+
+`atris business create "<name>"` is cloud-only unless `--workspace`, `--here`, or `--root` is supplied.
 
 ## Group Boundary
 
 Groups are the social/access layer, not a fourth owner type and not a computer.
 
-```
-Owner owns Computers.
+```text
+Owner owns computers.
 Computer runs work.
 Group controls people, chat, membership, posts, approvals, and visibility.
 ```
 
-Attach groups to owners and computers when humans need to participate.
-Do not put durable execution memory in groups; put it in the computer.
-Do not put membership, audience, or approval surfaces in the computer; put them in groups.
+Durable execution memory belongs in the computer. Membership and approval surfaces belong in groups or business/team state.
 
-Examples:
+## Guardrail
 
-- Parked: owner `business`, computers `crm` / `event_ops` / `reporting`, groups `founders` / `ambassadors` / `vendors` / `subscribers`
-- Research lab: owner `research`, computers `literature` / `experiments` / `benchmarks`, groups `PIs` / `students` / `reviewers` / `collaborators`
-- Product build: owner `project`, computers `codeops` / `research` / `reporting`, groups `core` / `contributors` / `reviewers`
+Do not add a third top-level owner type now. Use:
 
-## CLI Implication
+- owner: user or business
+- local fallback: project
+- computer type: job/function
+- group: people/access/coordination
+- tags/display language: lab, collective, artist, venue, nonprofit, school, team
 
-`atris business init "Parked"` should mean:
+## Cross-References
 
-1. create the shared owner/business
-2. create the first/default business computer
-3. scaffold the local workspace under `~/arena/atris-business/<slug>/`
-
-Future CLI can add typed computers under an owner:
-
-```bash
-atris computer create crm --business parked
-atris computer create reporting --business doordash
-atris computer create research --owner me
-```
-
-Do not add a third top-level owner type yet.
-Use `entity_type` for the strict operating mode, `computer_type` for function, and groups for people/access/coordination.
+- [[atris/wiki/systems/atris-cli.md]] - current public CLI surface
+- [[atris/wiki/systems/atris-business.md]] - shared-owner workspace implementation

@@ -2,8 +2,16 @@
 type: brief
 slug: atrisos-generative-ui-product-surface
 title: AtrisOS generative UI product surface
+sources:
+  - atris/wiki/sources/atrisos-generative-ui-product-surface-2026-05-10.txt
 created: 2026-04-29
-updated: 2026-04-29
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.72
+dependencies:
+  - atris/wiki/systems/atris-cli.md
+actionability: "Use as a historical design/product brief for AtrisOS-style generated product surfaces and block-based UI ideas."
 tags: [product, design, generative-ui, blocks, imagegen]
 ---
 

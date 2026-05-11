@@ -92,3 +92,118 @@
   - next ingest atris/CLAUDE.md
   - next ingest commands/init.js
   - next ingest commands/activate.js
+
+## 2026-05-10
+- RECOMPILE briefs/atris-cli-overview.md from README.md and workspace protocol sources
+  - source: README.md
+  - source: atris.md
+  - source: atris/MAP.md
+  - source: commands/autopilot.js
+  - source: lib/scorecard.js
+  - source: commands/task.js
+  - source: lib/task-db.js
+  - source: atris/TODO.md
+  - source: package.json
+  - durable: overview now reflects durable `atris task` state, member mission/goal loop, wiki upkeep, experiments, and current package version
+  - check: `node bin/atris.js loop --dry-run --json` now reports 12 stale pages instead of 13
+- REVERIFY briefs/atris-labs-workspace-protocol.md as historical snapshot
+  - missing source: /Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md
+  - replacement sources: atris/wiki/log.md, atris/wiki/systems/atris-labs.md
+  - durable: page is retained as April 2026 historical context, not a live source of truth for the old absolute path
+  - check: `node bin/atris.js loop --dry-run --json` now reports 11 stale pages instead of 12
+- RECOMPILE concepts/plan-do-review-loop.md from README.md, atris/atris.md, and commands/workflow.js
+  - durable: concept now reflects `atris task` as ownership truth, rendered TODO.md, plan-review, review proof, and the Confidence Gate
+  - check: `node bin/atris.js loop --dry-run --json` now reports 10 stale pages instead of 11
+- RECOMPILE concepts/verifiable-reward-loop.md from README.md, task state, autopilot, scorecard, and task DB sources
+  - durable: concept now reflects task review episodes, Confidence Gate proof, autopilot tick reward, optional Presidio scorecards, and local-first limits
+  - check: `node bin/atris.js loop --dry-run --json` now reports 9 stale pages instead of 10
+- RECOMPILE people/jack-dorsey.md from Sequoia/Block sources
+  - source: https://www.youtube.com/watch?v=YTVSwOY19Qs
+  - source: https://sequoiacap.com/podcast/jack-dorsey-every-company-can-now-be-a-mini-agi/
+  - source: https://block.xyz/inside/from-hierarchy-to-intelligence
+  - durable: page now separates the useful company-as-intelligence thesis from unverified AI-center rhetoric and records the proof-loop guardrail
+  - check: `node bin/atris.js loop --dry-run --json` now reports 8 stale pages instead of 9
+- RECOMPILE systems/atris-business.md from current business command sources
+  - source: commands/business.js
+  - source: commands/sync.js
+  - source: commands/computer.js
+  - source: README.md
+  - source: atris/MAP.md
+  - durable: page now reflects shared-owner workspaces, canonical `.atris/business.json` shape, onboarding artifacts, doctor/fleet guardrails, and local reward receipts
+  - check: `node bin/atris.js loop --dry-run --json` now reports 7 stale pages instead of 8
+- RECOMPILE systems/atris-cli.md from current CLI sources
+  - source: README.md
+  - source: atris.md
+  - source: atris/MAP.md
+  - source: package.json
+  - source: bin/atris.js
+  - source: commands/task.js
+  - source: commands/autopilot.js
+  - source: commands/business.js
+  - source: commands/member.js
+  - source: commands/mission.js
+  - source: commands/loop.js
+  - source: lib/task-db.js
+  - durable: page now reflects `atris task` as the task plane, rendered TODO.md, wiki upkeep, business owners, member/mission loops, skills/plugins, and the Endstate benchmark
+  - check: `node bin/atris.js loop --dry-run --json` now reports 6 stale pages instead of 7
+- RECOMPILE systems/atris-labs.md as split/historical dogfood workspace orientation
+  - source: atris/wiki/sources/atris-labs-2026-05-10.txt
+  - durable: page now names current local evidence paths, warns that March status/pipeline files are historical, and stops pointing at the missing old business path
+  - check: `node bin/atris.js loop --dry-run --json` now reports 5 stale pages instead of 6
+- RECOMPILE concepts/atris-labs-goals.md as historical goals snapshot
+  - source: atris/wiki/sources/atris-labs-goals-2026-05-10.txt
+  - durable: page now labels the $1M ARR / 10-customer targets as historical intent, preserves standing constraints, and warns to verify live numbers before acting
+  - check: `node bin/atris.js loop --dry-run --json` now reports 4 stale pages instead of 5
+- RECOMPILE concepts/horizon-types.md from current autopilot and scorecard sources
+  - source: commands/autopilot.js
+  - source: lib/scorecard.js
+  - source: atris/MAP.md
+  - durable: page now documents current expected-value scoring, adaptive explore rate, difficulty floor, private scorecards, and clear slug naming rules
+  - check: `node bin/atris.js loop --dry-run --json` now reports 3 stale pages instead of 4
+- RECOMPILE concepts/intent-capability-composition.md from local Jack Dorsey receipt and current Atris system pages
+  - source: atris/wiki/sources/jack-dorsey-2026-05-10.txt
+  - source: atris/wiki/people/jack-dorsey.md
+  - source: atris/wiki/systems/atris-business.md
+  - source: atris/wiki/systems/atris-cli.md
+  - durable: page now maps intent, capabilities, composition, gap signal, and backlog to current Atris loops without raw URL sources
+  - check: `node bin/atris.js loop --dry-run --json` now reports 2 stale pages instead of 3
+- RECOMPILE concepts/owner-computer-model.md from current public CLI/product sources
+  - source: README.md
+  - source: atris/MAP.md
+  - source: bin/atris.js
+  - source: commands/business.js
+  - source: commands/computer.js
+  - durable: page now anchors owner/computer language to current command behavior, including the `project` fallback in local computer cards
+  - check: `node bin/atris.js loop --dry-run --json` now reports 1 stale page instead of 2
+- RECOMPILE concepts/wiki-as-memory-substrate.md from current wiki implementation
+  - source: lib/wiki.js
+  - source: commands/wiki.js
+  - source: commands/loop.js
+  - source: README.md
+  - durable: page now documents public/private wiki roots, source receipts, agent-readable metadata, stale/orphan loop, suggested sources, and `wiki verify`
+  - check: `node bin/atris.js loop --dry-run --json` now reports 0 stale pages and 2 orphan pages
+- REPAIR orphan brief metadata and index coverage
+  - source: atris/wiki/briefs/atrisos-generative-ui-product-surface.md
+  - source: atris/wiki/briefs/launch-post.md
+  - source: atris/wiki/sources/atrisos-generative-ui-product-surface-2026-05-10.txt
+  - durable: both historical briefs now have contract frontmatter, launch-post points at wiki-loop instead of missing wiki-v2, and both are indexed
+  - check: `node bin/atris.js loop --dry-run --json` reports 0 stale pages and 0 orphan pages; `node bin/atris.js wiki verify` passes 15 pages with 0 findings
+- INGEST atris/CLAUDE.md into concepts/agent-activation-contract.md
+  - durable: editor-facing boot instructions now have a compact wiki contract for first-message behavior, MAP-first routing, setup, and durable-memory updates
+  - check: `node bin/atris.js wiki verify` passes 16 pages with 0 findings; `node bin/atris.js loop --dry-run --json` reports 16 pages, 0 stale pages, 0 orphan pages, and next source `commands/init.js`
+- INGEST commands/init.js into concepts/workspace-initialization-contract.md
+  - durable: `atris init` now has a compact wiki contract for nested-init guards, workspace scaffolds, project detection, generated agent instructions, Claude hooks, and local-only limits
+  - check: `node bin/atris.js wiki verify` passes 17 pages with 0 findings; `node bin/atris.js loop --dry-run --json` reports 17 pages, 0 stale pages, 0 orphan pages, and next source `commands/activate.js`
+- INGEST commands/activate.js into concepts/agent-activation-contract.md
+  - durable: activation contract now covers the runtime context panel, journal creation side effect, handoff/recent-completion display, wiki health display, learning count, and core file list
+  - check: `node bin/atris.js wiki verify` passes 17 pages with 0 findings; `node bin/atris.js loop --dry-run --json` reports 17 pages, 0 stale pages, 0 orphan pages, and next source `atris/team/navigator/MEMBER.md`
+- INGEST navigator/executor/validator member specs into concepts/plan-do-review-loop.md
+  - durable: plan-do-review now records each stage member contract, exact plan-review verdict shape, executor two-error rule, validator anti-slop/wiki checks, and the current `atris task` override for legacy TODO-moving wording
+  - check: `node bin/atris.js wiki verify` passes 17 pages with 0 findings; `node bin/atris.js loop --dry-run --json` reports 17 pages, 0 stale pages, 0 orphan pages, and 0 suggested sources
+- 00:20 LOOP 17 pages, 0 stale, 0 orphan, 0 suggested
+- 00:20 LOOP 17 pages, 0 stale, 0 orphan, 0 suggested
+- 00:42 INGEST 1 source item(s) staged from --help
+  - context /Users/keshavrao/arena/empire/atris-cli/atris/context
+  - pack atris/context/_ingest/2026-05-10-0042-help
+  - manifest atris/context/_ingest/2026-05-10-0042-help/manifest.json
+  - unresolved atris/context/_ingest/2026-05-10-0042-help/request.txt

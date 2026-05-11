@@ -3,8 +3,15 @@ const path = require('path');
 
 const NOW_PATH = path.join('atris', 'now.md');
 
+function formatLocalDate(date = new Date()) {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function todayIso() {
-  return new Date().toISOString().split('T')[0];
+  return formatLocalDate(new Date());
 }
 
 function ensureAtrisDir(root = process.cwd()) {
@@ -57,6 +64,37 @@ function countMatches(filePath, pattern) {
   return (content.match(pattern) || []).length;
 }
 
+function countOpenTodoItems(filePath) {
+  if (!fs.existsSync(filePath)) return 0;
+  const content = fs.readFileSync(filePath, 'utf8');
+  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\s*$/m.test(content);
+  let section = null;
+  let count = 0;
+
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      section = heading[1];
+      continue;
+    }
+    const isTaskBullet = /^-\s+(?:\[[ ]\]\s+)?\*\*.+?\*\*/.test(line);
+    if (!isTaskBullet) continue;
+    if (!hasRenderedSections || ['Backlog', 'In Progress', 'Blocked'].includes(section)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function countJournalCompletedReceipts(filePath) {
+  if (!fs.existsSync(filePath)) return 0;
+  const content = fs.readFileSync(filePath, 'utf8');
+  const proofReceipts = content.match(/^\s*Proof:\s+\S/gm) || [];
+  if (proofReceipts.length > 0) return proofReceipts.length;
+  return countMatches(filePath, /^-\s+\*\*C\d+:/gm);
+}
+
 function currentJournalPath(root = process.cwd()) {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -69,9 +107,9 @@ function renderDefaultNow(root = process.cwd()) {
   const mapHeading = readFirstHeading(path.join(atrisDir, 'MAP.md')) || 'MAP not filled yet';
   const todoPath = path.join(atrisDir, 'TODO.md');
   const journalPath = currentJournalPath(root);
-  const backlogCount = countMatches(todoPath, /^-\s+\*\*.+?\*\*/gm);
+  const openTodoCount = countOpenTodoItems(todoPath);
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
-  const completedCount = countMatches(journalPath, /^-\s+\*\*C\d+:/gm);
+  const completedCount = countJournalCompletedReceipts(journalPath);
   const generated = todayIso();
 
   return `# now
@@ -92,7 +130,7 @@ Last updated: ${generated}
 ## Signals
 
 - Map: ${mapHeading}
-- TODO items visible: ${backlogCount}
+- Open TODO items: ${openTodoCount}
 - Inbox items today: ${inboxCount}
 - Completed receipts today: ${completedCount}
 
@@ -123,9 +161,9 @@ function renderPortfolioNow(root = process.cwd()) {
   const generated = todayIso();
   const lines = workspaces.map((workspace) => {
     const heading = readFirstHeading(workspace.mapPath) || workspace.slug;
-    const todoCount = countMatches(workspace.todoPath, /^-\s+\*\*.+?\*\*/gm);
+    const todoCount = countOpenTodoItems(workspace.todoPath);
     const nowState = fs.existsSync(workspace.nowPath) ? 'has now.md' : 'needs now.md';
-    return `- ${workspace.slug}: ${heading}; ${todoCount} visible TODO item${todoCount === 1 ? '' : 's'}; ${nowState}.`;
+    return `- ${workspace.slug}: ${heading}; ${todoCount} open TODO item${todoCount === 1 ? '' : 's'}; ${nowState}.`;
   });
 
   return `# now
@@ -255,6 +293,9 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
 module.exports = {
   NOW_PATH,
   ensureNowFile,
+  formatLocalDate,
+  countJournalCompletedReceipts,
+  countOpenTodoItems,
   findChildWorkspaces,
   nowAtris,
   refreshNowFile,
