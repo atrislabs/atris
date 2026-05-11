@@ -321,6 +321,7 @@ function showHelp() {
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
+  console.log('  lesson     - Append a one-line lesson to atris/lessons.md');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
@@ -520,7 +521,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
@@ -1241,6 +1242,10 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/learn')(subcommand, ...args);
+} else if (command === 'lesson') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/lesson')(subcommand, ...args);
 } else if (command === 'skill') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
