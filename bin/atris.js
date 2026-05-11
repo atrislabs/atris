@@ -352,7 +352,7 @@ function showHelp() {
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
-  console.log('  worktree   - Member-scoped isolated Git worktrees for parallel agents');
+  console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('');
   console.log('Experiments:');
