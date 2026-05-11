@@ -432,9 +432,10 @@ When multiple members, Codex/Claude subagents, or other agents may touch a repo,
 atris worktree start --member <member> --task "<short task>" --claim
 atris worktree start --agent <subagent> --task "<short task>"
 cd <printed path>
+atris worktree ship --message "<commit summary>" --verify "<test command>" --merge
 ```
 
-This ties member/agent identity, branch name, isolated checkout, and optional Swarlo claim together. Use `atris worktree status` before broad staging or cleanup.
+This ties member/agent identity, branch name, isolated checkout, optional Swarlo claim, verification, push, PR, and merge together. Use `atris worktree status` before broad staging or cleanup.
 
 ## Mission Autonomy
 
