@@ -63,7 +63,7 @@ rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
 rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
 rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
-rg "worktreeCommand|startWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees plus optional Swarlo claim
+rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|codex_goal.json|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters and terminal next-action normalization
 rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features/codex-goal-replacement commands/mission.js test/mission-status.test.js  # Contract for Atris mission -> visible Codex /goal replacement
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
@@ -259,10 +259,10 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 - **Entry point:** `bin/atris.js` dispatch for `worktree`
 - **Handler:** `commands/worktree.js`
-- **Core flows:** `start --member <slug> --task "<task>" --claim` and `start --agent <slug> --task "<task>"` create sibling `.agent-worktrees/<repo>/...` checkouts; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
-- **Value:** Ties member/agent identity, branch, isolated filesystem state, staging area, and live Swarlo claim together for multi-agent work.
+- **Core flows:** `start --member <slug> --task "<task>" --claim` and `start --agent <slug> --task "<task>"` create sibling `.agent-worktrees/<repo>/...` checkouts from the current upstream/default remote base; `ship --message "<commit>" --verify "<cmd>" [--merge]` commits, verifies, merge-checks, pushes, opens a PR, and optionally merges; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
+- **Value:** Ties member/agent identity, branch, isolated filesystem state, staging area, live Swarlo claim, verification, push, PR, and merge together for multi-agent work.
 
-**Search:** `rg "worktreeCommand|startWorktree|parseWorktrees|swarloClaim" commands/worktree.js test/commands.test.js`
+**Search:** `rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js test/commands.test.js`
 
 ### Feature: Live Brain Sync (`atris live`)
 
