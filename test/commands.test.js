@@ -143,6 +143,20 @@ test('worktree swarlo claim is best-effort when local bridge is absent', () => {
   }
 });
 
+test('worktree guide prints the agent mission ship recipe', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['worktree', 'guide'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris worktree agent recipe/);
+    assert.match(res.stdout, /atris mission start/);
+    assert.match(res.stdout, /atris member goal-from-mission/);
+    assert.match(res.stdout, /atris worktree ship --message/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree start creates a member-scoped isolated checkout', () => {
   const dir = makeTempDir();
   let worktreePath;
@@ -327,6 +341,78 @@ test('worktree ship commits verifies and pushes an isolated branch', () => {
       runGit(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
       new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
     );
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship blocks from primary checkout', () => {
+  const dir = makeTempDir();
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['checkout', '-b', 'codex/primary-ship']);
+
+    const res = runCli(['worktree', 'ship', '--message', 'should block', '--dry-run', '--no-pr'], { cwd: dir });
+
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /blocked: ship from an isolated worktree/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship requires a message for dirty isolated checkout', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    worktreePath = path.join(dir, 'message-worktree');
+    assert.equal(runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex',
+      '--task',
+      'Message Gate',
+      '--path',
+      worktreePath,
+    ], { cwd: repo }).status, 0);
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
+
+    const res = runCli(['worktree', 'ship', '--verify', 'git status --short', '--dry-run', '--no-pr'], { cwd: worktreePath });
+
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /--message is required/);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
