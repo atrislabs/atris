@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest } = require('../lib/manifest');
+const { branchName, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const {
   analyzeBusinessDoctor,
@@ -103,6 +104,118 @@ test('member create initializes MEMBER.md and dated logs', () => {
     assert.match(log, /Trains teammates before autonomy/);
     assert.match(res.stdout, /logs\/\d{4}-\d{2}-\d{2}\.md/);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree helpers keep member identity in branch and parse git worktrees', () => {
+  assert.equal(slugify('Security Agent!!'), 'security-agent');
+  assert.equal(
+    branchName('security', 'OAuth timeout hardening', new Date('2026-05-11T08:09:10Z')),
+    'codex/security-oauth-timeout-hardening-20260511-080910'
+  );
+
+  const parsed = parseWorktrees(`
+worktree /repo/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo/.agent-worktrees/security
+HEAD def456
+branch refs/heads/codex/security-task
+`);
+  assert.deepEqual(parsed, [
+    { path: '/repo/main', branch: 'main', head: 'abc123' },
+    { path: '/repo/.agent-worktrees/security', branch: 'codex/security-task', head: 'def456' },
+  ]);
+});
+
+test('worktree swarlo claim is best-effort when local bridge is absent', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(
+      swarloClaim(dir, { channel: 'general', taskKey: 'security-task', content: 'security owns task' }),
+      'skip: scripts/swarlo.py not found'
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree start creates a member-scoped isolated checkout', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'security'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'security', 'MEMBER.md'), '# Security\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-security-worktree`);
+    const res = runCli([
+      'worktree',
+      'start',
+      '--member',
+      'security',
+      '--task',
+      'Smoke Task',
+      '--path',
+      worktreePath,
+    ], { cwd: dir });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, new RegExp(`path: ${worktreePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.equal(fs.existsSync(path.join(worktreePath, 'atris', 'team', 'security', 'MEMBER.md')), true);
+    assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/security-smoke-task-/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree start supports generic subagent checkout without a member persona', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-subagent-worktree`);
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-reviewer',
+      '--task',
+      'Smoke Task',
+      '--path',
+      worktreePath,
+    ], { cwd: dir });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /agent: codex-reviewer/);
+    assert.doesNotMatch(res.stderr, /no member persona/);
+    assert.equal(fs.existsSync(path.join(worktreePath, 'README.md')), true);
+    assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/codex-reviewer-smoke-task-/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
   }
 });
