@@ -181,6 +181,45 @@ test('worktree start creates a member-scoped isolated checkout', () => {
   }
 });
 
+test('worktree start supports generic subagent checkout without a member persona', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-subagent-worktree`);
+    const res = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-reviewer',
+      '--task',
+      'Smoke Task',
+      '--path',
+      worktreePath,
+    ], { cwd: dir });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /agent: codex-reviewer/);
+    assert.doesNotMatch(res.stderr, /no member persona/);
+    assert.equal(fs.existsSync(path.join(worktreePath, 'README.md')), true);
+    assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/codex-reviewer-smoke-task-/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('member create --help prints usage without creating a --help member', () => {
   const dir = makeTempDir();
   try {
