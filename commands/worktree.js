@@ -398,9 +398,35 @@ function prune(args) {
   return result.status || 0;
 }
 
-function help() {
-  console.log('Usage: atris worktree <start|ship|status|guard|prune>');
+function guide() {
+  console.log('Atris worktree agent recipe');
   console.log('');
+  console.log('1. Start isolated work:');
+  console.log('   atris worktree start --member <member> --task "<task>" --claim');
+  console.log('   atris worktree start --agent <agent> --task "<task>"');
+  console.log('');
+  console.log('2. Move into the printed path:');
+  console.log('   cd <printed path>');
+  console.log('   atris worktree guard');
+  console.log('');
+  console.log('3. Tie work to mission/member state when relevant:');
+  console.log('   atris mission start "<objective>" --owner <member> --verify "<cmd>"');
+  console.log('   atris member goal-from-mission <member>');
+  console.log('   atris member tick <member>');
+  console.log('   atris mission tick <id> --verify --complete-on-pass');
+  console.log('');
+  console.log('4. Ship only from the isolated worktree:');
+  console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge');
+  console.log('');
+  console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
+  console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
+  return 0;
+}
+
+function help() {
+  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune>');
+  console.log('');
+  console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
   console.log('  atris worktree ship --message "<commit>" --verify "<cmd>" [--merge]');
   console.log('  atris worktree status');
@@ -415,6 +441,7 @@ function worktreeCommand(args = []) {
     help();
     return 0;
   }
+  if (sub === 'guide' || sub === 'recipe') return guide();
   if (sub === 'start') return startWorktree(rest);
   if (sub === 'ship') return shipWorktree(rest);
   if (sub === 'status') {
