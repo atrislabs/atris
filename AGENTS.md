@@ -33,13 +33,14 @@ CHECK → atris review (verify + cleanup)
 When multiple members, Codex/Claude subagents, or other agents may touch a repo, start in an isolated checkout:
 
 ```bash
+atris worktree guide
 atris worktree start --member <member> --task "<short task>" --claim
 atris worktree start --agent <subagent> --task "<short task>"
 cd <printed path>
 atris worktree ship --message "<commit summary>" --verify "<test command>" --merge
 ```
 
-This ties member/agent identity, branch name, isolated checkout, optional Swarlo claim, verification, push, PR, and merge together. Use `atris worktree status` before broad staging or cleanup.
+This ties member/agent identity, mission/member state, branch name, isolated checkout, optional Swarlo claim, verification, push, PR, and merge together. Use `atris worktree status` before broad staging or cleanup.
 
 ## Mission Autonomy
 
