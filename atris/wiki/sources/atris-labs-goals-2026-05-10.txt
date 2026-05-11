@@ -1,0 +1,15 @@
+Source receipt for atris/wiki/concepts/atris-labs-goals.md
+Compiled: 2026-05-10
+
+Local evidence checked:
+- atris/wiki/concepts/atris-labs-goals.md before refresh
+- atris/wiki/log.md historical ingest notes for missing goals.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/context/STATUS.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/context/PIPELINE.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/fundraise/metrics.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/fundraise/story.md
+
+Notes:
+- The previous source /Users/keshavrao/arena/atris-business/atris-labs/goals.md is missing in this workspace.
+- The page is retained as historical direction only.
+- Revenue/customer counts require live verification before operational use.
