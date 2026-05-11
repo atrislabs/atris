@@ -28,11 +28,11 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 
 ```bash
 # Core CLI logic
-rg "function atrisDevEntry" bin/atris.js    # Main entry point (atris command)
-rg "function brainstormAtris" commands/brainstorm.js  # Brainstorm command (line 10)
-rg "function planAtris" commands/workflow.js   # Plan command (line 5)
-rg "function doAtris" commands/workflow.js     # Do command (line 297)
-rg "function reviewAtris" commands/workflow.js  # Review command (line 667)
+rg "async function interactiveEntry|async function atrisDevEntry" bin/atris.js    # Main entry points: cold-start dispatcher + legacy natural-language mode
+rg "function brainstormAtris" commands/brainstorm.js  # Brainstorm command (line 12)
+rg "function planAtris" commands/workflow.js   # Plan command (line 66)
+rg "function doAtris" commands/workflow.js     # Do command (line 394)
+rg "function reviewAtris" commands/workflow.js  # Review command (line 747)
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "function statusAtris" commands/status.js     # Status command (line 79)
 rg "function analyticsAtris" commands/analytics.js  # Analytics command (line 4)
@@ -81,8 +81,9 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
-- **Entry point:** `bin/atris.js:471-482` (knownCommands dispatch)
-- **Handler:** `bin/atris.js:1622-1752` (atrisDevEntry function)
+- **Entry point:** `bin/atris.js:522-533` (knownCommands dispatch)
+- **Cold-start handler:** `bin/atris.js:604` (`interactiveEntry`; active missions/work outrank completed history)
+- **Legacy handler:** `bin/atris.js:1718` (`atrisDevEntry` function)
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
