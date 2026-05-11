@@ -424,6 +424,17 @@ These are anti-patterns. Don't do them:
 
 **Next step:** Read `atris/PERSONA.md` and adopt that mindset. Then run `atris activate` to load context. You're ready to work.
 
+## Parallel Member Worktrees
+
+When multiple members or agents may touch a repo, start in an isolated checkout:
+
+```bash
+atris worktree start --member <member> --task "<short task>" --claim
+cd <printed path>
+```
+
+This ties member identity, branch name, isolated checkout, and optional Swarlo claim together. Use `atris worktree status` before broad staging or cleanup.
+
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Atris Brain Compile
 
