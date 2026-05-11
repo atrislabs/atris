@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest } = require('../lib/manifest');
+const { branchName, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const {
   analyzeBusinessDoctor,
@@ -102,6 +103,40 @@ test('member create initializes MEMBER.md and dated logs', () => {
     assert.match(log, /Member initialized/);
     assert.match(log, /Trains teammates before autonomy/);
     assert.match(res.stdout, /logs\/\d{4}-\d{2}-\d{2}\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree helpers keep member identity in branch and parse git worktrees', () => {
+  assert.equal(slugify('Security Agent!!'), 'security-agent');
+  assert.equal(
+    branchName('security', 'OAuth timeout hardening', new Date('2026-05-11T08:09:10Z')),
+    'codex/security-oauth-timeout-hardening-20260511-080910'
+  );
+
+  const parsed = parseWorktrees(`
+worktree /repo/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo/.agent-worktrees/security
+HEAD def456
+branch refs/heads/codex/security-task
+`);
+  assert.deepEqual(parsed, [
+    { path: '/repo/main', branch: 'main', head: 'abc123' },
+    { path: '/repo/.agent-worktrees/security', branch: 'codex/security-task', head: 'def456' },
+  ]);
+});
+
+test('worktree swarlo claim is best-effort when local bridge is absent', () => {
+  const dir = makeTempDir();
+  try {
+    assert.equal(
+      swarloClaim(dir, { channel: 'general', taskKey: 'security-task', content: 'security owns task' }),
+      'skip: scripts/swarlo.py not found'
+    );
   } finally {
     cleanupTempDir(dir);
   }
