@@ -1,7 +1,7 @@
 ---
 name: aeo
 description: "AI Engine Optimization — write content engineered to get cited by ChatGPT, Claude, and Gemini. Not SEO. Triggers on: aeo, AI engine, llm citation, get cited, write for ai."
-when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get Pallet cited by ChatGPT', 'aeo for our recruiting page', 'make this quotable by LLMs'."
+when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get ExampleCo cited by ChatGPT', 'aeo for our recruiting page', 'make this quotable by LLMs'."
 version: 0.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 tags:
@@ -46,7 +46,7 @@ Entity graph lives in the **customer's EC2 workspace** (not agent_files, not DB)
 ## The 10 rules (enforced by the endpoint + skill self-check)
 
 1. **Front-load the claim.** LLMs quote sentence 1 of a paragraph. No throat-clearing.
-2. **Name entities explicitly.** "Pallet" not "a leading freight platform." Entity density is how LLMs disambiguate and cite.
+2. **Name entities explicitly.** "ExampleCo" not "a leading freight platform." Entity density is how LLMs disambiguate and cite.
 3. **Canonical definition.** One sentence owns `X is Y that does Z` for the category. Make it liftable.
 4. **Q&A scaffolding.** H2s in question form: "What is X?" "How does X work?" — matches the prompts LLMs actually get.
 5. **Declarative stats with sources.** "$2.3B market (McKinsey 2025)" beats "a growing market." Citable atoms.

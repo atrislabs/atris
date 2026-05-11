@@ -4209,29 +4209,29 @@ test('business slug matcher accepts config aliases', () => {
 
 test('business doctor plans safe cache repoints for stale duplicate rows', () => {
   const active = {
-    id: 'active-pallet',
-    slug: 'pallet-recruiting',
-    name: 'pallet-recruiting',
+    id: 'active-example',
+    slug: 'example-recruiting',
+    name: 'example-recruiting',
     workspace_id: 'active-workspace',
     config: {},
   };
   const analysis = analyzeBusinessDoctor({
     cloudBusinesses: [active],
     cache: {
-      'pallet-recruiting': {
+      'example-recruiting': {
         business_id: 'deleted-duplicate',
         workspace_id: 'deleted-workspace',
-        name: 'pallet-recruiting',
-        slug: 'pallet-recruiting-1',
+        name: 'example-recruiting',
+        slug: 'example-recruiting-1',
       },
     },
     folderBindings: [],
   });
 
   assert.ok(analysis.issues.some((issue) => issue.code === 'stale-cache-repoint'));
-  assert.equal(analysis.cacheUpdates['pallet-recruiting'].business_id, 'active-pallet');
-  assert.equal(analysis.cacheUpdates['pallet-recruiting'].workspace_id, 'active-workspace');
-  assert.equal(analysis.cacheUpdates['pallet-recruiting'].slug, 'pallet-recruiting');
+  assert.equal(analysis.cacheUpdates['example-recruiting'].business_id, 'active-example');
+  assert.equal(analysis.cacheUpdates['example-recruiting'].workspace_id, 'active-workspace');
+  assert.equal(analysis.cacheUpdates['example-recruiting'].slug, 'example-recruiting');
 });
 
 test('business doctor accepts clean alias folders and asks for missing alias cache', () => {
@@ -5530,7 +5530,7 @@ test('status stays local even when .atris/business.json exists', () => {
     fs.mkdirSync(metaDir, { recursive: true });
     fs.writeFileSync(
       path.join(metaDir, 'business.json'),
-      JSON.stringify({ slug: 'pallet' }, null, 2),
+      JSON.stringify({ slug: 'example-co' }, null, 2),
       'utf8'
     );
 
@@ -5832,7 +5832,7 @@ test('wiki stale checks accept external source labels and legacy context paths',
     fs.writeFileSync(path.join(dir, 'atris', 'context', 'calls', 'README.md'), '# Calls\n', 'utf8');
     fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'systems'), { recursive: true });
     fs.writeFileSync(
-      path.join(dir, 'atris', 'wiki', 'systems', 'pallet.md'),
+      path.join(dir, 'atris', 'wiki', 'systems', 'example-co.md'),
       [
         '---',
         'sources: [hubspot, chorus, context/calls]',
@@ -5842,7 +5842,7 @@ test('wiki stale checks accept external source labels and legacy context paths',
         'dependencies: []',
         'actionability: "route account questions"',
         '---',
-        '# Pallet',
+        '# ExampleCo',
         '',
       ].join('\n'),
       'utf8'

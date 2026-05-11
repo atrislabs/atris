@@ -22,7 +22,7 @@ Atris has universal skills (email, calendar, drive) that work for everyone, but 
 
 Two-layer skill architecture. Universal skills ship publicly through the `atris-plugins` marketplace. Custom skills live in per-customer directories, get scaffolded with `atris skill create`, and deploy as private plugins through per-customer marketplace repos.
 
-The FDE (Justin) sits with a customer, runs `atris skill create pallet/email-outreach`, fills in the workflow, and runs `atris plugin publish --customer pallet`. The customer installs two plugins: the public `atris-workspace` (universal) and their private `pallet-workspace` (custom). Done.
+The FDE (Justin) sits with a customer, runs `atris skill create example-co/email-outreach`, fills in the workflow, and runs `atris plugin publish --customer example-co`. The customer installs two plugins: the public `atris-workspace` (universal) and their private `example-co-workspace` (custom). Done.
 
 ---
 
@@ -45,10 +45,10 @@ The FDE (Justin) sits with a customer, runs `atris skill create pallet/email-out
             ┌────────────┼────────────┐
             │            │            │
   ┌─────────▼──┐  ┌──────▼─────┐  ┌──▼──────────┐
-  │   PALLET   │  │  MERCURY   │  │  PARAFORM   │
+  │ EXAMPLECO  │  │  MERCURY   │  │  PARAFORM   │
   │            │  │            │  │             │
   │  customers/│  │  customers/│  │  customers/ │
-  │  pallet/   │  │  mercury/  │  │  paraform/  │
+  │ example-co/│  │  mercury/  │  │  paraform/  │
   │  skills/   │  │  skills/   │  │  skills/    │
   │            │  │            │  │             │
   │  email-    │  │  deal-     │  │  candidate- │
@@ -58,25 +58,25 @@ The FDE (Justin) sits with a customer, runs `atris skill create pallet/email-out
   │            │  │            │  │             │
   │  Private:  │  │  Private:  │  │  Private:   │
   │  atrislabs/│  │  atrislabs/│  │  atrislabs/ │
-  │  pallet-   │  │  mercury-  │  │  paraform-  │
+  │ example-co-│  │  mercury-  │  │  paraform-  │
   │  plugins   │  │  plugins   │  │  plugins    │
   └────────────┘  └────────────┘  └─────────────┘
 
   FDE WORKFLOW:
   ━━━━━━━━━━━━
-  atris skill create pallet/email-outreach
-    → scaffolds atris/customers/pallet/skills/email-outreach/SKILL.md
+  atris skill create example-co/email-outreach
+    → scaffolds atris/customers/example-co/skills/email-outreach/SKILL.md
 
-  atris plugin build --customer pallet
-    → packages into pallet-workspace.plugin
+  atris plugin build --customer example-co
+    → packages into example-co-workspace.plugin
 
-  atris plugin publish --customer pallet
-    → pushes to atrislabs/pallet-plugins (private repo)
+  atris plugin publish --customer example-co
+    → pushes to atrislabs/example-co-plugins (private repo)
 
   CUSTOMER INSTALLS:
   ━━━━━━━━━━━━━━━━━
   1. atrislabs/atris-plugins     → universal skills (free)
-  2. atrislabs/pallet-plugins    → custom skills ($100K/yr)
+  2. atrislabs/example-co-plugins    → custom skills ($100K/yr)
 ```
 
 ---
@@ -96,7 +96,7 @@ The FDE (Justin) sits with a customer, runs `atris skill create pallet/email-out
 
 **For FDEs (Justin):** Three commands to go from customer conversation to deployed plugin. No guessing at file structure, no manual GitHub repo setup, no copying boilerplate. Sit down, build, ship.
 
-**For customers (Sushanth):** Two plugins in Cowork — universal tools that work for everyone, plus custom skills built specifically for their workflows. The custom skills are the lock-in. They can't get "pallet-email-outreach" anywhere else.
+**For customers (Sushanth):** Two plugins in Cowork — universal tools that work for everyone, plus custom skills built specifically for their workflows. The custom skills are the lock-in. They can't get "example-co-email-outreach" anywhere else.
 
 **For the business:** Every customer engagement produces deployable artifacts (skills) that justify the $100K platform fee. The custom skills ARE the product. The universal skills are the hook.
 
