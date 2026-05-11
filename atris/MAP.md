@@ -57,6 +57,7 @@ rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
 rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
 rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
+rg "worktreeCommand|startWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees plus optional Swarlo claim
 rg "missionCommand|lintMissionVerifier|runMission|tickMission" commands/mission.js test/mission-verifier.test.js  # Durable mission start/status/tick/run plus verifier lint
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "gmailCommand" commands/integrations.js  # Integration commands
@@ -224,6 +225,17 @@ rg "Phase 1" atris.md                       # Agent generation spec
 - **Value:** Turns a broad goal into append-only state plus proof, so `atris` can surface the next concrete mission action.
 
 **Search:** `rg "missionCommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js`
+
+### Feature: Member Worktrees (`atris worktree`)
+
+**Purpose:** Keep parallel members/agents out of one dirty checkout by creating member-scoped Git worktrees and branches, with optional Swarlo claim wiring.
+
+- **Entry point:** `bin/atris.js` dispatch for `worktree`
+- **Handler:** `commands/worktree.js`
+- **Core flows:** `start --member <slug> --task "<task>" --claim` creates a sibling `.agent-worktrees/<repo>/...` checkout; `status` lists dirty counts for each worktree; `guard` blocks primary/dirty checkout use unless explicitly allowed; `prune --apply` removes stale missing worktree registrations.
+- **Value:** Ties member identity, branch, isolated filesystem state, staging area, and live Swarlo claim together for multi-agent work.
+
+**Search:** `rg "worktreeCommand|startWorktree|parseWorktrees|swarloClaim" commands/worktree.js test/commands.test.js`
 
 ### Feature: Live Brain Sync (`atris live`)
 

@@ -330,6 +330,7 @@ function showHelp() {
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
+  console.log('  worktree   - Member-scoped isolated Git worktrees for parallel agents');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('');
   console.log('Experiments:');
@@ -522,7 +523,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -919,6 +920,10 @@ if (command === 'init') {
 } else if (command === 'mission') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'worktree') {
+  Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.
