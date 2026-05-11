@@ -209,13 +209,13 @@ Validated behavior:
 
 - Publish `atris@3.15.12`.
 - Deploy the backend workspace snapshot patch from `atrisos-backend`.
-- After deploy, run a Pallet smoke:
+- After deploy, run an ExampleCo smoke:
 
 ```bash
 npm i -g atris@3.15.12
-cd ~/arena/atris-business/pallet
-atris pull pallet --keep-local --only atris/wiki --timeout 120
-atris push pallet --only atris/wiki --dry-run
+cd ~/arena/atris-business/example-co
+atris pull example-co --keep-local --only atris/wiki --timeout 120
+atris push example-co --only atris/wiki --dry-run
 ```
 
 - DoorDash post-publish smoke:
@@ -240,7 +240,7 @@ Missing validation:
 - remote delete does not destroy local modified work end-to-end
 - parent folder junk is ignored by the push planner; still needs a full command fixture
 - long-running watcher needs an integration test with a mocked local edit and no real cloud calls
-- Pallet shipped-command smoke test from a real Pallet-shaped workspace
+- ExampleCo shipped-command smoke test from a real ExampleCo-shaped workspace
 - npm publication after refreshing the invalid npm token
 
 ## Release Gate

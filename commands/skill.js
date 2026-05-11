@@ -593,7 +593,7 @@ function skillCreate(nameArg, ...flags) {
     console.error('Examples:');
     console.error('  atris skill create daily-standup');
     console.error('  atris skill create email-outreach --integration');
-    console.error('  atris skill create pallet/bol-processor --integration');
+    console.error('  atris skill create example-co/bol-processor --integration');
     console.error('  atris skill create my-skill --local     # project only, skip system dirs');
     process.exit(1);
   }
@@ -883,7 +883,7 @@ function skillCommand(subcommand, ...args) {
       console.log('Examples:');
       console.log('  atris skill create daily-standup');
       console.log('  atris skill create email-outreach --integration');
-      console.log('  atris skill create pallet/bol-processor --integration');
+      console.log('  atris skill create example-co/bol-processor --integration');
       console.log('  atris skill link --all');
       console.log('');
   }

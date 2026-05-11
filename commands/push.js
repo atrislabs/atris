@@ -130,8 +130,8 @@ async function pushAtris() {
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
     console.log('');
     console.log('  atris push                   Push from current folder (auto-detect business)');
-    console.log('  atris push pallet            Push pallet/ or atris/pallet/');
-    console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
+    console.log('  atris push example-co            Push example-co/ or atris/example-co/');
+    console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
     console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
@@ -157,8 +157,8 @@ async function pushAtris() {
     console.log('  the push will be blocked until you run `atris pull`. Use --force to override.');
     console.log('');
     console.log('  atris push                   Push from current folder (auto-detect business)');
-    console.log('  atris push pallet            Push pallet/ or atris/pallet/');
-    console.log('  atris push pallet --only team/nate   Only push files in team/nate/');
+    console.log('  atris push example-co            Push example-co/ or atris/example-co/');
+    console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
     console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
@@ -197,7 +197,7 @@ async function pushAtris() {
   const sourceDir = resolvePushSourceDir({ slug });
   if (!sourceDir) {
     console.error(`No local folder found for "${slug}".`);
-    console.error('Run from inside a pulled folder, or: atris push pallet --from ./path');
+    console.error('Run from inside a pulled folder, or: atris push example-co --from ./path');
     process.exit(1);
   }
 

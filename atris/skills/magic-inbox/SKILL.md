@@ -71,7 +71,7 @@ Returns email + calendar + slack in one structured response:
   },
   "calendar": {
     "events": [
-      {"summary": "Meeting with Grace", "start": "...", "attendees": ["grace@pallet.com"]}
+      {"summary": "Meeting with Grace", "start": "...", "attendees": ["grace@example.com"]}
     ],
     "count": 1
   },
