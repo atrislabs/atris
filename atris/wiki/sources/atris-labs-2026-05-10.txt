@@ -1,0 +1,17 @@
+Source receipt for atris/wiki/systems/atris-labs.md
+Compiled: 2026-05-10
+
+Local evidence checked:
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/CLAUDE.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/context/STATUS.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/context/PIPELINE.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/team/keshav/MEMBER.md
+- /Users/keshavrao/arena/empire/atris-customers/atris-labs/team/justin/MEMBER.md
+- /Users/keshavrao/arena/empire/atris-business/atris-labs-1/apps/
+- /Users/keshavrao/arena/empire/atrisos-backend/backend/static/workspaces/atris-labs/instructions.md
+- /Users/keshavrao/arena/empire/atrisos-backend/backend/atris-labs-1/.atris/business.json
+
+Notes:
+- The previous wiki source /Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md is missing in this workspace.
+- Available status/pipeline files are historical March 2026 artifacts.
+- Treat this page as orientation, not a live company operating report.

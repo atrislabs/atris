@@ -40,6 +40,14 @@ atris/.config
 atris/.log_sync_state.json
 atris/MAP.md
 atris/TASK_CONTEXTS.md
+atris/now.md
+atris/runs/
+atris/status/
+atris/context/_ingest/
+atris/team/*/now.md
+atris/team/*/logs/
+atris/team/*/goals.json
+atris/team/*/goals.md
 
 # Feature documentation (user-specific work in progress)
 # Track templates and README, ignore user-created features

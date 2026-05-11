@@ -1,0 +1,10 @@
+Source receipt for atris/wiki/briefs/atrisos-generative-ui-product-surface.md
+Compiled: 2026-05-10
+
+Local evidence checked:
+- atris/wiki/briefs/atrisos-generative-ui-product-surface.md before metadata repair
+- atris/wiki/systems/atris-cli.md for current CLI/product context
+
+Notes:
+- This brief appears to be an in-session product/design synthesis from 2026-04-29.
+- It is retained as a historical design note, not a current design-system contract.

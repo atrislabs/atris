@@ -1,0 +1,12 @@
+Source receipt for atris/wiki/people/jack-dorsey.md
+Compiled: 2026-05-10
+
+External sources checked:
+- YouTube episode URL: https://www.youtube.com/watch?v=YTVSwOY19Qs
+- Sequoia transcript: https://sequoiacap.com/podcast/jack-dorsey-every-company-can-now-be-a-mini-agi/
+- Block essay: https://block.xyz/inside/from-hierarchy-to-intelligence
+
+Notes:
+- The Sequoia page provides the transcript for the episode linked from YouTube.
+- The Block essay is the co-authored primary written thesis by Jack Dorsey and Roelof Botha.
+- No Atris YouTube processing credits were spent for this refresh.
