@@ -16,8 +16,12 @@
 - [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — reward, scorecards, and why the repo now acts like an RL-style environment
 - [[atris/wiki/concepts/owner-computer-model.md]] — Owner = User | Business; constrained entity modes, typed computers, and groups as the social/access layer
+- [[atris/wiki/concepts/agent-activation-contract.md]] — editor-facing boot contract: first message, MAP-first, setup, and durable-memory routing
+- [[atris/wiki/concepts/workspace-initialization-contract.md]] — `atris init` bootstrap contract: guards, scaffolds, team context, generated agent files, and hooks
 
 ## Briefs
 
 - [[atris/wiki/briefs/atris-cli-overview.md]] — summary of CLI, owner/computer model, workspace layers, and why `atris/wiki/` exists
 - [[atris/wiki/briefs/atris-labs-workspace-protocol.md]] — atris-labs workspace protocol: on-load sequence, layout, surfaces, north star
+- [[atris/wiki/briefs/atrisos-generative-ui-product-surface.md]] — historical AtrisOS generative UI / block surface design note
+- [[atris/wiki/briefs/launch-post.md]] — historical launch drafts for the local-first wiki feature

@@ -2245,6 +2245,11 @@ function pickUnresolvedFailLesson(cwd) {
   return candidates[0];
 }
 
+function getLessonVerdict(lessonLine) {
+  const match = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+[\w-]+\*\*\s*[—-]\s*(pass|fail)\b/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 /**
  * Propose 3 candidate next horizons for the autopilot loop. Combines
  * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
@@ -2286,6 +2291,7 @@ Based on these signals, propose exactly 3 candidate next horizons for the loop t
 - A real, concrete horizon tied to what the signals actually reveal (no placeholders, no "candidate 1", no TODO/FIXME stubs).
 - Something the loop can actually work on in this repo right now.
 - Distinct from the other two candidates.
+- Not a restatement of a \`pass\` lesson; pass lessons are shipped constraints, not open work.
 
 Output STRICT JSON ONLY — no prose, no markdown code fences, no commentary. The output must be a single JSON array with exactly 3 objects, each shaped:
 
@@ -2353,7 +2359,7 @@ Reply with the JSON array and nothing else.`;
     throw new Error(`proposeCandidateHorizons: expected at least 1 valid candidate, got ${candidates.length}`);
   }
 
-  // Filter out candidates derived from resolved lessons
+  // Filter out candidates derived from shipped/resolved lessons.
   const lessonsPath = path.join(cwd, 'atris', 'lessons.md');
   const filtered = [];
   for (const c of candidates) {
@@ -2362,12 +2368,16 @@ Reply with the JSON array and nothing else.`;
     for (const lessonLine of signals.recentLessons) {
       const slugMatch = lessonLine.match(/\*\*\[\d{4}-\d{2}-\d{2}\]\s+([\w-]+)\*\*/);
       if (!slugMatch) continue;
-      if (lessonLine.includes('[resolved]')) continue;
+      const alreadyResolved = lessonLine.includes('[resolved]');
       const slug = slugMatch[1];
       // Fuzzy match: check if slug keywords appear in the candidate text
       const slugWords = slug.split('-').filter(w => w.length > 2);
       const matchCount = slugWords.filter(w => combinedText.includes(w)).length;
       if (matchCount < Math.ceil(slugWords.length * 0.5)) continue;
+      if (alreadyResolved || getLessonVerdict(lessonLine) === 'pass') {
+        droppedByLesson = true;
+        break;
+      }
       // Candidate matches this lesson — check if the lesson is resolved
       if (isLessonResolved(lessonLine, cwd)) {
         // Tag lesson [resolved] in lessons.md

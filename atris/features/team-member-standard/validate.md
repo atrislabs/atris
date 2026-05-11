@@ -1,29 +1,37 @@
 ---
-last_compiled: 2026-04-08
+last_compiled: 2026-05-10
 sources:
-  - commands/member.js
+  - commands/member.js:1209-3054 (member command handlers)
+  - commands/mission.js:304-346 (member mission status rendering)
+  - test/commands.test.js:86-845 (member create, goal, wake, loop, status coverage)
 ---
 
 # Team Member Standard — Validation
 
-> **Status:** implemented (core)
-> **Validated:** 2026-04-08
+> **Status:** implemented (local-first member runtime)
+> **Validated:** 2026-05-10
 
 ## Checks
 
-- [x] `atris member create <name>` scaffolds MEMBER.md + skills/ + context/
+- [x] `atris member create <name>` scaffolds MEMBER.md + MISSION.md + skills/ + tools/ + context/ + logs/
 - [x] `atris member list` shows members with roles
 - [x] `atris member activate <name>` links skills, shows context
-- [x] 6 built-in members exist in atris/team/
-- [x] Frontmatter schema includes name, role, permissions, skills, traits
+- [x] Frontmatter schema includes name, role, description, version, permissions, skills, tools
+- [x] `atris member goal`, `tick`, `review`, `block`, and `status` preserve proof and useful next command state
+- [x] `atris member goal-from-mission` derives a bounded goal from MISSION.md and refuses placeholder missions
+- [x] `atris member goal-from-score` creates the active self-improvement goal from Team score evidence
+- [x] `atris member wake` returns one finite decision and refuses to pile work onto open experiments
+- [x] `atris member loop` repeats wake quickly and skips when a lease is already active
+- [x] `atris member run` delegates active member runtime work to `atris mission run`
 - [ ] Open source spec published
 - [ ] Cross-tool compatibility verified
 
 ## Verification
 
 ```bash
-atris member list                           # Should show navigator, executor, validator, etc.
-atris member create test-agent --role="QA"  # Should scaffold directory
-atris member activate navigator             # Should link skills, show context
-atris member upgrade executor               # Should convert flat MEMBER.md to directory format
+node --test test/commands.test.js --test-name-pattern 'member'
+node -c commands/member.js
+node -c commands/mission.js
+node -c bin/atris.js
+node bin/atris.js member --help
 ```

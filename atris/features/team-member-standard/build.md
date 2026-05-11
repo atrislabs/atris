@@ -1,26 +1,41 @@
 ---
-last_compiled: 2026-04-20
+last_compiled: 2026-05-10
 sources:
-  - commands/member.js
-  - bin/atris.js:430 (knownCommands dispatch)
+  - commands/member.js:150-190 (member paths and MISSION.md template)
+  - commands/member.js:348-365 (member run bridge to Mission Runtime)
+  - commands/member.js:1209-1235 (member list)
+  - commands/member.js:1261-1364 (member create scaffold)
+  - commands/member.js:1759-2054 (goal, goal-from-mission, goal-from-score)
+  - commands/member.js:2140-2469 (wake decision and receipts)
+  - commands/member.js:2483-2717 (member loop)
+  - commands/member.js:2720-2943 (tick, review, block, status)
+  - commands/member.js:2955-3054 (member command dispatch and help)
+  - commands/mission.js:304-346 (member now.md and workspace mission status rendering)
+  - bin/atris.js:1242-1245 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---
 
 # Team Member Standard — Build Spec
 
-> **Status:** implemented (core)
+> **Status:** implemented (local-first member runtime)
 
 ## Files Touched
 
 | File | What |
 |------|------|
-| `commands/member.js` | Full member CRUD: `list`, `create`, `activate`, `upgrade`, `push`, `pull` |
-| `bin/atris.js:315-318` | Help text for `member create`/`list`/`activate`/`upgrade` |
-| `bin/atris.js:1056` | Routes `atris member <subcommand>` to `memberCommand` |
+| `commands/member.js` | Member CRUD, cloud sync, mission-derived goals, wake/tick/review loop, status, block, archive |
+| `commands/mission.js` | Renders member `now.md` and workspace `atris/status/now.md` from active missions |
+| `bin/atris.js:1242-1245` | Routes `atris member <subcommand>` to `memberCommand` |
 | `atris/skills/create-member/SKILL.md` | Skill for creating members via conversation |
 | `atris/team/_template/MEMBER.md` | Canonical frontmatter template |
-| `atris/team/*/MEMBER.md` | 6 built-in members: `brainstormer`, `executor`, `launcher`, `navigator`, `researcher`, `validator` |
+| `atris/team/*/MEMBER.md` | Local member identity contracts |
+| `atris/team/*/MISSION.md` | Durable member purpose and goal-selection contract |
+| `atris/team/*/goals.json` | Machine-readable active goals, experiments, reviews, and value |
+| `atris/team/*/goals.md` | Generated human readout for goals and experiments |
+| `atris/team/*/logs/*.md` | Dated member receipts |
+| `.atris/state/steering.jsonl` | Cross-member steering directives consumed by wake decisions |
+| `atris/runs/member-*` | Wake and loop receipts |
 
 ## Subcommands
 
@@ -29,11 +44,23 @@ sources:
 | Subcommand | Handler | Purpose |
 |------------|---------|---------|
 | `list` / `ls` | `memberList` | Show all members with role, format, skill/context counts, version |
-| `create <name>` / `new` | `memberCreate` | Scaffold directory: `MEMBER.md` + `skills/` + `tools/` + `context/` + `journal/` |
+| `create <name>` / `new` | `memberCreate` | Scaffold directory: `MEMBER.md` + `MISSION.md` + `skills/` + `tools/` + `context/` + `logs/` |
 | `activate <name>` | `memberActivate` | Symlink local skills into `~/.claude`, `~/.codex`, `~/.cursor`; print context + permissions |
 | `upgrade <name>` | `memberUpgrade` | Convert flat `team/<name>.md` to directory format |
 | `push <name>` | `memberPush` | Upload `MEMBER.md` to cloud; writes `agent-id` back into frontmatter on create |
-| `pull <name\|agent_id>` | `memberPull` | Download agent as `MEMBER.md`; auto-resolves name → `agent-id` via local frontmatter; syncs journal entries back into `team/<name>/journal/` |
+| `pull <name\|agent_id>` | `memberPull` | Download agent as `MEMBER.md`; auto-resolves name -> `agent-id`; syncs remote journal entries |
+| `goal <name> "..."` | `memberGoal` | Create or update a durable active goal with acceptance criteria |
+| `goal-from-mission <name>` / `mission-goal` | `memberGoalFromMission` | Derive one bounded goal from `MISSION.md` and current member `now.md` |
+| `goal-from-score <name>` / `score-goal` | `memberGoalFromScore` | Derive one active self-improvement goal from Team score evidence |
+| `wake <name>` | `memberWake` | Decide `tick`, `wait`, `ask`, or `stop` from mission, goals, steering, task evidence, and workspace state |
+| `run <name>` | `memberRun` | Run the member's active Mission Runtime through `atris mission run` |
+| `loop <name>` | `memberLoop` | Repeat wake on a bounded cadence with a no-overlap lease, stop file, latest status, and receipts |
+| `tick <name>` | `memberTick` | Propose or reuse the next bounded experiment for the active goal |
+| `review <name> <id>` | `memberReview` | Accept or discard an experiment with proof, optional value, lesson, and next experiment |
+| `block <name> <id>` | `memberBlock` | Mark an experiment blocked with a concrete human/orchestrator ask |
+| `status <name>` | `memberStatus` | Show goal, open experiment, value, ask, recent log, and next command |
+| `archive <name>` | `memberArchive` | Move a member to `atris/team/_archived/` |
+| `purge-archived` | `memberPurgeArchived` | Delete old archived members with explicit confirmation |
 
 ## Frontmatter Schema
 
@@ -65,11 +92,21 @@ tools: []
 
 ```
 atris/team/<name>/
-├── MEMBER.md     # frontmatter + persona/workflow/rules
-├── skills/       # local skills (linked on activate)
-├── tools/        # member-specific tools
-├── context/      # reference docs surfaced on activate
-└── journal/      # per-day logs, round-tripped by push/pull
+├── MEMBER.md      # frontmatter + persona/workflow/rules
+├── MISSION.md     # human-authored North Star and goal-selection contract
+├── skills/        # local skills (linked on activate)
+├── tools/         # member-specific tools
+├── context/       # reference docs surfaced on activate
+└── logs/          # dated receipts and goal/review history
+```
+
+Runtime commands can then add:
+
+```
+atris/team/<name>/
+├── goals.json     # durable goal and experiment state
+├── goals.md       # generated operator readout
+└── now.md         # generated mission runtime view
 ```
 
 ## Push / Pull Round-Trip
@@ -80,17 +117,42 @@ atris/team/<name>/
 - `member pull <name|agent_id>`:
   - Name arg → reads local `MEMBER.md`, resolves `agent-id` from frontmatter (errors if unpushed).
   - GETs `/agent/<id>/export-member`, writes content to `team/<name>/MEMBER.md`.
-  - Then GETs `/agent/<id>/export-journal` and writes each returned file into `team/<name>/journal/` (preserves relative paths).
+  - Then GETs `/agent/<id>/export-journal` and writes each returned file into the member directory (preserves relative paths).
+
+## Goal / Wake / Review Loop
+
+The useful runtime path is local-first and proof-gated:
+
+```text
+MISSION.md + now.md
+  -> atris member goal-from-mission <name>
+  -> goals.json / goals.md
+  -> atris member wake <name> [--execute --confirm-autonomy-policy]
+  -> atris member tick <name>
+  -> atris member review <name> <experiment-id> --accept|--discard --proof "..." --value 1..5
+  -> atris member status <name>
+```
+
+- `goal-from-mission` refuses placeholder missions and creates one active goal from the member North Star.
+- `goal-from-score` can replace direction from Team score evidence and supersedes older open experiments.
+- `wake` checks mission, active goal, open/blocked experiments, steering directives, task projection evidence, recent receipts, and member-scoped dirty work.
+- `loop` repeats wake with a lease so two loops do not run the same member at once.
+- `review` refuses missing proof and records optional value/lesson/next experiment.
 
 ## What's Done
 
 - [x] MEMBER.md frontmatter schema (`name`, `role`, `description`, `version`, `skills`, `permissions`, `tools`, optional `agent-id`)
-- [x] `atris member create <name>` scaffolds `MEMBER.md` + `skills/` + `tools/` + `context/` + `journal/`
+- [x] `atris member create <name>` scaffolds `MEMBER.md` + `MISSION.md` + `skills/` + `tools/` + `context/` + `logs/`
 - [x] `atris member list` shows all members with role, format, skill/context counts
 - [x] `atris member activate <name>` symlinks skills into Claude/Codex/Cursor and prints context, tools, permissions
 - [x] `atris member upgrade <name>` converts flat file → directory format
 - [x] `atris member push <name>` creates or updates cloud agent; writes `agent-id` back to frontmatter on create
 - [x] `atris member pull <name|agent_id>` downloads agent + journal; auto-resolves name via local `agent-id`
+- [x] `atris member goal`, `goal-from-mission`, and `goal-from-score` maintain structured goals and generated readouts
+- [x] `atris member wake` makes one finite decision with a receipt instead of piling work onto open experiments
+- [x] `atris member loop` repeats wake with no-overlap lease, latest status, stop support, and receipts
+- [x] `atris member tick`, `review`, `block`, and `status` form the proof loop for useful member work
+- [x] `atris member run` bridges active member runtime state into `atris mission run`
 - [x] Members reference shared skills (`atris/skills/`) and local skills (`team/<name>/skills/`)
 - [x] Member directories are portable (self-contained)
 - [x] Spec is tool-agnostic in design
@@ -98,5 +160,4 @@ atris/team/<name>/
 ## What's Not Done
 
 - [ ] Open source spec published separately
-- [ ] `atris member link` as distinct from `activate`
 - [ ] Cross-tool testing (Codex, Cursor reading MEMBER.md)

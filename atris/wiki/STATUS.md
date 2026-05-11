@@ -1,18 +1,18 @@
 # Atris Wiki Status
 
-- Last ingest: 2026-04-27
-- Last lint: 2026-04-27 owner/computer propagation sweep
-- Last loop: 2026-04-09 19:12
-- Health: owner/computer/group model is present in concept, index, core system pages, Atris Labs protocol, and business/research templates. `entity_type` is constrained to business/research/project; groups are social/access, not compute.
-- Next move: optional stale-source recompile for older Dorsey-thesis pages; not blocking the owner/computer product model
+- Last ingest: 2026-05-10 00:42
+- Last lint: never
+- Last loop: 2026-05-10 00:42
+- Health: ingest staged from atris/context/_ingest/2026-05-10-0042-help
+- Next move: compile atris/context/_ingest/2026-05-10-0042-help/request.txt into atris/wiki
 
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Brain Compile
 
-- Last compile: 2026-05-07T16:30:37.042Z
-- State rows: 0 raw / 0 valid JSONL
-- Strongest signal: Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.
-- Next move: Capture one operator approval, edit, or rejection as an episode so the brain has a learning trace.
+- Last compile: 2026-05-11T10:49:08.864Z
+- State rows: 233 raw / 233 valid JSONL
+- Strongest signal: 77 scorecard row(s) and 156 episode row(s) are available for feedback-driven learning.
+- Next move: Run `atris brain activate --member <name> --root /Users/keshavrao/arena/empire/atris-cli --verify` to bind the operator and get a concrete work block.
 - Brain status: `atris/brain/STATUS.md`
 - Ledger: `atris/brain/self_improvement_ledger.md`
 <!-- ATRIS_BRAIN_COMPILE:END -->

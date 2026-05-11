@@ -1,111 +1,129 @@
 ---
-type: entity
+type: system
 slug: atris-business
-title: atris business (shared owner + computers)
-sources: [/Users/keshavrao/arena/atris-cli/commands/business.js]
+title: Atris Business Owner Workspaces
+sources:
+  - commands/business.js
+  - commands/sync.js
+  - commands/computer.js
+  - README.md
+  - atris/MAP.md
 created: 2026-04-07
-updated: 2026-04-28
+updated: 2026-05-10
+last_compiled: 2026-05-10
+last_verified: 2026-05-10
+confidence: 0.87
+dependencies:
+  - atris/wiki/concepts/owner-computer-model.md
+  - atris/wiki/systems/atris-cli.md
+  - atris/wiki/concepts/intent-capability-composition.md
+actionability: "Use this before changing `atris business`, business onboarding, business workspace shape, or owner/computer language."
 tags: [product, cloud, atris, computer, groups]
 ---
 
-# atris business
+# Atris Business Owner Workspaces
 
-Atris business is the shared-owner layer inside atris-cli. A `business` is the schema owner for a persistent fleet of computers: workspaces with files, tools, secrets, memory, agents, integrations, and validation loops. The internal owner primitive stays `business`; `entity_type` defines the operating mode, `computer_type` defines the function, and groups define the human surface.
+`atris business` is the shared-owner layer in the CLI. A business owner can be spoken about as a company, lab, collective, community, artist, team, or project, but the command keeps one internal primitive: a shared owner with a first/default computer workspace.
 
-## Product Model Update — 2026-04-27
+## Current Model
 
-Treat `business` as the shared owner/container, not as the only kind of customer language.
-Under the product model in [[atris/wiki/concepts/owner-computer-model.md]], owners have computers:
-
+```text
+business owner
+  -> .atris/business.json
+  -> atris/ workspace
+  -> context + wiki + team + reports + TODO
+  -> optional cloud sync / computer / integrations
 ```
-Owner = User | Business
-Business owns many Computers
-User owns many Computers
+
+The product language should follow the owner:
+
+```text
+Your business runs on Atris.
+Your lab runs on Atris.
+Your collective runs on Atris.
 ```
 
-The schema can keep `business` as the shared owner while `entity_type` stays constrained to three modes:
+Do not split those labels into new base entity types unless they have a distinct reward function. The owner/computer split stays:
 
-- `business` — profit generation
-- `research` — truth generation
-- `project` — artifact generation
+- Owner: user or business/shared owner.
+- Computer: scoped workspace for code, research, CRM, reporting, recruiting, event ops, support, or business ops.
+- Group/team: human membership, approvals, chat, roles, and visibility.
 
-The outward packaging can say business, lab, collective, artist, team, or community, but those are display language or tags.
-Do not turn them into base entity types without a distinct reward function.
+## Local Shape
 
-Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `recruiting`, `event_ops`, or `support`.
-`atris business init <name>` should be understood as creating the business owner plus its first/default business computer.
+Default target:
 
-Groups carry people, chat, membership, posts, approvals, and visibility.
-They attach to owners/computers; they do not replace either one.
-
-## Local shape
-
-```
+```text
 ~/arena/atris-business/<slug>/
-├── .atris/business.json   owner/computer binding metadata
-├── .atris/state/          events, episodes, scorecards, sync receipts
-└── atris/                 the default computer workspace
-    ├── MAP.md
-    ├── TODO.md
-    ├── context/
-    ├── team/
-    ├── wiki/
-    └── reports/
+  .atris/business.json
+  .atris/state/
+  atris/
+    MAP.md
+    TODO.md
+    context/
+    team/
+    wiki/
+    reports/
 ```
 
-`atris business deploy <slug>` pushes this folder to the cloud business owner; the cloud-side computer loop runs against the deployed workspace.
+`createCanonicalBusinessWorkspace()` writes `.atris/business.json` and then calls `syncBusinessCanonical()` so the starter business workspace comes from `templates/business-starter/` without clobbering custom files.
 
-## Legacy template presets
+## Primary Flows
 
-Older product docs describe template presets that ship predefined agents:
+- `atris business init "<name>"` / `workspace`: recommended path; creates the cloud business and local canonical workspace.
+- `atris business create "<name>"`: cloud-only by default; add `--workspace`, `--here`, or `--root <dir>` for local scaffold.
+- `atris business onboard ...`: creates raw intake, staged sources, a starter brief, optional person page, first-loop concept, cheat sheet, one-pager, and starter TODO entry from sparse input.
+- `atris business record <report>`: appends recap state to `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`.
+- `atris business list --local` / `fleet`: local fleet scan for `~/arena/atris-business/*`.
+- `atris business doctor [--fix]`: compares cloud-active businesses with `~/.atris/businesses.json` and local `.atris/business.json` bindings.
+- `atris business team|status|health|audit`: cloud inspection commands.
+- `atris business connect <service>` and `notify <digest|silent|push>`: integration and proactive-notification controls.
+- `atris business deploy <slug>`: legacy push path for `atris/business/<slug>/` content.
 
-| Template | Agents |
-|---|---|
-| **saas** | growth-hacker, product-analyst, support-agent |
-| **agency** | project-manager, researcher, outreach-agent |
-| **ecommerce** | inventory-analyst, marketing-agent, support-agent |
-| **content** | writer, researcher, social-media-agent |
-| **restaurant** | review-responder, social-media-agent, booking-agent |
+## Onboarding Contract
 
-## Capabilities surface
+`onboard` is intentionally tolerant of sparse input. It can use:
 
-- `atris business init <name> [--template ...]` — create the shared owner and first/default computer
-- `atris business create <name> [--template ...]` — create the cloud business record; add `--workspace` for local scaffold
-- `atris business onboard ...` — turn sparse intake or loose files into raw context, starter brief, first workflow, safe next action, and operator brief
-- `atris business record <report-path>` — append a completed recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
-- `atris business status <slug>` — inspect local/cloud binding state
-- `atris business connect <skill> --business <slug>` — wire up integrations (slack, github, notion, etc)
-- `atris business notify <digest|silent|push>` — control proactive notification
-- `atris business deploy <slug>` — push local workspace to cloud
-- `atris business health <slug>` — workspace health, member activity, issues
-- `atris business audit` — across all businesses
+- `--name` to scaffold `.atris/business.json` in a bare folder
+- `--website`, links in notes, and local source files
+- `--contact`, `--role`, and `--email`
+- loose local files outside `atris/` and `.atris/`
 
-## Notification modes (the proactive layer)
+The useful output is not a perfect CRM record. It is a first safe loop:
 
-| Mode | Behavior |
-|---|---|
-| **digest** | One morning briefing per day |
-| **silent** | Log everything, notify nothing |
-| **push** | Interrupt on every action (default, noisy) |
+```text
+intake evidence
+  -> starter brief
+  -> first-loop hypothesis
+  -> operator one-pager
+  -> starter task
+  -> first recap recorded as reward data
+```
 
-This is the **proactive prompting** half of the Dorsey checklist that atris-cli alone is missing.
+## Doctor / Fleet Guardrails
 
-## Why this matters for the Dorsey thesis
+`business doctor` is the safer repair path for binding drift. It can fix local cache rows, but it does not rename folders or mutate cloud data.
 
-atris-business is the closest thing in this codebase to Dorsey's intelligence-layer architecture:
+`business list --local` is pure local. It classifies folders as ready, flat, unbound, nested, bare, or superseded so operators can see which customer/business workspaces are safe to use.
 
-- **Artifact layer** — workspace + context dirs + connected integrations (slack/github/notion bring in real artifacts)
-- **Agent team** — predefined roles, deployed alongside the workspace
-- **Proactive layer** — notification modes mean the agents push, not just pull
-- **Customer signals** — connected integrations (slack, github) mean real-world signals can drive action
+## Relation To The Dorsey Thesis
 
-What's still missing here vs Dorsey:
-- No real-time composition — agents run on schedules / triggers, not on demand from customer queries
-- No automatic roadmap-from-gaps — humans still write BUSINESS.md
-- No money signal — Ramp skill exists but isn't wired into the loop yet
+This system is Atris' owner/computer version of the company-as-intelligence idea:
+
+- artifact layer: local workspace files, context packs, wiki, reports, and task state
+- world model seed: starter briefs, first-loop concepts, and recurring recaps
+- intelligence/action layer: business computer, integrations, and notification modes
+- reward layer: `business record` writes events, episodes, and scorecards
+
+The hard limits are still real:
+
+- No real-time product composition from customer queries yet.
+- No automatic roadmap-from-gaps beyond first-loop and recap artifacts.
+- Money signal is not wired into the business loop by default.
+- Some cloud paths still require login and cannot be validated offline.
 
 ## Cross-References
 
-- [[atris/wiki/systems/atris-cli.md]] — the dev tool that scaffolds these
-- [[atris/wiki/concepts/owner-computer-model.md]] — schema/product language guardrail
-- [[atris/wiki/concepts/intent-capability-composition.md]] — the loop atris-business runs partially
+- [[atris/wiki/concepts/owner-computer-model.md]] - schema and product-language guardrail
+- [[atris/wiki/systems/atris-cli.md]] - CLI layer that exposes the commands
+- [[atris/wiki/concepts/intent-capability-composition.md]] - capability gaps as roadmap signal

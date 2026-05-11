@@ -347,7 +347,29 @@ function getLearningCount() {
 /**
  * Main entry point for `atris learn [subcommand] [args]`
  */
+function showLearnHelp() {
+  console.log('');
+  console.log('  Usage: atris learn [command]');
+  console.log('');
+  console.log('  Commands:');
+  console.log('    (none)     Show recent learnings');
+  console.log('    add        Add a learning interactively');
+  console.log('    log <json> Add programmatically (for agents)');
+  console.log('    search <q> Search learnings by keyword');
+  console.log('    harvest    Extract learnings from journal Notes');
+  console.log('    prune      Check for stale/contradictory entries');
+  console.log('    stats      Show learning statistics');
+  console.log('    export     Export as markdown');
+  console.log('    count      Print learning count (for integrations)');
+  console.log('');
+}
+
 function learnAtris(subcommand, ...args) {
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h' || args.includes('--help') || args.includes('-h')) {
+    showLearnHelp();
+    return;
+  }
+
   const atrisDir = path.join(process.cwd(), 'atris');
   if (!fs.existsSync(atrisDir)) {
     console.error('  ✗ atris/ folder not found. Run "atris init" first.');
@@ -384,20 +406,7 @@ function learnAtris(subcommand, ...args) {
       harvestFromJournals();
       break;
     default:
-      console.log('');
-      console.log('  Usage: atris learn [command]');
-      console.log('');
-      console.log('  Commands:');
-      console.log('    (none)     Show recent learnings');
-      console.log('    add        Add a learning interactively');
-      console.log('    log <json> Add programmatically (for agents)');
-      console.log('    search <q> Search learnings by keyword');
-      console.log('    harvest    Extract learnings from journal Notes');
-      console.log('    prune      Check for stale/contradictory entries');
-      console.log('    stats      Show learning statistics');
-      console.log('    export     Export as markdown');
-      console.log('    count      Print learning count (for integrations)');
-      console.log('');
+      showLearnHelp();
       break;
   }
 }

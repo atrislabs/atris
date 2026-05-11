@@ -29,9 +29,16 @@ function findReviewEngine() {
   return null;
 }
 
-function runReview(args) {
-  const enginePath = findReviewEngine();
-  if (!enginePath) {
+function printMissingReviewEngine(jsonMode) {
+  if (jsonMode) {
+    console.log(JSON.stringify({
+      ok: false,
+      error: 'Review engine not found.',
+      expected: 'atris/business/claude-code-review/workspace/review_engine.py',
+      specialists: ['Security', 'Testing', 'Performance', 'Maintainability', 'Database', 'Async'],
+      install: 'copy review_engine.py to your project',
+    }, null, 2));
+  } else {
     console.error('Review engine not found.');
     console.error('Expected at: atris/business/claude-code-review/workspace/review_engine.py');
     console.error('');
@@ -39,9 +46,20 @@ function runReview(args) {
     console.error('  Security, Testing, Performance, Maintainability, Database, Async');
     console.error('');
     console.error('Install: copy review_engine.py to your project');
-    process.exit(1);
   }
+  process.exit(1);
+}
 
+function exitReviewError(message, jsonMode, extra = {}) {
+  if (jsonMode) {
+    console.log(JSON.stringify({ ok: false, error: message, ...extra }, null, 2));
+  } else {
+    console.error(message);
+  }
+  process.exit(1);
+}
+
+function runReview(args) {
   // Parse args
   let file = null;
   let diffRef = null;
@@ -61,6 +79,11 @@ function runReview(args) {
     }
   }
 
+  const enginePath = findReviewEngine();
+  if (!enginePath) {
+    printMissingReviewEngine(jsonMode);
+  }
+
   // Build command
   const cmdArgs = ['python3', enginePath];
   if (file) {
@@ -74,11 +97,12 @@ function runReview(args) {
 
   if (allMode) {
     // Audit all Python services
-    console.log('Auditing all Python services...\n');
+    if (!jsonMode) console.log('Auditing all Python services...\n');
     const servicesDir = path.join(process.cwd(), 'backend', 'services');
     if (!fs.existsSync(servicesDir)) {
-      console.error('No backend/services/ directory found.');
-      process.exit(1);
+      exitReviewError('No backend/services/ directory found.', jsonMode, {
+        expected: 'backend/services/',
+      });
     }
 
     const files = fs.readdirSync(servicesDir).filter(f => f.endsWith('.py'));
@@ -106,6 +130,19 @@ function runReview(args) {
     }
 
     issues.sort((a, b) => a.score - b.score);
+
+    if (jsonMode) {
+      console.log(JSON.stringify({
+        ok: true,
+        action: 'code_review_all',
+        services: files.length,
+        clean: cleanCount,
+        with_findings: issues.length,
+        total_findings: totalFindings,
+        issues,
+      }, null, 2));
+      return;
+    }
 
     console.log(`AUDIT: ${files.length} services | ${cleanCount} clean | ${issues.length} with findings\n`);
     if (issues.length > 0) {

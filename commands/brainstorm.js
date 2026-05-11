@@ -11,18 +11,7 @@ const pkg = require('../package.json');
 
 async function brainstormAtris() {
   const args = process.argv.slice(3);
-  const targetDir = path.join(process.cwd(), 'atris');
-  if (!fs.existsSync(targetDir)) {
-    throw new Error('atris/ folder not found. Run "atris init" first.');
-  }
-
-  ensureLogDirectory();
-  const { logFile, dateFormatted } = getLogPath();
-  if (!fs.existsSync(logFile)) {
-    createLogFile(logFile, dateFormatted);
-  }
-
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris brainstorm [idea] [--cloud]');
     console.log('');
@@ -35,6 +24,17 @@ async function brainstormAtris() {
     console.log('  --no-cloud   Force local-only mode (skip AtrisOS).');
     console.log('');
     return;
+  }
+
+  const targetDir = path.join(process.cwd(), 'atris');
+  if (!fs.existsSync(targetDir)) {
+    throw new Error('atris/ folder not found. Run "atris init" first.');
+  }
+
+  ensureLogDirectory();
+  const { logFile, dateFormatted } = getLogPath();
+  if (!fs.existsSync(logFile)) {
+    createLogFile(logFile, dateFormatted);
   }
 
   const useCloudJournal = args.includes('--cloud') && !args.includes('--no-cloud');

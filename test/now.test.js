@@ -1,10 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ensureNowFile, nowAtris, refreshNowFile, renderDefaultNow, renderPortfolioNow } = require('../commands/now');
+const {
+  countJournalCompletedReceipts,
+  countOpenTodoItems,
+  ensureNowFile,
+  formatLocalDate,
+  nowAtris,
+  refreshNowFile,
+  renderDefaultNow,
+  renderPortfolioNow,
+} = require('../commands/now');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-now-test-'));
@@ -52,13 +62,94 @@ test('refreshNowFile regenerates now.md from current local signals', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n- **T1:** Ship it\n- **T2:** Validate it\n', 'utf8');
+    const date = formatLocalDate(new Date());
+    const journalDir = path.join(dir, 'atris', 'logs', date.slice(0, 4));
+    fs.mkdirSync(journalDir, { recursive: true });
+    fs.writeFileSync(path.join(journalDir, `${date}.md`), [
+      '# Log',
+      '',
+      '## Notes',
+      '',
+      '- 9:00 am',
+      '  Proof: shipped the proof-backed change.',
+      '',
+    ].join('\n'), 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'now.md'), 'old', 'utf8');
 
     refreshNowFile(dir);
     const content = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
 
-    assert.match(content, /TODO items visible: 2/);
+    assert.match(content, /Open TODO items: 2/);
+    assert.match(content, /Completed receipts today: 1/);
     assert.doesNotMatch(content, /^old$/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('countOpenTodoItems ignores rendered completed task rows', () => {
+  const dir = makeTempDir();
+  try {
+    const todoPath = path.join(dir, 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '- **[CLI-2]** Active task [brain]',
+      '',
+      '## Blocked',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '- **[CLI-1]** Completed task [brain]',
+      '',
+    ].join('\n'), 'utf8');
+
+    assert.equal(countOpenTodoItems(todoPath), 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('countJournalCompletedReceipts counts proof receipts before legacy completed markers', () => {
+  const dir = makeTempDir();
+  try {
+    const journalPath = path.join(dir, 'journal.md');
+    fs.writeFileSync(journalPath, [
+      '# Log',
+      '',
+      '## Notes',
+      '',
+      '- 9:00 am',
+      '  Proof so far: partial verifier output.',
+      '',
+      '- 9:15 am',
+      '  Proof: shipped with verifier output.',
+      '',
+      '- **C1:** Legacy completed receipt',
+      '',
+    ].join('\n'), 'utf8');
+
+    assert.equal(countJournalCompletedReceipts(journalPath), 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('countJournalCompletedReceipts supports legacy completed markers', () => {
+  const dir = makeTempDir();
+  try {
+    const journalPath = path.join(dir, 'journal.md');
+    fs.writeFileSync(journalPath, '- **C1:** Done\n- **C2:** Also done\n', 'utf8');
+
+    assert.equal(countJournalCompletedReceipts(journalPath), 2);
   } finally {
     cleanup(dir);
   }
@@ -71,6 +162,19 @@ test('renderDefaultNow refuses non-Atris workspaces', () => {
   } finally {
     cleanup(dir);
   }
+});
+
+test('now dates use local calendar day near UTC boundary', () => {
+  const output = execFileSync(process.execPath, [
+    '-e',
+    "const { formatLocalDate } = require('./commands/now'); console.log(formatLocalDate(new Date('2026-05-10T03:30:00Z')));",
+  ], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, TZ: 'America/Los_Angeles' },
+    encoding: 'utf8',
+  }).trim();
+
+  assert.equal(output, '2026-05-09');
 });
 
 test('ensureNowFile creates a portfolio now.md for a parent of Atris workspaces', () => {
@@ -88,8 +192,42 @@ test('ensureNowFile creates a portfolio now.md for a parent of Atris workspaces'
 
     assert.equal(result.created, true);
     assert.match(content, /portfolio of Atris workspaces/);
-    assert.match(content, /pallet: Pallet Map; 1 visible TODO item/);
-    assert.match(content, /parked: Parked Map; 0 visible TODO items/);
+    assert.match(content, /pallet: Pallet Map; 1 open TODO item/);
+    assert.match(content, /parked: Parked Map; 0 open TODO items/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('renderPortfolioNow ignores completed rows in child TODO views', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'child', 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'child', 'atris', 'MAP.md'), '# Child Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'child', 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Blocked',
+      '',
+      '(Empty)',
+      '',
+      '## Completed',
+      '',
+      '- **[CLI-1]** Completed task [brain]',
+      '',
+    ].join('\n'), 'utf8');
+
+    const content = renderPortfolioNow(dir);
+
+    assert.match(content, /child: Child Map; 0 open TODO items/);
   } finally {
     cleanup(dir);
   }
