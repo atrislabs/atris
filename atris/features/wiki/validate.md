@@ -1,29 +1,43 @@
 ---
-last_compiled: 2026-04-20
+last_compiled: 2026-05-10
 sources:
-  - lib/wiki.js
-  - commands/wiki.js
-  - commands/init.js
-  - commands/activate.js
-  - commands/pull.js
-  - commands/push.js
-  - bin/atris.js
-  - test/commands.test.js
+  - lib/wiki.js:4-24 (public/private wiki roots)
+  - lib/wiki.js:192-214 (wiki and context scaffold)
+  - lib/wiki.js:246-316 (staged ingest packs and manifests)
+  - lib/wiki.js:436-619 (stale, orphan, and agent-readable checks)
+  - lib/wiki.js:620-805 (status/log writes and prompt builders)
+  - commands/wiki.js:137-215 (local/private ingest and query)
+  - commands/wiki.js:220-358 (lint, search, log, verify)
+  - commands/wiki.js:360-463 (wiki dispatch and help)
+  - commands/loop.js:1-112 (local wiki upkeep loop)
+  - commands/init.js:360-364 (wiki scaffold during init)
+  - commands/activate.js:141-158 (session-start wiki status)
+  - commands/pull.js:197-198 (wiki prefix normalization)
+  - commands/push.js:185-186 (wiki prefix normalization)
+  - bin/atris.js:318-321 (top-level wiki help)
+  - bin/atris.js:1310-1323 (wiki, ingest, query, lint, loop routes)
+  - test/commands.test.js:4002-4288 (wiki regression coverage)
   - atris/skills/wiki/SKILL.md
 ---
 
 # Wiki — Validation
 
-> **Status:** v2 — shipped 2026-04-07
-> **Exit condition:** local-first wiki flow works, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, and this repo dogsfoods it.
+> **Status:** v2 — local-first wiki plus upkeep loop
+> **Validated:** 2026-05-10
+> **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
 
 ## Checks
 
 - [x] `atris ingest` scaffolds `atris/wiki/` locally
+- [x] `atris ingest` stages source packs under `atris/context/_ingest/` with manifest receipts
+- [x] `atris wiki ingest --private` scaffolds `.atris/presidio/`
 - [x] `atris query` defaults to local wiki mode
 - [x] `atris lint` defaults to local wiki mode
 - [x] `atris wiki search` reads `atris/wiki/index.md`
 - [x] `atris wiki log` reads `atris/wiki/log.md`
+- [x] `atris wiki verify` checks sources, `last_compiled`, `last_verified`, confidence, dependencies, actionability, and stale sources
+- [x] `atris loop` flags stale wiki pages, orphan pages, and next ingest candidates while refreshing `STATUS.md` and `log.md`
+- [x] `atris wiki loop` aliases the same upkeep analysis
 - [x] `pull --only wiki` and `push --only wiki` normalize to `atris/wiki/`
 - [x] `atris init` creates the wiki scaffold
 - [x] `atris activate` reads `atris/wiki/STATUS.md`
@@ -31,49 +45,27 @@ sources:
 - [x] Agent/spec docs mention the wiki loop
 - [x] `atris-cli` itself has a seeded `atris/wiki/`
 
-## Validation Passes
+## Current Verification
 
-### Pass 1
+```bash
+node --test test/commands.test.js --test-name-pattern 'wiki|loop'
+node -c lib/wiki.js
+node -c commands/wiki.js
+node -c commands/loop.js
+node bin/atris.js wiki --help
+node bin/atris.js loop --dry-run
+```
 
-- Command: `npm test -- test/commands.test.js`
-- Result: pass
+`npm test` remains the full regression gate; the focused command above covers the wiki behavior directly.
 
-### Pass 2
+## Known Content Debt
 
-- Command: `npm test`
-- Result: pass
-
-### Pass 3
-
-- Command: `node bin/atris.js ingest README.md` + `query` + `lint` in a fresh temp directory
-- Result: pass
-
-### Pass 4
-
-- Command: `npm test`
-- Result: pass
-
-### Pass 5
-
-- Command: `node bin/atris.js ingest README.md` + scaffold check + `query` + `lint` in a second fresh temp directory
-- Result: pass
-
-### Pass 6
-
-- Command: `npm test -- test/cli-smoke.test.js`
-- Result: pass
-
-### Pass 7
-
-- Command: `npm test`
-- Result: pass
-
-### Pass 8
-
-- Command: `init -> activate -> ingest -> query -> lint` in a fresh temp workspace
-- Result: pass
+- `node bin/atris.js wiki verify` currently fails this repo's wiki content: 15 pages, 84 findings.
+- The top causes are missing `last_compiled`, `last_verified`, confidence, dependencies, actionability, stale sources, and 2 orphan pages.
+- `node bin/atris.js loop --dry-run` is the current remediation queue: 13 stale pages, starting with `atris/wiki/people/jack-dorsey.md`.
 
 ## Notes
 
-- Cron-driven upkeep and vibe-check interviewing are intentionally not part of v1.
 - `log` and `search` stay under `atris wiki` because the top-level CLI already uses those names for journals.
+- Cloud ingest/query/lint remains opt-in with `--cloud`; cloud wiki verify is intentionally local-first after pull.
+- Cron-driven upkeep and vibe-check interviewing are intentionally not part of this slice.

@@ -1,8 +1,14 @@
 # Customer Skill Zones
 
-> **Status:** planning
+> **Status:** partially shipped / private publish parked
 > **Created:** 2026-02-16
-> **Last Updated:** 2026-02-16
+> **Last Updated:** 2026-05-10
+
+## 2026-05-10 Reality Check
+
+The narrow scaffold path is shipped: `atris skill create <customer>/<skill-name>` writes `atris/customers/<customer>/skills/<skill-name>/SKILL.md`.
+
+The larger private plugin workflow is not shipped. `atris plugin build` and `atris plugin publish` still package/publish the universal `atris/skills` workspace only; `--customer` is parked until a live customer deployment needs it.
 
 ---
 

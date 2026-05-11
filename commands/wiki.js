@@ -166,6 +166,53 @@ function printLocalPrompt(title, prompt, wikiRoot, details = []) {
   console.log('');
 }
 
+function hasHelpFlag(args) {
+  return args.includes('--help') || args.includes('-h') || args[0] === 'help';
+}
+
+function printWikiHelp(scope = null) {
+  const normalized = scope === 'ingest' || scope === 'query' || scope === 'lint' || scope === 'search' || scope === 'log' || scope === 'loop' || scope === 'verify'
+    ? scope
+    : null;
+
+  console.log('');
+  if (normalized === 'ingest') {
+    console.log('Usage: atris ingest <path>');
+    console.log('Usage: atris wiki ingest [--private|--cloud] [business] <path>');
+    console.log('');
+    console.log('Stage source files into the local wiki context pack.');
+  } else if (normalized === 'query') {
+    console.log('Usage: atris query "question"');
+    console.log('Usage: atris wiki query [--private|--cloud] [business] "question"');
+    console.log('');
+    console.log('Build a local or cloud wiki query prompt.');
+  } else if (normalized === 'lint') {
+    console.log('Usage: atris lint');
+    console.log('Usage: atris wiki lint [--private|--cloud] [business]');
+    console.log('');
+    console.log('Build a local or cloud wiki lint prompt.');
+  } else {
+    console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify> [business] [args]');
+    console.log('');
+    console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
+    console.log('  query  "question"             Local-first query against atris/wiki/');
+    console.log('  lint                          Local-first lint for atris/wiki/');
+    console.log('  search [business] <term>      Search local atris/wiki/index.md');
+    console.log('  log    [business] [N]         Show recent atris/wiki/log.md entries');
+    console.log('  loop                          Run local wiki upkeep analysis and refresh STATUS/log');
+    console.log('  verify                        Check agent-readable source/verification metadata');
+  }
+  console.log('');
+  console.log('Flags:');
+  console.log('  --cloud                       Route ingest/query/lint to the cloud workspace');
+  console.log('  --local                       Be explicit about local mode');
+  console.log(`  --private                     Use local private wiki at ${PRIVATE_WIKI_ROOT}/`);
+  console.log('  --help, -h                    Show this help');
+  console.log('');
+  console.log('Business is auto-detected from .atris/business.json for cloud mode if omitted.');
+  console.log('');
+}
+
 async function wikiIngest(mode, slug, sourceValue) {
   if (!sourceValue) {
     console.error('Usage: atris wiki ingest [business] <path>');
@@ -359,6 +406,11 @@ function wikiVerify(mode, slug) {
 }
 
 async function wikiCommand(subcommand, ...args) {
+  if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h' || hasHelpFlag(args)) {
+    printWikiHelp(subcommand);
+    return;
+  }
+
   const { mode, args: cleanArgs } = parseModeArgs(args);
 
   switch (subcommand) {
@@ -430,22 +482,7 @@ async function wikiCommand(subcommand, ...args) {
       break;
     }
     default:
-      console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify> [business] [args]');
-      console.log('');
-      console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
-      console.log('  query  "question"             Local-first query against atris/wiki/');
-      console.log('  lint                          Local-first lint for atris/wiki/');
-      console.log('  search [business] <term>      Search local atris/wiki/index.md');
-      console.log('  log    [business] [N]         Show recent atris/wiki/log.md entries');
-      console.log('  loop                          Run local wiki upkeep analysis and refresh STATUS/log');
-      console.log('  verify                        Check agent-readable source/verification metadata');
-      console.log('');
-      console.log('Flags:');
-      console.log('  --cloud                       Route ingest/query/lint to the cloud workspace');
-      console.log('  --local                       Be explicit about local mode');
-      console.log(`  --private                     Use local private wiki at ${PRIVATE_WIKI_ROOT}/`);
-      console.log('');
-      console.log('Business is auto-detected from .atris/business.json for cloud mode if omitted.');
+      printWikiHelp();
   }
 }
 
