@@ -16,7 +16,7 @@ Schedules the recurring autopilot heartbeat. One tick fires roughly every 13–1
 ## What it does
 
 1. Calls `CronCreate` with a recurring schedule (off-clock minute to avoid fleet sync at :00 / :30)
-2. The cron prompt invokes `/autopilot`, which runs ONE plan→do→review tick on the next-priority work
+2. The cron prompt first invokes `atris mission run --due --max-ticks 1 --complete-on-pass`; if no mission is due, it invokes `/autopilot`
 3. Returns the cron job id so the user can stop it later with `CronDelete`
 4. Lists the active cron jobs via `CronList` so the user can see the heartbeat is alive
 
@@ -28,7 +28,7 @@ The agent then:
 
 1. Calls `CronCreate` with these args (use whatever off-clock minute you land on, do not pin to :00 or :30):
    - `cron`: `"*/13 * * * *"` (every 13 min) for tight loops, or `"7 * * * *"` (hourly at :07) for slow loops
-   - `prompt`: `"/autopilot — run one tick. find the next thing in atris/TODO.md or the inbox, plan it, do it, review it. one task only. then stop. do not start a conversation."`
+   - `prompt`: `"First run: atris mission run --due --max-ticks 1 --complete-on-pass. If it reports no_due_mission, run /autopilot for one tick. One bounded goal only, then stop. Do not start a conversation."`
    - `recurring`: `true`
    - `durable`: `false` (in-memory only — gone when this Claude session ends)
 2. After creating, calls `CronList` and shows the user the active cron jobs.
@@ -51,14 +51,15 @@ If the user says "kill all loops", call `CronList`, then `CronDelete` for every 
 
 ## Why this is the heartbeat
 
-`/autopilot` is one tick. `/loop` is the schedule. Together they are the heartbeat:
+`atris mission` is the north star. `/autopilot` is the fallback tick. `/loop` is the schedule:
 
 ```
-/loop  →  CronCreate('*/13 * * * *', '/autopilot')
+/loop  →  CronCreate('*/13 * * * *', 'atris mission run --due ... || /autopilot')
               ↓
           every ~13 min while Claude Code is idle:
               ↓
-          /autopilot  →  one tick
+          due mission? → one mission tick
+          no mission?  → one autopilot tick
               ↓
           plan → do → review → stop
               ↓

@@ -68,10 +68,18 @@ const fetchMyAgents = (token) => _fetchMyAgents(token, apiRequestJson);
 const displayAccountSummary = () => _displayAccountSummary(apiRequestJson);
 
 // Run update check in background (non-blocking)
-// Skip for 'version' and 'update' commands to avoid redundant messages
+// Skip for 'version', 'update', and help commands to avoid redundant messages or help side effects.
 let updateCheckPromise = null;
-const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER);
-if (!skipUpdateCheck && (!process.argv[2] || (process.argv[2] && !['version', 'update', 'help'].includes(process.argv[2])))) {
+const updateCommand = process.argv[2];
+const updateArgs = process.argv.slice(3);
+const helpRequested = updateCommand === 'help'
+  || updateCommand === '--help'
+  || updateCommand === '-h'
+  || updateArgs.includes('--help')
+  || updateArgs.includes('-h')
+  || updateArgs[0] === 'help';
+const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested);
+if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
       // Show notification if update available (after command completes)
@@ -175,10 +183,24 @@ function loadActiveMissions(workspaceDir) {
   }
 }
 
+function showSearchHelp() {
+  console.log('Usage: atris search <keyword>');
+  console.log('Example: atris search auth');
+}
+
 function searchJournal(keyword) {
   if (!keyword) {
-    console.log('Usage: atris search <keyword>');
-    console.log('Example: atris search auth');
+    showSearchHelp();
+    process.exit(1);
+  }
+
+  if (keyword === '--help' || keyword === '-h') {
+    showSearchHelp();
+    process.exit(0);
+  }
+
+  if (process.argv.slice(4).includes('--help') || process.argv.slice(4).includes('-h')) {
+    showSearchHelp();
     process.exit(1);
   }
 
@@ -480,6 +502,216 @@ function showReviewHelp() {
   console.log('');
 }
 
+function showStatusHelp() {
+  console.log('');
+  console.log('Usage: atris status [--quick] [--json] [--verbose]');
+  console.log('');
+  console.log('Description:');
+  console.log('  Show the local Atris workspace task, inbox, completion, lesson, and team status.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --quick, -q    Print one compact status line.');
+  console.log('  --json         Print machine-readable workspace status.');
+  console.log('  --verbose, -v  Print the legacy visual task board.');
+  console.log('  --help, -h     Show this help.');
+  console.log('');
+}
+
+function showAnalyticsHelp() {
+  console.log('');
+  console.log('Usage: atris analytics');
+  console.log('');
+  console.log('Description:');
+  console.log('  Summarize local journal completions, inbox trend, and activity patterns.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showActivateHelp() {
+  console.log('');
+  console.log('Usage: atris activate');
+  console.log('');
+  console.log('Description:');
+  console.log('  Load workspace context, recent completions, TODO, MAP, journal, and wiki status.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showNextHelp(commandName = 'next') {
+  console.log('');
+  console.log(`Usage: atris ${commandName} [request]`);
+  console.log('');
+  console.log('Description:');
+  console.log('  Auto-advance to the next workflow step, or route a request through the Atris entry.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showVerifyHelp() {
+  console.log('');
+  console.log('Usage: atris verify [task]');
+  console.log('Usage: atris verify <feature-slug> --section <name>');
+  console.log('');
+  console.log('Description:');
+  console.log('  Validate workspace health, a specific task, or a feature rubric section.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --section <name>  Run a fenced bash check from atris/features/<slug>/validate.md.');
+  console.log('  --help, -h        Show this help.');
+  console.log('');
+}
+
+function showUpdateHelp(commandName = 'update') {
+  console.log('');
+  console.log(`Usage: atris ${commandName} [--all] [--dry-run] [--force]`);
+  console.log('');
+  console.log('Description:');
+  console.log('  Sync Atris workspace files from the installed CLI templates.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --all        Update Atris files across projects under the current tree.');
+  console.log('  --dry-run    Preview update work without writing files.');
+  console.log('  --force      Overwrite existing template files where supported.');
+  console.log('  --help, -h       Show this help.');
+  console.log('');
+}
+
+function showUpgradeHelp() {
+  console.log('');
+  console.log('Usage: atris upgrade');
+  console.log('');
+  console.log('Description:');
+  console.log('  Check npm for the latest Atris CLI and install it globally if newer.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h       Show this help.');
+  console.log('');
+}
+
+function showReleaseHelp() {
+  console.log('');
+  console.log('Usage: atris release [--dry-run]');
+  console.log('');
+  console.log('Description:');
+  console.log('  Draft or publish a release from local git history.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --dry-run    Print the planned release without committing, tagging, or pushing.');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showAuthHelp(commandName) {
+  const usage = {
+    login: 'Usage: atris login [--token <token>] [--force]',
+    logout: 'Usage: atris logout',
+    whoami: 'Usage: atris whoami',
+    switch: 'Usage: atris switch [account] [--global]',
+    use: 'Usage: atris use [account]',
+    accounts: 'Usage: atris accounts [add|remove <account>|remove --all]',
+  }[commandName] || 'Usage: atris login|logout|whoami';
+  console.log('');
+  console.log(usage);
+  console.log('');
+  console.log('Description:');
+  if (commandName === 'login') {
+    console.log('  Sign in with browser OAuth or a pasted API token.');
+  } else if (commandName === 'logout') {
+    console.log('  Sign out of the current Atris account.');
+  } else if (commandName === 'whoami') {
+    console.log('  Show the active Atris account.');
+  } else if (commandName === 'switch') {
+    console.log('  Switch the active account globally or for this terminal session.');
+  } else if (commandName === 'use') {
+    console.log('  Print an ATRIS_PROFILE export for per-terminal account use.');
+  } else if (commandName === 'accounts') {
+    console.log('  List, add, or remove saved Atris accounts.');
+  }
+  console.log('');
+  console.log('Options:');
+  if (commandName === 'login') {
+    console.log('  --token <token>  Save an API token without prompting.');
+    console.log('  --force, -f      Re-run login even if credentials already exist.');
+  } else if (commandName === 'switch') {
+    console.log('  --global, -g     Switch the account for all terminals.');
+  }
+  console.log('  --help, -h       Show this help.');
+  console.log('');
+}
+
+function showIntegrationsHelp() {
+  console.log('');
+  console.log('Usage: atris integrations');
+  console.log('');
+  console.log('Description:');
+  console.log('  Show connection status for Gmail, Calendar, Slack, Twitter, GitHub, and iMessage.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h       Show this help.');
+  console.log('');
+}
+
+function showSetupHelp() {
+  console.log('');
+  console.log('Usage: atris setup');
+  console.log('');
+  console.log('Description:');
+  console.log('  Guided first-time setup: checks Node.js, login, businesses, and pull.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showServeHelp() {
+  console.log('');
+  console.log('Usage: atris serve [--agent <agent_id>] [--allow-bash]');
+  console.log('');
+  console.log('Description:');
+  console.log('  Start the local AI Computer bridge for the current directory.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --agent <agent_id>  Bind the session to a specific cloud agent.');
+  console.log('  --allow-bash        Allow remote bash operations in this directory.');
+  console.log('  --help, -h          Show this help.');
+  console.log('');
+}
+
+function showLoopHelp() {
+  console.log('');
+  console.log('Usage: atris loop [--dry-run] [--json] [--limit=N]');
+  console.log('');
+  console.log('Description:');
+  console.log('  Inspect wiki upkeep state and optionally refresh wiki status/log files.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --dry-run    Preview wiki loop state without writing files.');
+  console.log('  --json       Print the loop report as JSON.');
+  console.log('  --limit=N    Limit suggested source count.');
+  console.log('  --help, -h   Show this help.');
+  console.log('');
+}
+
+function showCleanHelp() {
+  console.log('');
+  console.log('Usage: atris clean [--dry-run]');
+  console.log('');
+  console.log('Description:');
+  console.log('  Check workspace housekeeping: stale tasks, MAP.md refs, old journals,');
+  console.log('  empty TODO sections, and stale wiki pages.');
+  console.log('');
+  console.log('Options:');
+  console.log('  --dry-run, -n   Preview cleanup without changing files.');
+  console.log('  --help, -h      Show this help.');
+  console.log('');
+}
+
 function showAutopilotHelp() {
   console.log('');
   console.log('Usage: atris autopilot [description] [options]');
@@ -521,7 +753,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
-                       'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
@@ -585,6 +817,17 @@ if (!command || !knownCommands.includes(command)) {
 
 if (!command || !knownCommands.includes(command)) {
   const userInput = process.argv.slice(2).join(' ');
+
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify({
+      ok: false,
+      error: command ? `unknown command: ${command}` : 'unknown command',
+      command: command || null,
+      input: userInput,
+      usage: 'atris help',
+    }, null, 2));
+    process.exit(2);
+  }
 
   // Warn if this looks like a mistyped single-word command (no spaces)
   if (command && !userInput.includes(' ')) {
@@ -728,6 +971,7 @@ async function interactiveEntry(userInput) {
     if (preview.length > 0) {
       console.log('\nCompleted (history):');
       preview.forEach((t) => console.log(`- ${t}`));
+      console.log('Completed tasks are history, not pending review.');
     }
   }
 
@@ -763,7 +1007,6 @@ async function interactiveEntry(userInput) {
   }
 
   if (completedTasksCount > 0) {
-    console.log('\nCompleted tasks are history, not pending review.');
     console.log('Next: atris plan (new work)');
     return;
   }
@@ -931,9 +1174,18 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
-  Promise.resolve(require('../commands/brain').brainCommand(process.argv.slice(3)))
+  Promise.resolve()
+    .then(() => require('../commands/brain').brainCommand(process.argv.slice(3)))
     .then(() => process.exit(0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .catch((err) => {
+      const message = err.message || String(err);
+      if (process.argv.slice(3).includes('--json')) {
+        console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+      } else {
+        console.error(`\n✗ Error: ${message}`);
+      }
+      process.exit(1);
+    });
 } else if (command === 'agent') {
   agentAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'log') {
@@ -961,10 +1213,25 @@ if (command === 'init') {
     logCmd();
   }
 } else if (command === 'now') {
-  require('../commands/now').nowAtris(process.argv.slice(3));
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    require('../commands/now').nowAtris(args);
+    process.exit(0);
+  }
+  require('../commands/now').nowAtris(args);
 } else if (command === 'activate') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showActivateHelp();
+    process.exit(0);
+  }
   activateCmd();
 } else if (command === 'update' || command === 'sync') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showUpdateHelp(command);
+    process.exit(0);
+  }
   const firstSyncArg = process.argv[3];
   const isBusinessSync = command === 'sync'
     && (
@@ -987,6 +1254,11 @@ if (command === 'init') {
     syncCmd();
   }
 } else if (command === 'upgrade') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showUpgradeHelp();
+    process.exit(0);
+  }
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat') {
   chatAtris()
@@ -1001,6 +1273,10 @@ if (command === 'init') {
   // Start the local AI Computer bridge — make this directory addressable
   // by cloud agents via the Atris API
   const serveArgs = process.argv.slice(3);
+  if (serveArgs.includes('--help') || serveArgs.includes('-h') || serveArgs[0] === 'help') {
+    showServeHelp();
+    process.exit(0);
+  }
   const serveOptions = {};
   for (let i = 0; i < serveArgs.length; i++) {
     if (serveArgs[i] === '--agent' && serveArgs[i + 1]) {
@@ -1018,16 +1294,46 @@ if (command === 'init') {
 } else if (command === 'version') {
   require('../commands/version').showVersion();
 } else if (command === 'login') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('login');
+    process.exit(0);
+  }
   require('../commands/auth').loginAtris();
 } else if (command === 'logout') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('logout');
+    process.exit(0);
+  }
   require('../commands/auth').logoutAtris();
 } else if (command === 'whoami') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('whoami');
+    process.exit(0);
+  }
   require('../commands/auth').whoamiAtris();
 } else if (command === 'switch') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('switch');
+    process.exit(0);
+  }
   require('../commands/auth').switchAccount();
 } else if (command === 'use') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('use');
+    process.exit(0);
+  }
   require('../commands/auth').useAccount();
 } else if (command === 'accounts') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAuthHelp('accounts');
+    process.exit(0);
+  }
   require('../commands/auth').accountsCmd();
 } else if (command === '_resolve') {
   // Hidden: resolve a profile name query → print exact profile name
@@ -1128,6 +1434,10 @@ if (command === 'init') {
     });
 } else if (command === 'next' || command === 'atris') {
   const rawArgs = process.argv.slice(3);
+  if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs[0] === 'help') {
+    showNextHelp(command);
+    process.exit(0);
+  }
   const userInput = rawArgs.filter((arg) => !arg.startsWith('-')).join(' ').trim();
   interactiveEntry(userInput || null)
     .then(() => process.exit(0))
@@ -1172,6 +1482,11 @@ if (command === 'init') {
       process.exit(1);
     });
 } else if (command === 'status') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showStatusHelp();
+    process.exit(0);
+  }
   let subcommand = process.argv[3];
   if (subcommand && !subcommand.startsWith('-')) {
     require('../commands/context-sync').businessStatus(subcommand)
@@ -1184,11 +1499,26 @@ if (command === 'init') {
     statusCmd(isQuick, isJson, verbose);
   }
 } else if (command === 'analytics') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showAnalyticsHelp();
+    process.exit(0);
+  }
   require('../commands/analytics').analyticsAtris();
 } else if (command === 'clean') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h')) {
+    showCleanHelp();
+    process.exit(0);
+  }
   const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
   require('../commands/clean').cleanAtris({ dryRun });
 } else if (command === 'verify') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showVerifyHelp();
+    process.exit(0);
+  }
   const sectionIdx = process.argv.indexOf('--section');
   if (sectionIdx > 0 && process.argv[sectionIdx + 1]) {
     const slug = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
@@ -1199,6 +1529,11 @@ if (command === 'init') {
   const taskId = process.argv[3] || null;
   require('../commands/verify').verifyAtris(taskId);
 } else if (command === 'release') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showReleaseHelp();
+    process.exit(0);
+  }
   const dryRun = process.argv.includes('--dry-run');
   require('../commands/release').releaseAtris({ dryRun })
     .then(() => process.exit(0))
@@ -1242,6 +1577,11 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'integrations') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showIntegrationsHelp();
+    process.exit(0);
+  }
   const { integrationsStatus } = require('../commands/integrations');
   integrationsStatus()
     .then(() => process.exit(0))
@@ -1339,6 +1679,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'loop') {
   const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showLoopHelp();
+    process.exit(0);
+  }
   require('../commands/loop').loopAtris(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
@@ -1360,6 +1704,11 @@ if (command === 'init') {
   const args = process.argv.slice(4);
   require('../commands/proof').proofCommand(subcommand, ...args);
 } else if (command === 'setup') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    showSetupHelp();
+    process.exit(0);
+  }
   require('../commands/setup').setupAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });

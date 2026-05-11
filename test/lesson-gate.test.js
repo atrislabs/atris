@@ -57,6 +57,23 @@ describe('proposeCandidateHorizons filter path', () => {
   let proposeCandidateHorizons;
   let origExecSync;
 
+  function writeTodayJournal(atrisDir) {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const logsDir = path.join(atrisDir, 'logs', String(yyyy));
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(path.join(logsDir, `${yyyy}-${mm}-${dd}.md`), [
+      `# Log — ${yyyy}-${mm}-${dd}`,
+      '',
+      '## Notes',
+      '',
+      '## Inbox',
+      '',
+    ].join('\n'));
+  }
+
   before(() => {
     // Monkey-patch child_process.execSync BEFORE re-requiring autopilot
     // so the destructured binding inside autopilot captures the mock.
@@ -99,29 +116,16 @@ describe('proposeCandidateHorizons filter path', () => {
     const atrisDir = path.join(tmpDir, 'atris');
     fs.mkdirSync(atrisDir, { recursive: true });
 
-    // Create lessons.md with one lesson that references a nonexistent file
+    // Create lessons.md with one fail lesson that references a nonexistent file
     const lessonsContent = [
       '# lessons.md',
       '',
-      '- **[2026-04-10] ghost-missing-bug** — pass — The `ghost/missing.js:42` had a bad export.',
+      '- **[2026-04-10] ghost-missing-bug** — fail — The `ghost/missing.js:42` had a bad export.',
     ].join('\n');
     fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsContent);
 
     // Create today's journal so getIdleTickCount doesn't crash
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const logsDir = path.join(atrisDir, 'logs', String(yyyy));
-    fs.mkdirSync(logsDir, { recursive: true });
-    fs.writeFileSync(path.join(logsDir, `${yyyy}-${mm}-${dd}.md`), [
-      `# Log — ${yyyy}-${mm}-${dd}`,
-      '',
-      '## Notes',
-      '',
-      '## Inbox',
-      '',
-    ].join('\n'));
+    writeTodayJournal(atrisDir);
 
     // All 3 candidates match the resolved lesson slug → should throw
     await assert.rejects(
@@ -140,6 +144,67 @@ describe('proposeCandidateHorizons filter path', () => {
     assert.ok(
       updatedLessons.includes('[resolved]'),
       'lessons.md should contain [resolved] tag after filtering'
+    );
+  });
+
+  it('throws when all candidates match a pass lesson without tagging it resolved', async () => {
+    const atrisDir = path.join(tmpDir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+
+    const lessonsContent = [
+      '# lessons.md',
+      '',
+      '- **[2026-04-10] ghost-missing-bug** — pass — Shipped already; no file refs needed.',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsContent);
+    writeTodayJournal(atrisDir);
+
+    await assert.rejects(
+      () => proposeCandidateHorizons(tmpDir),
+      (err) => {
+        assert.ok(
+          err.message.includes('all candidates were from resolved lessons'),
+          `expected "all candidates were from resolved lessons", got: ${err.message}`
+        );
+        return true;
+      }
+    );
+
+    const updatedLessons = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
+    assert.ok(
+      !updatedLessons.includes('[resolved]'),
+      'pass lessons should be treated as shipped without mutating lessons.md'
+    );
+  });
+
+  it('throws when all candidates match a pre-tagged resolved lesson', async () => {
+    const atrisDir = path.join(tmpDir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+
+    const lessonsContent = [
+      '# lessons.md',
+      '',
+      '- **[2026-04-10] ghost-missing-bug** [resolved] — fail — The `ghost/missing.js:42` had a bad export.',
+    ].join('\n');
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsContent);
+    writeTodayJournal(atrisDir);
+
+    await assert.rejects(
+      () => proposeCandidateHorizons(tmpDir),
+      (err) => {
+        assert.ok(
+          err.message.includes('all candidates were from resolved lessons'),
+          `expected "all candidates were from resolved lessons", got: ${err.message}`
+        );
+        return true;
+      }
+    );
+
+    const updatedLessons = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
+    assert.strictEqual(
+      (updatedLessons.match(/\[resolved\]/g) || []).length,
+      1,
+      'pre-tagged resolved lessons should not be retagged'
     );
   });
 });

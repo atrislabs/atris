@@ -56,8 +56,8 @@ function getTaskDb() {
   }
 }
 
-function help() {
-  console.log(`
+function taskUsageText() {
+  return `
 atris task - durable local task state (SQLite, gitignored)
 
   atris task                              Show the task desk
@@ -102,7 +102,15 @@ Refs:
 
 Headless:
   Add --json to task commands for machine-readable output and stable automation.
-`.trim());
+`.trim();
+}
+
+function taskUsageLines() {
+  return taskUsageText().split('\n');
+}
+
+function help() {
+  console.log(taskUsageText());
 }
 
 function flag(args, name) {
@@ -129,7 +137,7 @@ function jsonModeActive() {
 
 function failTask(label, reason, detail, exitCode = 2) {
   if (jsonModeActive()) {
-    console.error(JSON.stringify({
+    console.log(JSON.stringify({
       ok: false,
       command: label,
       reason,
@@ -771,8 +779,7 @@ function cmdAdd(args) {
   const pos = positional(args);
   const title = pos.join(' ').trim();
   if (!title) {
-    console.error('atris task add: title required');
-    process.exit(2);
+    failTask('atris task add', 'missing_title', 'title required');
   }
   const tag = flag(args, '--tag');
   const taskDb = getTaskDb();
@@ -820,12 +827,10 @@ function cmdDelegate(args) {
   const title = pos.join(' ').trim();
   const owner = flag(args, '--to') || flag(args, '--as');
   if (!title) {
-    console.error('atris task delegate: title required');
-    process.exit(2);
+    failTask('atris task delegate', 'missing_title', 'title required');
   }
   if (!owner || owner === true) {
-    console.error('atris task delegate: --to <owner> required');
-    process.exit(2);
+    failTask('atris task delegate', 'missing_owner', '--to <owner> required');
   }
   const viaFlag = flag(args, '--via');
   const via = viaFlag === 'swarlo' ? 'swarlo' : 'local';
@@ -994,8 +999,7 @@ function cmdClaim(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
-    console.error('atris task claim: id required');
-    process.exit(2);
+    failTask('atris task claim', 'missing_id', 'id required');
   }
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
@@ -1017,6 +1021,16 @@ function cmdClaim(args) {
     }
     console.log(`claimed ${taskRef(compactTaskFromProjection(projection, taskId))} as ${owner}`);
   } else {
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        command: 'atris task claim',
+        reason: result.reason,
+        claimed_by: result.claimed_by || null,
+        detail: `claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`,
+      });
+      process.exit(1);
+    }
     console.error(`claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`);
     process.exit(1);
   }
@@ -1096,8 +1110,7 @@ function cmdNote(args) {
   const id = pos[0];
   const content = pos.slice(1).join(' ').trim();
   if (!id || !content) {
-    console.error('atris task note: id and message required');
-    process.exit(2);
+    failTask('atris task note', 'missing_args', 'id and message required');
   }
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
@@ -1127,8 +1140,7 @@ function cmdShow(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
-    console.error('atris task show: id required');
-    process.exit(2);
+    failTask('atris task show', 'missing_id', 'id required');
   }
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -1161,8 +1173,7 @@ function cmdDone(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
-    console.error('atris task done: id required');
-    process.exit(2);
+    failTask('atris task done', 'missing_id', 'id required');
   }
   const failed = hasFlag(args, '--failed');
   const taskDb = getTaskDb();
@@ -1200,7 +1211,18 @@ function cmdDone(args) {
       console.log(`${failed ? 'failed' : 'done'} ${taskRef(task)}`);
     }
   } else {
-    console.error(`done failed: ${taskId} not in open|claimed`);
+    const detail = `done failed: ${taskId} not in open|claimed`;
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        command: 'atris task done',
+        reason: 'not_open_or_claimed',
+        task_id: taskId,
+        detail,
+      });
+      process.exit(1);
+    }
+    console.error(detail);
     process.exit(1);
   }
 }
@@ -1209,8 +1231,7 @@ function cmdFinish(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
-    console.error('atris task finish: id required');
-    process.exit(2);
+    failTask('atris task finish', 'missing_id', 'id required');
   }
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -1218,7 +1239,18 @@ function cmdFinish(args) {
   const currentTask = taskDb.getTask(db, taskId);
   const done = taskDb.doneTask(db, { id: taskId, status: hasFlag(args, '--failed') ? 'failed' : 'done' });
   if (!done.updated) {
-    console.error(`finish failed: ${taskId} not in open|claimed`);
+    const detail = `finish failed: ${taskId} not in open|claimed`;
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        command: 'atris task finish',
+        reason: 'not_open_or_claimed',
+        task_id: taskId,
+        detail,
+      });
+      process.exit(1);
+    }
+    console.error(detail);
     process.exit(1);
   }
   const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
@@ -1272,8 +1304,7 @@ function cmdReview(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
-    console.error('atris task review: id required');
-    process.exit(2);
+    failTask('atris task review', 'missing_id', 'id required');
   }
   const reward = flag(args, '--reward');
   const lesson = flag(args, '--lesson') || '';
@@ -2080,6 +2111,14 @@ async function run(args) {
     case '-h':
       return help();
     default:
+      if (wantsJson(raw)) {
+        printJson({
+          ok: false,
+          error: `unknown task subcommand: ${sub}`,
+          usage: taskUsageLines(),
+        });
+        process.exit(2);
+      }
       console.error(`atris task: unknown subcommand "${sub}"`);
       help();
       process.exit(2);

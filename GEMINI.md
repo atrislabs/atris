@@ -1,27 +1,43 @@
 # GEMINI
 
+## Mission Autonomy
+
+Use `atris mission` when work should survive this chat or run as an autonomous loop.
+
+```
+member -> mission start --verify -> status --status active -> one bounded step -> mission tick --verify -> receipt -> complete|run|stop
+```
+
+- Start current-agent work: `atris mission start "<objective>" --owner <member> --runner codex_goal --lane code --verify "<cmd>" --stop "<condition>"`
+- Start headless Claude work: add `--runner claude --cadence "15m" --always-on`, then use `atris mission run <id> --max-ticks 4 --complete-on-pass`.
+- Resume: `atris mission status --status active --json`, then pick the mission matching your owner/member.
+- Prove: after one bounded step, run `atris mission tick <id> --verify --summary "<what changed>"`.
+- Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
+
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Atris Brain Compile
 
 This workspace has a compiled agent brain.
 
 On session start, activate it first:
-`atris brain activate --root /Users/keshavrao/arena/atris-cli --verify`
+`atris brain activate --root /Users/keshavrao/arena/empire/atris-cli --verify`
 
 Load these first:
 - `atris/now.md`
 - `atris/brain/STATUS.md`
 - `atris/brain/self_improvement_ledger.md`
-- `atris/wiki/concepts/sync-language.md`
-- `atris/skills/activation/SKILL.md`
+- `atris/wiki/concepts/agent-activation-contract.md`
+- `atris/skills/atris/SKILL.md`
+- `atris/PERSONA.md`
 - `atris/MAP.md`
 - `atris/TODO.md`
+- `atris/wiki/index.md`
 
-First-message rule: follow the sync-language contract before writing to the operator.
+First-message rule: lead with the move before writing to the operator.
 Purpose: optimize for decision-speed; lead with the move, then use descriptions only when they help the operator act.
 Shape: `<operator>, today is about <move>` -> `I picked this because <why now>` -> `Ready: <draft/proof/context>` -> `Go deeper: <paths>`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 
 Re-run after meaningful work:
-`atris brain compile --root /Users/keshavrao/arena/atris-cli`
+`atris brain compile --root /Users/keshavrao/arena/empire/atris-cli`
 <!-- ATRIS_BRAIN_COMPILE:END -->

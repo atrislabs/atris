@@ -19,24 +19,57 @@ function findAppsPackRoot(startDir = process.cwd()) {
   return null;
 }
 
+function appsUsageLines() {
+  return [
+    'Usage: atris apps <command>',
+    '',
+    'Commands:',
+    '  list [--json]                List available local apps',
+    '  run <slug> [--lines N]       Run an app and print data/latest.md or --json status',
+    '  owner <slug> [--json]        Show owner view: launch, usage, learning, next actions',
+    '  status [--json]              Show local app health',
+    '  queue                        Show app improvement queue',
+    '  rate <slug> <up|down> [note] Record output feedback',
+    '  smoke                        Run fresh-checkout smoke test',
+    '  doctor [--strict]            Audit pack health, smoke, and source cleanliness',
+    '  handoff [--json]             Print app operator checklist and receipt paths',
+    '  overnight                    Run the bounded overnight app loop',
+    '  overnight-install [--start]  Install bounded macOS LaunchAgent',
+    '  overnight-agent [status|stop] Inspect or stop macOS LaunchAgent',
+  ];
+}
+
 function printAppsHelp() {
   console.log('');
-  console.log('Usage: atris apps <command>');
+  for (const line of appsUsageLines()) console.log(line);
   console.log('');
-  console.log('Commands:');
-  console.log('  list [--json]                List available local apps');
-  console.log('  run <slug> [--lines N]       Run an app and print data/latest.md or --json status');
-  console.log('  owner <slug> [--json]        Show owner view: launch, usage, learning, next actions');
-  console.log('  status [--json]              Show local app health');
-  console.log('  queue                        Show app improvement queue');
-  console.log('  rate <slug> <up|down> [note] Record output feedback');
-  console.log('  smoke                        Run fresh-checkout smoke test');
-  console.log('  doctor [--strict]            Audit pack health, smoke, and source cleanliness');
-  console.log('  handoff [--json]             Print app operator checklist and receipt paths');
-  console.log('  overnight                    Run the bounded overnight app loop');
-  console.log('  overnight-install [--start]  Install bounded macOS LaunchAgent');
-  console.log('  overnight-agent [status|stop] Inspect or stop macOS LaunchAgent');
-  console.log('');
+}
+
+function wantsJson(subcommand, rawArgs) {
+  return subcommand === '--json' || rawArgs.includes('--json');
+}
+
+function normalizeInvocation(subcommand, rawArgs) {
+  if (subcommand === '--json') {
+    return { subcommand: 'list', rawArgs: ['--json', ...rawArgs] };
+  }
+  return { subcommand, rawArgs };
+}
+
+function exitAppsError(message, json, options = {}) {
+  const payload = {
+    ok: false,
+    error: message,
+    ...(options.extra || {}),
+  };
+  if (options.usage) payload.usage = appsUsageLines();
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.error(message);
+    if (options.usage) printAppsHelp();
+  }
+  process.exit(options.code || 1);
 }
 
 function parseScalar(value) {
@@ -124,12 +157,22 @@ function runPackScript(packRoot, script, args) {
 }
 
 function appsCommand(subcommand, ...rawArgs) {
+  const jsonRequested = wantsJson(subcommand, rawArgs);
+  const normalized = normalizeInvocation(subcommand, rawArgs);
+  subcommand = normalized.subcommand;
+  rawArgs = normalized.rawArgs;
+
   if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     printAppsHelp();
     return;
   }
   const packRoot = findAppsPackRoot();
   if (!packRoot) {
+    if (jsonRequested) {
+      exitAppsError('No Atris app pack found.', true, {
+        extra: { expected: 'atris/apps-pack/ in this workspace, or ATRIS_APPS_PACK' },
+      });
+    }
     console.error('✗ No Atris app pack found.');
     console.error('  Expected atris/apps-pack/ in this workspace, or set ATRIS_APPS_PACK.');
     process.exit(1);
@@ -193,8 +236,7 @@ function appsCommand(subcommand, ...rawArgs) {
   if (subcommand === 'run') {
     const slug = args.shift();
     if (!slug) {
-      console.error('Usage: atris apps run <slug> [--workspace <path>] [--lines N]');
-      process.exit(1);
+      exitAppsError('Usage: atris apps run <slug> [--workspace <path>] [--lines N]', json);
     }
     const command = [slug, '--workspace', workspace];
     if (lines) command.push('--lines', lines);
@@ -205,8 +247,7 @@ function appsCommand(subcommand, ...rawArgs) {
   if (subcommand === 'owner') {
     const slug = args.shift();
     if (!slug) {
-      console.error('Usage: atris apps owner <slug> [--workspace <path>] [--lines N]');
-      process.exit(1);
+      exitAppsError('Usage: atris apps owner <slug> [--workspace <path>] [--lines N]', json);
     }
     const command = [slug, '--workspace', workspace];
     if (lines) command.push('--lines', lines);
@@ -225,9 +266,7 @@ function appsCommand(subcommand, ...rawArgs) {
     runPackScript(packRoot, 'scripts/app_rate.py', [slug, rating, ratingNote || '']);
   }
 
-  console.error(`Unknown apps command: ${subcommand}`);
-  printAppsHelp();
-  process.exit(1);
+  exitAppsError(`Unknown apps command: ${subcommand}`, json, { usage: true });
 }
 
 module.exports = {

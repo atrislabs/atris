@@ -1,41 +1,41 @@
 ---
-last_compiled: 2026-04-20
-validated_by: executor
-validation_notes: Re-verified 2026-04-20 after v3.6/v3.9 shipping. showHelp drifted 338→340 (2 lines, noise); planAtris TODO read 83→84; doAtris load 427→433 (token-refresh additions); reviewAtris read 746→758 (same cause). All routing and behavior intact. Updated refs below.
+last_compiled: 2026-05-10
+validated_by: codex
+validation_notes: Re-verified 2026-05-10. Help still keeps setup, core workflow, context/tracking, optional helpers, and experiments separated. plan/do/review still read TODO.md with TASK_CONTEXTS fallback. Current task system regenerates TODO.md from durable task state, so the file is a readable board, not ownership truth.
 sources:
-  - bin/atris.js:199-340 (showHelp function — core workflow section)
-  - commands/init.js:398-422 (TODO.md file creation via fs.writeFileSync)
-  - commands/workflow.js:84-94 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - commands/workflow.js:286 (planAtris — include TODO.md in user prompt)
-  - commands/workflow.js:433-443 (doAtris — load and read TODO.md)
-  - commands/workflow.js:758 (reviewAtris — read TODO.md)
-  - atris/features/cli-ux-simplification/idea.md
-  - atris/features/cli-ux-simplification/build.md
+  - bin/atris.js:264-340 (showHelp function — quick start, core workflow, context/tracking, sync)
+  - commands/init.js:408-434 (TODO.md placeholder creation via fs.writeFileSync)
+  - commands/workflow.js:106-115 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:309-310 (planAtris — include TODO.md in user prompt)
+  - commands/workflow.js:459-473 (doAtris — load TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:789-798 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - lib/task-db.js:651-687 (renderTodoMarkdown — regenerated TODO.md board)
 ---
 
 # CLI UX Simplification — Validation
 
-> **Status:** v1 — shipped 2025-11-16
-> **Exit Condition:** Help output clearly sections core workflow (plan/do/review) separate from optional helpers and cloud commands. TODO.md is created and read by init/plan/do/review. Legacy TASK_CONTEXTS.md still supported for backwards compatibility.
+> **Status:** v2 — re-verified 2026-05-10
+> **Exit Condition:** Help output clearly sections core workflow (plan/do/review) separate from optional helpers and cloud commands. TODO.md is created and read by init/plan/do/review, while `atris task render` keeps it aligned with durable task state. Legacy TASK_CONTEXTS.md is still supported for backwards compatibility.
 
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` sections: Setup → Core workflow → Context & tracking → Optional helpers → Experiments → Quick commands → Sync → GitHub for Context → Business → Code Review → Cloud & agents → Integrations → Skills → Team → Plugin → Feedback → Other (17 sections, `bin/atris.js:199-340`)
-- [x] Core workflow grouped: plan, do, review, run (lines 226-230)
-- [x] visualize marked as "Legacy visualization helper (prefer 'atris plan')" (line 250)
-- [x] brainstorm and autopilot in "Optional helpers" section, not core (lines 248-249)
+- [x] `atris help` keeps Setup, Core workflow, Context & tracking, Optional helpers, Experiments, and Sync separated (`bin/atris.js:292-340`)
+- [x] Core workflow grouped: plan, do, review, run (`bin/atris.js:298-302`)
+- [x] task, mission, brain, ingest/query/lint, and loop live in Context & tracking (`bin/atris.js:304-321`)
+- [x] brainstorm, autopilot, and visualize stay in Optional helpers (`bin/atris.js:323-326`)
 
 ### 2. TODO.md Creation & Usage
-- [x] `atris init` creates atris/TODO.md with placeholder content (commands/init.js:398-422)
-- [x] TODO.md template includes Backlog, In Progress, Completed sections (init.js:398-422)
-- [x] init calls console.log summary after creation (init.js:423)
+- [x] `atris init` creates atris/TODO.md with placeholder content (`commands/init.js:408-434`)
+- [x] TODO.md template includes Backlog, In Progress, Completed sections (`commands/init.js:416-430`)
+- [x] init calls console.log summary after creation (`commands/init.js:434`)
+- [x] `atris task render` marks TODO.md as regenerated from durable task state (`lib/task-db.js:651-687`)
 
 ### 3. Commands Read TODO.md
-- [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:84-94`)
-- [x] **plan**: Includes TODO.md in user prompt when present (`commands/workflow.js:286`, 298)
-- [x] **do**: Reads TODO.md to find tasks to execute (`commands/workflow.js:433-443`)
-- [x] **review**: Reads TODO.md for task context (`commands/workflow.js:758`)
+- [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:106-115`)
+- [x] **plan**: Includes TODO.md in user prompt when present (`commands/workflow.js:309-310`)
+- [x] **do**: Reads TODO.md to find tasks to execute (`commands/workflow.js:459-473`)
+- [x] **review**: Reads TODO.md for task context (`commands/workflow.js:789-798`)
 - [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js with parseTodo)
 
 ### 4. Backwards Compatibility

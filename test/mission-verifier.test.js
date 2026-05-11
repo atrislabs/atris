@@ -46,9 +46,25 @@ test('mission start rejects static numeric verifier from expanded shell substitu
     ], { cwd: dir });
 
     assert.equal(res.status, 2);
-    assert.match(res.stderr, /Invalid --verify/);
-    assert.match(res.stderr, /shell substitution expanded/);
+    assert.equal(res.stderr, '');
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, false);
+    assert.match(payload.error, /Invalid --verify/);
+    assert.match(payload.error, /shell substitution expanded/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+
+    const human = runCli([
+      'mission',
+      'start',
+      'bad expanded verifier',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'test 476 -ge 478',
+    ], { cwd: dir });
+    assert.equal(human.status, 2);
+    assert.equal(human.stdout, '');
+    assert.match(human.stderr, /Invalid --verify/);
   } finally {
     cleanupTempDir(dir);
   }
