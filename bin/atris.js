@@ -306,6 +306,7 @@ function showHelp() {
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
+  console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
@@ -515,7 +516,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo', 'xp',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -1191,6 +1192,10 @@ if (command === 'init') {
 } else if (command === 'search') {
   const keyword = process.argv.slice(3).join(' ');
   searchJournal(keyword);
+} else if (command === 'xp') {
+  require('../commands/xp').xpCommand(...process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'gmail') {
   const { gmailCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
