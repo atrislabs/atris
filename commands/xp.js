@@ -14,13 +14,30 @@ const CAREER_XP_PROJECTION_FILE = path.join('.atris', 'state', 'career_xp.projec
 const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.json');
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
+const XP_STATE_FILES = new Set([
+  path.basename(TASK_EPISODES_FILE),
+  path.basename(CAREER_XP_RECEIPTS_FILE),
+  path.basename(CAREER_XP_PROJECTION_FILE),
+]);
+const SEARCH_EXCLUDED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  '.next',
+  'coverage',
+  'tmp',
+  'temp',
+]);
+const DEFAULT_SEARCH_DEPTH = 6;
 
 function showHelp() {
-  console.log('Usage: atris xp [status|collect] [--json] [--workspace <path>]');
+  console.log('Usage: atris xp [status|collect] [--json] [--workspace <path>] [--all] [--root <path>]');
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
   console.log('Show your Career XP contribution graph for the active Atris account.');
   console.log('Use status/collect to project accepted local task proof into a durable XP ledger.');
+  console.log('Use status --all to aggregate verified local XP ledgers across workspaces.');
   console.log('Use --local to render from proof receipts in the current workspace.');
 }
 
@@ -81,6 +98,22 @@ function readFlag(args, name, fallback = null) {
     return args[index + 1];
   }
   return fallback;
+}
+
+function readFlagValues(args, names) {
+  const wanted = Array.isArray(names) ? names : [names];
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    for (const name of wanted) {
+      if (arg === name && args[index + 1] && !args[index + 1].startsWith('--')) {
+        values.push(args[index + 1]);
+      } else if (arg.startsWith(`${name}=`)) {
+        values.push(arg.slice(name.length + 1));
+      }
+    }
+  }
+  return values.filter(Boolean);
 }
 
 function hasFlag(args, name) {
@@ -464,6 +497,193 @@ function collectLocalXpProjection(args = []) {
   };
 }
 
+function uniquePaths(paths) {
+  const seen = new Set();
+  return paths
+    .map(item => path.resolve(item))
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function stateWorkspaceForFile(filePath) {
+  const stateDir = path.dirname(filePath);
+  if (path.basename(stateDir) !== 'state') return null;
+  const atrisDir = path.dirname(stateDir);
+  if (path.basename(atrisDir) !== '.atris') return null;
+  return path.dirname(atrisDir);
+}
+
+function discoverCareerXpWorkspaces(root, maxDepth = DEFAULT_SEARCH_DEPTH) {
+  const start = path.resolve(root);
+  if (!fs.existsSync(start)) return [];
+  const workspaces = new Set();
+  const stack = [{ dir: start, depth: 0 }];
+
+  while (stack.length) {
+    const { dir, depth } = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth >= maxDepth || SEARCH_EXCLUDED_DIRS.has(entry.name)) continue;
+        stack.push({ dir: entryPath, depth: depth + 1 });
+        continue;
+      }
+      if (!entry.isFile() || !XP_STATE_FILES.has(entry.name)) continue;
+      const workspace = stateWorkspaceForFile(entryPath);
+      if (workspace) workspaces.add(workspace);
+    }
+  }
+
+  return Array.from(workspaces).sort();
+}
+
+function defaultAllSearchRoots(args = []) {
+  const explicitRoots = readFlagValues(args, ['--root', '--search-root']);
+  if (explicitRoots.length) return uniquePaths(explicitRoots);
+
+  const roots = [];
+  const workspace = readFlag(args, '--workspace', null);
+  if (workspace) roots.push(workspace);
+  roots.push(process.cwd());
+  roots.push(path.join(os.homedir(), 'arena'));
+  return uniquePaths(roots);
+}
+
+function workspaceName(workspace) {
+  return path.basename(workspace) || workspace;
+}
+
+function isVerifiedProjection(projection) {
+  return projection?.schema === 'atris.career_xp_projection.v1'
+    && projection.integrity_status === 'verified'
+    && projection.integrity?.status === 'verified';
+}
+
+function buildAllCareerXpProjection(projections, searchRoots = []) {
+  const warnings = [];
+  const verified = [];
+  const workspaces = projections.map((item) => {
+    if (item.error) {
+      warnings.push({
+        workspace_root: item.workspace_root,
+        reason: item.error,
+      });
+      return {
+        workspace_root: item.workspace_root,
+        name: workspaceName(item.workspace_root),
+        included: false,
+        integrity_status: 'error',
+        error: item.error,
+      };
+    }
+
+    const projection = item.projection;
+    const included = isVerifiedProjection(projection);
+    if (included) {
+      verified.push(projection);
+    } else {
+      warnings.push({
+        workspace_root: item.workspace_root,
+        reason: `integrity:${projection?.integrity_status || projection?.integrity?.status || 'unknown'}`,
+        errors: projection?.integrity?.errors || [],
+      });
+    }
+
+    return {
+      workspace_root: item.workspace_root,
+      name: workspaceName(item.workspace_root),
+      included,
+      total_xp: asNumber(projection?.total_xp),
+      today_xp: asNumber(projection?.today_xp),
+      level: asNumber(projection?.level, 1),
+      receipts_count: asNumber(projection?.receipts_count),
+      integrity_status: projection?.integrity_status || projection?.integrity?.status || 'unknown',
+      leaderboard_eligible: Boolean(projection?.leaderboard_eligible),
+      latest_accepted_proof: projection?.latest_accepted_proof || null,
+      ledger: projection?.ledger || null,
+    };
+  }).sort((a, b) => {
+    if (b.included !== a.included) return Number(b.included) - Number(a.included);
+    return b.total_xp - a.total_xp || a.name.localeCompare(b.name);
+  });
+
+  const totalXp = verified.reduce((sum, projection) => sum + asNumber(projection.total_xp), 0);
+  const todayXp = verified.reduce((sum, projection) => sum + asNumber(projection.today_xp), 0);
+  const level = levelFromXp(totalXp);
+  const levelBase = (level - 1) * LEVEL_XP;
+  const currentLevelXp = totalXp - levelBase;
+  const latest = verified
+    .map(projection => ({
+      ...(projection.latest_accepted_proof || {}),
+      workspace_root: projection.workspace_root,
+      workspace_name: workspaceName(projection.workspace_root),
+    }))
+    .filter(proof => proof && proof.accepted_at)
+    .sort((a, b) => new Date(b.accepted_at).getTime() - new Date(a.accepted_at).getTime())[0] || null;
+
+  return {
+    schema: 'atris.career_xp_profile.v1',
+    generated_at: new Date().toISOString(),
+    search_roots: searchRoots,
+    workspace_count: workspaces.length,
+    verified_workspace_count: verified.length,
+    career_xp: totalXp,
+    total_xp: totalXp,
+    today_xp: todayXp,
+    level,
+    leaderboard_eligible: false,
+    next_level_progress: {
+      level,
+      next_level: level + 1,
+      current_xp: currentLevelXp,
+      required_xp: LEVEL_XP,
+      remaining_xp: Math.max(0, (level * LEVEL_XP) - totalXp),
+      percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
+    },
+    receipts_count: verified.reduce((sum, projection) => sum + asNumber(projection.receipts_count), 0),
+    latest_accepted_proof: latest,
+    workspaces,
+    integrity: {
+      status: warnings.length ? 'warnings' : 'verified',
+      warnings,
+      local_trust: 'workspace_local_tamper_evident_not_attested',
+      note: 'Only verified local ledgers are counted. Public trust still requires cloud/notary attestation.',
+    },
+  };
+}
+
+function collectAllLocalXpProjection(args = []) {
+  const searchRoots = defaultAllSearchRoots(args).filter(root => fs.existsSync(root));
+  const explicitWorkspaces = readFlagValues(args, '--workspace');
+  const discovered = searchRoots.flatMap(root => discoverCareerXpWorkspaces(root));
+  const workspaces = uniquePaths([...explicitWorkspaces, ...discovered]);
+  const projections = workspaces.map((workspace) => {
+    try {
+      return {
+        workspace_root: workspace,
+        projection: collectLocalXpProjection(['--workspace', workspace]),
+      };
+    } catch (error) {
+      return {
+        workspace_root: workspace,
+        error: error.message,
+      };
+    }
+  });
+
+  return buildAllCareerXpProjection(projections, searchRoots);
+}
+
 function normalizeLocalScore(score, workspace) {
   const card = score.profile_card || {};
   const integrity = score.integrity || {};
@@ -523,6 +743,29 @@ function loadLocalPayload(args) {
 }
 
 function render(payload) {
+  if (payload.schema === 'atris.career_xp_profile.v1') {
+    const progress = payload.next_level_progress || {};
+    console.log(`Career XP ${formatNumber(payload.total_xp)} | Today ${formatNumber(payload.today_xp)} | Level ${formatNumber(payload.level || 1)}`);
+    console.log(`Next level ${formatNumber(progress.current_xp)}/${formatNumber(progress.required_xp)} XP (${formatNumber(progress.percent)}%) | ${formatNumber(progress.remaining_xp)} to go`);
+    console.log(`Workspaces ${formatNumber(payload.verified_workspace_count)}/${formatNumber(payload.workspace_count)} verified`);
+    for (const workspace of payload.workspaces || []) {
+      const marker = workspace.included ? 'included' : 'excluded';
+      console.log(`- ${workspace.name}: ${formatNumber(workspace.total_xp)} XP | today ${formatNumber(workspace.today_xp)} | ${workspace.integrity_status} | ${marker}`);
+    }
+    if (payload.latest_accepted_proof) {
+      const proof = payload.latest_accepted_proof;
+      console.log(`Latest proof ${proof.workspace_name || 'workspace'} / ${proof.label || proof.title || 'Accepted proof'}: ${proof.proof}`);
+    } else {
+      console.log('Latest proof: none accepted yet');
+    }
+    const integrity = payload.integrity || {};
+    console.log(`Integrity: ${integrity.status || 'unknown'} (${integrity.local_trust || 'local'})`);
+    for (const warning of integrity.warnings || []) {
+      console.log(`Warning: ${warning.workspace_root} ${warning.reason}`);
+    }
+    return;
+  }
+
   if (payload.schema === 'atris.career_xp_projection.v1') {
     const progress = payload.next_level_progress || {};
     console.log(`Career XP ${formatNumber(payload.total_xp)} | Today ${formatNumber(payload.today_xp)} | Level ${formatNumber(payload.level || 1)}`);
@@ -565,9 +808,12 @@ async function xpCommand(...args) {
 
   const subcommand = args[0] && !args[0].startsWith('--') ? args[0] : null;
   if (subcommand === 'collect' || subcommand === 'status') {
+    const commandArgs = args.slice(1);
     let payload;
     try {
-      payload = collectLocalXpProjection(args.slice(1));
+      payload = hasFlag(commandArgs, '--all')
+        ? collectAllLocalXpProjection(commandArgs)
+        : collectLocalXpProjection(commandArgs);
     } catch (error) {
       console.error(`Failed to collect local XP: ${error.message}`);
       process.exit(1);
@@ -625,6 +871,8 @@ module.exports = {
   xpCommand,
   buildContributionRows,
   buildCareerXpProjection,
+  buildAllCareerXpProjection,
+  collectAllLocalXpProjection,
   collectLocalXpProjection,
   receiptFromTaskEpisode,
   render,
