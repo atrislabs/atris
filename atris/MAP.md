@@ -35,6 +35,7 @@ rg "function doAtris" commands/workflow.js     # Do command (line 297)
 rg "function reviewAtris" commands/workflow.js  # Review command (line 667)
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "function statusAtris" commands/status.js     # Status command (line 79)
+rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|loadLocalPayload" commands/xp.js bin/atris.js  # Career XP command: remote graph plus local xp status/collect proof receipts
 rg "function analyticsAtris" commands/analytics.js  # Analytics command (line 4)
 
 # Modular commands
