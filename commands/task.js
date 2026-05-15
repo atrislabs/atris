@@ -363,7 +363,11 @@ function taskReviewSummary(task) {
   const reviewedEventHas = (key) => reviewed && reviewed.event_type === 'reviewed'
     && Object.prototype.hasOwnProperty.call(payload, key);
   const readyField = (key, metadataKey) => {
-    if (reviewedEventHas(key) && payload[key]) return payload[key];
+    if (reviewedEventHas(key)) {
+      if (payload[key]) return payload[key];
+      if (key === 'proof') return metadata[metadataKey] || null;
+      return null;
+    }
     return payload[key] || metadata[metadataKey] || null;
   };
   return {
