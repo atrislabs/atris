@@ -12,6 +12,9 @@ const TASK_EPISODES_FILE = path.join('.atris', 'state', 'task_episodes.jsonl');
 const CAREER_XP_RECEIPTS_FILE = path.join('.atris', 'state', 'career_xp_receipts.jsonl');
 const CAREER_XP_PROJECTION_FILE = path.join('.atris', 'state', 'career_xp.projection.json');
 const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.json');
+const CAREER_XP_SESSIONS_DIR = path.join('.atris', 'state', 'career_xp_sessions');
+const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
+const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
 const XP_STATE_FILES = new Set([
@@ -32,12 +35,15 @@ const SEARCH_EXCLUDED_DIRS = new Set([
 const DEFAULT_SEARCH_DEPTH = 6;
 
 function showHelp() {
-  console.log('Usage: atris xp [status|collect] [--json] [--workspace <path>] [--all] [--root <path>]');
+  console.log('Usage: atris xp [status|collect|session] [--json] [--workspace <path>] [--all] [--root <path>]');
+  console.log('       atris xp session [--since today|tonight|YYYY-MM-DD] [--until <time>] [--mission <text>] [--thread <id>] [--no-write]');
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
   console.log('Show your Career XP contribution graph for the active Atris account.');
-  console.log('Use status/collect to project accepted local task proof into a durable XP ledger.');
-  console.log('Use status --all to aggregate verified local XP ledgers across workspaces.');
+  console.log('Use status to show account-level Career XP across verified local ledgers.');
+  console.log('Use collect or status --local to project accepted task proof in the current workspace.');
+  console.log('Use session to encapsulate the current work window into a local XP capsule.');
+  console.log('Use status --all to explicitly aggregate verified local XP ledgers across workspaces.');
   console.log('Use --local to render from proof receipts in the current workspace.');
 }
 
@@ -139,14 +145,54 @@ function localDateKey(value, timeZone = process.env.TZ || Intl.DateTimeFormat().
   }
 }
 
-function readJsonl(filePath) {
+function parseJsonlContent(content, options = {}) {
+  const allowPartialTail = Boolean(options.allowPartialTail);
+  const rows = [];
+  const hasTerminalNewline = /\r?\n$/.test(content);
+  const lines = content.split('\n');
+  let parsedBytes = 0;
+  let skippedPartialTail = false;
+  let skippedPartialTailBytes = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
+    const isLast = index === lines.length - 1;
+    const lineHadNewline = !isLast || hasTerminalNewline;
+    const lineBytes = isLast && hasTerminalNewline && rawLine === ''
+      ? 0
+      : Buffer.byteLength(rawLine, 'utf8') + (lineHadNewline ? 1 : 0);
+    const line = rawLine.trim();
+
+    if (!line) {
+      parsedBytes += lineBytes;
+      continue;
+    }
+
+    try {
+      rows.push(JSON.parse(line));
+      parsedBytes += lineBytes;
+    } catch (error) {
+      if (allowPartialTail && isLast && !hasTerminalNewline) {
+        skippedPartialTail = true;
+        skippedPartialTailBytes = lineBytes;
+        break;
+      }
+      throw error;
+    }
+  }
+
+  return {
+    rows,
+    parsedBytes,
+    skippedPartialTail,
+    skippedPartialTailBytes,
+  };
+}
+
+function readJsonl(filePath, options = {}) {
   if (!fs.existsSync(filePath)) return [];
   const content = fs.readFileSync(filePath, 'utf8');
-  return content
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => JSON.parse(line));
+  return parseJsonlContent(content, options).rows;
 }
 
 function writeJson(filePath, payload) {
@@ -188,6 +234,95 @@ function hashPayload(value) {
 function readJsonFile(filePath, fallback = null) {
   if (!fs.existsSync(filePath)) return fallback;
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function timestampMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && String(value).trim() !== '') return numeric;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isoFromMs(value) {
+  const ms = timestampMs(value);
+  return ms === null ? null : new Date(ms).toISOString();
+}
+
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function startOfTonight() {
+  const date = new Date();
+  if (date.getHours() < 6) {
+    date.setDate(date.getDate() - 1);
+  }
+  date.setHours(18, 0, 0, 0);
+  return date;
+}
+
+function parseSessionBoundary(value, fallback) {
+  if (!value) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === 'now') return new Date();
+  if (normalized === 'today') return startOfToday();
+  if (normalized === 'tonight') return startOfTonight();
+  if (normalized === 'yesterday') {
+    const date = startOfToday();
+    date.setDate(date.getDate() - 1);
+    return date;
+  }
+
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (dateOnly) {
+    return new Date(
+      Number(dateOnly[1]),
+      Number(dateOnly[2]) - 1,
+      Number(dateOnly[3]),
+      0,
+      0,
+      0,
+      0
+    );
+  }
+
+  const parsed = new Date(value);
+  if (Number.isFinite(parsed.getTime())) return parsed;
+  throw new Error(`Invalid session time: ${value}`);
+}
+
+function inWindow(value, sinceMs, untilMs) {
+  const ms = timestampMs(value);
+  return ms !== null && ms >= sinceMs && ms <= untilMs;
+}
+
+function expandHome(filePath) {
+  if (!filePath) return filePath;
+  if (filePath === '~') return os.homedir();
+  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
+  return filePath;
+}
+
+function sqlString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function runSqliteJsonOptional(dbPath, sql) {
+  if (!dbPath || !fs.existsSync(dbPath)) return [];
+  const result = spawnSync('sqlite3', ['-readonly', '-json', dbPath, sql], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return [];
+  const out = String(result.stdout || '').trim();
+  if (!out) return [];
+  try {
+    return JSON.parse(out);
+  } catch (_) {
+    return [];
+  }
 }
 
 function receiptHashBase(receipt, previousHash) {
@@ -279,13 +414,44 @@ function normalizeReceiptChain(receipts, { allowLegacyUpgrade = true } = {}) {
   };
 }
 
+function alignJsonlReadStart(filePath, start) {
+  if (!start || start <= 0) return 0;
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const previous = Buffer.alloc(1);
+    fs.readSync(fd, previous, 0, 1, start - 1);
+    if (previous[0] === 0x0a) return start;
+
+    const current = Buffer.alloc(1);
+    const currentBytes = fs.readSync(fd, current, 0, 1, start);
+    if (previous[0] === 0x0d && currentBytes === 1 && current[0] === 0x0a) {
+      return start + 1;
+    }
+
+    const chunkSize = 64 * 1024;
+    let scanEnd = start;
+    while (scanEnd > 0) {
+      const scanStart = Math.max(0, scanEnd - chunkSize);
+      const buffer = Buffer.alloc(scanEnd - scanStart);
+      fs.readSync(fd, buffer, 0, buffer.length, scanStart);
+      for (let index = buffer.length - 1; index >= 0; index -= 1) {
+        if (buffer[index] === 0x0a) return scanStart + index + 1;
+      }
+      scanEnd = scanStart;
+    }
+    return 0;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function readTaskEpisodeTail(episodePath, cursorPath) {
   const stat = fs.existsSync(episodePath) ? fs.statSync(episodePath) : null;
   const cursor = readJsonFile(cursorPath, null);
   const previousBytes = Number(cursor?.bytes_read || 0);
   const size = stat ? stat.size : 0;
   const reset = !cursor || cursor.source_path !== episodePath || size < previousBytes;
-  const start = reset ? 0 : previousBytes;
+  const start = reset || !stat ? 0 : alignJsonlReadStart(episodePath, previousBytes);
   if (!stat || size === start) {
     return {
       episodes: [],
@@ -305,21 +471,21 @@ function readTaskEpisodeTail(episodePath, cursorPath) {
   try {
     const buffer = Buffer.alloc(size - start);
     fs.readSync(fd, buffer, 0, buffer.length, start);
-    const episodes = buffer.toString('utf8')
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .map(line => JSON.parse(line));
+    const parsed = parseJsonlContent(buffer.toString('utf8'), { allowPartialTail: true });
+    const episodes = parsed.rows;
+    const bytesRead = start + parsed.parsedBytes;
     return {
       episodes,
       cursor: {
         schema: 'atris.career_xp_cursor.v1',
         source_path: episodePath,
-        bytes_read: size,
+        bytes_read: bytesRead,
         source_size: size,
         last_episode_id: episodes.length ? episodes[episodes.length - 1].episode_id || null : cursor?.last_episode_id || null,
         updated_at: new Date().toISOString(),
         reset,
+        skipped_partial_tail: parsed.skippedPartialTail,
+        skipped_partial_tail_bytes: parsed.skippedPartialTailBytes,
       },
     };
   } finally {
@@ -684,6 +850,351 @@ function collectAllLocalXpProjection(args = []) {
   return buildAllCareerXpProjection(projections, searchRoots);
 }
 
+function readTaskProjectionState(workspace) {
+  const projectionPath = path.join(workspace, TASK_PROJECTION_FILE);
+  try {
+    const projection = readJsonFile(projectionPath, { tasks: [] });
+    return {
+      tasks: Array.isArray(projection?.tasks) ? projection.tasks : [],
+      warning: null,
+    };
+  } catch (error) {
+    return {
+      tasks: [],
+      warning: `task_projection_unreadable:${error.message}`,
+    };
+  }
+}
+
+function readTaskProjection(workspace) {
+  return readTaskProjectionState(workspace).tasks;
+}
+
+function taskRef(task) {
+  return task?.display_id || task?.legacy_ref || task?.id || 'task';
+}
+
+function taskTimes(task) {
+  const times = [
+    task?.created_at,
+    task?.updated_at,
+    task?.done_at,
+    task?.review?.reviewed_at,
+    task?.review?.accepted_at,
+    task?.review?.revised_at,
+    task?.metadata?.agent_reviewed_at,
+    task?.metadata?.accepted_at,
+    task?.metadata?.human_revision_at,
+  ];
+  for (const event of task?.events || []) times.push(event.created_at);
+  for (const message of task?.messages || []) times.push(message.created_at);
+  return times
+    .map(timestampMs)
+    .filter(ms => ms !== null);
+}
+
+function taskTouchedInWindow(task, sinceMs, untilMs) {
+  return taskTimes(task).some(ms => ms >= sinceMs && ms <= untilMs);
+}
+
+function latestTaskMs(task) {
+  const times = taskTimes(task);
+  return times.length ? Math.max(...times) : null;
+}
+
+function taskApprovalStatus(task) {
+  return task?.review?.approval_status || task?.metadata?.approval_status || null;
+}
+
+function textExcerpt(value, limit = 220) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text || null;
+  return `${text.slice(0, limit - 3)}...`;
+}
+
+function compactTask(task) {
+  const proof = task?.review?.proof || task?.metadata?.latest_agent_proof || null;
+  return {
+    task_id: taskRef(task),
+    id: task?.id || null,
+    title: task?.title || null,
+    status: task?.status || null,
+    tag: task?.tag || null,
+    claimed_by: task?.claimed_by || null,
+    approval_status: taskApprovalStatus(task),
+    summary: task?.review?.summary || null,
+    proof_excerpt: textExcerpt(proof),
+    has_proof: Boolean(proof),
+    updated_at: isoFromMs(latestTaskMs(task)),
+  };
+}
+
+function receiptMatchesTask(receipt, task) {
+  const sourceTaskId = String(receipt?.source_task_id || '');
+  if (!sourceTaskId) return false;
+  return [task?.id, task?.display_id, task?.legacy_ref]
+    .filter(Boolean)
+    .map(String)
+    .includes(sourceTaskId);
+}
+
+function compactReceipt(receipt, task = null, options = {}) {
+  const proof = receipt?.proof || null;
+  const compact = {
+    receipt_id: receipt?.receipt_id || null,
+    task_id: task ? taskRef(task) : receipt?.source_task_id || null,
+    source_task_id: receipt?.source_task_id || null,
+    title: receipt?.title || task?.title || null,
+    proof_excerpt: textExcerpt(proof),
+    has_proof: Boolean(proof),
+    xp: asNumber(receipt?.xp),
+    actor: receipt?.actor || null,
+    accepted_at: receipt?.accepted_at || null,
+    goal: receipt?.goal || null,
+  };
+  if (options.fullProof) {
+    compact.proof = proof;
+  }
+  return compact;
+}
+
+function compactGoal(goal) {
+  if (!goal) return null;
+  if (typeof goal === 'string') {
+    const label = goal.trim();
+    return label ? { label } : null;
+  }
+  const label = goal.objective || goal.title || goal.condition || goal.id || goal.goal_id || null;
+  if (!label) return null;
+  return {
+    provider: goal.provider || null,
+    thread_id: goal.thread_id || null,
+    goal_id: goal.id || goal.goal_id || null,
+    label,
+    status: goal.status || null,
+    met: typeof goal.met === 'boolean' ? goal.met : null,
+    tokens_used: Number.isFinite(Number(goal.tokens_used)) ? Number(goal.tokens_used) : null,
+    time_used_seconds: Number.isFinite(Number(goal.time_used_seconds)) ? Number(goal.time_used_seconds) : null,
+    created_at: goal.created_at || isoFromMs(goal.created_at_ms),
+    updated_at: goal.updated_at || isoFromMs(goal.updated_at_ms),
+    workspace_path: goal.thread_cwd || goal.workspace_path || null,
+  };
+}
+
+function uniqueGoals(goals) {
+  const seen = new Set();
+  return goals
+    .map(compactGoal)
+    .filter(Boolean)
+    .filter((goal) => {
+      const key = `${goal.goal_id || ''}:${goal.label}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function buildNextQuest(reviewTasks, touchedTasks, acceptedReceipts) {
+  const pendingReview = reviewTasks
+    .slice()
+    .sort((a, b) => (latestTaskMs(b) || 0) - (latestTaskMs(a) || 0))[0];
+  if (pendingReview) {
+    return `Review ${taskRef(pendingReview)}: ${pendingReview.title}`;
+  }
+
+  const activeTask = touchedTasks
+    .filter(task => ['claimed', 'open', 'todo', 'do'].includes(String(task.status || '').toLowerCase()))
+    .sort((a, b) => (latestTaskMs(b) || 0) - (latestTaskMs(a) || 0))[0];
+  if (activeTask) {
+    return `Move ${taskRef(activeTask)} to Review with proof.`;
+  }
+
+  if (!acceptedReceipts.length) {
+    return 'Put one task into Review with proof, then accept it if the proof is real.';
+  }
+  return 'Pick the next highest-leverage task and move it to Review with proof.';
+}
+
+function workspacePathCandidates(workspace) {
+  const candidates = [workspace];
+  try {
+    candidates.push(fs.realpathSync(workspace));
+  } catch (_) {
+    // best-effort only
+  }
+  const pwd = process.env.PWD || '';
+  if (pwd) {
+    try {
+      if (fs.existsSync(pwd) && fs.realpathSync(pwd) === fs.realpathSync(workspace)) candidates.push(pwd);
+    } catch (_) {
+      // best-effort only
+    }
+  }
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function readCodexGoalsForSession(args, workspace, sinceMs, untilMs) {
+  const dbPath = path.resolve(expandHome(
+    readFlag(args, '--codex-state', readFlag(args, '--state', process.env.CODEX_STATE_DB || CODEX_STATE_FILE))
+  ));
+  const threadId = readFlag(args, '--thread', process.env.CODEX_THREAD_ID || '');
+  const clauses = [];
+  if (threadId) clauses.push(`tg.thread_id = ${sqlString(threadId)}`);
+  const workspaceCandidates = workspacePathCandidates(workspace);
+  if (workspaceCandidates.length) {
+    clauses.push(`(t.cwd IN (${workspaceCandidates.map(sqlString).join(', ')}) AND tg.created_at_ms <= ${Number(untilMs)} AND (tg.updated_at_ms >= ${Number(sinceMs)} OR tg.status = 'active'))`);
+  }
+  if (!clauses.length) return [];
+
+  const rows = runSqliteJsonOptional(dbPath, `
+SELECT
+  'codex' AS provider,
+  tg.thread_id,
+  tg.goal_id,
+  tg.objective,
+  tg.status,
+  tg.token_budget,
+  tg.tokens_used,
+  tg.time_used_seconds,
+  tg.created_at_ms,
+  tg.updated_at_ms,
+  t.cwd AS thread_cwd,
+  t.title AS thread_title
+FROM thread_goals tg
+LEFT JOIN threads t ON t.id = tg.thread_id
+WHERE ${clauses.join(' OR ')}
+ORDER BY tg.updated_at_ms DESC
+LIMIT 25
+`);
+
+  return rows.map(row => ({
+    ...row,
+    provider: 'codex',
+  }));
+}
+
+function buildCareerXpSessionCapsule(args = []) {
+  const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
+  const sinceInput = readFlag(args, '--since', 'today');
+  const untilInput = readFlag(args, '--until', null);
+  const since = parseSessionBoundary(sinceInput, startOfToday());
+  const until = parseSessionBoundary(untilInput, new Date());
+  const sinceMs = since.getTime();
+  const untilMs = until.getTime();
+  if (sinceMs > untilMs) {
+    throw new Error('--since must be before --until');
+  }
+
+  const projection = collectLocalXpProjection(['--workspace', workspace]);
+  const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
+  const taskProjectionPath = path.join(workspace, TASK_PROJECTION_FILE);
+  const sessionDate = localDateKey(since) || since.toISOString().slice(0, 10);
+  const sessionPath = path.join(workspace, CAREER_XP_SESSIONS_DIR, `${sessionDate}.json`);
+  const warnings = [];
+  if (projection.integrity?.cursor?.skipped_partial_tail) {
+    warnings.push('task_episodes_partial_tail_waiting');
+  }
+  const taskProjection = readTaskProjectionState(workspace);
+  if (taskProjection.warning) warnings.push(taskProjection.warning);
+  const tasks = taskProjection.tasks;
+  const touchedTasks = tasks
+    .filter(task => taskTouchedInWindow(task, sinceMs, untilMs))
+    .sort((a, b) => (latestTaskMs(b) || 0) - (latestTaskMs(a) || 0));
+  const reviewTasks = touchedTasks.filter((task) => {
+    const status = String(task.status || '').toLowerCase();
+    return status === 'review' || taskApprovalStatus(task) === 'pending';
+  });
+  const doneTasks = touchedTasks.filter(task => String(task.status || '').toLowerCase() === 'done');
+  const receipts = projection.integrity_status === 'verified' ? readJsonl(receiptsPath) : [];
+  const acceptedReceipts = receipts
+    .filter(receipt => receipt?.outcome === 'accepted' && asNumber(receipt.xp) > 0 && inWindow(receipt.accepted_at, sinceMs, untilMs))
+    .sort((a, b) => (timestampMs(b.accepted_at) || 0) - (timestampMs(a.accepted_at) || 0));
+  const acceptedTasks = acceptedReceipts.map((receipt) => {
+    const task = touchedTasks.find(item => receiptMatchesTask(receipt, item));
+    return compactReceipt(receipt, task);
+  });
+  const windowXp = acceptedReceipts.reduce((sum, receipt) => sum + asNumber(receipt.xp), 0);
+  const afterTotalXp = asNumber(projection.total_xp);
+  const missionFlag = readFlag(args, '--mission', null);
+  const episodeGoals = readJsonl(path.join(workspace, TASK_EPISODES_FILE), { allowPartialTail: true })
+    .filter(episode => inWindow(episode?.created_at, sinceMs, untilMs))
+    .map(episode => episode.goal);
+  const codexGoals = readCodexGoalsForSession(args, workspace, sinceMs, untilMs);
+  const goals = uniqueGoals([
+    ...codexGoals,
+    ...acceptedReceipts.map(receipt => receipt.goal),
+    ...episodeGoals,
+  ]);
+  const latestAccepted = acceptedReceipts[0] || null;
+  const writeEnabled = !hasFlag(args, '--no-write') && !hasFlag(args, '--dry-run');
+
+  const capsule = {
+    schema: 'atris.career_xp_session_capsule.v1',
+    generated_at: new Date().toISOString(),
+    workspace_root: workspace,
+    window: {
+      label: String(sinceInput || 'today'),
+      since: since.toISOString(),
+      until: until.toISOString(),
+      since_ms: sinceMs,
+      until_ms: untilMs,
+    },
+    mission: {
+      label: missionFlag || goals[0]?.label || touchedTasks.find(task => task.tag === 'career-xp')?.title || 'Capture proof-backed work',
+      source: missionFlag ? 'flag' : goals[0] ? 'goal' : 'tasks',
+    },
+    xp: {
+      before_total_xp: Math.max(0, afterTotalXp - windowXp),
+      after_total_xp: afterTotalXp,
+      delta_xp: windowXp,
+      today_xp: asNumber(projection.today_xp),
+      level: asNumber(projection.level, 1),
+      next_level_progress: projection.next_level_progress || null,
+      integrity_status: projection.integrity_status || 'unknown',
+    },
+    tasks: {
+      touched_count: touchedTasks.length,
+      review_count: reviewTasks.length,
+      accepted_count: acceptedTasks.length,
+      done_count: doneTasks.length,
+      touched: touchedTasks.map(compactTask),
+      review: reviewTasks.map(compactTask),
+      accepted: acceptedTasks,
+    },
+    goals: {
+      count: goals.length,
+      touched: goals,
+    },
+    proof: {
+      receipts_count: acceptedReceipts.length,
+      latest_accepted: latestAccepted ? compactReceipt(
+        latestAccepted,
+        touchedTasks.find(task => receiptMatchesTask(latestAccepted, task)),
+        { fullProof: true }
+      ) : null,
+      accepted: acceptedTasks,
+    },
+    next_quest: buildNextQuest(reviewTasks, touchedTasks, acceptedReceipts),
+    files: {
+      projection_path: path.join(workspace, CAREER_XP_PROJECTION_FILE),
+      receipts_path: receiptsPath,
+      task_projection_path: fs.existsSync(taskProjectionPath) ? taskProjectionPath : null,
+      session_path: writeEnabled ? sessionPath : null,
+    },
+    written: writeEnabled,
+  };
+
+  if (warnings.length) {
+    capsule.warnings = warnings;
+  }
+
+  if (writeEnabled) {
+    writeJson(sessionPath, capsule);
+  }
+
+  return capsule;
+}
+
 function normalizeLocalScore(score, workspace) {
   const card = score.profile_card || {};
   const integrity = score.integrity || {};
@@ -743,6 +1254,25 @@ function loadLocalPayload(args) {
 }
 
 function render(payload) {
+  if (payload.schema === 'atris.career_xp_session_capsule.v1') {
+    const xp = payload.xp || {};
+    const tasks = payload.tasks || {};
+    console.log(`Career XP Session ${payload.window?.label || 'window'}`);
+    console.log(`XP earned ${formatNumber(xp.delta_xp)} | Total ${formatNumber(xp.after_total_xp)} | Today ${formatNumber(xp.today_xp)} | Level ${formatNumber(xp.level || 1)}`);
+    console.log(`Tasks ${formatNumber(tasks.touched_count)} touched | ${formatNumber(tasks.review_count)} in Review | ${formatNumber(tasks.accepted_count)} accepted`);
+    if (payload.proof?.latest_accepted) {
+      const proof = payload.proof.latest_accepted;
+      console.log(`Latest proof ${proof.task_id || proof.title || 'accepted proof'}: ${textExcerpt(proof.proof, 260)}`);
+    } else {
+      console.log('Latest proof: none accepted in this session');
+    }
+    console.log(`Mission: ${payload.mission?.label || 'Capture proof-backed work'}`);
+    console.log(`Next quest: ${payload.next_quest || 'Pick the next proof-backed task.'}`);
+    if (payload.files?.session_path) console.log(`Capsule: ${payload.files.session_path}`);
+    console.log(`Integrity: ${xp.integrity_status || 'unknown'}`);
+    return;
+  }
+
   if (payload.schema === 'atris.career_xp_profile.v1') {
     const progress = payload.next_level_progress || {};
     console.log(`Career XP ${formatNumber(payload.total_xp)} | Today ${formatNumber(payload.today_xp)} | Level ${formatNumber(payload.level || 1)}`);
@@ -807,11 +1337,32 @@ async function xpCommand(...args) {
   }
 
   const subcommand = args[0] && !args[0].startsWith('--') ? args[0] : null;
+  if (subcommand === 'session') {
+    const commandArgs = args.slice(1);
+    let payload;
+    try {
+      payload = buildCareerXpSessionCapsule(commandArgs);
+    } catch (error) {
+      console.error(`Failed to build local XP session: ${error.message}`);
+      process.exit(1);
+    }
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    render(payload);
+    return;
+  }
+
   if (subcommand === 'collect' || subcommand === 'status') {
     const commandArgs = args.slice(1);
     let payload;
     try {
-      payload = hasFlag(commandArgs, '--all')
+      const explicitLocal = hasFlag(commandArgs, '--local')
+        || hasFlag(commandArgs, '--workspace')
+        || hasFlag(commandArgs, '--operator');
+      const accountStatus = subcommand === 'status' && !explicitLocal;
+      payload = hasFlag(commandArgs, '--all') || accountStatus
         ? collectAllLocalXpProjection(commandArgs)
         : collectLocalXpProjection(commandArgs);
     } catch (error) {
@@ -872,6 +1423,7 @@ module.exports = {
   buildContributionRows,
   buildCareerXpProjection,
   buildAllCareerXpProjection,
+  buildCareerXpSessionCapsule,
   collectAllLocalXpProjection,
   collectLocalXpProjection,
   receiptFromTaskEpisode,

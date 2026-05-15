@@ -126,6 +126,17 @@ Move one task at a time through plan → do → review.
 - **do** — claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
 - **review** — run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
 
+Every stage runs the Confidence Gate before it advances:
+
+```
+am I factually confident enough to move this forward?
+  -> find loopholes: stale source, missing owner, weak proof, bad rollback, hidden risk
+  -> patch each loophole with source, verifier, proof, owner, rollback, or blocked note
+  -> advance only when known loopholes are patched, verified, or named as residual risk
+```
+
+100% confidence is not a vibe. It means every known loophole has been closed or explicitly carried as residual risk.
+
 State the next stage:
 
 ```

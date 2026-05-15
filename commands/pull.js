@@ -37,6 +37,11 @@ function isBusinessWorkspaceRoot(dir) {
   return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
 }
 
+function normalizePullFilePath(filePath) {
+  if (!filePath) return null;
+  return `/${String(filePath).replace(/^\/+/, '')}`;
+}
+
 function syncTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -221,8 +226,8 @@ async function pullBusiness(slug) {
   // correct workspace for THIS business — i.e. it has a `.atris/business.json`
   // whose slug matches `slug`. Any other signal (a stray `atris/` folder, a
   // business.json for a different business, etc.) is NOT enough: pulling
-  // atris-labs-1 on top of a pallet workspace would mix two businesses into
-  // one directory and write pallet's manifest over atris-labs-1's (or vice
+  // atris-labs on top of another business workspace would mix two businesses into
+  // one directory and write one manifest over the other (or vice
   // versa), causing the next sync to do strange things.
   //
   // Fallback: create a fresh ./{slug}/ subdir. Always safe — even if cwd is
@@ -253,9 +258,9 @@ async function pullBusiness(slug) {
   // for a stray cwd to cause atris to delete user files.
   ({ dir: outputDir } = resolveSafeOutputDir(outputDir, { slug, op: 'pull into' }));
 
-  if (!onlyPrefixes && isBusinessWorkspaceRoot(outputDir)) {
-    onlyPrefixes = ['atris/'];
-  }
+  // Pull the whole business workspace by default. Older versions silently
+  // narrowed bound workspace pulls to atris/, which made staging snapshots and
+  // the real workspace diverge while both reported "synced".
 
   // Resolve business ID — always refresh from API to avoid stale workspace_id
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -379,13 +384,15 @@ async function pullBusiness(slug) {
       // Diff against manifest to find changed files
       const remoteHashes = {};
       for (const f of hashResult.data.files) {
-        if (f.path && f.hash) remoteHashes[f.path] = f.hash;
+        const normalizedPath = normalizePullFilePath(f.path);
+        if (normalizedPath && f.hash) remoteHashes[normalizedPath] = f.hash;
       }
       const changedPaths = [];
       const manifestFiles = manifest.files || {};
       for (const [p, hash] of Object.entries(remoteHashes)) {
         const prev = manifestFiles[p];
-        if (!prev || prev.hash !== hash) changedPaths.push(p);
+        const missingLocally = !localFilesBeforePull[p];
+        if (!prev || prev.hash !== hash || missingLocally) changedPaths.push(p);
       }
 
       if (changedPaths.length === 0) {
@@ -422,12 +429,15 @@ async function pullBusiness(slug) {
           // Merge: hash-only results + content for changed files
           const contentMap = {};
           for (const f of batchResult.data.files) {
-            if (f.path) contentMap[f.path] = f;
+            const normalizedPath = normalizePullFilePath(f.path);
+            if (normalizedPath) contentMap[normalizedPath] = { ...f, path: normalizedPath };
           }
           // Build merged file list: all hash-only entries + inject content for changed ones
           const mergedFiles = hashResult.data.files.map(f => {
-            const withContent = contentMap[f.path];
-            return withContent || f;
+            const normalizedPath = normalizePullFilePath(f.path);
+            const normalizedHashOnly = normalizedPath ? { ...f, path: normalizedPath } : f;
+            const withContent = contentMap[normalizedPath];
+            return withContent || normalizedHashOnly;
           });
           result = { ok: true, data: { files: mergedFiles } };
         } else {
@@ -544,6 +554,8 @@ async function pullBusiness(slug) {
   const crypto = require('crypto');
   for (const file of files) {
     if (!file.path || file.binary) continue;
+    const normalizedPath = normalizePullFilePath(file.path);
+    if (!normalizedPath) continue;
     // An empty string IS valid content (a real, zero-byte file). The earlier
     // version excluded `content === ''` from the hasContent path, which made
     // empty files masquerade as hash-only entries; they'd then be recorded in
@@ -555,11 +567,11 @@ async function pullBusiness(slug) {
     if (hasContent) {
       // Full content available — hash from raw bytes (matches computeLocalHashes)
       const rawBytes = Buffer.from(file.content, 'utf-8');
-      remoteFiles[file.path] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
-      remoteContent[file.path] = file.content;
+      remoteFiles[normalizedPath] = { hash: crypto.createHash('sha256').update(rawBytes).digest('hex'), size: rawBytes.length };
+      remoteContent[normalizedPath] = file.content;
     } else if (file.hash) {
       // Hash-only entry from smart pull — trust the cloud-reported hash
-      remoteFiles[file.path] = { hash: file.hash, size: file.size || 0 };
+      remoteFiles[normalizedPath] = { hash: file.hash, size: file.size || 0 };
     }
   }
 
@@ -598,8 +610,12 @@ async function pullBusiness(slug) {
 
   if (dryRun) {
     console.log('');
-    for (const p of [...diff.toPull, ...diff.newRemote]) {
-      const label = diff.newRemote.includes(p) ? 'new on computer' : 'updated on computer';
+    for (const p of [...diff.toPull, ...diff.newRemote, ...diff.deletedLocal]) {
+      const label = diff.newRemote.includes(p)
+        ? 'new on computer'
+        : diff.deletedLocal.includes(p)
+          ? 'missing locally, restored from computer'
+          : 'updated on computer';
       const icon = diff.newRemote.includes(p) ? '+' : '\u2193';
       console.log(`  ${icon} ${p.replace(/^\//, '')}  ${label}  (dry run)`);
     }
@@ -611,7 +627,7 @@ async function pullBusiness(slug) {
     }
 
     const parts = [];
-    const pullCount = diff.toPull.length + diff.newRemote.length;
+    const pullCount = diff.toPull.length + diff.newRemote.length + diff.deletedLocal.length;
     if (pullCount > 0) parts.push(`${pullCount} would be pulled`);
     if (diff.deletedRemote.length > 0) parts.push(`${diff.deletedRemote.length} local file${diff.deletedRemote.length === 1 ? '' : 's'} would be removed`);
     if (diff.unchanged.length > 0) parts.push(`${diff.unchanged.length} unchanged`);
@@ -632,13 +648,17 @@ async function pullBusiness(slug) {
   console.log('');
 
   // Pull files that changed remotely (and we didn't change locally)
-  for (const p of [...diff.toPull, ...diff.newRemote]) {
+  for (const p of [...diff.toPull, ...diff.newRemote, ...diff.deletedLocal]) {
     const content = remoteContent[p];
     if (!content && content !== '') continue;
     const localPath = path.join(outputDir, p.replace(/^\//, ''));
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
     fs.writeFileSync(localPath, content);
-    const label = diff.newRemote.includes(p) ? 'new on computer' : 'updated on computer';
+    const label = diff.newRemote.includes(p)
+      ? 'new on computer'
+      : diff.deletedLocal.includes(p)
+        ? 'missing locally, restored from computer'
+        : 'updated on computer';
     const icon = diff.newRemote.includes(p) ? '+' : '\u2193';
     console.log(`  ${icon} ${p.replace(/^\//, '')}  ${label}`);
     pulled++;
@@ -1059,4 +1079,4 @@ async function pullMemberJournal(token, agentId, memberName, memberDir) {
   return synced;
 }
 
-module.exports = { buildPullConflictReviewPacket, pullAtris };
+module.exports = { buildPullConflictReviewPacket, normalizePullFilePath, pullAtris };

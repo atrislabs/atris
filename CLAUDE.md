@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working on the 
 
 4. **Find what you need** — Always reference `atris/MAP.md` before making changes. It has exact file:line references for every component.
 
-5. **Claim and complete tasks** — Use `atris task day`, `atris task next`, `atris task claim <id> --as <agent>`, and `atris task finish <id> --proof "..."`. `atris/TODO.md` is only a rendered fallback view.
+5. **Claim and prepare tasks for approval** — Use `atris task day`, `atris task next`, `atris task claim <id> --as <agent>`, and `atris task ready <id> --proof "..."`. `atris/TODO.md` is only a rendered fallback view. Once proof is in Review, the agent may complete its native goal and continue the mission loop. Use `atris task accept <id>` only after human approval; that is what moves the task to Done and awards Career XP.
 
 6. **Use the agent workflow** — Navigator (plan) → Executor (build) → Validator (review). Each has specific responsibilities in `atris/team/`.
 
@@ -302,7 +302,8 @@ This is how the system is meant to be used:
    └─ Run: atris review
    └─ AI ultrathinks (3x before deciding)
    └─ Runs tests, fixes bugs, updates docs
-   └─ Finishes with `atris task finish <id> --proof "..."` and records review/next task
+   └─ Moves to approval with `atris task ready <id> --proof "..."`
+   └─ Native goal may complete here; human approval runs `atris task accept <id>` for Done + Career XP
    └─ Output: Tests pass, docs fresh, system clean
 
 6. Target State

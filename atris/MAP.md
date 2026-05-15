@@ -35,7 +35,7 @@ rg "function doAtris" commands/workflow.js     # Do command (line 297)
 rg "function reviewAtris" commands/workflow.js  # Review command (line 667)
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "function statusAtris" commands/status.js     # Status command (line 79)
-rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|loadLocalPayload" commands/xp.js bin/atris.js  # Career XP command: remote graph plus local xp status/collect proof receipts
+rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # Career XP command: remote graph, local xp status/collect, all-workspace profile, and session capsule
 rg "function analyticsAtris" commands/analytics.js  # Analytics command (line 4)
 
 # Modular commands
@@ -57,8 +57,9 @@ rg "searchJournal" bin/atris.js             # Search command (inline)
 rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
 rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
-rg "cmdAdd|cmdImport|cmdClaim|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
+rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
+rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
 rg "gmailCommand" commands/integrations.js  # Integration commands
 rg "memberCommand|memberGoal|memberTick|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, goal loop, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
@@ -71,6 +72,7 @@ rg "checkForUpdates" utils/update-check.js  # Version checks
 
 # Documentation
 rg "Phase 1" atris.md                       # Agent generation spec
+rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/init.js atris/CLAUDE.md  # generated agent onboarding contract
 ```
 
 ---

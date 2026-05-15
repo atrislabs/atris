@@ -12,6 +12,7 @@ const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
   || os.userInfo().username
   || 'unknown';
+const AGENT_CERTIFICATION_REVIEW_PASSES = 2;
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -64,7 +65,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task new "<title>"                Create a task
   atris task next                         Claim/show the next open task
   atris task say <id> "<message>"         Add context to a task
-  atris task ready <id> --proof "..."      Agent proof ready for human approval
+  atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
   atris task accept <id> [--proof "..."]   Human accepts proof, marks done
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
@@ -203,6 +204,22 @@ function taskRef(taskOrId) {
   return taskOrId.display_id || taskOrId.legacy_ref || taskRef(taskOrId.id);
 }
 
+function normalizeTaskLookupRef(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+function taskLookupRefs(task) {
+  if (!task) return [];
+  return [task.id, task.display_id, task.legacy_ref, taskRef(task)]
+    .map(normalizeTaskLookupRef)
+    .filter(Boolean);
+}
+
+function resolveProjectionTaskRef(ref, taskByRef) {
+  const key = normalizeTaskLookupRef(ref);
+  return key ? taskByRef.get(key) || null : null;
+}
+
 function createNextTaskIfRequested(taskDb, db, args, currentTask, title) {
   const nextTitle = String(title || '').trim();
   if (!hasFlag(args, '--create-next') || !nextTitle) return null;
@@ -278,9 +295,20 @@ function reviewSummary(task, payload = {}) {
 
   const title = String(task.title || 'this task').replace(/\s+/g, ' ').trim();
   const plainTitle = title ? title.charAt(0).toLowerCase() + title.slice(1) : 'this task';
-  const productText = `${title} ${task.tag || ''}`.toLowerCase();
-  if (productText.includes('career xp') || /\bxp\b/.test(productText)) {
-    return 'This makes Career XP a real local scoreboard: accepted proof updates XP, level progress, latest proof, and tamper-evident receipts.';
+  const careerText = [
+    task.tag,
+    metadata.goal_id,
+    metadata.goal_objective,
+    metadata.review_goal,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (careerText.includes('career-xp') || careerText.includes('career xp')) {
+    if (task.status === 'done') {
+      return `This is accepted Career XP work: ${plainTitle} is done and has a proof receipt.`;
+    }
+    if (task.status === 'review') {
+      return `This is Career XP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
+    }
+    return `This explains what accepting ${plainTitle} would make real for Career XP.`;
   }
   if (task.status === 'done') {
     return `This is the accepted outcome: ${plainTitle} is done and counted as real work.`;
@@ -295,7 +323,11 @@ function taskReviewSummary(task) {
   const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed' || e.event_type === 'proof_ready');
   const payload = reviewed && reviewed.payload || {};
   const metadata = task.metadata || {};
-  if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count) return null;
+  if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
+  const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
+  const agentCertified = metadata.agent_certified === true
+    || payload.agent_certified === true
+    || reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES;
   return {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
@@ -303,7 +335,11 @@ function taskReviewSummary(task) {
     lesson: payload.lesson || null,
     next_task: payload.next_task || null,
     approval_status: metadata.approval_status || (task.status === 'review' ? 'pending' : null),
-    agent_review_pass_count: metadata.agent_review_pass_count || payload.review_pass_count || null,
+    agent_review_pass_count: reviewPassCount || null,
+    agent_certified: agentCertified,
+    agent_certification_policy: metadata.agent_certification_policy
+      || payload.agent_certification_policy
+      || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
   };
 }
@@ -347,6 +383,26 @@ function pickTaskGoal(task, goals) {
     }
   }
   return bestScore > 0 ? best : null;
+}
+
+function taskBaseObjective(task, goals) {
+  const metadata = task && task.metadata || {};
+  return task.objective
+    || metadata.goal_objective
+    || metadata.objective
+    || pickTaskGoal(task, goals);
+}
+
+function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+  const metadata = task && task.metadata || {};
+  const explicit = task.objective || metadata.goal_objective || metadata.objective;
+  if (explicit) return explicit;
+  if (parent) {
+    if (parentLinkType === 'parent_task_id') return baseObjectives.get(parent.id) || parent.title;
+    if (parentLinkType === 'goal_id') return parent.title;
+    return baseObjectives.get(parent.id) || parent.title;
+  }
+  return pickTaskGoal(task, goals);
 }
 
 function buildTaskStreams(tasks, goals) {
@@ -405,22 +461,35 @@ function buildTaskStreams(tasks, goals) {
 function enrichTaskProjection(projection) {
   const root = projection.workspace_root || process.cwd();
   const goalSource = readGoalSources(root);
-  const byId = new Map((projection.tasks || []).map(task => [task.id, task]));
+  const byRef = new Map();
+  for (const task of projection.tasks || []) {
+    for (const ref of taskLookupRefs(task)) byRef.set(ref, task);
+  }
+  const baseObjectives = new Map();
+  for (const task of projection.tasks || []) {
+    const objective = taskBaseObjective(task, goalSource.goals);
+    if (objective) baseObjectives.set(task.id, objective);
+  }
   const children = new Map();
   for (const task of projection.tasks || []) {
-    const parentId = task.metadata && task.metadata.parent_task_id;
-    if (!parentId) continue;
-    if (!children.has(parentId)) children.set(parentId, []);
-    children.get(parentId).push(task);
+    const metadata = task.metadata || {};
+    const parent = resolveProjectionTaskRef(metadata.parent_task_id, byRef) || resolveProjectionTaskRef(metadata.goal_id, byRef);
+    if (!parent) continue;
+    if (!children.has(parent.id)) children.set(parent.id, []);
+    children.get(parent.id).push(task);
   }
   const enrichedTasks = (projection.tasks || []).map(task => {
-      const parentId = task.metadata && task.metadata.parent_task_id || null;
-      const parent = parentId ? byId.get(parentId) : null;
+      const metadata = task.metadata || {};
+      const parentFromParentId = resolveProjectionTaskRef(metadata.parent_task_id, byRef);
+      const parentFromGoalId = resolveProjectionTaskRef(metadata.goal_id, byRef);
+      const parent = parentFromParentId || parentFromGoalId;
+      const parentLinkType = parentFromParentId ? 'parent_task_id' : parentFromGoalId ? 'goal_id' : null;
+      const parentId = parent ? parent.id : metadata.parent_task_id || null;
       const childTasks = children.get(task.id) || [];
       const review = taskReviewSummary(task);
       return {
         ...task,
-        objective: pickTaskGoal(task, goalSource.goals) || (parent ? pickTaskGoal(parent, goalSource.goals) : null),
+        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
@@ -557,6 +626,18 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
+function reviewHandoffForTask(task) {
+  const review = task && task.review || {};
+  if (task && task.status !== 'review') return null;
+  if (review.approval_status !== 'pending') return null;
+  const agentCertified = review.agent_certified === true;
+  return {
+    native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
+    career_xp_status: 'pending_human_accept',
+    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+  };
+}
+
 function compactTaskForStatus(task) {
   if (!task) return null;
   const metadata = task.metadata || {};
@@ -584,18 +665,23 @@ function compactTaskForStatus(task) {
     if (task.review.next_task) review.next_task = clipStatusText(task.review.next_task, 140);
     if (task.review.approval_status) review.approval_status = task.review.approval_status;
     if (task.review.agent_review_pass_count) review.agent_review_pass_count = task.review.agent_review_pass_count;
+    if (task.review.agent_certified) review.agent_certified = task.review.agent_certified;
+    if (task.review.agent_certification_policy) review.agent_certification_policy = task.review.agent_certification_policy;
     if (task.review.human_revision_count) review.human_revision_count = task.review.human_revision_count;
+    const handoff = reviewHandoffForTask(task);
+    if (handoff) review.handoff = handoff;
     if (Object.keys(review).length) out.review = review;
   }
   if (task.lineage) {
     const lineage = {};
     if (task.lineage.parent_task_id) lineage.parent_task_id = task.lineage.parent_task_id;
+    if (task.lineage.parent_title) lineage.parent_title = clipStatusText(task.lineage.parent_title, 140);
     if (task.lineage.child_task_ids && task.lineage.child_task_ids.length) lineage.child_task_ids = task.lineage.child_task_ids;
     if (task.lineage.next_task_suggestion) lineage.next_task_suggestion = clipStatusText(task.lineage.next_task_suggestion, 140);
     if (Object.keys(lineage).length) out.lineage = lineage;
   }
   const compactMetadata = {};
-  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'human_revision_count', 'human_revision_note']) {
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
     if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
   }
   if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
@@ -1146,7 +1232,35 @@ function cmdNext(args) {
     limit: 1,
   });
   if (!open.length) {
-    const { outPath } = writeDefaultProjection(taskDb, db);
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const reviewTasks = (projection.tasks || [])
+      .map(compactTaskForStatus)
+      .filter(task => task && task.review && task.review.handoff);
+    const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
+      || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work');
+    if (reviewTask) {
+      const handoff = reviewTask.review.handoff;
+      if (wantsJson(args)) {
+        printJson({
+          ok: true,
+          action: handoff.next_action,
+          task_id: handoff.next_action === 'agent_review_again' ? reviewTask.id : null,
+          owner: String(owner),
+          projection_path: outPath,
+          handoff,
+          review_task: reviewTask,
+        });
+        return;
+      }
+      console.log('No open tasks.');
+      console.log(handoff.next_action === 'continue_work'
+        ? `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`
+        : `${taskRef(reviewTask)} needs one more agent review before continuation.`);
+      console.log(handoff.next_action === 'continue_work'
+        ? 'Continue work elsewhere; Career XP waits for human accept.'
+        : 'Review this task again before continuing.');
+      return;
+    }
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -1238,6 +1352,15 @@ function cmdShow(args) {
   const tag = task.tag ? ` #${task.tag}` : '';
   console.log(`${task.status.toUpperCase()} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
+  if (task.review) {
+    console.log('');
+    if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
+    if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
+    if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
+    if (task.review.next_task) console.log(`Next: ${task.review.next_task}`);
+    if (task.review.approval_status) console.log(`Approval: ${task.review.approval_status}`);
+    if (task.review.agent_certified) console.log(`Agent certified: yes (${task.review.agent_review_pass_count || AGENT_CERTIFICATION_REVIEW_PASSES} reviews)`);
+  }
   if (task.messages.length) {
     console.log('');
     console.log('Dialogue:');
@@ -1395,6 +1518,15 @@ function cmdReady(args) {
     process.exit(1);
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const agentCertified = result.event.payload.agent_certified === true;
+  const handoff = {
+    native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
+    career_xp_status: 'pending_human_accept',
+    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+    rule: agentCertified
+      ? 'Agent double-check complete; continue work. Career XP waits for human accept.'
+      : 'Proof is in Review; one more agent review pass certifies continuation. Career XP waits for human accept.',
+  };
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -1403,12 +1535,15 @@ function cmdReady(args) {
       version: result.event.version,
       approval_status: 'pending',
       review_pass_count: result.event.payload.review_pass_count,
+      agent_certified: agentCertified,
+      handoff,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
     return;
   }
   console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
+  console.log(handoff.rule);
 }
 
 function cmdAccept(args) {
