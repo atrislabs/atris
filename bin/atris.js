@@ -403,7 +403,7 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
-  console.log('  agent      - Select which Atris agent to use');
+  console.log('  agent      - Select cloud agent, or run `agent doctor` for local CLI wiring');
   console.log('  chat       - Chat with the selected Atris agent');
   console.log('  login      - Sign in or add another account');
   console.log('  logout     - Sign out of current account');
@@ -1814,17 +1814,110 @@ function showVersion() {
 // Agent Selection
 // ============================================
 
+function fileContains(relPath, pattern) {
+  try {
+    const fullPath = path.join(process.cwd(), relPath);
+    if (!fs.existsSync(fullPath)) return false;
+    const text = fs.readFileSync(fullPath, 'utf8');
+    return pattern instanceof RegExp ? pattern.test(text) : text.includes(pattern);
+  } catch {
+    return false;
+  }
+}
+
+function commandOnPath(name) {
+  const result = spawnSync('which', [name], { encoding: 'utf8', timeout: 1000 });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function inspectAgentCliWiring() {
+  const checks = [
+    {
+      id: 'atris-core',
+      label: 'Atris core',
+      ok: fs.existsSync(path.join(process.cwd(), 'atris', 'MAP.md'))
+        && fs.existsSync(path.join(process.cwd(), 'atris', 'TODO.md')),
+      fix: 'Run `atris init` from the workspace root.',
+    },
+    {
+      id: 'codex',
+      label: 'Codex / OpenAI agents',
+      ok: fileContains('AGENTS.md', /atris\/MAP\.md|atris atris\.md|atris task/),
+      fix: 'Add AGENTS.md with Atris boot, MAP, and task instructions.',
+    },
+    {
+      id: 'claude',
+      label: 'Claude Code',
+      ok: fileContains('.claude/commands/atris.md', /atris|AGENTS\.md/)
+        || fileContains('.claude/settings.json', /atris atris\.md|atris\/skills/)
+        || fileContains('CLAUDE.md', /Atris|atris/),
+      fix: 'Run `atris init` to create .claude commands/settings.',
+    },
+    {
+      id: 'cursor',
+      label: 'Cursor',
+      ok: fileContains('.cursor/rules/atris.mdc', /atris\/MAP\.md|AGENTS\.md|atris task/)
+        || fileContains('.cursorrules', /atris\/MAP\.md|AGENTS\.md|atris task/)
+        || fileContains('.cursor/commands/atris.md', /atris\/MAP\.md|atris\.md/),
+      fix: 'Run `atris init` to create Cursor rules, or add .cursor/commands/atris.md.',
+    },
+    {
+      id: 'devin',
+      label: 'Devin',
+      ok: fileContains('.devin/config.local.json', /Exec\(atris\)/),
+      fix: 'Run `atris init` or add .devin/config.local.json allowing Exec(atris).',
+    },
+  ];
+
+  const binaries = ['atris', 'claude', 'codex', 'cursor-agent', 'devin'].map((name) => ({
+    name,
+    path: commandOnPath(name),
+  }));
+  return { checks, binaries };
+}
+
+function agentDoctor() {
+  const args = process.argv.slice(4);
+  const json = args.includes('--json');
+  const { checks, binaries } = inspectAgentCliWiring();
+  const ok = checks.every((check) => check.ok);
+  const payload = { ok, action: 'agent_doctor', checks, binaries };
+
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    process.exit(ok ? 0 : 1);
+  }
+
+  console.log('Atris agent CLI doctor');
+  console.log('');
+  for (const check of checks) {
+    console.log(`${check.ok ? '✓' : '✗'} ${check.label}`);
+    if (!check.ok) console.log(`  fix: ${check.fix}`);
+  }
+  console.log('');
+  console.log('Local binaries');
+  for (const binary of binaries) {
+    console.log(`${binary.path ? '✓' : '·'} ${binary.name}${binary.path ? ` -> ${binary.path}` : ' not on PATH'}`);
+  }
+  process.exit(ok ? 0 : 1);
+}
+
 async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent');
+    console.log('Usage: atris agent [doctor]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
+    console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
     console.log('  Requires `atris login` first.');
     console.log('');
     console.log('  After selecting, use: atris chat ["message"]');
     process.exit(0);
+  }
+
+  if (firstArg === 'doctor') {
+    agentDoctor();
   }
 
   const targetDir = path.join(process.cwd(), 'atris');
