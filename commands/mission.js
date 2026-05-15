@@ -132,6 +132,79 @@ function printJsonOrText(payload, lines, asJson) {
   for (const line of lines) console.log(line);
 }
 
+function loadTaskDb(asJson = false) {
+  try {
+    return require('../lib/task-db');
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    if (error?.code === 'ERR_UNKNOWN_BUILTIN_MODULE' || /node:sqlite/.test(message)) {
+      exitMissionError('AgentXP mission tasks require Node 22+ with node:sqlite.', 2, asJson);
+    }
+    throw error;
+  }
+}
+
+function writeMissionTaskProjection(taskDb, db, workspaceRoot) {
+  const projection = taskDb.taskProjection(db, { workspaceRoot, limit: 500 });
+  const outPath = path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json');
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
+  return { projection, outPath };
+}
+
+function missionTaskRef(task) {
+  return task?.display_id || task?.legacy_ref || String(task?.id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
+}
+
+function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
+  const taskDb = loadTaskDb(asJson);
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot(root);
+  const title = `Mission XP: ${mission.objective}`;
+  const metadata = {
+    assigned_to: mission.owner,
+    delegate_via: 'mission_goal_loop',
+    created_for_day: todayName(),
+    goal_id: mission.id,
+    goal_objective: mission.objective,
+    mission_id: mission.id,
+    mission_objective: mission.objective,
+    mission_owner: mission.owner,
+    mission_lane: mission.lane,
+    mission_runner: mission.runner,
+    verify: mission.verifier || null,
+    stop_condition: mission.stop_condition || null,
+  };
+  const result = taskDb.addTask(db, {
+    title,
+    tag: 'agent-xp',
+    workspaceRoot,
+    sourceKey: `mission-xp:${mission.id}`,
+    status: 'claimed',
+    claimedBy: mission.owner,
+    metadata,
+  });
+  const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
+  const task = rows.find(row => row.id === result.id);
+  if (task) {
+    taskDb.noteTask(db, {
+      id: task.id,
+      actor: process.env.ATRIS_AGENT_ID || mission.owner || 'mission-lead',
+      content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task ready; AgentXP lands only after human accept.`,
+    });
+  }
+  const { outPath } = writeMissionTaskProjection(taskDb, db, workspaceRoot);
+  return {
+    task_id: result.id,
+    ref: missionTaskRef(task) || result.id,
+    title,
+    status: task?.status || 'claimed',
+    assigned_to: mission.owner,
+    inserted: result.inserted !== false,
+    projection_path: outPath,
+  };
+}
+
 function statePaths(root = process.cwd()) {
   const stateDir = path.join(root, '.atris', 'state');
   return {
@@ -323,6 +396,7 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- cadence: ${mission.cadence}`);
     lines.push(`- runner: ${mission.runner}`);
     lines.push(`- lane: ${mission.lane}`);
+    if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
     if (mission.next_action) lines.push(`- next: ${mission.next_action}`);
@@ -366,6 +440,7 @@ function renderMissionStatus(root = process.cwd()) {
       lines.push(`  - owner: ${mission.owner}`);
       lines.push(`  - state: ${mission.status}`);
       lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
+      if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
     }
     lines.push('');
@@ -374,6 +449,18 @@ function renderMissionStatus(root = process.cwd()) {
   lines.push('');
   fs.writeFileSync(paths.statusNow, lines.join('\n'), 'utf8');
   return paths.statusNow;
+}
+
+function missionXpTaskRefFromMission(mission) {
+  if (mission?.xp_task?.ref) return mission.xp_task.ref;
+  if (mission?.xp_task_enabled && mission?.task_ids?.[0]) return mission.task_ids[0];
+  return '';
+}
+
+function missionXpReadyAction(mission, receiptPath) {
+  const ref = missionXpTaskRefFromMission(mission);
+  if (!ref || !receiptPath) return null;
+  return `queue AgentXP review: atris task ready ${ref} --proof "${receiptPath}"`;
 }
 
 function missionFromArgs(args) {
@@ -387,7 +474,7 @@ function missionFromArgs(args) {
     '--stop',
     '--task',
     '--ask',
-  ], ['--json', '--always-on']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]', 1, wantsJson(args));
   }
@@ -401,6 +488,7 @@ function missionFromArgs(args) {
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
   const alwaysOn = hasFlag(args, '--always-on');
+  const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const id = missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
@@ -414,6 +502,7 @@ function missionFromArgs(args) {
     lane,
     verifier,
     always_on: alwaysOn,
+    xp_task_enabled: xpTaskEnabled,
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
@@ -437,6 +526,14 @@ function missingVerifierWarning(mission) {
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
+  if (mission.xp_task_enabled) {
+    const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
+    mission.xp_task = xpTask;
+    mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
+    if (!mission.verifier && !mission.always_on) {
+      mission.next_action = `work task then run: atris task ready ${xpTask.ref} --proof "<proof>"`;
+    }
+  }
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective });
@@ -455,6 +552,7 @@ function startMission(args) {
       `Owner: ${saved.owner}`,
       `State: ${saved.status}`,
       ...warnings.map((warning) => `Warning: ${warning.message}`),
+      ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
       `Next: atris mission tick ${saved.id}`,
     ],
     asJson,
@@ -694,6 +792,10 @@ function codexGoalObjective(mission) {
 }
 
 function codexGoalNextCommand(mission) {
+  if (mission.status === 'ready') {
+    const xpAction = missionXpReadyAction(mission, mission.receipt_path);
+    if (xpAction) return xpAction.replace(/^queue AgentXP review: /, '');
+  }
   if (mission.verifier && missionDueAt(mission)) {
     return 'atris mission run --due --max-ticks 1 --complete-on-pass';
   }
@@ -1294,7 +1396,9 @@ async function runMission(args) {
         worktree: tickWorktree,
       });
 
+      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
       const newStatus = (verifierResult?.passed && mission.always_on) ? 'running' :
+                        (verifierResult?.passed && xpReadyAction) ? 'ready' :
                         (verifierResult?.passed && completeOnPass) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
@@ -1302,6 +1406,8 @@ async function runMission(args) {
       let nextAction = mission.next_action;
       if (verifierResult?.passed && mission.always_on) {
         nextAction = nextCandidateTickAction(mission);
+      } else if (verifierResult?.passed && xpReadyAction) {
+        nextAction = xpReadyAction;
       } else if (verifierResult?.passed && completeOnPass) {
         nextAction = 'mission complete';
       } else if (verifierResult?.passed) {
@@ -1482,9 +1588,10 @@ function tickMission(args) {
     let status = 'running';
     let nextAction = mission.verifier ? `run verifier: ${mission.verifier}` : 'attach task, verifier, or proof';
     if (verifierResult?.passed) {
-      status = (completeOnPass && !mission.always_on) ? 'complete' : 'ready';
+      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
+      status = (completeOnPass && !mission.always_on && !xpReadyAction) ? 'complete' : 'ready';
       nextAction = mission.always_on ? nextCandidateTickAction(mission) :
-        (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`);
+        (xpReadyAction || (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`));
     } else if (verifierResult) {
       status = 'blocked';
       nextAction = 'fix verifier failure or revise mission';
@@ -1549,9 +1656,10 @@ function completeMission(args) {
   const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof });
   const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
   const codexGoalState = refreshCodexGoalController(process.cwd());
+  const xpNextCommand = missionXpReadyAction(saved, proof);
   printJsonOrText(
-    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath, codex_goal_state: codexGoalState },
-    [`Completed mission: ${saved.objective}`, `Proof: ${proof}`],
+    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath, codex_goal_state: codexGoalState, xp_next_command: xpNextCommand },
+    [`Completed mission: ${saved.objective}`, `Proof: ${proof}`, ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : [])],
     asJson,
   );
 }
@@ -1683,7 +1791,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task]
   atris mission status [id] [--status <state>] [--limit <n>] [--json]
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -1696,13 +1804,15 @@ atris mission - durable goal + loop + owner + proof state
 Autonomy recipe:
   1. Pick an owner member: atris member create <member>  (if missing)
   2. Start a current-agent mission with a verifier:
-     atris mission start "ship one proof" --owner <member> --runner codex_goal --lane code --verify "npm test" --stop "verifier passes"
+     atris mission start "ship one proof" --owner <member> --runner codex_goal --lane code --verify "npm test" --stop "verifier passes" --xp-task
   3. Codex sessions: atris mission goal --json, then set /goal to goal.objective
      Overnight controller: atris mission goal --heartbeat --json
      Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json
   4. Do one bounded step, then record it:
      atris mission tick <id> --verify --summary "what changed"
   5. Close or continue from the receipt:
+     atris task ready <xp_task_ref> --proof "<receipt_path>"  (if --xp-task)
+     atris task accept <xp_task_ref> --reward <n>             (human accept mints AgentXP)
      atris mission complete <id> --proof "<receipt_path>"
      repeat status -> step -> tick for current-agent work
      atris mission run <id> --max-ticks 4 --complete-on-pass  (Claude/always-on runner)
