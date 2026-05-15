@@ -36,6 +36,8 @@ Prove the operating model by living in it. Atris Labs should be able to answer "
 
 The latest available local status files are historical March 2026 artifacts, not fresh company truth. They still show the shape of the dogfood loop:
 
+The canonical current local route is `arena/atris-business/atris-labs/atris/`. The latest available status files captured in this wiki page are still historical March 2026 artifacts, not fresh company truth. They show the shape of the dogfood loop:
+
 - company status and pipeline rollups in `context/`
 - team member priorities in `team/<person>/MEMBER.md`
 - customer/deal work as explicit pipeline rows

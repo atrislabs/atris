@@ -161,7 +161,7 @@ atris task say <task_ref> "User wants to see who is doing what" --as codex
 Finish with proof:
 
 ```bash
-atris task finish <task_ref> --proof "npm run typecheck && npm run build passed" --as codex
+atris task ready <task_ref> --proof "npm run typecheck && npm run build passed" --as codex
 ```
 
 Record review, lesson, and the next task:
@@ -270,7 +270,8 @@ The recursive self-improvement loop is:
 ```text
 atris task next --as <agent>
   -> work the task
-  -> atris task finish <id> --proof "..."
+  -> atris task ready <id> --proof "..."
+  -> human approves with atris task accept <id>
   -> atris task review <id> --reward 1 --lesson "..." --next "..." --create-next
   -> atris task --json
 ```

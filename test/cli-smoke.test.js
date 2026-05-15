@@ -61,6 +61,11 @@ test('init creates structured TODO and feature templates', () => {
     const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(agents, /## Mission Autonomy/);
     assert.match(agents, /atris mission status --status active --json/);
+    assert.match(agents, /OpenClaw/);
+    assert.match(agents, /Agent Contract/);
+    assert.match(agents, /atris task note <id>/);
+    assert.match(agents, /atris task ready <id> --proof/);
+    assert.match(agents, /atris task accept <id>/);
 
     const claude = fs.readFileSync(path.join(dir, 'atris', 'CLAUDE.md'), 'utf8');
     assert.match(claude, /## Mission Autonomy/);
@@ -145,6 +150,38 @@ test('natural-language entry passes request into plan output', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /DIRECT REQUEST/);
     assert.match(res.stdout, /build a thing/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('plan ignores legacy local execution config unless Atris 2 alias is present', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', '.config'), '{"execution_mode":"local"}\n', 'utf8');
+
+    const res = runCli(['plan'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris Plan - Navigator Agent Activated|Atris Plan .* Navigator Agent Activated/);
+    assert.doesNotMatch(res.stderr, /Cannot read properties/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('natural-language prompts containing 2 fast do not trigger Atris 2 alias', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
+
+    const res = runCli(['make', '2', 'fast', 'smoke', 'tests'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /DIRECT REQUEST/);
+    assert.match(res.stdout, /make 2 fast smoke tests/);
+    assert.doesNotMatch(res.stdout, /EXECUTING VIA ATRIS 2/);
   } finally {
     cleanupTempDir(dir);
   }
