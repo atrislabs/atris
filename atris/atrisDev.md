@@ -470,7 +470,7 @@ Enhanced sync logic with auto-pull and conflict resolution.
 
 **The atrisDev Protocol** is a universal workflow that any coding agent can follow to produce high-quality output. When agents follow this protocol, they build features systematically with human approval gates and proper documentation, using small, low-risk changes that compound over time.
 
-**This protocol works with ANY agent:** Claude Code, Cursor, Windsurf, GitHub Copilot, or any LLM-based coding assistant.
+**This protocol works with ANY agent:** Claude Code, Cursor, Codex, OpenClaw, Windsurf, GitHub Copilot, or any LLM-based coding assistant.
 
 ---
 

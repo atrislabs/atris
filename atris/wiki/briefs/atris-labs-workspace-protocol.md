@@ -3,7 +3,7 @@ type: brief
 slug: atris-labs-workspace-protocol
 title: Atris Labs Workspace Protocol
 sources:
-  - /Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md
+  - /Users/keshavrao/arena/atris-business/atris-labs/atris/atris.md
 last_compiled: 2026-04-27
 created: 2026-04-08
 updated: 2026-04-27
@@ -16,7 +16,7 @@ tags:
 ---
 # Atris Labs Workspace Protocol
 
-Atris Labs is the business owner for the company that builds Atris. Its default computer lives at `arena/atris-business/atris-labs-1/atris/` and dogfoods the AI-native operating shape before customers touch it. Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
+Atris Labs is the business owner for the company that builds Atris. Its default computer lives at `arena/atris-business/atris-labs/atris/` and dogfoods the AI-native operating shape before customers touch it. Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
 
 Model mapping:
 

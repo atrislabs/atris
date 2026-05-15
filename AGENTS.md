@@ -1,24 +1,65 @@
 # AGENTS.md — Universal Agent Instructions
 
-> Works with: Claude Code, Cursor, Codex, Windsurf, and any AI coding agent.
+> Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
 
 ## Quick Start
 
 ```bash
 atris
+atris task list --status open
+atris task claim <id> --as <agent>
 ```
 
-Run this first. Follow the output.
+Run `atris` first. It prints repo state, the files to read, and the next command.
+
+If there is no existing task, create one before editing:
+
+```bash
+atris task new "<small concrete title>" --tag <area>
+atris task claim <id> --as <agent>
+```
 
 ## Core Files
 
+Atris is the source of truth. This file is only an adapter for tools that read
+`AGENTS.md`; do not turn it into a parallel brain. Durable policy, workflow,
+task truth, proof, review, and backend/cloud sync all flow through Atris.
+
 | File | Purpose |
 |------|---------|
+| `atris/atris.md` | Protocol/backbone for this workspace |
 | `atris/PERSONA.md` | Communication style (read first) |
 | `atris task` | Current tasks, claims, dialogue, proof |
 | `.atris/state/tasks.projection.json` | Readable task projection for UIs/agents |
 | `atris/TODO.md` | Rendered/legacy task view only |
 | `atris/MAP.md` | Navigation (where is X?) |
+
+## Agent Contract
+
+Every agent should leave four artifacts another agent can trust:
+
+| Artifact | Where |
+|----------|-------|
+| Objective | `atris task note <id> "Goal / files / done / check"` |
+| Navigation | `atris/MAP.md` when a new route or file location is learned |
+| Change | Small git diff in declared files only |
+| Proof ready | `atris task ready <id> --proof "<commands or receipt>"` |
+| Human accept | `atris task accept <id>` |
+
+Do not rely on chat context. Put the task, file pointers, and proof on disk.
+Do not write new operating doctrine here first; add it to Atris policy, skills,
+wiki, or `atris/atris.md`, then regenerate this adapter if needed.
+
+Native goals and task approval are separate gates:
+
+```text
+Agent proof ready -> native goal can complete
+Human accept      -> task Done + Career XP awarded
+```
+
+Always-on agents should move proof-backed work to Review, complete their native
+goal, then continue the mission loop with the next goal. They must not run
+`atris task accept` or claim Career XP unless a human approved the proof.
 
 ## Workflow
 
@@ -35,8 +76,12 @@ CHECK → atris review (verify + cleanup)
 - [ ] Check MAP.md before touching code
 - [ ] Run `atris task list` or `atris task next` before picking work
 - [ ] Claim tasks with `atris task claim <id> --as <agent>`
-- [ ] Finish tasks with proof via `atris task finish <id> --proof "..."`
+- [ ] Move agent-completed work to Review via `atris task ready <id> --proof "..."`
+- [ ] Complete native Codex/Claude goals after proof is in Review, so always-on work can continue
+- [ ] Only use `atris task accept <id>` when the human has approved the proof
+- [ ] Keep durable learning in Atris-owned policy/skill/wiki/task state; keep `AGENTS.md` as a generated/pointer layer
 - [ ] Treat `atris/TODO.md` as a rendered view; do not manually use it as the source of truth
+- [ ] Use `atris-labs` for the Atris Labs business computer slug in docs and links
 
 ## Anti-patterns
 
