@@ -3779,6 +3779,66 @@ test('task delegate can prepare a Swarlo handoff without changing task truth', (
   }
 });
 
+test('play mode opens the assigned AgentXP mission for a player', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'AgentXP Mode first rep',
+      '--to',
+      'justin',
+      '--tag',
+      'agent-xp',
+      '--note',
+      'Win condition: one proof-backed customer-motion rep.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+
+    const play = runCli(['play', '--as', 'justin'], { cwd: dir, env });
+    assert.equal(play.status, 0, play.stderr);
+    assert.match(play.stdout, /AgentXP Mode/);
+    assert.match(play.stdout, /Player justin/);
+    assert.match(play.stdout, /AgentXP Mode first rep/);
+    assert.match(play.stdout, /Win condition: one proof-backed customer-motion rep/);
+    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as justin/);
+    assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --proof/);
+    assert.match(play.stdout, /atris xp card --local/);
+
+    const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const body = JSON.parse(json.stdout);
+    assert.equal(body.schema, 'atris.agentxp_play_mode.v1');
+    assert.equal(body.player, 'justin');
+    assert.equal(body.mission.title, 'AgentXP Mode first rep');
+    assert.equal(body.mission.assigned_to, 'justin');
+    assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as justin`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('play mode help is workspace-free and non-mutating', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['play', '--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Usage: atris play/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Run "atris init"|Not logged in|CONTEXT LOADED/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review writes a reviewed event and RSI episode jsonl', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -5592,6 +5652,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['experiments', '--help'],
     ['receipt', '--help'],
     ['proof', '--help'],
+    ['play', '--help'],
     ['code-review', '--help'],
     ['cr', '--help'],
   ];
