@@ -2,7 +2,7 @@
 type: entity
 slug: atris-labs
 title: atris labs (business owner dogfood)
-sources: [/Users/keshavrao/arena/atris-business/atris-labs-1/atris/MEMBER.md]
+sources: [/Users/keshavrao/arena/atris-business/atris-labs/atris/MEMBER.md]
 created: 2026-04-08
 updated: 2026-04-27
 last_compiled: 2026-04-27
@@ -19,7 +19,7 @@ Be the dogfood. Prove the operating model by living in it. The company's brain â
 
 ## What it is
 
-A standalone Atris business computer at `arena/atris-business/atris-labs-1/atris/`. Holds:
+A standalone Atris business computer at `arena/atris-business/atris-labs/atris/`. Holds:
 
 - company state (pipeline, financials, customers)
 - team identities (`team/<member>/MEMBER.md`)

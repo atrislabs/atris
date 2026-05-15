@@ -272,6 +272,54 @@ function readMemberContext(root, memberSlug) {
   };
 }
 
+function parseContributionCard(text, member) {
+  if (!text || !member) return null;
+  const firstName = String(member.name || member.slug || '').split(/\s+/)[0].toLowerCase();
+  const sections = String(text).split(/\n(?=##\s+)/);
+  const memberSections = sections.filter(section => new RegExp(`^##\\s+${firstName}\\b`, 'i').test(section.trim()));
+  const section = (
+    memberSections.find(candidate => /current_score_signal\s*:/i.test(candidate))
+    || memberSections[0]
+    || ''
+  );
+  const fields = {};
+  for (const line of section.split('\n')) {
+    const match = line.match(/^\s*([a-z_]+):\s*(.+?)\s*$/i);
+    if (match) fields[match[1].toLowerCase()] = match[2].trim();
+  }
+
+  const tableRow = text.split('\n').find(line => {
+    if (!line.trim().startsWith('|')) return false;
+    return line.toLowerCase().includes(`| ${firstName} |`);
+  });
+  if (tableRow) {
+    const cells = tableRow.split('|').map(cell => cell.trim()).filter(Boolean);
+    if (cells.length >= 5) {
+      fields.operator ||= cells[0];
+      fields.current_score_signal ||= cells[2];
+      fields.current_signal ||= cells[3];
+      fields.next_rep ||= cells[4];
+    }
+  }
+
+  const score = fields.current_score_signal || fields.score_signal || fields.score;
+  const nextRep = fields.next_rep || fields.proof_needed || fields.next_move;
+  if (!score && !nextRep) return null;
+
+  return {
+    score,
+    nextRep,
+    proofNeeded: fields.proof_needed || '',
+    why: fields.why || fields.current_signal || '',
+  };
+}
+
+function memberScoreContext(root, member) {
+  if (!member) return null;
+  const contributionScore = readText(path.join(root, 'atris', 'state', 'contribution-score.md'));
+  return parseContributionCard(contributionScore, member);
+}
+
 function listMemberSlugs(root) {
   const teamDir = path.join(root, 'atris', 'team');
   if (!fs.existsSync(teamDir)) return [];
@@ -312,7 +360,7 @@ function memberNextMove(member) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
   }
   if (member.slug === 'keshav' || /keshav/i.test(member.name || '')) {
-    return `${name}: make one high-leverage CEO move: ship product, close a strategic loop, or make a queued decision; leave proof and a scorecard.`;
+    return `${name}: act as Customer 0: choose one allocation, narrative, system, or talent leverage move; leave proof and route the next owner.`;
   }
   if (/gtm|forward deployed/i.test(identity) || /gtm|forward deployed|customer-moving|customer move/i.test(context)) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
@@ -373,11 +421,15 @@ FEEDBACK: yes / edit / no`;
   rememberOperator(state.root, member);
   const modeMove = modeNextMove(member, options.mode);
   const next = modeMove?.move || memberNextMove(member) || move;
-  const proof = modeMove?.proof || `After the move, record feedback and recompile: atris brain yes|edit|no "note" --root ${state.root} --verify && atris brain compile --root ${state.root} --verify`;
+  const scoreContext = memberScoreContext(state.root, member);
+  const proof = modeMove?.proof || scoreContext?.proofNeeded || scoreContext?.nextRep || `After the move, record feedback and recompile: atris brain yes|edit|no "note" --root ${state.root} --verify && atris brain compile --root ${state.root} --verify`;
+  const scoreLines = scoreContext
+    ? `${scoreContext.score ? `\nSCORE: ${scoreContext.score}` : ''}${scoreContext.nextRep ? `\nNEXT REP: ${scoreContext.nextRep}` : ''}`
+    : '';
   return `CONTEXT: ${state.name} Brain${member ? `\nOPERATOR: ${member.name}` : ''}${modeMove ? `\nMODE: ${modeMove.label}` : ''}
 NEXT MOVE: ${next}
 WHY: This is the next business workflow to improve from atris/now.md, the compiled brain, MAP, TODO, wiki, state rows, and reward history.
-PROOF: ${proof}
+PROOF: ${proof}${scoreLines}
 FEEDBACK: yes / edit / no`;
 }
 

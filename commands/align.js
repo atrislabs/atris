@@ -12,10 +12,10 @@
  *
  * USAGE:
  *   atris align                    # auto-detect business from .atris/business.json
- *   atris align pallet             # explicit business slug
- *   atris align pallet --dry-run   # show diff, do nothing
- *   atris align pallet --fix       # local is canonical: delete EC2 extras, push local-only
- *   atris align pallet --fix --from cloud  # cloud is canonical: pull EC2-only, delete local extras
+ *   atris align acme               # explicit business slug
+ *   atris align acme --dry-run     # show diff, do nothing
+ *   atris align acme --fix         # local is canonical: delete EC2 extras, push local-only
+ *   atris align acme --fix --from cloud  # cloud is canonical: pull EC2-only, delete local extras
  */
 
 const fs = require('fs');
@@ -493,11 +493,11 @@ async function alignAtris() {
     console.log('Usage: atris align [business] [--fix] [--hard] [--from cloud|local] [--dry-run]');
     console.log('');
     console.log('  atris align                   Diff current workspace against cloud (auto-detect)');
-    console.log('  atris align pallet            Diff pallet workspace');
-    console.log('  atris align pallet --fix      Fix drift (local is canonical by default)');
-    console.log('  atris align pallet --fix --hard  Force-push: nuke cloud cruft, upload local. Skips diff. Fast.');
-    console.log('  atris align pallet --fix --from cloud  Cloud is canonical: pull EC2-only, delete local extras');
-    console.log('  atris align pallet --dry-run  Show what would change, do nothing');
+    console.log('  atris align acme              Diff acme workspace');
+    console.log('  atris align acme --fix        Fix drift (local is canonical by default)');
+    console.log('  atris align acme --fix --hard Force-push: nuke cloud cruft, upload local. Skips diff. Fast.');
+    console.log('  atris align acme --fix --from cloud  Cloud is canonical: pull EC2-only, delete local extras');
+    console.log('  atris align acme --dry-run    Show what would change, do nothing');
     process.exit(0);
   }
 
