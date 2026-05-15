@@ -512,11 +512,22 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // All other commands are lazy-loaded inline (require() only when invoked)
 
+if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').toLowerCase())) {
+  const userInput = process.argv.slice(2).join(' ');
+  planCmd(userInput)
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`✗ Atris 2 failed: ${error.message || error}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo', 'xp',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo', 'xp', 'x',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -913,7 +924,7 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'codex-goal') {
   Promise.resolve(require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.

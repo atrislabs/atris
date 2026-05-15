@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
-const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
+const { loadManifest, saveManifest, buildManifest, computeLocalHashes, isIgnoredSyncPath, filterSyncFiles } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { assertSafeWorkspaceRoot } = require('../lib/workspace-safety');
@@ -59,6 +59,7 @@ function buildPushChangePlan({
   baseFiles = {},
   onlyPrefixes = null,
   readFileContent,
+  isLocalFilePresent,
 } = {}) {
   const filesToPush = [];
   const deletedPaths = [];
@@ -79,7 +80,9 @@ function buildPushChangePlan({
   for (const filePath of Object.keys(baseFiles)) {
     if (!pathInScope(filePath, onlyPrefixes)) continue;
     if (basenameOfManifestPath(filePath).startsWith('.')) continue;
+    if (isIgnoredSyncPath(filePath)) continue;
     if (!localFiles[filePath]) {
+      if (isLocalFilePresent && isLocalFilePresent(filePath)) continue;
       deletedPaths.push(filePath);
     }
   }
@@ -107,6 +110,15 @@ function isMassDeletePlan({ deletedPaths = [], filesToPush = [], unchangedCount 
 function cleanManifestPath(filePath) {
   const s = String(filePath || '').replace(/\\/g, '/');
   return s.startsWith('/') ? s : `/${s}`;
+}
+
+function buildCloudHashMap(files = []) {
+  const cloudHashes = {};
+  for (const f of files) {
+    const normalizedPath = f && f.path ? cleanManifestPath(f.path) : null;
+    if (normalizedPath && f.hash) cloudHashes[normalizedPath] = f.hash;
+  }
+  return cloudHashes;
 }
 
 function isSyncReviewArtifactPath(filePath) {
@@ -419,11 +431,8 @@ async function pushAtris() {
       { method: 'GET', token: creds.token, timeoutMs: 60000 }
     );
     if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
-      const cloudHashes = {};
-      for (const f of snapshotResult.data.files) {
-        if (f.path && f.hash) cloudHashes[f.path] = f.hash;
-      }
-      const manifestFiles = (manifest && manifest.files) || {};
+      const cloudHashes = filterSyncFiles(buildCloudHashMap(snapshotResult.data.files));
+      const manifestFiles = filterSyncFiles((manifest && manifest.files) || {});
       const driftFiles = [];
       // Direction 1: cloud has files the manifest doesn't know about, OR
       // cloud's hash differs from what we last pulled (someone changed it).
@@ -489,12 +498,13 @@ async function pushAtris() {
 
   // Compare local hashes to manifest — NO server call needed
   // Files where local hash differs from manifest = changed locally
-  const baseFiles = (manifest && manifest.files) ? manifest.files : {};
+  const baseFiles = filterSyncFiles((manifest && manifest.files) ? manifest.files : {});
   const { filesToPush, deletedPaths, unchangedCount } = buildPushChangePlan({
     localFiles,
     baseFiles,
     onlyPrefixes,
     readFileContent: (filePath) => fs.readFileSync(path.join(sourceDir, filePath.replace(/^\//, '')), 'utf8'),
+    isLocalFilePresent: (filePath) => fs.existsSync(path.join(sourceDir, filePath.replace(/^\//, ''))),
   });
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
@@ -876,6 +886,7 @@ module.exports = {
   resolvePushSourceDir,
   canonicalWorkspaceRoot,
   basenameOfManifestPath,
+  buildCloudHashMap,
   isBusinessWorkspaceRoot,
   isMassDeletePlan,
   parsePushTimeoutSec,

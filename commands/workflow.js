@@ -63,6 +63,83 @@ function confidenceGatePrompt(stage) {
   ].join('\n');
 }
 
+async function runAtris2Local(userInput, atris2Mode) {
+  console.log(`🚀 EXECUTING VIA ATRIS 2 ${atris2Mode.toUpperCase()}`);
+  console.log('');
+
+  const actualCommand = String(userInput || '').trim().replace(/^2\s+(fast|pro)\b/i, '').trim();
+  if (!actualCommand) {
+    console.log(`⚠ No command provided after "2 ${atris2Mode}"`);
+    console.log(`Usage: atris 2 ${atris2Mode} <your command>`);
+    process.exit(1);
+  }
+
+  console.log(`Running: ${actualCommand}`);
+  console.log('');
+
+  try {
+    const http = require('http');
+    const response = await new Promise((resolve, reject) => {
+      const postData = JSON.stringify({
+        message: actualCommand,
+        workspace_path: process.cwd(),
+        model: `atris-2-${atris2Mode}`
+      });
+
+      const options = {
+        hostname: '127.0.0.1',
+        port: 8000,
+        path: '/api/agent-sdk/fast',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+              reject(new Error(parsed.detail || parsed.error || `HTTP ${res.statusCode}`));
+              return;
+            }
+            resolve(parsed);
+          } catch (e) {
+            reject(new Error(`Failed to parse response: ${data}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      const timeoutMs = atris2Mode === 'pro' ? 30000 : 10000;
+      req.setTimeout(timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`Request timeout after ${timeoutMs / 1000}s`));
+      });
+      req.write(postData);
+      req.end();
+    });
+
+    if (response.error) {
+      throw new Error(response.error);
+    }
+
+    console.log(`✅ Atris 2 ${atris2Mode} completed`);
+    if (response.result) {
+      console.log(JSON.stringify(response.result, null, 2));
+    }
+  } catch (error) {
+    console.error(`✗ Error: ${error.message}`);
+    console.error(`Atris 2 ${atris2Mode} failed before completion.`);
+    console.error(`Refusing to run the prompt as a shell command. Start the backend on port 8000 or retry without "2 ${atris2Mode}".`);
+    process.exit(1);
+  }
+}
+
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
   const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
@@ -73,9 +150,16 @@ async function planAtris(userInput = null) {
   const showFull = args.includes('--full') || args.includes('--verbose');
 
   const config = loadConfig();
-  // Auto-enable local execution mode for "2 fast" pattern (bypasses backend API requirement)
-  const isFastMode = userInput && userInput.toLowerCase().includes('2 fast');
-  const executionMode = executeFlag ? 'agent' : (isFastMode ? 'local' : (config.execution_mode || 'prompt'));
+  // Auto-enable local execution mode for "2 fast" / "2 pro" product aliases.
+  const atris2ModeMatch = userInput && String(userInput).trim().match(/^2\s+(fast|pro)\b/i);
+  const atris2Mode = atris2ModeMatch ? atris2ModeMatch[1].toLowerCase() : null;
+  const configuredMode = config.execution_mode || 'prompt';
+  const executionMode = executeFlag ? 'agent' : (atris2Mode ? 'local' : (configuredMode === 'agent' ? 'agent' : 'prompt'));
+
+  if (executionMode === 'local') {
+    await runAtris2Local(userInput, atris2Mode);
+    return;
+  }
 
   const targetDir = path.join(process.cwd(), 'atris');
   const navigatorFile = fs.existsSync(path.join(targetDir, 'team', 'navigator', 'MEMBER.md'))
@@ -254,7 +338,7 @@ async function planAtris(userInput = null) {
   console.log('   Format: - **T#:** Description [explore|execute]');
   console.log('4) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, User reaction, Pattern)');
-  if (isFastMode) {
+  if (atris2Mode) {
     console.log('5) EXECUTE MODE ENABLED: Will execute tasks directly.');
   } else {
     console.log('5) Stop. Do NOT execute (run `atris do` to build).');
@@ -269,114 +353,7 @@ async function planAtris(userInput = null) {
   console.log('');
 
   // Check execution mode
-  if (executionMode === 'local') {
-    // Local execution mode: call backend Agent SDK for full tool access
-    console.log('🚀 EXECUTING VIA AGENT SDK (2 fast mode)');
-    console.log('');
-
-    // Extract the actual command after "2 fast"
-    const actualCommand = userInput.replace(/2\s*fast/i, '').trim();
-    if (!actualCommand) {
-      console.log('⚠ No command provided after "2 fast"');
-      console.log('Usage: atris 2 fast <your command>');
-      process.exit(1);
-    }
-
-    console.log(`Running: ${actualCommand}`);
-    console.log('');
-
-    // Call backend Agent SDK endpoint
-    const { apiRequestJson } = require('../utils/api');
-    const { ensureValidCredentials } = require('../utils/auth');
-
-    try {
-      // Check authentication
-      const ensured = await ensureValidCredentials(apiRequestJson);
-      if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
-        console.log('⚠ Backend not authenticated. Falling back to shell execution.');
-        console.log('Run "atris login" to enable full Agent SDK capabilities.');
-        console.log('');
-
-        // Fallback to shell execution
-        const { execSync } = require('child_process');
-        const stdout = execSync(actualCommand, {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-          stdio: 'inherit'
-        });
-        if (stdout) console.log(stdout);
-        return;
-      }
-
-      // Call backend Agent SDK endpoint (localhost for 2 fast mode)
-      const http = require('http');
-      const response = await new Promise((resolve, reject) => {
-        const postData = JSON.stringify({
-          message: actualCommand,
-          workspace_path: process.cwd(),
-          model: 'claude-sonnet-4-6'
-        });
-
-        const options = {
-          hostname: '127.0.0.1',
-          port: 8000,
-          path: '/api/agent-sdk/execute',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(postData)
-          }
-        };
-
-        const req = http.request(options, (res) => {
-          let data = '';
-          res.on('data', (chunk) => data += chunk);
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(data));
-            } catch (e) {
-              reject(new Error(`Failed to parse response: ${data}`));
-            }
-          });
-        });
-
-        req.on('error', reject);
-        req.setTimeout(60000, () => {
-          req.destroy();
-          reject(new Error('Request timeout after 60s'));
-        });
-        req.write(postData);
-        req.end();
-      });
-
-      if (response.error) {
-        throw new Error(response.error);
-      }
-
-      console.log('✅ Agent SDK execution completed');
-      if (response.result) {
-        console.log(JSON.stringify(response.result, null, 2));
-      }
-    } catch (error) {
-      console.error(`✗ Error: ${error.message}`);
-      console.log('Falling back to shell execution...');
-
-      // Fallback to shell execution on error
-      const { execSync } = require('child_process');
-      try {
-        const stdout = execSync(actualCommand, {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-          stdio: 'inherit'
-        });
-        if (stdout) console.log(stdout);
-      } catch (shellError) {
-        console.error(`✗ Shell execution also failed: ${shellError.message}`);
-        process.exit(1);
-      }
-    }
-    return;
-  } else if (executionMode === 'agent') {
+  if (executionMode === 'agent') {
     // Agent mode: execute via backend API
     if (!config.agent_id) {
       throw new Error('No agent selected. Run "atris agent" first.');
@@ -1360,7 +1337,12 @@ async function executeAgentSDKFast(userInput) {
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+              reject(new Error(parsed.detail || parsed.error || `HTTP ${res.statusCode}`));
+              return;
+            }
+            resolve(parsed);
           } catch (e) {
             reject(new Error(`Failed to parse response: ${data}`));
           }
