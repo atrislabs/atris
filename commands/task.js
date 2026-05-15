@@ -362,10 +362,11 @@ function taskReviewSummary(task) {
     || reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES;
   const reviewedEventHas = (key) => reviewed && reviewed.event_type === 'reviewed'
     && Object.prototype.hasOwnProperty.call(payload, key);
+  const clearedReviewFields = new Set(Array.isArray(payload.cleared_review_fields) ? payload.cleared_review_fields : []);
   const readyField = (key, metadataKey) => {
     if (reviewedEventHas(key)) {
       if (payload[key]) return payload[key];
-      if (key === 'proof') return metadata[metadataKey] || null;
+      if (key === 'proof' || !clearedReviewFields.has(key)) return metadata[metadataKey] || null;
       return null;
     }
     return payload[key] || metadata[metadataKey] || null;
@@ -1675,6 +1676,9 @@ function cmdAccept(args) {
   const nextTask = typeof nextTaskFlag === 'string'
     ? nextTaskFlag
     : String(readyReview.next_task || beforeTask?.metadata?.latest_agent_next_task || '');
+  const clearedFields = [];
+  if (typeof lessonFlag === 'string' && !String(lessonFlag).trim()) clearedFields.push('lesson');
+  if (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim()) clearedFields.push('next_task');
   const parsedReward = parseAcceptReward(reward);
   if (!parsedReward.ok) {
     console.error('atris task accept: reward must be a positive number');
@@ -1693,6 +1697,7 @@ function cmdAccept(args) {
     nextTask,
     proof,
     careerXpEligible: true,
+    clearedFields,
   });
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -2597,6 +2602,9 @@ async function handleTaskApi(req, res, taskDb, db) {
     const hasExplicitNext = Object.prototype.hasOwnProperty.call(body, 'next');
     const lesson = hasExplicitLesson ? String(body.lesson || '') : String(currentTask?.review?.lesson || currentTask?.metadata?.latest_agent_lesson || '');
     const nextTask = hasExplicitNext ? String(body.next || '') : String(currentTask?.review?.next_task || currentTask?.metadata?.latest_agent_next_task || '');
+    const clearedFields = [];
+    if (hasExplicitLesson && !lesson.trim()) clearedFields.push('lesson');
+    if (hasExplicitNext && !nextTask.trim()) clearedFields.push('next_task');
     const parsedReward = parseAcceptReward(body.reward);
     if (!parsedReward.ok) return sendJson(res, 400, { ok: false, reason: 'invalid_reward', detail: 'reward must be a positive number' });
     const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor: String(body.actor || DEFAULT_OWNER), allowReview: true });
@@ -2609,6 +2617,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       nextTask,
       proof,
       careerXpEligible: true,
+      clearedFields,
     });
     const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
     const xpProjection = refreshCareerXpAfterReview(reviewed);
