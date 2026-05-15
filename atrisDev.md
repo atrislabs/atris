@@ -470,7 +470,7 @@ Enhanced sync logic with auto-pull and conflict resolution.
 
 **The atrisDev Protocol** is a universal workflow that any coding agent can follow to produce high-quality output. When agents follow this protocol, they build features systematically with human approval gates and proper documentation, using small, low-risk changes that compound over time.
 
-**This protocol works with ANY agent:** Claude Code, Cursor, Windsurf, GitHub Copilot, or any LLM-based coding assistant.
+**This protocol works with ANY agent:** Claude Code, Cursor, Codex, OpenClaw, Windsurf, GitHub Copilot, or any LLM-based coding assistant.
 
 ---
 
@@ -637,7 +637,8 @@ Workflow: Navigator (plan) → Executor (build) → Validator (verify)
 Key behaviors:
 - Read PERSONA.md first (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
-- Update TODO.md (claim tasks, delete when done)
+- Use `atris task` for claims, proof, ready, and accept
+- Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 ```
 
 ### Checklist

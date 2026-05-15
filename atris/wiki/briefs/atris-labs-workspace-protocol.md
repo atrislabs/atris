@@ -23,7 +23,7 @@ tags:
 ---
 # Atris Labs Workspace Protocol
 
-Atris Labs is the business owner for the company that builds Atris. This page preserves the April 2026 workspace protocol that was ingested from a now-missing local path: `/Users/keshavrao/arena/atris-business/atris-labs-1/atris/atris.md`. Treat it as historical context, not a live source of truth.
+Atris Labs is the business owner for the company that builds Atris. Its default computer lives at `arena/atris-business/atris-labs/atris/` and dogfoods the AI-native operating shape before customers touch it. This page also preserves historical April 2026 workspace protocol notes that may reference the old `atris-labs-1` path; treat those as context, not live routing truth.
 
 Older docs call this a workspace; in the current product model, the workspace is the filesystem inside the computer.
 

@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 
-const { runTaskOnce } = require('../commands/autopilot');
+const { runTaskOnce, suggestNextTask } = require('../commands/autopilot');
 const { verifyRubric } = require('../commands/verify');
 
 // Build an isolated temp atris workspace with a TODO.md carrying one endgame
@@ -49,6 +49,32 @@ function cleanup(cwd) {
 
 function stubPhaseExec(phase) {
   return { prompt: `${phase} prompt`, output: `${phase} ok` };
+}
+
+function setupPickerFixture({ endgameVerify = '', lesson = '' } = {}) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-picker-test-'));
+  const atrisDir = path.join(cwd, 'atris');
+  fs.mkdirSync(atrisDir, { recursive: true });
+  const verifyLine = endgameVerify ? `  **Verify:** ${endgameVerify}\n` : '';
+  fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Endgame
+
+**Slug:** picker-fixture
+
+## Backlog
+
+- **T1:** Unsafe endgame task [endgame] [execute]
+${verifyLine}- **T2:** Safe generic task [execute]
+  **Verify:** node -e "process.exit(1)"
+
+## In Progress
+
+## Completed
+`);
+  fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lesson || '# lessons\n\n---\n');
+  return cwd;
 }
 
 test('trivial Verify (true) halts with verify-not-falsifiable', () => {
@@ -128,6 +154,32 @@ test('non-endgame task is exempt from the gate', () => {
     if (result.outcome === 'halted') {
       assert.notStrictEqual(result.reason, 'verify-not-falsifiable');
     }
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not downgrade endgame tasks missing Verify into backlog', async () => {
+  const cwd = setupPickerFixture();
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not downgrade recently pre-passed endgame tasks into backlog', async () => {
+  const today = new Date().toISOString().split('T')[0];
+  const cwd = setupPickerFixture({
+    endgameVerify: 'true',
+    lesson: `# lessons\n\n---\n\n- **[${today}] verify-not-falsifiable** — fail — Verify \`true\` passed before work started on "Unsafe endgame task". Either the rubric is trivial or the task is already done. Tick halted.\n`,
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(['self-heal']), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
   } finally {
     cleanup(cwd);
   }

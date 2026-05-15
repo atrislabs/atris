@@ -334,6 +334,7 @@ function showHelp() {
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
+  console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
@@ -751,11 +752,22 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 
 // All other commands are lazy-loaded inline (require() only when invoked)
 
+if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').toLowerCase())) {
+  const userInput = process.argv.slice(2).join(' ');
+  planCmd(userInput)
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`✗ Atris 2 failed: ${error.message || error}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo',
+                       'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'xp', 'x',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -1168,6 +1180,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'codex-goal') {
+  Promise.resolve(require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
+    .then(() => process.exit(process.exitCode || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
@@ -1228,10 +1244,6 @@ if (command === 'init') {
   activateCmd();
 } else if (command === 'update' || command === 'sync') {
   const args = process.argv.slice(3);
-  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    showUpdateHelp(command);
-    process.exit(0);
-  }
   const firstSyncArg = process.argv[3];
   const isBusinessSync = command === 'sync'
     && (
@@ -1240,6 +1252,10 @@ if (command === 'init') {
       || (firstSyncArg && !firstSyncArg.startsWith('-'))
     )
     && firstSyncArg !== 'all';
+  if ((args.includes('--help') || args.includes('-h') || args[0] === 'help') && !isBusinessSync) {
+    showUpdateHelp(command);
+    process.exit(0);
+  }
   if (isBusinessSync) {
     Promise.resolve(require('../commands/business-sync').businessSync(process.argv.slice(3)))
       .then(() => process.exit(0))
@@ -1541,6 +1557,10 @@ if (command === 'init') {
 } else if (command === 'search') {
   const keyword = process.argv.slice(3).join(' ');
   searchJournal(keyword);
+} else if (command === 'xp') {
+  require('../commands/xp').xpCommand(...process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'gmail') {
   const { gmailCommand } = require('../commands/integrations');
   const subcommand = process.argv[3];
@@ -1626,6 +1646,16 @@ if (command === 'init') {
   require('../commands/terminal').terminalAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'x') {
+  // Fast Agent SDK execution - like "atris x echo hello" or "atris x ls -la"
+  const userInput = process.argv.slice(3).join(' ').trim();
+  if (!userInput) {
+    console.log('Usage: atris x <command>');
+    console.log('Example: atris x echo "hello world"');
+    console.log('Example: atris x ls -la');
+    process.exit(1);
+  }
+  require('../commands/workflow').executeAgentSDKFast(userInput);
 } else if (command === 'computer') {
   require('../commands/computer').runComputer()
     .then(() => process.exit(0))

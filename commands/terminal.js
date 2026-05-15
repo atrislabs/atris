@@ -16,7 +16,7 @@
  *   atris terminal example-co "find /workspace -name '*.md' | wc -l" --timeout 60
  *   atris terminal "rm -rf /workspace/cruft"   # auto-detects business from .atris/business.json
  *
- * Discovered the /terminal endpoint during overnight example-co cleanup — bulk
+ * Discovered the /terminal endpoint during overnight workspace cleanup - bulk
  * deleting 401 files via individual /file DELETE calls hit the rate limit
  * after request 60 and would have taken hours. One `rm -rf` via /terminal
  * finished in 1 second.
