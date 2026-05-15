@@ -5168,6 +5168,39 @@ test('task serve exposes a local task factory API', async () => {
     assert.equal(freshApiAccept.episode.next_task_suggestion, 'Create the API follow-up task');
     assert.ok(freshApiAccept.next_task_id);
 
+    const clearReview = await fetch(`${base}/api/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Clear stale review guidance', tag: 'factory' }),
+    }).then(r => r.json());
+    assert.equal(clearReview.ok, true);
+    const clearReviewId = clearReview.task_id;
+
+    const clearReady = await fetch(`${base}/api/tasks/${clearReviewId}/ready`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'codex',
+        proof: 'clear proof stays visible',
+        lesson: 'stale ready lesson',
+        next: 'stale ready next',
+      }),
+    }).then(r => r.json());
+    assert.equal(clearReady.ok, true);
+
+    const clearAccept = await fetch(`${base}/api/tasks/${clearReviewId}/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator', lesson: '', next: '' }),
+    }).then(r => r.json());
+    assert.equal(clearAccept.ok, true);
+    assert.equal(clearAccept.episode.proof, 'clear proof stays visible');
+    assert.equal(clearAccept.episode.lesson, '');
+    assert.equal(clearAccept.episode.next_task_suggestion, null);
+    assert.equal(clearAccept.task.review.proof, 'clear proof stays visible');
+    assert.equal(clearAccept.task.review.lesson, null);
+    assert.equal(clearAccept.task.review.next_task, null);
+
     const listed = await fetch(`${base}/api/tasks`).then(r => r.json());
     assert.equal(listed.ok, true);
     assert.ok(listed.projection.tasks.some(t => t.id === finished.next_task_id && t.title === 'Connect the board to Swarlo leases'));
