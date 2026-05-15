@@ -323,14 +323,19 @@ function reviewSummary(task, payload = {}) {
     metadata.goal_objective,
     metadata.review_goal,
   ].filter(Boolean).join(' ').toLowerCase();
-  if (careerText.includes('career-xp') || careerText.includes('career xp')) {
+  if (
+    careerText.includes('career-xp')
+    || careerText.includes('career xp')
+    || careerText.includes('agent-xp')
+    || careerText.includes('agent xp')
+  ) {
     if (task.status === 'done') {
-      return `This is accepted Career XP work: ${plainTitle} is done and has a proof receipt.`;
+      return `This is accepted AgentXP work: ${plainTitle} is done and has a proof receipt.`;
     }
     if (task.status === 'review') {
-      return `This is Career XP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
+      return `This is AgentXP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
     }
-    return `This explains what accepting ${plainTitle} would make real for Career XP.`;
+    return `This explains what accepting ${plainTitle} would make real for AgentXP.`;
   }
   if (task.status === 'done') {
     return `This is the accepted outcome: ${plainTitle} is done and counted as real work.`;
@@ -1340,7 +1345,7 @@ function cmdNext(args) {
         ? `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`
         : `${taskRef(reviewTask)} needs one more agent review before continuation.`);
       console.log(handoff.next_action === 'continue_work'
-        ? 'Continue work elsewhere; Career XP waits for human accept.'
+        ? 'Continue work elsewhere; AgentXP waits for human accept.'
         : 'Review this task again before continuing.');
       return;
     }
@@ -1627,8 +1632,8 @@ function cmdReady(args) {
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? 'continue_work' : 'agent_review_again',
     rule: agentCertified
-      ? 'Agent double-check complete; continue work. Career XP waits for human accept.'
-      : 'Proof is in Review; one more agent review pass certifies continuation. Career XP waits for human accept.',
+      ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
+      : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
   };
   if (wantsJson(args)) {
     printJson({
