@@ -140,8 +140,16 @@ test('xp status --all aggregates verified local workspace ledgers', () => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.schema, 'atris.career_xp_profile.v1');
+    assert.equal(payload.metric_label, 'AgentXP');
+    assert.equal(payload.agent_xp, 5);
+    assert.equal(payload.total_agent_xp, 5);
+    assert.equal(payload.today_agent_xp, 5);
     assert.equal(payload.total_xp, 5);
     assert.equal(payload.today_xp, 5);
+    assert.equal(payload.career.card_label, 'Career Card');
+    assert.equal(payload.contribution_graph.metric_label, 'AgentXP');
+    assert.equal(payload.contribution_graph.total_xp, 5);
+    assert.equal(payload.contribution_graph.active_days, 1);
     assert.equal(payload.workspace_count, 2);
     assert.equal(payload.verified_workspace_count, 2);
     assert.equal(payload.integrity.status, 'verified');
@@ -154,13 +162,29 @@ test('xp status --all aggregates verified local workspace ledgers', () => {
     assert.equal(defaultStatus.status, 0, defaultStatus.stderr || defaultStatus.stdout);
     const defaultPayload = JSON.parse(defaultStatus.stdout);
     assert.equal(defaultPayload.schema, 'atris.career_xp_profile.v1');
+    assert.equal(defaultPayload.agent_xp, 5);
     assert.equal(defaultPayload.total_xp, 5);
+
+    const renderedStatus = runCli(['xp', 'status', '--root', root], { cwd: alpha });
+    assert.equal(renderedStatus.status, 0, renderedStatus.stderr || renderedStatus.stdout);
+    assert.match(renderedStatus.stdout, /AgentXP Card/);
+    assert.match(renderedStatus.stdout, /AgentXP 5 \| Today 5 \| Career Level 1/);
+    assert.match(renderedStatus.stdout, /Last 365 days: 5 AgentXP across 1 active days/);
+    assert.doesNotMatch(renderedStatus.stdout, /Career XP/);
+
+    const cardStatus = runCli(['xp', 'card', '--root', root], { cwd: alpha });
+    assert.equal(cardStatus.status, 0, cardStatus.stderr || cardStatus.stdout);
+    assert.match(cardStatus.stdout, /AgentXP Card/);
 
     const localStatus = runCli(['xp', 'status', '--local', '--json'], { cwd: alpha });
     assert.equal(localStatus.status, 0, localStatus.stderr || localStatus.stdout);
     const localPayload = JSON.parse(localStatus.stdout);
     assert.equal(localPayload.schema, 'atris.career_xp_projection.v1');
+    assert.equal(localPayload.metric_label, 'AgentXP');
+    assert.equal(localPayload.agent_xp, 2);
+    assert.equal(localPayload.total_agent_xp, 2);
     assert.equal(localPayload.total_xp, 2);
+    assert.equal(localPayload.contribution_graph.total_xp, 2);
 
     const localDefault = runCli(['xp', '--local', '--json'], { cwd: alpha });
     assert.equal(localDefault.status, 0, localDefault.stderr || localDefault.stdout);
@@ -364,6 +388,9 @@ test('xp session writes a local capsule for the current proof-backed work window
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.schema, 'atris.career_xp_session_capsule.v1');
     assert.equal(payload.workspace_root, workspace);
+    assert.equal(payload.xp.delta_agent_xp, 2);
+    assert.equal(payload.xp.before_agent_xp, 9);
+    assert.equal(payload.xp.after_agent_xp, 11);
     assert.equal(payload.xp.delta_xp, 2);
     assert.equal(payload.xp.before_total_xp, 9);
     assert.equal(payload.xp.after_total_xp, 11);

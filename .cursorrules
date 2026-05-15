@@ -35,7 +35,7 @@ Leave four durable artifacts:
 | Human accept | `atris task accept <id>` |
 
 Do not depend on chat context. Put task state and proof on disk.
-Agents move proof-backed work to Review with `ready`; humans use `accept` for Done + Career XP.
+Agents move proof-backed work to Review with `ready`; humans use `accept` for Done + AgentXP.
 
 ## Workflow
 
