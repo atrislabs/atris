@@ -4034,14 +4034,26 @@ test('task ready holds work in review until human accept', () => {
 	      assert.equal(note.status, 0, note.stderr);
 	    }
 
-	    const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
-	    assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
-	    const statusPayload = JSON.parse(statusAfterCertification.stdout);
-	    assert.equal(statusPayload.status.needs_review[0].review.proof, 'typecheck passed and diff reviewed again');
-	    assert.equal(statusPayload.status.needs_review[0].review.lesson, 'Double-check proof before awarding XP');
-	    assert.equal(statusPayload.status.needs_review[0].review.next_task, 'Queue the next proof loop');
+    const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
+    const statusPayload = JSON.parse(statusAfterCertification.stdout);
+    assert.equal(statusPayload.status.needs_review[0].review.proof, 'typecheck passed and diff reviewed again');
+    assert.equal(statusPayload.status.needs_review[0].review.lesson, 'Double-check proof before awarding XP');
+    assert.equal(statusPayload.status.needs_review[0].review.next_task, 'Queue the next proof loop');
 	    assert.equal(statusPayload.status.needs_review[0].review.handoff.next_action, 'continue_work');
     assert.equal(statusPayload.status.needs_review[0].review.handoff.career_xp_status, 'pending_human_accept');
+
+    const omittedGuidanceReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(omittedGuidanceReview.status, 0, omittedGuidanceReview.stderr);
+    const omittedGuidancePayload = JSON.parse(omittedGuidanceReview.stdout);
+    assert.equal(omittedGuidancePayload.task.review.proof, 'typecheck passed and diff reviewed again');
+    assert.equal(omittedGuidancePayload.task.review.lesson, 'Double-check proof before awarding XP');
+    assert.equal(omittedGuidancePayload.task.review.next_task, 'Queue the next proof loop');
 
     const nextAfterCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterCertification.status, 0, nextAfterCertification.stderr);
@@ -5187,6 +5199,16 @@ test('task serve exposes a local task factory API', async () => {
       }),
     }).then(r => r.json());
     assert.equal(clearReady.ok, true);
+
+    const omittedApiReview = await fetch(`${base}/api/tasks/${clearReviewId}/review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'validator', reward: 0 }),
+    }).then(r => r.json());
+    assert.equal(omittedApiReview.ok, true);
+    assert.equal(omittedApiReview.task.review.proof, 'clear proof stays visible');
+    assert.equal(omittedApiReview.task.review.lesson, 'stale ready lesson');
+    assert.equal(omittedApiReview.task.review.next_task, 'stale ready next');
 
     const clearAccept = await fetch(`${base}/api/tasks/${clearReviewId}/accept`, {
       method: 'POST',
