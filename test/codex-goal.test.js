@@ -110,10 +110,62 @@ test('codex-goal reset backs up, dumps, and clears only a completed goal row', (
     assert.ok(fs.existsSync(payload.dump_path));
     assert.ok(fs.existsSync(payload.receipt_path));
 
+    const backupRows = JSON.parse(runSqlite(payload.backup_path, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
+    assert.equal(backupRows[0].n, 1);
+
     const rows = JSON.parse(runSqlite(dbPath, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-complete';", ['-json']));
     assert.equal(rows[0].n, 0);
     const activeRows = JSON.parse(runSqlite(dbPath, "SELECT count(*) AS n FROM thread_goals WHERE thread_id = 'thread-active';", ['-json']));
     assert.equal(activeRows[0].n, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('codex-goal reset defaults backups to ignored private runtime dir', () => {
+  const dir = makeTempDir();
+  try {
+    const dbPath = seedCodexState(dir);
+    const res = runCli([
+      'codex-goal',
+      'reset',
+      '--state',
+      dbPath,
+      '--thread',
+      'thread-complete',
+      '--confirm-complete-goal-reset',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const payload = JSON.parse(res.stdout);
+    const expectedDirPath = path.join(dir, '.atris', 'runs');
+    const expectedDir = fs.realpathSync.native ? fs.realpathSync.native(expectedDirPath) : fs.realpathSync(expectedDirPath);
+    assert.equal(path.dirname(payload.backup_path), expectedDir);
+    assert.equal(path.dirname(payload.dump_path), expectedDir);
+    assert.equal(path.dirname(payload.receipt_path), expectedDir);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('codex-goal reset without confirmation exits non-zero', () => {
+  const dir = makeTempDir();
+  try {
+    const dbPath = seedCodexState(dir);
+    const res = runCli([
+      'codex-goal',
+      'reset',
+      '--state',
+      dbPath,
+      '--thread',
+      'thread-complete',
+      '--json',
+    ], { cwd: dir });
+    assert.notEqual(res.status, 0);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, 'needs_confirmation');
+    assert.equal(payload.required_flag, '--confirm-complete-goal-reset');
   } finally {
     cleanupTempDir(dir);
   }

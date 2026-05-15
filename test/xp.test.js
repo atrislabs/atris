@@ -161,6 +161,16 @@ test('xp status --all aggregates verified local workspace ledgers', () => {
     const localPayload = JSON.parse(localStatus.stdout);
     assert.equal(localPayload.schema, 'atris.career_xp_projection.v1');
     assert.equal(localPayload.total_xp, 2);
+
+    const localDefault = runCli(['xp', '--local', '--json'], { cwd: alpha });
+    assert.equal(localDefault.status, 0, localDefault.stderr || localDefault.stdout);
+    const localDefaultPayload = JSON.parse(localDefault.stdout);
+    assert.equal(localDefaultPayload.schema, 'atris.career_xp_projection.v1');
+    assert.equal(localDefaultPayload.total_xp, 2);
+
+    const typo = runCli(['xp', 'stats', '--local', '--json'], { cwd: alpha });
+    assert.notEqual(typo.status, 0, typo.stdout);
+    assert.match(typo.stderr, /Unknown xp subcommand: stats/);
   } finally {
     cleanupTempDir(root);
   }
@@ -215,6 +225,47 @@ test('xp status --all excludes tampered local ledgers from totals', () => {
     assert.match(payload.integrity.warnings[0].reason, /integrity:tampered/);
   } finally {
     cleanupTempDir(root);
+  }
+});
+
+test('xp status fails closed when receipt chain metadata is tampered', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'meta-accepted-1',
+        task_id: 'META-1',
+        title: 'Metadata receipt one',
+        proof: 'metadata proof one',
+      }),
+      taskEpisode(workspace, {
+        episode_id: 'meta-accepted-2',
+        task_id: 'META-2',
+        title: 'Metadata receipt two',
+        proof: 'metadata proof two',
+      }),
+    ]);
+
+    const firstStatus = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(firstStatus.status, 0, firstStatus.stderr || firstStatus.stdout);
+    assert.equal(JSON.parse(firstStatus.stdout).total_xp, 2);
+
+    const receiptsPath = path.join(workspace, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const receipts = fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    assert.equal(receipts.length, 2);
+    receipts[0].chain_version = 'atris.career_xp_receipt_chain.v0';
+    receipts[1].previous_receipt_hash = 'not-the-previous-receipt';
+    writeJsonl(receiptsPath, receipts);
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.integrity.status, 'tampered');
+    assert.equal(payload.total_xp, 0);
+    assert.match(payload.integrity.errors.join('\n'), /receipt_chain_version_mismatch/);
+    assert.match(payload.integrity.errors.join('\n'), /receipt_previous_hash_mismatch/);
+  } finally {
+    cleanupTempDir(workspace);
   }
 });
 
@@ -336,6 +387,38 @@ test('xp session writes a local capsule for the current proof-backed work window
   }
 });
 
+test('xp session --no-write previews receipts without mutating the local ledger', () => {
+  const workspace = makeTempDir();
+  try {
+    const episodePath = path.join(workspace, '.atris', 'state', 'task_episodes.jsonl');
+    writeJsonl(episodePath, [
+      taskEpisode(workspace, {
+        episode_id: 'no-write-preview',
+        task_id: 'task-no-write-preview',
+        title: 'Preview XP without writes',
+        xp: 1,
+        proof: 'preview proof accepted',
+      }),
+    ]);
+
+    const result = runCli(['xp', 'session', '--workspace', workspace, '--since', 'today', '--no-write', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.written, false);
+    assert.equal(payload.xp.delta_xp, 1);
+    assert.equal(payload.xp.after_total_xp, 1);
+    assert.equal(payload.proof.receipts_count, 1);
+    assert.equal(payload.files.session_path, null);
+
+    assert.equal(fs.existsSync(path.join(workspace, '.atris', 'state', 'career_xp_receipts.jsonl')), false);
+    assert.equal(fs.existsSync(path.join(workspace, '.atris', 'state', 'career_xp.cursor.json')), false);
+    assert.equal(fs.existsSync(path.join(workspace, '.atris', 'state', 'career_xp.projection.json')), false);
+    assert.equal(fs.existsSync(path.join(workspace, '.atris', 'state', 'career_xp_sessions')), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp session skips a partial trailing task episode without advancing the cursor', () => {
   const workspace = makeTempDir();
   try {
@@ -432,6 +515,44 @@ test('xp status cursor stays byte-aligned after newline-terminated JSONL append'
     assert.equal(secondPayload.total_xp, 2);
     assert.equal(secondPayload.latest_accepted_proof.proof, 'second proof accepted');
     assert.equal(secondPayload.integrity.cursor.bytes_read, fs.statSync(episodePath).size);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp status replays accepted episodes when the receipt ledger is missing', () => {
+  const workspace = makeTempDir();
+  try {
+    const episodePath = path.join(workspace, '.atris', 'state', 'task_episodes.jsonl');
+    writeJsonl(episodePath, [
+      taskEpisode(workspace, {
+        episode_id: 'replay-accepted',
+        task_id: 'task-replay-accepted',
+        title: 'Replay accepted proof',
+        xp: 2,
+        proof: 'accepted proof should replay',
+      }),
+    ]);
+
+    const first = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+    assert.equal(firstPayload.total_xp, 2);
+    assert.equal(firstPayload.collected_receipts, 1);
+
+    const receiptsPath = path.join(workspace, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const projectionPath = path.join(workspace, '.atris', 'state', 'career_xp.projection.json');
+    fs.rmSync(receiptsPath, { force: true });
+    fs.rmSync(projectionPath, { force: true });
+
+    const second = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.equal(secondPayload.total_xp, 2);
+    assert.equal(secondPayload.collected_receipts, 1);
+    assert.equal(secondPayload.integrity.cursor.reset, true);
+    assert.equal(secondPayload.latest_accepted_proof.proof, 'accepted proof should replay');
+    assert.equal(fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).length, 1);
   } finally {
     cleanupTempDir(workspace);
   }

@@ -36,7 +36,24 @@ function resolveStatePath(args = []) {
 }
 
 function defaultRunsDir(args = []) {
-  return path.resolve(readFlag(args, '--out-dir', path.join(process.cwd(), 'atris', 'runs')));
+  return path.resolve(readFlag(args, '--out-dir', path.join(process.cwd(), '.atris', 'runs')));
+}
+
+function ensurePrivateDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch {
+    // Best effort: some filesystems do not support POSIX permissions.
+  }
+}
+
+function chmodPrivate(filePath) {
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // Best effort: some filesystems do not support POSIX permissions.
+  }
 }
 
 function runSqliteJson(dbPath, sql, { readonly = true } = {}) {
@@ -115,11 +132,22 @@ function resolveThreadGoal(dbPath, args) {
 }
 
 function writeReceipt(outDir, payload) {
-  fs.mkdirSync(outDir, { recursive: true });
+  ensurePrivateDir(outDir);
   const receiptPath = path.join(outDir, `codex-goal-${payload.action}-${safeStamp(payload.finished_at || payload.started_at)}.json`);
   const withPath = { ...payload, receipt_path: receiptPath };
   fs.writeFileSync(receiptPath, `${JSON.stringify(withPath, null, 2)}\n`, 'utf8');
+  chmodPrivate(receiptPath);
   return withPath;
+}
+
+function backupSqliteDb(dbPath, backupPath) {
+  const result = spawnSync('sqlite3', [dbPath, `VACUUM INTO ${sqlString(backupPath)};`], { encoding: 'utf8' });
+  if (result.error) throw new Error(`sqlite3 backup failed: ${result.error.message}`);
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || '').trim();
+    throw new Error(detail || `sqlite3 backup exited with status ${result.status}`);
+  }
+  chmodPrivate(backupPath);
 }
 
 function printJsonOrText(payload, lines, asJson) {
@@ -192,12 +220,13 @@ function resetCommand(args) {
     return;
   }
 
-  fs.mkdirSync(outDir, { recursive: true });
+  ensurePrivateDir(outDir);
   const stamp = safeStamp(startedAt);
   const backupPath = path.join(outDir, `codex-state-before-goal-reset-${goal.thread_id}-${stamp}.sqlite`);
   const dumpPath = path.join(outDir, `codex-goal-row-before-reset-${goal.thread_id}-${stamp}.json`);
-  fs.copyFileSync(dbPath, backupPath);
+  backupSqliteDb(dbPath, backupPath);
   fs.writeFileSync(dumpPath, `${JSON.stringify(goal, null, 2)}\n`, 'utf8');
+  chmodPrivate(dumpPath);
 
   const rows = runSqliteJson(dbPath, `
 BEGIN IMMEDIATE;
@@ -250,11 +279,11 @@ function usage() {
     'Flags:',
     '  --state <path>      Codex state DB (default ~/.codex/state_5.sqlite)',
     '  --latest           Use the latest Codex goal whose thread cwd matches the current directory',
-    '  --out-dir <path>   Receipt/backup directory (default atris/runs)',
+    '  --out-dir <path>   Receipt/backup directory (default .atris/runs)',
     '',
     'Reset guardrails:',
     '- only completed native Codex goals can be reset',
-    '- reset copies the SQLite DB before mutation',
+    '- reset backs up the SQLite DB before mutation',
     '- reset dumps the exact deleted row and writes a receipt',
     '- the next native goal must still be created by the active Codex thread',
   ].join('\n');
