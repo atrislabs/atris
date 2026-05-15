@@ -40,10 +40,10 @@ Native goals and task approval are separate gates:
 
 ```text
 Agent proof ready -> native goal can complete
-Human accept      -> task Done + Career XP awarded
+Human accept      -> task Done + AgentXP awarded
 ```
 
-Always-on agents should complete their native goal after proof is in Review, then continue the mission loop with the next goal. They must not run `atris task accept` or claim Career XP unless a human approved the proof.
+Always-on agents should complete their native goal after proof is in Review, then continue the mission loop with the next goal. They must not run `atris task accept` or claim AgentXP unless a human approved the proof.
 
 Do not write new operating doctrine here first. Add it to Atris policy, skills, wiki, or `atris/atris.md`, then regenerate this adapter if needed.
 

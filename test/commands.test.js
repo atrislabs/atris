@@ -3879,7 +3879,7 @@ test('task done with proof writes a reviewed proof event', () => {
   }
 });
 
-test('task review does not mint Career XP before the task is done', () => {
+test('task review does not mint AgentXP before the task is done', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -3887,7 +3887,7 @@ test('task review does not mint Career XP before the task is done', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Do not pay XP before accept', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    const add = runCli(['task', 'add', 'Do not pay XP before accept', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
 
@@ -3930,15 +3930,15 @@ test('task ready holds work in review until human accept', () => {
     const add = runCli([
       'task', 'add', 'Approve autonomous work before XP',
       '--tag', 'agent',
-      '--goal-id', 'goal-career-xp',
-      '--goal-objective', 'Make Career XP recruitable',
+      '--goal-id', 'goal-agent-xp',
+      '--goal-objective', 'Make AgentXP recruitable',
       '--json',
     ], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const created = JSON.parse(add.stdout);
     const ref = created.task.display_id;
-    assert.equal(created.task.metadata.goal_id, 'goal-career-xp');
-    assert.equal(created.task.metadata.goal_objective, 'Make Career XP recruitable');
+    assert.equal(created.task.metadata.goal_id, 'goal-agent-xp');
+    assert.equal(created.task.metadata.goal_objective, 'Make AgentXP recruitable');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -3957,10 +3957,10 @@ test('task ready holds work in review until human accept', () => {
       native_goal_status: 'needs_second_agent_review',
       career_xp_status: 'pending_human_accept',
       next_action: 'agent_review_again',
-      rule: 'Proof is in Review; one more agent review pass certifies continuation. Career XP waits for human accept.',
+      rule: 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
     });
     assert.equal(readyPayload.task.status, 'review');
-    assert.equal(readyPayload.task.review.summary, 'This is Career XP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
+    assert.equal(readyPayload.task.review.summary, 'This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
     assert.equal(readyPayload.task.review.proof, 'typecheck passed and diff reviewed');
     assert.equal(readyPayload.task.review.reward, null);
     assert.equal(readyPayload.task.review.approval_status, 'pending');
@@ -3968,7 +3968,7 @@ test('task ready holds work in review until human accept', () => {
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /Summary: This is Career XP review: approve autonomous work before XP is agent-complete; accept only if the proof is real\./);
+    assert.match(readyShow.stdout, /Summary: This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real\./);
     assert.match(readyShow.stdout, /Proof: typecheck passed and diff reviewed/);
     assert.match(readyShow.stdout, /Approval: pending/);
     assert.doesNotMatch(readyShow.stdout, /Agent certified: yes/);
@@ -4005,7 +4005,7 @@ test('task ready holds work in review until human accept', () => {
       native_goal_status: 'agent_certified',
       career_xp_status: 'pending_human_accept',
       next_action: 'continue_work',
-      rule: 'Agent double-check complete; continue work. Career XP waits for human accept.',
+      rule: 'Agent double-check complete; continue work. AgentXP waits for human accept.',
     });
     assert.equal(certifiedPayload.task.status, 'review');
     assert.equal(certifiedPayload.task.review.approval_status, 'pending');
@@ -4075,7 +4075,7 @@ test('task ready holds work in review until human accept', () => {
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
     assert.match(readyText.stdout, /ready .* pending approval/);
-    assert.match(readyText.stdout, /Proof is in Review; one more agent review pass certifies continuation\. Career XP waits for human accept\./);
+    assert.match(readyText.stdout, /Proof is in Review; one more agent review pass certifies continuation\. AgentXP waits for human accept\./);
 
     const accept = runCli([
       'task', 'accept', ref,
@@ -4087,15 +4087,15 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.action, 'accepted');
     assert.equal(acceptPayload.task.status, 'done');
     assert.equal(acceptPayload.task.review.reward, 1);
-    assert.equal(acceptPayload.task.review.summary, 'This is accepted Career XP work: approve autonomous work before XP is done and has a proof receipt.');
+    assert.equal(acceptPayload.task.review.summary, 'This is accepted AgentXP work: approve autonomous work before XP is done and has a proof receipt.');
     assert.equal(acceptPayload.task.review.proof, 'typecheck passed and diff reviewed again');
     assert.equal(acceptPayload.task.review.lesson, 'Double-check proof before awarding XP');
     assert.equal(acceptPayload.task.review.next_task, 'Queue the next proof loop');
     assert.equal(acceptPayload.task.metadata.approval_status, 'accepted');
     assert.equal(acceptPayload.episode.action.actor, 'keshavrao');
     assert.deepEqual(acceptPayload.episode.goal, {
-      goal_id: 'goal-career-xp',
-      objective: 'Make Career XP recruitable',
+      goal_id: 'goal-agent-xp',
+      objective: 'Make AgentXP recruitable',
     });
     assert.equal(acceptPayload.episode.career_xp.eligible, true);
     assert.equal(acceptPayload.episode.rl.label, 'accepted');
@@ -4175,7 +4175,7 @@ test('task next blocks new claims until required second review pass', () => {
   }
 });
 
-test('task review summary does not treat incidental XP wording as Career XP work', () => {
+test('task review summary does not treat incidental XP wording as AgentXP work', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -4207,7 +4207,7 @@ test('task review summary does not treat incidental XP wording as Career XP work
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /Summary: This is the human checkpoint/);
     assert.match(readyShow.stdout, /Proof: closed stale duplicate scheduler claims as failed reward 0/);
-    assert.doesNotMatch(readyShow.stdout, /Career XP a real local scoreboard/);
+    assert.doesNotMatch(readyShow.stdout, /AgentXP a real local scoreboard/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4222,9 +4222,9 @@ test('task accept automatically projects accepted proof into durable local XP le
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const add = runCli([
-      'task', 'add', 'Ship local Career XP projection',
-      '--tag', 'career-xp',
-      '--goal-id', 'goal-career-xp',
+      'task', 'add', 'Ship local AgentXP projection',
+      '--tag', 'agent-xp',
+      '--goal-id', 'goal-agent-xp',
       '--goal-objective', 'Make XP collectible anywhere',
       '--json',
     ], { cwd: dir, env });
@@ -4248,7 +4248,7 @@ test('task accept automatically projects accepted proof into durable local XP le
     assert.equal(projection.latest_accepted_proof.source_task_id, accepted.task_id);
     assert.equal(projection.latest_accepted_proof.proof, 'xp projection test passed');
     assert.equal(projection.latest_accepted_proof.xp, 2);
-    assert.equal(projection.latest_accepted_proof.goal.goal_id, 'goal-career-xp');
+    assert.equal(projection.latest_accepted_proof.goal.goal_id, 'goal-agent-xp');
     assert.equal(projection.integrity.status, 'verified');
     assert.equal(projection.integrity.local_trust, 'tamper_evident_not_attested');
     assert.equal(projection.leaderboard_eligible, false);
@@ -4309,7 +4309,7 @@ test('task accept rejects non-positive rewards before marking done', () => {
   }
 });
 
-test('task review after acceptance cannot mint duplicate Career XP', () => {
+test('task review after acceptance cannot mint duplicate AgentXP', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -4317,7 +4317,7 @@ test('task review after acceptance cannot mint duplicate Career XP', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Keep accepted XP idempotent', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    const add = runCli(['task', 'add', 'Keep accepted XP idempotent', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
@@ -5624,7 +5624,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /AGENTS\.md`; do not turn it into a parallel brain/);
     assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
     assert.match(agents, /`atris task ready <id> --proof/);
-    assert.match(agents, /Human accept\s+-> task Done \+ Career XP awarded/);
+    assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
     assert.doesNotMatch(agents, /task finish <id> --proof/);
     const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
     assert.match(claudeCommand, /atris\/atris\.md/);

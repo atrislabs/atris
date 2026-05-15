@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
+const DEFAULT_GRAPH_DAYS = 365;
 const INTENSITY_CHARS = [' ', '.', ':', '*', '#'];
 const ROW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TASK_EPISODES_FILE = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -15,6 +16,7 @@ const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.jso
 const CAREER_XP_SESSIONS_DIR = path.join('.atris', 'state', 'career_xp_sessions');
 const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+const AGENT_XP_LABEL = 'AgentXP';
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
 const XP_STATE_FILES = new Set([
@@ -35,12 +37,12 @@ const SEARCH_EXCLUDED_DIRS = new Set([
 const DEFAULT_SEARCH_DEPTH = 6;
 
 function showHelp() {
-  console.log('Usage: atris xp [status|collect|session] [--json] [--workspace <path>] [--all] [--root <path>]');
+  console.log('Usage: atris xp [card|status|collect|session] [--json] [--workspace <path>] [--all] [--root <path>]');
   console.log('       atris xp session [--since today|tonight|YYYY-MM-DD] [--until <time>] [--mission <text>] [--thread <id>] [--no-write]');
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
-  console.log('Show your Career XP contribution graph for the active Atris account.');
-  console.log('Use status to show account-level Career XP across verified local ledgers.');
+  console.log('Show your AgentXP graph for the active Atris account.');
+  console.log('Use status to show account-level AgentXP across verified local ledgers.');
   console.log('Use collect or status --local to project accepted task proof in the current workspace.');
   console.log('Use session to encapsulate the current work window into a local XP capsule.');
   console.log('Use status --all to explicitly aggregate verified local XP ledgers across workspaces.');
@@ -79,6 +81,85 @@ function buildContributionRows(days) {
     }
     return line;
   });
+}
+
+function dateWindow(windowDays = DEFAULT_GRAPH_DAYS) {
+  const count = Math.max(1, asNumber(windowDays, DEFAULT_GRAPH_DAYS));
+  const end = new Date();
+  const dates = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(end);
+    date.setDate(end.getDate() - offset);
+    const key = localDateKey(date);
+    if (key && dates[dates.length - 1] !== key) dates.push(key);
+  }
+  return dates;
+}
+
+function graphIntensity(xp, maxDailyXp) {
+  const total = asNumber(xp);
+  if (total <= 0) return 0;
+  const max = Math.max(1, asNumber(maxDailyXp, 1));
+  if (max <= 1) return 1;
+  const ratio = total / max;
+  if (ratio >= 0.75) return 4;
+  if (ratio >= 0.5) return 3;
+  if (ratio >= 0.25) return 2;
+  return 1;
+}
+
+function graphFromDailyTotals(dailyTotals, windowDays = DEFAULT_GRAPH_DAYS) {
+  const totals = dailyTotals instanceof Map
+    ? dailyTotals
+    : new Map(Object.entries(dailyTotals || {}));
+  const dates = dateWindow(windowDays);
+  const maxDailyXp = dates.reduce((max, date) => Math.max(max, asNumber(totals.get(date))), 0);
+  const days = dates.map((date) => {
+    const xp = asNumber(totals.get(date));
+    return {
+      date,
+      xp,
+      total_xp: xp,
+      intensity: graphIntensity(xp, maxDailyXp),
+    };
+  });
+  return {
+    schema: 'atris.agent_xp_contribution_graph.v1',
+    metric_label: AGENT_XP_LABEL,
+    window_days: days.length,
+    total_xp: days.reduce((sum, day) => sum + day.xp, 0),
+    active_days: days.filter(day => day.xp > 0).length,
+    first_date: days[0]?.date || null,
+    last_date: days[days.length - 1]?.date || null,
+    days,
+  };
+}
+
+function buildAgentXpContributionGraph(receipts, windowDays = DEFAULT_GRAPH_DAYS) {
+  const totals = new Map();
+  for (const receipt of receipts || []) {
+    if (!receipt || receipt.outcome !== 'accepted') continue;
+    const xp = asNumber(receipt.xp);
+    if (xp <= 0) continue;
+    const date = localDateKey(receipt.accepted_at);
+    if (!date) continue;
+    totals.set(date, asNumber(totals.get(date)) + xp);
+  }
+  return graphFromDailyTotals(totals, windowDays);
+}
+
+function combineAgentXpContributionGraphs(graphs, windowDays = DEFAULT_GRAPH_DAYS) {
+  const totals = new Map();
+  for (const graph of graphs || []) {
+    for (const day of graph?.days || []) {
+      const date = day?.date;
+      if (!date) continue;
+      const xp = asNumber(day.xp ?? day.total_xp);
+      if (xp <= 0) continue;
+      totals.set(date, asNumber(totals.get(date)) + xp);
+    }
+  }
+  return graphFromDailyTotals(totals, windowDays);
 }
 
 function currentForm(payload) {
@@ -572,26 +653,38 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   const levelBase = (level - 1) * LEVEL_XP;
   const currentLevelXp = totalXp - levelBase;
   const remainingXp = Math.max(0, (level * LEVEL_XP) - totalXp);
+  const nextLevelProgress = {
+    level,
+    next_level: level + 1,
+    current_xp: currentLevelXp,
+    required_xp: LEVEL_XP,
+    remaining_xp: remainingXp,
+    percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
+  };
   const latest = latestReceipt(accepted);
 
   return {
     schema: 'atris.career_xp_projection.v1',
     generated_at: new Date().toISOString(),
     workspace_root: workspace,
+    metric_label: AGENT_XP_LABEL,
+    agent_xp: totalXp,
+    total_agent_xp: totalXp,
+    today_agent_xp: todayXp,
     career_xp: totalXp,
     total_xp: totalXp,
     today_xp: todayXp,
     level,
     leaderboard_eligible: false,
     integrity_status: integrity.status || 'unknown',
-    next_level_progress: {
+    next_level_progress: nextLevelProgress,
+    career: {
       level,
-      next_level: level + 1,
-      current_xp: currentLevelXp,
-      required_xp: LEVEL_XP,
-      remaining_xp: remainingXp,
-      percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
+      card_label: 'Career Card',
+      progress_label: 'Career Progress',
+      next_level_progress: nextLevelProgress,
     },
+    contribution_graph: buildAgentXpContributionGraph(accepted),
     receipts_count: accepted.length,
     sources: countBySource(accepted),
     latest_accepted_proof: latest ? {
@@ -828,6 +921,14 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
   const level = levelFromXp(totalXp);
   const levelBase = (level - 1) * LEVEL_XP;
   const currentLevelXp = totalXp - levelBase;
+  const nextLevelProgress = {
+    level,
+    next_level: level + 1,
+    current_xp: currentLevelXp,
+    required_xp: LEVEL_XP,
+    remaining_xp: Math.max(0, (level * LEVEL_XP) - totalXp),
+    percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
+  };
   const latest = verified
     .map(projection => ({
       ...(projection.latest_accepted_proof || {}),
@@ -836,6 +937,9 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
     }))
     .filter(proof => proof && proof.accepted_at)
     .sort((a, b) => new Date(b.accepted_at).getTime() - new Date(a.accepted_at).getTime())[0] || null;
+  const contributionGraph = combineAgentXpContributionGraphs(
+    verified.map(projection => projection.contribution_graph),
+  );
 
   return {
     schema: 'atris.career_xp_profile.v1',
@@ -843,19 +947,23 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
     search_roots: searchRoots,
     workspace_count: workspaces.length,
     verified_workspace_count: verified.length,
+    metric_label: AGENT_XP_LABEL,
+    agent_xp: totalXp,
+    total_agent_xp: totalXp,
+    today_agent_xp: todayXp,
     career_xp: totalXp,
     total_xp: totalXp,
     today_xp: todayXp,
     level,
     leaderboard_eligible: false,
-    next_level_progress: {
+    next_level_progress: nextLevelProgress,
+    career: {
       level,
-      next_level: level + 1,
-      current_xp: currentLevelXp,
-      required_xp: LEVEL_XP,
-      remaining_xp: Math.max(0, (level * LEVEL_XP) - totalXp),
-      percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
+      card_label: 'Career Card',
+      progress_label: 'Career Progress',
+      next_level_progress: nextLevelProgress,
     },
+    contribution_graph: contributionGraph,
     receipts_count: verified.reduce((sum, projection) => sum + asNumber(projection.receipts_count), 0),
     latest_accepted_proof: latest,
     workspaces,
@@ -1185,6 +1293,10 @@ function buildCareerXpSessionCapsule(args = []) {
       source: missionFlag ? 'flag' : goals[0] ? 'goal' : 'tasks',
     },
     xp: {
+      before_agent_xp: Math.max(0, afterTotalXp - windowXp),
+      after_agent_xp: afterTotalXp,
+      delta_agent_xp: windowXp,
+      today_agent_xp: asNumber(projection.today_xp),
       before_total_xp: Math.max(0, afterTotalXp - windowXp),
       after_total_xp: afterTotalXp,
       delta_xp: windowXp,
@@ -1237,14 +1349,16 @@ function buildCareerXpSessionCapsule(args = []) {
 }
 
 function normalizeLocalScore(score, workspace) {
-  const card = score.profile_card || {};
+  const card = score.profile_card || score.player_card || {};
   const integrity = score.integrity || {};
-  const careerXp = asNumber(card.career_xp);
+  const careerXp = asNumber(card.agent_xp ?? card.career_xp);
   const leaderboardEligible = Boolean(
     card.leaderboard_eligible ?? integrity.leaderboard_eligible
   );
 
   return {
+    metric_label: AGENT_XP_LABEL,
+    agent_xp: careerXp,
     career_xp: careerXp,
     level: levelFromXp(careerXp),
     operator: score.operator || null,
@@ -1262,6 +1376,16 @@ function normalizeLocalScore(score, workspace) {
     },
     contribution_graph: score.contribution_graph || {},
   };
+}
+
+function renderContributionGraph(graph) {
+  if (!graph || !Array.isArray(graph.days)) return;
+  console.log('');
+  console.log(`Last ${formatNumber(graph.window_days || DEFAULT_GRAPH_DAYS)} days: ${formatNumber(graph.total_xp)} ${AGENT_XP_LABEL} across ${formatNumber(graph.active_days)} active days`);
+  for (const row of buildContributionRows(graph.days)) {
+    console.log(row);
+  }
+  console.log('Legend: blank none | . started | : solid | * heavy | # breakout');
 }
 
 function loadLocalPayload(args) {
@@ -1298,8 +1422,8 @@ function render(payload) {
   if (payload.schema === 'atris.career_xp_session_capsule.v1') {
     const xp = payload.xp || {};
     const tasks = payload.tasks || {};
-    console.log(`Career XP Session ${payload.window?.label || 'window'}`);
-    console.log(`XP earned ${formatNumber(xp.delta_xp)} | Total ${formatNumber(xp.after_total_xp)} | Today ${formatNumber(xp.today_xp)} | Level ${formatNumber(xp.level || 1)}`);
+    console.log(`${AGENT_XP_LABEL} Session ${payload.window?.label || 'window'}`);
+    console.log(`${AGENT_XP_LABEL} earned ${formatNumber(xp.delta_agent_xp ?? xp.delta_xp)} | Total ${formatNumber(xp.after_agent_xp ?? xp.after_total_xp)} | Today ${formatNumber(xp.today_agent_xp ?? xp.today_xp)} | Career Level ${formatNumber(xp.level || 1)}`);
     console.log(`Tasks ${formatNumber(tasks.touched_count)} touched | ${formatNumber(tasks.review_count)} in Review | ${formatNumber(tasks.accepted_count)} accepted`);
     if (payload.proof?.latest_accepted) {
       const proof = payload.proof.latest_accepted;
@@ -1316,12 +1440,15 @@ function render(payload) {
 
   if (payload.schema === 'atris.career_xp_profile.v1') {
     const progress = payload.next_level_progress || {};
-    console.log(`Career XP ${formatNumber(payload.total_xp)} | Today ${formatNumber(payload.today_xp)} | Level ${formatNumber(payload.level || 1)}`);
-    console.log(`Next level ${formatNumber(progress.current_xp)}/${formatNumber(progress.required_xp)} XP (${formatNumber(progress.percent)}%) | ${formatNumber(progress.remaining_xp)} to go`);
+    console.log(`${AGENT_XP_LABEL} Card`);
+    console.log(`${AGENT_XP_LABEL} ${formatNumber(payload.total_agent_xp ?? payload.total_xp)} | Today ${formatNumber(payload.today_agent_xp ?? payload.today_xp)} | Career Level ${formatNumber(payload.level || 1)}`);
+    console.log(`Next career level ${formatNumber(progress.current_xp)}/${formatNumber(progress.required_xp)} ${AGENT_XP_LABEL} (${formatNumber(progress.percent)}%) | ${formatNumber(progress.remaining_xp)} to go`);
     console.log(`Workspaces ${formatNumber(payload.verified_workspace_count)}/${formatNumber(payload.workspace_count)} verified`);
+    renderContributionGraph(payload.contribution_graph);
+    console.log('');
     for (const workspace of payload.workspaces || []) {
       const marker = workspace.included ? 'included' : 'excluded';
-      console.log(`- ${workspace.name}: ${formatNumber(workspace.total_xp)} XP | today ${formatNumber(workspace.today_xp)} | ${workspace.integrity_status} | ${marker}`);
+      console.log(`- ${workspace.name}: ${formatNumber(workspace.total_xp)} ${AGENT_XP_LABEL} | today ${formatNumber(workspace.today_xp)} | ${workspace.integrity_status} | ${marker}`);
     }
     if (payload.latest_accepted_proof) {
       const proof = payload.latest_accepted_proof;
@@ -1339,8 +1466,11 @@ function render(payload) {
 
   if (payload.schema === 'atris.career_xp_projection.v1') {
     const progress = payload.next_level_progress || {};
-    console.log(`Career XP ${formatNumber(payload.total_xp)} | Today ${formatNumber(payload.today_xp)} | Level ${formatNumber(payload.level || 1)}`);
-    console.log(`Next level ${formatNumber(progress.current_xp)}/${formatNumber(progress.required_xp)} XP (${formatNumber(progress.percent)}%) | ${formatNumber(progress.remaining_xp)} to go`);
+    console.log(`${AGENT_XP_LABEL} Card`);
+    console.log(`${AGENT_XP_LABEL} ${formatNumber(payload.total_agent_xp ?? payload.total_xp)} | Today ${formatNumber(payload.today_agent_xp ?? payload.today_xp)} | Career Level ${formatNumber(payload.level || 1)}`);
+    console.log(`Next career level ${formatNumber(progress.current_xp)}/${formatNumber(progress.required_xp)} ${AGENT_XP_LABEL} (${formatNumber(progress.percent)}%) | ${formatNumber(progress.remaining_xp)} to go`);
+    renderContributionGraph(payload.contribution_graph);
+    console.log('');
     if (payload.latest_accepted_proof) {
       const proof = payload.latest_accepted_proof;
       console.log(`Latest proof ${proof.label || proof.title || 'Accepted proof'}: ${proof.proof}`);
@@ -1354,12 +1484,12 @@ function render(payload) {
   const graph = payload.contribution_graph || {};
   const form = currentForm(payload);
 
-  console.log(`Career XP ${formatNumber(payload.career_xp)} | Level ${formatNumber(payload.level || 1)}`);
+  console.log(`${AGENT_XP_LABEL} ${formatNumber(payload.agent_xp ?? payload.career_xp)} | Career Level ${formatNumber(payload.level || 1)}`);
   if (form) {
     const stats = form.visibleStats.length ? ` | ${form.visibleStats.join(', ')}` : '';
     console.log(`Current form ${form.ovr}/99 | ${form.integrityStatus}${stats}`);
   }
-  console.log(`Last ${formatNumber(graph.window_days || 365)} days: ${formatNumber(graph.total_xp)} XP across ${formatNumber(graph.active_days)} active days`);
+  console.log(`Last ${formatNumber(graph.window_days || 365)} days: ${formatNumber(graph.total_xp)} ${AGENT_XP_LABEL} across ${formatNumber(graph.active_days)} active days`);
   console.log('');
   for (const row of buildContributionRows(graph.days)) {
     console.log(row);
@@ -1395,14 +1525,14 @@ async function xpCommand(...args) {
     return;
   }
 
-  if (subcommand === 'collect' || subcommand === 'status') {
+  if (subcommand === 'collect' || subcommand === 'status' || subcommand === 'card') {
     const commandArgs = args.slice(1);
     let payload;
     try {
       const explicitLocal = hasFlag(commandArgs, '--local')
         || hasFlag(commandArgs, '--workspace')
         || hasFlag(commandArgs, '--operator');
-      const accountStatus = subcommand === 'status' && !explicitLocal;
+      const accountStatus = (subcommand === 'status' || subcommand === 'card') && !explicitLocal;
       payload = hasFlag(commandArgs, '--all') || accountStatus
         ? collectAllLocalXpProjection(commandArgs)
         : collectLocalXpProjection(commandArgs);
