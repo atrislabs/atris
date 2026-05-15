@@ -4104,6 +4104,35 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.xp_projection.total_xp, 1);
     assert.equal(acceptPayload.xp_projection.latest_accepted_proof.source_task_id, acceptPayload.task_id);
 
+    const clearCli = runCli(['task', 'add', 'Clear stale CLI review guidance', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(clearCli.status, 0, clearCli.stderr);
+    const clearCliRef = JSON.parse(clearCli.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', clearCliRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const clearCliReady = runCli([
+      'task', 'ready', clearCliRef,
+      '--proof', 'cli clear proof stays visible',
+      '--lesson', 'stale CLI lesson',
+      '--next', 'stale CLI next',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(clearCliReady.status, 0, clearCliReady.stderr);
+    const clearCliAccept = runCli([
+      'task', 'accept', clearCliRef,
+      '--as', 'keshavrao',
+      '--lesson', '',
+      '--next', '',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(clearCliAccept.status, 0, clearCliAccept.stderr);
+    const clearCliPayload = JSON.parse(clearCliAccept.stdout);
+    assert.equal(clearCliPayload.episode.proof, 'cli clear proof stays visible');
+    assert.equal(clearCliPayload.episode.lesson, '');
+    assert.equal(clearCliPayload.episode.next_task_suggestion, null);
+    assert.equal(clearCliPayload.task.review.proof, 'cli clear proof stays visible');
+    assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'lesson'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'next_task'), false);
+
 	    const events = runCli(['task', 'events', ref, '--json'], { cwd: dir, env });
 	    assert.equal(events.status, 0, events.stderr);
 	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);

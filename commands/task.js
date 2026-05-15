@@ -127,6 +127,11 @@ function hasFlag(args, name) {
   return args.indexOf(name) !== -1;
 }
 
+function hasEmptyFlagValue(args, name) {
+  const i = args.indexOf(name);
+  return i !== -1 && args[i + 1] === '';
+}
+
 function wantsJson(args) {
   return hasFlag(args, '--json');
 }
@@ -1670,15 +1675,21 @@ function cmdAccept(args) {
     process.exit(2);
   }
   const readyReview = beforeTask?.review || {};
-  const lesson = typeof lessonFlag === 'string'
+  const clearLesson = hasEmptyFlagValue(args, '--lesson');
+  const clearNextTask = hasEmptyFlagValue(args, '--next');
+  const lesson = clearLesson
+    ? ''
+    : typeof lessonFlag === 'string'
     ? lessonFlag
     : String(readyReview.lesson || beforeTask?.metadata?.latest_agent_lesson || '');
-  const nextTask = typeof nextTaskFlag === 'string'
+  const nextTask = clearNextTask
+    ? ''
+    : typeof nextTaskFlag === 'string'
     ? nextTaskFlag
     : String(readyReview.next_task || beforeTask?.metadata?.latest_agent_next_task || '');
   const clearedFields = [];
-  if (typeof lessonFlag === 'string' && !String(lessonFlag).trim()) clearedFields.push('lesson');
-  if (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim()) clearedFields.push('next_task');
+  if (clearLesson || (typeof lessonFlag === 'string' && !String(lessonFlag).trim())) clearedFields.push('lesson');
+  if (clearNextTask || (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim())) clearedFields.push('next_task');
   const parsedReward = parseAcceptReward(reward);
   if (!parsedReward.ok) {
     console.error('atris task accept: reward must be a positive number');
