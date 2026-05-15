@@ -39,16 +39,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
 
   for (const t of todo.backlog) {
     if (t.tags && t.tags.includes('unverified')) continue;
-    // Endgame tasks must declare an explicit **Verify:** field — runTaskOnce
-    // halts the whole loop if Verify is missing (autopilot.js:1162, lessons.md
-    // no-verify-field 8× in 2026-05-08..10). Skip-at-picker beats halt-at-runner.
-    if (t.tag === 'endgame' && !t.verify) continue;
-    // Skip endgame tasks whose Verify clause already passed pre-work (lesson
-    // `verify-not-falsifiable` within the last 7 days). Without this, the
-    // picker re-selects the same already-shipped task every cron tick,
-    // burning ~95s per fire to halt at the falsifiability gate. Per 3
-    // consecutive halts on the same task 2026-05-11 06:12-06:30.
-    if (t.tag === 'endgame' && hasRecentVerifyPrePass(cwd, t.title)) continue;
+    if (shouldSkipEndgameAtPicker(cwd, t)) continue;
     if (t.tag === 'endgame' && !skipped.has(t.title)) {
       suggestions.push({
         task: t.title,
@@ -135,6 +126,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   // --- Backlog tasks ---
   for (const t of todo.backlog) {
     if (t.tags && t.tags.includes('unverified')) continue;
+    if (shouldSkipEndgameAtPicker(cwd, t)) continue;
     if (skipped.has(t.title)) continue;
     const remaining = todo.backlog.filter(b => !(b.tags && b.tags.includes('unverified'))).length;
     suggestions.push({
@@ -800,7 +792,7 @@ function getVerifyCommand(cwd, taskTitle) {
   const todoPath = path.join(cwd, 'atris', 'TODO.md');
   if (fs.existsSync(todoPath)) {
     const todo = parseTodo(todoPath);
-    const task = [...todo.inProgress, ...todo.backlog, ...todo.completed]
+    const task = [...todo.inProgress, ...(todo.review || []), ...todo.backlog, ...todo.completed]
       .find(t => t.title === taskTitle);
     if (task && task.verify) return { cmd: task.verify, explicit: true };
   }
@@ -1496,7 +1488,8 @@ function readEndgameState(cwd) {
       pickedAt: pickedMatch ? pickedMatch[1].trim() : null,
       horizon: horizonMatch ? horizonMatch[1].trim() : '',
       remaining: todo.backlog.filter(t => t.tag === 'endgame').length
-        + todo.inProgress.filter(t => t.tag === 'endgame').length,
+        + todo.inProgress.filter(t => t.tag === 'endgame').length
+        + (todo.review || []).filter(t => t.tag === 'endgame').length,
       completed: todo.completed.filter(t => t.tag === 'endgame').length,
     };
   } catch {
@@ -2261,6 +2254,16 @@ function hasRecentVerifyPrePass(cwd, taskTitle, windowDays = 7) {
     if (l.body.includes(needle)) return true;
   }
   return false;
+}
+
+function shouldSkipEndgameAtPicker(cwd, task) {
+  if (!task || task.tag !== 'endgame') return false;
+  // Endgame tasks must declare an explicit **Verify:** field. runTaskOnce would
+  // halt them, so the picker must not downgrade them into generic backlog work.
+  if (!task.verify) return true;
+  // If Verify already passed before work started recently, the task is already
+  // shipped or the rubric is trivial. Keep it out of all picker paths.
+  return hasRecentVerifyPrePass(cwd, task.title);
 }
 
 function pickUnresolvedFailLesson(cwd) {

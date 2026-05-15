@@ -31,9 +31,11 @@ Leave four durable artifacts:
 | Objective | `atris task note <id> "Goal / files / done / check"` |
 | Navigation | `atris/MAP.md` when a route or file location is learned |
 | Change | Small git diff in declared files only |
-| Proof | `atris task finish <id> --proof "<commands or receipt>"` |
+| Proof ready | `atris task ready <id> --proof "<commands or receipt>"` |
+| Human accept | `atris task accept <id>` |
 
 Do not depend on chat context. Put task state and proof on disk.
+Agents move proof-backed work to Review with `ready`; humans use `accept` for Done + Career XP.
 
 ## Workflow
 

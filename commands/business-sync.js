@@ -3,7 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { loadManifest } = require('../lib/manifest');
 
-const WATCH_IGNORED_DIRS = new Set(['.git', '.atris', '.claude', 'node_modules', '__pycache__']);
+const WATCH_IGNORED_DIRS = new Set([
+  '.git', '.atris', '.claude', '.cursor', '.next', '.cache',
+  'node_modules', '__pycache__', 'venv', '.venv', 'dist', 'build',
+  'coverage', 'tmp', 'temp',
+]);
 const WATCH_IGNORED_FILES = new Set(['.DS_Store']);
 
 function commandLine(args) {
@@ -392,7 +396,6 @@ function collectConflictResolutionEntries(cwd = process.cwd()) {
         const localPath = full;
         const remotePath = full.replace(/\.local$/, '.remote');
         const targetRel = path.relative(dir, full).replace(/\\/g, '/').replace(/\.local$/, '');
-        if (!targetRel.startsWith('atris/')) continue;
         entries.push({
           targetRel,
           basePath: full.replace(/\.local$/, '.base'),
@@ -414,6 +417,13 @@ function assertWorkspaceTarget(cwd, targetRel) {
     throw new Error(`Refusing to resolve outside workspace: ${targetRel}`);
   }
   return targetPath;
+}
+
+function cleanupResolvedConflictSidecars(cwd, targetRel, { keepCloud = false } = {}) {
+  const suffixes = ['.base', '.local', '.remote', ...(keepCloud ? [] : ['.cloud'])];
+  for (const suffix of suffixes) {
+    fs.rmSync(assertWorkspaceTarget(cwd, `${targetRel}${suffix}`), { force: true });
+  }
 }
 
 function changedRange(baseLines, changedLines) {
@@ -580,6 +590,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
         fs.mkdirSync(path.dirname(remoteCopyPath), { recursive: true });
         fs.copyFileSync(entry.remotePath, remoteCopyPath);
       }
+      cleanupResolvedConflictSidecars(cwd, entry.targetRel, { keepCloud: true });
       resolved.push(entry.targetRel);
       continue;
     }
@@ -600,6 +611,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
       }
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       fs.writeFileSync(targetPath, merged.content, 'utf8');
+      cleanupResolvedConflictSidecars(cwd, entry.targetRel);
       resolved.push(entry.targetRel);
       continue;
     }
@@ -608,6 +620,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
     if (!fs.existsSync(sourcePath)) continue;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
+    cleanupResolvedConflictSidecars(cwd, entry.targetRel);
     resolved.push(entry.targetRel);
   }
 

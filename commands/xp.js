@@ -236,6 +236,14 @@ function readJsonFile(filePath, fallback = null) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function fileSize(filePath) {
+  try {
+    return fs.statSync(filePath).size;
+  } catch (_) {
+    return 0;
+  }
+}
+
 function timestampMs(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -385,8 +393,16 @@ function normalizeReceiptChain(receipts, { allowLegacyUpgrade = true } = {}) {
 
     const expected = withReceiptIntegrity(receipt, previousHash);
     const hadIntegrity = Boolean(receipt.receipt_hash && receipt.chain_version && Object.prototype.hasOwnProperty.call(receipt, 'previous_receipt_hash'));
-    if (hadIntegrity && receipt.receipt_hash !== expected.receipt_hash) {
-      errors.push(`receipt_hash_mismatch:${receiptLabel(receipt)}`);
+    if (hadIntegrity) {
+      if (receipt.chain_version !== RECEIPT_CHAIN_VERSION) {
+        errors.push(`receipt_chain_version_mismatch:${receiptLabel(receipt)}`);
+      }
+      if ((receipt.previous_receipt_hash || null) !== (previousHash || null)) {
+        errors.push(`receipt_previous_hash_mismatch:${receiptLabel(receipt)}`);
+      }
+      if (receipt.receipt_hash !== expected.receipt_hash) {
+        errors.push(`receipt_hash_mismatch:${receiptLabel(receipt)}`);
+      }
     }
     if (!hadIntegrity && !allowLegacyUpgrade) {
       errors.push(`missing_receipt_integrity:${receiptLabel(receipt)}`);
@@ -445,12 +461,13 @@ function alignJsonlReadStart(filePath, start) {
   }
 }
 
-function readTaskEpisodeTail(episodePath, cursorPath) {
+function readTaskEpisodeTail(episodePath, cursorPath, options = {}) {
   const stat = fs.existsSync(episodePath) ? fs.statSync(episodePath) : null;
-  const cursor = readJsonFile(cursorPath, null);
+  const forceReset = Boolean(options.forceReset);
+  const cursor = forceReset ? null : readJsonFile(cursorPath, null);
   const previousBytes = Number(cursor?.bytes_read || 0);
   const size = stat ? stat.size : 0;
-  const reset = !cursor || cursor.source_path !== episodePath || size < previousBytes;
+  const reset = forceReset || !cursor || cursor.source_path !== episodePath || size < previousBytes;
   const start = reset || !stat ? 0 : alignJsonlReadStart(episodePath, previousBytes);
   if (!stat || size === start) {
     return {
@@ -494,7 +511,12 @@ function readTaskEpisodeTail(episodePath, cursorPath) {
 }
 
 function receiptFromTaskEpisode(episode) {
-  const eligible = episode?.career_xp?.eligible === true || episode?.rl?.label === 'accepted';
+  const doneForXp = String(episode?.state?.status || '').toLowerCase() === 'done';
+  const hasExplicitCareerXp = episode?.career_xp && typeof episode.career_xp === 'object';
+  const eligible = doneForXp && (
+    episode?.career_xp?.eligible === true
+      || (!hasExplicitCareerXp && episode?.rl?.label === 'accepted')
+  );
   const proof = String(episode?.proof || '').trim();
   const reward = asNumber(episode?.career_xp?.reward ?? episode?.reward?.value, 0);
   if (!eligible || !proof || reward <= 0 || !episode?.episode_id) return null;
@@ -605,7 +627,7 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
   };
 }
 
-function collectLocalXpProjection(args = []) {
+function collectLocalXpProjectionState(args = [], { write = true } = {}) {
   const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
   const episodePath = path.join(workspace, TASK_EPISODES_FILE);
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
@@ -613,19 +635,26 @@ function collectLocalXpProjection(args = []) {
   const cursorPath = path.join(workspace, CAREER_XP_CURSOR_FILE);
   let existingChain = normalizeReceiptChain(readJsonl(receiptsPath));
   if ((existingChain.upgraded || existingChain.deduped) && existingChain.integrity.status === 'verified') {
-    writeJsonl(receiptsPath, existingChain.receipts);
+    if (write) writeJsonl(receiptsPath, existingChain.receipts);
     existingChain = normalizeReceiptChain(existingChain.receipts);
   }
   if (existingChain.integrity.status === 'tampered') {
     const projection = buildCareerXpProjection([], workspace, existingChain.integrity);
-    writeJson(projectionPath, projection);
+    if (write) writeJson(projectionPath, projection);
     return {
-      ...projection,
-      collected_receipts: 0,
+      projection: {
+        ...projection,
+        collected_receipts: 0,
+      },
+      receipts: [],
+      newReceipts: [],
     };
   }
 
-  const tail = readTaskEpisodeTail(episodePath, cursorPath);
+  const replayFromStart = existingChain.receipts.length === 0
+    && fileSize(episodePath) > 0
+    && fileSize(receiptsPath) === 0;
+  const tail = readTaskEpisodeTail(episodePath, cursorPath, { forceReset: replayFromStart });
   const seen = new Set(existingChain.receipts.map(receipt => receipt.receipt_id).filter(Boolean));
   let previousHash = existingChain.integrity.head_hash || null;
   const newReceipts = tail.episodes
@@ -653,14 +682,25 @@ function collectLocalXpProjection(args = []) {
     finalIntegrity,
   );
 
-  appendJsonl(receiptsPath, newReceipts);
-  writeJson(cursorPath, tail.cursor);
-  writeJson(projectionPath, projection);
+  if (write) {
+    appendJsonl(receiptsPath, newReceipts);
+    writeJson(cursorPath, tail.cursor);
+    writeJson(projectionPath, projection);
+  }
 
   return {
-    ...projection,
-    collected_receipts: newReceipts.length,
+    projection: {
+      ...projection,
+      collected_receipts: newReceipts.length,
+    },
+    receipts: finalChain.receipts,
+    newReceipts,
+    cursor: tail.cursor,
   };
+}
+
+function collectLocalXpProjection(args = []) {
+  return collectLocalXpProjectionState(args, { write: true }).projection;
 }
 
 function uniquePaths(paths) {
@@ -1085,7 +1125,9 @@ function buildCareerXpSessionCapsule(args = []) {
     throw new Error('--since must be before --until');
   }
 
-  const projection = collectLocalXpProjection(['--workspace', workspace]);
+  const writeEnabled = !hasFlag(args, '--no-write') && !hasFlag(args, '--dry-run');
+  const projectionState = collectLocalXpProjectionState(['--workspace', workspace], { write: writeEnabled });
+  const projection = projectionState.projection;
   const receiptsPath = path.join(workspace, CAREER_XP_RECEIPTS_FILE);
   const taskProjectionPath = path.join(workspace, TASK_PROJECTION_FILE);
   const sessionDate = localDateKey(since) || since.toISOString().slice(0, 10);
@@ -1105,7 +1147,7 @@ function buildCareerXpSessionCapsule(args = []) {
     return status === 'review' || taskApprovalStatus(task) === 'pending';
   });
   const doneTasks = touchedTasks.filter(task => String(task.status || '').toLowerCase() === 'done');
-  const receipts = projection.integrity_status === 'verified' ? readJsonl(receiptsPath) : [];
+  const receipts = projection.integrity_status === 'verified' ? projectionState.receipts : [];
   const acceptedReceipts = receipts
     .filter(receipt => receipt?.outcome === 'accepted' && asNumber(receipt.xp) > 0 && inWindow(receipt.accepted_at, sinceMs, untilMs))
     .sort((a, b) => (timestampMs(b.accepted_at) || 0) - (timestampMs(a.accepted_at) || 0));
@@ -1126,7 +1168,6 @@ function buildCareerXpSessionCapsule(args = []) {
     ...episodeGoals,
   ]);
   const latestAccepted = acceptedReceipts[0] || null;
-  const writeEnabled = !hasFlag(args, '--no-write') && !hasFlag(args, '--dry-run');
 
   const capsule = {
     schema: 'atris.career_xp_session_capsule.v1',
@@ -1377,14 +1418,20 @@ async function xpCommand(...args) {
     return;
   }
 
+  if (subcommand) {
+    console.error(`Unknown xp subcommand: ${subcommand}`);
+    showHelp();
+    process.exit(1);
+  }
+
   const jsonMode = args.includes('--json');
   const localMode = hasFlag(args, '--local') || hasFlag(args, '--workspace') || hasFlag(args, '--operator');
   if (localMode) {
     let payload;
     try {
-      payload = loadLocalPayload(args);
+      payload = collectLocalXpProjection(args);
     } catch (error) {
-      console.error(`Failed to load local XP graph: ${error.message}`);
+      console.error(`Failed to collect local XP: ${error.message}`);
       process.exit(1);
     }
     if (jsonMode) {
