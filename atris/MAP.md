@@ -44,6 +44,7 @@ rg "logAtris" commands/log.js               # Log command
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp" bin/atris.js commands/auth.js test/commands.test.js # Auth/account commands + non-mutating help
+rg "agentDoctor|inspectAgentCliWiring|agent doctor" bin/atris.js test/commands.test.js commands/init.js # Local AI CLI wiring doctor + Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "brainCommand|collectState|countStateRows|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard + workspace-free help
@@ -840,19 +841,22 @@ rg "Phase 1" atris.md                       # Agent generation spec
 
 **Search:** `rg "checkForUpdates|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/commands.test.js`
 
-### Feature: Agent Selection (`atris agent`)
+### Feature: Agent Selection + Local CLI Doctor (`atris agent`)
 
-**Purpose:** Select which cloud agent persona to use
+**Purpose:** Select which cloud agent persona to use, and verify local AI CLIs can see Atris context
 
-- **Entry point:** `bin/atris.js:1793-1890` (agentAtris function)
+- **Entry point:** `bin/atris.js` (`agentAtris`, `agentDoctor`, `inspectAgentCliWiring`)
 - **Requires:** Valid credentials
 - **Logic:**
 - Fetches available agents from backend
 - Interactive selection
 - Saves to `~/.atris/config.json`
-- **Value:** Switch between different agent personalities
+- `atris agent doctor [--json]` is auth-free and checks Atris core files plus Codex/AGENTS.md, Claude, Cursor, and Devin wiring.
+- `atris init` now scaffolds `.devin/config.local.json` with `Exec(atris)` so Devin can run Atris boot/context commands in new workspaces.
+- **Regression:** `test/commands.test.js` covers workspace-free `agent --help`, Devin init scaffold, and JSON doctor output.
+- **Value:** Switch between different agent personalities and prove local agent CLIs are connected to Atris before work starts.
 
-**Search:** `rg "agentAtris" bin/atris.js`
+**Search:** `rg "agentAtris|agentDoctor|inspectAgentCliWiring|agent doctor" bin/atris.js test/commands.test.js commands/init.js`
 
 ### Feature: Interactive Chat (`atris chat`)
 
