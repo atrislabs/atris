@@ -41,4 +41,3 @@ This is the Atris boot sequence. Show the output to the user, then respond natur
 - Plan = ASCII visualization + approval gate. Do not execute during planning.
 - Execute step-by-step, verify as you go, update artifacts (`TODO.md`, `MAP.md`) when reality changes.
 - Delete completed tasks (validator cleans to target state = 0).
-

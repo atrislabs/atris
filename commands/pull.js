@@ -7,7 +7,7 @@ const { loadConfig } = require('../utils/config');
 const { getLogPath } = require('../lib/file-ops');
 const { parseJournalSections, mergeSections, reconstructJournal } = require('../lib/journal');
 const { loadBusinesses, businessMatchesSlug } = require('./business');
-const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
+const { loadManifest, saveManifest, computeFileHash, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
@@ -40,6 +40,29 @@ function isBusinessWorkspaceRoot(dir) {
 function normalizePullFilePath(filePath) {
   if (!filePath) return null;
   return `/${String(filePath).replace(/^\/+/, '')}`;
+}
+
+function mergeSmartPullFiles(hashFiles = [], batchFiles = [], changedPaths = []) {
+  const contentMap = {};
+  for (const f of batchFiles) {
+    const normalizedPath = normalizePullFilePath(f && f.path);
+    if (normalizedPath) contentMap[normalizedPath] = { ...f, path: normalizedPath };
+  }
+
+  const missingContent = changedPaths.filter((p) => {
+    const item = contentMap[p];
+    return !item || typeof item.content !== 'string';
+  });
+  if (missingContent.length > 0) {
+    return { ok: false, missingContent };
+  }
+
+  const files = hashFiles.map((f) => {
+    const normalizedPath = normalizePullFilePath(f && f.path);
+    const normalizedHashOnly = normalizedPath ? { ...f, path: normalizedPath } : f;
+    return contentMap[normalizedPath] || normalizedHashOnly;
+  });
+  return { ok: true, files };
 }
 
 function syncTimestamp() {
@@ -385,6 +408,7 @@ async function pullBusiness(slug) {
       const remoteHashes = {};
       for (const f of hashResult.data.files) {
         const normalizedPath = normalizePullFilePath(f.path);
+        if (isIgnoredSyncPath(normalizedPath)) continue;
         if (normalizedPath && f.hash) remoteHashes[normalizedPath] = f.hash;
       }
       const changedPaths = [];
@@ -426,20 +450,16 @@ async function pullBusiness(slug) {
 
         if (batchResult.ok && batchResult.data && batchResult.data.files) {
           process.stdout.write(`\r  Fetched ${batchResult.data.files.length} files in ${phase2Sec}s.${' '.repeat(10)}\n`);
-          // Merge: hash-only results + content for changed files
-          const contentMap = {};
-          for (const f of batchResult.data.files) {
-            const normalizedPath = normalizePullFilePath(f.path);
-            if (normalizedPath) contentMap[normalizedPath] = { ...f, path: normalizedPath };
+          const merged = mergeSmartPullFiles(hashResult.data.files, batchResult.data.files, changedPaths);
+          if (merged.ok) {
+            result = { ok: true, data: { files: merged.files } };
+          } else {
+            process.stdout.write(`\r  Batch missing ${merged.missingContent.length} file(s), fetching full snapshot...${' '.repeat(10)}\n`);
+            const contentUrl = `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=true${pathsParam}`;
+            result = await apiRequestJson(contentUrl, { method: 'GET', token: creds.token, timeoutMs });
+            const fullSec = Math.floor((Date.now() - startPhase2) / 1000);
+            process.stdout.write(`\r  Fetched in ${fullSec}s.${' '.repeat(20)}\n`);
           }
-          // Build merged file list: all hash-only entries + inject content for changed ones
-          const mergedFiles = hashResult.data.files.map(f => {
-            const normalizedPath = normalizePullFilePath(f.path);
-            const normalizedHashOnly = normalizedPath ? { ...f, path: normalizedPath } : f;
-            const withContent = contentMap[normalizedPath];
-            return withContent || normalizedHashOnly;
-          });
-          result = { ok: true, data: { files: mergedFiles } };
         } else {
           // Batch not available — fall back to full snapshot
           process.stdout.write(`\r  Batch unavailable, fetching full snapshot...${' '.repeat(10)}\n`);
@@ -556,6 +576,7 @@ async function pullBusiness(slug) {
     if (!file.path || file.binary) continue;
     const normalizedPath = normalizePullFilePath(file.path);
     if (!normalizedPath) continue;
+    if (isIgnoredSyncPath(normalizedPath)) continue;
     // An empty string IS valid content (a real, zero-byte file). The earlier
     // version excluded `content === ''` from the hasContent path, which made
     // empty files masquerade as hash-only entries; they'd then be recorded in
@@ -756,7 +777,9 @@ async function pullBusiness(slug) {
     // If there's no prior manifest (first pull), there's nothing to sweep —
     // threeWayCompare already handled newRemote/conflicts/newLocal, and we
     // have no basis for claiming ownership of any local-only file.
-    const managedPaths = manifest && manifest.files ? Object.keys(manifest.files) : [];
+    const managedPaths = manifest && manifest.files
+      ? Object.keys(manifest.files).filter((p) => !isIgnoredSyncPath(p))
+      : [];
     const sweepCandidates = managedPaths.filter(isInScope).filter((p) => localFiles[p]);
     const inScopeLocal = Object.keys(localFiles).filter(isInScope);
 
@@ -1079,4 +1102,4 @@ async function pullMemberJournal(token, agentId, memberName, memberDir) {
   return synced;
 }
 
-module.exports = { buildPullConflictReviewPacket, normalizePullFilePath, pullAtris };
+module.exports = { buildPullConflictReviewPacket, mergeSmartPullFiles, normalizePullFilePath, pullAtris };

@@ -637,7 +637,8 @@ Workflow: Navigator (plan) → Executor (build) → Validator (verify)
 Key behaviors:
 - Read PERSONA.md first (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
-- Update TODO.md (claim tasks, delete when done)
+- Use `atris task` for claims, proof, ready, and accept
+- Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 ```
 
 ### Checklist
