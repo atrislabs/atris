@@ -1294,7 +1294,8 @@ async function runMission(args) {
         worktree: tickWorktree,
       });
 
-      const newStatus = (verifierResult?.passed && completeOnPass && !mission.always_on) ? 'complete' :
+      const newStatus = (verifierResult?.passed && mission.always_on) ? 'running' :
+                        (verifierResult?.passed && completeOnPass) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
@@ -1339,7 +1340,7 @@ async function runMission(args) {
         backoffAttempt++;
       }
 
-      if (newStatus === 'complete' || newStatus === 'ready') break;
+      if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on)) break;
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
 
       // Sleep until next tick

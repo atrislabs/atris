@@ -3,7 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { loadManifest } = require('../lib/manifest');
 
-const WATCH_IGNORED_DIRS = new Set(['.git', '.atris', '.claude', 'node_modules', '__pycache__']);
+const WATCH_IGNORED_DIRS = new Set([
+  '.git', '.atris', '.claude', '.cursor', '.next', '.cache',
+  'node_modules', '__pycache__', 'venv', '.venv', 'dist', 'build',
+  'coverage', 'tmp', 'temp',
+]);
 const WATCH_IGNORED_FILES = new Set(['.DS_Store']);
 
 function commandLine(args) {
@@ -33,8 +37,9 @@ function parseBusinessSyncArgs(args = []) {
   const watch = args.includes('--watch');
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
+  const help = args.includes('--help') || args.includes('-h') || positional[0] === 'help';
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, help };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -75,8 +80,7 @@ function shouldIgnoreWatchPath(relativePath) {
   return WATCH_IGNORED_FILES.has(path.basename(relativePath));
 }
 
-function collectBrainSnapshot(root) {
-  const brainDir = path.join(root, 'atris');
+function collectWorkspaceSnapshot(root) {
   const snapshot = new Map();
 
   function walk(dir) {
@@ -89,7 +93,7 @@ function collectBrainSnapshot(root) {
 
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      const rel = path.relative(brainDir, full);
+      const rel = path.relative(root, full);
       if (shouldIgnoreWatchPath(rel)) continue;
       if (entry.isDirectory()) {
         walk(full);
@@ -104,9 +108,11 @@ function collectBrainSnapshot(root) {
     }
   }
 
-  walk(brainDir);
+  walk(root);
   return snapshot;
 }
+
+const collectBrainSnapshot = collectWorkspaceSnapshot;
 
 function snapshotsDiffer(before, after) {
   if (before.size !== after.size) return true;
@@ -152,8 +158,7 @@ function writeSyncStatus(cwd, payload = {}) {
   }, null, 2) + '\n', 'utf8');
 }
 
-function countBrainFiles(cwd) {
-  const brainDir = path.join(cwd, 'atris');
+function countWorkspaceFiles(cwd) {
   let count = 0;
 
   function walk(dir) {
@@ -165,15 +170,76 @@ function countBrainFiles(cwd) {
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      const rel = path.relative(brainDir, full);
+      const rel = path.relative(cwd, full);
       if (shouldIgnoreWatchPath(rel)) continue;
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) count += 1;
     }
   }
 
-  walk(brainDir);
+  walk(cwd);
   return count;
+}
+
+function countFilesUnder(dir) {
+  let count = 0;
+
+  function walk(current) {
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) count += 1;
+    }
+  }
+
+  walk(dir);
+  return count;
+}
+
+function collectWorkspaceWarnings(cwd, slug) {
+  const warnings = [];
+  if (slug) {
+    const nested = path.join(cwd, slug);
+    if (fs.existsSync(nested)) {
+      try {
+        if (fs.statSync(nested).isDirectory()) {
+          warnings.push(`nested workspace folder: ${slug}/ (${countFilesUnder(nested)} files)`);
+        }
+      } catch {
+        // Ignore races while editors or sync tools move folders.
+      }
+    }
+  }
+
+  const syncArtifacts = [];
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(cwd, full);
+      if (shouldIgnoreWatchPath(rel)) continue;
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && ['.remote', '.local', '.base', '.cloud'].some((suffix) => entry.name.endsWith(suffix))) {
+        syncArtifacts.push(rel.replace(/\\/g, '/'));
+      }
+    }
+  }
+  walk(cwd);
+  if (syncArtifacts.length > 0) {
+    warnings.push(`sync review artifacts outside .atris/: ${syncArtifacts.length}`);
+  }
+  return warnings;
 }
 
 function listConflictSummaries(cwd) {
@@ -206,30 +272,36 @@ function collectLocalSyncStatus(cwd = process.cwd(), options = {}) {
   const heartbeat = readJsonFile(syncStatusPath(cwd));
   const conflictSummaries = listConflictSummaries(cwd);
   const brainDir = path.join(cwd, 'atris');
+  const workspaceFileCount = countWorkspaceFiles(cwd);
   const manifestRootMatches = !manifest || !manifest.workspace_root || sameRealPath(manifest.workspace_root, cwd);
+  const warnings = collectWorkspaceWarnings(cwd, slug);
 
   return {
     slug,
     cwd,
     brainDir,
     brainExists: fs.existsSync(brainDir),
-    brainFileCount: countBrainFiles(cwd),
+    brainFileCount: workspaceFileCount,
+    workspaceFileCount,
     conflictCount: conflictSummaries.length,
     latestConflict: conflictSummaries[conflictSummaries.length - 1] || null,
     lastSync: manifest && manifest.last_sync ? manifest.last_sync : null,
     manifestRoot: manifest && manifest.workspace_root ? manifest.workspace_root : null,
     manifestRootMatches,
     heartbeat,
+    warnings,
   };
 }
 
 function renderLocalSyncStatus(status) {
   const lines = [];
-  const fileLabel = status.brainFileCount === 1 ? 'file' : 'files';
-  lines.push('Company brain status');
+  const fileLabel = status.workspaceFileCount === 1 ? 'file' : 'files';
+  lines.push('Business workspace sync status');
   lines.push(`  business: ${status.slug || 'not detected'}`);
   lines.push(`  folder: ${status.cwd}`);
-  lines.push(`  brain: ${status.brainExists ? `atris/ (${status.brainFileCount} ${fileLabel})` : 'missing atris/'}`);
+  lines.push(`  workspace: ${status.workspaceFileCount} ${fileLabel} (${status.brainExists ? 'atris/ present' : 'missing atris/'})`);
+  lines.push('  loop: Pull -> Review -> Publish');
+  lines.push('  quest gate: exact files beat broad pushes');
   lines.push(`  last cloud sync: ${status.lastSync || 'never on this machine'}`);
   if (status.manifestRoot && !status.manifestRootMatches) {
     lines.push(`  manifest: from another folder (${status.manifestRoot})`);
@@ -242,14 +314,41 @@ function renderLocalSyncStatus(status) {
   } else {
     lines.push('  conflicts: none');
   }
+  if (status.warnings && status.warnings.length > 0) {
+    lines.push(`  warnings: ${status.warnings.length}`);
+    status.warnings.slice(0, 3).forEach((warning) => lines.push(`    - ${warning}`));
+  } else {
+    lines.push('  warnings: none');
+  }
   if (status.heartbeat && status.heartbeat.updated_at) {
     lines.push(`  watcher: last heartbeat ${status.heartbeat.updated_at} (${status.heartbeat.state || 'unknown'})`);
   } else {
     lines.push('  watcher: no heartbeat yet');
   }
   lines.push('');
-  lines.push('Next: run `atris sync --dry-run` to preview, or `atris sync --watch` to keep this brain live.');
+  lines.push('Next: run `atris sync --dry-run` to preview the quest, or `atris sync --review` if conflicts exist.');
   return `${lines.join('\n')}\n`;
+}
+
+function renderBusinessSyncHelp() {
+  return [
+    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--timeout 120]',
+    '',
+    'Safe loop:',
+    '  Pull -> Review -> Publish',
+    '',
+    'Commands:',
+    '  atris sync --status       Show local sync health',
+    '  atris sync --dry-run      Preview pull and publish plans without writing cloud',
+    '  atris sync --review       Read the latest conflict packet',
+    '  atris sync --resolve cloud|local|merge',
+    '  atris sync --watch        Keep the workspace live with the same safety gates',
+    '',
+    'Publish safety:',
+    '  Large unscoped pushes, nested workspace folders, and *.remote artifacts are blocked.',
+    '  Use exact --only paths for repairs, or explicit push override flags after review.',
+    '',
+  ].join('\n');
 }
 
 function renderLatestConflictReview(cwd = process.cwd()) {
@@ -297,7 +396,6 @@ function collectConflictResolutionEntries(cwd = process.cwd()) {
         const localPath = full;
         const remotePath = full.replace(/\.local$/, '.remote');
         const targetRel = path.relative(dir, full).replace(/\\/g, '/').replace(/\.local$/, '');
-        if (!targetRel.startsWith('atris/')) continue;
         entries.push({
           targetRel,
           basePath: full.replace(/\.local$/, '.base'),
@@ -319,6 +417,13 @@ function assertWorkspaceTarget(cwd, targetRel) {
     throw new Error(`Refusing to resolve outside workspace: ${targetRel}`);
   }
   return targetPath;
+}
+
+function cleanupResolvedConflictSidecars(cwd, targetRel, { keepCloud = false } = {}) {
+  const suffixes = ['.base', '.local', '.remote', ...(keepCloud ? [] : ['.cloud'])];
+  for (const suffix of suffixes) {
+    fs.rmSync(assertWorkspaceTarget(cwd, `${targetRel}${suffix}`), { force: true });
+  }
 }
 
 function changedRange(baseLines, changedLines) {
@@ -485,6 +590,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
         fs.mkdirSync(path.dirname(remoteCopyPath), { recursive: true });
         fs.copyFileSync(entry.remotePath, remoteCopyPath);
       }
+      cleanupResolvedConflictSidecars(cwd, entry.targetRel, { keepCloud: true });
       resolved.push(entry.targetRel);
       continue;
     }
@@ -505,6 +611,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
       }
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       fs.writeFileSync(targetPath, merged.content, 'utf8');
+      cleanupResolvedConflictSidecars(cwd, entry.targetRel);
       resolved.push(entry.targetRel);
       continue;
     }
@@ -513,6 +620,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
     if (!fs.existsSync(sourcePath)) continue;
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
+    cleanupResolvedConflictSidecars(cwd, entry.targetRel);
     resolved.push(entry.targetRel);
   }
 
@@ -593,6 +701,11 @@ async function runSyncCycle(plan, cwd, options = {}) {
 async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const options = resolveBusinessSyncOptions(args, cwd);
 
+  if (options.help) {
+    process.stdout.write(renderBusinessSyncHelp());
+    return;
+  }
+
   if (options.status) {
     process.stdout.write(renderLocalSyncStatus(collectLocalSyncStatus(cwd, options)));
     return;
@@ -611,14 +724,16 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   const plan = buildBusinessSyncPlan(options);
 
   if (!plan) {
-    console.error('Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--timeout 120]');
+    console.error(renderBusinessSyncHelp().trimEnd());
     console.error('Run inside a business workspace or pass a business slug.');
     process.exit(1);
   }
 
   console.log('');
-  console.log(`Syncing ${options.slug} knowledge wiki...`);
-  console.log('  scope: atris/');
+  console.log(`Syncing ${options.slug} business workspace...`);
+  console.log('  scope: full workspace');
+  console.log('  loop: Pull -> Review -> Publish');
+  console.log('  quest gate: exact files beat broad pushes');
   if (options.watch) {
     console.log(`  watch: on (${options.intervalSec}s interval, ${options.debounceSec}s debounce)`);
   }
@@ -632,18 +747,18 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   });
   if (!options.watch) return;
 
-  let lastSnapshot = collectBrainSnapshot(cwd);
+  let lastSnapshot = collectWorkspaceSnapshot(cwd);
   let running = false;
   let quietTicks = 0;
   let pendingLocal = false;
 
   console.log('');
-  console.log('Company brain sync is watching atris/. Press Ctrl+C to stop.');
+  console.log('Business workspace sync is watching this folder. Press Ctrl+C to stop.');
 
   const tickMs = 1000;
   setInterval(async () => {
     if (running) return;
-    const current = collectBrainSnapshot(cwd);
+    const current = collectWorkspaceSnapshot(cwd);
     if (snapshotsDiffer(lastSnapshot, current)) {
       pendingLocal = true;
       quietTicks = 0;
@@ -664,14 +779,14 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
     running = true;
     try {
       console.log('');
-      console.log(shouldLocalSync ? 'Local brain changed. Syncing...' : 'Checking cloud brain...');
+      console.log(shouldLocalSync ? 'Local workspace changed. Syncing...' : 'Checking cloud workspace...');
       await runSyncCycle(plan, cwd, {
         dryRun: options.dryRun,
         slug: options.slug,
         writeStatus: !options.dryRun,
         watch: true,
       });
-      lastSnapshot = collectBrainSnapshot(cwd);
+      lastSnapshot = collectWorkspaceSnapshot(cwd);
       pendingLocal = false;
       quietTicks = 0;
     } catch (err) {
@@ -699,6 +814,8 @@ module.exports = {
   buildBusinessSyncPlan,
   canPreviewPush,
   collectBrainSnapshot,
+  collectWorkspaceSnapshot,
+  collectWorkspaceWarnings,
   collectLocalSyncStatus,
   collectConflictResolutionEntries,
   describeWatchFailure,
@@ -706,6 +823,7 @@ module.exports = {
   readBusinessSlug,
   renderLatestConflictReview,
   renderLocalSyncStatus,
+  renderBusinessSyncHelp,
   resolveLatestConflict,
   resolveBusinessSyncOptions,
   safeLineMerge,

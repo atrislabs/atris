@@ -12,6 +12,7 @@ const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
   || os.userInfo().username
   || 'unknown';
+const AGENT_CERTIFICATION_REVIEW_PASSES = 2;
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -64,9 +65,11 @@ atris task - durable local task state (SQLite, gitignored)
   atris task new "<title>"                Create a task
   atris task next                         Claim/show the next open task
   atris task say <id> "<message>"         Add context to a task
-  atris task finish <id> [--proof "..."]  Complete, optionally review
+  atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
+  atris task accept <id> [--proof "..."]   Human accepts proof, marks done
+  atris task revise <id> --note "..."      Send reviewed work back to Do
 
-  atris task add "<title>" [--tag <tag>]   Create a task
+  atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
   atris task delegate "<title>" --to <id>  Create an assigned task
   atris task day [--json]                  Show today's owner-grouped task list
   atris task list [--all] [--status <s>]   List tasks (default: this workspace)
@@ -74,6 +77,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task note <id> "<message>"         Append dialogue/context to a task
   atris task show <id> [--json]            Show a task card + dialogue
   atris task done <id> [--failed] [--proof "..."]  Mark complete (or failed), optionally reviewed
+  atris task finish <id> [--proof "..."]   Legacy alias for done
   atris task review <id> --reward <n>      Write review event + RSI episode
   atris task status [--json] [--history]   Compact live status for web/Swarlo
   atris task setup [--import-todo]         Create/refresh task projection
@@ -127,8 +131,47 @@ function wantsJson(args) {
   return hasFlag(args, '--json');
 }
 
+function parseAcceptReward(value, { defaultValue = 1 } = {}) {
+  if (value === undefined || value === null || value === true) return { ok: true, value: defaultValue };
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return { ok: false, reason: 'invalid_reward' };
+  }
+  return { ok: true, value: numeric };
+}
+
 function printJson(value) {
-  console.log(JSON.stringify(value, null, 2));
+  const buffer = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const retryWait = new Int32Array(new SharedArrayBuffer(4));
+  let offset = 0;
+  while (offset < buffer.length) {
+    try {
+      offset += fs.writeSync(process.stdout.fd, buffer, offset, buffer.length - offset);
+    } catch (err) {
+      if (err && err.code === 'EAGAIN') {
+        Atomics.wait(retryWait, 0, 0, 10);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function refreshCareerXpProjection(workspaceRoot) {
+  if (!workspaceRoot) return null;
+  try {
+    const { collectLocalXpProjection } = require('../commands/xp');
+    return collectLocalXpProjection(['--workspace', workspaceRoot]);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error && error.message ? error.message : String(error),
+    };
+  }
+}
+
+function refreshCareerXpAfterReview(reviewed) {
+  return refreshCareerXpProjection(reviewed?.episode?.workspace_root);
 }
 
 function jsonModeActive() {
@@ -176,6 +219,22 @@ function taskRef(taskOrId) {
   if (!taskOrId) return 'TASK';
   if (typeof taskOrId === 'string') return taskOrId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
   return taskOrId.display_id || taskOrId.legacy_ref || taskRef(taskOrId.id);
+}
+
+function normalizeTaskLookupRef(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+function taskLookupRefs(task) {
+  if (!task) return [];
+  return [task.id, task.display_id, task.legacy_ref, taskRef(task)]
+    .map(normalizeTaskLookupRef)
+    .filter(Boolean);
+}
+
+function resolveProjectionTaskRef(ref, taskByRef) {
+  const key = normalizeTaskLookupRef(ref);
+  return key ? taskByRef.get(key) || null : null;
 }
 
 function createNextTaskIfRequested(taskDb, db, args, currentTask, title) {
@@ -241,14 +300,85 @@ function readGoalSources(root = process.cwd()) {
   return { path: null, goals: [] };
 }
 
+function reviewSummary(task, payload = {}) {
+  const metadata = task.metadata || {};
+  const explicit = payload.summary
+    || payload.meaning
+    || metadata.review_summary
+    || metadata.review_meaning
+    || metadata.plain_language_summary
+    || metadata.human_summary;
+  if (explicit) return clipStatusText(explicit, 240);
+
+  const title = String(task.title || 'this task').replace(/\s+/g, ' ').trim();
+  const plainTitle = title ? title.charAt(0).toLowerCase() + title.slice(1) : 'this task';
+  const careerText = [
+    task.tag,
+    metadata.goal_id,
+    metadata.goal_objective,
+    metadata.review_goal,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (careerText.includes('career-xp') || careerText.includes('career xp')) {
+    if (task.status === 'done') {
+      return `This is accepted Career XP work: ${plainTitle} is done and has a proof receipt.`;
+    }
+    if (task.status === 'review') {
+      return `This is Career XP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
+    }
+    return `This explains what accepting ${plainTitle} would make real for Career XP.`;
+  }
+  if (task.status === 'done') {
+    return `This is the accepted outcome: ${plainTitle} is done and counted as real work.`;
+  }
+  if (task.status === 'review') {
+    return `This is the human checkpoint: ${plainTitle} is agent-complete and needs acceptance before it counts as done.`;
+  }
+  return `This explains what accepting ${plainTitle} would make real.`;
+}
+
 function taskReviewSummary(task) {
-  const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed');
+  const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed' || e.event_type === 'proof_ready' || e.event_type === 'revision_requested');
   const payload = reviewed && reviewed.payload || {};
+  const metadata = task.metadata || {};
+  if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
+  if (reviewed && reviewed.event_type === 'revision_requested') {
+    return {
+      summary: reviewSummary(task, payload),
+      reward: null,
+      proof: null,
+      lesson: null,
+      next_task: null,
+      approval_status: metadata.approval_status || payload.approval_status || 'revise',
+      agent_review_pass_count: null,
+      agent_certified: false,
+      agent_certification_policy: null,
+      human_revision_count: metadata.human_revision_count || payload.revision_count || null,
+      human_revision_note: metadata.human_revision_note || payload.note || null,
+    };
+  }
+  const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
+  const agentCertified = metadata.agent_certified === true
+    || payload.agent_certified === true
+    || reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES;
+  const reviewedEventHas = (key) => reviewed && reviewed.event_type === 'reviewed'
+    && Object.prototype.hasOwnProperty.call(payload, key);
+  const readyField = (key, metadataKey) => {
+    if (reviewedEventHas(key)) return payload[key] || null;
+    return payload[key] || metadata[metadataKey] || null;
+  };
   return {
-    reward: payload.reward === undefined ? null : payload.reward,
-    proof: payload.proof || null,
-    lesson: payload.lesson || null,
-    next_task: payload.next_task || null,
+    summary: reviewSummary(task, payload),
+    reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
+    proof: readyField('proof', 'latest_agent_proof'),
+    lesson: readyField('lesson', 'latest_agent_lesson'),
+    next_task: readyField('next_task', 'latest_agent_next_task'),
+    approval_status: metadata.approval_status || (task.status === 'review' ? 'pending' : null),
+    agent_review_pass_count: reviewPassCount || null,
+    agent_certified: agentCertified,
+    agent_certification_policy: metadata.agent_certification_policy
+      || payload.agent_certification_policy
+      || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
+    human_revision_count: metadata.human_revision_count || null,
   };
 }
 
@@ -257,10 +387,26 @@ function taskAssignee(task) {
   return metadata.assigned_to || task.claimed_by || null;
 }
 
+const GOAL_MATCH_STOPWORDS = new Set([
+  'daily',
+  'goal',
+  'goals',
+  'loop',
+  'loops',
+  'make',
+  'task',
+  'tasks',
+  'work',
+]);
+
 function scoreGoalMatch(task, goal) {
   const haystack = `${task.title} ${task.tag || ''}`.toLowerCase();
-  const words = String(goal || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [];
-  return words.reduce((score, word) => score + (haystack.includes(word) ? 1 : 0), 0);
+  const words = (String(goal || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [])
+    .filter(word => !GOAL_MATCH_STOPWORDS.has(word));
+  return words.reduce((score, word) => {
+    const singular = word.endsWith('s') && word.length > 4 ? word.slice(0, -1) : word;
+    return score + (haystack.includes(word) || haystack.includes(singular) ? 1 : 0);
+  }, 0);
 }
 
 function pickTaskGoal(task, goals) {
@@ -274,7 +420,27 @@ function pickTaskGoal(task, goals) {
       bestScore = score;
     }
   }
-  return best;
+  return bestScore > 0 ? best : null;
+}
+
+function taskBaseObjective(task, goals) {
+  const metadata = task && task.metadata || {};
+  return task.objective
+    || metadata.goal_objective
+    || metadata.objective
+    || pickTaskGoal(task, goals);
+}
+
+function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
+  const metadata = task && task.metadata || {};
+  const explicit = task.objective || metadata.goal_objective || metadata.objective;
+  if (explicit) return explicit;
+  if (parent) {
+    if (parentLinkType === 'parent_task_id') return baseObjectives.get(parent.id) || parent.title;
+    if (parentLinkType === 'goal_id') return parent.title;
+    return baseObjectives.get(parent.id) || parent.title;
+  }
+  return pickTaskGoal(task, goals);
 }
 
 function buildTaskStreams(tasks, goals) {
@@ -333,29 +499,42 @@ function buildTaskStreams(tasks, goals) {
 function enrichTaskProjection(projection) {
   const root = projection.workspace_root || process.cwd();
   const goalSource = readGoalSources(root);
-  const byId = new Map((projection.tasks || []).map(task => [task.id, task]));
+  const byRef = new Map();
+  for (const task of projection.tasks || []) {
+    for (const ref of taskLookupRefs(task)) byRef.set(ref, task);
+  }
+  const baseObjectives = new Map();
+  for (const task of projection.tasks || []) {
+    const objective = taskBaseObjective(task, goalSource.goals);
+    if (objective) baseObjectives.set(task.id, objective);
+  }
   const children = new Map();
   for (const task of projection.tasks || []) {
-    const parentId = task.metadata && task.metadata.parent_task_id;
-    if (!parentId) continue;
-    if (!children.has(parentId)) children.set(parentId, []);
-    children.get(parentId).push(task);
+    const metadata = task.metadata || {};
+    const parent = resolveProjectionTaskRef(metadata.parent_task_id, byRef) || resolveProjectionTaskRef(metadata.goal_id, byRef);
+    if (!parent) continue;
+    if (!children.has(parent.id)) children.set(parent.id, []);
+    children.get(parent.id).push(task);
   }
   const enrichedTasks = (projection.tasks || []).map(task => {
-      const parentId = task.metadata && task.metadata.parent_task_id || null;
-      const parent = parentId ? byId.get(parentId) : null;
+      const metadata = task.metadata || {};
+      const parentFromParentId = resolveProjectionTaskRef(metadata.parent_task_id, byRef);
+      const parentFromGoalId = resolveProjectionTaskRef(metadata.goal_id, byRef);
+      const parent = parentFromParentId || parentFromGoalId;
+      const parentLinkType = parentFromParentId ? 'parent_task_id' : parentFromGoalId ? 'goal_id' : null;
+      const parentId = parent ? parent.id : metadata.parent_task_id || null;
       const childTasks = children.get(task.id) || [];
       const review = taskReviewSummary(task);
       return {
         ...task,
-        objective: pickTaskGoal(task, goalSource.goals),
+        objective: taskObjective(task, parent, goalSource.goals, { parentLinkType, baseObjectives }),
         review,
         lineage: {
           parent_task_id: parentId,
           parent_title: parent ? parent.title : null,
           child_task_ids: childTasks.map(child => child.id),
           child_titles: childTasks.map(child => child.title),
-          next_task_suggestion: review.next_task,
+          next_task_suggestion: review ? review.next_task : null,
         },
       };
     });
@@ -379,11 +558,17 @@ function taskTypeForCloud(task) {
 }
 
 function taskStateForCloud(task) {
+  if (task.status === 'review') return 'doing';
   if (task.status === 'claimed') return 'doing';
   if (task.status === 'failed' && taskHasReview(task)) return 'done';
   if (task.status === 'failed') return 'blocked';
   if (task.status === 'done') return 'done';
   return 'open';
+}
+
+function taskNeedsApprovalForCloud(task) {
+  const approvalStatus = task?.review?.approval_status || task?.metadata?.approval_status || null;
+  return task?.status === 'review' || approvalStatus === 'pending';
 }
 
 function ownerMemberIdForCloud(task) {
@@ -412,6 +597,10 @@ function taskDescriptionForCloud(task) {
     if (reviewed.payload.proof) lines.push('', `Proof: ${reviewed.payload.proof}`);
     if (reviewed.payload.lesson) lines.push(`Lesson: ${reviewed.payload.lesson}`);
     if (reviewed.payload.next_task) lines.push(`Next: ${reviewed.payload.next_task}`);
+  } else if (task.review && task.review.proof) {
+    lines.push('', `Proof: ${task.review.proof}`);
+    if (task.review.lesson) lines.push(`Lesson: ${task.review.lesson}`);
+    if (task.review.next_task) lines.push(`Next: ${task.review.next_task}`);
   }
   return lines.join('\n').slice(0, 5000);
 }
@@ -424,7 +613,7 @@ function cloudPayloadForTask(task, businessId) {
     title: String(task.title || '').slice(0, 200),
     description: taskDescriptionForCloud(task),
     owner_member_id: ownerMemberIdForCloud(task),
-    needs_approval: false,
+    needs_approval: taskNeedsApprovalForCloud(task),
     metadata: {
       ...metadata,
       source: 'atris_cli_task',
@@ -485,6 +674,18 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
+function reviewHandoffForTask(task) {
+  const review = task && task.review || {};
+  if (task && task.status !== 'review') return null;
+  if (review.approval_status !== 'pending') return null;
+  const agentCertified = review.agent_certified === true;
+  return {
+    native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
+    career_xp_status: 'pending_human_accept',
+    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+  };
+}
+
 function compactTaskForStatus(task) {
   if (!task) return null;
   const metadata = task.metadata || {};
@@ -505,20 +706,30 @@ function compactTaskForStatus(task) {
   if (task.review) {
     const review = {};
     if (typeof task.review.reward === 'number') review.reward = task.review.reward;
+    else if (task.review.reward === null) review.reward = null;
+    if (task.review.summary) review.summary = clipStatusText(task.review.summary, 240);
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
     if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
     if (task.review.next_task) review.next_task = clipStatusText(task.review.next_task, 140);
+    if (task.review.approval_status) review.approval_status = task.review.approval_status;
+    if (task.review.agent_review_pass_count) review.agent_review_pass_count = task.review.agent_review_pass_count;
+    if (task.review.agent_certified) review.agent_certified = task.review.agent_certified;
+    if (task.review.agent_certification_policy) review.agent_certification_policy = task.review.agent_certification_policy;
+    if (task.review.human_revision_count) review.human_revision_count = task.review.human_revision_count;
+    const handoff = reviewHandoffForTask(task);
+    if (handoff) review.handoff = handoff;
     if (Object.keys(review).length) out.review = review;
   }
   if (task.lineage) {
     const lineage = {};
     if (task.lineage.parent_task_id) lineage.parent_task_id = task.lineage.parent_task_id;
+    if (task.lineage.parent_title) lineage.parent_title = clipStatusText(task.lineage.parent_title, 140);
     if (task.lineage.child_task_ids && task.lineage.child_task_ids.length) lineage.child_task_ids = task.lineage.child_task_ids;
     if (task.lineage.next_task_suggestion) lineage.next_task_suggestion = clipStatusText(task.lineage.next_task_suggestion, 140);
     if (Object.keys(lineage).length) out.lineage = lineage;
   }
   const compactMetadata = {};
-  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via']) {
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
     if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
   }
   if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
@@ -782,6 +993,11 @@ function cmdAdd(args) {
     failTask('atris task add', 'missing_title', 'title required');
   }
   const tag = flag(args, '--tag');
+  const goalId = flag(args, '--goal-id');
+  const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
+  const metadata = {};
+  if (goalId && goalId !== true) metadata.goal_id = String(goalId);
+  if (goalObjective && goalObjective !== true) metadata.goal_objective = String(goalObjective);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
@@ -789,6 +1005,7 @@ function cmdAdd(args) {
     title,
     tag: typeof tag === 'string' ? tag : null,
     workspaceRoot: ws,
+    metadata: Object.keys(metadata).length ? metadata : null,
   });
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const task = compactTaskFromProjection(projection, result.id);
@@ -914,7 +1131,7 @@ function cmdDay(args) {
     owners: groups.length,
     open: (projection.tasks || []).filter(task => task.status === 'open').length,
     claimed: (projection.tasks || []).filter(task => task.status === 'claimed').length,
-    review: (projection.tasks || []).filter(task => task.status === 'failed' || (task.status === 'done' && task.review && task.review.reward === null)).length,
+    review: (projection.tasks || []).filter(task => task.status === 'review' || task.status === 'failed' || (task.status === 'done' && task.review && task.review.reward === null)).length,
   };
   const date = new Date().toISOString().slice(0, 10);
   if (wantsJson(args)) {
@@ -1063,13 +1280,60 @@ function cmdNext(args) {
     console.log(claimed[0].title);
     return;
   }
+  const reviewProjection = writeDefaultProjection(taskDb, db);
+  const reviewTasks = (reviewProjection.projection.tasks || [])
+    .map(compactTaskForStatus)
+    .filter(task => task && task.review && task.review.handoff);
+  const secondReviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again');
+  if (secondReviewTask) {
+    const handoff = secondReviewTask.review.handoff;
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: handoff.next_action,
+        task_id: secondReviewTask.id,
+        owner: String(owner),
+        projection_path: reviewProjection.outPath,
+        handoff,
+        review_task: secondReviewTask,
+      });
+      return;
+    }
+    console.log(`${taskRef(secondReviewTask)} needs one more agent review before continuation.`);
+    console.log('Review this task again before claiming new work.');
+    return;
+  }
   const open = taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
     status: 'open',
     limit: 1,
   });
   if (!open.length) {
-    const { outPath } = writeDefaultProjection(taskDb, db);
+    const { projection, outPath } = reviewProjection;
+    const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'continue_work');
+    if (reviewTask) {
+      const handoff = reviewTask.review.handoff;
+      if (wantsJson(args)) {
+        printJson({
+          ok: true,
+          action: handoff.next_action,
+          task_id: handoff.next_action === 'agent_review_again' ? reviewTask.id : null,
+          owner: String(owner),
+          projection_path: outPath,
+          handoff,
+          review_task: reviewTask,
+        });
+        return;
+      }
+      console.log('No open tasks.');
+      console.log(handoff.next_action === 'continue_work'
+        ? `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`
+        : `${taskRef(reviewTask)} needs one more agent review before continuation.`);
+      console.log(handoff.next_action === 'continue_work'
+        ? 'Continue work elsewhere; Career XP waits for human accept.'
+        : 'Review this task again before continuing.');
+      return;
+    }
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -1152,13 +1416,22 @@ function cmdShow(args) {
     process.exit(1);
   }
   if (hasFlag(args, '--json')) {
-    console.log(JSON.stringify(task, null, 2));
+    printJson(task);
     return;
   }
   const owner = task.claimed_by ? ` / ${task.claimed_by}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
   console.log(`${task.status.toUpperCase()} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
+  if (task.review) {
+    console.log('');
+    if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
+    if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
+    if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
+    if (task.review.next_task) console.log(`Next: ${task.review.next_task}`);
+    if (task.review.approval_status) console.log(`Approval: ${task.review.approval_status}`);
+    if (task.review.agent_certified) console.log(`Agent certified: yes (${task.review.agent_review_pass_count || AGENT_CERTIFICATION_REVIEW_PASSES} reviews)`);
+  }
   if (task.messages.length) {
     console.log('');
     console.log('Dialogue:');
@@ -1179,17 +1452,20 @@ function cmdDone(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task done');
-  const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done' });
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
   if (result.updated) {
     const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
     const review = hasReview ? taskDb.reviewTask(db, {
       id: taskId,
-      actor: String(flag(args, '--as') || DEFAULT_OWNER),
+      actor,
       reward: flag(args, '--reward') || (failed ? 0 : 1),
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
       proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      careerXpEligible: false,
     }) : null;
+    const xpProjection = refreshCareerXpAfterReview(review);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
       printJson({
@@ -1199,6 +1475,7 @@ function cmdDone(args) {
         reviewed: Boolean(review && review.reviewed),
         reward: review && review.episode ? review.episode.reward.value : null,
         episode: review && review.episode || null,
+        xp_projection: xpProjection,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
       });
@@ -1237,7 +1514,8 @@ function cmdFinish(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task finish');
   const currentTask = taskDb.getTask(db, taskId);
-  const done = taskDb.doneTask(db, { id: taskId, status: hasFlag(args, '--failed') ? 'failed' : 'done' });
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const done = taskDb.doneTask(db, { id: taskId, status: hasFlag(args, '--failed') ? 'failed' : 'done', actor });
   if (!done.updated) {
     const detail = `finish failed: ${taskId} not in open|claimed`;
     if (wantsJson(args)) {
@@ -1257,13 +1535,15 @@ function cmdFinish(args) {
   if (hasReview) {
     const result = taskDb.reviewTask(db, {
       id: taskId,
-      actor: String(flag(args, '--as') || DEFAULT_OWNER),
+      actor,
       reward: flag(args, '--reward') || 1,
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
       proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      careerXpEligible: false,
     });
     const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
+    const xpProjection = refreshCareerXpAfterReview(result);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
       printJson({
@@ -1273,6 +1553,7 @@ function cmdFinish(args) {
         reviewed: true,
         reward: result.episode.reward.value,
         episode: result.episode,
+        xp_projection: xpProjection,
         next_task_id: nextCreated ? nextCreated.id : null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
@@ -1300,6 +1581,172 @@ function cmdFinish(args) {
   console.log(`finished ${taskRef(compactTaskFromProjection(projection, taskId))}`);
 }
 
+function cmdReady(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    console.error('atris task ready: id required');
+    process.exit(2);
+  }
+  const proof = flag(args, '--proof');
+  if (!proof || proof === true) {
+    console.error('atris task ready: --proof required');
+    process.exit(2);
+  }
+  const lesson = flag(args, '--lesson') || '';
+  const nextTask = flag(args, '--next') || '';
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+  const result = taskDb.readyTask(db, {
+    id: taskId,
+    actor,
+    proof: String(proof),
+    lesson: typeof lesson === 'string' ? lesson : '',
+    nextTask: typeof nextTask === 'string' ? nextTask : '',
+  });
+  if (!result.ready) {
+    console.error(`ready failed: ${result.reason}`);
+    process.exit(1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const agentCertified = result.event.payload.agent_certified === true;
+  const handoff = {
+    native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
+    career_xp_status: 'pending_human_accept',
+    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+    rule: agentCertified
+      ? 'Agent double-check complete; continue work. Career XP waits for human accept.'
+      : 'Proof is in Review; one more agent review pass certifies continuation. Career XP waits for human accept.',
+  };
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'ready',
+      task_id: taskId,
+      version: result.event.version,
+      approval_status: 'pending',
+      review_pass_count: result.event.payload.review_pass_count,
+      agent_certified: agentCertified,
+      handoff,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
+  console.log(handoff.rule);
+}
+
+function cmdAccept(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    console.error('atris task accept: id required');
+    process.exit(2);
+  }
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const reward = flag(args, '--reward');
+  const lessonFlag = flag(args, '--lesson');
+  const nextTaskFlag = flag(args, '--next');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task accept');
+  const beforeProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
+  const beforeTask = beforeProjection.tasks[0] || null;
+  const proofFlag = flag(args, '--proof');
+  const hasExplicitProof = typeof proofFlag === 'string';
+  const proof = hasExplicitProof
+    ? proofFlag
+    : String(beforeTask?.metadata?.latest_agent_proof || '').trim();
+  if (!proof) {
+    console.error('atris task accept: proof required or task must already have fresh proof_ready proof');
+    process.exit(2);
+  }
+  const readyReview = beforeTask?.review || {};
+  const lesson = typeof lessonFlag === 'string'
+    ? lessonFlag
+    : String(readyReview.lesson || beforeTask?.metadata?.latest_agent_lesson || '');
+  const nextTask = typeof nextTaskFlag === 'string'
+    ? nextTaskFlag
+    : String(readyReview.next_task || beforeTask?.metadata?.latest_agent_next_task || '');
+  const parsedReward = parseAcceptReward(reward);
+  if (!parsedReward.ok) {
+    console.error('atris task accept: reward must be a positive number');
+    process.exit(2);
+  }
+  const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor, allowReview: true });
+  if (!done.updated) {
+    console.error(`accept failed: ${taskId} not open|claimed|review`);
+    process.exit(1);
+  }
+  const reviewed = taskDb.reviewTask(db, {
+    id: taskId,
+    actor,
+    reward: parsedReward.value,
+    lesson,
+    nextTask,
+    proof,
+    careerXpEligible: true,
+  });
+  const xpProjection = refreshCareerXpAfterReview(reviewed);
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'accepted',
+      task_id: taskId,
+      reviewed: true,
+      reward: reviewed.episode.reward.value,
+      episode: reviewed.episode,
+      xp_projection: xpProjection,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`accepted ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${reviewed.episode.reward.value}`);
+}
+
+function cmdRevise(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    console.error('atris task revise: id required');
+    process.exit(2);
+  }
+  const note = flag(args, '--note') || flag(args, '--reason') || pos.slice(1).join(' ');
+  if (!note || note === true) {
+    console.error('atris task revise: --note required');
+    process.exit(2);
+  }
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task revise');
+  const result = taskDb.reviseTask(db, { id: taskId, actor, note: String(note) });
+  if (!result.revised) {
+    console.error(`revise failed: ${result.reason}`);
+    process.exit(1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'revise',
+      task_id: taskId,
+      version: result.event.version,
+      approval_status: 'revise',
+      revision_count: result.event.payload.revision_count,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`revise ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+}
+
 function cmdReview(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -1322,12 +1769,14 @@ function cmdReview(args) {
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: typeof nextTask === 'string' ? nextTask : '',
     proof: typeof proof === 'string' ? proof : '',
+    careerXpEligible: false,
   });
   if (!result.reviewed) {
     console.error(`review failed: ${result.reason}`);
     process.exit(1);
   }
   const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
+  const xpProjection = refreshCareerXpAfterReview(result);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   if (wantsJson(args)) {
     printJson({
@@ -1337,6 +1786,7 @@ function cmdReview(args) {
       version: result.event.version,
       reward: result.episode.reward.value,
       episode: result.episode,
+      xp_projection: xpProjection,
       next_task_id: nextCreated ? nextCreated.id : null,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -1360,6 +1810,7 @@ function importTodoFile(taskDb, db, target) {
   const all = [
     ...parsed.backlog.map(t => ({ ...t, importStatus: 'open' })),
     ...parsed.inProgress.map(t => ({ ...t, importStatus: 'claimed' })),
+    ...(parsed.review || []).map(t => ({ ...t, importStatus: 'review' })),
   ];
   let inserted = 0;
   let skipped = 0;
@@ -1373,7 +1824,7 @@ function importTodoFile(taskDb, db, target) {
       sourceKey: sk,
       status: t.importStatus,
       claimedBy: t.claimed || null,
-      metadata: { todo_id: t.id, claimed: t.claimed, stage: t.stage, verify: t.verify },
+      metadata: { todo_id: t.id, todo_tags: t.tags || [], claimed: t.claimed, stage: t.stage, verify: t.verify },
     });
     if (result.inserted) inserted++; else skipped++;
   }
@@ -1531,6 +1982,68 @@ function cmdSetup(args) {
   }
 }
 
+function extractTodoSectionMarkdown(content, sectionName) {
+  const escaped = String(sectionName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(content || '').match(new RegExp(`(?:^|\\n)(##\\s+${escaped}[^\\n]*\\n[\\s\\S]*?)(?=\\n##(?!#)\\s+|$)`, 'i'));
+  return match ? match[1].trimEnd() : null;
+}
+
+function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
+  if (!existingTodoPath || !fs.existsSync(existingTodoPath)) return [];
+  const { parseTodoFile } = require('../lib/todo-fallback');
+  const parsed = parseTodoFile(existingTodoPath);
+  const ws = taskDb.workspaceRoot();
+  const existingSourceKeys = new Set(
+    (Array.isArray(refRows) ? refRows : [])
+      .map(row => row && row.source_key)
+      .filter(Boolean)
+  );
+  const existingTitles = new Set(
+    [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(refRows) ? refRows : [])]
+      .map(row => taskDb.normalizeTitle(row && row.title))
+      .filter(Boolean)
+  );
+  const sections = [
+    ['backlog', 'open'],
+    ['inProgress', 'claimed'],
+    ['review', 'review'],
+    ['completed', 'done'],
+  ];
+  const out = [];
+  let index = 0;
+  for (const [bucket, status] of sections) {
+    for (const task of parsed[bucket] || []) {
+      if (!task.title) continue;
+      const sk = taskDb.sourceKey(existingTodoPath, task.title);
+      const normalizedTitle = taskDb.normalizeTitle(task.title);
+      if ((sk && existingSourceKeys.has(sk)) || existingTitles.has(normalizedTitle)) continue;
+      out.push({
+        id: `markdown:${status}:${task.id || index}:${sk ? sk.slice(0, 10) : index}`,
+        title: task.title,
+        status,
+        tag: task.tag || null,
+        workspace_root: ws,
+        claimed_by: status === 'claimed' ? (task.claimed || null) : null,
+        created_at: index,
+        updated_at: index,
+        done_at: null,
+        metadata: {
+          todo_id: task.id || null,
+          todo_tags: task.tags || [],
+          claimed: task.claimed || null,
+          stage: task.stage || null,
+          verify: task.verify || null,
+          markdown_source: existingTodoPath,
+        },
+      });
+      if (sk) existingSourceKeys.add(sk);
+      existingTitles.add(normalizedTitle);
+      index += 1;
+    }
+  }
+  return out;
+}
+
 function cmdRender(args) {
   const out = flag(args, '--out') || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
@@ -1542,20 +2055,29 @@ function cmdRender(args) {
     workspaceRoot: all ? null : taskDb.workspaceRoot(),
     limit: 500,
   });
-  const markdown = taskDb.renderTodoMarkdown(rows, { doneLimit });
+  const refRows = taskDb.listTasks(db, {
+    workspaceRoot: all ? null : taskDb.workspaceRoot(),
+  });
   const outPath = path.resolve(String(out));
+  const existingTodo = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
+  const preservedSections = [];
+  const endgameSection = extractTodoSectionMarkdown(existingTodo, 'Endgame');
+  if (endgameSection) preservedSections.push(endgameSection);
+  const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
+  const rowsToRender = [...rows, ...markdownRows];
+  const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, refRows, preservedSections });
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, markdown, 'utf8');
   if (wantsJson(args)) {
     printJson({
       ok: true,
       action: 'rendered',
-      count: rows.length,
+      count: rowsToRender.length,
       path: outPath,
     });
     return;
   }
-  console.log(`rendered ${rows.length} task${rows.length === 1 ? '' : 's'} -> ${outPath}`);
+  console.log(`rendered ${rowsToRender.length} task${rowsToRender.length === 1 ? '' : 's'} -> ${outPath}`);
 }
 
 function cmdSync(args) {
@@ -1614,6 +2136,7 @@ function cmdSync(args) {
 function taskColumn(task) {
   if (task.status === 'open') return taskIsPlannedOpen(task) ? 'open' : 'backlog';
   if (task.status === 'claimed') return 'doing';
+  if (task.status === 'review') return 'review';
   if (task.status === 'failed' && taskHasReview(task)) return 'done';
   if (task.status === 'failed') return 'blocked';
   if (task.status === 'done' && !taskHasReview(task)) return 'review';
@@ -1649,7 +2172,7 @@ function taskBoardHtml() {
     button { border:1px solid var(--line); background:#20242a; color:var(--text); border-radius:7px; padding:8px 10px; font:inherit; font-size:12px; cursor:pointer; }
     button:hover { border-color:#3b414b; background:#252a32; }
     .primary { background:#214b35; border-color:#2f684a; }
-    .grid { display:grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap:12px; align-items:start; }
+    .grid { display:grid; grid-template-columns: repeat(var(--board-columns, 6), minmax(160px, 1fr)); gap:12px; align-items:start; }
     .overview { display:grid; grid-template-columns: minmax(260px, 1.4fr) minmax(260px, 1fr); gap:12px; margin-bottom:12px; }
     .goalbox, .chainbox { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px; min-height:88px; }
     .goalbox h2, .chainbox h2 { margin:0 0 8px; color:var(--muted); font-size:12px; font-weight:650; }
@@ -1749,6 +2272,7 @@ function taskBoardHtml() {
         return planned ? 'open' : 'backlog';
       }
       if (task.status === 'claimed') return 'doing';
+      if (task.status === 'review') return 'review';
       const reviewed = task.latest_event_type === 'reviewed' || !!(task.review && (task.review.reward != null || task.review.proof || task.review.lesson || task.review.next_task));
       if (task.status === 'failed' && reviewed) return 'done';
       if (task.status === 'failed') return 'blocked';
@@ -1766,6 +2290,7 @@ function taskBoardHtml() {
       renderOverview();
       renderStreams();
       const board = $('board');
+      board.style.setProperty('--board-columns', columns.length);
       board.innerHTML = '';
       for (const [key, label] of columns) {
         const tasks = state.tasks.filter((task) => taskColumn(task) === key);
@@ -1873,30 +2398,43 @@ function taskBoardHtml() {
         '<div class="meta"><span class="pill">' + task.status + '</span><span class="pill">' + (task.claimed_by || 'unowned') + '</span><span class="pill">v' + task.current_version + '</span></div>',
         '<div class="fact"><b>Goal</b><div id="taskGoal"></div></div>',
         '<div class="fact"><b>Lineage</b><div id="taskLineage"></div></div>',
+        '<div class="fact"><b>Summary</b><div id="taskSummary"></div></div>',
         '<div class="fact"><b>Proof / lesson</b><div id="taskProof"></div></div>',
         '<div class="thread">' + (messages || '<div class="empty">No thread yet.</div>') + '</div>',
         '<label>Add context</label><textarea id="note" placeholder="Decision, blocker, context, update..."></textarea>',
         '<label>Proof</label><input id="proof" placeholder="npm test, PR link, screenshot, blocked reason...">',
         '<label>Lesson</label><textarea id="lesson" placeholder="What did this task teach us?"></textarea>',
         '<label>Next task</label><input id="nextTask" placeholder="Optional next sharper task">',
-        '<div class="actions"><button id="claim">Claim</button><button id="saveNote">Say</button><button id="finish" class="primary full">Finish + review</button></div>'
+        '<div class="actions"><button id="claim">Claim</button><button id="saveNote">Say</button><button id="finish" class="primary full"></button></div>'
       ].join('');
       room.querySelector('h3').textContent = task.title;
       $('taskGoal').textContent = task.objective || 'No matching goal yet.';
       $('taskLineage').textContent = 'parent: ' + parent + ' / next: ' + children;
+      $('taskSummary').textContent = task.review && task.review.summary
+        ? task.review.summary
+        : 'No review summary yet.';
       $('taskProof').textContent = task.review && (task.review.proof || task.review.lesson)
         ? ((task.review.proof || 'no proof') + ' / ' + (task.review.lesson || 'no lesson'))
         : 'No proof yet.';
       room.querySelectorAll('.msg div:last-child').forEach((el, i) => { el.textContent = task.messages[i].content; });
+      $('finish').textContent = task.status === 'review' ? 'Accept proof' : 'Move to Review';
       $('claim').onclick = () => mutate('/api/tasks/' + task.id + '/claim', { owner: 'operator' });
       $('saveNote').onclick = () => mutate('/api/tasks/' + task.id + '/message', { actor: 'operator', content: $('note').value });
-      $('finish').onclick = () => mutate('/api/tasks/' + task.id + '/finish', {
-        actor: 'operator',
-        proof: $('proof').value,
-        lesson: $('lesson').value,
-        next: $('nextTask').value,
-        createNext: Boolean($('nextTask').value.trim())
-      });
+      $('finish').onclick = () => {
+        const proof = $('proof').value.trim();
+        const lesson = $('lesson').value.trim();
+        const nextTask = $('nextTask').value.trim();
+        const payload = { actor: 'operator' };
+        if (proof) payload.proof = proof;
+        if (lesson) payload.lesson = lesson;
+        if (nextTask) payload.next = nextTask;
+        if (task.status === 'review') {
+          payload.createNext = Boolean(nextTask || (task.review && task.review.next_task));
+          mutate('/api/tasks/' + task.id + '/accept', payload);
+        } else {
+          mutate('/api/tasks/' + task.id + '/ready', payload);
+        }
+      };
     }
 
     async function mutate(path, body) {
@@ -1972,7 +2510,7 @@ async function handleTaskApi(req, res, taskDb, db) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, action: 'created', task_id: result.id, projection_path: outPath, task: taskFromProjection(projection, result.id) });
   }
-  const match = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(claim|message|finish|review|events)$/);
+  const match = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(claim|message|ready|accept|revise|finish|review|events)$/);
   if (!match) return sendJson(res, 404, { ok: false, reason: 'not_found' });
   const resolved = resolveTaskRef(taskDb, db, match[1]);
   if (!resolved.ok) return sendJson(res, resolved.reason === 'ambiguous' ? 409 : 404, { ok: false, reason: resolved.reason });
@@ -2004,6 +2542,7 @@ async function handleTaskApi(req, res, taskDb, db) {
     const shouldReview = body.proof || body.lesson || body.next || body.reward !== undefined;
     let episode = null;
     let nextCreated = null;
+    let xpProjection = null;
     if (shouldReview) {
       const reviewed = taskDb.reviewTask(db, {
         id: taskId,
@@ -2012,9 +2551,11 @@ async function handleTaskApi(req, res, taskDb, db) {
         lesson: String(body.lesson || ''),
         nextTask: String(body.next || ''),
         proof: String(body.proof || ''),
+        careerXpEligible: false,
       });
       episode = reviewed.episode;
       nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, episode.next_task_suggestion) : null;
+      xpProjection = refreshCareerXpAfterReview(reviewed);
     }
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, {
@@ -2023,10 +2564,58 @@ async function handleTaskApi(req, res, taskDb, db) {
       task_id: taskId,
       reviewed: Boolean(episode),
       episode,
+      xp_projection: xpProjection,
       next_task_id: nextCreated ? nextCreated.id : null,
       projection_path: outPath,
       task: taskFromProjection(projection, taskId),
     });
+  }
+  if (op === 'ready') {
+    const proof = String(body.proof || '').trim();
+    if (!proof) return sendJson(res, 400, { ok: false, reason: 'proof_required' });
+    const result = taskDb.readyTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      proof,
+      lesson: String(body.lesson || ''),
+      nextTask: String(body.next || ''),
+    });
+    if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'ready', task_id: taskId, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+  }
+  if (op === 'accept') {
+    const currentTask = enrichTaskProjection(taskDb.taskProjection(db, { taskId })).tasks[0] || null;
+    const hasExplicitProof = Object.prototype.hasOwnProperty.call(body, 'proof');
+    const proof = String(hasExplicitProof ? body.proof : currentTask?.metadata?.latest_agent_proof || '').trim();
+    if (!proof) return sendJson(res, 400, { ok: false, reason: 'proof_required' });
+    const hasExplicitLesson = Object.prototype.hasOwnProperty.call(body, 'lesson');
+    const hasExplicitNext = Object.prototype.hasOwnProperty.call(body, 'next');
+    const lesson = hasExplicitLesson ? String(body.lesson || '') : String(currentTask?.review?.lesson || currentTask?.metadata?.latest_agent_lesson || '');
+    const nextTask = hasExplicitNext ? String(body.next || '') : String(currentTask?.review?.next_task || currentTask?.metadata?.latest_agent_next_task || '');
+    const parsedReward = parseAcceptReward(body.reward);
+    if (!parsedReward.ok) return sendJson(res, 400, { ok: false, reason: 'invalid_reward', detail: 'reward must be a positive number' });
+    const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor: String(body.actor || DEFAULT_OWNER), allowReview: true });
+    if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_claimed_or_review' });
+    const reviewed = taskDb.reviewTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      reward: parsedReward.value,
+      lesson,
+      nextTask,
+      proof,
+      careerXpEligible: true,
+    });
+    const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
+    const xpProjection = refreshCareerXpAfterReview(reviewed);
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'accepted', task_id: taskId, episode: reviewed.episode, xp_projection: xpProjection, next_task_id: nextCreated ? nextCreated.id : null, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+  }
+  if (op === 'revise') {
+    const result = taskDb.reviseTask(db, { id: taskId, actor: String(body.actor || DEFAULT_OWNER), note: String(body.note || body.reason || '') });
+    if (!result.revised) return sendJson(res, 409, { ok: false, reason: result.reason });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'revise', task_id: taskId, projection_path: outPath, task: taskFromProjection(projection, taskId) });
   }
   if (op === 'review') {
     const currentTask = taskDb.getTask(db, taskId);
@@ -2037,10 +2626,12 @@ async function handleTaskApi(req, res, taskDb, db) {
       lesson: String(body.lesson || ''),
       nextTask: String(body.next || ''),
       proof: String(body.proof || ''),
+      careerXpEligible: false,
     });
     const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
+    const xpProjection = refreshCareerXpAfterReview(reviewed);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
-    return sendJson(res, 200, { ok: true, action: 'reviewed', task_id: taskId, episode: reviewed.episode, next_task_id: nextCreated ? nextCreated.id : null, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+    return sendJson(res, 200, { ok: true, action: 'reviewed', task_id: taskId, episode: reviewed.episode, xp_projection: xpProjection, next_task_id: nextCreated ? nextCreated.id : null, projection_path: outPath, task: taskFromProjection(projection, taskId) });
   }
 }
 
@@ -2093,6 +2684,9 @@ async function run(args) {
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
     case 'show':   return cmdShow(rest);
+    case 'ready':  return cmdReady(rest);
+    case 'accept': return cmdAccept(rest);
+    case 'revise': return cmdRevise(rest);
     case 'done':   return cmdDone(rest);
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);

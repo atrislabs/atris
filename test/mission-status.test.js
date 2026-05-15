@@ -550,7 +550,7 @@ test('always-on missions become due again after cadence even after verifier pass
     const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
     const firstPayload = JSON.parse(firstRun.stdout);
-    assert.equal(firstPayload.mission.status, 'ready');
+    assert.equal(firstPayload.mission.status, 'running');
     assert.equal(firstPayload.mission.verifier_result.passed, true);
 
     const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + 2000);

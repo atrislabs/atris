@@ -1,22 +1,41 @@
-# AGENTS.md — Universal Agent Instructions
+# Cursor / Universal Agent Instructions
 
-> Works with: Claude Code, Cursor, Codex, Windsurf, and any AI coding agent.
+> Same contract as AGENTS.md. Works with Cursor, Claude Code, Codex, OpenClaw, Windsurf, and any AI coding agent.
 
 ## Quick Start
 
 ```bash
 atris
+atris task list --status open
+atris task claim <id> --as <agent>
 ```
 
-Run this first. Follow the output.
+Run `atris` first. If no task exists, create one with `atris task new "<small concrete title>" --tag <area>` before editing.
 
 ## Core Files
 
 | File | Purpose |
 |------|---------|
 | `atris/PERSONA.md` | Communication style (read first) |
-| `atris/TODO.md` | Current tasks |
+| `atris task` | Current tasks, claims, dialogue, proof |
+| `.atris/state/tasks.projection.json` | Current task projection |
+| `atris/TODO.md` | Rendered/legacy task fallback |
 | `atris/MAP.md` | Navigation (where is X?) |
+
+## Agent Contract
+
+Leave four durable artifacts:
+
+| Artifact | Where |
+|----------|-------|
+| Objective | `atris task note <id> "Goal / files / done / check"` |
+| Navigation | `atris/MAP.md` when a route or file location is learned |
+| Change | Small git diff in declared files only |
+| Proof ready | `atris task ready <id> --proof "<commands or receipt>"` |
+| Human accept | `atris task accept <id>` |
+
+Do not depend on chat context. Put task state and proof on disk.
+Agents move proof-backed work to Review with `ready`; humans use `accept` for Done + Career XP.
 
 ## Workflow
 
@@ -31,8 +50,9 @@ CHECK → atris review (verify + cleanup)
 - [ ] 3-4 sentences max per response
 - [ ] Use ASCII visuals for planning
 - [ ] Check MAP.md before touching code
-- [ ] Claim tasks in TODO.md before working
-- [ ] Delete tasks when done
+- [ ] Claim tasks with `atris task`; use TODO.md only as rendered fallback
+- [ ] Finish task records with proof when done
+- [ ] Use `atris-labs` for the Atris Labs business computer slug in docs and links
 
 ## Anti-patterns
 
