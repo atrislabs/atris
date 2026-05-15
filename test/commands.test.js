@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { buildManifest } = require('../lib/manifest');
+const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
@@ -21,8 +21,16 @@ const {
   shouldIgnore,
   snapshotsDiffer,
 } = require('../commands/live');
-const { buildPullConflictReviewPacket } = require('../commands/pull');
-const { basenameOfManifestPath, buildPushChangePlan, isBusinessWorkspaceRoot, resolvePushSourceDir, shouldRetrySyncIndividually } = require('../commands/push');
+const { buildPullConflictReviewPacket, mergeSmartPullFiles, normalizePullFilePath } = require('../commands/pull');
+const {
+  analyzePushSafety,
+  basenameOfManifestPath,
+  buildCloudHashMap,
+  buildPushChangePlan,
+  isBusinessWorkspaceRoot,
+  resolvePushSourceDir,
+  shouldRetrySyncIndividually,
+} = require('../commands/push');
 const { collectState } = require('../commands/brain');
 const {
   buildBusinessSyncPlan,
@@ -30,8 +38,10 @@ const {
   collectBrainSnapshot,
   collectConflictResolutionEntries,
   collectLocalSyncStatus,
+  collectWorkspaceWarnings,
   describeWatchFailure,
   parseBusinessSyncArgs,
+  renderBusinessSyncHelp,
   renderLatestConflictReview,
   renderLocalSyncStatus,
   resolveLatestConflict,
@@ -1221,6 +1231,42 @@ test('mission start tick complete writes durable member-owned state', () => {
   }
 });
 
+test('always-on mission run keeps ticking after verifier passes', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const start = runCli([
+      'mission', 'start', 'Keep the loop alive',
+      '--owner', 'mission-lead',
+      '--runner', 'codex_goal',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+    assert.equal(mission.always_on, true);
+
+    const run = runCli([
+      'mission', 'run', mission.id,
+      '--max-ticks', '2',
+      '--complete-on-pass',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ran_ticks, 2);
+    assert.equal(payload.tick_count, 2);
+    assert.equal(payload.mission.status, 'running');
+    assert.match(payload.mission.next_action, /mission run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
@@ -1344,7 +1390,7 @@ test('live options resolve explicit slug to child workspace from portfolio root'
     const child = path.join(dir, 'atris-labs');
     fs.mkdirSync(path.join(child, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(child, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(child, '.atris', 'business.json'), JSON.stringify({ slug: 'atris-labs-1' }), 'utf8');
+    fs.writeFileSync(path.join(child, '.atris', 'business.json'), JSON.stringify({ slug: 'atris-labs' }), 'utf8');
 
     const options = parseLiveOptions(['atris-labs', '--once'], dir);
     assert.equal(options.slug, 'atris-labs');
@@ -1417,6 +1463,91 @@ test('push ignores dotfile basenames when considering cloud deletes', () => {
   assert.equal(basenameOfManifestPath('/atris/MAP.md'), 'MAP.md');
 });
 
+test('sync hash walker keeps dot-directory workspace files without scanning state dirs', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.next', 'cache'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.git', 'objects'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'build'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'tmp'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.github', 'workflows', 'ci.yml'), 'name: ci\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"private":true}\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.next', 'cache', 'artifact.txt'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.git', 'config'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.json'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'dist', 'app.js'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'build', 'app.js'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'tmp', 'scratch.md'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.env'), 'ignored\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'assets', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]));
+
+    const hashes = computeLocalHashes(dir);
+    assert.ok(hashes['/.github/workflows/ci.yml']);
+    assert.ok(hashes['/README.md']);
+    assert.equal(hashes['/.claude/settings.local.json'], undefined);
+    assert.equal(hashes['/.next/cache/artifact.txt'], undefined);
+    assert.equal(hashes['/.git/config'], undefined);
+    assert.equal(hashes['/.atris/state/tasks.json'], undefined);
+    assert.equal(hashes['/dist/app.js'], undefined);
+    assert.equal(hashes['/build/app.js'], undefined);
+    assert.equal(hashes['/tmp/scratch.md'], undefined);
+    assert.equal(hashes['/.env'], undefined);
+    assert.equal(hashes['/assets/logo.png'], undefined);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('sync comparison filters ignored generated paths from remote and manifest', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'doc.md'), 'hello\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'dist', 'app.js'), 'generated\n', 'utf8');
+
+    const localFiles = computeLocalHashes(dir);
+    const doc = localFiles['/atris/wiki/doc.md'];
+    const legacyManifest = {
+      files: {
+        '/atris/wiki/doc.md': doc,
+        '/dist/app.js': { hash: 'old-generated', size: 9 },
+      },
+    };
+    const remoteFiles = {
+      '/atris/wiki/doc.md': doc,
+      '/dist/app.js': { hash: 'remote-generated', size: 10 },
+    };
+
+    const diff = threeWayCompare(localFiles, remoteFiles, legacyManifest);
+    assert.deepEqual(diff.deletedLocal, []);
+    assert.deepEqual(diff.conflicts, []);
+    assert.deepEqual(diff.unchanged, ['/atris/wiki/doc.md']);
+
+    const manifest = buildManifest(remoteFiles, 'commit123', { workspaceRoot: dir });
+    assert.equal(manifest.files['/dist/app.js'], undefined);
+    assert.deepEqual(Object.keys(manifest.files), ['/atris/wiki/doc.md']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('push normalizes cloud snapshot paths before drift checks', () => {
+  assert.deepEqual(buildCloudHashMap([
+    { path: 'atris/wiki/a.md', hash: 'one' },
+    { path: '/README.md', hash: 'two' },
+  ]), {
+    '/atris/wiki/a.md': 'one',
+    '/README.md': 'two',
+  });
+});
+
 test('push planner publishes only scoped local brain creates and updates', () => {
   const plan = buildPushChangePlan({
     onlyPrefixes: ['/atris/'],
@@ -1479,6 +1610,25 @@ test('push planner treats scoped local deletes as gated deletes and ignores pare
   assert.equal(plan.unchangedCount, 0);
 });
 
+test('push planner ignores stale manifest entries from skipped local dirs', () => {
+  const plan = buildPushChangePlan({
+    baseFiles: {
+      '/dist/app.js': { hash: 'old-dist', size: 9 },
+      '/build/app.js': { hash: 'old-build', size: 10 },
+      '/tmp/scratch.md': { hash: 'old-tmp', size: 11 },
+      '/.atris/state/tasks.projection.json': { hash: 'old-state', size: 12 },
+      '/assets/logo.png': { hash: 'old-binary', size: 12 },
+      '/atris/wiki/delete-me.md': { hash: 'base', size: 4 },
+    },
+    localFiles: {},
+    readFileContent: () => '',
+    isLocalFilePresent: (filePath) => filePath === '/assets/logo.png',
+  });
+
+  assert.deepEqual(plan.filesToPush, []);
+  assert.deepEqual(plan.deletedPaths, ['/atris/wiki/delete-me.md']);
+});
+
 test('push retries multi-file server failures individually but not access or sleeping states', () => {
   assert.equal(shouldRetrySyncIndividually({ ok: false, status: 500 }, [{ path: '/a.md' }, { path: '/b.md' }]), true);
   assert.equal(shouldRetrySyncIndividually({ ok: false, status: 502 }, [{ path: '/a.md' }, { path: '/b.md' }]), true);
@@ -1486,6 +1636,43 @@ test('push retries multi-file server failures individually but not access or sle
   assert.equal(shouldRetrySyncIndividually({ ok: false, status: 403 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
   assert.equal(shouldRetrySyncIndividually({ ok: false, status: 409 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
   assert.equal(shouldRetrySyncIndividually({ ok: true, status: 200 }, [{ path: '/a.md' }, { path: '/b.md' }]), false);
+});
+
+test('push safety blocks nested workspace pollution and sync artifacts', () => {
+  const report = analyzePushSafety({
+    slug: 'atris-labs',
+    filesToPush: [
+      { path: '/atris-labs/atris/now.md' },
+      { path: '/CLAUDE.md.remote' },
+    ],
+    unchangedCount: 30,
+  });
+
+  assert.equal(report.ok, false);
+  assert.match(report.reasons.join('\n'), /nested workspace folder/);
+  assert.match(report.reasons.join('\n'), /sync review artifacts/);
+});
+
+test('push safety blocks large unscoped dirty workspace plans', () => {
+  const report = analyzePushSafety({
+    slug: 'atris-labs',
+    filesToPush: Array.from({ length: 30 }, (_, i) => ({ path: `/atris/wiki/file-${i}.md` })),
+    unchangedCount: 296,
+  });
+
+  assert.equal(report.ok, false);
+  assert.match(report.reasons.join('\n'), /large unscoped workspace change/);
+});
+
+test('push safety allows exact scoped repair pushes', () => {
+  const report = analyzePushSafety({
+    slug: 'atris-labs',
+    onlyPrefixes: ['/atris/now.md'],
+    filesToPush: [{ path: '/atris/now.md' }],
+    unchangedCount: 1,
+  });
+
+  assert.equal(report.ok, true);
 });
 
 test('business workspace root detection requires .atris binding and atris folder', () => {
@@ -1525,6 +1712,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     status: false,
     review: false,
     resolve: null,
+    help: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
@@ -1553,46 +1741,66 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
   assert.equal(options.status, false);
   assert.equal(options.review, false);
   assert.equal(options.resolve, null);
+  assert.equal(options.help, false);
   assert.deepEqual(buildBusinessSyncPlan(options), {
     pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
     pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
   });
 });
 
-test('business sync resolve applies local or cloud conflict artifacts to atris files', () => {
+test('business sync resolve applies local or cloud conflict artifacts to workspace files', () => {
   const dir = makeTempDir();
   try {
     const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
     fs.mkdirSync(packetDir, { recursive: true });
     fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'base copy\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
-    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
+	    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
+	    const rootPacketDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z');
+	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.base'), 'base readme\n', 'utf8');
+	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.local'), 'local readme\n', 'utf8');
+	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.remote'), 'cloud readme\n', 'utf8');
+	    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
+	    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+	    for (const rel of ['atris/wiki/a.md.remote', 'atris/wiki/a.md.local', 'README.md.remote']) {
+	      fs.writeFileSync(path.join(dir, rel), 'workspace sidecar\n', 'utf8');
+	    }
 
     const entries = collectConflictResolutionEntries(dir);
-    assert.deepEqual(entries.map(entry => entry.targetRel), ['atris/wiki/a.md']);
+    assert.deepEqual(entries.map(entry => entry.targetRel).sort(), ['README.md', 'atris/wiki/a.md']);
 
     const local = resolveLatestConflict(dir, 'local');
-    assert.deepEqual(local.resolved, ['atris/wiki/a.md']);
-    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+	    assert.deepEqual(local.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
+	    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+	    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'local readme\n');
+	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.remote')), false);
+	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.local')), false);
+	    assert.equal(fs.existsSync(path.join(dir, 'README.md.remote')), false);
 
     const cloud = resolveLatestConflict(dir, 'cloud');
-    assert.deepEqual(cloud.resolved, ['atris/wiki/a.md']);
+    assert.deepEqual(cloud.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'cloud readme\n');
     assert.match(cloud.message, /atris sync --dry-run/);
 
     const both = resolveLatestConflict(dir, 'both');
-    assert.deepEqual(both.resolved, ['atris/wiki/a.md']);
+    assert.deepEqual(both.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md.cloud'), 'utf8'), 'cloud copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'local readme\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'README.md.cloud'), 'utf8'), 'cloud readme\n');
     assert.match(both.message, /both versions/);
 
     fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'A\nB\nC\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'A\nB local\nC\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'A\nB\nC cloud\n', 'utf8');
+    fs.writeFileSync(path.join(rootPacketDir, 'README.md.base'), 'A\nB\nC\n', 'utf8');
+    fs.writeFileSync(path.join(rootPacketDir, 'README.md.local'), 'A\nB local\nC\n', 'utf8');
+    fs.writeFileSync(path.join(rootPacketDir, 'README.md.remote'), 'A\nB\nC cloud\n', 'utf8');
     const merge = resolveLatestConflict(dir, 'merge');
-    assert.deepEqual(merge.resolved, ['atris/wiki/a.md']);
+    assert.deepEqual(merge.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'A\nB local\nC cloud\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'A\nB local\nC cloud\n');
     assert.match(merge.message, /safe merge/);
   } finally {
     cleanupTempDir(dir);
@@ -1727,6 +1935,43 @@ test('business pull conflict packet includes base, local, and remote artifacts',
   }
 });
 
+test('pull normalizes cloud file paths to manifest keys', () => {
+  assert.equal(normalizePullFilePath('atris/now.md'), '/atris/now.md');
+  assert.equal(normalizePullFilePath('/atris/now.md'), '/atris/now.md');
+  assert.equal(normalizePullFilePath('///workspace/sales/notes.md'), '/workspace/sales/notes.md');
+  assert.equal(normalizePullFilePath(''), null);
+});
+
+test('pull smart merge fails closed when batch omits changed content', () => {
+  const merged = mergeSmartPullFiles(
+    [
+      { path: 'atris/wiki/a.md', hash: 'hash-a', size: 10 },
+      { path: 'atris/wiki/b.md', hash: 'hash-b', size: 10 },
+    ],
+    [
+      { path: 'atris/wiki/a.md', content: 'A\n' },
+    ],
+    ['/atris/wiki/a.md', '/atris/wiki/b.md'],
+  );
+
+  assert.equal(merged.ok, false);
+  assert.deepEqual(merged.missingContent, ['/atris/wiki/b.md']);
+
+  const complete = mergeSmartPullFiles(
+    [
+      { path: 'atris/wiki/a.md', hash: 'hash-a', size: 10 },
+      { path: 'atris/wiki/b.md', hash: 'hash-b', size: 10 },
+    ],
+    [
+      { path: 'atris/wiki/a.md', content: 'A\n' },
+      { path: 'atris/wiki/b.md', content: '' },
+    ],
+    ['/atris/wiki/a.md', '/atris/wiki/b.md'],
+  );
+  assert.equal(complete.ok, true);
+  assert.equal(complete.files[1].content, '');
+});
+
 test('business sync review command is local-only and works without credentials', () => {
   const dir = makeTempDir();
   try {
@@ -1763,12 +2008,44 @@ test('business sync status renders a nonengineer-safe local brain readout', () =
     assert.match(status.latestConflict, /summary\.md$/);
 
     const rendered = renderLocalSyncStatus(status);
-    assert.match(rendered, /Company brain status/);
+    assert.match(rendered, /Business workspace sync status/);
     assert.match(rendered, /business: doordash/);
-    assert.match(rendered, /brain: atris\/ \(1 file\)/);
+    assert.match(rendered, /workspace: 1 file \(atris\/ present\)/);
     assert.match(rendered, /conflicts: 1 review packet/);
+    assert.match(rendered, /warnings: none/);
     assert.match(rendered, /watcher: last heartbeat/);
     assert.match(rendered, /atris sync --dry-run/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync status warns about nested workspace pollution', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris-labs', 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris-labs', 'atris', 'now.md'), '# now\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md.remote'), 'cloud copy\n', 'utf8');
+
+    const warnings = collectWorkspaceWarnings(dir, 'atris-labs');
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[0], /nested workspace folder: atris-labs\//);
+    assert.match(warnings[1], /sync review artifacts/);
+
+    const rendered = renderLocalSyncStatus({
+      slug: 'atris-labs',
+      cwd: dir,
+      workspaceFileCount: 3,
+      brainExists: true,
+      lastSync: null,
+      manifestRoot: dir,
+      manifestRootMatches: true,
+      conflictCount: 0,
+      warnings,
+    });
+    assert.match(rendered, /warnings: 2/);
+    assert.match(rendered, /nested workspace folder/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1784,9 +2061,30 @@ test('business sync status command is local-only and works without credentials',
 
     const res = runCli(['sync', '--status'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Company brain status/);
+    assert.match(res.stdout, /Business workspace sync status/);
     assert.match(res.stdout, /business: doordash/);
     assert.match(res.stdout, /Next: run `atris sync --dry-run`/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync help is read-only and names the safety gates', () => {
+  const help = renderBusinessSyncHelp();
+  assert.match(help, /Pull -> Review -> Publish/);
+  assert.match(help, /Large unscoped pushes/);
+
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+
+    const res = runCli(['sync', '--help'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris sync/);
+    assert.match(res.stdout, /Pull -> Review -> Publish/);
+    assert.doesNotMatch(res.stdout, /Syncing .* business workspace/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1804,12 +2102,14 @@ test('business sync watch failures retry instead of killing the alive loop', () 
   assert.match(conflict.detail, /review packet/);
 });
 
-test('business sync watch snapshot detects atris folder changes only', () => {
+test('business sync watch snapshot detects workspace changes and ignores runtime state', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'workspace', 'sales'), { recursive: true });
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'one\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'workspace', 'sales', 'notes.md'), 'one\n', 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'ignored.json'), '{}', 'utf8');
 
     const before = collectBrainSnapshot(dir);
@@ -1818,6 +2118,10 @@ test('business sync watch snapshot detects atris folder changes only', () => {
 
     fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'two longer\n', 'utf8');
     assert.equal(brainSnapshotsDiffer(before, collectBrainSnapshot(dir)), true);
+
+    const afterAtris = collectBrainSnapshot(dir);
+    fs.writeFileSync(path.join(dir, 'workspace', 'sales', 'notes.md'), 'two longer\n', 'utf8');
+    assert.equal(brainSnapshotsDiffer(afterAtris, collectBrainSnapshot(dir)), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1825,6 +2129,9 @@ test('business sync watch snapshot detects atris folder changes only', () => {
 
 test('business sync watch ignore rules skip runtime and OS files', () => {
   assert.equal(shouldIgnoreWatchPath(path.join('.atris', 'state.json')), true);
+  assert.equal(shouldIgnoreWatchPath(path.join('.next', 'cache', 'bundle.js')), true);
+  assert.equal(shouldIgnoreWatchPath(path.join('dist', 'bundle.js')), true);
+  assert.equal(shouldIgnoreWatchPath(path.join('venv', 'bin', 'python')), true);
   assert.equal(shouldIgnoreWatchPath('.DS_Store'), true);
   assert.equal(shouldIgnoreWatchPath(path.join('wiki', 'index.md')), false);
 });
@@ -2735,7 +3042,7 @@ test('brain gallery previews activation cards for every team member', () => {
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /OPERATOR: Keshav Rao/);
     assert.match(res.stdout, /Justin McDonald: run one customer-moving GTM rep/);
-    assert.match(res.stdout, /Keshav Rao: make one high-leverage CEO move/);
+    assert.match(res.stdout, /Keshav Rao: act as Customer 0/);
     assert.match(res.stdout, /---/);
     assert.match(res.stdout, /VERIFY: brain artifacts and member readiness present/);
   } finally {
@@ -2794,6 +3101,43 @@ test('brain gallery --json --verify returns machine-readable readiness failures'
     assert.match(body.error, /brain gallery not-ready member activation cards: Executor \(not ready\)/);
     assert.deepEqual(body.members, ['executor', 'justin', 'keshav']);
     assert.match(body.gallery, /OPERATOR: Executor \(not ready\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate shows Keshav Customer 0 score context when present', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'state', 'contribution-score.md'), `# Contribution Score
+
+| Operator | Mode | Visible score signal | Current signal | Needed to count today |
+|---|---|---|---|---|
+| Keshav | Customer 0 / system leverage | Level 1: Customer 0 loop started | Member surface defines the first-run loop | Close one receipt with proof and next owner |
+
+## Keshav Profile Scoring Contract
+
+Source profile: atris/team/keshav/MEMBER.md
+
+## Keshav Customer 0 Card
+
+\`\`\`text
+operator: Keshav
+current_score_signal: Level 1 - Customer 0 loop started
+why: member identity, first screen, and score surface agree
+next_rep: log one receipt with evidence and next owner
+proof_needed: leave a receipt in contribution-score
+\`\`\`
+`, 'utf8');
+    const res = runCli(['brain', 'activate', '--member', 'keshav', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: Keshav Rao/);
+    assert.match(res.stdout, /NEXT MOVE: Keshav Rao: act as Customer 0/);
+    assert.match(res.stdout, /SCORE: Level 1 - Customer 0 loop started/);
+    assert.match(res.stdout, /NEXT REP: log one receipt with evidence and next owner/);
+    assert.match(res.stdout, /PROOF: leave a receipt in contribution-score/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3013,6 +3357,116 @@ test('task display refs use semantic IDs and collision-safe legacy prefixes', ()
   assert.ok(rows[1].legacy_ref.startsWith('01KQMBKF'));
 });
 
+test('task render preserves Endgame metadata and markdown-only T rows', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** renderer-horizon',
+      '**Picked:** 2026-05-15 10:00',
+      '**Horizon:** Keep the playable horizon visible.',
+      '**Source:** test',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** Keep markdown horizon [endgame] [execute]',
+      '  **Verify:** test -f horizon.txt',
+      '',
+      '## In Progress',
+      '',
+      '## Review',
+      '',
+      '- **[T2]** Pending human approval [agent]',
+      '  **Verify:** test -f approval.txt',
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+    const created = runCli(['task', 'new', 'DB state task', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const createdTask = JSON.parse(created.stdout).task;
+
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(render.status, 0, render.stderr);
+    const regenerated = fs.readFileSync(todoPath, 'utf8');
+    assert.match(regenerated, /## Endgame/);
+    assert.match(regenerated, /\*\*Slug:\*\* renderer-horizon/);
+    assert.match(regenerated, /- \*\*\[T1\]\*\* Keep markdown horizon \[endgame\] \[execute\]/);
+    assert.match(regenerated, /\*\*Verify:\*\* test -f horizon\.txt/);
+    assert.match(regenerated, /## Review\n\n- \*\*\[T2\]\*\* Pending human approval \[agent\]\n  \*\*Verify:\*\* test -f approval\.txt/);
+    assert.match(regenerated, /DB state task \[agent\]/);
+    assert.match(regenerated, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task`));
+    const showByRenderedRef = runCli(['task', 'show', createdTask.display_id, '--json'], { cwd: dir, env });
+    assert.equal(showByRenderedRef.status, 0, showByRenderedRef.stderr);
+    assert.equal(JSON.parse(showByRenderedRef.stdout).id, createdTask.id);
+
+    const renderAgain = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(renderAgain.status, 0, renderAgain.stderr);
+    const second = fs.readFileSync(todoPath, 'utf8');
+    assert.equal((second.match(/## Endgame/g) || []).length, 1);
+    assert.equal((second.match(/Keep markdown horizon/g) || []).length, 1);
+    assert.equal((second.match(/Pending human approval/g) || []).length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task import preserves markdown Review rows as review tasks', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '## In Progress',
+      '',
+      '(Empty)',
+      '',
+      '## Review',
+      '',
+      '- **[T9]** Pending human proof [agent]',
+      '  **Claimed by:** codex',
+      '  **Verify:** npm test',
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const imported = runCli(['task', 'import', 'atris/TODO.md', '--json'], { cwd: dir, env });
+    assert.equal(imported.status, 0, imported.stderr);
+    assert.equal(JSON.parse(imported.stdout).inserted, 1);
+
+    const review = runCli(['task', 'list', '--status', 'review', '--json'], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+    const payload = JSON.parse(review.stdout);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].status, 'review');
+    assert.equal(payload.tasks[0].title, 'Pending human proof');
+    assert.equal(payload.tasks[0].claimed_by, 'codex');
+    assert.equal(payload.tasks[0].metadata.verify, 'npm test');
+
+    const revise = runCli(['task', 'revise', payload.tasks[0].display_id, '--note', 'tighten proof', '--json'], { cwd: dir, env });
+    assert.equal(revise.status, 0, revise.stderr);
+    assert.equal(JSON.parse(revise.stdout).task.status, 'claimed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task display refs stay stable in filtered list views', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -3038,6 +3492,82 @@ test('task display refs stay stable in filtered list views', () => {
     assert.equal(openJson.status, 0, openJson.stderr);
     assert.equal(JSON.parse(openJson.stdout).tasks[0].display_id, current.task.display_id);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task display refs stay stable when compact projection is capped', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const taskDb = require('../lib/task-db');
+  taskDb.close();
+  try {
+    const db = taskDb.open(dbPath);
+    const ws = path.join(dir, 'project-obelisk');
+    const createdIds = [];
+    for (let i = 0; i < 505; i += 1) {
+      createdIds.push(taskDb.addTask(db, {
+        title: `Task ${i + 1}`,
+        workspaceRoot: ws,
+      }).id);
+    }
+
+    const newestId = createdIds[createdIds.length - 1];
+    const fullRefById = new Map(taskDb.withTaskDisplayRefs(
+      taskDb.listTasks(db, { workspaceRoot: ws })
+    ).map(task => [task.id, task.display_id]));
+    const compact = taskDb.taskProjection(db, { workspaceRoot: ws, limit: 500 });
+    assert.equal(compact.tasks.length, 500);
+    const newestCompact = compact.tasks.find(task => task.id === newestId);
+    assert.ok(newestCompact, 'newest task should be present in capped compact projection');
+    assert.equal(newestCompact.display_id, fullRefById.get(newestId));
+
+    const direct = taskDb.taskProjection(db, { taskId: newestId }).tasks[0];
+    assert.equal(direct.display_id, newestCompact.display_id);
+    assert.equal(direct.legacy_ref, newestCompact.legacy_ref);
+  } finally {
+    taskDb.close();
+    cleanupTempDir(dir);
+  }
+});
+
+test('task render keeps display refs stable when compact TODO view is capped', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const taskDb = require('../lib/task-db');
+  taskDb.close();
+  try {
+    fs.mkdirSync(path.join(dir, 'project-obelisk', 'atris'), { recursive: true });
+    const db = taskDb.open(dbPath);
+    const ws = fs.realpathSync(path.join(dir, 'project-obelisk'));
+    for (let i = 0; i < 505; i += 1) {
+      taskDb.addTask(db, {
+        title: `Task ${i + 1}`,
+        workspaceRoot: ws,
+      });
+    }
+    const compactRows = taskDb.listTasks(db, { workspaceRoot: ws, limit: 500 });
+    const fullById = new Map(taskDb.withTaskDisplayRefs(
+      taskDb.listTasks(db, { workspaceRoot: ws })
+    ).map(task => [task.id, task.display_id]));
+    const compactOnlyById = new Map(taskDb.withTaskDisplayRefs(compactRows)
+      .map(task => [task.id, task.display_id]));
+    const target = compactRows.find(task => fullById.get(task.id) !== compactOnlyById.get(task.id));
+    assert.ok(target, 'fixture should expose a compact-row display ref drift');
+    const expectedRef = fullById.get(target.id);
+    const staleRef = compactOnlyById.get(target.id);
+    taskDb.close();
+
+    const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: ws, env });
+    assert.equal(render.status, 0, render.stderr);
+    const regenerated = fs.readFileSync(path.join(ws, 'atris', 'TODO.md'), 'utf8');
+    assert.match(regenerated, new RegExp(`\\*\\*\\[${expectedRef}\\]\\*\\* ${target.title}`));
+    assert.doesNotMatch(regenerated, new RegExp(`\\*\\*\\[${staleRef}\\]\\*\\* ${target.title}`));
+  } finally {
+    taskDb.close();
     cleanupTempDir(dir);
   }
 });
@@ -3142,6 +3672,17 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
     const task = JSON.parse(showJson.stdout);
     assert.equal(task.current_version, 2);
     assert.equal(task.messages[0].content, 'User wants Cursor-like task chat');
+
+    const largeMessage = `large json pipe proof\n${'x'.repeat(96 * 1024)}`;
+    const largeNote = runCli(['task', 'note', ref, largeMessage, '--as', 'codex'], { cwd: dir, env });
+    assert.equal(largeNote.status, 0, largeNote.stderr);
+
+    const largeShowJson = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
+    assert.equal(largeShowJson.status, 0, largeShowJson.stderr);
+    assert.ok(largeShowJson.stdout.length > 64 * 1024, 'large task JSON must exceed a typical pipe buffer');
+    const largeTask = JSON.parse(largeShowJson.stdout);
+    assert.equal(largeTask.current_version, 3);
+    assert.ok(largeTask.messages.at(-1).content.startsWith('large json pipe proof\nxxxxx'));
 
     const out = path.join(dir, '.atris', 'state', 'tasks.projection.json');
     const exported = runCli(['task', 'export', '--out', out], { cwd: dir, env });
@@ -3278,6 +3819,21 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     assert.equal(episode.lesson, 'Small task events compound');
     assert.equal(episode.proof, 'npm test');
     assert.equal(episode.next_task_suggestion, 'Sync task events to Swarlo');
+    assert.equal(episode.goal, null);
+    assert.deepEqual(episode.career_xp, {
+      eligible: false,
+      source: 'task_review',
+      reward: 1,
+      proof_required: true,
+    });
+    assert.deepEqual(episode.rl, {
+      label: 'accepted',
+      source: 'task_review',
+      reward: 1,
+      has_proof: true,
+      has_lesson: true,
+      has_next_task: true,
+    });
   } finally {
     cleanupTempDir(dir);
   }
@@ -3307,6 +3863,9 @@ test('task done with proof writes a reviewed proof event', () => {
     assert.equal(donePayload.reward, 1);
     assert.equal(donePayload.episode.proof, 'task show exposes reviewed proof');
     assert.equal(donePayload.episode.lesson, 'done with proof should unlock review state');
+    assert.equal(donePayload.episode.career_xp.eligible, false);
+    assert.equal(donePayload.xp_projection.total_xp, 0);
+    assert.equal(donePayload.xp_projection.collected_receipts, 0);
 
     const show = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
@@ -3315,6 +3874,634 @@ test('task done with proof writes a reviewed proof event', () => {
     assert.deepEqual(task.events.map(e => e.event_type), ['created', 'completed', 'reviewed']);
     assert.equal(task.review.proof, 'task show exposes reviewed proof');
     assert.equal(task.review.reward, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review does not mint Career XP before the task is done', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Do not pay XP before accept', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const review = runCli([
+      'task', 'review', ref,
+      '--reward', '1',
+      '--proof', 'premature proof',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+    const reviewPayload = JSON.parse(review.stdout);
+    assert.equal(reviewPayload.task.status, 'open');
+    assert.equal(reviewPayload.task.metadata?.approval_status, undefined);
+    assert.equal(reviewPayload.episode.career_xp.eligible, false);
+    assert.equal(reviewPayload.episode.rl.label, 'accepted');
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.total_xp, 0);
+    assert.equal(payload.collected_receipts, 0);
+
+    const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 2);
+    assert.match(accept.stderr, /fresh proof_ready proof/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready holds work in review until human accept', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli([
+      'task', 'add', 'Approve autonomous work before XP',
+      '--tag', 'agent',
+      '--goal-id', 'goal-career-xp',
+      '--goal-objective', 'Make Career XP recruitable',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const created = JSON.parse(add.stdout);
+    const ref = created.task.display_id;
+    assert.equal(created.task.metadata.goal_id, 'goal-career-xp');
+    assert.equal(created.task.metadata.goal_objective, 'Make Career XP recruitable');
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'typecheck passed and diff reviewed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(readyPayload.action, 'ready');
+    assert.equal(readyPayload.approval_status, 'pending');
+    assert.equal(readyPayload.review_pass_count, 1);
+    assert.equal(readyPayload.agent_certified, false);
+    assert.deepEqual(readyPayload.handoff, {
+      native_goal_status: 'needs_second_agent_review',
+      career_xp_status: 'pending_human_accept',
+      next_action: 'agent_review_again',
+      rule: 'Proof is in Review; one more agent review pass certifies continuation. Career XP waits for human accept.',
+    });
+    assert.equal(readyPayload.task.status, 'review');
+    assert.equal(readyPayload.task.review.summary, 'This is Career XP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
+    assert.equal(readyPayload.task.review.proof, 'typecheck passed and diff reviewed');
+    assert.equal(readyPayload.task.review.reward, null);
+    assert.equal(readyPayload.task.review.approval_status, 'pending');
+    assert.equal(readyPayload.task.review.agent_certified, undefined);
+
+    const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
+    assert.equal(readyShow.status, 0, readyShow.stderr);
+    assert.match(readyShow.stdout, /Summary: This is Career XP review: approve autonomous work before XP is agent-complete; accept only if the proof is real\./);
+    assert.match(readyShow.stdout, /Proof: typecheck passed and diff reviewed/);
+    assert.match(readyShow.stdout, /Approval: pending/);
+    assert.doesNotMatch(readyShow.stdout, /Agent certified: yes/);
+
+    const nextAfterFirstReview = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(nextAfterFirstReview.status, 0, nextAfterFirstReview.stderr);
+    const firstNextPayload = JSON.parse(nextAfterFirstReview.stdout);
+    assert.equal(firstNextPayload.action, 'agent_review_again');
+    assert.equal(firstNextPayload.task_id, readyPayload.task.id);
+    assert.equal(firstNextPayload.handoff.career_xp_status, 'pending_human_accept');
+
+    const certified = runCli([
+      'task', 'ready', ref,
+      '--proof', 'typecheck passed and diff reviewed again',
+      '--lesson', 'Double-check proof before awarding XP',
+      '--next', 'Queue the next proof loop',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(certified.status, 0, certified.stderr);
+    const certifiedPayload = JSON.parse(certified.stdout);
+    assert.equal(certifiedPayload.review_pass_count, 2);
+    assert.equal(certifiedPayload.agent_certified, true);
+    assert.deepEqual(certifiedPayload.handoff, {
+      native_goal_status: 'agent_certified',
+      career_xp_status: 'pending_human_accept',
+      next_action: 'continue_work',
+      rule: 'Agent double-check complete; continue work. Career XP waits for human accept.',
+    });
+    assert.equal(certifiedPayload.task.status, 'review');
+    assert.equal(certifiedPayload.task.review.approval_status, 'pending');
+    assert.equal(certifiedPayload.task.review.agent_review_pass_count, 2);
+    assert.equal(certifiedPayload.task.review.agent_certified, true);
+    assert.equal(certifiedPayload.task.metadata.agent_certified, true);
+
+    const prematureDone = runCli(['task', 'done', ref, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(prematureDone.status, 1);
+    assert.equal(prematureDone.stderr, '');
+    const prematureDonePayload = JSON.parse(prematureDone.stdout);
+    assert.equal(prematureDonePayload.reason, 'not_open_or_claimed');
+    assert.match(prematureDonePayload.detail, /not in open\|claimed/);
+    const stillReview = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(stillReview.status, 0, stillReview.stderr);
+    assert.equal(JSON.parse(stillReview.stdout).status, 'review');
+
+    const certifiedShow = runCli(['task', 'show', ref], { cwd: dir, env });
+    assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
+	    assert.match(certifiedShow.stdout, /Proof: typecheck passed and diff reviewed again/);
+	    assert.match(certifiedShow.stdout, /Approval: pending/);
+	    assert.match(certifiedShow.stdout, /Agent certified: yes \(2 reviews\)/);
+
+	    for (let i = 0; i < 10; i += 1) {
+	      const note = runCli(['task', 'note', ref, `post-ready context ${i}`, '--as', 'codex'], { cwd: dir, env });
+	      assert.equal(note.status, 0, note.stderr);
+	    }
+
+	    const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
+	    assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
+	    const statusPayload = JSON.parse(statusAfterCertification.stdout);
+	    assert.equal(statusPayload.status.needs_review[0].review.proof, 'typecheck passed and diff reviewed again');
+	    assert.equal(statusPayload.status.needs_review[0].review.lesson, 'Double-check proof before awarding XP');
+	    assert.equal(statusPayload.status.needs_review[0].review.next_task, 'Queue the next proof loop');
+	    assert.equal(statusPayload.status.needs_review[0].review.handoff.next_action, 'continue_work');
+    assert.equal(statusPayload.status.needs_review[0].review.handoff.career_xp_status, 'pending_human_accept');
+
+    const nextAfterCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(nextAfterCertification.status, 0, nextAfterCertification.stderr);
+    const nextPayload = JSON.parse(nextAfterCertification.stdout);
+    assert.equal(nextPayload.action, 'continue_work');
+    assert.equal(nextPayload.task_id, null);
+    assert.equal(nextPayload.handoff.next_action, 'continue_work');
+    assert.equal(nextPayload.handoff.career_xp_status, 'pending_human_accept');
+    assert.equal(nextPayload.review_task.id, certifiedPayload.task.id);
+
+    const textAdd = runCli(['task', 'add', 'Render native goal handoff copy', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(textAdd.status, 0, textAdd.stderr);
+    const textRef = JSON.parse(textAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const readyText = runCli([
+      'task', 'ready', textRef,
+      '--proof', 'second validation pass',
+      '--as', 'codex',
+    ], { cwd: dir, env });
+    assert.equal(readyText.status, 0, readyText.stderr);
+    assert.match(readyText.stdout, /ready .* pending approval/);
+    assert.match(readyText.stdout, /Proof is in Review; one more agent review pass certifies continuation\. Career XP waits for human accept\./);
+
+    const accept = runCli([
+      'task', 'accept', ref,
+      '--as', 'keshavrao',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    const acceptPayload = JSON.parse(accept.stdout);
+    assert.equal(acceptPayload.action, 'accepted');
+    assert.equal(acceptPayload.task.status, 'done');
+    assert.equal(acceptPayload.task.review.reward, 1);
+    assert.equal(acceptPayload.task.review.summary, 'This is accepted Career XP work: approve autonomous work before XP is done and has a proof receipt.');
+    assert.equal(acceptPayload.task.review.proof, 'typecheck passed and diff reviewed again');
+    assert.equal(acceptPayload.task.review.lesson, 'Double-check proof before awarding XP');
+    assert.equal(acceptPayload.task.review.next_task, 'Queue the next proof loop');
+    assert.equal(acceptPayload.task.metadata.approval_status, 'accepted');
+    assert.equal(acceptPayload.episode.action.actor, 'keshavrao');
+    assert.deepEqual(acceptPayload.episode.goal, {
+      goal_id: 'goal-career-xp',
+      objective: 'Make Career XP recruitable',
+    });
+    assert.equal(acceptPayload.episode.career_xp.eligible, true);
+    assert.equal(acceptPayload.episode.rl.label, 'accepted');
+    assert.equal(acceptPayload.xp_projection.schema, 'atris.career_xp_projection.v1');
+    assert.equal(acceptPayload.xp_projection.collected_receipts, 1);
+    assert.equal(acceptPayload.xp_projection.total_xp, 1);
+    assert.equal(acceptPayload.xp_projection.latest_accepted_proof.source_task_id, acceptPayload.task_id);
+
+	    const events = runCli(['task', 'events', ref, '--json'], { cwd: dir, env });
+	    assert.equal(events.status, 0, events.stderr);
+	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);
+	    assert.deepEqual(eventTypes.slice(0, 4), ['created', 'claimed', 'proof_ready', 'proof_ready']);
+	    assert.deepEqual(eventTypes.slice(-2), ['completed', 'reviewed']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task next blocks new claims until required second review pass', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
+    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const openAdd = runCli(['task', 'add', 'Open work must wait', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(openAdd.status, 0, openAdd.stderr);
+    const openPayload = JSON.parse(openAdd.stdout);
+
+    const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    const payload = JSON.parse(next.stdout);
+    assert.equal(payload.action, 'agent_review_again');
+    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+
+    const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
+    assert.equal(openShow.status, 0, openShow.stderr);
+    assert.equal(JSON.parse(openShow.stdout).status, 'open');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review summary does not treat incidental XP wording as Career XP work', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli([
+      'task', 'add', 'Clean stale claimed task queue after XP review',
+      '--tag', 'hygiene',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'closed stale duplicate scheduler claims as failed reward 0',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(readyPayload.task.review.summary, 'This is the human checkpoint: clean stale claimed task queue after XP review is agent-complete and needs acceptance before it counts as done.');
+    assert.equal(readyPayload.task.review.proof, 'closed stale duplicate scheduler claims as failed reward 0');
+
+    const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
+    assert.equal(readyShow.status, 0, readyShow.stderr);
+    assert.match(readyShow.stdout, /Summary: This is the human checkpoint/);
+    assert.match(readyShow.stdout, /Proof: closed stale duplicate scheduler claims as failed reward 0/);
+    assert.doesNotMatch(readyShow.stdout, /Career XP a real local scoreboard/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task accept automatically projects accepted proof into durable local XP ledger', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli([
+      'task', 'add', 'Ship local Career XP projection',
+      '--tag', 'career-xp',
+      '--goal-id', 'goal-career-xp',
+      '--goal-objective', 'Make XP collectible anywhere',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'xp projection test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    const accepted = JSON.parse(accept.stdout);
+    const projection = accepted.xp_projection;
+    assert.equal(projection.schema, 'atris.career_xp_projection.v1');
+    assert.equal(projection.collected_receipts, 1);
+    assert.equal(projection.total_xp, 2);
+    assert.equal(projection.today_xp, 2);
+    assert.equal(projection.level, 1);
+    assert.equal(projection.next_level_progress.current_xp, 2);
+    assert.equal(projection.next_level_progress.required_xp, 1000);
+    assert.equal(projection.next_level_progress.remaining_xp, 998);
+    assert.equal(projection.receipts_count, 1);
+    assert.equal(projection.latest_accepted_proof.source_task_id, accepted.task_id);
+    assert.equal(projection.latest_accepted_proof.proof, 'xp projection test passed');
+    assert.equal(projection.latest_accepted_proof.xp, 2);
+    assert.equal(projection.latest_accepted_proof.goal.goal_id, 'goal-career-xp');
+    assert.equal(projection.integrity.status, 'verified');
+    assert.equal(projection.integrity.local_trust, 'tamper_evident_not_attested');
+    assert.equal(projection.leaderboard_eligible, false);
+    assert.ok(projection.integrity.head_hash);
+    assert.ok(projection.integrity.cursor.bytes_read > 0);
+
+    const receiptsPath = path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const projectionPath = path.join(dir, '.atris', 'state', 'career_xp.projection.json');
+    const cursorPath = path.join(dir, '.atris', 'state', 'career_xp.cursor.json');
+    assert.ok(fs.existsSync(receiptsPath));
+    assert.ok(fs.existsSync(projectionPath));
+    assert.ok(fs.existsSync(cursorPath));
+    const receipts = fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].receipt_id, `task_review:${accepted.episode.episode_id}`);
+    assert.equal(receipts[0].chain_version, 'atris.career_xp_receipt_chain.v1');
+    assert.ok(receipts[0].source_episode_hash);
+    assert.ok(receipts[0].receipt_hash);
+
+    const collect = runCli(['xp', 'collect', '--json'], { cwd: dir, env });
+    assert.equal(collect.status, 0, collect.stderr);
+    assert.equal(JSON.parse(collect.stdout).collected_receipts, 0);
+    assert.equal(fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).length, 1);
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    assert.equal(JSON.parse(status.stdout).latest_accepted_proof.proof, 'xp projection test passed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task accept rejects non-positive rewards before marking done', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Reject zero reward accept', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'accept proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const accept = runCli(['task', 'accept', ref, '--reward', '0', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 2);
+    assert.match(accept.stderr, /reward must be a positive number/);
+
+    const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    const task = JSON.parse(show.stdout);
+    assert.equal(task.status, 'review');
+    assert.equal(task.metadata.approval_status, 'pending');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review after acceptance cannot mint duplicate Career XP', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Keep accepted XP idempotent', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'accepted once', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    assert.equal(JSON.parse(accept.stdout).xp_projection.total_xp, 1);
+
+    const extraReview = runCli(['task', 'review', ref, '--reward', '1', '--proof', 'duplicate review proof', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(extraReview.status, 0, extraReview.stderr);
+    const extraReviewPayload = JSON.parse(extraReview.stdout);
+    assert.equal(extraReviewPayload.episode.career_xp.eligible, false);
+    assert.equal(extraReviewPayload.xp_projection.total_xp, 1);
+    assert.equal(extraReviewPayload.xp_projection.collected_receipts, 0);
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.total_xp, 1);
+    assert.equal(payload.receipts_count, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('xp status repairs exact duplicate local XP receipts', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Repair duplicate XP receipt', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'duplicate receipt repair proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+
+    const receiptsPath = path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const original = fs.readFileSync(receiptsPath, 'utf8').trim();
+    fs.writeFileSync(receiptsPath, `${original}\n${original}\n`, 'utf8');
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const projection = JSON.parse(status.stdout);
+    assert.equal(projection.integrity.status, 'verified');
+    assert.equal(projection.total_xp, 1);
+    assert.equal(projection.receipts_count, 1);
+    assert.equal(fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('xp status fails closed on conflicting duplicate receipts with readable labels', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const title = 'Detect conflicting XP receipt';
+    const add = runCli(['task', 'add', title, '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'conflict proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+
+    const receiptsPath = path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const receipt = JSON.parse(fs.readFileSync(receiptsPath, 'utf8').trim());
+    const conflicting = { ...receipt, proof: 'conflicting proof', xp: 2 };
+    fs.writeFileSync(receiptsPath, `${JSON.stringify(receipt)}\n${JSON.stringify(conflicting)}\n`, 'utf8');
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const projection = JSON.parse(status.stdout);
+    assert.equal(projection.integrity.status, 'tampered');
+    assert.equal(projection.total_xp, 0);
+    assert.match(projection.integrity.errors.join('\n'), new RegExp(`conflicting_duplicate_receipt:${title}`));
+    assert.doesNotMatch(projection.integrity.errors.join('\n'), /task_review:[A-Z0-9]+/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('xp status fails closed when local receipt ledger is tampered', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Detect XP tampering', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'tamper test proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    assert.equal(JSON.parse(accept.stdout).xp_projection.total_xp, 1);
+
+    const receiptsPath = path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl');
+    const tampered = fs.readFileSync(receiptsPath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    tampered[0].xp = 999;
+    fs.writeFileSync(receiptsPath, `${JSON.stringify(tampered[0])}\n`, 'utf8');
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const projection = JSON.parse(status.stdout);
+    assert.equal(projection.integrity.status, 'tampered');
+    assert.equal(projection.total_xp, 0);
+    assert.equal(projection.today_xp, 0);
+    assert.equal(projection.leaderboard_eligible, false);
+    assert.match(projection.integrity.errors.join('\n'), /receipt_hash_mismatch/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task revise sends ready work back to claimed with revision count', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Revise autonomous work', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'second smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const revise = runCli([
+      'task', 'revise', ref,
+      '--note', 'Proof is good but the user-facing copy is too much.',
+      '--as', 'keshavrao',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(revise.status, 0, revise.stderr);
+    const payload = JSON.parse(revise.stdout);
+    assert.equal(payload.action, 'revise');
+    assert.equal(payload.task.status, 'claimed');
+    assert.equal(payload.task.metadata.approval_status, 'revise');
+    assert.equal(payload.task.metadata.human_revision_count, 1);
+    assert.equal(payload.task.metadata.human_revision_note, 'Proof is good but the user-facing copy is too much.');
+    assert.equal(payload.task.metadata.agent_review_pass_count, undefined);
+    assert.equal(payload.task.metadata.agent_certified, undefined);
+    assert.equal(payload.task.review.proof, undefined);
+    assert.equal(payload.task.review.agent_review_pass_count, undefined);
+    assert.equal(payload.task.review.agent_certified, undefined);
+
+    const revisedShow = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(revisedShow.status, 0, revisedShow.stderr);
+    const revisedTask = JSON.parse(revisedShow.stdout);
+    assert.equal(revisedTask.review.proof, null);
+    assert.equal(revisedTask.review.agent_review_pass_count, null);
+    assert.equal(revisedTask.review.agent_certified, false);
+
+    const staleAccept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(staleAccept.status, 2);
+    assert.match(staleAccept.stderr, /fresh proof_ready proof/);
+
+    const revisedReady = runCli(['task', 'ready', ref, '--proof', 'revised proof passed', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(revisedReady.status, 0, revisedReady.stderr);
+    const readyPayload = JSON.parse(revisedReady.stdout);
+    assert.equal(readyPayload.review_pass_count, 1);
+    assert.equal(readyPayload.agent_certified, false);
+    assert.equal(readyPayload.handoff.next_action, 'agent_review_again');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task revise returns unclaimed ready work to open so agents can claim it', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Revise open ready task', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'open task proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const revise = runCli(['task', 'revise', ref, '--note', 'tighten proof', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(revise.status, 0, revise.stderr);
+    const revisedPayload = JSON.parse(revise.stdout);
+    assert.equal(revisedPayload.task.status, 'open');
+    assert.equal(revisedPayload.task.claimed_by, undefined);
+
+    const claim = runCli(['task', 'claim', ref, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(claim.status, 0, claim.stderr);
+    assert.equal(JSON.parse(claim.stdout).task.status, 'claimed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task revise refuses accepted tasks so XP is not stale', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Do not revise accepted XP', '--tag', 'career-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'accepted proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    assert.equal(JSON.parse(accept.stdout).xp_projection.total_xp, 1);
+
+    const revise = runCli(['task', 'revise', ref, '--note', 'needs more work', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(revise.status, 1);
+    assert.match(revise.stderr, /not_reviewable_done/);
+
+    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    assert.equal(JSON.parse(status.stdout).total_xp, 1);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3634,6 +4821,44 @@ test('task status gives web and Swarlo a compact live contract', () => {
   }
 });
 
+test('task status resolves goal_id display refs to parent task objectives', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'goals.md'), [
+      '# Goals',
+      '',
+      '- **Owned by:** chief-of-staff should not become the task objective',
+      '',
+    ].join('\n'), 'utf8');
+
+    const parentCreated = runCli(['task', 'add', 'GM Desk v0: make Atris Labs open to one playable daily rep', '--tag', 'gm-desk', '--json'], { cwd: dir, env });
+    assert.equal(parentCreated.status, 0, parentCreated.stderr);
+    const parent = JSON.parse(parentCreated.stdout).task;
+
+    const childCreated = runCli(['task', 'add', 'GM Desk v0 step 2: route Atris Labs open to daily surface, no /flow', '--tag', 'gm-desk', '--goal-id', parent.display_id, '--json'], { cwd: dir, env });
+    assert.equal(childCreated.status, 0, childCreated.stderr);
+    const child = JSON.parse(childCreated.stdout).task;
+
+    const claimed = runCli(['task', 'claim', child.id, '--as', 'builder', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.status.current.id, child.id);
+    assert.equal(payload.status.current.objective, parent.title);
+    assert.equal(payload.status.current.lineage.parent_task_id, parent.id);
+    assert.equal(payload.status.current.lineage.parent_title, parent.title);
+    assert.ok(payload.status.streams.some(stream => stream.objective === parent.title));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task status treats reviewed failures as closed task health', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -3773,6 +4998,8 @@ test('task review can create the next RSI task from the review suggestion', () =
     assert.equal(payload.task.status, 'done');
     assert.equal(Object.hasOwn(payload, 'projection'), false);
     assert.equal(Object.hasOwn(payload.task, 'events'), false);
+    assert.equal(payload.episode.career_xp.eligible, false);
+    assert.equal(payload.xp_projection.total_xp, 0);
     assert.ok(payload.next_task_id);
     const next = payload.next_task;
     assert.equal(next.title, 'Make the next task editable from UI');
@@ -3800,9 +5027,15 @@ test('task serve exposes a local task factory API', async () => {
     const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
     const base = ready.match[1];
 
-    const html = await fetch(base).then(r => r.text());
-    assert.match(html, /Atris Task Factory/);
-    assert.match(html, /data-smoke="hello-from-ui">hello from UI/);
+	    const html = await fetch(base).then(r => r.text());
+	    assert.match(html, /Atris Task Factory/);
+	    assert.match(html, /data-smoke="hello-from-ui">hello from UI/);
+	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/ready/);
+	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/accept/);
+	    assert.match(html, /if \(lesson\) payload\.lesson = lesson/);
+	    assert.match(html, /if \(nextTask\) payload\.next = nextTask/);
+	    assert.match(html, /task\.review && task\.review\.next_task/);
+	    assert.doesNotMatch(html, /\/api\/tasks\/' \+ task\.id \+ '\/finish/);
 
     const created = await fetch(`${base}/api/tasks`, {
       method: 'POST',
@@ -3841,11 +5074,95 @@ test('task serve exposes a local task factory API', async () => {
     }).then(r => r.json());
     assert.equal(finished.ok, true);
     assert.equal(finished.task.status, 'done');
+    assert.equal(finished.episode.career_xp.eligible, false);
+    assert.equal(finished.xp_projection.total_xp, 0);
     assert.ok(finished.next_task_id);
+
+    const apiReview = await fetch(`${base}/api/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Reject stale API proof after revise', tag: 'factory' }),
+    }).then(r => r.json());
+    assert.equal(apiReview.ok, true);
+    const apiReviewId = apiReview.task_id;
+
+    const missingReadyProofResponse = await fetch(`${base}/api/tasks/${apiReviewId}/ready`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'codex' }),
+    });
+    assert.equal(missingReadyProofResponse.status, 400);
+    const missingReadyProof = await missingReadyProofResponse.json();
+    assert.equal(missingReadyProof.reason, 'proof_required');
+
+    const apiReady = await fetch(`${base}/api/tasks/${apiReviewId}/ready`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'codex', proof: 'old API proof' }),
+    }).then(r => r.json());
+    assert.equal(apiReady.ok, true);
+
+    const prematureApiFinishResponse = await fetch(`${base}/api/tasks/${apiReviewId}/finish`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'codex', proof: 'skip accept' }),
+    });
+    assert.equal(prematureApiFinishResponse.status, 409);
+    const prematureApiFinish = await prematureApiFinishResponse.json();
+    assert.equal(prematureApiFinish.reason, 'not_open_or_claimed');
+
+    const apiRevise = await fetch(`${base}/api/tasks/${apiReviewId}/revise`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator', note: 'needs another pass' }),
+    }).then(r => r.json());
+    assert.equal(apiRevise.ok, true);
+    assert.equal(apiRevise.task.status, 'open');
+
+    const staleApiAcceptResponse = await fetch(`${base}/api/tasks/${apiReviewId}/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator' }),
+    });
+    assert.equal(staleApiAcceptResponse.status, 400);
+    const staleApiAccept = await staleApiAcceptResponse.json();
+    assert.equal(staleApiAccept.reason, 'proof_required');
+
+    const freshApiReady = await fetch(`${base}/api/tasks/${apiReviewId}/ready`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'codex',
+        proof: 'fresh API proof',
+        lesson: 'API accept keeps the ready lesson',
+        next: 'Create the API follow-up task',
+      }),
+    }).then(r => r.json());
+    assert.equal(freshApiReady.ok, true);
+    const invalidRewardResponse = await fetch(`${base}/api/tasks/${apiReviewId}/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator', reward: 0 }),
+    });
+    assert.equal(invalidRewardResponse.status, 400);
+    const invalidReward = await invalidRewardResponse.json();
+    assert.equal(invalidReward.reason, 'invalid_reward');
+
+    const freshApiAccept = await fetch(`${base}/api/tasks/${apiReviewId}/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'operator', createNext: true }),
+    }).then(r => r.json());
+    assert.equal(freshApiAccept.ok, true);
+    assert.equal(freshApiAccept.episode.proof, 'fresh API proof');
+    assert.equal(freshApiAccept.episode.lesson, 'API accept keeps the ready lesson');
+    assert.equal(freshApiAccept.episode.next_task_suggestion, 'Create the API follow-up task');
+    assert.ok(freshApiAccept.next_task_id);
 
     const listed = await fetch(`${base}/api/tasks`).then(r => r.json());
     assert.equal(listed.ok, true);
     assert.ok(listed.projection.tasks.some(t => t.id === finished.next_task_id && t.title === 'Connect the board to Swarlo leases'));
+    assert.ok(listed.projection.tasks.some(t => t.id === freshApiAccept.next_task_id && t.title === 'Create the API follow-up task'));
   } finally {
     if (child) child.kill('SIGTERM');
     cleanupTempDir(dir);
@@ -3875,6 +5192,9 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
     const noted = runCli(['task', 'say', id, 'Use dry-run before cloud writes', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(noted.status, 0, noted.stderr);
 
+    const ready = runCli(['task', 'ready', id, '--proof', 'dry-run sync proof', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
     const sync = runCli(['task', 'sync', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(sync.status, 0, sync.stderr);
     const payload = JSON.parse(sync.stdout);
@@ -3887,10 +5207,13 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
     assert.equal(payload.plan[0].body.owner_member_id, 'agent:codex');
     assert.equal(payload.plan[0].body.metadata.source, 'atris_cli_task');
     assert.equal(payload.plan[0].body.metadata.local_task_id, id);
+    assert.equal(payload.plan[0].body.metadata.approval_status, 'pending');
     assert.equal(payload.plan[0].body.metadata.swarlo.lease_owner, 'codex');
-    assert.equal(payload.plan[0].body.metadata.swarlo.lease_state, 'held');
+    assert.equal(payload.plan[0].body.metadata.swarlo.lease_state, 'none');
+    assert.equal(payload.plan[0].body.needs_approval, true);
     assert.equal(payload.plan[0].after_create[0].body.state, 'doing');
     assert.match(payload.plan[0].body.description, /Use dry-run before cloud writes/);
+    assert.match(payload.plan[0].body.description, /Proof: dry-run sync proof/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3919,6 +5242,14 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(created.status, 0, created.stderr);
     const id = JSON.parse(created.stdout).task_id;
 
+    const unrelated = runCli(['task', 'new', 'Repair notarized Mac installer', '--tag', 'release', '--json'], { cwd: dir, env });
+    assert.equal(unrelated.status, 0, unrelated.stderr);
+    const unrelatedId = JSON.parse(unrelated.stdout).task_id;
+
+    const genericLoop = runCli(['task', 'new', 'Loop tick: Validate local Claude /goal behavior', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(genericLoop.status, 0, genericLoop.stderr);
+    const genericLoopId = JSON.parse(genericLoop.stdout).task_id;
+
     const finished = runCli([
       'task', 'finish', id,
       '--proof', 'board shows lineage',
@@ -3939,7 +5270,12 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.ok(projection.streams.some(stream => stream.objective === 'Build the task factory into a compounding autonomous development surface'));
     const parent = projection.tasks.find(t => t.id === id);
     const child = projection.tasks.find(t => t.id === nextId);
+    const unrelatedTask = projection.tasks.find(t => t.id === unrelatedId);
+    const genericLoopTask = projection.tasks.find(t => t.id === genericLoopId);
     assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
+    assert.equal(unrelatedTask.objective, null);
+    assert.equal(genericLoopTask.objective, null);
+    assert.equal(parent.review.summary, 'This is the accepted outcome: improve task factory lineage view is done and counted as real work.');
     assert.equal(parent.review.proof, 'board shows lineage');
     assert.equal(parent.review.lesson, 'Visual tasks need goal and proof context');
     assert.deepEqual(parent.lineage.child_task_ids, [nextId]);
@@ -4190,6 +5526,16 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     initWorkspace(dir);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'briefs')));
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'syntheses')), false);
+    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /Atris is the source of truth/);
+    assert.match(agents, /AGENTS\.md`; do not turn it into a parallel brain/);
+    assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
+    assert.match(agents, /`atris task ready <id> --proof/);
+    assert.match(agents, /Human accept\s+-> task Done \+ Career XP awarded/);
+    assert.doesNotMatch(agents, /task finish <id> --proof/);
+    const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
+    assert.match(claudeCommand, /atris\/atris\.md/);
+    assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4235,13 +5581,13 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
 
 test('business slug matcher accepts config aliases', () => {
   const business = {
-    slug: 'atris-labs-1',
+    slug: 'atris-labs',
     name: 'Atris Labs',
-    config: { aliases: ['atris-labs'] },
+    config: { aliases: ['atris'] },
   };
 
   assert.equal(businessMatchesSlug(business, 'atris-labs'), true);
-  assert.equal(businessMatchesSlug(business, 'atris-labs-1'), true);
+  assert.equal(businessMatchesSlug(business, 'atris'), true);
   assert.equal(businessMatchesSlug(business, 'Atris Labs'), false);
   assert.equal(businessMatchesSlug(business, 'Atris Labs', { includeName: true }), true);
 });
@@ -4276,23 +5622,23 @@ test('business doctor plans safe cache repoints for stale duplicate rows', () =>
 test('business doctor accepts clean alias folders and asks for missing alias cache', () => {
   const atrisLabs = {
     id: 'biz-atris-labs',
-    slug: 'atris-labs-1',
+    slug: 'atris-labs',
     name: 'Atris Labs',
     workspace_id: 'workspace-atris-labs',
-    config: { aliases: ['atris-labs'] },
+    config: { aliases: ['atris'] },
   };
   const analysis = analyzeBusinessDoctor({
     cloudBusinesses: [atrisLabs],
     cache: {
-      'atris-labs-1': {
+      'atris-labs': {
         business_id: 'biz-atris-labs',
         workspace_id: 'workspace-atris-labs',
         name: 'Atris Labs',
-        slug: 'atris-labs-1',
+        slug: 'atris-labs',
       },
     },
     folderBindings: [{
-      name: 'atris-labs',
+      name: 'atris',
       isSymlink: false,
       hasAtris: true,
       hasBusinessJson: true,
@@ -4300,16 +5646,16 @@ test('business doctor accepts clean alias folders and asks for missing alias cac
         business_id: 'biz-atris-labs',
         workspace_id: 'workspace-atris-labs',
         name: 'Atris Labs',
-        slug: 'atris-labs',
-        canonical_slug: 'atris-labs-1',
+        slug: 'atris',
+        canonical_slug: 'atris-labs',
       },
     }],
   });
 
   assert.equal(analysis.issues.some((issue) => issue.code === 'folder-name-not-slug-or-alias'), false);
   assert.equal(analysis.issues.some((issue) => issue.code === 'folder-slug-mismatch'), false);
-  assert.equal(analysis.cacheUpdates['atris-labs'].business_id, 'biz-atris-labs');
-  assert.equal(analysis.cacheUpdates['atris-labs'].canonical_slug, 'atris-labs-1');
+  assert.equal(analysis.cacheUpdates.atris.business_id, 'biz-atris-labs');
+  assert.equal(analysis.cacheUpdates.atris.canonical_slug, 'atris-labs');
 });
 
 test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
@@ -6177,6 +7523,57 @@ slug: verify-loop
       remaining: 1,
     });
     assert.equal(wroteAgain, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('maybeWriteCompletedEndgameScorecard treats Review endgame work as active', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const now = new Date();
+    const yyyy = now.getFullYear().toString();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), `# TODO.md
+
+## Endgame
+
+**Slug:** review-loop
+**Picked:** ${dateStr} 00:00
+**Horizon:** Review is not shipped yet.
+**Source:** test
+
+## Backlog
+
+(Empty)
+
+## In Progress
+
+(Empty)
+
+## Review
+
+- **[T1]** Waiting for human accept [endgame]
+  **Verify:** node -e "process.exit(0)"
+
+## Completed
+
+(Empty)
+`, 'utf8');
+
+    const wrote = maybeWriteCompletedEndgameScorecard(dir, {
+      slug: 'review-loop',
+      pickedAt: `${dateStr} 00:00`,
+      remaining: 1,
+    });
+
+    assert.equal(wrote, false);
+    const scorecards = readScorecards(path.join(dir, 'atris'));
+    assert.equal(scorecards.length, 0);
   } finally {
     cleanupTempDir(dir);
   }

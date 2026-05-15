@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
-const { loadManifest, saveManifest, buildManifest, computeLocalHashes } = require('../lib/manifest');
+const { loadManifest, saveManifest, buildManifest, computeLocalHashes, isIgnoredSyncPath, filterSyncFiles } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
 const { assertSafeWorkspaceRoot } = require('../lib/workspace-safety');
@@ -59,6 +59,7 @@ function buildPushChangePlan({
   baseFiles = {},
   onlyPrefixes = null,
   readFileContent,
+  isLocalFilePresent,
 } = {}) {
   const filesToPush = [];
   const deletedPaths = [];
@@ -79,7 +80,9 @@ function buildPushChangePlan({
   for (const filePath of Object.keys(baseFiles)) {
     if (!pathInScope(filePath, onlyPrefixes)) continue;
     if (basenameOfManifestPath(filePath).startsWith('.')) continue;
+    if (isIgnoredSyncPath(filePath)) continue;
     if (!localFiles[filePath]) {
+      if (isLocalFilePresent && isLocalFilePresent(filePath)) continue;
       deletedPaths.push(filePath);
     }
   }
@@ -102,6 +105,116 @@ function isMassDeletePlan({ deletedPaths = [], filesToPush = [], unchangedCount 
   if (deleteCount >= 10 && survivingCount === 0) return true;
   if (deleteCount >= 25) return true;
   return deleteCount >= 10 && deleteCount > survivingCount;
+}
+
+function cleanManifestPath(filePath) {
+  const s = String(filePath || '').replace(/\\/g, '/');
+  return s.startsWith('/') ? s : `/${s}`;
+}
+
+function buildCloudHashMap(files = []) {
+  const cloudHashes = {};
+  for (const f of files) {
+    const normalizedPath = f && f.path ? cleanManifestPath(f.path) : null;
+    if (normalizedPath && f.hash) cloudHashes[normalizedPath] = f.hash;
+  }
+  return cloudHashes;
+}
+
+function isSyncReviewArtifactPath(filePath) {
+  const cleaned = cleanManifestPath(filePath);
+  return ['.remote', '.local', '.base', '.cloud'].some((suffix) => cleaned.endsWith(suffix));
+}
+
+function isNestedWorkspacePollutionPath(filePath, slug) {
+  const cleaned = cleanManifestPath(filePath);
+  const cleanSlug = String(slug || '').trim().replace(/^\/+|\/+$/g, '');
+  if (!cleanSlug) return false;
+  return cleaned === `/${cleanSlug}` || cleaned.startsWith(`/${cleanSlug}/`);
+}
+
+function analyzePushSafety({
+  filesToPush = [],
+  deletedPaths = [],
+  unchangedCount = 0,
+  onlyPrefixes = null,
+  slug = null,
+  allowBroadWorkspace = false,
+  allowNestedWorkspace = false,
+  allowSyncArtifacts = false,
+} = {}) {
+  const changedPaths = [
+    ...filesToPush.map((file) => cleanManifestPath(file.path)),
+    ...deletedPaths.map((filePath) => cleanManifestPath(filePath)),
+  ];
+  const changeCount = changedPaths.length;
+  const rootChanged = changedPaths.filter((filePath) => filePath.split('/').filter(Boolean).length === 1);
+  const topLevels = new Set(changedPaths.map((filePath) => filePath.split('/').filter(Boolean)[0]).filter(Boolean));
+  const nestedWorkspacePaths = changedPaths.filter((filePath) => isNestedWorkspacePollutionPath(filePath, slug));
+  const syncArtifactPaths = changedPaths.filter(isSyncReviewArtifactPath);
+  const reasons = [];
+
+  if (nestedWorkspacePaths.length > 0 && !allowNestedWorkspace) {
+    reasons.push(`nested workspace folder detected (${nestedWorkspacePaths.length} path${nestedWorkspacePaths.length === 1 ? '' : 's'})`);
+  }
+  if (syncArtifactPaths.length > 0 && !allowSyncArtifacts) {
+    reasons.push(`sync review artifacts detected (${syncArtifactPaths.length} path${syncArtifactPaths.length === 1 ? '' : 's'})`);
+  }
+  if (!onlyPrefixes && !allowBroadWorkspace) {
+    if (changeCount >= 25) {
+      reasons.push(`large unscoped workspace change (${changeCount} paths)`);
+    } else if (rootChanged.length >= 5) {
+      reasons.push(`many root files changed (${rootChanged.length} paths)`);
+    } else if (topLevels.size >= 8 && changeCount >= 10) {
+      reasons.push(`many top-level areas changed (${topLevels.size} areas)`);
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    changedPaths,
+    changeCount,
+    unchangedCount,
+    rootChanged,
+    topLevelCount: topLevels.size,
+    nestedWorkspacePaths,
+    syncArtifactPaths,
+  };
+}
+
+function renderPushSafetyBlock(report, slug) {
+  const lines = [];
+  lines.push('');
+  lines.push('  Quest gate: review before publish');
+  lines.push('  ✗ Refusing unsafe workspace push.');
+  lines.push('');
+  lines.push(`    Planned change: ${report.changeCount} path${report.changeCount === 1 ? '' : 's'}, ${report.unchangedCount} unchanged.`);
+  for (const reason of report.reasons) {
+    lines.push(`    Reason: ${reason}.`);
+  }
+  const examples = [
+    ...report.nestedWorkspacePaths,
+    ...report.syncArtifactPaths,
+    ...report.changedPaths,
+  ];
+  const uniqueExamples = [...new Set(examples)].slice(0, 8);
+  if (uniqueExamples.length > 0) {
+    lines.push('');
+    lines.push('    First paths to review:');
+    uniqueExamples.forEach((filePath) => lines.push(`      - ${filePath.replace(/^\//, '')}`));
+  }
+  lines.push('');
+  lines.push('    Safe moves:');
+  lines.push(`      atris push ${slug || ''} --dry-run --only atris/now.md`.trimEnd());
+  lines.push('      atris sync --review');
+  lines.push('');
+  lines.push('    If this broad publish is intentional, rerun with:');
+  lines.push('      --allow-broad-workspace');
+  if (report.nestedWorkspacePaths.length > 0) lines.push('      --allow-nested-workspace');
+  if (report.syncArtifactPaths.length > 0) lines.push('      --allow-sync-artifacts');
+  lines.push('');
+  return `${lines.join('\n')}\n`;
 }
 
 function parsePushTimeoutSec(argv = process.argv, defaultSec = 120) {
@@ -135,6 +248,9 @@ async function pushAtris() {
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
     console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
+    console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
+    console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
+    console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
     process.exit(0);
   }
 
@@ -162,6 +278,9 @@ async function pushAtris() {
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
     console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
+    console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
+    console.log('  --allow-nested-workspace     Explicitly allow nested <slug>/ paths');
+    console.log('  --allow-sync-artifacts       Explicitly allow *.remote/*.local/*.base/*.cloud files');
     process.exit(0);
   }
 
@@ -169,6 +288,9 @@ async function pushAtris() {
   const dryRun = process.argv.includes('--dry-run');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
+  const allowBroadWorkspace = process.argv.includes('--allow-broad-workspace');
+  const allowNestedWorkspace = process.argv.includes('--allow-nested-workspace');
+  const allowSyncArtifacts = process.argv.includes('--allow-sync-artifacts');
   const allowCrossRootManifest = process.argv.includes('--allow-cross-root-manifest');
   const timeoutSec = parsePushTimeoutSec(process.argv);
 
@@ -206,9 +328,8 @@ async function pushAtris() {
   // Refuse to walk/upload dangerous paths ($HOME, /, /Users, system dirs).
   assertSafeWorkspaceRoot(sourceDir, { slug, op: 'push from' });
 
-  if (!onlyPrefixes && isBusinessWorkspaceRoot(sourceDir)) {
-    onlyPrefixes = ['/atris/'];
-  }
+  // Push the whole business workspace by default. Brain-only sync must be
+  // explicit with --only atris/ so root workspace files cannot be missed.
 
   // Resolve business — always refresh from API
   let businessId, workspaceId, businessName, resolvedSlug;
@@ -310,11 +431,8 @@ async function pushAtris() {
       { method: 'GET', token: creds.token, timeoutMs: 60000 }
     );
     if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
-      const cloudHashes = {};
-      for (const f of snapshotResult.data.files) {
-        if (f.path && f.hash) cloudHashes[f.path] = f.hash;
-      }
-      const manifestFiles = (manifest && manifest.files) || {};
+      const cloudHashes = filterSyncFiles(buildCloudHashMap(snapshotResult.data.files));
+      const manifestFiles = filterSyncFiles((manifest && manifest.files) || {});
       const driftFiles = [];
       // Direction 1: cloud has files the manifest doesn't know about, OR
       // cloud's hash differs from what we last pulled (someone changed it).
@@ -380,18 +498,36 @@ async function pushAtris() {
 
   // Compare local hashes to manifest — NO server call needed
   // Files where local hash differs from manifest = changed locally
-  const baseFiles = (manifest && manifest.files) ? manifest.files : {};
+  const baseFiles = filterSyncFiles((manifest && manifest.files) ? manifest.files : {});
   const { filesToPush, deletedPaths, unchangedCount } = buildPushChangePlan({
     localFiles,
     baseFiles,
     onlyPrefixes,
     readFileContent: (filePath) => fs.readFileSync(path.join(sourceDir, filePath.replace(/^\//, '')), 'utf8'),
+    isLocalFilePresent: (filePath) => fs.existsSync(path.join(sourceDir, filePath.replace(/^\//, ''))),
   });
 
   if (filesToPush.length === 0 && deletedPaths.length === 0) {
     console.log('\n  Already up to date.\n');
     await emit('success', { files_unchanged: unchangedCount });
     return;
+  }
+
+  const safetyReport = analyzePushSafety({
+    filesToPush,
+    deletedPaths,
+    unchangedCount,
+    onlyPrefixes,
+    slug: resolvedSlug || slug,
+    allowBroadWorkspace,
+    allowNestedWorkspace,
+    allowSyncArtifacts,
+  });
+
+  if (!safetyReport.ok && !dryRun) {
+    process.stdout.write(renderPushSafetyBlock(safetyReport, resolvedSlug || slug));
+    await emit('blocked', { error_detail: safetyReport.reasons.join('; ') });
+    process.exit(1);
   }
 
   // Dry run — show what would be pushed without pushing
@@ -412,6 +548,10 @@ async function pushAtris() {
     if (deletedPaths.length > 0) {
       console.log('  Deletes require an explicit real push with --delete.');
       console.log('  If these deletes are unexpected, run `atris pull --keep-local` first.\n');
+    }
+    if (!safetyReport.ok) {
+      process.stdout.write(renderPushSafetyBlock(safetyReport, resolvedSlug || slug));
+      console.log('  Dry run only: nothing was sent.\n');
     }
     return;
   }
@@ -746,7 +886,12 @@ module.exports = {
   resolvePushSourceDir,
   canonicalWorkspaceRoot,
   basenameOfManifestPath,
+  buildCloudHashMap,
   isBusinessWorkspaceRoot,
   isMassDeletePlan,
   parsePushTimeoutSec,
+  analyzePushSafety,
+  isNestedWorkspacePollutionPath,
+  isSyncReviewArtifactPath,
+  renderPushSafetyBlock,
 };

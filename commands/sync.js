@@ -415,7 +415,7 @@ function syncAtris() {
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
   const skillContent = `---
 name: atris
-description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+description: Atris workspace navigation for atris repos, TODO files, tasks, MAP.md, backlog, and where-is-X questions.
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 
@@ -440,7 +440,8 @@ Commands: plan → do → review
 Key behaviors:
 - Read PERSONA.md (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
-- Update TODO.md (claim tasks, delete when done)`;
+- Use \`atris task\` for claims, proof, ready, and accept
+- Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks`;
 
   if (!fs.existsSync(claudeSkillsDir)) {
     fs.mkdirSync(claudeSkillsDir, { recursive: true });
