@@ -71,10 +71,12 @@ async function planAtris(userInput = null) {
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
-  
+
   const config = loadConfig();
-  const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
-  
+  // Auto-enable local execution mode for "2 fast" pattern (bypasses backend API requirement)
+  const isFastMode = userInput && userInput.toLowerCase().includes('2 fast');
+  const executionMode = executeFlag ? 'agent' : (isFastMode ? 'local' : (config.execution_mode || 'prompt'));
+
   const targetDir = path.join(process.cwd(), 'atris');
   const navigatorFile = fs.existsSync(path.join(targetDir, 'team', 'navigator', 'MEMBER.md'))
     ? path.join(targetDir, 'team', 'navigator', 'MEMBER.md')
@@ -252,7 +254,11 @@ async function planAtris(userInput = null) {
   console.log('   Format: - **T#:** Description [explore|execute]');
   console.log('4) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, User reaction, Pattern)');
-  console.log('5) Stop. Do NOT execute (run `atris do` to build).');
+  if (isFastMode) {
+    console.log('5) EXECUTE MODE ENABLED: Will execute tasks directly.');
+  } else {
+    console.log('5) Stop. Do NOT execute (run `atris do` to build).');
+  }
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('💡 After planning: Run "atris do" to execute the build');
@@ -261,9 +267,116 @@ async function planAtris(userInput = null) {
   }
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  
+
   // Check execution mode
-  if (executionMode === 'agent') {
+  if (executionMode === 'local') {
+    // Local execution mode: call backend Agent SDK for full tool access
+    console.log('🚀 EXECUTING VIA AGENT SDK (2 fast mode)');
+    console.log('');
+
+    // Extract the actual command after "2 fast"
+    const actualCommand = userInput.replace(/2\s*fast/i, '').trim();
+    if (!actualCommand) {
+      console.log('⚠ No command provided after "2 fast"');
+      console.log('Usage: atris 2 fast <your command>');
+      process.exit(1);
+    }
+
+    console.log(`Running: ${actualCommand}`);
+    console.log('');
+
+    // Call backend Agent SDK endpoint
+    const { apiRequestJson } = require('../utils/api');
+    const { ensureValidCredentials } = require('../utils/auth');
+
+    try {
+      // Check authentication
+      const ensured = await ensureValidCredentials(apiRequestJson);
+      if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
+        console.log('⚠ Backend not authenticated. Falling back to shell execution.');
+        console.log('Run "atris login" to enable full Agent SDK capabilities.');
+        console.log('');
+
+        // Fallback to shell execution
+        const { execSync } = require('child_process');
+        const stdout = execSync(actualCommand, {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          stdio: 'inherit'
+        });
+        if (stdout) console.log(stdout);
+        return;
+      }
+
+      // Call backend Agent SDK endpoint (localhost for 2 fast mode)
+      const http = require('http');
+      const response = await new Promise((resolve, reject) => {
+        const postData = JSON.stringify({
+          message: actualCommand,
+          workspace_path: process.cwd(),
+          model: 'claude-sonnet-4-6'
+        });
+
+        const options = {
+          hostname: '127.0.0.1',
+          port: 8000,
+          path: '/api/agent-sdk/execute',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        };
+
+        const req = http.request(options, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(new Error(`Failed to parse response: ${data}`));
+            }
+          });
+        });
+
+        req.on('error', reject);
+        req.setTimeout(60000, () => {
+          req.destroy();
+          reject(new Error('Request timeout after 60s'));
+        });
+        req.write(postData);
+        req.end();
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      console.log('✅ Agent SDK execution completed');
+      if (response.result) {
+        console.log(JSON.stringify(response.result, null, 2));
+      }
+    } catch (error) {
+      console.error(`✗ Error: ${error.message}`);
+      console.log('Falling back to shell execution...');
+
+      // Fallback to shell execution on error
+      const { execSync } = require('child_process');
+      try {
+        const stdout = execSync(actualCommand, {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          stdio: 'inherit'
+        });
+        if (stdout) console.log(stdout);
+      } catch (shellError) {
+        console.error(`✗ Shell execution also failed: ${shellError.message}`);
+        process.exit(1);
+      }
+    }
+    return;
+  } else if (executionMode === 'agent') {
     // Agent mode: execute via backend API
     if (!config.agent_id) {
       throw new Error('No agent selected. Run "atris agent" first.');
@@ -282,12 +395,12 @@ async function planAtris(userInput = null) {
     if (navigatorSpec) {
       systemPrompt += navigatorSpec + '\n\n';
     }
-    
+
     // Reference MAP.md and PERSONA.md
     if (fs.existsSync(personaPath)) {
       systemPrompt += '## PERSONA.md\n' + fs.readFileSync(personaPath, 'utf8') + '\n\n';
     }
-    
+
     if (mapFileRef) {
       systemPrompt += `## MAP.md\nRead this file for file:line references: ${mapFileRef}\n\n`;
     }
@@ -295,7 +408,7 @@ async function planAtris(userInput = null) {
     // Build user prompt with context
     let userPrompt = `You are the Navigator. Take ideas from Inbox → break them down into perfect, manageable tasks.\n\n`;
     userPrompt += `⚠️ CRITICAL: You MUST create visualizations BEFORE writing tasks!\n\n`;
-    
+
     if (userInput) {
       userPrompt += `## DIRECT REQUEST:\n${userInput}\n\n`;
     }
@@ -305,11 +418,11 @@ async function planAtris(userInput = null) {
     } else {
       userPrompt += `## INBOX CONTEXT:\n(No items in Inbox - check logs/YYYY/YYYY-MM-DD.md for inbox items)\n\n`;
     }
-    
+
     if (taskContexts) {
       userPrompt += `## CURRENT TODO.md:\n${taskContexts}\n\n`;
     }
-    
+
     userPrompt += `Your job (execute these steps):\n\n`;
     userPrompt += `STEP 1: Generate ASCII visualizations for user approval\n`;
     userPrompt += `   Create diagrams showing architecture, flows, schemas, UI/UX.\n`;
@@ -377,7 +490,7 @@ async function planAtris(userInput = null) {
           console.error(`\n❌ Execution error: ${error.message}`);
         },
       });
-      
+
       console.log('\n');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('');
@@ -399,10 +512,10 @@ async function doAtris() {
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
-  
+
   const config = loadConfig();
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
-  
+
   const cwd = process.cwd();
   const targetDir = path.join(cwd, 'atris');
   const executorFile = fs.existsSync(path.join(targetDir, 'team', 'executor', 'MEMBER.md'))
@@ -431,7 +544,7 @@ async function doAtris() {
       context = 'ROOT';
     }
   }
-  
+
   // Load executor spec
   const executorSpec = fs.readFileSync(executorFile, 'utf8');
 
@@ -472,7 +585,7 @@ async function doAtris() {
   if (!taskSource) {
     taskSource = 'atris/TODO.md';
   }
-  
+
   // All tasks available (no tag filtering)
   const filteredTasks = tasksContent;
 
@@ -512,7 +625,7 @@ async function doAtris() {
   } catch {
     workspaceSummary = null;
   }
-  
+
   // Prompt-mode output (keep concise by default)
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
@@ -631,7 +744,7 @@ async function doAtris() {
   }
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  
+
   // Check execution mode
   if (executionMode === 'agent') {
     // Agent mode: execute via backend API
@@ -665,13 +778,13 @@ async function doAtris() {
     // Build user prompt with context
     let userPrompt = `⚠️ CRITICAL: Execute tasks NOW. Use file tools to edit code, terminal to run commands.\n\n`;
     userPrompt += `You are the Executor. Get it done, precisely, following instructions perfectly.\n\n`;
-    
+
     if (filteredTasks) {
       userPrompt += `## TASKS TO EXECUTE (from ${taskSource}):\n${filteredTasks}\n\n`;
     } else {
       userPrompt += `## TASKS TO EXECUTE:\n(No tasks found - check TODO.md)\n\n`;
     }
-    
+
     userPrompt += `Your process (EXECUTE these steps):\n`;
     userPrompt += `1. Read tasks from TODO.md (shown above)\n`;
     userPrompt += `2. For each task: Show ASCII visualization first (especially complex changes)\n`;
@@ -732,7 +845,7 @@ async function doAtris() {
           console.error(`\n❌ Execution error: ${error.message}`);
         },
       });
-      
+
       console.log('\n');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('');
@@ -752,10 +865,10 @@ async function reviewAtris() {
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
-  
+
   const config = loadConfig();
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');
-  
+
   const targetDir = path.join(process.cwd(), 'atris');
   const validatorFile = fs.existsSync(path.join(targetDir, 'team', 'validator', 'MEMBER.md'))
     ? path.join(targetDir, 'team', 'validator', 'MEMBER.md')
@@ -800,7 +913,7 @@ async function reviewAtris() {
   // Read journal for timestamp context (History)
   const { logFile, dateFormatted } = getLogPath();
   let journalHistory = '';
-  
+
   // Load today's log
   if (fs.existsSync(logFile)) {
     journalHistory += `## TODAY (${dateFormatted}):\n` + fs.readFileSync(logFile, 'utf8') + '\n\n';
@@ -823,7 +936,7 @@ async function reviewAtris() {
     // Sort desc, take top 3
     allLogs.sort().reverse();
     const recentLogs = allLogs.slice(0, 3);
-    
+
     if (recentLogs.length > 0) {
       journalHistory += `## RECENT HISTORY (Drift Check):\n`;
       for (const log of recentLogs) {
@@ -998,7 +1111,7 @@ async function reviewAtris() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('');
   }
-  
+
   // Check execution mode
   if (executionMode === 'agent') {
     // Agent mode: execute via backend API
@@ -1022,12 +1135,12 @@ async function reviewAtris() {
     if (testingGuide) {
       systemPrompt += '## TESTING GUIDE\n' + testingGuide + '\n\n';
     }
-    
+
     const personaFile = path.join(targetDir, 'PERSONA.md');
     if (fs.existsSync(personaFile)) {
       systemPrompt += '## PERSONA.md\n' + fs.readFileSync(personaFile, 'utf8') + '\n\n';
     }
-    
+
     if (mapPath) {
       systemPrompt += `## MAP.md\nRead this file for file:line references: ${mapPath}\n\n`;
     }
@@ -1043,7 +1156,7 @@ async function reviewAtris() {
     userPrompt += `  5. Detect Drift: Scan the Journal History below. Do you see the same friction 2x?\n`;
     userPrompt += `  6. If issues found: report → "atris do" fixes → "atris review" again\n`;
     userPrompt += `  7. Repeat until: "✅ All good. Ready for human testing."\n\n`;
-    
+
     if (taskContexts) {
       userPrompt += `## TODO.md:\n${taskContexts}\n\n`;
     }
@@ -1051,7 +1164,7 @@ async function reviewAtris() {
     if (journalHistory) {
       userPrompt += `## JOURNAL HISTORY (For Evolution/Drift Check):\n${journalHistory}\n\n`;
     }
-    
+
     userPrompt += `Your job:\n`;
     userPrompt += `  • Verify everything works\n`;
     userPrompt += `  • Find all plausible loopholes; patch them or name residual risk\n`;
@@ -1110,7 +1223,7 @@ async function reviewAtris() {
           console.error(`\n❌ Execution error: ${error.message}`);
         },
       });
-      
+
       console.log('\n');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('');
@@ -1213,9 +1326,92 @@ async function reviewAtris() {
   });
 }
 
+/**
+ * Fast Agent SDK execution - for "atris go" command.
+ * Direct execution without planning workflow, like "devin" or "cursor agent".
+ */
+async function executeAgentSDKFast(userInput) {
+  const http = require('http');
+
+  console.log(`⚡ Executing: ${userInput}`);
+  console.log('');
+
+  try {
+    const postData = JSON.stringify({
+      message: userInput,
+      workspace_path: process.cwd(),
+      model: 'claude-sonnet-4-6'
+    });
+
+    const options = {
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: '/api/agent-sdk/execute',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const response = await new Promise((resolve, reject) => {
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error(`Failed to parse response: ${data}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.setTimeout(120000, () => {
+        req.destroy();
+        reject(new Error('Request timeout after 120s'));
+      });
+      req.write(postData);
+      req.end();
+    });
+
+    if (response.error) {
+      throw new Error(response.error);
+    }
+
+    // Display results in a clean format
+    if (response.result && Array.isArray(response.result)) {
+      for (const event of response.result) {
+        if (event.type === 'assistant' && event.content) {
+          for (const block of event.content) {
+            if (block.type === 'text') {
+              console.log(block.text);
+            } else if (block.type === 'tool_use') {
+              console.log(`\n⚙️  ${block.tool_name}`);
+            }
+          }
+        } else if (event.type === 'result') {
+          console.log(`\n✅ Done in ${event.duration_ms}ms`);
+          if (event.cost_usd) {
+            console.log(`💰 Cost: $${event.cost_usd.toFixed(4)}`);
+          }
+        }
+      }
+    }
+
+  } catch (error) {
+    console.error(`✗ Error: ${error.message}`);
+    console.log('');
+    console.log('💡 Make sure the AtrisOS backend is running on port 8000');
+    console.log('   Start it with: cd /Users/keshavrao/arena/atrisos-backend/backend && python -m uvicorn main:app --reload --port 8000');
+    process.exit(1);
+  }
+}
 
 module.exports = {
   planAtris,
   doAtris,
-  reviewAtris
+  reviewAtris,
+  executeAgentSDKFast
 };

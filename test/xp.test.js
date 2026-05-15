@@ -21,6 +21,11 @@ function writeJsonl(filePath, rows) {
   fs.writeFileSync(filePath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf8');
 }
 
+function writeJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
 function taskEpisode(workspace, overrides = {}) {
   return {
     schema: 'atris.task_episode.v1',
@@ -39,6 +44,7 @@ function taskEpisode(workspace, overrides = {}) {
       value: overrides.xp || 1,
     },
     proof: overrides.proof || 'accepted proof',
+    goal: overrides.goal || null,
     career_xp: {
       eligible: true,
       reward: overrides.xp || 1,
@@ -49,7 +55,7 @@ function taskEpisode(workspace, overrides = {}) {
   };
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -57,10 +63,52 @@ function runCli(args, { cwd } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      CODEX_THREAD_ID: '',
+      CODEX_STATE_DB: path.join(os.tmpdir(), 'atris-xp-test-no-codex-state.sqlite'),
+      ...env,
     },
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function runSqlite(dbPath, sql) {
+  const result = spawnSync('sqlite3', [dbPath, sql], { encoding: 'utf8' });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout;
+}
+
+function seedCodexGoalState(workspace, overrides = {}) {
+  const dbPath = path.join(workspace, 'codex-state.sqlite');
+  const threadId = overrides.threadId || 'thread-session';
+  const goalId = overrides.goalId || 'goal-session';
+  const now = overrides.now || Date.now();
+  const threadCwd = workspace.replace(/'/g, "''");
+  runSqlite(dbPath, `
+CREATE TABLE threads (
+  id TEXT PRIMARY KEY,
+  cwd TEXT NOT NULL,
+  title TEXT NOT NULL,
+  updated_at_ms INTEGER
+);
+CREATE TABLE thread_goals (
+  thread_id TEXT PRIMARY KEY NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  goal_id TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  status TEXT NOT NULL,
+  token_budget INTEGER,
+  tokens_used INTEGER NOT NULL DEFAULT 0,
+  time_used_seconds INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+INSERT INTO threads (id, cwd, title, updated_at_ms)
+VALUES ('${threadId}', '${threadCwd}', 'session capture thread', ${now});
+INSERT INTO thread_goals (thread_id, goal_id, objective, status, token_budget, tokens_used, time_used_seconds, created_at_ms, updated_at_ms)
+VALUES ('${threadId}', '${goalId}', 'Capture tonight work', 'active', NULL, 42, 17, ${now - 1000}, ${now});
+`);
+  return { dbPath, threadId, goalId };
 }
 
 test('xp status --all aggregates verified local workspace ledgers', () => {
@@ -101,6 +149,18 @@ test('xp status --all aggregates verified local workspace ledgers', () => {
     assert.ok(payload.workspaces.every(workspace => workspace.included));
     assert.equal(payload.latest_accepted_proof.workspace_name, 'beta');
     assert.equal(payload.latest_accepted_proof.proof, 'beta proof accepted');
+
+    const defaultStatus = runCli(['xp', 'status', '--root', root, '--json'], { cwd: alpha });
+    assert.equal(defaultStatus.status, 0, defaultStatus.stderr || defaultStatus.stdout);
+    const defaultPayload = JSON.parse(defaultStatus.stdout);
+    assert.equal(defaultPayload.schema, 'atris.career_xp_profile.v1');
+    assert.equal(defaultPayload.total_xp, 5);
+
+    const localStatus = runCli(['xp', 'status', '--local', '--json'], { cwd: alpha });
+    assert.equal(localStatus.status, 0, localStatus.stderr || localStatus.stdout);
+    const localPayload = JSON.parse(localStatus.stdout);
+    assert.equal(localPayload.schema, 'atris.career_xp_projection.v1');
+    assert.equal(localPayload.total_xp, 2);
   } finally {
     cleanupTempDir(root);
   }
@@ -155,5 +215,262 @@ test('xp status --all excludes tampered local ledgers from totals', () => {
     assert.match(payload.integrity.warnings[0].reason, /integrity:tampered/);
   } finally {
     cleanupTempDir(root);
+  }
+});
+
+test('xp session writes a local capsule for the current proof-backed work window', () => {
+  const workspace = makeTempDir();
+  try {
+    const now = Date.now();
+    const old = now - 36 * 60 * 60 * 1000;
+    const acceptedTaskId = 'task-accepted';
+    const reviewTaskId = 'task-review';
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'old-accepted',
+        task_id: 'task-old',
+        title: 'Old accepted task',
+        xp: 9,
+        proof: 'old proof accepted',
+        created_at: new Date(old).toISOString(),
+      }),
+      taskEpisode(workspace, {
+        episode_id: 'session-accepted',
+        task_id: acceptedTaskId,
+        title: 'Ship session capsule',
+        xp: 2,
+        proof: 'session proof accepted',
+        created_at: new Date(now).toISOString(),
+        goal: {
+          id: 'goal-session-capture',
+          objective: 'Capture tonight work',
+          status: 'active',
+        },
+      }),
+    ]);
+    writeJson(path.join(workspace, '.atris', 'state', 'tasks.projection.json'), {
+      schema: 'atris.tasks_projection.v1',
+      tasks: [
+        {
+          id: acceptedTaskId,
+          display_id: 'XP-10',
+          title: 'Ship session capsule',
+          status: 'done',
+          tag: 'career-xp',
+          claimed_by: 'codex',
+          created_at: now - 1000,
+          updated_at: now,
+          done_at: now,
+          review: {
+            approval_status: 'accepted',
+            proof: 'session proof accepted',
+            summary: 'The work session now has a capsule.',
+          },
+        },
+        {
+          id: reviewTaskId,
+          display_id: 'XP-11',
+          title: 'Review pending proof',
+          status: 'review',
+          tag: 'career-xp',
+          claimed_by: 'codex',
+          created_at: now - 500,
+          updated_at: now,
+          review: {
+            approval_status: 'pending',
+            proof: 'pending proof',
+            summary: 'Waiting for human judgment.',
+          },
+        },
+        {
+          id: 'task-old',
+          display_id: 'XP-1',
+          title: 'Old accepted task',
+          status: 'done',
+          tag: 'career-xp',
+          created_at: old,
+          updated_at: old,
+          done_at: old,
+        },
+      ],
+    });
+
+    const codexState = seedCodexGoalState(workspace, { now });
+    const result = runCli([
+      'xp',
+      'session',
+      '--workspace',
+      workspace,
+      '--since',
+      'today',
+      '--codex-state',
+      codexState.dbPath,
+      '--thread',
+      codexState.threadId,
+      '--json',
+    ], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.schema, 'atris.career_xp_session_capsule.v1');
+    assert.equal(payload.workspace_root, workspace);
+    assert.equal(payload.xp.delta_xp, 2);
+    assert.equal(payload.xp.before_total_xp, 9);
+    assert.equal(payload.xp.after_total_xp, 11);
+    assert.equal(payload.xp.integrity_status, 'verified');
+    assert.equal(payload.tasks.touched_count, 2);
+    assert.equal(payload.tasks.review_count, 1);
+    assert.equal(payload.tasks.accepted_count, 1);
+    assert.equal(payload.proof.receipts_count, 1);
+    assert.equal(payload.proof.latest_accepted.proof, 'session proof accepted');
+    assert.equal(payload.goals.touched[0].label, 'Capture tonight work');
+    assert.equal(payload.goals.touched[0].provider, 'codex');
+    assert.equal(payload.goals.touched[0].tokens_used, 42);
+    assert.equal(payload.goals.touched[0].time_used_seconds, 17);
+    assert.match(payload.next_quest, /Review XP-11/);
+    assert.ok(fs.existsSync(payload.files.session_path));
+    const written = JSON.parse(fs.readFileSync(payload.files.session_path, 'utf8'));
+    assert.equal(written.schema, 'atris.career_xp_session_capsule.v1');
+    assert.equal(written.xp.delta_xp, 2);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp session skips a partial trailing task episode without advancing the cursor', () => {
+  const workspace = makeTempDir();
+  try {
+    const now = new Date().toISOString();
+    const episodePath = path.join(workspace, '.atris', 'state', 'task_episodes.jsonl');
+    const validEpisode = taskEpisode(workspace, {
+      episode_id: 'partial-safe',
+      task_id: 'task-partial-safe',
+      title: 'Keep local XP capture durable',
+      xp: 2,
+      proof: 'valid proof before a partial write',
+      created_at: now,
+      goal: {
+        id: 'goal-partial-safe',
+        objective: 'Keep local XP capture durable',
+        status: 'active',
+      },
+    });
+    fs.mkdirSync(path.dirname(episodePath), { recursive: true });
+    fs.writeFileSync(
+      episodePath,
+      `${JSON.stringify(validEpisode)}\n{"schema":"atris.task_episode.v1","episode_id":`,
+      'utf8'
+    );
+
+    const result = runCli([
+      'xp',
+      'session',
+      '--workspace',
+      workspace,
+      '--since',
+      'today',
+      '--json',
+    ], { cwd: workspace });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.xp.delta_xp, 2);
+    assert.equal(payload.proof.receipts_count, 1);
+    assert.ok(payload.warnings.includes('task_episodes_partial_tail_waiting'));
+    assert.equal(payload.goals.touched[0].label, 'Keep local XP capture durable');
+
+    const cursor = JSON.parse(fs.readFileSync(path.join(workspace, '.atris', 'state', 'career_xp.cursor.json'), 'utf8'));
+    assert.equal(cursor.last_episode_id, 'partial-safe');
+    assert.equal(cursor.skipped_partial_tail, true);
+    assert.ok(cursor.bytes_read < cursor.source_size);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp status cursor stays byte-aligned after newline-terminated JSONL append', () => {
+  const workspace = makeTempDir();
+  try {
+    const episodePath = path.join(workspace, '.atris', 'state', 'task_episodes.jsonl');
+    writeJsonl(episodePath, [
+      taskEpisode(workspace, {
+        episode_id: 'cursor-first',
+        task_id: 'task-cursor-first',
+        title: 'First cursor-safe proof',
+        xp: 1,
+        proof: 'first proof accepted',
+      }),
+    ]);
+
+    const first = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+    assert.equal(firstPayload.collected_receipts, 1);
+    assert.equal(firstPayload.integrity.cursor.bytes_read, fs.statSync(episodePath).size);
+
+    const cursorPath = path.join(workspace, '.atris', 'state', 'career_xp.cursor.json');
+    const staleCursor = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+    staleCursor.bytes_read = fs.statSync(episodePath).size + 1;
+    staleCursor.source_size = fs.statSync(episodePath).size;
+    writeJson(cursorPath, staleCursor);
+
+    fs.appendFileSync(
+      episodePath,
+      `${JSON.stringify(taskEpisode(workspace, {
+        episode_id: 'cursor-second',
+        task_id: 'task-cursor-second',
+        title: 'Second cursor-safe proof',
+        xp: 1,
+        proof: 'second proof accepted',
+      }))}\n`,
+      'utf8'
+    );
+
+    const second = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.equal(secondPayload.collected_receipts, 1);
+    assert.equal(secondPayload.total_xp, 2);
+    assert.equal(secondPayload.latest_accepted_proof.proof, 'second proof accepted');
+    assert.equal(secondPayload.integrity.cursor.bytes_read, fs.statSync(episodePath).size);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp session reports an unreadable task projection without blocking verified XP', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'projection-safe',
+        task_id: 'task-projection-safe',
+        title: 'Capture XP with a bad task projection',
+        xp: 1,
+        proof: 'verified proof survives bad projection',
+        created_at: new Date().toISOString(),
+      }),
+    ]);
+    const projectionPath = path.join(workspace, '.atris', 'state', 'tasks.projection.json');
+    fs.mkdirSync(path.dirname(projectionPath), { recursive: true });
+    fs.writeFileSync(projectionPath, '{"schema":"atris.tasks_projection.v1","tasks":[', 'utf8');
+
+    const result = runCli([
+      'xp',
+      'session',
+      '--workspace',
+      workspace,
+      '--since',
+      'today',
+      '--json',
+    ], { cwd: workspace });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.xp.delta_xp, 1);
+    assert.equal(payload.proof.receipts_count, 1);
+    assert.equal(payload.tasks.touched_count, 0);
+    assert.ok(payload.warnings.some(warning => warning.startsWith('task_projection_unreadable:')));
+  } finally {
+    cleanupTempDir(workspace);
   }
 });

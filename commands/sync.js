@@ -415,7 +415,7 @@ function syncAtris() {
   const claudeSkillFile = path.join(claudeSkillsDir, 'SKILL.md');
   const skillContent = `---
 name: atris
-description: Atris workspace navigation. Triggers on: atris, TODO, tasks, MAP.md, backlog, "where is X?"
+description: Atris workspace navigation for atris repos, TODO files, tasks, MAP.md, backlog, and where-is-X questions.
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit
 ---
 

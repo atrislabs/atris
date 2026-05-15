@@ -39,6 +39,16 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
 
   for (const t of todo.backlog) {
     if (t.tags && t.tags.includes('unverified')) continue;
+    // Endgame tasks must declare an explicit **Verify:** field — runTaskOnce
+    // halts the whole loop if Verify is missing (autopilot.js:1162, lessons.md
+    // no-verify-field 8× in 2026-05-08..10). Skip-at-picker beats halt-at-runner.
+    if (t.tag === 'endgame' && !t.verify) continue;
+    // Skip endgame tasks whose Verify clause already passed pre-work (lesson
+    // `verify-not-falsifiable` within the last 7 days). Without this, the
+    // picker re-selects the same already-shipped task every cron tick,
+    // burning ~95s per fire to halt at the falsifiability gate. Per 3
+    // consecutive halts on the same task 2026-05-11 06:12-06:30.
+    if (t.tag === 'endgame' && hasRecentVerifyPrePass(cwd, t.title)) continue;
     if (t.tag === 'endgame' && !skipped.has(t.title)) {
       suggestions.push({
         task: t.title,
@@ -697,6 +707,12 @@ function writeLesson(cwd, slug, status, explanation) {
   }
 
   let content = fs.readFileSync(lessonsPath, 'utf8');
+  // Same-day dedup: if an identical line already exists, skip the write. A
+  // cron firing every 13min produced 5 identical no-verify-field lessons in
+  // one day (2026-05-08) before the picker-side fix landed — pure noise. The
+  // append-only contract still holds across days because today's date is in
+  // the line.
+  if (content.includes(lessonLine)) return;
   // Append after the --- separator
   if (content.includes('---\n')) {
     content = content.replace(/---\n/, `---\n\n${lessonLine}\n`);
@@ -813,6 +829,14 @@ function detectDefaultVerify(cwd) {
   if (fs.existsSync(path.join(cwd, 'pytest.ini')) ||
       fs.existsSync(path.join(cwd, 'pyproject.toml')) ||
       fs.existsSync(path.join(cwd, 'setup.py'))) {
+    // Prefer a repo-curated fast lane over bare `pytest`. Large repos (e.g.
+    // atrisos-backend) ship a critical-path runner because the full suite is
+    // unsafe to run unsupervised (CLAUDE.md: "NEVER run pytest tests/ ... eats
+    // 10GB+ RAM"). lessons.md 2026-05-10 verify-failed: bare `pytest` failed
+    // a reactive-signal verify and halted the loop.
+    for (const fast of ['backend/scripts/test_fast.sh', 'scripts/test_fast.sh', 'test_fast.sh']) {
+      if (fs.existsSync(path.join(cwd, fast))) return `bash ${fast}`;
+    }
     return 'pytest';
   }
   if (fs.existsSync(path.join(cwd, 'Cargo.toml'))) {
@@ -1177,10 +1201,16 @@ function runTaskOnce(context, options = {}) {
   // task is already done — either way, halt. This is the keystone that makes
   // Verify load-bearing. The cmd is captured here and reused post-execute so
   // an agent cannot swap the rubric mid-tick.
+  //
+  // Timeout: 300s. Many endgame Verify clauses chain a fast-suite run
+  // (test_fast.sh ~60s) plus extra assertions. At 60s the gate timed out
+  // before the chain could finish, the catch branch labeled it "falsifiable",
+  // and the loop executed already-done work. 300s lets the standard
+  // pytest+fast-suite shape complete cleanly.
   const skipFalsifiability = options.skipFalsifiability === true;
   if (!skipFalsifiability && verifyResult.explicit && context.kind === 'endgame' && verifyCmd) {
     try {
-      execSync(verifyCmd, { cwd, stdio: 'pipe', timeout: 60000 });
+      execSync(verifyCmd, { cwd, stdio: 'pipe', timeout: 300000 });
       writeLesson(cwd, 'verify-not-falsifiable', 'fail',
         `Verify \`${verifyCmd}\` passed before work started on "${context.task}". Either the rubric is trivial or the task is already done. Tick halted.`);
       return {
@@ -2207,6 +2237,32 @@ function isLessonResolvedLegacy(lessonLine, cwd) {
  * system already wrote down about itself. A `fail` lesson with `isLessonResolved
  * === false` means grep confirms the bug pattern is still present — actionable.
  */
+/**
+ * Returns true if a recent (within `windowDays`) `verify-not-falsifiable`
+ * lesson references this exact task title. The falsifiability gate halts the
+ * tick when the Verify clause already passes before work starts (task is
+ * already shipped or rubric is trivial), but nothing in TODO.md changes —
+ * so the next tick re-picks the same task and burns another 90s+ halting in
+ * the same place. Reading the lesson log breaks the loop without requiring
+ * a TODO.md hand-edit (which is the structurally-broken file we route around
+ * per feedback_todo_md_is_the_problem).
+ */
+function hasRecentVerifyPrePass(cwd, taskTitle, windowDays = 7) {
+  if (!taskTitle) return false;
+  const lessons = parseLessons(cwd);
+  if (lessons.length === 0) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  const cutoffDate = cutoff.toISOString().split('T')[0];
+  const needle = `"${taskTitle}"`;
+  for (const l of lessons) {
+    if (l.id !== 'verify-not-falsifiable') continue;
+    if (l.date < cutoffDate) continue;
+    if (l.body.includes(needle)) return true;
+  }
+  return false;
+}
+
 function pickUnresolvedFailLesson(cwd) {
   const lessons = parseLessons(cwd);
   if (lessons.length === 0) return null;

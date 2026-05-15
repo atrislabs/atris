@@ -515,7 +515,7 @@ const { planAtris: planCmd, doAtris: doCmd, reviewAtris: reviewCmd } = require('
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'aeo', 'xp',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
@@ -911,6 +911,10 @@ if (command === 'init') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'codex-goal') {
+  Promise.resolve(require('../commands/codex-goal').codexGoalCommand(process.argv.slice(3)))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {
   // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
@@ -1272,6 +1276,16 @@ if (command === 'init') {
   require('../commands/terminal').terminalAtris()
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'x') {
+  // Fast Agent SDK execution - like "atris x echo hello" or "atris x ls -la"
+  const userInput = process.argv.slice(3).join(' ').trim();
+  if (!userInput) {
+    console.log('Usage: atris x <command>');
+    console.log('Example: atris x echo "hello world"');
+    console.log('Example: atris x ls -la');
+    process.exit(1);
+  }
+  require('../commands/workflow').executeAgentSDKFast(userInput);
 } else if (command === 'computer') {
   require('../commands/computer').runComputer()
     .then(() => process.exit(0))

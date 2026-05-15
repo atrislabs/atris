@@ -88,7 +88,7 @@ function printHelp() {
   console.log('');
   console.log('Examples:');
   console.log('  atris aeo init');
-  console.log('  atris aeo draft "what is pallet" --queries "what is pallet,best freight platform"');
+  console.log('  atris aeo draft "what is acme" --queries "what is acme,best freight platform"');
   console.log('  atris aeo draft "how does atris work" --workspace doordash --slug atris-overview');
 }
 
