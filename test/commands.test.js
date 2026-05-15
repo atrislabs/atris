@@ -3801,7 +3801,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
 
-    const play = runCli(['play', '--as', 'justin'], { cwd: dir, env });
+    const play = runCli(['play'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(play.status, 0, play.stderr);
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
@@ -3811,14 +3811,56 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --proof/);
     assert.match(play.stdout, /atris xp card --local/);
 
-    const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env });
+    const json = runCli(['play', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(json.status, 0, json.stderr);
     const body = JSON.parse(json.stdout);
     assert.equal(body.schema, 'atris.agentxp_play_mode.v1');
     assert.equal(body.player, 'justin');
+    assert.equal(body.player_source, 'active_task_assignment');
     assert.equal(body.mission.title, 'AgentXP Mode first rep');
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as justin`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('play mode bootstraps a starter mission on a fresh player workspace', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = {
+    ATRIS_TASKS_DB: dbPath,
+    NODE_NO_WARNINGS: '1',
+    USER: 'justin',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'justin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'justin', 'START_HERE.md'), '# Justin\n');
+
+    const play = runCli(['play'], { cwd: dir, env });
+    assert.equal(play.status, 0, play.stderr);
+    assert.match(play.stdout, /AgentXP Mode/);
+    assert.match(play.stdout, /Player justin/);
+    assert.match(play.stdout, /Starter mission created locally/);
+    assert.match(play.stdout, /AgentXP Mode first rep: complete one proof-backed customer-motion mission/);
+    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as justin/);
+
+    const json = runCli(['play', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const body = JSON.parse(json.stdout);
+    assert.equal(body.player, 'justin');
+    assert.equal(body.player_source, 'active_task_assignment');
+    assert.equal(body.seeded, null);
+    assert.equal(body.mission.assigned_to, 'justin');
+    assert.equal(body.mission.title, 'AgentXP Mode first rep: complete one proof-backed customer-motion mission');
+
+    const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr);
+    const tasks = JSON.parse(list.stdout).tasks;
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0].metadata.assigned_to, 'justin');
+    assert.equal(tasks[0].metadata.delegate_via, 'agentxp_play');
   } finally {
     cleanupTempDir(dir);
   }
