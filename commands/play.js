@@ -2,6 +2,8 @@
 
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+const { spawnSync } = require('child_process');
 
 function showHelp() {
   console.log('');
@@ -16,6 +18,7 @@ function showHelp() {
   console.log('  --as <player>        Player id, for example justin.');
   console.log('  --player <player>    Alias for --as.');
   console.log('  --workspace <path>   Read missions from another Atris workspace.');
+  console.log('  --no-seed            Do not create a starter mission when none exists.');
   console.log('  --json               Print machine-readable mode state.');
   console.log('  --help, -h           Show this help.');
   console.log('');
@@ -47,6 +50,13 @@ function normalizeOwner(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function slugify(value) {
+  return normalizeOwner(value)
+    .replace(/@.*$/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function taskAssignee(task) {
   const metadata = task && task.metadata && typeof task.metadata === 'object'
     ? task.metadata
@@ -75,6 +85,96 @@ function latestMessage(events) {
   return messages.length ? clip(messages[0].payload.content, 520) : null;
 }
 
+function explicitPlayer(args) {
+  return flag(args, '--as')
+    || flag(args, '--player')
+    || flag(args, '--user')
+    || positional(args)[0]
+    || null;
+}
+
+function activePlayerCounts(tasks) {
+  const counts = new Map();
+  for (const task of tasks || []) {
+    if (!task || ['done', 'failed'].includes(task.status)) continue;
+    const owner = slugify(taskAssignee(task));
+    if (!owner) continue;
+    counts.set(owner, (counts.get(owner) || 0) + 1);
+  }
+  return counts;
+}
+
+function uniqueAssignedPlayer(tasks) {
+  const counts = activePlayerCounts(tasks);
+  if (counts.size !== 1) return null;
+  return Array.from(counts.keys())[0] || null;
+}
+
+function gitIdentityCandidate(workspaceRoot) {
+  const candidates = [];
+  for (const key of ['user.email', 'user.name']) {
+    const result = spawnSync('git', ['config', '--get', key], {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+      timeout: 1000,
+    });
+    if (result.status === 0 && result.stdout.trim()) {
+      candidates.push(slugify(result.stdout.trim()));
+    }
+  }
+  return candidates.find(Boolean) || null;
+}
+
+function teamMemberExists(workspaceRoot, player) {
+  const slug = slugify(player);
+  return Boolean(slug) && fs.existsSync(path.join(workspaceRoot, 'atris', 'team', slug));
+}
+
+function onlyTeamMember(workspaceRoot) {
+  const teamDir = path.join(workspaceRoot, 'atris', 'team');
+  try {
+    const members = fs.readdirSync(teamDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .filter(name => !name.startsWith('_') && name !== 'template')
+      .filter(name => fs.existsSync(path.join(teamDir, name, 'MEMBER.md')) || fs.existsSync(path.join(teamDir, name, 'START_HERE.md')));
+    return members.length === 1 ? slugify(members[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function inferPlayer(workspaceRoot, tasks, args = []) {
+  const explicit = explicitPlayer(args);
+  if (explicit) return { player: slugify(explicit), source: 'flag' };
+
+  const assigned = uniqueAssignedPlayer(tasks);
+  if (assigned) return { player: assigned, source: 'active_task_assignment' };
+
+  for (const value of [process.env.ATRIS_PLAYER, process.env.ATRIS_AGENT_ID]) {
+    const player = slugify(value);
+    if (player) return { player, source: 'env' };
+  }
+
+  const gitPlayer = gitIdentityCandidate(workspaceRoot);
+  if (gitPlayer && teamMemberExists(workspaceRoot, gitPlayer)) {
+    return { player: gitPlayer, source: 'git_team_match' };
+  }
+
+  for (const value of [process.env.USER, os.userInfo().username]) {
+    const player = slugify(value);
+    if (player && teamMemberExists(workspaceRoot, player)) {
+      return { player, source: 'local_user_team_match' };
+    }
+  }
+
+  const soleMember = onlyTeamMember(workspaceRoot);
+  if (soleMember) return { player: soleMember, source: 'only_team_member' };
+
+  const fallback = slugify(process.env.USER || os.userInfo().username || 'player') || 'player';
+  return { player: fallback, source: 'local_user' };
+}
+
 function rankTask(task, player) {
   const assignedTo = normalizeOwner(taskAssignee(task));
   const claimedBy = normalizeOwner(task.claimed_by);
@@ -99,6 +199,50 @@ function selectMission(tasks, player) {
     if (rank) return rank;
     return Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0);
   })[0] || null;
+}
+
+function starterMissionTitle() {
+  return 'AgentXP Mode first rep: complete one proof-backed customer-motion mission';
+}
+
+function starterMissionPrompt(player) {
+  return [
+    `Player ${player}: enter AgentXP Mode in this local workspace.`,
+    'Pick one concrete Atris Labs customer-motion rep you can finish today.',
+    'Have an agent help create a real artifact and verifier proof.',
+    'Do not self-accept; when proof is ready, show accept/revise.',
+    'Win condition: one accepted proof-backed rep visible on the local AgentXP card.',
+  ].join(' ');
+}
+
+function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = []) {
+  if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
+  if (selectMission(tasks, player)) return { tasks, seeded: null };
+  if (!fs.existsSync(path.join(workspaceRoot, 'atris'))) return { tasks, seeded: null };
+
+  const result = taskDb.addTask(db, {
+    title: starterMissionTitle(),
+    tag: 'agent-xp',
+    workspaceRoot,
+    metadata: {
+      assigned_to: player,
+      delegate_via: 'agentxp_play',
+      auto_seeded_by: 'atris play',
+      created_for_day: new Date().toISOString().slice(0, 10),
+    },
+  });
+  taskDb.noteTask(db, {
+    id: result.id,
+    actor: 'game-manager',
+    content: starterMissionPrompt(player),
+  });
+
+  const refreshed = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, {
+    workspaceRoot,
+    limit: 500,
+  }));
+  const seeded = refreshed.find(task => task.id === result.id) || null;
+  return { tasks: refreshed, seeded };
 }
 
 function nextCommands(task, player) {
@@ -144,15 +288,6 @@ function nextCommands(task, player) {
 
 function modeState(args = []) {
   const taskDb = require('../lib/task-db');
-  const player = flag(args, '--as')
-    || flag(args, '--player')
-    || flag(args, '--user')
-    || positional(args)[0]
-    || process.env.ATRIS_PLAYER
-    || process.env.ATRIS_AGENT_ID
-    || process.env.USER
-    || os.userInfo().username
-    || 'player';
   const workspaceArg = flag(args, '--workspace') || flag(args, '--root') || process.cwd();
   const workspaceRoot = taskDb.workspaceRoot(path.resolve(workspaceArg));
   const db = taskDb.open();
@@ -160,7 +295,11 @@ function modeState(args = []) {
     workspaceRoot,
     limit: 500,
   });
-  const tasks = taskDb.withTaskDisplayRefs(rows);
+  let tasks = taskDb.withTaskDisplayRefs(rows);
+  const detected = inferPlayer(workspaceRoot, tasks, args);
+  const player = detected.player || 'player';
+  const starter = ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args);
+  tasks = starter.tasks;
   const mission = selectMission(tasks, player);
   const events = mission
     ? taskDb.listTaskEvents(db, { taskId: mission.id, limit: 20, order: 'desc' })
@@ -172,8 +311,14 @@ function modeState(args = []) {
     mode: 'AgentXP Mode',
     generated_at: new Date().toISOString(),
     player,
+    player_source: detected.source,
     workspace_root: workspaceRoot,
     workspace_name: path.basename(workspaceRoot),
+    seeded: starter.seeded ? {
+      id: starter.seeded.id,
+      ref: taskRef(starter.seeded),
+      title: starter.seeded.title,
+    } : null,
     mission: mission ? {
       id: mission.id,
       ref: taskRef(mission),
@@ -204,6 +349,10 @@ function render(state) {
   }
 
   const mission = state.mission;
+  if (state.seeded) {
+    console.log(`Starter mission created locally: ${state.seeded.ref}`);
+    console.log('');
+  }
   console.log(`Mission ${mission.ref}: ${mission.title}`);
   console.log(`State ${mission.status} | Assigned ${mission.assigned_to || 'unassigned'} | Claimed ${mission.claimed_by || 'none'}`);
   if (mission.prompt) {
