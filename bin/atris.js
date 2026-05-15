@@ -767,7 +767,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'xp', 'x',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'xp', 'play', 'x',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -1559,6 +1559,10 @@ if (command === 'init') {
   searchJournal(keyword);
 } else if (command === 'xp') {
   require('../commands/xp').xpCommand(...process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'play') {
+  require('../commands/play').playCommand(...process.argv.slice(3))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'gmail') {
