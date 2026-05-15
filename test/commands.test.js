@@ -3973,6 +3973,15 @@ test('task ready holds work in review until human accept', () => {
     assert.match(readyShow.stdout, /Approval: pending/);
     assert.doesNotMatch(readyShow.stdout, /Agent certified: yes/);
 
+    const prooflessReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(prooflessReview.status, 0, prooflessReview.stderr);
+    assert.equal(JSON.parse(prooflessReview.stdout).task.review.proof, 'typecheck passed and diff reviewed');
+
     const nextAfterFirstReview = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterFirstReview.status, 0, nextAfterFirstReview.stderr);
     const firstNextPayload = JSON.parse(nextAfterFirstReview.stdout);
@@ -4086,7 +4095,7 @@ test('task ready holds work in review until human accept', () => {
 	    const events = runCli(['task', 'events', ref, '--json'], { cwd: dir, env });
 	    assert.equal(events.status, 0, events.stderr);
 	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);
-	    assert.deepEqual(eventTypes.slice(0, 4), ['created', 'claimed', 'proof_ready', 'proof_ready']);
+	    assert.deepEqual(eventTypes.slice(0, 5), ['created', 'claimed', 'proof_ready', 'reviewed', 'proof_ready']);
 	    assert.deepEqual(eventTypes.slice(-2), ['completed', 'reviewed']);
   } finally {
     cleanupTempDir(dir);
