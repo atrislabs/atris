@@ -4145,6 +4145,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['verify', '--help'],
     ['loop', '--help'],
     ['serve', '--help'],
+    ['agent', '--help'],
     ['update', '--help'],
     ['sync', '--help'],
     ['upgrade', '--help'],
@@ -4189,6 +4190,44 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     initWorkspace(dir);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'briefs')));
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'syntheses')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('init scaffolds Devin permission for Atris command access', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const configPath = path.join(dir, '.devin', 'config.local.json');
+    assert.ok(fs.existsSync(configPath));
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.deepEqual(config.permissions.allow, ['Exec(atris)']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('agent doctor verifies local AI CLI wiring without auth', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['agent', 'doctor', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'agent_doctor');
+    assert.equal(payload.ok, true);
+    assert.deepEqual(
+      payload.checks.map((check) => [check.id, check.ok]),
+      [
+        ['atris-core', true],
+        ['codex', true],
+        ['claude', true],
+        ['cursor', true],
+        ['devin', true],
+      ]
+    );
+    assert.ok(payload.binaries.some((binary) => binary.name === 'devin'));
   } finally {
     cleanupTempDir(dir);
   }

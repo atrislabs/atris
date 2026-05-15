@@ -695,6 +695,22 @@ member -> mission start --verify -> status --status active -> one bounded step -
     console.log('✓ Created AGENTS.md (for Codex)');
   }
 
+  // .devin/config.local.json for Devin for Terminal
+  const devinConfigDir = path.join(process.cwd(), '.devin');
+  const devinConfigFile = path.join(devinConfigDir, 'config.local.json');
+  if (!fs.existsSync(devinConfigFile)) {
+    fs.mkdirSync(devinConfigDir, { recursive: true });
+    const devinConfig = {
+      permissions: {
+        allow: [
+          'Exec(atris)',
+        ],
+      },
+    };
+    fs.writeFileSync(devinConfigFile, `${JSON.stringify(devinConfig, null, 2)}\n`);
+    console.log('✓ Created .devin/config.local.json (for Devin)');
+  }
+
   // .claude/commands/atris.md for Claude Code
   const claudeCommandsDir = path.join(process.cwd(), '.claude', 'commands');
   const claudeCommandFile = path.join(claudeCommandsDir, 'atris.md');
