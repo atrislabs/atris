@@ -48,6 +48,10 @@ function _substituteParams(content, params) {
     .replace(/\{\{workspace_template\}\}/g, params.workspace_template || 'business');
 }
 
+function _templateTargetRelPath(relPath) {
+  return relPath === 'persona.md' ? 'PERSONA.md' : relPath;
+}
+
 /**
  * Sync the canonical skill set from atris-cli/atris/skills/* into a
  * workspace's atris/skills/* (plus ensure .claude/skills/ symlinks).
@@ -212,14 +216,15 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
   const addedList = [], updatedList = [], preservedList = [];
 
   for (const relPath of templateFiles) {
+    const targetRelPath = _templateTargetRelPath(relPath);
     const templatePath = path.join(template.dir, relPath);
-    const targetPath = path.join(targetAtrisDir, relPath);
+    const targetPath = path.join(targetAtrisDir, targetRelPath);
     let templateContent;
     try { templateContent = fs.readFileSync(templatePath, 'utf-8'); } catch { continue; }
     const finalContent = _substituteParams(templateContent, params);
 
     if (!fs.existsSync(targetPath)) {
-      addedList.push(relPath); added++;
+      addedList.push(targetRelPath); added++;
       if (!dryRun) {
         fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         fs.writeFileSync(targetPath, finalContent);
@@ -229,10 +234,10 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
       if (existing === finalContent) {
         skipped++;
       } else if (force) {
-        updatedList.push(relPath); updated++;
+        updatedList.push(targetRelPath); updated++;
         if (!dryRun) fs.writeFileSync(targetPath, finalContent);
       } else {
-        preservedList.push(relPath); preserved++;
+        preservedList.push(targetRelPath); preserved++;
       }
     }
   }
