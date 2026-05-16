@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
+const AGENTXP_GLOBAL_SYNC_RULE = 'Use the owner-provided sync token first; fallback is atris login before sync.';
 
 const ROLE_PLAYERS_TO_IGNORE = new Set([
   'game-manager',
@@ -265,6 +266,7 @@ function compactTask(task) {
 
 function globalSyncCommands(player) {
   return [
+    `atris xp sync --local --as ${player} --token <owner-provided-token>`,
     'atris login',
     `atris xp sync --local --as ${player}`,
   ];
@@ -330,7 +332,7 @@ function gmState(args = []) {
     review_queue: reviewQueue,
     next_commands: commands,
     xp_rule: 'GM can route missions and review proof, but AgentXP still lands only after human accept.',
-    global_sync_rule: 'Run atris login once before syncing to the hosted AgentXP leaderboard.',
+    global_sync_rule: AGENTXP_GLOBAL_SYNC_RULE,
     leaderboard_url: AGENTXP_LEADERBOARD_URL,
   };
 }
@@ -365,7 +367,7 @@ function render(state) {
 
   console.log('');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
-  console.log('Global sync: run atris login once before hosted leaderboard sync.');
+  console.log('Global sync: use owner token first; fallback to atris login before hosted leaderboard sync.');
   console.log(`Leaderboard: ${state.leaderboard_url}`);
   console.log('');
   console.log('Next commands:');
