@@ -39,7 +39,7 @@ const DEFAULT_SEARCH_DEPTH = 6;
 function showHelp() {
   console.log('Usage: atris xp [card|status|collect|session|sync] [--json] [--workspace <path>] [--all] [--root <path>]');
   console.log('       atris xp session [--since today|tonight|YYYY-MM-DD] [--until <time>] [--mission <text>] [--thread <id>] [--no-write]');
-  console.log('       atris xp sync [--as <player>] [--local|--all] [--token <token>] [--dry-run] [--json]');
+  console.log('       atris xp sync [--as <player>] [--local|--all] [--token <token>|logged-in] [--dry-run] [--json]');
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
   console.log('Show your AgentXP graph for the active Atris account.');
@@ -1559,16 +1559,22 @@ async function syncAgentXp(args = []) {
   if (dryRun) return preview;
 
   const token = readFlag(args, '--token', process.env.ATRIS_AGENTXP_SYNC_TOKEN || process.env.AGENTXP_SYNC_TOKEN || '');
-  if (!token) {
-    throw new Error('Missing sync token. Set ATRIS_AGENTXP_SYNC_TOKEN or pass --token.');
-  }
-
-  const response = await apiRequestJson('/agentxp/leaderboard/sync', {
+  const options = {
     method: 'POST',
-    headers: { 'X-AgentXP-Sync-Token': token },
     body: preview.packet,
     retries: 0,
-  });
+  };
+  if (token) {
+    options.headers = { 'X-AgentXP-Sync-Token': token };
+  } else {
+    const ensured = await ensureValidCredentials(apiRequestJson);
+    if (ensured.error) {
+      throw new Error(`Missing sync auth. Run atris login, or set ATRIS_AGENTXP_SYNC_TOKEN${ensured.detail ? ` (${ensured.detail})` : ''}.`);
+    }
+    options.token = ensured.credentials.token;
+  }
+
+  const response = await apiRequestJson('/agentxp/leaderboard/sync', options);
   if (!response.ok) {
     throw new Error(`AgentXP sync failed: ${response.error || response.status}`);
   }
