@@ -3801,7 +3801,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
 
-    const play = runCli(['play'], { cwd: dir, env: { ...env, USER: 'keshav' } });
+    const play = runCli(['play', '--as', 'justin'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(play.status, 0, play.stderr);
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
@@ -3811,15 +3811,46 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --proof/);
     assert.match(play.stdout, /atris xp card --local/);
 
-    const json = runCli(['play', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
+    const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(json.status, 0, json.stderr);
     const body = JSON.parse(json.stdout);
     assert.equal(body.schema, 'atris.agentxp_play_mode.v1');
     assert.equal(body.player, 'justin');
-    assert.equal(body.player_source, 'active_task_assignment');
+    assert.equal(body.player_source, 'flag');
     assert.equal(body.mission.title, 'AgentXP Mode first rep');
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as justin`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('play mode defaults to current username instead of another assigned player', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', USER: 'keshav' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'Justin AgentXP Mode first rep',
+      '--to',
+      'justin',
+      '--tag',
+      'agent-xp',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+
+    const play = runCli(['play', '--no-seed', '--json'], { cwd: dir, env });
+    assert.equal(play.status, 0, play.stderr);
+    const body = JSON.parse(play.stdout);
+    assert.equal(body.player, 'keshav');
+    assert.equal(body.player_source, 'local_user');
+    assert.equal(body.mission, null);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3850,7 +3881,7 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.equal(json.status, 0, json.stderr);
     const body = JSON.parse(json.stdout);
     assert.equal(body.player, 'justin');
-    assert.equal(body.player_source, 'active_task_assignment');
+    assert.equal(body.player_source, 'local_user_team_match');
     assert.equal(body.seeded, null);
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.mission.title, 'AgentXP Mode first rep: complete one proof-backed customer-motion mission');
@@ -3861,6 +3892,30 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0].metadata.assigned_to, 'justin');
     assert.equal(tasks[0].metadata.delegate_via, 'agentxp_play');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('play mode makes a plain folder playable on first run', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', USER: 'keshav' };
+  try {
+    const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const body = JSON.parse(json.stdout);
+    assert.equal(body.player, 'justin');
+    assert.equal(body.player_source, 'flag');
+    assert.equal(body.workspace_root, fs.realpathSync(dir));
+    assert.equal(body.seeded.title, 'AgentXP Mode first rep: complete one proof-backed customer-motion mission');
+    assert.equal(body.mission.assigned_to, 'justin');
+    assert.deepEqual(body.next_commands.slice(0, 2), [
+      `atris task claim ${body.mission.ref} --as justin`,
+      `atris task ready ${body.mission.ref} --proof "<artifact path + verifier result>"`,
+    ]);
+    assert.ok(fs.existsSync(path.join(dir, 'atris')), 'play should initialize the local game workspace');
   } finally {
     cleanupTempDir(dir);
   }
