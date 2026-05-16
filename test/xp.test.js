@@ -255,7 +255,13 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
     assert.equal(payload.entry.verified_receipts, 1);
     assert.equal(payload.entry.leaderboard_eligible, true);
     assert.equal(payload.packet.schema, 'atris.agentxp_sync_packet.v1');
+    assert.equal(payload.packet.gm_projection.schema, 'atris.gm_xp_projection.v1');
+    assert.equal(payload.packet.gm_projection.workspace_root_hash, payload.packet.workspace_root_hash);
+    assert.equal(payload.packet.gm_projection.operator, 'justin');
+    assert.equal(payload.packet.gm_projection.player_score.agent_xp, 7);
+    assert.equal(payload.packet.gm_projection.player_score.leaderboard_eligible, true);
     assert.equal(payload.packet.user_leaderboard.schema, 'atris.agentxp_user_leaderboard.v1');
+    assert.equal(payload.packet.user_leaderboard.workspace_root_hash, payload.packet.workspace_root_hash);
     assert.equal(payload.packet.privacy.raw_proofs_included, false);
     assert.equal(payload.packet.privacy.raw_receipts_included, false);
     assert.equal(payload.packet.privacy.contains_absolute_workspace_root, false);
@@ -328,6 +334,10 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
     assert.equal(captured.url, '/api/agentxp/leaderboard/sync');
     assert.equal(captured.token, 'sync-secret');
     assert.equal(captured.body.operator, 'justin');
+    assert.equal(captured.body.gm_projection.schema, 'atris.gm_xp_projection.v1');
+    assert.equal(captured.body.gm_projection.workspace_root_hash, captured.body.workspace_root_hash);
+    assert.equal(captured.body.gm_projection.player_score.agent_xp, 4);
+    assert.equal(captured.body.user_leaderboard.workspace_root_hash, captured.body.workspace_root_hash);
     assert.equal(captured.body.user_leaderboard.entries[0].agent_xp, 4);
     assert.equal(JSON.stringify(captured.body).includes(workspace), false);
     assert.equal(JSON.stringify(captured.body).includes('posted proof stays local'), false);

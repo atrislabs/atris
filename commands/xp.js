@@ -1496,6 +1496,7 @@ function buildAgentXpSyncPacket(args = []) {
   const receiptsCount = asNumber(projection.receipts_count);
   const eligible = verifiedProjection(projection) && receiptsCount > 0 && totalXp > 0;
   const publicXp = publicAgentXp(totalXp);
+  const workspaceRootHash = sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':'));
   const entry = {
     user_id: player,
     username: player,
@@ -1517,7 +1518,7 @@ function buildAgentXpSyncPacket(args = []) {
   const packet = {
     schema: 'atris.agentxp_sync_packet.v1',
     generated_at: new Date().toISOString(),
-    workspace_root_hash: sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':')),
+    workspace_root_hash: workspaceRootHash,
     computer: projection.workspace_name || workspaces[0]?.name || 'local',
     operator: player,
     privacy: {
@@ -1537,8 +1538,20 @@ function buildAgentXpSyncPacket(args = []) {
       integrity_status: projection.integrity?.status || projection.integrity_status || 'unknown',
       ledger_head_hash: projection.integrity?.head_hash || null,
     },
+    gm_projection: {
+      schema: 'atris.gm_xp_projection.v1',
+      workspace_root_hash: workspaceRootHash,
+      operator: player,
+      player_score: {
+        agent_xp: totalXp,
+        career_xp: totalXp,
+        leaderboard_eligible: eligible,
+        verified_receipts: receiptsCount,
+      },
+    },
     user_leaderboard: {
       schema: 'atris.agentxp_user_leaderboard.v1',
+      workspace_root_hash: workspaceRootHash,
       score_name: AGENT_XP_LABEL,
       entries: [entry],
     },
