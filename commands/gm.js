@@ -28,7 +28,7 @@ function showHelp() {
   console.log('');
   console.log('Options:');
   console.log('  --manager <id>    Manager id. Defaults to game-manager when present.');
-  console.log('  --as <id>         Alias for --manager.');
+  console.log('  --as <id>         Alias for --player.');
   console.log('  --player <id>     Preferred player when seeding a first local mission.');
   console.log('  --workspace <p>   Read missions from another Atris workspace.');
   console.log('  --no-seed         Do not create a starter player mission.');
@@ -104,7 +104,7 @@ function teamMembers(workspaceRoot) {
 }
 
 function inferManager(workspaceRoot, args = []) {
-  const explicit = flag(args, '--manager') || flag(args, '--as') || positional(args)[0];
+  const explicit = flag(args, '--manager') || positional(args)[0];
   if (explicit) return { manager: slugify(explicit), source: 'flag' };
 
   for (const value of [process.env.ATRIS_GM, process.env.ATRIS_MANAGER, process.env.ATRIS_AGENT_ID]) {
@@ -162,7 +162,7 @@ function starterMissionPrompt(player) {
 }
 
 function pickSeedPlayer(workspaceRoot, tasks, args = []) {
-  const explicit = flag(args, '--player') || flag(args, '--user');
+  const explicit = flag(args, '--player') || flag(args, '--user') || flag(args, '--as');
   if (explicit) return slugify(explicit);
 
   const fromTasks = playersFromTasks(tasks);

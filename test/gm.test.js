@@ -127,6 +127,30 @@ test('gm mode bootstraps a starter mission for a fresh single-player workspace',
   }
 });
 
+test('gm --as seeds that player while preserving game-manager role', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', USER: 'owner' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const gm = runCli(['gm', '--as', 'justin'], { cwd: dir, env });
+    assert.equal(gm.status, 0, gm.stderr);
+    assert.match(gm.stdout, /Manager game-manager/);
+    assert.match(gm.stdout, /Starter mission created locally: [A-Z0-9]+-1 -> justin/);
+    assert.match(gm.stdout, /atris task claim [A-Z0-9]+-1 --as game-manager/);
+
+    const json = runCli(['gm', '--as', 'justin', '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const body = JSON.parse(json.stdout);
+    assert.equal(body.manager, 'game-manager');
+    assert.equal(body.missions[0].assigned_to, 'justin');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('gm help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
