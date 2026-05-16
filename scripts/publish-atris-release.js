@@ -27,7 +27,15 @@ function buildPublishArgs(args = []) {
   return publishArgs;
 }
 
-function renderOtpHelp(version) {
+function currentGitRef(runner = spawnSync) {
+  const result = runner('git', ['rev-parse', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return result.status === 0 && result.stdout.trim() ? result.stdout.trim() : null;
+}
+
+function renderOtpHelp(version, installRef = `v${version}`) {
   return [
     '',
     'npm publish needs the owner OTP.',
@@ -36,7 +44,7 @@ function renderOtpHelp(version) {
     `Verify: npm view atris version gitHead --json`,
     '',
     'Playable fallback until npm latest moves:',
-    `npm install -g github:atrislabs/atris#v${version}`,
+    `npm install -g github:atrislabs/atris#${installRef}`,
     '',
   ].join('\n');
 }
@@ -57,12 +65,14 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
 
   const result = runner('npm', buildPublishArgs(args), {
     cwd: repoRoot,
-    stdio: 'inherit',
+    encoding: 'utf8',
   });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
   if (isOtpFailure(result)) {
-    console.error(renderOtpHelp(version));
+    process.stderr.write(renderOtpHelp(version, currentGitRef(runner) || `v${version}`));
   }
-  return result.status || 0;
+  return typeof result.status === 'number' ? result.status : 1;
 }
 
 if (require.main === module) {
@@ -71,6 +81,7 @@ if (require.main === module) {
 
 module.exports = {
   buildPublishArgs,
+  currentGitRef,
   isOtpFailure,
   publishAtrisRelease,
   renderOtpHelp,
