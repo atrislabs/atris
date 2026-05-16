@@ -37,6 +37,7 @@ rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-g
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
 rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|buildAgentXpSyncPacket|syncAgentXp|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # AgentXP command: remote graph, local status/collect, all-workspace profile, session capsule, and hosted leaderboard sync packet/upload
+rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js test/gm.test.js  # AgentXP GM mode: manager/player identity, starter mission seeding, review queue, and global sync handoff
 
 # Modular commands
 rg "initAtris" commands/init.js             # Init command
