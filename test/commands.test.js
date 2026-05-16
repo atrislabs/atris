@@ -3812,6 +3812,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /atris xp card --local/);
     assert.match(play.stdout, /atris login/);
     assert.match(play.stdout, /atris xp sync --local --as justin/);
+    assert.match(play.stdout, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
 
     const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(json.status, 0, json.stderr);
@@ -3822,6 +3823,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(body.mission.title, 'AgentXP Mode first rep');
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.global_sync_rule, 'Run atris login once before syncing to the hosted AgentXP leaderboard.');
+    assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as game-manager`);
     assert.equal(body.next_commands.includes('atris login'), true);
   } finally {

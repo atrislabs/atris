@@ -74,6 +74,7 @@ test('gm mode shows local players missions and next review action', () => {
     assert.match(gm.stdout, new RegExp(`atris task show ${ref}`));
     assert.match(gm.stdout, new RegExp(`atris task accept ${ref}`));
     assert.match(gm.stdout, /Global sync: run atris login once before hosted leaderboard sync\./);
+    assert.match(gm.stdout, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
     assert.match(gm.stdout, /atris login/);
     assert.match(gm.stdout, /atris xp sync --local --as justin/);
 
@@ -86,6 +87,7 @@ test('gm mode shows local players missions and next review action', () => {
     assert.equal(body.counts.players, 1);
     assert.equal(body.review_queue[0].ref, ref);
     assert.equal(body.global_sync_rule, 'Run atris login once before syncing to the hosted AgentXP leaderboard.');
+    assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
     assert.ok(body.next_commands.indexOf('atris login') < body.next_commands.indexOf('atris xp sync --local --as justin'));
     assert.equal(body.next_commands.includes('atris xp sync --local --as justin'), true);
   } finally {

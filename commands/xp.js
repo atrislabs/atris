@@ -17,6 +17,7 @@ const CAREER_XP_SESSIONS_DIR = path.join('.atris', 'state', 'career_xp_sessions'
 const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
 const AGENT_XP_LABEL = 'AgentXP';
+const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
 const XP_STATE_FILES = new Set([
@@ -1596,6 +1597,7 @@ function renderSync(payload) {
   if (payload.dry_run) {
     console.log(`Packet ${payload.packet?.packet_hash || 'unhashed'} ready; no network upload ran.`);
     console.log('Run with ATRIS_AGENTXP_SYNC_TOKEN set to publish to the hosted leaderboard.');
+    console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
     return;
   }
   const server = payload.server || {};
@@ -1612,6 +1614,7 @@ function renderSync(payload) {
     console.log('Login auth mapped this sync to your Atris account.');
   }
   console.log(`Packet ${payload.packet_hash}`);
+  console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
 }
 
 function render(payload) {
