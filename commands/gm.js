@@ -261,6 +261,13 @@ function compactTask(task) {
   };
 }
 
+function globalSyncCommands(player) {
+  return [
+    'atris login',
+    `atris xp sync --local --as ${player}`,
+  ];
+}
+
 function nextCommands({ seeded, reviewQueue, missions, players, manager }) {
   if (reviewQueue.length) {
     const task = reviewQueue[0];
@@ -270,7 +277,7 @@ function nextCommands({ seeded, reviewQueue, missions, players, manager }) {
       `atris task show ${ref}`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       `atris task revise ${ref} --as ${player} --note "<what must change>"`,
-      `atris xp sync --local --as ${player}`,
+      ...globalSyncCommands(player),
     ];
   }
   if (missions.length) {
@@ -321,6 +328,7 @@ function gmState(args = []) {
     review_queue: reviewQueue,
     next_commands: commands,
     xp_rule: 'GM can route missions and review proof, but AgentXP still lands only after human accept.',
+    global_sync_rule: 'Run atris login once before syncing to the hosted AgentXP leaderboard.',
   };
 }
 
@@ -354,6 +362,7 @@ function render(state) {
 
   console.log('');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
+  console.log('Global sync: run atris login once before hosted leaderboard sync.');
   console.log('');
   console.log('Next commands:');
   for (const command of state.next_commands) console.log(`- ${command}`);

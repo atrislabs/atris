@@ -73,6 +73,8 @@ test('gm mode shows local players missions and next review action', () => {
     assert.match(gm.stdout, /justin/);
     assert.match(gm.stdout, new RegExp(`atris task show ${ref}`));
     assert.match(gm.stdout, new RegExp(`atris task accept ${ref}`));
+    assert.match(gm.stdout, /Global sync: run atris login once before hosted leaderboard sync\./);
+    assert.match(gm.stdout, /atris login/);
     assert.match(gm.stdout, /atris xp sync --local --as justin/);
 
     const json = runCli(['gm', '--json'], { cwd: dir, env });
@@ -83,6 +85,8 @@ test('gm mode shows local players missions and next review action', () => {
     assert.equal(body.manager_source, 'team');
     assert.equal(body.counts.players, 1);
     assert.equal(body.review_queue[0].ref, ref);
+    assert.equal(body.global_sync_rule, 'Run atris login once before syncing to the hosted AgentXP leaderboard.');
+    assert.ok(body.next_commands.indexOf('atris login') < body.next_commands.indexOf('atris xp sync --local --as justin'));
     assert.equal(body.next_commands.includes('atris xp sync --local --as justin'), true);
   } finally {
     cleanupTempDir(dir);
