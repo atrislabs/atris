@@ -252,6 +252,13 @@ function starterMissionPrompt(player) {
   ].join(' ');
 }
 
+function globalSyncCommands(player) {
+  return [
+    'atris login',
+    `atris xp sync --local --as ${player}`,
+  ];
+}
+
 function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = []) {
   if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
   if (selectMission(tasks, player)) return { tasks, seeded: null };
@@ -311,7 +318,7 @@ function nextCommands(task, player) {
       `atris task ready ${ref} --as ${helper} --proof "<artifact path + verifier result>"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
-      `atris xp sync --local --as ${player}`,
+      ...globalSyncCommands(player),
     ];
   }
 
@@ -321,7 +328,7 @@ function nextCommands(task, player) {
       `atris task ready ${ref} --as ${actor} --proof "<artifact path + verifier result>"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
-      `atris xp sync --local --as ${player}`,
+      ...globalSyncCommands(player),
     ];
   }
 
@@ -331,14 +338,14 @@ function nextCommands(task, player) {
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       `atris task revise ${ref} --as ${player} --note "<what must change>"`,
       'atris xp card --local',
-      `atris xp sync --local --as ${player}`,
+      ...globalSyncCommands(player),
     ];
   }
 
   return [
     `atris task show ${ref}`,
     'atris xp card --local',
-    `atris xp sync --local --as ${player}`,
+    ...globalSyncCommands(player),
   ];
 }
 
@@ -386,6 +393,7 @@ function modeState(args = []) {
       prompt: latestMessage(events),
     } : null,
     xp_rule: 'AgentXP lands only after proof is ready and a human accepts the task.',
+    global_sync_rule: 'Run atris login once before syncing to the hosted AgentXP leaderboard.',
     next_commands: commandList,
   };
 }
@@ -418,6 +426,7 @@ function render(state) {
   console.log('');
   console.log('Win condition: real artifact + verifier + human accept.');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
+  console.log('Global sync: run atris login once before hosted leaderboard sync.');
   console.log('');
   console.log('Next commands:');
   for (const command of state.next_commands) console.log(`- ${command}`);

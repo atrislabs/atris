@@ -3810,6 +3810,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
     assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --as game-manager --proof/);
     assert.match(play.stdout, /atris xp card --local/);
+    assert.match(play.stdout, /atris login/);
     assert.match(play.stdout, /atris xp sync --local --as justin/);
 
     const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
@@ -3820,7 +3821,9 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(body.player_source, 'flag');
     assert.equal(body.mission.title, 'AgentXP Mode first rep');
     assert.equal(body.mission.assigned_to, 'justin');
+    assert.equal(body.global_sync_rule, 'Run atris login once before syncing to the hosted AgentXP leaderboard.');
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as game-manager`);
+    assert.equal(body.next_commands.includes('atris login'), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3916,6 +3919,7 @@ test('play mode makes a plain folder playable on first run', () => {
       `atris task claim ${body.mission.ref} --as game-manager`,
       `atris task ready ${body.mission.ref} --as game-manager --proof "<artifact path + verifier result>"`,
     ]);
+    assert.equal(body.next_commands.includes('atris login'), true);
     assert.equal(body.next_commands.includes('atris xp sync --local --as justin'), true);
     assert.ok(fs.existsSync(path.join(dir, 'atris')), 'play should initialize the local game workspace');
   } finally {
