@@ -65,7 +65,7 @@ rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.t
 rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp" bin/atris.js commands/learn.js commands/soul.js test/commands.test.js  # Broad workspace-free help smoke coverage
 rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
-rg "computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js  # AI computer local/cloud/card
+rg "computerCreate|parseComputerCreateArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js test/computer-create.test.js  # AI computer create/local/cloud/card
 rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|codex_goal.json|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters and terminal next-action normalization

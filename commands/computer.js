@@ -3,6 +3,7 @@
  *
  *   atris computer                  — Open SMART mode (cloud in business workspace, local elsewhere)
  *   atris computer --cloud          — Open CLOUD workspace mode
+ *   atris computer create <name>    — Create and wake a business computer
  *   atris computer wake             — Start the computer
  *   atris computer sleep            — Stop (files persist)
  *   atris computer card             — Show the local computer card
@@ -19,7 +20,7 @@ const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const { loadCredentials, decodeJwtClaims } = require('../utils/auth');
-const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
+const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
 const { streamSession } = require('./serve');
@@ -544,6 +545,36 @@ function parseComputerOptions(argv) {
   };
 }
 
+function parseComputerCreateArgs(argv = []) {
+  const nameParts = [];
+  let businessSlug = null;
+  let help = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      help = true;
+      continue;
+    }
+    if ((arg === '--business' || arg === '-b') && argv[i + 1]) {
+      businessSlug = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--business=')) {
+      businessSlug = arg.split('=', 2)[1] || null;
+      continue;
+    }
+    nameParts.push(arg);
+  }
+
+  return {
+    name: nameParts.join(' ').trim(),
+    businessSlug: businessSlug ? String(businessSlug).trim() : null,
+    help,
+  };
+}
+
 function formatCloudSelection(options = {}) {
   const worker = activeWorker(options.worker);
   const parts = [`worker=${worker}`];
@@ -953,6 +984,55 @@ async function resolveBusinessContextBySlug(token, slug) {
   return null;
 }
 
+async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
+  const wantedSlug = businessSlug ? String(businessSlug).trim() : null;
+  if (wantedSlug) {
+    const fromApi = await resolveBusinessContextBySlug(token, wantedSlug);
+    if (fromApi) return fromApi;
+
+    const cached = loadBusinesses()[wantedSlug];
+    if (cached?.business_id) {
+      return {
+        slug: cached.slug || wantedSlug,
+        businessId: cached.business_id,
+        workspaceId: cached.workspace_id || null,
+        businessName: cached.name || cached.slug || wantedSlug,
+      };
+    }
+    return null;
+  }
+
+  const binding = readBusinessBinding();
+  if (binding?.business_id) {
+    return {
+      slug: binding.slug || binding.canonical_slug || null,
+      businessId: binding.business_id,
+      workspaceId: binding.workspace_id || null,
+      businessName: binding.name || binding.slug || 'business',
+    };
+  }
+
+  return resolveBusinessContext(token);
+}
+
+function rememberCreatedComputer(ctx, workspace, endpoint = null) {
+  const slug = ctx.slug || (ctx.businessName || '').toLowerCase().replace(/\s+/g, '-');
+  if (!slug) return;
+  const businesses = loadBusinesses();
+  businesses[slug] = {
+    ...(businesses[slug] || {}),
+    business_id: ctx.businessId,
+    workspace_id: workspace.id,
+    name: ctx.businessName,
+    slug,
+    computer_name: workspace.name,
+    endpoint: endpoint || undefined,
+    added_at: businesses[slug]?.added_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  saveBusinesses(businesses);
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -1222,6 +1302,90 @@ async function computerWake(token, ctx = null) {
   }
   console.log(`  Status:   ${result.data.status}`);
   console.log(`  Endpoint: ${result.data.endpoint}`);
+}
+
+async function computerCreate(token, args = []) {
+  const options = parseComputerCreateArgs(args);
+  if (options.help || !options.name) {
+    console.log('Usage: atris computer create <name> --business <slug>');
+    console.log('');
+    console.log('Create a business computer, activate it, and wake it in one command.');
+    console.log('');
+    console.log('Examples:');
+    console.log('  atris computer create "My Business Computer" --business atris-labs');
+    console.log('  atris computer create "Recruiting Computer"');
+    if (!options.name && !options.help) process.exitCode = 1;
+    return;
+  }
+
+  const ctx = await resolveBusinessOwnerForCreate(token, options.businessSlug);
+  if (!ctx?.businessId) {
+    console.error('No business found.');
+    console.error('Run inside a bound business workspace or pass: --business <slug>');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`Creating computer "${options.name}" for ${ctx.businessName}...`);
+  const created = await apiRequestJson(`/business/${ctx.businessId}/workspaces`, {
+    method: 'POST',
+    token,
+    body: { name: options.name, type: 'general' },
+  });
+  if (!created.ok) {
+    console.error(`Failed to create workspace: ${created.errorMessage || created.error || created.status}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const workspace = created.data || {};
+  const workspaceId = workspace.id || workspace.workspace_id;
+  if (!workspaceId) {
+    console.error('Failed to create workspace: response did not include workspace id');
+    process.exitCode = 1;
+    return;
+  }
+
+  const activate = await apiRequestJson(`/business/${ctx.businessId}/workspaces/${workspaceId}/activate`, {
+    method: 'POST',
+    token,
+    body: {},
+  });
+  if (!activate.ok && activate.status !== 409) {
+    console.error(`Failed to activate computer: ${activate.errorMessage || activate.error || activate.status}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const wake = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, {
+    method: 'POST',
+    token,
+    body: {},
+  });
+  if (!wake.ok && !activate.ok) {
+    console.error(`Failed to wake computer: ${wake.errorMessage || wake.error || wake.status}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const endpoint = activate.data?.endpoint || wake.data?.endpoint || null;
+  const status = endpoint
+    ? 'running'
+    : (wake.data?.status || (activate.ok ? 'activated' : 'warming_up'));
+  rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint);
+
+  const appBase = getAppBaseUrl();
+  console.log('');
+  console.log(`Computer created: ${workspaceId}`);
+  console.log(`  Name:      ${workspace.name || options.name}`);
+  console.log(`  Business:  ${ctx.businessName}`);
+  console.log(`  Status:    ${status}`);
+  if (endpoint) console.log(`  Endpoint:  ${endpoint}`);
+  console.log(`  Dashboard: ${appBase}/dashboard/gm/${ctx.businessId}`);
+  console.log('');
+  console.log('Next:');
+  console.log(`  atris pull ${ctx.slug || ctx.businessId}`);
+  console.log('  atris computer');
 }
 
 async function computerSleep(token, ctx = null) {
@@ -2562,6 +2726,14 @@ async function runComputer() {
     return;
   }
 
+  if (sub === 'create') {
+    const createOptions = parseComputerCreateArgs(args.slice(1));
+    if (createOptions.help || !createOptions.name) {
+      await computerCreate(null, args.slice(1));
+      return;
+    }
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -2593,6 +2765,7 @@ async function runComputer() {
     console.log('  claude|codex    Legacy local console backends');
     console.log('');
     console.log('Cloud commands:');
+    console.log('  create <name>    Create and wake a business computer');
     console.log('  chat            Interactive cloud workspace chat');
     console.log('                  Ctrl-C during a cloud run interrupts it');
     console.log('                  /start shows the beginner flow');
@@ -2614,6 +2787,7 @@ async function runComputer() {
     console.log('Examples:');
     console.log('  atris computer');
     console.log('  atris computer card --write');
+    console.log('  atris computer create "My Business Computer" --business atris-labs');
     console.log('  atris business init "My Lab"     # shared owner + first/default computer');
     console.log('  atris computer proof');
     console.log('  atris computer local');
@@ -2695,6 +2869,7 @@ async function runComputer() {
   switch (sub) {
     case 'chat': return computerChat(token, ctx, cloudOptions);
     case 'card': return computerCard(args.slice(1));
+    case 'create': return computerCreate(token, args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'wake': return computerWake(token, ctx);
