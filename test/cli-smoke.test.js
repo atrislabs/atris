@@ -206,6 +206,23 @@ test('ax is a self-contained Atris2 Pro workspace agent script', () => {
   assert.ok(pkg.files.includes('ax'), 'published package must include the ax entrypoint');
 });
 
+test('ax help stays local and does not start an agent turn', () => {
+  const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), '--help'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    },
+  });
+
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /ax - Atris 2 local coding agent/);
+  assert.match(res.stdout, /ax \[--pro\|--fast\] <message>/);
+  assert.doesNotMatch(res.stdout, /run\s+local workspace/);
+  assert.doesNotMatch(res.stdout, /Worked for/);
+});
+
 test('ax keeps chat context and file-operation proof readable', () => {
   const ax = require('../ax');
   const payload = ax.buildPayload('edit config', {

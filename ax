@@ -45,6 +45,26 @@ function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) 
   ].filter(Boolean).join('\n');
 }
 
+function formatUsage() {
+  return [
+    'ax - Atris 2 local coding agent',
+    '',
+    'Usage:',
+    '  ax [--pro|--fast] <message>',
+    '  ax [--pro|--fast] --chat',
+    '  ax [--pro|--fast] --doctor',
+    '',
+    'Modes:',
+    '  --pro   local workspace agent, deeper tool loop',
+    '  --fast  local workspace agent, faster low-latency turns',
+    '',
+    'Examples:',
+    '  ax --pro find the config file and explain it',
+    '  ax --fast what files are here',
+    '  ax --pro --chat',
+  ].join('\n');
+}
+
 function backendUrl() {
   return `http://${BACKEND.host}:${BACKEND.port}${BACKEND.path}`;
 }
@@ -539,10 +559,15 @@ function printBackendHint() {
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(formatUsage());
+    return;
+  }
+
   const mode = args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
   const prompt = args
-    .filter(arg => !['--fast', '--pro', '--chat', '--doctor'].includes(arg))
+    .filter(arg => !['--fast', '--pro', '--chat', '--doctor', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -589,6 +614,7 @@ module.exports = {
   formatRunProfile,
   formatStatusMessage,
   formatSystemInit,
+  formatUsage,
   formatWorkingLine,
   handleEvent,
   modelForMode,
