@@ -1389,10 +1389,10 @@ atris update
 
 ```bash
 npm link              # Local testing
-npm publish           # Push to npm
+npm run publish:release
 ```
 
-**Flow:** Development → test with `npm link` → bump version → publish
+**Flow:** Development → test with `npm link` → bump version → `.github/workflows/publish.yml` or local `npm run publish:release`; trusted publishing requires npm package settings to name workflow filename `publish.yml`
 
 ---
 
