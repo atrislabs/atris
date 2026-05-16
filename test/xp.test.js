@@ -452,6 +452,7 @@ test('xp sync render shows server public identity mapping', () => {
 
   assert.match(output, /Public identity: keshav/);
   assert.match(output, /Login auth mapped this sync to your Atris account\./);
+  assert.match(output, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
 });
 
 test('xp status --all excludes tampered local ledgers from totals', () => {
