@@ -56,6 +56,7 @@
   ],
   "scripts": {
     "test": "node --test",
+    "publish:release": "node scripts/publish-atris-release.js",
     "prepare": "cp scripts/pre-commit .git/hooks/pre-commit 2>/dev/null && chmod +x .git/hooks/pre-commit || true"
   },
   "keywords": [
