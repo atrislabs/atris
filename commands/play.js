@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
+const { getSessionProfile, loadCredentials } = require('../utils/auth');
 
 function showHelp() {
   console.log('');
@@ -125,6 +126,32 @@ function gitIdentityCandidate(workspaceRoot) {
   return candidates.find(Boolean) || null;
 }
 
+function activeAccountCandidate() {
+  const envPlayer = slugify(process.env.ATRIS_PLAYER || process.env.ATRIS_USERNAME);
+  if (envPlayer) return { player: envPlayer, source: 'env' };
+
+  const envProfile = slugify(process.env.ATRIS_PROFILE);
+  if (envProfile) return { player: envProfile, source: 'atris_profile' };
+
+  try {
+    const sessionProfile = slugify(getSessionProfile());
+    if (sessionProfile) return { player: sessionProfile, source: 'atris_session' };
+  } catch {}
+
+  try {
+    const credentials = loadCredentials();
+    const credentialPlayer = slugify(
+      credentials?.username
+      || credentials?.handle
+      || credentials?.display_name
+      || credentials?.name
+    );
+    if (credentialPlayer) return { player: credentialPlayer, source: 'atris_account' };
+  } catch {}
+
+  return null;
+}
+
 function teamMemberExists(workspaceRoot, player) {
   const slug = slugify(player);
   return Boolean(slug) && fs.existsSync(path.join(workspaceRoot, 'atris', 'team', slug));
@@ -148,13 +175,8 @@ function inferPlayer(workspaceRoot, tasks, args = []) {
   const explicit = explicitPlayer(args);
   if (explicit) return { player: slugify(explicit), source: 'flag' };
 
-  const assigned = uniqueAssignedPlayer(tasks);
-  if (assigned) return { player: assigned, source: 'active_task_assignment' };
-
-  for (const value of [process.env.ATRIS_PLAYER, process.env.ATRIS_AGENT_ID]) {
-    const player = slugify(value);
-    if (player) return { player, source: 'env' };
-  }
+  const account = activeAccountCandidate();
+  if (account) return account;
 
   const gitPlayer = gitIdentityCandidate(workspaceRoot);
   if (gitPlayer && teamMemberExists(workspaceRoot, gitPlayer)) {
@@ -172,7 +194,12 @@ function inferPlayer(workspaceRoot, tasks, args = []) {
   if (soleMember) return { player: soleMember, source: 'only_team_member' };
 
   const fallback = slugify(process.env.USER || os.userInfo().username || 'player') || 'player';
-  return { player: fallback, source: 'local_user' };
+  if (fallback) return { player: fallback, source: 'local_user' };
+
+  const assigned = uniqueAssignedPlayer(tasks);
+  if (assigned) return { player: assigned, source: 'active_task_assignment' };
+
+  return { player: 'player', source: 'fallback' };
 }
 
 function rankTask(task, player) {
@@ -191,8 +218,18 @@ function rankTask(task, player) {
   return 99;
 }
 
+function taskMatchesPlayer(task, player) {
+  const target = normalizeOwner(player);
+  return Boolean(target) && (
+    normalizeOwner(taskAssignee(task)) === target
+    || normalizeOwner(task?.claimed_by) === target
+  );
+}
+
 function selectMission(tasks, player) {
-  const active = (tasks || []).filter(task => !['done', 'failed'].includes(task.status));
+  const active = (tasks || [])
+    .filter(task => !['done', 'failed'].includes(task.status))
+    .filter(task => taskMatchesPlayer(task, player));
   if (!active.length) return null;
   return [...active].sort((a, b) => {
     const rank = rankTask(a, player) - rankTask(b, player);
@@ -218,7 +255,7 @@ function starterMissionPrompt(player) {
 function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = []) {
   if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
   if (selectMission(tasks, player)) return { tasks, seeded: null };
-  if (!fs.existsSync(path.join(workspaceRoot, 'atris'))) return { tasks, seeded: null };
+  fs.mkdirSync(path.join(workspaceRoot, 'atris'), { recursive: true });
 
   const result = taskDb.addTask(db, {
     title: starterMissionTitle(),
@@ -243,6 +280,19 @@ function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = [
   }));
   const seeded = refreshed.find(task => task.id === result.id) || null;
   return { tasks: refreshed, seeded };
+}
+
+function playWorkspaceRoot(taskDb, workspaceArg) {
+  let requested = path.resolve(workspaceArg || process.cwd());
+  try { requested = fs.realpathSync(requested); } catch {}
+  if (
+    fs.existsSync(path.join(requested, '.git'))
+    || fs.existsSync(path.join(requested, 'atris'))
+    || fs.existsSync(path.join(requested, '.atris'))
+  ) {
+    return taskDb.workspaceRoot(requested);
+  }
+  return requested;
 }
 
 function nextCommands(task, player) {
@@ -289,7 +339,7 @@ function nextCommands(task, player) {
 function modeState(args = []) {
   const taskDb = require('../lib/task-db');
   const workspaceArg = flag(args, '--workspace') || flag(args, '--root') || process.cwd();
-  const workspaceRoot = taskDb.workspaceRoot(path.resolve(workspaceArg));
+  const workspaceRoot = playWorkspaceRoot(taskDb, workspaceArg);
   const db = taskDb.open();
   const rows = taskDb.listTasks(db, {
     workspaceRoot,
