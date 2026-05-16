@@ -62,8 +62,8 @@ function buildRunProfile(options = {}) {
     streaming: true,
     runtime: 'local workspace',
     reasoning: mode === 'pro'
-      ? 'backend resolved; Pro workspace default is medium unless env overrides'
-      : 'backend resolved; Fast workspace default is low unless env overrides'
+      ? 'backend reports run row; Pro workspace tool loop uses API default medium'
+      : 'backend reports run row; Fast workspace tool loop uses provider default'
   };
 }
 
