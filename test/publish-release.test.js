@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+const packageVersion = require('../package.json').version;
+
 const {
   buildPublishArgs,
   currentGitRef,
@@ -154,14 +156,14 @@ test('publish helper verifies registry latest after a successful publish run', (
       calls.push([cmd, args]);
       if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
       if (args[0] === 'view') {
-        return { status: 0, stdout: JSON.stringify({ version: '3.15.30', gitHead: 'abc123' }) };
+        return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
       }
       throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
     });
     assert.equal(status, 0);
     assert.equal(calls.length, 2);
     assert.match(stdout.join(''), /published/);
-    assert.match(stdout.join(''), /Verified npm latest: atris@3\.15\.30 gitHead abc123/);
+    assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
   } finally {
     process.stdout.write = originalStdoutWrite;
   }
