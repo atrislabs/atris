@@ -54,6 +54,36 @@ function isOtpFailure(result) {
   return result.status !== 0 && (text.includes('EOTP') || text.toLowerCase().includes('one-time password'));
 }
 
+function verifyPublishedVersion(version, runner = spawnSync) {
+  const result = runner('npm', ['view', 'atris', 'version', 'gitHead', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    return { ok: false, error: result.stderr || result.stdout || 'npm view failed' };
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse(result.stdout || '{}');
+  } catch (error) {
+    return { ok: false, error: `could not parse npm view output: ${error.message}` };
+  }
+  const actual = String(payload.version || '');
+  return {
+    ok: actual === version,
+    actual,
+    expected: version,
+    gitHead: payload.gitHead || null,
+  };
+}
+
+function renderPublishVerification(verification) {
+  if (verification.ok) {
+    return `Verified npm latest: atris@${verification.actual} gitHead ${verification.gitHead || 'unknown'}\n`;
+  }
+  return `npm latest verification failed: expected ${verification.expected || 'unknown'}, got ${verification.actual || verification.error || 'unknown'}\n`;
+}
+
 function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
   const version = readPackageVersion();
   if (args.includes('--help') || args.includes('-h')) {
@@ -72,6 +102,13 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
   if (isOtpFailure(result)) {
     process.stderr.write(renderOtpHelp(version, currentGitRef(runner) || `v${version}`));
   }
+  if (result.status === 0 && !args.includes('--dry-run')) {
+    const verification = verifyPublishedVersion(version, runner);
+    const output = renderPublishVerification(verification);
+    if (verification.ok) process.stdout.write(output);
+    else process.stderr.write(output);
+    return verification.ok ? 0 : 1;
+  }
   return typeof result.status === 'number' ? result.status : 1;
 }
 
@@ -85,4 +122,6 @@ module.exports = {
   isOtpFailure,
   publishAtrisRelease,
   renderOtpHelp,
+  renderPublishVerification,
+  verifyPublishedVersion,
 };
