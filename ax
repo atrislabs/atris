@@ -1,0 +1,599 @@
+#!/usr/bin/env node
+
+const http = require('http');
+const readline = require('readline');
+
+const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
+const BACKEND = {
+  host: '127.0.0.1',
+  port: 8000,
+  path: '/api/atris2/turn'
+};
+const ANSI = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  muted: '\x1b[90m',
+  accent: '\x1b[36m',
+  ok: '\x1b[32m'
+};
+
+function modelForMode(mode) {
+  return mode === 'fast' ? 'atris:fast' : 'atris:pro';
+}
+
+function formatDuration(ms) {
+  const value = Number(ms) || 0;
+  if (value < 1000) return `${Math.max(0, Math.round(value))}ms`;
+  const totalSeconds = Math.max(1, Math.round(value / 1000));
+  return formatSeconds(totalSeconds);
+}
+
+function formatSeconds(totalSeconds) {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) {
+  const label = mode === 'fast' ? 'Atris 2 Fast' : 'Atris 2 Pro';
+  return [
+    `${label}${chat ? ' chat' : ''} (${modelForMode(mode)})`,
+    cwd,
+    chat ? 'exit with exit, quit, or :q' : '',
+  ].filter(Boolean).join('\n');
+}
+
+function backendUrl() {
+  return `http://${BACKEND.host}:${BACKEND.port}${BACKEND.path}`;
+}
+
+function buildRunProfile(options = {}) {
+  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  const cwd = options.cwd || process.cwd();
+  const payload = buildPayload(options.message || 'doctor', { mode, cwd });
+  return {
+    endpoint: backendUrl(),
+    mode,
+    model: payload.model,
+    workspace_path: payload.workspace_path,
+    max_turns: payload.max_turns,
+    streaming: true,
+    runtime: 'local workspace',
+    reasoning: mode === 'pro'
+      ? 'backend resolved; Pro workspace default is medium unless env overrides'
+      : 'backend resolved; Fast workspace default is low unless env overrides'
+  };
+}
+
+function formatRunProfile(profile, options = {}) {
+  const rows = [
+    ['mode', `${profile.mode} (${profile.model})`],
+    ['endpoint', profile.endpoint],
+    ['workspace', formatPathSubject(profile.workspace_path, options)],
+    ['turns', String(profile.max_turns)],
+    ['streaming', profile.streaming ? 'yes' : 'no'],
+    ['runtime', profile.runtime],
+    ['thinking', profile.reasoning],
+  ];
+  return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
+}
+
+function formatPrompt() {
+  return '› ';
+}
+
+function formatWorkingLine(ms) {
+  const totalSeconds = Math.max(1, Math.round((Number(ms) || 0) / 1000));
+  return `• Working (${formatSeconds(totalSeconds)} • ctrl-c to interrupt)`;
+}
+
+function formatDoneLine(ms) {
+  return `— Worked for ${formatDuration(ms)} —`;
+}
+
+function useColor(options = {}) {
+  if (options.color === false) return false;
+  if (process.env.NO_COLOR) return false;
+  return Boolean(options.color || options.isTTY);
+}
+
+function paint(text, codes, options = {}) {
+  if (!useColor(options)) return String(text);
+  return `${codes.join('')}${text}${ANSI.reset}`;
+}
+
+function truncateMiddle(value, limit = 120) {
+  const text = String(value || '');
+  if (text.length <= limit) return text;
+  const head = Math.max(8, Math.floor((limit - 3) * 0.6));
+  const tail = Math.max(8, limit - 3 - head);
+  return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function formatPathSubject(value, options = {}) {
+  const raw = truncateMiddle(String(value || '').trim(), options.limit || 120);
+  if (!raw) return '';
+  if (raw === '.' || raw === '/' || raw.endsWith('/')) {
+    return paint(raw, [ANSI.accent], options);
+  }
+
+  const slash = raw.lastIndexOf('/');
+  if (slash === -1) return paint(raw, [ANSI.bold, ANSI.accent], options);
+
+  const parent = raw.slice(0, slash + 1);
+  const filename = raw.slice(slash + 1);
+  return `${paint(parent, [ANSI.muted], options)}  ${paint(filename, [ANSI.bold, ANSI.accent], options)}`;
+}
+
+function formatAuxRow(label, value, options = {}) {
+  const tag = String(label || '').padEnd(4);
+  const color = label === 'ok' ? [ANSI.ok] : [ANSI.muted];
+  return `  ${paint(tag, color, options)}  ${value}`;
+}
+
+function createProgressReporter(output, options = {}) {
+  const enabled = options.showProgress !== false;
+  const isTty = Boolean(output && output.isTTY);
+  const startedAt = Date.now();
+  let interval = null;
+  let timeout = null;
+  let shown = false;
+  let closed = false;
+
+  const render = () => {
+    if (!enabled || closed) return;
+    const line = formatWorkingLine(Date.now() - startedAt);
+    if (isTty) {
+      output.write(`\r${line}\x1b[K`);
+    } else if (!shown) {
+      output.write(`${line}\n`);
+    }
+    shown = true;
+  };
+
+  return {
+    start() {
+      if (!enabled) return;
+      timeout = setTimeout(() => {
+        render();
+        if (isTty) interval = setInterval(render, 1000);
+      }, 700);
+    },
+    clear() {
+      if (!isTty || !shown || closed) return;
+      output.write('\r\x1b[K');
+      shown = false;
+    },
+    stop() {
+      closed = true;
+      clearTimeout(timeout);
+      clearInterval(interval);
+      if (isTty && shown) output.write('\r\x1b[K');
+      shown = false;
+    }
+  };
+}
+
+function parseSseBlock(block) {
+  const data = String(block || '')
+    .split(/\r?\n/)
+    .filter(line => line.startsWith('data:'))
+    .map(line => line.replace(/^data:\s?/, ''))
+    .join('\n')
+    .trim();
+
+  if (!data || data === '[DONE]') return null;
+  return JSON.parse(data);
+}
+
+function summarizeToolInput(block) {
+  const options = arguments[1] || {};
+  const tool = block.tool || 'tool';
+  const input = block.input || {};
+  const toolName = paint(tool, [ANSI.bold], options);
+  const pathValue = input.file_path || input.path;
+  if (input.command) return `${toolName}  ${truncateMiddle(input.command, 120)}`;
+  if (input.pattern || input.query) {
+    const pattern = truncateMiddle(input.pattern || input.query, 80);
+    return pathValue
+      ? `${toolName}  ${pattern}  in  ${formatPathSubject(pathValue, options)}`
+      : `${toolName}  ${pattern}`;
+  }
+  if (pathValue) return `${toolName}  ${formatPathSubject(pathValue, options)}`;
+  const subject = input.type || '';
+  return subject ? `${toolName}  ${String(subject).slice(0, 120)}` : toolName;
+}
+
+function summarizeToolResult(result) {
+  const options = arguments[1] || {};
+  const content = String(result.content || '');
+  if (!content) return 'done';
+
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.error) return `error: ${parsed.error}`;
+    if (Array.isArray(parsed.matches)) {
+      const where = parsed.path ? `  in  ${formatPathSubject(parsed.path, options)}` : '';
+      return `${parsed.matches.length} matches${where}`;
+    }
+    if (Array.isArray(parsed.files) || Array.isArray(parsed.dirs)) {
+      const parts = [];
+      if (Array.isArray(parsed.files)) parts.push(`${parsed.files.length} files`);
+      if (Array.isArray(parsed.dirs)) parts.push(`${parsed.dirs.length} dirs`);
+      const where = parsed.path ? `  in  ${formatPathSubject(parsed.path, options)}` : '';
+      return `${parts.join(' / ')}${where}`;
+    }
+    if (parsed.path && parsed.status) return `${parsed.status}  ${formatPathSubject(parsed.path, options)}`;
+    if (parsed.path) return formatPathSubject(parsed.path, options);
+    if (parsed.status) return parsed.status;
+  } catch (_) {
+    // Bash output and older streams can be plain text.
+  }
+
+  return content.length > 120 ? `${content.slice(0, 117)}...` : content;
+}
+
+function formatStatusMessage(message) {
+  const text = String(message || '').trim();
+  if (!text || text === 'complete') return null;
+  if (text === 'retrying_with_required_local_tool') return null;
+  return text.replace(/_/g, ' ');
+}
+
+function formatSystemInit(event, options = {}) {
+  const runtime = event.tool_runtime || {};
+  const model = runtime.tool_model || runtime.chat_model || event.model || '';
+  const mode = runtime.mode ? String(runtime.mode).replace(/_/g, ' ') : '';
+  const thinking = runtime.reasoning_effort ? `thinking ${runtime.reasoning_effort}` : '';
+  const parts = [mode || 'runtime', model, thinking].filter(Boolean);
+  return parts.length ? parts.join('  ') : null;
+}
+
+function clearRetriedText(state) {
+  state.pendingText = '';
+  state.output = '';
+  state.wroteText = false;
+  state.lastChar = '\n';
+  state.inAuxBlock = false;
+}
+
+function stopProgress(state) {
+  if (!state.progress) return;
+  state.progress.stop();
+  state.progress = null;
+}
+
+function flushPendingText(state, output) {
+  if (!state.pendingText) return;
+  stopProgress(state);
+  if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
+  output.write(state.pendingText);
+  state.wroteText = true;
+  state.wroteActivity = true;
+  state.lastChar = state.pendingText.slice(-1);
+  state.pendingText = '';
+  state.inAuxBlock = false;
+}
+
+function writeStreamingText(state, output, content) {
+  if (!content) return;
+  stopProgress(state);
+  if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
+  output.write(content);
+  state.wroteText = true;
+  state.wroteActivity = true;
+  state.lastChar = String(content).slice(-1);
+  state.inAuxBlock = false;
+}
+
+function writeAuxLine(state, output, line) {
+  if (!line) return;
+  stopProgress(state);
+  if (state.wroteText && state.lastChar !== '\n') output.write('\n');
+  if (!state.inAuxBlock && state.wroteActivity && state.lastChar === '\n') output.write('\n');
+  output.write(`${line}\n`);
+  state.wroteActivity = true;
+  state.lastChar = '\n';
+  state.inAuxBlock = true;
+}
+
+function compactHistory(history, limit = 8) {
+  return history
+    .slice(-limit)
+    .map(turn => `${turn.role}: ${String(turn.content || '').slice(0, 1200)}`)
+    .join('\n');
+}
+
+function buildMessage(message, history = []) {
+  const trimmed = String(message || '').trim();
+  if (!history.length) return trimmed;
+  return [
+    'Continue this terminal coding-agent conversation in the same workspace.',
+    'Use local tools when the user asks about files, code, tests, or edits.',
+    '',
+    'Recent conversation:',
+    compactHistory(history),
+    '',
+    `Current user message: ${trimmed}`,
+  ].join('\n');
+}
+
+function buildPayload(message, options = {}) {
+  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  return {
+    message: buildMessage(message, options.history || []),
+    workspace_path: options.cwd || process.cwd(),
+    model: modelForMode(mode),
+    max_turns: mode === 'pro' ? 8 : 4,
+    verify_command: 'true'
+  };
+}
+
+function handleEvent(event, state, output) {
+  if (!event || typeof event !== 'object') return;
+  state.events.push(event);
+
+  if (event.type === 'system_init') {
+    state.runtime = event;
+    writeAuxLine(state, output, formatAuxRow('run', formatSystemInit(event, output), output));
+    return;
+  }
+
+  if ((event.type === 'text_delta' || event.type === 'text') && event.content) {
+    state.output += event.content;
+    if (output && output.isTTY) writeStreamingText(state, output, event.content);
+    else state.pendingText += event.content;
+    return;
+  }
+
+  if (event.type === 'assistant_blocks' && Array.isArray(event.blocks)) {
+    for (const block of event.blocks) {
+      if (block && block.type === 'tool_use') {
+        flushPendingText(state, output);
+        writeAuxLine(state, output, formatAuxRow('tool', summarizeToolInput(block, output), output));
+      }
+    }
+    return;
+  }
+
+  if (event.type === 'tool_results' && Array.isArray(event.results)) {
+    for (const result of event.results) {
+      flushPendingText(state, output);
+      writeAuxLine(state, output, formatAuxRow('ok', summarizeToolResult(result, output), output));
+    }
+    return;
+  }
+
+  if (event.type === 'status' && event.message && event.message !== 'complete') {
+    if (event.message === 'retrying_with_required_local_tool') {
+      clearRetriedText(state);
+      return;
+    }
+    flushPendingText(state, output);
+    writeAuxLine(state, output, formatAuxRow('info', formatStatusMessage(event.message), output));
+    return;
+  }
+
+  if (event.type === 'error' || event.error) {
+    state.errors.push(event.error || event.message || 'Atris2 stream error');
+  }
+}
+
+function postTurn(message, options = {}) {
+  const payload = buildPayload(message, options);
+  const postData = JSON.stringify(payload);
+  const output = options.output || process.stdout;
+  const timeoutMs = payload.model === 'atris:pro' ? 180000 : 60000;
+  const state = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    durationMs: 0,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const startedAt = Date.now();
+    state.progress = createProgressReporter(output, options);
+    state.progress.start();
+
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (state.progress) state.progress.stop();
+      state.progress = null;
+      state.durationMs = Date.now() - startedAt;
+      if (error) reject(error);
+      else resolve(value);
+    };
+
+    const req = http.request({
+      hostname: BACKEND.host,
+      port: BACKEND.port,
+      path: BACKEND.path,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        Accept: 'text/event-stream'
+      }
+    }, (res) => {
+      res.setEncoding('utf8');
+      let buffer = '';
+      let rawBody = '';
+
+      res.on('data', (chunk) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          rawBody += chunk;
+          return;
+        }
+
+        buffer += chunk;
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          try {
+            handleEvent(parseSseBlock(block), state, output);
+          } catch (error) {
+            state.errors.push(`bad_sse_event: ${error.message}`);
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+      });
+
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          try {
+            const parsed = JSON.parse(rawBody);
+            finish(new Error(parsed.detail || parsed.error || `HTTP ${res.statusCode}`));
+          } catch (_) {
+            finish(new Error(rawBody || `HTTP ${res.statusCode}`));
+          }
+          return;
+        }
+
+        if (buffer.trim()) {
+          try {
+            handleEvent(parseSseBlock(buffer), state, output);
+          } catch (error) {
+            state.errors.push(`bad_sse_event: ${error.message}`);
+          }
+        }
+
+        if (state.errors.length) {
+          finish(new Error(state.errors.join('; ')));
+          return;
+        }
+
+        flushPendingText(state, output);
+        finish(null, state);
+      });
+    });
+
+    req.on('error', finish);
+    req.setTimeout(timeoutMs, () => {
+      finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
+      req.destroy();
+    });
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function chat(options = {}) {
+  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  const cwd = options.cwd || process.cwd();
+  const input = options.input || process.stdin;
+  const output = options.output || process.stdout;
+  const history = [];
+
+  output.write(`${formatHeader({ mode, cwd, chat: true })}\n\n`);
+
+  const runLine = async (line) => {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return false;
+    if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
+
+    output.write('\n');
+    const result = await postTurn(trimmed, { mode, cwd, history, output });
+    if (result.output && !result.output.endsWith('\n')) output.write('\n');
+    output.write(`${formatDoneLine(result.durationMs)}\n\n`);
+    history.push({ role: 'user', content: trimmed });
+    history.push({ role: 'assistant', content: result.output || '' });
+    return false;
+  };
+
+  if (!input.isTTY) {
+    const rl = readline.createInterface({ input, crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (await runLine(line)) break;
+    }
+    return;
+  }
+
+  const rl = readline.createInterface({ input, output });
+  const ask = () => new Promise(resolve => rl.question(formatPrompt(mode), resolve));
+  while (true) {
+    const line = await ask();
+    if (await runLine(line)) {
+      rl.close();
+      break;
+    }
+  }
+}
+
+function printBackendHint() {
+  console.log('');
+  console.log('Start backend:');
+  console.log(`cd /Users/keshavrao/arena/atrisos-backend/backend && uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const mode = args.includes('--fast') ? 'fast' : 'pro';
+  const doctor = args.includes('--doctor');
+  const prompt = args
+    .filter(arg => !['--fast', '--pro', '--chat', '--doctor'].includes(arg))
+    .join(' ')
+    .trim();
+
+  try {
+    if (doctor) {
+      console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
+      console.log('');
+      console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd() }), process.stdout));
+      return;
+    }
+
+    if (!prompt || args.includes('--chat')) {
+      await chat({ mode, cwd: process.cwd() });
+      return;
+    }
+
+    console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
+    console.log('');
+    const result = await postTurn(prompt, { mode, cwd: process.cwd() });
+    console.log('');
+    console.log(formatDoneLine(result.durationMs));
+  } catch (error) {
+    console.error(`x ${error.message}`);
+    printBackendHint();
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  backendUrl,
+  buildPayload,
+  buildRunProfile,
+  chat,
+  createProgressReporter,
+  formatDoneLine,
+  formatDuration,
+  formatHeader,
+  formatPathSubject,
+  formatPrompt,
+  formatRunProfile,
+  formatStatusMessage,
+  formatSystemInit,
+  formatWorkingLine,
+  handleEvent,
+  modelForMode,
+  parseSseBlock,
+  postTurn,
+  summarizeToolInput,
+  summarizeToolResult
+};
