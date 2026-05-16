@@ -310,6 +310,7 @@ function nextCommands(task, player) {
       `atris task ready ${ref} --proof "<artifact path + verifier result>"`,
       `atris task accept ${ref} --proof "<human review>"`,
       'atris xp card --local',
+      `atris xp sync --local --as ${player}`,
     ];
   }
 
@@ -318,6 +319,7 @@ function nextCommands(task, player) {
       `atris task ready ${ref} --proof "<artifact path + verifier result>"`,
       `atris task accept ${ref} --proof "<human review>"`,
       'atris xp card --local',
+      `atris xp sync --local --as ${player}`,
     ];
   }
 
@@ -327,12 +329,14 @@ function nextCommands(task, player) {
       `atris task accept ${ref} --proof "<human review>"`,
       `atris task revise ${ref} --note "<what must change>"`,
       'atris xp card --local',
+      `atris xp sync --local --as ${player}`,
     ];
   }
 
   return [
     `atris task show ${ref}`,
     'atris xp card --local',
+    `atris xp sync --local --as ${player}`,
   ];
 }
 
