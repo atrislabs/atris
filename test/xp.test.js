@@ -5,7 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { syncAgentXp } = require('../commands/xp');
+const { render, syncAgentXp } = require('../commands/xp');
 const { saveCredentials } = require('../utils/auth');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -85,6 +85,22 @@ function closeServer(server) {
   return new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+function captureStdout(fn) {
+  const writes = [];
+  const original = process.stdout.write;
+  process.stdout.write = (chunk, encoding, callback) => {
+    writes.push(String(chunk));
+    if (typeof callback === 'function') callback();
+    return true;
+  };
+  try {
+    fn();
+  } finally {
+    process.stdout.write = original;
+  }
+  return writes.join('');
 }
 
 function runSqlite(dbPath, sql) {
@@ -269,6 +285,9 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
         schema: 'atris.agentxp_sync_import.v1',
         accepted_count: 1,
         stored_count: 1,
+        accepted_usernames: ['justin'],
+        stored_usernames: ['justin'],
+        mapped_to_authenticated_user: false,
         source: 'sync_upload',
       }));
     });
@@ -303,6 +322,8 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
 
     assert.equal(payload.schema, 'atris.agentxp_sync_result.v1');
     assert.equal(payload.server.accepted_count, 1);
+    assert.deepEqual(payload.server.accepted_usernames, ['justin']);
+    assert.equal(payload.server.mapped_to_authenticated_user, false);
     assert.equal(captured.method, 'POST');
     assert.equal(captured.url, '/api/agentxp/leaderboard/sync');
     assert.equal(captured.token, 'sync-secret');
@@ -348,6 +369,9 @@ test('xp sync falls back to logged-in Atris auth when no sync token is set', asy
         schema: 'atris.agentxp_sync_import.v1',
         accepted_count: 1,
         stored_count: 1,
+        accepted_usernames: ['justin'],
+        stored_usernames: ['justin'],
+        mapped_to_authenticated_user: true,
         source: 'sync_upload',
       }));
     });
@@ -390,6 +414,8 @@ test('xp sync falls back to logged-in Atris auth when no sync token is set', asy
     }
 
     assert.equal(payload.schema, 'atris.agentxp_sync_result.v1');
+    assert.deepEqual(payload.server.accepted_usernames, ['justin']);
+    assert.equal(payload.server.mapped_to_authenticated_user, true);
     assert.equal(capturedValidate.authorization, 'Bearer user-access-token');
     assert.equal(capturedValidate.body.token, 'user-access-token');
     assert.equal(capturedSync.authorization, 'Bearer user-access-token');
@@ -401,6 +427,31 @@ test('xp sync falls back to logged-in Atris auth when no sync token is set', asy
     await closeServer(server).catch(() => {});
     cleanupTempDir(workspace);
   }
+});
+
+test('xp sync render shows server public identity mapping', () => {
+  const output = captureStdout(() => render({
+    schema: 'atris.agentxp_sync_result.v1',
+    dry_run: false,
+    player: 'sync-identity-smoke',
+    entry: {
+      username: 'sync-identity-smoke',
+      agent_xp: 1,
+      verified_receipts: 1,
+    },
+    packet_hash: 'abc123',
+    server: {
+      accepted_count: 1,
+      stored_count: 1,
+      accepted_usernames: ['keshav'],
+      stored_usernames: ['keshav'],
+      mapped_to_authenticated_user: true,
+      source: 'sync_upload',
+    },
+  }));
+
+  assert.match(output, /Public identity: keshav/);
+  assert.match(output, /Login auth mapped this sync to your Atris account\./);
 });
 
 test('xp status --all excludes tampered local ledgers from totals', () => {
