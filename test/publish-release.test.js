@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const {
@@ -10,6 +12,8 @@ const {
   renderPublishVerification,
   verifyPublishedVersion,
 } = require('../scripts/publish-atris-release');
+
+const publishWorkflowPath = path.resolve(__dirname, '../.github/workflows/publish.yml');
 
 test('publish helper adds owner OTP when provided', () => {
   assert.deepEqual(buildPublishArgs(['--otp', '123456']), ['publish', '--access', 'public', '--otp', '123456']);
@@ -114,4 +118,18 @@ test('publish helper verifies registry latest after a successful publish run', (
   } finally {
     process.stdout.write = originalStdoutWrite;
   }
+});
+
+test('trusted publish workflow uses OIDC without npm token secrets', () => {
+  const workflow = fs.readFileSync(publishWorkflowPath, 'utf8');
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /id-token:\s*write/);
+  assert.match(workflow, /contents:\s*read/);
+  assert.match(workflow, /node-version:\s*'24'/);
+  assert.match(workflow, /registry-url:\s*'https:\/\/registry\.npmjs\.org'/);
+  assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /npm run publish:release/);
+  assert.match(workflow, /Block duplicate npm versions/);
+  assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|NPM_CONFIG_TOKEN/);
 });
