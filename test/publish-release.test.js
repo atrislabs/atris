@@ -7,9 +7,11 @@ const {
   buildPublishArgs,
   currentGitRef,
   isOtpFailure,
+  isTrustedPublishAuthFailure,
   publishAtrisRelease,
   renderOtpHelp,
   renderPublishVerification,
+  renderTrustedPublishHelp,
   verifyPublishedVersion,
 } = require('../scripts/publish-atris-release');
 
@@ -27,6 +29,22 @@ test('publish helper detects npm one-time-password failures', () => {
   assert.equal(isOtpFailure({ status: 1, stderr: 'npm error code EOTP' }), true);
   assert.equal(isOtpFailure({ status: 1, stderr: 'requires a one-time password' }), true);
   assert.equal(isOtpFailure({ status: 1, stderr: 'npm error code E403' }), false);
+});
+
+test('publish helper detects trusted publisher auth failures in GitHub Actions', () => {
+  const originalGithubActions = process.env.GITHUB_ACTIONS;
+  process.env.GITHUB_ACTIONS = 'true';
+  try {
+    assert.equal(isTrustedPublishAuthFailure({
+      status: 1,
+      stderr: "npm error code E404\nnpm error 404 The requested resource 'atris@3.15.30' could not be found or you do not have permission to access it.",
+    }), true);
+    assert.match(renderTrustedPublishHelp(), /workflow filename: publish\.yml/);
+    assert.match(renderTrustedPublishHelp(), /gh workflow run publish\.yml --repo atrislabs\/atris --ref master/);
+  } finally {
+    if (originalGithubActions == null) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = originalGithubActions;
+  }
 });
 
 test('publish helper prints exact retry and GitHub fallback', () => {
@@ -91,6 +109,35 @@ test('publish helper replays captured npm output and prints OTP help', () => {
   } finally {
     process.stdout.write = originalStdoutWrite;
     process.stderr.write = originalStderrWrite;
+  }
+});
+
+test('publish helper prints trusted publisher setup help in GitHub Actions', () => {
+  const stderr = [];
+  const originalStderrWrite = process.stderr.write;
+  const originalGithubActions = process.env.GITHUB_ACTIONS;
+  process.stderr.write = chunk => {
+    stderr.push(String(chunk));
+    return true;
+  };
+  process.env.GITHUB_ACTIONS = 'true';
+  try {
+    const status = publishAtrisRelease([], (cmd, args) => {
+      assert.equal(cmd, 'npm');
+      assert.deepEqual(args, ['publish', '--access', 'public']);
+      return {
+        status: 1,
+        stdout: '',
+        stderr: "npm error code E404\nnpm error 404 The requested resource 'atris@3.15.30' could not be found or you do not have permission to access it.\n",
+      };
+    });
+    assert.equal(status, 1);
+    assert.match(stderr.join(''), /GitHub trusted publishing did not authenticate this workflow/);
+    assert.match(stderr.join(''), /owner\/repository: atrislabs\/atris/);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    if (originalGithubActions == null) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = originalGithubActions;
   }
 });
 
