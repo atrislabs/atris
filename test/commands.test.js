@@ -6613,6 +6613,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'goals.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'PERSONA.md')));
+    assert.ok(fs.readdirSync(path.join(dir, 'atris')).includes('PERSONA.md'));
+    assert.equal(fs.readdirSync(path.join(dir, 'atris')).includes('persona.md'), false);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'policies', 'REWARD.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'context', 'live-workspace.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
