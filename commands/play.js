@@ -296,6 +296,7 @@ function playWorkspaceRoot(taskDb, workspaceArg) {
 }
 
 function nextCommands(task, player) {
+  const helper = 'game-manager';
   if (!task) {
     return [
       `atris task delegate "AgentXP first rep: one proof-backed mission" --to ${player} --tag agent-xp`,
@@ -306,18 +307,19 @@ function nextCommands(task, player) {
   const ref = taskRef(task);
   if (task.status === 'open') {
     return [
-      `atris task claim ${ref} --as ${player}`,
-      `atris task ready ${ref} --proof "<artifact path + verifier result>"`,
-      `atris task accept ${ref} --proof "<human review>"`,
+      `atris task claim ${ref} --as ${helper}`,
+      `atris task ready ${ref} --as ${helper} --proof "<artifact path + verifier result>"`,
+      `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       `atris xp sync --local --as ${player}`,
     ];
   }
 
   if (task.status === 'claimed') {
+    const actor = task.claimed_by || helper;
     return [
-      `atris task ready ${ref} --proof "<artifact path + verifier result>"`,
-      `atris task accept ${ref} --proof "<human review>"`,
+      `atris task ready ${ref} --as ${actor} --proof "<artifact path + verifier result>"`,
+      `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       `atris xp sync --local --as ${player}`,
     ];
@@ -326,8 +328,8 @@ function nextCommands(task, player) {
   if (task.status === 'review') {
     return [
       `atris task show ${ref}`,
-      `atris task accept ${ref} --proof "<human review>"`,
-      `atris task revise ${ref} --note "<what must change>"`,
+      `atris task accept ${ref} --as ${player} --proof "<human review>"`,
+      `atris task revise ${ref} --as ${player} --note "<what must change>"`,
       'atris xp card --local',
       `atris xp sync --local --as ${player}`,
     ];
