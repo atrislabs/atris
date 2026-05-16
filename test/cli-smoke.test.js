@@ -197,7 +197,7 @@ test('ax is a self-contained Atris2 Pro workspace agent script', () => {
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*mode === 'pro' \? 8 : 4/);
+  assert.match(ax, /max_turns:\s*mode === 'pro' \? 8 : 6/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
   assert.doesNotMatch(ax, /\/api\/agent-sdk\/fast/);
@@ -237,6 +237,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(payload.workspace_path, '/workspace/demo');
   assert.equal(payload.model, 'atris:pro');
   assert.equal(payload.max_turns, 8);
+  assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 6);
   assert.match(payload.message, /Recent conversation/);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
