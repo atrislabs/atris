@@ -6,6 +6,8 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { getSessionProfile, loadCredentials } = require('../utils/auth');
 
+const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
+
 function showHelp() {
   console.log('');
   console.log('Usage: atris play [--as <player>] [--workspace <path>] [--json]');
@@ -394,6 +396,7 @@ function modeState(args = []) {
     } : null,
     xp_rule: 'AgentXP lands only after proof is ready and a human accepts the task.',
     global_sync_rule: 'Run atris login once before syncing to the hosted AgentXP leaderboard.',
+    leaderboard_url: AGENTXP_LEADERBOARD_URL,
     next_commands: commandList,
   };
 }
@@ -427,6 +430,7 @@ function render(state) {
   console.log('Win condition: real artifact + verifier + human accept.');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
   console.log('Global sync: run atris login once before hosted leaderboard sync.');
+  console.log(`Leaderboard: ${state.leaderboard_url}`);
   console.log('');
   console.log('Next commands:');
   for (const command of state.next_commands) console.log(`- ${command}`);

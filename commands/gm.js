@@ -4,6 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
+
 const ROLE_PLAYERS_TO_IGNORE = new Set([
   'game-manager',
   'navigator',
@@ -329,6 +331,7 @@ function gmState(args = []) {
     next_commands: commands,
     xp_rule: 'GM can route missions and review proof, but AgentXP still lands only after human accept.',
     global_sync_rule: 'Run atris login once before syncing to the hosted AgentXP leaderboard.',
+    leaderboard_url: AGENTXP_LEADERBOARD_URL,
   };
 }
 
@@ -363,6 +366,7 @@ function render(state) {
   console.log('');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
   console.log('Global sync: run atris login once before hosted leaderboard sync.');
+  console.log(`Leaderboard: ${state.leaderboard_url}`);
   console.log('');
   console.log('Next commands:');
   for (const command of state.next_commands) console.log(`- ${command}`);
