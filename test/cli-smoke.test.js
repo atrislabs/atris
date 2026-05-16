@@ -187,6 +187,137 @@ test('natural-language prompts containing 2 fast do not trigger Atris 2 alias', 
   }
 });
 
+test('ax is a self-contained Atris2 Pro workspace agent script', () => {
+  const ax = fs.readFileSync(path.join(repoRoot, 'ax'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+
+  assert.match(ax, /path:\s*'\/api\/atris2\/turn'/);
+  assert.match(ax, /workspace_path:\s*options\.cwd/);
+  assert.match(ax, /model:\s*modelForMode\(mode\)/);
+  assert.match(ax, /function modelForMode/);
+  assert.match(ax, /function buildRunProfile/);
+  assert.match(ax, /function formatSystemInit/);
+  assert.match(ax, /max_turns:\s*mode === 'pro' \? 8 : 4/);
+  assert.match(ax, /Accept:\s*'text\/event-stream'/);
+  assert.match(ax, /async function chat/);
+  assert.doesNotMatch(ax, /\/api\/agent-sdk\/fast/);
+  assert.doesNotMatch(ax, /atris2-fast-local/);
+  assert.equal(pkg.bin.ax, 'ax');
+  assert.ok(pkg.files.includes('ax'), 'published package must include the ax entrypoint');
+});
+
+test('ax keeps chat context and file-operation proof readable', () => {
+  const ax = require('../ax');
+  const payload = ax.buildPayload('edit config', {
+    cwd: '/workspace/demo',
+    mode: 'pro',
+    history: [
+      { role: 'user', content: 'find mode' },
+      { role: 'assistant', content: 'mode is in src/config.js' }
+    ]
+  });
+
+  assert.equal(payload.workspace_path, '/workspace/demo');
+  assert.equal(payload.model, 'atris:pro');
+  assert.equal(payload.max_turns, 8);
+  assert.match(payload.message, /Recent conversation/);
+  assert.equal(ax.modelForMode('pro'), 'atris:pro');
+  assert.equal(ax.modelForMode('fast'), 'atris:fast');
+  assert.equal(ax.backendUrl(), 'http://127.0.0.1:8000/api/atris2/turn');
+  assert.equal(ax.formatPrompt('pro'), '› ');
+  assert.equal(ax.formatDuration(6197), '6s');
+  assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
+  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
+  assert.equal(ax.formatStatusMessage('retrying_with_required_local_tool'), null);
+  assert.equal(ax.formatStatusMessage('loading_workspace_context'), 'loading workspace context');
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat \(atris:pro\)/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /\/workspace\/demo/);
+  assert.deepEqual(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' }), {
+    endpoint: 'http://127.0.0.1:8000/api/atris2/turn',
+    mode: 'pro',
+    model: 'atris:pro',
+    workspace_path: '/workspace/demo',
+    max_turns: 8,
+    streaming: true,
+    runtime: 'local workspace',
+    reasoning: 'backend resolved; Pro workspace default is medium unless env overrides'
+  });
+  assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+backend resolved/);
+  assert.equal(
+    ax.formatSystemInit({
+      type: 'system_init',
+      model: 'gpt-5.5',
+      tool_runtime: {
+        mode: 'local_workspace',
+        tool_model: 'openai:gpt-5.5',
+        reasoning_effort: 'medium'
+      }
+    }),
+    'local workspace  openai:gpt-5.5  thinking medium'
+  );
+  assert.deepEqual(
+    ax.parseSseBlock('data: {"type":"text_delta","content":"ok"}\n\n'),
+    { type: 'text_delta', content: 'ok' }
+  );
+  assert.equal(
+    ax.summarizeToolInput({ tool: 'Grep', input: { pattern: 'mode', path: '.' } }),
+    'Grep  mode  in  .'
+  );
+  assert.equal(
+    ax.summarizeToolInput({ tool: 'Read', input: { file_path: 'src/config.js' } }),
+    'Read  src/  config.js'
+  );
+  assert.equal(ax.formatPathSubject('src/components/Message.tsx'), 'src/components/  Message.tsx');
+  assert.equal(
+    ax.summarizeToolResult({ content: '{"status":"ok","path":".","files":["ax"],"dirs":["test"]}' }),
+    '1 files / 1 dirs  in  .'
+  );
+
+  const writes = [];
+  const output = { isTTY: false, write: (chunk) => writes.push(chunk) };
+  const state = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null
+  };
+  ax.handleEvent({
+    type: 'system_init',
+    model: 'gpt-5.5',
+    tool_runtime: {
+      mode: 'local_workspace',
+      tool_model: 'openai:gpt-5.5',
+      reasoning_effort: 'medium'
+    }
+  }, state, output);
+  ax.handleEvent({ type: 'text_delta', content: 'What would you like me to inspect?' }, state, output);
+  ax.handleEvent({ type: 'status', message: 'retrying_with_required_local_tool' }, state, output);
+  ax.handleEvent({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'Task', input: { type: 'status' } }] }, state, output);
+  assert.equal(writes.join(''), '  run   local workspace  openai:gpt-5.5  thinking medium\n\n  tool  Task  status\n');
+  assert.equal(state.output, '');
+
+  const ttyWrites = [];
+  const ttyOutput = { isTTY: true, write: (chunk) => ttyWrites.push(chunk) };
+  const ttyState = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false
+  };
+  ax.handleEvent({ type: 'text_delta', content: 'streaming' }, ttyState, ttyOutput);
+  assert.equal(ttyWrites.join(''), 'streaming');
+  assert.equal(ttyState.output, 'streaming');
+});
+
 test('default entry auto-advances to plan when inbox has items', () => {
   const dir = makeTempDir();
   try {
