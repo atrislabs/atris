@@ -54,6 +54,30 @@ function isOtpFailure(result) {
   return result.status !== 0 && (text.includes('EOTP') || text.toLowerCase().includes('one-time password'));
 }
 
+function isTrustedPublishAuthFailure(result) {
+  const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+  return result.status !== 0
+    && process.env.GITHUB_ACTIONS === 'true'
+    && text.includes('npm error code E404')
+    && text.includes('could not be found or you do not have permission');
+}
+
+function renderTrustedPublishHelp() {
+  return [
+    '',
+    'GitHub trusted publishing did not authenticate this workflow.',
+    '',
+    'Configure npm package trusted publishing:',
+    '- package: atris',
+    '- provider: GitHub Actions',
+    '- owner/repository: atrislabs/atris',
+    '- workflow filename: publish.yml',
+    '',
+    'Retry: gh workflow run publish.yml --repo atrislabs/atris --ref master',
+    '',
+  ].join('\n');
+}
+
 function verifyPublishedVersion(version, runner = spawnSync) {
   const result = runner('npm', ['view', 'atris', 'version', 'gitHead', '--json'], {
     cwd: repoRoot,
@@ -101,6 +125,8 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
   if (result.stderr) process.stderr.write(result.stderr);
   if (isOtpFailure(result)) {
     process.stderr.write(renderOtpHelp(version, currentGitRef(runner) || `v${version}`));
+  } else if (isTrustedPublishAuthFailure(result)) {
+    process.stderr.write(renderTrustedPublishHelp());
   }
   if (result.status === 0 && !args.includes('--dry-run')) {
     const verification = verifyPublishedVersion(version, runner);
@@ -120,8 +146,10 @@ module.exports = {
   buildPublishArgs,
   currentGitRef,
   isOtpFailure,
+  isTrustedPublishAuthFailure,
   publishAtrisRelease,
   renderOtpHelp,
   renderPublishVerification,
+  renderTrustedPublishHelp,
   verifyPublishedVersion,
 };
