@@ -77,6 +77,12 @@ function startApiServer(requests) {
         });
         return;
       }
+      if (req.method === 'GET' && req.url === '/api/business/biz-1/workspaces/ws-new/files?path=.') {
+        send(200, {
+          files: [{ name: 'README.md', type: 'file', size: 42 }],
+        });
+        return;
+      }
       send(404, { detail: `unexpected ${req.method} ${req.url}` });
     });
   });
@@ -142,7 +148,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /Computer created: ws-new/);
     assert.match(res.stdout, /Dashboard: http:\/\/app\.local\/dashboard\/gm\/biz-1/);
     assert.match(res.stdout, /Next:/);
-    assert.match(res.stdout, /atris pull atris-labs/);
+    assert.match(res.stdout, /atris computer --business atris-labs --workspace ws-new/);
 
     assert.deepEqual(
       requests.map((request) => [request.method, request.url]),
@@ -160,6 +166,33 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
     assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
     assert.equal(cache['atris-labs'].computer_name, 'My Business Computer');
+
+    const ls = await runCliAsync([
+      'computer',
+      'ls',
+      '.',
+      '--business',
+      'atris-labs',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+    assert.equal(ls.status, 0, ls.stderr || ls.stdout);
+    assert.match(ls.stdout, /README\.md/);
+    assert.equal(requests.length, 5);
+    assert.deepEqual(requests.at(-1), {
+      method: 'GET',
+      url: '/api/business/biz-1/workspaces/ws-new/files?path=.',
+      authorization: 'Bearer test-token',
+      body: null,
+    });
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
