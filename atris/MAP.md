@@ -29,6 +29,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 ```bash
 # Core CLI logic
 rg "async function interactiveEntry|async function atrisDevEntry" bin/atris.js    # Main entry points: cold-start dispatcher + legacy natural-language mode
+rg "modelForMode|buildPayload|formatUsage|async function chat|postTurn" ax test/cli-smoke.test.js  # ax Atris2 local coding-agent CLI: Fast/Pro modes, SSE streaming, workspace_path, chat history, doctor/help
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)
