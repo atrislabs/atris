@@ -261,22 +261,22 @@ function compactTask(task) {
   };
 }
 
-function nextCommands({ seeded, reviewQueue, missions, players }) {
+function nextCommands({ seeded, reviewQueue, missions, players, manager }) {
   if (reviewQueue.length) {
     const task = reviewQueue[0];
     const ref = task.ref;
     const player = task.assigned_to || task.claimed_by || players[0]?.player || 'player';
     return [
       `atris task show ${ref}`,
-      `atris task accept ${ref} --proof "<human review>"`,
-      `atris task revise ${ref} --note "<what must change>"`,
+      `atris task accept ${ref} --as ${player} --proof "<human review>"`,
+      `atris task revise ${ref} --as ${player} --note "<what must change>"`,
       `atris xp sync --local --as ${player}`,
     ];
   }
   if (missions.length) {
     const mission = missions[0];
     const player = mission.assigned_to || mission.claimed_by || players[0]?.player || 'player';
-    if (mission.status === 'open') return [`atris task claim ${mission.ref} --as ${player}`];
+    if (mission.status === 'open') return [`atris task claim ${mission.ref} --as ${manager || 'game-manager'}`];
     return [`atris play --as ${player}`];
   }
   if (seeded) return [`atris play --as ${seeded.assigned_to || 'player'}`];
@@ -300,7 +300,7 @@ function gmState(args = []) {
   const reviewQueue = missions.filter(task => task.status === 'review');
   const players = groupPlayers(tasks, workspaceRoot);
   const seeded = compactTask(starter.seeded);
-  const commands = nextCommands({ seeded, reviewQueue, missions, players });
+  const commands = nextCommands({ seeded, reviewQueue, missions, players, manager: detected.manager });
 
   return {
     schema: 'atris.agentxp_gm_mode.v1',
