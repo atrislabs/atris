@@ -263,11 +263,14 @@ function compactTask(task) {
 
 function nextCommands({ seeded, reviewQueue, missions, players }) {
   if (reviewQueue.length) {
-    const ref = reviewQueue[0].ref;
+    const task = reviewQueue[0];
+    const ref = task.ref;
+    const player = task.assigned_to || task.claimed_by || players[0]?.player || 'player';
     return [
       `atris task show ${ref}`,
       `atris task accept ${ref} --proof "<human review>"`,
       `atris task revise ${ref} --note "<what must change>"`,
+      `atris xp sync --local --as ${player}`,
     ];
   }
   if (missions.length) {

@@ -36,7 +36,7 @@ rg "function reviewAtris" commands/workflow.js  # Review command (line 747)
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
-rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # Career XP command: remote graph, local xp status/collect, all-workspace profile, and session capsule
+rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|buildAgentXpSyncPacket|syncAgentXp|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # AgentXP command: remote graph, local status/collect, all-workspace profile, session capsule, and hosted leaderboard sync packet/upload
 
 # Modular commands
 rg "initAtris" commands/init.js             # Init command
