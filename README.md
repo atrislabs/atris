@@ -86,6 +86,42 @@ Core loop: `plan` -> `do` -> `review`
 
 Integrates with any agent.
 
+## Play AgentXP
+
+AgentXP is the proof-backed game loop for getting better with agents. Start it
+inside any project folder:
+
+```bash
+npm exec --yes --package github:atrislabs/atris#v3.15.28 -- atris play --as <player>
+```
+
+The first run creates a local starter mission if one does not exist. The loop is:
+
+```text
+start -> proof -> accept -> login -> sync
+```
+
+The player path:
+
+```bash
+atris play --as justin
+atris task claim <mission-ref> --as game-manager
+atris task ready <mission-ref> --as game-manager --proof "<artifact path + verifier result>"
+atris task accept <mission-ref> --as justin --proof "<human review>"
+atris xp card --local
+atris login
+atris xp sync --local --as justin
+```
+
+The manager path:
+
+```bash
+atris gm --player justin
+```
+
+No proof, no AgentXP. Human accept/revise is the gate before XP can count on
+the local card or hosted leaderboard.
+
 ## Business Owners
 
 If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.
@@ -138,6 +174,9 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris log` | Add inbox items to today's journal |
 | `atris status` | Show active work and completions |
 | `atris task` | Durable local task state with claims, dialogue, review episodes, JSON export, TODO import, TODO render, board, and sync dry-run |
+| `atris play` | Enter the AgentXP player loop for one proof-backed mission |
+| `atris gm` | Enter AgentXP General Manager mode for player missions and review queues |
+| `atris xp` | Show the local AgentXP card and sync eligible proof to the hosted leaderboard |
 | `atris codex-goal` | Inspect or clear a completed native Codex thread goal after writing a backup, row dump, and receipt |
 | `atris learn` | Manage structured learnings |
 | `atris ingest` | Stage raw evidence into `atris/context/` and compile into `atris/wiki/` |
