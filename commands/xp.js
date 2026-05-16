@@ -1600,6 +1600,17 @@ function renderSync(payload) {
   }
   const server = payload.server || {};
   console.log(`Uploaded: accepted ${formatNumber(server.accepted_count)} | stored ${formatNumber(server.stored_count)}`);
+  const acceptedUsernames = Array.isArray(server.accepted_usernames)
+    ? server.accepted_usernames.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  if (acceptedUsernames.length) {
+    console.log(`Public identity: ${acceptedUsernames.join(', ')}`);
+  }
+  const player = String(payload.player || entry.username || '').trim().toLowerCase();
+  const accepted = acceptedUsernames.map(value => value.toLowerCase());
+  if (server.mapped_to_authenticated_user === true && player && !accepted.includes(player)) {
+    console.log('Login auth mapped this sync to your Atris account.');
+  }
   console.log(`Packet ${payload.packet_hash}`);
 }
 
