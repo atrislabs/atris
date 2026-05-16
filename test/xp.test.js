@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { syncAgentXp } = require('../commands/xp');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -70,6 +72,18 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function listen(server) {
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve(server.address()));
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 function runSqlite(dbPath, sql) {
@@ -197,6 +211,107 @@ test('xp status --all aggregates verified local workspace ledgers', () => {
     assert.match(typo.stderr, /Unknown xp subcommand: stats/);
   } finally {
     cleanupTempDir(root);
+  }
+});
+
+test('xp sync dry-run builds a path-private AgentXP packet', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-accepted',
+        task_id: 'SYNC-1',
+        title: 'Sync accepted proof',
+        xp: 7,
+        proof: 'private accepted proof text',
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'justin', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    const packetText = JSON.stringify(payload.packet);
+
+    assert.equal(payload.schema, 'atris.agentxp_sync_preview.v1');
+    assert.equal(payload.entry.username, 'justin');
+    assert.equal(payload.entry.agent_xp, 7);
+    assert.equal(payload.entry.verified_receipts, 1);
+    assert.equal(payload.entry.leaderboard_eligible, true);
+    assert.equal(payload.packet.schema, 'atris.agentxp_sync_packet.v1');
+    assert.equal(payload.packet.user_leaderboard.schema, 'atris.agentxp_user_leaderboard.v1');
+    assert.equal(payload.packet.privacy.raw_proofs_included, false);
+    assert.equal(payload.packet.privacy.raw_receipts_included, false);
+    assert.equal(payload.packet.privacy.contains_absolute_workspace_root, false);
+    assert.match(payload.packet.packet_hash, /^[a-f0-9]{64}$/);
+    assert.equal(packetText.includes(workspace), false);
+    assert.equal(packetText.includes('private accepted proof text'), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync posts the packet with the AgentXP sync token', async () => {
+  const workspace = makeTempDir();
+  let captured = null;
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      captured = {
+        method: req.method,
+        url: req.url,
+        token: req.headers['x-agentxp-sync-token'],
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      };
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        schema: 'atris.agentxp_sync_import.v1',
+        accepted_count: 1,
+        stored_count: 1,
+        source: 'sync_upload',
+      }));
+    });
+  });
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'posted-accepted',
+        task_id: 'SYNC-2',
+        title: 'Posted sync proof',
+        xp: 4,
+        proof: 'posted proof stays local',
+      }),
+    ]);
+    const address = await listen(server);
+    const previousCwd = process.cwd();
+    const previousApiUrl = process.env.ATRIS_API_URL;
+    const previousToken = process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+    process.chdir(workspace);
+    process.env.ATRIS_API_URL = `http://127.0.0.1:${address.port}/api`;
+    process.env.ATRIS_AGENTXP_SYNC_TOKEN = 'sync-secret';
+    let payload;
+    try {
+      payload = await syncAgentXp(['--local', '--as', 'justin']);
+    } finally {
+      process.chdir(previousCwd);
+      if (previousApiUrl === undefined) delete process.env.ATRIS_API_URL;
+      else process.env.ATRIS_API_URL = previousApiUrl;
+      if (previousToken === undefined) delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+      else process.env.ATRIS_AGENTXP_SYNC_TOKEN = previousToken;
+    }
+
+    assert.equal(payload.schema, 'atris.agentxp_sync_result.v1');
+    assert.equal(payload.server.accepted_count, 1);
+    assert.equal(captured.method, 'POST');
+    assert.equal(captured.url, '/api/agentxp/leaderboard/sync');
+    assert.equal(captured.token, 'sync-secret');
+    assert.equal(captured.body.operator, 'justin');
+    assert.equal(captured.body.user_leaderboard.entries[0].agent_xp, 4);
+    assert.equal(JSON.stringify(captured.body).includes(workspace), false);
+    assert.equal(JSON.stringify(captured.body).includes('posted proof stays local'), false);
+  } finally {
+    await closeServer(server).catch(() => {});
+    cleanupTempDir(workspace);
   }
 });
 

@@ -37,14 +37,16 @@ const SEARCH_EXCLUDED_DIRS = new Set([
 const DEFAULT_SEARCH_DEPTH = 6;
 
 function showHelp() {
-  console.log('Usage: atris xp [card|status|collect|session] [--json] [--workspace <path>] [--all] [--root <path>]');
+  console.log('Usage: atris xp [card|status|collect|session|sync] [--json] [--workspace <path>] [--all] [--root <path>]');
   console.log('       atris xp session [--since today|tonight|YYYY-MM-DD] [--until <time>] [--mission <text>] [--thread <id>] [--no-write]');
+  console.log('       atris xp sync [--as <player>] [--local|--all] [--token <token>] [--dry-run] [--json]');
   console.log('       atris xp [--json] [--local] [--workspace <path>] [--operator <name>]');
   console.log('');
   console.log('Show your AgentXP graph for the active Atris account.');
   console.log('Use status to show account-level AgentXP across verified local ledgers.');
   console.log('Use collect or status --local to project accepted task proof in the current workspace.');
   console.log('Use session to encapsulate the current work window into a local XP capsule.');
+  console.log('Use sync to upload a path-private AgentXP packet to the hosted leaderboard.');
   console.log('Use status --all to explicitly aggregate verified local XP ledgers across workspaces.');
   console.log('Use --local to render from proof receipts in the current workspace.');
 }
@@ -187,6 +189,14 @@ function readFlag(args, name, fallback = null) {
   return fallback;
 }
 
+function readFirstFlag(args, names, fallback = null) {
+  for (const name of names) {
+    const value = readFlag(args, name, null);
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return fallback;
+}
+
 function readFlagValues(args, names) {
   const wanted = Array.isArray(names) ? names : [names];
   const values = [];
@@ -310,6 +320,15 @@ function sha256(value) {
 
 function hashPayload(value) {
   return sha256(canonicalJson(value));
+}
+
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/@.*$/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function readJsonFile(filePath, fallback = null) {
@@ -1418,7 +1437,172 @@ function loadLocalPayload(args) {
   return normalizeLocalScore(JSON.parse(result.stdout), workspace);
 }
 
+function publicAgentXp(value) {
+  return Math.max(0, Math.min(99, asNumber(value)));
+}
+
+function verifiedProjection(projection) {
+  return projection?.integrity_status === 'verified'
+    && projection?.integrity?.status === 'verified';
+}
+
+function projectionWorkspaceSummaries(projection) {
+  if (Array.isArray(projection?.workspaces)) {
+    return projection.workspaces.map(workspace => ({
+      name: workspace.name || workspaceName(workspace.workspace_root || 'workspace'),
+      workspace_root_hash: workspace.workspace_root ? sha256(path.resolve(workspace.workspace_root)) : null,
+      included: Boolean(workspace.included),
+      agent_xp: asNumber(workspace.total_xp),
+      receipts_count: asNumber(workspace.receipts_count),
+      integrity_status: workspace.integrity_status || 'unknown',
+    }));
+  }
+
+  const workspaceRoot = projection?.workspace_root || path.resolve(process.cwd());
+  return [{
+    name: workspaceName(workspaceRoot),
+    workspace_root_hash: sha256(path.resolve(workspaceRoot)),
+    included: verifiedProjection(projection),
+    agent_xp: asNumber(projection?.total_agent_xp ?? projection?.total_xp),
+    receipts_count: asNumber(projection?.receipts_count),
+    integrity_status: projection?.integrity_status || projection?.integrity?.status || 'unknown',
+  }];
+}
+
+function syncPlayer(args, projection) {
+  const explicit = readFirstFlag(args, ['--as', '--player', '--user', '--operator'], null);
+  return slugify(
+    explicit
+    || process.env.ATRIS_PLAYER
+    || process.env.ATRIS_USERNAME
+    || process.env.ATRIS_PROFILE
+    || process.env.USER
+    || os.userInfo().username
+    || projection?.operator
+    || 'player'
+  ) || 'player';
+}
+
+function buildAgentXpSyncPacket(args = []) {
+  const localMode = hasFlag(args, '--local') || hasFlag(args, '--workspace') || hasFlag(args, '--operator');
+  const projectionArgs = args.filter(arg => !['--dry-run', '--no-post', '--packet'].includes(arg));
+  const projection = hasFlag(args, '--all') || !localMode
+    ? collectAllLocalXpProjection(projectionArgs)
+    : collectLocalXpProjection(projectionArgs);
+  const player = syncPlayer(args, projection);
+  const workspaces = projectionWorkspaceSummaries(projection);
+  const totalXp = asNumber(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? projection.career_xp);
+  const receiptsCount = asNumber(projection.receipts_count);
+  const eligible = verifiedProjection(projection) && receiptsCount > 0 && totalXp > 0;
+  const publicXp = publicAgentXp(totalXp);
+  const entry = {
+    user_id: player,
+    username: player,
+    agent_xp: publicXp,
+    career_xp: publicXp,
+    current_form: publicXp,
+    ovr: publicXp,
+    level: Math.max(1, asNumber(projection.level, 1)),
+    verified_receipts: receiptsCount,
+    reviewed_tasks: receiptsCount,
+    recent_verified_receipts: receiptsCount,
+    recent_reviewed_tasks: receiptsCount,
+    leaderboard_eligible: eligible,
+    integrity_status: eligible ? 'trusted' : (projection.integrity_status || projection.integrity?.status || 'unknown'),
+    lock_reason: eligible ? null : 'not_enough_trusted_proof',
+    public_adjustment: null,
+    next_move: eligible ? 'Play the next proof-backed AgentXP mission.' : 'Complete one proof-backed AgentXP rep.',
+  };
+  const packet = {
+    schema: 'atris.agentxp_sync_packet.v1',
+    generated_at: new Date().toISOString(),
+    workspace_root_hash: sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':')),
+    computer: projection.workspace_name || workspaces[0]?.name || 'local',
+    operator: player,
+    privacy: {
+      raw_proofs_included: false,
+      raw_receipts_included: false,
+      contains_absolute_workspace_root: false,
+      public_user_board_omits_lifetime_xp: true,
+    },
+    sync_contract: {
+      anti_bs_rule: 'No accepted proof-backed task episodes means no AgentXP leaderboard movement.',
+      trust_rule: 'Only verified local ledgers are uploaded; raw proof and paths stay local.',
+    },
+    local_evidence: {
+      workspaces,
+      verified_workspace_count: asNumber(projection.verified_workspace_count, verifiedProjection(projection) ? 1 : 0),
+      receipts_count: receiptsCount,
+      integrity_status: projection.integrity?.status || projection.integrity_status || 'unknown',
+      ledger_head_hash: projection.integrity?.head_hash || null,
+    },
+    user_leaderboard: {
+      schema: 'atris.agentxp_user_leaderboard.v1',
+      score_name: AGENT_XP_LABEL,
+      entries: [entry],
+    },
+  };
+  packet.packet_hash = hashPayload(packet);
+  return {
+    schema: 'atris.agentxp_sync_preview.v1',
+    generated_at: new Date().toISOString(),
+    dry_run: true,
+    player,
+    entry,
+    packet,
+  };
+}
+
+async function syncAgentXp(args = []) {
+  const preview = buildAgentXpSyncPacket(args);
+  const dryRun = hasFlag(args, '--dry-run') || hasFlag(args, '--no-post') || hasFlag(args, '--packet');
+  if (dryRun) return preview;
+
+  const token = readFlag(args, '--token', process.env.ATRIS_AGENTXP_SYNC_TOKEN || process.env.AGENTXP_SYNC_TOKEN || '');
+  if (!token) {
+    throw new Error('Missing sync token. Set ATRIS_AGENTXP_SYNC_TOKEN or pass --token.');
+  }
+
+  const response = await apiRequestJson('/agentxp/leaderboard/sync', {
+    method: 'POST',
+    headers: { 'X-AgentXP-Sync-Token': token },
+    body: preview.packet,
+    retries: 0,
+  });
+  if (!response.ok) {
+    throw new Error(`AgentXP sync failed: ${response.error || response.status}`);
+  }
+  return {
+    schema: 'atris.agentxp_sync_result.v1',
+    generated_at: new Date().toISOString(),
+    dry_run: false,
+    player: preview.player,
+    entry: preview.entry,
+    packet_hash: preview.packet.packet_hash,
+    server: response.data || {},
+  };
+}
+
+function renderSync(payload) {
+  const entry = payload.entry || {};
+  console.log('AgentXP Sync');
+  console.log(`Player ${payload.player || entry.username || 'player'} | AgentXP ${formatNumber(entry.agent_xp)} | receipts ${formatNumber(entry.verified_receipts)}`);
+  if (payload.dry_run) {
+    console.log(`Packet ${payload.packet?.packet_hash || 'unhashed'} ready; no network upload ran.`);
+    console.log('Run with ATRIS_AGENTXP_SYNC_TOKEN set to publish to the hosted leaderboard.');
+    return;
+  }
+  const server = payload.server || {};
+  console.log(`Uploaded: accepted ${formatNumber(server.accepted_count)} | stored ${formatNumber(server.stored_count)}`);
+  console.log(`Packet ${payload.packet_hash}`);
+}
+
 function render(payload) {
+  if (payload.schema === 'atris.agentxp_sync_preview.v1' || payload.schema === 'atris.agentxp_sync_result.v1') {
+    renderSync(payload);
+    return;
+  }
+
   if (payload.schema === 'atris.career_xp_session_capsule.v1') {
     const xp = payload.xp || {};
     const tasks = payload.tasks || {};
@@ -1508,6 +1692,23 @@ async function xpCommand(...args) {
   }
 
   const subcommand = args[0] && !args[0].startsWith('--') ? args[0] : null;
+  if (subcommand === 'sync') {
+    const commandArgs = args.slice(1);
+    let payload;
+    try {
+      payload = await syncAgentXp(commandArgs);
+    } catch (error) {
+      console.error(`Failed to sync AgentXP: ${error.message}`);
+      process.exit(1);
+    }
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    render(payload);
+    return;
+  }
+
   if (subcommand === 'session') {
     const commandArgs = args.slice(1);
     let payload;
@@ -1603,6 +1804,8 @@ module.exports = {
   buildCareerXpSessionCapsule,
   collectAllLocalXpProjection,
   collectLocalXpProjection,
+  buildAgentXpSyncPacket,
+  syncAgentXp,
   receiptFromTaskEpisode,
   render,
 };
