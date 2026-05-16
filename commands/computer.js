@@ -506,9 +506,33 @@ function parseComputerOptions(argv) {
   const positional = [];
   let worker = process.env.ATRIS_CLOUD_WORKER || null;
   let model = process.env.ATRIS_CLOUD_MODEL || null;
+  let businessSlug = null;
+  let workspaceId = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if ((arg === '--business' || arg === '-b') && argv[i + 1]) {
+      businessSlug = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--business=')) {
+      businessSlug = arg.split('=', 2)[1] || null;
+      continue;
+    }
+    if ((arg === '--workspace' || arg === '--workspace-id') && argv[i + 1]) {
+      workspaceId = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--workspace=')) {
+      workspaceId = arg.split('=', 2)[1] || null;
+      continue;
+    }
+    if (arg.startsWith('--workspace-id=')) {
+      workspaceId = arg.split('=', 2)[1] || null;
+      continue;
+    }
     if (arg === '--worker' && argv[i + 1]) {
       worker = argv[i + 1];
       i++;
@@ -541,6 +565,8 @@ function parseComputerOptions(argv) {
     options: {
       worker: worker || null,
       model: model || null,
+      businessSlug: businessSlug ? String(businessSlug).trim() : null,
+      workspaceId: workspaceId ? String(workspaceId).trim() : null,
     },
   };
 }
@@ -954,8 +980,32 @@ async function resolveBusinessContext(token) {
   return null;
 }
 
-async function resolveBusinessContextBySlug(token, slug) {
+function cachedBusinessContext(slug) {
   if (!slug) return null;
+  const wanted = String(slug).toLowerCase();
+  const businesses = loadBusinesses();
+  const cached = businesses[slug] || Object.values(businesses).find((entry) => {
+    if (!entry) return false;
+    return String(entry.slug || '').toLowerCase() === wanted
+      || String(entry.canonical_slug || '').toLowerCase() === wanted
+      || String(entry.name || '').toLowerCase() === wanted;
+  });
+  if (!cached?.business_id) return null;
+  return {
+    slug: cached.slug || slug,
+    businessId: cached.business_id,
+    workspaceId: cached.workspace_id || null,
+    businessName: cached.name || cached.slug || slug,
+  };
+}
+
+async function resolveBusinessContextBySlug(token, slug, options = {}) {
+  if (!slug) return null;
+
+  if (options.preferCache) {
+    const cached = cachedBusinessContext(slug);
+    if (cached?.workspaceId) return cached;
+  }
 
   const businesses = loadBusinesses();
   const list = await apiRequestJson('/business/', { method: 'GET', token });
@@ -982,6 +1032,21 @@ async function resolveBusinessContextBySlug(token, slug) {
   }
 
   return null;
+}
+
+async function resolveComputerCommandContext(token, options = {}) {
+  if (options.businessSlug || options.workspaceId) {
+    const ctx = options.businessSlug
+      ? await resolveBusinessContextBySlug(token, options.businessSlug, { preferCache: true })
+      : await resolveBusinessContext(token);
+    if (!ctx?.businessId) return null;
+    return {
+      ...ctx,
+      workspaceId: options.workspaceId || ctx.workspaceId,
+    };
+  }
+
+  return resolveBusinessContext(token);
 }
 
 async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
@@ -1304,8 +1369,11 @@ async function computerWake(token, ctx = null) {
   console.log(`  Endpoint: ${result.data.endpoint}`);
 }
 
-async function computerCreate(token, args = []) {
+async function computerCreate(token, args = [], defaults = {}) {
   const options = parseComputerCreateArgs(args);
+  if (!options.businessSlug && defaults.businessSlug) {
+    options.businessSlug = defaults.businessSlug;
+  }
   if (options.help || !options.name) {
     console.log('Usage: atris computer create <name> --business <slug>');
     console.log('');
@@ -1384,8 +1452,8 @@ async function computerCreate(token, args = []) {
   console.log(`  Dashboard: ${appBase}/dashboard/gm/${ctx.businessId}`);
   console.log('');
   console.log('Next:');
-  console.log(`  atris pull ${ctx.slug || ctx.businessId}`);
-  console.log('  atris computer');
+  console.log(`  atris computer --business ${ctx.slug || ctx.businessId} --workspace ${workspaceId}`);
+  console.log(`  atris computer ls / --business ${ctx.slug || ctx.businessId} --workspace ${workspaceId}`);
 }
 
 async function computerSleep(token, ctx = null) {
@@ -2669,6 +2737,13 @@ async function runComputer() {
   const sub = args[0];
 
   if (!sub) {
+    if (cloudOptions.businessSlug || cloudOptions.workspaceId) {
+      const token = getToken();
+      const ctx = await resolveComputerCommandContext(token, cloudOptions);
+      await computerChat(token, ctx, cloudOptions);
+      return;
+    }
+
     const hasBusinessBinding = Boolean(readBusinessBinding());
     const hasLocalHarness = Boolean(findAtrisCodeTerminal());
     const surface = await chooseComputerSurface(hasBusinessBinding, hasLocalHarness);
@@ -2695,7 +2770,7 @@ async function runComputer() {
 
   if (sub === '--local' || sub === 'local') {
     const token = getToken();
-    const ctx = await resolveBusinessContext(token);
+    const ctx = await resolveComputerCommandContext(token, cloudOptions);
     if (ctx) {
       await computerLocalAtris(token, ctx, cloudOptions);
       return;
@@ -2706,7 +2781,7 @@ async function runComputer() {
 
   if (sub === 'local-atris') {
     const token = getToken();
-    const ctx = await resolveBusinessContext(token);
+    const ctx = await resolveComputerCommandContext(token, cloudOptions);
     await computerLocalAtris(token, ctx, cloudOptions);
     return;
   }
@@ -2760,6 +2835,8 @@ async function runComputer() {
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
     console.log('  codeops         Open Atris CodeOps workflow computer if your account has access');
+    console.log('  --business      Select a business by slug');
+    console.log('  --workspace     Select a specific workspace/computer id');
     console.log('  --worker        Cloud worker override: claude | openai');
     console.log('  --model         Cloud model override');
     console.log('  claude|codex    Legacy local console backends');
@@ -2788,6 +2865,7 @@ async function runComputer() {
     console.log('  atris computer');
     console.log('  atris computer card --write');
     console.log('  atris computer create "My Business Computer" --business atris-labs');
+    console.log('  atris computer --business atris-labs --workspace <workspace-id>');
     console.log('  atris business init "My Lab"     # shared owner + first/default computer');
     console.log('  atris computer proof');
     console.log('  atris computer local');
@@ -2809,7 +2887,11 @@ async function runComputer() {
   }
 
   const token = getToken();
-  const ctx = await resolveBusinessContext(token);
+  if (sub === 'create') {
+    return computerCreate(token, args.slice(1), cloudOptions);
+  }
+
+  const ctx = await resolveComputerCommandContext(token, cloudOptions);
 
   if (sub === 'codeops') {
     const codeopsCtx = await resolveBusinessContextBySlug(token, 'atris-codeops');
@@ -2869,7 +2951,6 @@ async function runComputer() {
   switch (sub) {
     case 'chat': return computerChat(token, ctx, cloudOptions);
     case 'card': return computerCard(args.slice(1));
-    case 'create': return computerCreate(token, args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'wake': return computerWake(token, ctx);
