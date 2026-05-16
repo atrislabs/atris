@@ -240,9 +240,9 @@ test('ax keeps chat context and file-operation proof readable', () => {
     max_turns: 8,
     streaming: true,
     runtime: 'local workspace',
-    reasoning: 'backend resolved; Pro workspace default is medium unless env overrides'
+    reasoning: 'backend reports run row; Pro workspace tool loop uses API default medium'
   });
-  assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+backend resolved/);
+  assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+backend reports run row/);
   assert.equal(
     ax.formatSystemInit({
       type: 'system_init',
