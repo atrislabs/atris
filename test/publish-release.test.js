@@ -176,6 +176,8 @@ test('trusted publish workflow uses OIDC without npm token secrets', () => {
   assert.match(workflow, /contents:\s*read/);
   assert.match(workflow, /node-version:\s*'24'/);
   assert.match(workflow, /registry-url:\s*'https:\/\/registry\.npmjs\.org'/);
+  assert.match(workflow, /npm install -g npm@\^11\.5\.1/);
+  assert.match(workflow, /npm --version/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npm run publish:release/);
