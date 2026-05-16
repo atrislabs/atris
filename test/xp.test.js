@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { syncAgentXp } = require('../commands/xp');
+const { saveCredentials } = require('../utils/auth');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -309,6 +310,93 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
     assert.equal(captured.body.user_leaderboard.entries[0].agent_xp, 4);
     assert.equal(JSON.stringify(captured.body).includes(workspace), false);
     assert.equal(JSON.stringify(captured.body).includes('posted proof stays local'), false);
+  } finally {
+    await closeServer(server).catch(() => {});
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync falls back to logged-in Atris auth when no sync token is set', async () => {
+  const workspace = makeTempDir();
+  const home = path.join(workspace, 'home');
+  let capturedSync = null;
+  let capturedValidate = null;
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const bodyText = Buffer.concat(chunks).toString('utf8');
+      if (req.url === '/api/auth/validate') {
+        capturedValidate = {
+          authorization: req.headers.authorization,
+          body: JSON.parse(bodyText),
+        };
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          valid: true,
+          user: { id: 'user-justin', email: 'justin@example.com', provider: 'test' },
+        }));
+        return;
+      }
+      capturedSync = {
+        authorization: req.headers.authorization,
+        tokenHeader: req.headers['x-agentxp-sync-token'],
+        body: JSON.parse(bodyText),
+      };
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        schema: 'atris.agentxp_sync_import.v1',
+        accepted_count: 1,
+        stored_count: 1,
+        source: 'sync_upload',
+      }));
+    });
+  });
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'auth-accepted',
+        task_id: 'SYNC-3',
+        title: 'Authenticated sync proof',
+        xp: 6,
+        proof: 'authenticated proof stays local',
+      }),
+    ]);
+    const address = await listen(server);
+    const previousCwd = process.cwd();
+    const previousHome = process.env.HOME;
+    const previousApiUrl = process.env.ATRIS_API_URL;
+    const previousSyncToken = process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+    const previousLegacySyncToken = process.env.AGENTXP_SYNC_TOKEN;
+    process.chdir(workspace);
+    process.env.HOME = home;
+    process.env.ATRIS_API_URL = `http://127.0.0.1:${address.port}/api`;
+    delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+    delete process.env.AGENTXP_SYNC_TOKEN;
+    saveCredentials('user-access-token', 'refresh-token', 'justin@example.com', 'user-justin', 'test');
+    let payload;
+    try {
+      payload = await syncAgentXp(['--local', '--as', 'justin']);
+    } finally {
+      process.chdir(previousCwd);
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousApiUrl === undefined) delete process.env.ATRIS_API_URL;
+      else process.env.ATRIS_API_URL = previousApiUrl;
+      if (previousSyncToken === undefined) delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+      else process.env.ATRIS_AGENTXP_SYNC_TOKEN = previousSyncToken;
+      if (previousLegacySyncToken === undefined) delete process.env.AGENTXP_SYNC_TOKEN;
+      else process.env.AGENTXP_SYNC_TOKEN = previousLegacySyncToken;
+    }
+
+    assert.equal(payload.schema, 'atris.agentxp_sync_result.v1');
+    assert.equal(capturedValidate.authorization, 'Bearer user-access-token');
+    assert.equal(capturedValidate.body.token, 'user-access-token');
+    assert.equal(capturedSync.authorization, 'Bearer user-access-token');
+    assert.equal(capturedSync.tokenHeader, undefined);
+    assert.equal(capturedSync.body.user_leaderboard.entries[0].agent_xp, 6);
+    assert.equal(JSON.stringify(capturedSync.body).includes(workspace), false);
+    assert.equal(JSON.stringify(capturedSync.body).includes('authenticated proof stays local'), false);
   } finally {
     await closeServer(server).catch(() => {});
     cleanupTempDir(workspace);
