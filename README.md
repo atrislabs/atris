@@ -86,6 +86,20 @@ Core loop: `plan` -> `do` -> `review`
 
 Integrates with any agent.
 
+## Chat With Atris 2
+
+`ax` is the local Atris 2 coding-agent CLI. It talks to the AtrisOS backend at `http://127.0.0.1:8000/api/atris2/turn`, streams text, shows tool activity, and sends the current folder as the workspace.
+
+```bash
+cd your-project
+ax --pro "find the task system and explain it"
+ax --fast "what files are here?"
+ax --pro --chat
+ax --doctor
+```
+
+Use Pro for agentic file work and edit/test loops. Use Fast for quick workspace search, short chats, and small edits.
+
 ## Play AgentXP
 
 AgentXP is the proof-backed game loop for getting better with agents. Start it
