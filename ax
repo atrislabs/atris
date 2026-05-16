@@ -346,7 +346,7 @@ function buildPayload(message, options = {}) {
     message: buildMessage(message, options.history || []),
     workspace_path: options.cwd || process.cwd(),
     model: modelForMode(mode),
-    max_turns: mode === 'pro' ? 8 : 6,
+    max_turns: mode === 'pro' ? 14 : 6,
     verify_command: 'true'
   };
 }
