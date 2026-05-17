@@ -1267,6 +1267,59 @@ test('always-on mission run keeps ticking after verifier passes', () => {
   }
 });
 
+test('mission run bounds errored claude ticks with max-ticks', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      'echo "{\"type\":\"result\",\"is_error\":true,\"result\":\"boom\"}"',
+      'exit 1',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const start = runCli([
+      'mission', 'start', 'Bound failed worker attempts',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    const run = runCli([
+      'mission', 'run', mission.id,
+      '--max-ticks', '1',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ran_ticks, 0);
+    assert.equal(payload.tick_count, 1);
+    assert.equal(payload.ticks[0].status, 'errored');
+    assert.equal(payload.ticks[0].reason, 'claude-error');
+    assert.equal(payload.pause_reason, 'max-ticks-reached');
+    assert.equal(payload.mission.status, 'paused');
+    assert.equal(payload.mission.stop_reason, 'max-ticks-reached');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
