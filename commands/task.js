@@ -1299,25 +1299,6 @@ function cmdNext(args) {
   const reviewTasks = (reviewProjection.projection.tasks || [])
     .map(compactTaskForStatus)
     .filter(task => task && task.review && task.review.handoff);
-  const secondReviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again');
-  if (secondReviewTask) {
-    const handoff = secondReviewTask.review.handoff;
-    if (wantsJson(args)) {
-      printJson({
-        ok: true,
-        action: handoff.next_action,
-        task_id: secondReviewTask.id,
-        owner: String(owner),
-        projection_path: reviewProjection.outPath,
-        handoff,
-        review_task: secondReviewTask,
-      });
-      return;
-    }
-    console.log(`${taskRef(secondReviewTask)} needs one more agent review before continuation.`);
-    console.log('Review this task again before claiming new work.');
-    return;
-  }
   const open = taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
     status: 'open',
@@ -1325,7 +1306,8 @@ function cmdNext(args) {
   });
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
-    const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'continue_work');
+    const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
+      || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work');
     if (reviewTask) {
       const handoff = reviewTask.review.handoff;
       if (wantsJson(args)) {
