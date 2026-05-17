@@ -1827,8 +1827,15 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
     const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
-    console.log(`  Next:      cd ${workspaceRoot}`);
-    console.log('             atris align --fix');
+    console.log('  Atris:     seeded local computer + operator + validator');
+    console.log('');
+    console.log('  Start here:');
+    console.log(`    cd ${workspaceRoot}`);
+    console.log('    atris member activate operator');
+    console.log('    atris business onboard --website <url> --contact "Name" --note "what they do"');
+    console.log('');
+    console.log('  Sync when ready:');
+    console.log(`    atris align ${biz.slug} --fix`);
   }
   console.log('');
 }

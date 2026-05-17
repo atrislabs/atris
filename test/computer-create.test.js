@@ -50,6 +50,17 @@ function startApiServer(requests) {
         send(200, [{ id: 'biz-1', slug: 'atris-labs', name: 'Atris Labs', workspace_id: 'ws-old' }]);
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/business/') {
+        const slug = String(body.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        send(200, {
+          id: 'biz-created',
+          slug,
+          name: body.name,
+          workspace_id: 'ws-created',
+          agent_id: 'agent-created',
+        });
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/business/biz-1/workspaces') {
         send(200, {
           id: 'ws-new',
@@ -161,10 +172,13 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /Dashboard: http:\/\/app\.local\/dashboard\/gm\/biz-1/);
     assert.match(res.stdout, /Start here:/);
     assert.match(res.stdout, /atris computer --business atris-labs --workspace ws-new/);
-    assert.match(res.stdout, /Onboard the org:/);
-    assert.match(res.stdout, /atris pull atris-labs/);
-    assert.match(res.stdout, /atris member create operator/);
-    assert.match(res.stdout, /atris member create validator/);
+    assert.match(res.stdout, /Org workspace:/);
+    assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /atris member activate operator/);
+    assert.match(res.stdout, /atris member activate validator/);
+    assert.match(res.stdout, /If the org workspace does not exist yet:/);
+    assert.match(res.stdout, /atris business init "Atris Labs"/);
+    assert.doesNotMatch(res.stdout, /atris member create operator/);
     assert.match(res.stdout, /Cost control:/);
     assert.match(res.stdout, /atris computer sleep --business atris-labs --workspace ws-new/);
 
@@ -211,6 +225,50 @@ test('computer create creates workspace, activates it, wakes it, and prints next
       authorization: 'Bearer test-token',
       body: null,
     });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('business init seeds Atris operator onboarding as the first computer path', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'business',
+      'init',
+      'Acme Corp',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Business created!/);
+    assert.match(res.stdout, /Atris:\s+seeded local computer \+ operator \+ validator/);
+    assert.match(res.stdout, /Start here:/);
+    assert.match(res.stdout, /atris member activate operator/);
+    assert.match(res.stdout, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
+    assert.match(res.stdout, /Sync when ready:/);
+    assert.match(res.stdout, /atris align acme-corp --fix/);
+
+    const workspaceRoot = path.join(home, 'arena', 'atris-business', 'acme-corp');
+    assert.ok(fs.existsSync(path.join(workspaceRoot, '.atris', 'business.json')));
+    assert.ok(fs.existsSync(path.join(workspaceRoot, 'atris', 'team', 'operator', 'MEMBER.md')));
+    assert.ok(fs.existsSync(path.join(workspaceRoot, 'atris', 'team', 'validator', 'MEMBER.md')));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
