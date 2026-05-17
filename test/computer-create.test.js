@@ -84,9 +84,18 @@ function startApiServer(requests) {
         });
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/business/biz-1/workspaces/ws-old/activate') {
+        send(200, {
+          status: 'ok',
+          business_id: 'biz-1',
+          workspace_id: 'ws-old',
+          endpoint: 'https://runner.example',
+        });
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/business/biz-1/ai-computer/wake') {
         send(200, {
-          status: 'awake',
+          status: 'running',
           business_id: 'biz-1',
           endpoint: 'https://runner.example',
         });
@@ -179,6 +188,48 @@ test('computer proof can retry against attached workspace context', () => {
     workspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
   });
   assert.equal(contextForAttachedWorkspaceMismatch(ctx, { fallback: { error: 'other' } }), null);
+});
+
+test('top-level wake and sleep use business computer lifecycle for business slugs', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const wake = await runCliAsync(['wake', 'atris-labs'], { cwd, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    assert.match(wake.stdout, /Business computer 'Atris Labs' is alive/);
+
+    const sleep = await runCliAsync(['sleep', 'atris-labs'], { cwd, env });
+    assert.equal(sleep.status, 0, sleep.stderr || sleep.stdout);
+    assert.match(sleep.stdout, /Business computer 'Atris Labs' is now sleeping/);
+
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url]),
+      [
+        ['GET', '/api/business/'],
+        ['POST', '/api/business/biz-1/workspaces/ws-old/activate'],
+        ['POST', '/api/business/biz-1/ai-computer/wake'],
+        ['GET', '/api/business/'],
+        ['POST', '/api/business/biz-1/ai-computer/sleep'],
+      ]
+    );
+    assert.ok(!requests.some((request) => request.url.includes('/api/workspace/')));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
 });
 
 test('computer create creates workspace, activates it, wakes it, and prints next steps', async () => {
