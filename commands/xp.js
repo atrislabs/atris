@@ -20,6 +20,10 @@ const AGENT_XP_LABEL = 'AgentXP';
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
+const VALIDATION_TERMS = ['verify', 'verified', 'verifier', 'passed', 'pytest', 'receipt', 'score', 'smoke', 'git diff --check'];
+const QUALITY_TERMS = ['craft', 'scorecard', 'quality', 'critique', 'review', 'taste'];
+const ATRIS_ACCEPTED_STATUSES = new Set(['accepted', 'approved', 'done', 'review', 'reviewed', 'unknown']);
+const ATRIS_ACCEPTED_EVENTS = new Set(['accepted', 'approved', 'completed', 'done', 'reviewed', 'unknown']);
 const EARNING_MODEL = {
   schema: 'atris.agentxp_earning_model.v1',
   score_name: AGENT_XP_LABEL,
@@ -539,22 +543,119 @@ function buildLocalAssistantActivity(workspace, acceptedTaskXp = 0) {
   const contextAgentXp = acceptedXp > 0 ? Math.min(weightedContext, contextCap) : 0;
 
   return {
-    schema: 'atris.agentxp_local_activity.v1',
+    schema: 'atris.agentxp_local_assistant_activity.v1',
     public_leaderboard: false,
     source_type: 'local_assistant_activity',
     weight,
+    context_weight: weight,
     cap: {
       max_public_xp_ratio: 0.1,
       requires_accepted_task_xp: true,
     },
+    cap_ratio_to_accepted_task_xp: 0.1,
+    cap_agent_xp: contextCap,
+    accepted_task_agent_xp: acceptedXp,
     detected_providers: detected.map(provider => provider.id).sort(),
+    provider_count: detected.length,
     providers,
     raw_signal_count: rawSignalCount,
     weighted_context_score: weightedContext,
     context_agent_xp: contextAgentXp,
     included_in_total_agent_xp: false,
+    role: 'context_only',
     note: 'Local assistant activity helps context and RL; accepted proof-backed tasks are the public AgentXP source.',
   };
+}
+
+function safeSignalKey(value) {
+  const text = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const clean = [...text].filter(char => /[a-z0-9_-]/.test(char)).join('');
+  return clean.slice(0, 40) || 'unknown';
+}
+
+function hasAnyTerm(text, terms) {
+  const lower = String(text || '').toLowerCase();
+  return terms.some(term => lower.includes(term));
+}
+
+function incrementCount(counts, key) {
+  counts[key] = (counts[key] || 0) + 1;
+}
+
+function buildAtrisActionSignalFromRows(rows = []) {
+  const eventTypeCounts = {};
+  const statusCounts = {};
+  const actors = new Set();
+  const claimants = new Set();
+  let proofBackedEpisodeCount = 0;
+  let acceptedEpisodeCount = 0;
+  let validationReceiptCount = 0;
+  let qualityReceiptCount = 0;
+  let claimedEpisodeCount = 0;
+
+  for (const row of rows || []) {
+    const action = row?.action && typeof row.action === 'object' ? row.action : {};
+    const state = row?.state && typeof row.state === 'object' ? row.state : {};
+    const eventType = safeSignalKey(action.event_type || action.type || action.name);
+    const status = safeSignalKey(state.status);
+    incrementCount(eventTypeCounts, eventType);
+    incrementCount(statusCounts, status);
+
+    const actor = slugify(action.actor || '');
+    if (actor) actors.add(actor);
+    const claimant = slugify(state.claimed_by || state.assigned_to || '');
+    if (claimant) {
+      claimants.add(claimant);
+      claimedEpisodeCount += 1;
+    }
+
+    const proof = String(row?.proof || '').trim();
+    const proofBacked = proof.length >= 20;
+    if (proofBacked) proofBackedEpisodeCount += 1;
+    if (proofBacked && hasAnyTerm(proof, VALIDATION_TERMS)) validationReceiptCount += 1;
+    if (proofBacked && hasAnyTerm(proof, QUALITY_TERMS)) qualityReceiptCount += 1;
+    if (
+      proofBacked
+      && status !== 'failed'
+      && (ATRIS_ACCEPTED_STATUSES.has(status) || ATRIS_ACCEPTED_EVENTS.has(eventType))
+    ) {
+      acceptedEpisodeCount += 1;
+    }
+  }
+
+  return {
+    schema: 'atris.agentxp_atris_action_signal.v1',
+    source: '.atris/state/task_episodes.jsonl',
+    episode_count: rows.length,
+    accepted_episode_count: acceptedEpisodeCount,
+    proof_backed_episode_count: proofBackedEpisodeCount,
+    validation_receipt_count: validationReceiptCount,
+    quality_receipt_count: qualityReceiptCount,
+    claimed_episode_count: claimedEpisodeCount,
+    reviewed_episode_count: eventTypeCounts.reviewed || 0,
+    distinct_actor_count: actors.size,
+    distinct_claimant_count: claimants.size,
+    event_type_counts: Object.fromEntries(Object.entries(eventTypeCounts).sort()),
+    status_counts: Object.fromEntries(Object.entries(statusCounts).sort()),
+    included_in_total_agent_xp: false,
+    public_leaderboard: false,
+    role: 'rl_routing_only',
+  };
+}
+
+function readTaskEpisodesForWorkspace(workspace) {
+  if (!workspace) return [];
+  return readJsonl(path.join(workspace, TASK_EPISODES_FILE));
+}
+
+function buildAtrisActionSignal(projection) {
+  const workspaceRoots = Array.isArray(projection?.workspaces)
+    ? projection.workspaces
+      .filter(workspace => workspace?.included && workspace.workspace_root)
+      .map(workspace => workspace.workspace_root)
+    : [projection?.workspace_root].filter(Boolean);
+  const rows = workspaceRoots.flatMap(workspace => readTaskEpisodesForWorkspace(workspace));
+  return buildAtrisActionSignalFromRows(rows);
 }
 
 function runSqliteJsonOptional(dbPath, sql) {
@@ -1701,17 +1802,28 @@ function buildAgentXpSyncPacket(args = []) {
       trust_rule: 'Only verified local ledgers are uploaded; raw proof and paths stay local.',
     },
     local_evidence: {
+      schema: 'atris.agentxp_local_evidence.v1',
+      workspace_root_hash: workspaceRootHash,
       workspaces,
       verified_workspace_count: asNumber(projection.verified_workspace_count, verifiedProjection(projection) ? 1 : 0),
       receipts_count: receiptsCount,
       integrity_status: projection.integrity?.status || projection.integrity_status || 'unknown',
       ledger_head_hash: projection.integrity?.head_hash || null,
       local_activity: {
+        schema: projection.local_activity?.schema || 'atris.agentxp_local_assistant_activity.v1',
         detected_providers: projection.local_activity?.detected_providers || [],
+        provider_count: asNumber(projection.local_activity?.provider_count, (projection.local_activity?.detected_providers || []).length),
         raw_signal_count: asNumber(projection.local_activity?.raw_signal_count),
         context_agent_xp: asNumber(projection.local_activity?.context_agent_xp),
+        context_weight: asNumber(projection.local_activity?.context_weight, 0.05),
+        cap_ratio_to_accepted_task_xp: asNumber(projection.local_activity?.cap_ratio_to_accepted_task_xp, 0.1),
+        cap_agent_xp: asNumber(projection.local_activity?.cap_agent_xp),
+        accepted_task_agent_xp: asNumber(projection.local_activity?.accepted_task_agent_xp, totalXp),
         included_in_total_agent_xp: false,
+        public_leaderboard: false,
+        role: 'context_only',
       },
+      atris_actions: buildAtrisActionSignal(projection),
     },
     gm_projection: {
       schema: 'atris.gm_xp_projection.v1',
