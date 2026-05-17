@@ -6625,6 +6625,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'context', 'live-workspace.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'STATUS.md')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', '_sync.json')));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'runtime.json')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'events.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'episodes.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')));
@@ -6649,6 +6650,12 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.equal(syncMeta.business_id, 'biz-123');
     assert.equal(syncMeta.workspace_id, 'ws-456');
     assert.equal(syncMeta.workspace_template, 'business');
+
+    const runtime = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'runtime.json'), 'utf8'));
+    assert.equal(runtime.schema, 'atris.runtime.v1');
+    assert.equal(runtime.scope, 'local-business-computer');
+    assert.equal(runtime.install_status, 'local_cli_present');
+    assert.equal(runtime.sync_status, 'templates_seeded');
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /BLOND:ISH/);
