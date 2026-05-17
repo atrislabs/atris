@@ -56,10 +56,15 @@ function isOtpFailure(result) {
 
 function isTrustedPublishAuthFailure(result) {
   const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+  const lower = text.toLowerCase();
+  const permission404 = text.includes('npm error code E404')
+    && text.includes('could not be found or you do not have permission');
+  const missingOidcAuth = text.includes('npm error code ENEEDAUTH')
+    && lower.includes('need auth')
+    && lower.includes('logged in');
   return result.status !== 0
     && process.env.GITHUB_ACTIONS === 'true'
-    && text.includes('npm error code E404')
-    && text.includes('could not be found or you do not have permission');
+    && (permission404 || missingOidcAuth);
 }
 
 function renderTrustedPublishHelp() {
