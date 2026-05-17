@@ -33,6 +33,11 @@ jobs:
 
       - run: npm test
 
+      - name: Restore clean release tree
+        run: |
+          git reset --hard
+          git clean -fd
+
       - name: Block duplicate npm versions
         run: |
           VERSION=$(node -p "require('./package.json').version")
