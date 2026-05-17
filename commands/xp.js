@@ -1724,21 +1724,10 @@ function buildAgentXpSyncPacket(args = []) {
         verified_receipts: receiptsCount,
       },
     },
-    gm_projection: {
-      schema: 'atris.gm_xp_projection.v1',
-      workspace_root_hash: sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':')),
-      operator: player,
-      player_score: {
-        agent_xp: publicXp,
-        career_xp: publicXp,
-        leaderboard_eligible: eligible,
-      },
-    },
     user_leaderboard: {
       schema: 'atris.agentxp_user_leaderboard.v1',
       workspace_root_hash: workspaceRootHash,
       score_name: AGENT_XP_LABEL,
-      workspace_root_hash: sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':')),
       entries: [entry],
     },
   };
