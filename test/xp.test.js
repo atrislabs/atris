@@ -491,6 +491,62 @@ test('xp sync falls back to logged-in Atris auth when no sync token is set', asy
   }
 });
 
+test('xp sync without login points public players to login-first sync', async () => {
+  const workspace = makeTempDir();
+  const home = path.join(workspace, 'home');
+  const previousCwd = process.cwd();
+  const previousHome = process.env.HOME;
+  const previousSyncToken = process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+  const previousLegacySyncToken = process.env.AGENTXP_SYNC_TOKEN;
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'missing-auth-accepted',
+        task_id: 'SYNC-AUTH',
+        title: 'Missing auth sync proof',
+        xp: 2,
+      }),
+    ]);
+    process.chdir(workspace);
+    process.env.HOME = home;
+    delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+    delete process.env.AGENTXP_SYNC_TOKEN;
+
+    await assert.rejects(
+      syncAgentXp(['--local', '--as', 'public-player']),
+      /Missing sync auth\. Run atris login, then retry atris xp sync\. Guided demos can pass --token <owner-provided-token>\./
+    );
+  } finally {
+    process.chdir(previousCwd);
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousSyncToken === undefined) delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+    else process.env.ATRIS_AGENTXP_SYNC_TOKEN = previousSyncToken;
+    if (previousLegacySyncToken === undefined) delete process.env.AGENTXP_SYNC_TOKEN;
+    else process.env.AGENTXP_SYNC_TOKEN = previousLegacySyncToken;
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync dry-run render points players to login-first publish', () => {
+  const output = captureStdout(() => render({
+    schema: 'atris.agentxp_sync_preview.v1',
+    dry_run: true,
+    player: 'public-player',
+    entry: {
+      username: 'public-player',
+      agent_xp: 1,
+      verified_receipts: 1,
+    },
+    packet: {
+      packet_hash: 'packet123',
+    },
+  }));
+
+  assert.match(output, /Run atris login, then atris xp sync --local --as public-player to publish/);
+  assert.match(output, /Guided demos can pass --token <owner-provided-token>\./);
+});
+
 test('xp sync render shows server public identity mapping', () => {
   const output = captureStdout(() => render({
     schema: 'atris.agentxp_sync_result.v1',
