@@ -187,17 +187,18 @@ test('natural-language prompts containing 2 fast do not trigger Atris 2 alias', 
   }
 });
 
-test('ax is a self-contained Atris2 Pro workspace agent script', () => {
+test('ax is a self-contained Atris2 local/cloud agent script', () => {
   const ax = fs.readFileSync(path.join(repoRoot, 'ax'), 'utf8');
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
   assert.match(ax, /path:\s*'\/api\/atris2\/turn'/);
-  assert.match(ax, /workspace_path:\s*options\.cwd/);
+  assert.match(ax, /payload\.workspace_path = options\.cwd \|\| process\.cwd\(\)/);
+  assert.match(ax, /function resolveRoute/);
   assert.match(ax, /model:\s*modelForMode\(mode\)/);
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*mode === 'pro' \? 14 : 6/);
+  assert.match(ax, /max_turns:\s*local \? \(mode === 'pro' \? 14 : 8\) : 1/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
   assert.doesNotMatch(ax, /\/api\/agent-sdk\/fast/);
@@ -218,7 +219,7 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris 2 local coding agent/);
-  assert.match(res.stdout, /ax \[--pro\|--fast\] <message>/);
+  assert.match(res.stdout, /ax \[--pro\|--fast\] \[--local\|--cloud\] <message>/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
 });
@@ -237,7 +238,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(payload.workspace_path, '/workspace/demo');
   assert.equal(payload.model, 'atris:pro');
   assert.equal(payload.max_turns, 14);
-  assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 6);
+  assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 8);
   assert.match(payload.message, /Recent conversation/);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
@@ -253,6 +254,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.deepEqual(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' }), {
     endpoint: 'http://127.0.0.1:8000/api/atris2/turn',
     mode: 'pro',
+    route: 'local',
     model: 'atris:pro',
     workspace_path: '/workspace/demo',
     max_turns: 14,
