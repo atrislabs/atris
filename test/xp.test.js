@@ -273,6 +273,58 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
   }
 });
 
+test('xp local activity detects assistant surfaces without inflating receipt XP', () => {
+  const workspace = makeTempDir();
+  try {
+    const home = path.join(workspace, 'home');
+    const codexState = path.join(home, '.codex', 'state_5.sqlite');
+    fs.mkdirSync(path.dirname(codexState), { recursive: true });
+    fs.writeFileSync(codexState, 'sqlite placeholder', 'utf8');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(workspace, '.cursor'), { recursive: true });
+    fs.mkdirSync(path.join(workspace, '.devin'), { recursive: true });
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'activity-accepted',
+        task_id: 'ACT-1',
+        title: 'Activity context proof',
+        xp: 20,
+        proof: 'activity proof accepted',
+      }),
+    ]);
+
+    const env = { HOME: home, CODEX_STATE_DB: codexState };
+    const result = runCli(['xp', 'status', '--local', '--json'], { cwd: workspace, env });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.total_agent_xp, 20);
+    assert.equal(payload.total_xp, 20);
+    assert.equal(payload.earning_model.primary_public_source, 'accepted_task_receipt');
+    assert.equal(payload.earning_model.weights.find(item => item.id === 'local_assistant_activity').relative_weight, 0.05);
+    assert.equal(payload.local_activity.included_in_total_agent_xp, false);
+    assert.equal(payload.local_activity.public_leaderboard, false);
+    assert.deepEqual(payload.local_activity.detected_providers.sort(), ['claude', 'codex', 'cursor', 'devin']);
+    assert.ok(payload.local_activity.context_agent_xp > 0);
+    assert.ok(payload.local_activity.context_agent_xp <= 2);
+
+    const rendered = runCli(['xp', 'status', '--local'], { cwd: workspace, env });
+    assert.equal(rendered.status, 0, rendered.stderr || rendered.stdout);
+    assert.match(rendered.stdout, /Local activity: claude, codex, cursor, devin/);
+    assert.match(rendered.stdout, /not public AgentXP/);
+
+    const sync = runCli(['xp', 'sync', '--local', '--as', 'internet-test', '--dry-run', '--json'], { cwd: workspace, env });
+    assert.equal(sync.status, 0, sync.stderr || sync.stdout);
+    const syncPayload = JSON.parse(sync.stdout);
+    assert.equal(syncPayload.entry.agent_xp, 20);
+    assert.equal(syncPayload.packet.local_evidence.local_activity.included_in_total_agent_xp, false);
+    assert.deepEqual(syncPayload.packet.local_evidence.local_activity.detected_providers.sort(), ['claude', 'codex', 'cursor', 'devin']);
+    assert.equal(JSON.stringify(syncPayload.packet).includes(workspace), false);
+    assert.equal(JSON.stringify(syncPayload.packet).includes(home), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp sync posts the packet with the AgentXP sync token', async () => {
   const workspace = makeTempDir();
   let captured = null;

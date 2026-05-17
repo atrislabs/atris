@@ -20,6 +20,46 @@ const AGENT_XP_LABEL = 'AgentXP';
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const LEVEL_XP = 1000;
 const RECEIPT_CHAIN_VERSION = 'atris.career_xp_receipt_chain.v1';
+const EARNING_MODEL = {
+  schema: 'atris.agentxp_earning_model.v1',
+  score_name: AGENT_XP_LABEL,
+  primary_public_source: 'accepted_task_receipt',
+  public_rule: 'No accepted proof-backed task episodes means no AgentXP leaderboard movement.',
+  weights: [
+    {
+      id: 'accepted_task_receipt',
+      label: 'Accepted proof-backed task',
+      relative_weight: 1,
+      public_leaderboard: true,
+      rl_value: 'high',
+    },
+    {
+      id: 'validated_agent_loop',
+      label: 'Verifier or agent loop inside an accepted task',
+      relative_weight: 0.35,
+      public_leaderboard: true,
+      rl_value: 'high',
+    },
+    {
+      id: 'atris_action_signal',
+      label: 'Atris action signal',
+      relative_weight: 0.1,
+      public_leaderboard: false,
+      rl_value: 'medium',
+    },
+    {
+      id: 'local_assistant_activity',
+      label: 'Local assistant activity',
+      relative_weight: 0.05,
+      public_leaderboard: false,
+      rl_value: 'medium',
+    },
+  ],
+  caps: {
+    local_assistant_activity: 'Capped below 10% of accepted-task XP and never unlocks public ranking alone.',
+    atris_action_signal: 'Routes RL and next moves, but does not outrank an accepted proof-backed task.',
+  },
+};
 const XP_STATE_FILES = new Set([
   path.basename(TASK_EPISODES_FILE),
   path.basename(CAREER_XP_RECEIPTS_FILE),
@@ -421,6 +461,102 @@ function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function existingSignal(label, filePath) {
+  if (!filePath) return null;
+  try {
+    const stat = fs.statSync(expandHome(filePath));
+    return {
+      label,
+      kind: stat.isDirectory() ? 'dir' : 'file',
+      size_bytes: stat.isFile() ? stat.size : null,
+      mtime: stat.mtime.toISOString(),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function localAssistantProviderSignals(workspace) {
+  const codexStatePath = process.env.CODEX_STATE_DB || CODEX_STATE_FILE;
+  const candidates = [
+    {
+      id: 'codex',
+      label: 'Codex',
+      signals: [
+        existingSignal('codex_state', codexStatePath),
+        existingSignal('codex_history', path.join(os.homedir(), '.codex', 'history.jsonl')),
+        existingSignal('codex_sessions', path.join(os.homedir(), '.codex', 'sessions')),
+      ],
+    },
+    {
+      id: 'claude',
+      label: 'Claude',
+      signals: [
+        existingSignal('claude_home', path.join(os.homedir(), '.claude')),
+        existingSignal('claude_config', path.join(os.homedir(), '.claude.json')),
+        existingSignal('workspace_claude', path.join(workspace, '.claude')),
+      ],
+    },
+    {
+      id: 'cursor',
+      label: 'Cursor',
+      signals: [
+        existingSignal('workspace_cursor', path.join(workspace, '.cursor')),
+        existingSignal('cursor_home', path.join(os.homedir(), '.cursor')),
+        existingSignal('cursor_app_support', path.join(os.homedir(), 'Library', 'Application Support', 'Cursor')),
+      ],
+    },
+    {
+      id: 'devin',
+      label: 'Devin',
+      signals: [
+        existingSignal('workspace_devin', path.join(workspace, '.devin')),
+        existingSignal('devin_home', path.join(os.homedir(), '.devin')),
+      ],
+    },
+  ];
+
+  return candidates.map((provider) => {
+    const signals = provider.signals.filter(Boolean);
+    return {
+      id: provider.id,
+      label: provider.label,
+      detected: signals.length > 0,
+      signal_count: signals.length,
+      signals,
+    };
+  });
+}
+
+function buildLocalAssistantActivity(workspace, acceptedTaskXp = 0) {
+  const providers = localAssistantProviderSignals(workspace);
+  const detected = providers.filter(provider => provider.detected);
+  const rawSignalCount = detected.reduce((sum, provider) => sum + provider.signal_count, 0);
+  const weight = EARNING_MODEL.weights.find(item => item.id === 'local_assistant_activity')?.relative_weight || 0.05;
+  const weightedContext = Math.round(rawSignalCount * weight * 100) / 100;
+  const acceptedXp = asNumber(acceptedTaskXp);
+  const contextCap = Math.round(acceptedXp * 0.1 * 100) / 100;
+  const contextAgentXp = acceptedXp > 0 ? Math.min(weightedContext, contextCap) : 0;
+
+  return {
+    schema: 'atris.agentxp_local_activity.v1',
+    public_leaderboard: false,
+    source_type: 'local_assistant_activity',
+    weight,
+    cap: {
+      max_public_xp_ratio: 0.1,
+      requires_accepted_task_xp: true,
+    },
+    detected_providers: detected.map(provider => provider.id).sort(),
+    providers,
+    raw_signal_count: rawSignalCount,
+    weighted_context_score: weightedContext,
+    context_agent_xp: contextAgentXp,
+    included_in_total_agent_xp: false,
+    note: 'Local assistant activity helps context and RL; accepted proof-backed tasks are the public AgentXP source.',
+  };
+}
+
 function runSqliteJsonOptional(dbPath, sql) {
   if (!dbPath || !fs.existsSync(dbPath)) return [];
   const result = spawnSync('sqlite3', ['-readonly', '-json', dbPath, sql], { encoding: 'utf8' });
@@ -682,6 +818,7 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
     percent: Math.round((currentLevelXp / LEVEL_XP) * 1000) / 10,
   };
   const latest = latestReceipt(accepted);
+  const localActivity = buildLocalAssistantActivity(workspace, totalXp);
 
   return {
     schema: 'atris.career_xp_projection.v1',
@@ -707,6 +844,8 @@ function buildCareerXpProjection(receipts, workspace, integrity = {}) {
     contribution_graph: buildAgentXpContributionGraph(accepted),
     receipts_count: accepted.length,
     sources: countBySource(accepted),
+    earning_model: EARNING_MODEL,
+    local_activity: localActivity,
     latest_accepted_proof: latest ? {
       label: receiptLabel(latest),
       receipt_id: latest.receipt_id,
@@ -929,6 +1068,7 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
       integrity_status: projection?.integrity_status || projection?.integrity?.status || 'unknown',
       leaderboard_eligible: Boolean(projection?.leaderboard_eligible),
       latest_accepted_proof: projection?.latest_accepted_proof || null,
+      local_activity: projection?.local_activity || null,
       ledger: projection?.ledger || null,
     };
   }).sort((a, b) => {
@@ -960,6 +1100,17 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
   const contributionGraph = combineAgentXpContributionGraphs(
     verified.map(projection => projection.contribution_graph),
   );
+  const activityProviders = new Set();
+  let rawActivitySignals = 0;
+  let contextAgentXp = 0;
+  for (const projection of verified) {
+    const activity = projection.local_activity || {};
+    rawActivitySignals += asNumber(activity.raw_signal_count);
+    contextAgentXp += asNumber(activity.context_agent_xp);
+    for (const provider of activity.detected_providers || []) {
+      activityProviders.add(provider);
+    }
+  }
 
   return {
     schema: 'atris.career_xp_profile.v1',
@@ -985,6 +1136,16 @@ function buildAllCareerXpProjection(projections, searchRoots = []) {
     },
     contribution_graph: contributionGraph,
     receipts_count: verified.reduce((sum, projection) => sum + asNumber(projection.receipts_count), 0),
+    earning_model: EARNING_MODEL,
+    local_activity: {
+      schema: 'atris.agentxp_local_activity_summary.v1',
+      public_leaderboard: false,
+      detected_providers: Array.from(activityProviders).sort(),
+      raw_signal_count: rawActivitySignals,
+      context_agent_xp: Math.round(contextAgentXp * 100) / 100,
+      included_in_total_agent_xp: false,
+      note: 'Aggregated local assistant activity is context only; verified receipts define total AgentXP.',
+    },
     latest_accepted_proof: latest,
     workspaces,
     integrity: {
@@ -1408,6 +1569,13 @@ function renderContributionGraph(graph) {
   console.log('Legend: blank none | . started | : solid | * heavy | # breakout');
 }
 
+function renderLocalActivity(activity) {
+  if (!activity || !Array.isArray(activity.detected_providers) || !activity.detected_providers.length) return;
+  console.log(
+    `Local activity: ${activity.detected_providers.join(', ')} | context ${formatNumber(activity.context_agent_xp)} | not public ${AGENT_XP_LABEL}`
+  );
+}
+
 function loadLocalPayload(args) {
   const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
   const operator = readFlag(
@@ -1537,6 +1705,12 @@ function buildAgentXpSyncPacket(args = []) {
       receipts_count: receiptsCount,
       integrity_status: projection.integrity?.status || projection.integrity_status || 'unknown',
       ledger_head_hash: projection.integrity?.head_hash || null,
+      local_activity: {
+        detected_providers: projection.local_activity?.detected_providers || [],
+        raw_signal_count: asNumber(projection.local_activity?.raw_signal_count),
+        context_agent_xp: asNumber(projection.local_activity?.context_agent_xp),
+        included_in_total_agent_xp: false,
+      },
     },
     gm_projection: {
       schema: 'atris.gm_xp_projection.v1',
@@ -1673,6 +1847,7 @@ function render(payload) {
     } else {
       console.log('Latest proof: none accepted yet');
     }
+    renderLocalActivity(payload.local_activity);
     const integrity = payload.integrity || {};
     console.log(`Integrity: ${integrity.status || 'unknown'} (${integrity.local_trust || 'local'})`);
     for (const warning of integrity.warnings || []) {
@@ -1694,6 +1869,7 @@ function render(payload) {
     } else {
       console.log('Latest proof: none accepted yet');
     }
+    renderLocalActivity(payload.local_activity);
     console.log(`Ledger: ${payload.ledger?.projection_path || CAREER_XP_PROJECTION_FILE}`);
     return;
   }
