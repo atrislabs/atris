@@ -152,6 +152,38 @@ function formatBillingMode(worker) {
     : 'Claude subscription lane';
 }
 
+function extractAttachedWorkspaceMismatch(...values) {
+  const text = values
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => {
+      if (typeof value === 'string') return value;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    })
+    .join('\n');
+  const match = text.match(/attached to workspace\s+([a-z0-9-]+)\.\s*Activate workspace\s+([a-z0-9-]+)\s+to switch/i);
+  if (!match) return null;
+  return {
+    attachedWorkspaceId: match[1],
+    requestedWorkspaceId: match[2],
+  };
+}
+
+function contextForAttachedWorkspaceMismatch(ctx, failure) {
+  const mismatch = extractAttachedWorkspaceMismatch(
+    failure?.result?.error,
+    failure?.result?.errorMessage,
+    failure?.result?.data,
+    failure?.fallback?.error,
+    failure?.fallback?.payload
+  );
+  if (!mismatch?.attachedWorkspaceId || mismatch.attachedWorkspaceId === ctx?.workspaceId) return null;
+  return { ...ctx, workspaceId: mismatch.attachedWorkspaceId };
+}
+
 async function describeClaudeAuth(token, ctx) {
   try {
     const status = await fetchBusinessClaudeLoginStatus(token, ctx);
@@ -2358,6 +2390,9 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
       maxTurns: 25,
     });
     if (!fallback.ok) {
+      if (typeof options.onFailure === 'function') {
+        options.onFailure({ result, fallback });
+      }
       console.error(`Failed: ${result.error || result.status}`);
       if (fallback.error) {
         console.error(`Fallback failed: ${fallback.error}`);
@@ -2869,12 +2904,33 @@ async function computerProof(token, ctx, initialOptions = {}) {
 
     console.log(ui.bold('Run'));
     console.log(`  prompt: ${prompt}`);
-    const nextSessionId = await sendBusinessChat(token, ctx, prompt, sessionId, true, null, {
+    let activeCtx = ctx;
+    let chatFailure = null;
+    let nextSessionId = await sendBusinessChat(token, activeCtx, prompt, sessionId, true, null, {
       worker,
       model,
       systemPrompt,
       localCliSessionId: bridge.sessionId,
+      onFailure: (failure) => {
+        chatFailure = failure;
+      },
     });
+    const retryCtx = contextForAttachedWorkspaceMismatch(activeCtx, chatFailure);
+    if (retryCtx) {
+      console.log('');
+      console.log(`Retrying proof against attached workspace ${retryCtx.workspaceId}...`);
+      activeCtx = retryCtx;
+      chatFailure = null;
+      nextSessionId = await sendBusinessChat(token, activeCtx, prompt, `${sessionId}-attached`, true, null, {
+        worker,
+        model,
+        systemPrompt,
+        localCliSessionId: bridge.sessionId,
+        onFailure: (failure) => {
+          chatFailure = failure;
+        },
+      });
+    }
 
     const localPath = path.join(bridge.workingDir, fileName);
     let localContent = '';
@@ -2885,10 +2941,10 @@ async function computerProof(token, ctx, initialOptions = {}) {
     }
     const localOk = localContent === expected;
 
-    const cloudFile = await readBusinessWorkspaceFile(token, ctx, fileName, 15000);
+    const cloudFile = await readBusinessWorkspaceFile(token, activeCtx, fileName, 15000);
     const cloudClear = !cloudFile.ok && cloudFile.status === 404;
 
-    const audit = await fetchBusinessChatAudit(token, ctx, 5);
+    const audit = await fetchBusinessChatAudit(token, activeCtx, 5);
     const rows = audit.ok ? (audit.data?.rows || []) : [];
     const auditRow = rows.find((row) => row.session_id === nextSessionId || row.preview?.includes(fileName)) || rows[0] || {};
     const auditOk = audit.ok && auditRow.status === 'completed' && String(auditRow.result_preview || '').includes('ATRIS COMPUTER PROOF OK');
@@ -3169,4 +3225,6 @@ module.exports = {
   buildComputerCard,
   renderComputerCard,
   renderComputerCardMarkdown,
+  extractAttachedWorkspaceMismatch,
+  contextForAttachedWorkspaceMismatch,
 };

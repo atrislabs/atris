@@ -5,6 +5,10 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const {
+  contextForAttachedWorkspaceMismatch,
+  extractAttachedWorkspaceMismatch,
+} = require('../commands/computer');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -146,6 +150,36 @@ function runCliAsync(args, { cwd, env }) {
     });
   });
 }
+
+test('computer proof can parse active workspace mismatch errors', () => {
+  const message = 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.';
+
+  assert.deepEqual(extractAttachedWorkspaceMismatch(message), {
+    attachedWorkspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
+    requestedWorkspaceId: '89e8432e-e796-4e7b-9a40-e536c454fa9a',
+  });
+  assert.equal(extractAttachedWorkspaceMismatch('plain failure'), null);
+});
+
+test('computer proof can retry against attached workspace context', () => {
+  const ctx = {
+    businessId: 'biz-1',
+    businessName: 'Atris Labs',
+    workspaceId: '89e8432e-e796-4e7b-9a40-e536c454fa9a',
+  };
+  const failure = {
+    result: { error: 'bad request' },
+    fallback: {
+      error: 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.',
+    },
+  };
+
+  assert.deepEqual(contextForAttachedWorkspaceMismatch(ctx, failure), {
+    ...ctx,
+    workspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
+  });
+  assert.equal(contextForAttachedWorkspaceMismatch(ctx, { fallback: { error: 'other' } }), null);
+});
 
 test('computer create creates workspace, activates it, wakes it, and prints next steps', async () => {
   const home = makeTempDir();
