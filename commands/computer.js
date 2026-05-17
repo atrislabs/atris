@@ -25,6 +25,7 @@ const { apiRequestJson, getApiBaseUrl, getAppBaseUrl } = require('../utils/api')
 const { loadBusinesses, saveBusinesses } = require('./business');
 const { consoleCommand, gatherAtrisContext, buildSystemPrompt } = require('./console');
 const { streamSession } = require('./serve');
+const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap');
 
 function getToken() {
   const creds = loadCredentials();
@@ -1143,6 +1144,42 @@ async function runBusinessTerminalCommand(token, ctx, command, timeout = 30) {
   );
 }
 
+async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake') {
+  if (!ctx?.businessId || !ctx?.workspaceId) {
+    return { ok: false, skipped: true, reason: 'missing_workspace' };
+  }
+  if (process.env.ATRIS_SKIP_RUNTIME_BOOTSTRAP === '1') {
+    return { ok: true, skipped: true, reason: 'env' };
+  }
+
+  const command = buildRemoteAtrisBootstrapCommand({
+    boundary,
+    businessSlug: ctx.slug || '',
+    businessId: ctx.businessId,
+    workspaceId: ctx.workspaceId,
+  });
+  const result = await runBusinessTerminalCommand(token, ctx, command, 120);
+  if (!result.ok) {
+    console.log('  Runtime: bootstrap could not run.');
+    console.log(`  Recovery: atris computer run "npm install -g atris@latest" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    return { ok: false, result };
+  }
+
+  const data = result.data || {};
+  const output = String(data.stdout || data.output || data.result || '').trim();
+  const line = output.split('\n').find((entry) => entry.includes('atris_runtime_bootstrap'));
+  const recovery = output.split('\n').find((entry) => entry.startsWith('recovery='));
+  if (line) {
+    console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
+  } else {
+    console.log('  Runtime: Atris bootstrap receipt written.');
+  }
+  if (recovery) {
+    console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+  }
+  return { ok: true, output };
+}
+
 async function readBusinessWorkspaceFile(token, ctx, remotePath, timeoutMs = 15000) {
   return apiRequestJson(
     `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/file?path=${encodeURIComponent(remotePath)}`,
@@ -1306,6 +1343,7 @@ async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
       console.log(`awake (${elapsed}s)`);
+      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake');
       return true;
     }
   }
@@ -1376,6 +1414,7 @@ async function computerWake(token, ctx = null) {
     }
     console.log(`  Status:   ${result.data.status}`);
     if (result.data.endpoint) console.log(`  Endpoint: ${result.data.endpoint}`);
+    await bootstrapBusinessComputerRuntime(token, ctx, 'computer-wake');
     console.log('  Computer is awake.');
     return;
   }
@@ -1467,6 +1506,7 @@ async function computerCreate(token, args = [], defaults = {}) {
     ? 'running'
     : (wake.data?.status || (activate.ok ? 'activated' : 'warming_up'));
   rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint);
+  await bootstrapBusinessComputerRuntime(token, { ...ctx, workspaceId }, 'computer-create');
 
   const appBase = getAppBaseUrl();
   console.log('');
