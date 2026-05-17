@@ -1666,7 +1666,7 @@ if (command === 'init') {
   require('../commands/workflow').executeAgentSDKFast(userInput);
 } else if (command === 'computer') {
   require('../commands/computer').runComputer()
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'diff') {
   let diffSlug = process.argv[3];
