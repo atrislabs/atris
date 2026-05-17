@@ -106,7 +106,7 @@ AgentXP is the proof-backed game loop for getting better with agents. Start it
 inside any project folder:
 
 ```bash
-npm exec --yes --package github:atrislabs/atris#v3.15.28 -- atris play --as <player>
+npm exec --yes --package atris@latest -- atris play
 ```
 
 The first run creates a local starter mission if one does not exist. The loop is:
@@ -118,13 +118,13 @@ start -> proof -> accept -> login -> sync
 The player path:
 
 ```bash
-atris play --as justin
+atris play
 atris task claim <mission-ref> --as game-manager
 atris task ready <mission-ref> --as game-manager --proof "<artifact path + verifier result>"
 atris task accept <mission-ref> --as justin --proof "<human review>"
 atris xp card --local
 atris login
-atris xp sync --local --as justin
+atris xp sync --local
 ```
 
 The manager path:

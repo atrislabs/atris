@@ -75,9 +75,9 @@ test('gm mode shows local players missions and next review action', () => {
     assert.match(gm.stdout, new RegExp(`atris task accept ${ref}`));
     assert.match(gm.stdout, /Global sync: run atris login, then sync; owner tokens are guided-demo fallback only\./);
     assert.match(gm.stdout, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
-    assert.match(gm.stdout, /atris xp sync --local --as justin --token <owner-provided-token>/);
+    assert.match(gm.stdout, /atris xp sync --local --token <owner-provided-token>/);
     assert.match(gm.stdout, /atris login/);
-    assert.match(gm.stdout, /atris xp sync --local --as justin/);
+    assert.match(gm.stdout, /atris xp sync --local/);
 
     const json = runCli(['gm', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr);
@@ -91,9 +91,9 @@ test('gm mode shows local players missions and next review action', () => {
     assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
     assert.ok(
       body.next_commands.indexOf('atris login')
-        < body.next_commands.indexOf('atris xp sync --local --as justin --token <owner-provided-token>')
+        < body.next_commands.indexOf('atris xp sync --local --token <owner-provided-token>')
     );
-    assert.equal(body.next_commands.includes('atris xp sync --local --as justin'), true);
+    assert.equal(body.next_commands.includes('atris xp sync --local'), true);
   } finally {
     cleanupTempDir(dir);
   }
