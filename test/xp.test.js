@@ -275,6 +275,79 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
   }
 });
 
+test('xp sync infers player from accepted local proof before OS user', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-infer-proof-actor',
+        task_id: 'SYNC-INFER',
+        title: 'Sync inferred proof',
+        xp: 3,
+        actor: 'public-player',
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--dry-run', '--json'], {
+      cwd: workspace,
+      env: {
+        USER: 'machine-user',
+        ATRIS_PLAYER: '',
+        ATRIS_USERNAME: '',
+        ATRIS_PROFILE: '',
+        HOME: path.join(workspace, 'home'),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.player, 'public-player');
+    assert.equal(payload.entry.username, 'public-player');
+    assert.equal(payload.packet.operator, 'public-player');
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync infers player from logged-in account profile when present', () => {
+  const workspace = makeTempDir();
+  const home = path.join(workspace, 'home');
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-infer-account',
+        task_id: 'SYNC-ACCOUNT',
+        title: 'Sync account proof',
+        xp: 3,
+      }),
+    ]);
+    fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+    writeJson(path.join(home, '.atris', 'credentials.json'), {
+      token: 'local-token',
+      refresh_token: 'refresh-token',
+      email: 'Morgan.Agent@example.com',
+      user_id: 'user-morgan',
+      provider: 'test',
+    });
+
+    const result = runCli(['xp', 'sync', '--local', '--dry-run', '--json'], {
+      cwd: workspace,
+      env: {
+        USER: 'machine-user',
+        ATRIS_PLAYER: '',
+        ATRIS_USERNAME: '',
+        ATRIS_PROFILE: '',
+        HOME: home,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.player, 'morgan-agent');
+    assert.equal(payload.entry.username, 'morgan-agent');
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp local activity detects assistant surfaces without inflating receipt XP', () => {
   const workspace = makeTempDir();
   try {
@@ -573,7 +646,7 @@ test('xp sync dry-run render points players to login-first publish', () => {
     },
   }));
 
-  assert.match(output, /Run atris login, then atris xp sync --local --as public-player to publish/);
+  assert.match(output, /Run atris login, then atris xp sync --local to publish/);
   assert.match(output, /Guided demos can pass --token <owner-provided-token>\./);
 });
 
