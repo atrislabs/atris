@@ -5,6 +5,7 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { syncBusinessCanonical, ensureWorkspaceStateFiles } = require('./sync');
 const { ensureContextScaffold, writeWikiStatus, appendWikiLog } = require('../lib/wiki');
+const { writeRuntimeReceipt } = require('../lib/runtime-bootstrap');
 
 function getBusinessConfigPath() {
   const home = require('os').homedir();
@@ -398,6 +399,17 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
   }, null, 2));
 
   syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false, templateName: workspaceTemplate });
+  writeRuntimeReceipt(targetRoot, {
+    scope: 'local-business-computer',
+    boundary: 'business-workspace-scaffold',
+    business_id: bizMeta.business_id,
+    workspace_id: bizMeta.workspace_id,
+    business_slug: bizMeta.slug,
+    business_name: bizMeta.name,
+    workspace_template: workspaceTemplate,
+    install_status: 'local_cli_present',
+    sync_status: 'templates_seeded',
+  });
   return { targetRoot, businessJsonPath, workspaceTemplate };
 }
 

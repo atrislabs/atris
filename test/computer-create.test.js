@@ -88,6 +88,12 @@ function startApiServer(requests) {
         });
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/business/biz-1/workspaces/ws-new/terminal') {
+        send(200, {
+          stdout: 'atris_runtime_bootstrap install=installed_latest version=atris v3.15.31 sync=synced receipt=.atris/state/runtime.json\n',
+        });
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/business/biz-1/ai-computer/sleep') {
         send(200, {
           status: 'sleeping',
@@ -176,6 +182,8 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
     assert.match(res.stdout, /atris member activate operator/);
     assert.match(res.stdout, /atris member activate validator/);
+    assert.match(res.stdout, /Runtime: install=installed_latest/);
+    assert.match(res.stdout, /receipt=.atris\/state\/runtime\.json/);
     assert.match(res.stdout, /If the org workspace does not exist yet:/);
     assert.match(res.stdout, /atris business init "Atris Labs"/);
     assert.doesNotMatch(res.stdout, /atris member create operator/);
@@ -189,6 +197,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
         ['POST', '/api/business/biz-1/workspaces'],
         ['POST', '/api/business/biz-1/workspaces/ws-new/activate'],
         ['POST', '/api/business/biz-1/ai-computer/wake'],
+        ['POST', '/api/business/biz-1/workspaces/ws-new/terminal'],
       ]
     );
     assert.deepEqual(requests[1].body, { name: 'My Business Computer', type: 'general' });
@@ -218,7 +227,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     });
     assert.equal(ls.status, 0, ls.stderr || ls.stdout);
     assert.match(ls.stdout, /README\.md/);
-    assert.equal(requests.length, 5);
+    assert.equal(requests.length, 6);
     assert.deepEqual(requests.at(-1), {
       method: 'GET',
       url: '/api/business/biz-1/workspaces/ws-new/files?path=.',
@@ -269,6 +278,12 @@ test('business init seeds Atris operator onboarding as the first computer path',
     assert.ok(fs.existsSync(path.join(workspaceRoot, '.atris', 'business.json')));
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'atris', 'team', 'operator', 'MEMBER.md')));
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'atris', 'team', 'validator', 'MEMBER.md')));
+
+    const runtime = JSON.parse(fs.readFileSync(path.join(workspaceRoot, '.atris', 'state', 'runtime.json'), 'utf8'));
+    assert.equal(runtime.schema, 'atris.runtime.v1');
+    assert.equal(runtime.scope, 'local-business-computer');
+    assert.equal(runtime.install_status, 'local_cli_present');
+    assert.equal(runtime.sync_status, 'templates_seeded');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
@@ -349,6 +364,7 @@ test('computer up and sleep are simple lifecycle commands', async () => {
 
     assert.equal(up.status, 0, up.stderr || up.stdout);
     assert.match(up.stdout, /Computer is awake/);
+    assert.match(up.stdout, /Runtime: install=installed_latest/);
     assert.equal(sleep.status, 0, sleep.stderr || sleep.stdout);
     assert.match(sleep.stdout, /No compute cost while sleeping/);
     assert.deepEqual(
@@ -356,6 +372,7 @@ test('computer up and sleep are simple lifecycle commands', async () => {
       [
         ['GET', '/api/business/'],
         ['POST', '/api/business/biz-1/ai-computer/wake'],
+        ['POST', '/api/business/biz-1/workspaces/ws-new/terminal'],
         ['POST', '/api/business/biz-1/ai-computer/sleep'],
       ]
     );
