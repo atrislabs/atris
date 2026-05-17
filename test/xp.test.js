@@ -38,10 +38,12 @@ function taskEpisode(workspace, overrides = {}) {
     created_at: overrides.created_at || new Date().toISOString(),
     state: {
       title: overrides.title || 'Proof-backed task',
-      status: 'done',
+      status: overrides.status || 'done',
+      claimed_by: overrides.claimed_by || 'codex',
     },
     action: {
       actor: overrides.actor || 'tester',
+      event_type: overrides.event_type || 'reviewed',
     },
     reward: {
       value: overrides.xp || 1,
@@ -301,8 +303,14 @@ test('xp local activity detects assistant surfaces without inflating receipt XP'
     assert.equal(payload.total_xp, 20);
     assert.equal(payload.earning_model.primary_public_source, 'accepted_task_receipt');
     assert.equal(payload.earning_model.weights.find(item => item.id === 'local_assistant_activity').relative_weight, 0.05);
+    assert.equal(payload.local_activity.schema, 'atris.agentxp_local_assistant_activity.v1');
     assert.equal(payload.local_activity.included_in_total_agent_xp, false);
     assert.equal(payload.local_activity.public_leaderboard, false);
+    assert.equal(payload.local_activity.role, 'context_only');
+    assert.equal(payload.local_activity.provider_count, 4);
+    assert.equal(payload.local_activity.context_weight, 0.05);
+    assert.equal(payload.local_activity.cap_ratio_to_accepted_task_xp, 0.1);
+    assert.equal(payload.local_activity.accepted_task_agent_xp, 20);
     assert.deepEqual(payload.local_activity.detected_providers.sort(), ['claude', 'codex', 'cursor', 'devin']);
     assert.ok(payload.local_activity.context_agent_xp > 0);
     assert.ok(payload.local_activity.context_agent_xp <= 2);
@@ -316,8 +324,30 @@ test('xp local activity detects assistant surfaces without inflating receipt XP'
     assert.equal(sync.status, 0, sync.stderr || sync.stdout);
     const syncPayload = JSON.parse(sync.stdout);
     assert.equal(syncPayload.entry.agent_xp, 20);
+    assert.equal(syncPayload.packet.local_evidence.schema, 'atris.agentxp_local_evidence.v1');
+    assert.equal(syncPayload.packet.local_evidence.workspace_root_hash, syncPayload.packet.workspace_root_hash);
+    assert.equal(syncPayload.packet.local_evidence.local_activity.schema, 'atris.agentxp_local_assistant_activity.v1');
     assert.equal(syncPayload.packet.local_evidence.local_activity.included_in_total_agent_xp, false);
+    assert.equal(syncPayload.packet.local_evidence.local_activity.public_leaderboard, false);
+    assert.equal(syncPayload.packet.local_evidence.local_activity.role, 'context_only');
     assert.deepEqual(syncPayload.packet.local_evidence.local_activity.detected_providers.sort(), ['claude', 'codex', 'cursor', 'devin']);
+    const atrisActions = syncPayload.packet.local_evidence.atris_actions;
+    assert.equal(atrisActions.schema, 'atris.agentxp_atris_action_signal.v1');
+    assert.equal(atrisActions.source, '.atris/state/task_episodes.jsonl');
+    assert.equal(atrisActions.episode_count, 1);
+    assert.equal(atrisActions.accepted_episode_count, 1);
+    assert.equal(atrisActions.proof_backed_episode_count, 1);
+    assert.equal(atrisActions.validation_receipt_count, 0);
+    assert.equal(atrisActions.quality_receipt_count, 0);
+    assert.equal(atrisActions.claimed_episode_count, 1);
+    assert.equal(atrisActions.reviewed_episode_count, 1);
+    assert.equal(atrisActions.distinct_actor_count, 1);
+    assert.equal(atrisActions.distinct_claimant_count, 1);
+    assert.deepEqual(atrisActions.event_type_counts, { reviewed: 1 });
+    assert.deepEqual(atrisActions.status_counts, { done: 1 });
+    assert.equal(atrisActions.included_in_total_agent_xp, false);
+    assert.equal(atrisActions.public_leaderboard, false);
+    assert.equal(atrisActions.role, 'rl_routing_only');
     assert.equal(JSON.stringify(syncPayload.packet).includes(workspace), false);
     assert.equal(JSON.stringify(syncPayload.packet).includes(home), false);
   } finally {
