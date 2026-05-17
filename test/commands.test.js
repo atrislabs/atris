@@ -3823,12 +3823,12 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(body.player_source, 'flag');
     assert.equal(body.mission.title, 'AgentXP Mode first rep');
     assert.equal(body.mission.assigned_to, 'justin');
-    assert.equal(body.global_sync_rule, 'Use the owner-provided sync token first; fallback is atris login before sync.');
+    assert.equal(body.global_sync_rule, 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.');
     assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as game-manager`);
     assert.ok(
-      body.next_commands.indexOf('atris xp sync --local --as justin --token <owner-provided-token>')
-        < body.next_commands.indexOf('atris login')
+      body.next_commands.indexOf('atris login')
+        < body.next_commands.indexOf('atris xp sync --local --as justin --token <owner-provided-token>')
     );
     assert.equal(body.next_commands.includes('atris login'), true);
   } finally {
