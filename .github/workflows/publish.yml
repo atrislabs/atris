@@ -41,4 +41,10 @@ jobs:
             exit 1
           fi
 
-      - run: npm run publish:release
+      - name: Publish with npm trusted publishing
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken || true
+          unset NODE_AUTH_TOKEN
+          npm run publish:release
+        env:
+          NODE_AUTH_TOKEN: ''
