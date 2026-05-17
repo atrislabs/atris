@@ -6,6 +6,7 @@
  *   atris computer create <name>    — Create and wake a business computer
  *   atris computer wake             — Start the computer
  *   atris computer sleep            — Stop (files persist)
+ *   atris computer delete           — Sleep, confirm, and delete a business computer
  *   atris computer card             — Show the local computer card
  *   atris computer run <command>    — Run bash on EC2 (no LLM)
  *   atris computer grep <pattern>   — Search files on EC2
@@ -599,6 +600,29 @@ function parseComputerCreateArgs(argv = []) {
     businessSlug: businessSlug ? String(businessSlug).trim() : null,
     help,
   };
+}
+
+function parseComputerDeleteArgs(argv = []) {
+  const options = { help: false, confirm: null };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--help' || arg === '-h' || arg === 'help') {
+      options.help = true;
+      continue;
+    }
+    if (arg === '--confirm' && argv[i + 1]) {
+      options.confirm = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--confirm=')) {
+      options.confirm = arg.slice('--confirm='.length);
+      continue;
+    }
+  }
+
+  return options;
 }
 
 function formatCloudSelection(options = {}) {
@@ -1352,6 +1376,7 @@ async function computerWake(token, ctx = null) {
     }
     console.log(`  Status:   ${result.data.status}`);
     if (result.data.endpoint) console.log(`  Endpoint: ${result.data.endpoint}`);
+    console.log('  Computer is awake.');
     return;
   }
 
@@ -1367,6 +1392,7 @@ async function computerWake(token, ctx = null) {
   }
   console.log(`  Status:   ${result.data.status}`);
   console.log(`  Endpoint: ${result.data.endpoint}`);
+  console.log('  Computer is awake.');
 }
 
 async function computerCreate(token, args = [], defaults = {}) {
@@ -1469,6 +1495,7 @@ async function computerSleep(token, ctx = null) {
       return;
     }
     console.log('  Computer is sleeping. Files persist.');
+    console.log('  No compute cost while sleeping.');
     return;
   }
 
@@ -1483,6 +1510,113 @@ async function computerSleep(token, ctx = null) {
     return;
   }
   console.log('  Computer is sleeping. Files persist.');
+  console.log('  No compute cost while sleeping.');
+}
+
+function rememberDeletedComputer(ctx) {
+  const businesses = loadBusinesses();
+  let changed = false;
+  for (const [slug, entry] of Object.entries(businesses)) {
+    if (!entry) continue;
+    const sameBusiness = entry.business_id === ctx.businessId || slug === ctx.slug;
+    const sameWorkspace = entry.workspace_id === ctx.workspaceId;
+    if (sameBusiness && sameWorkspace) {
+      delete entry.workspace_id;
+      delete entry.computer_name;
+      delete entry.endpoint;
+      entry.deleted_workspace_id = ctx.workspaceId;
+      entry.updated_at = new Date().toISOString();
+      changed = true;
+    }
+  }
+  if (changed) saveBusinesses(businesses);
+}
+
+async function confirmComputerDelete(ctx, options) {
+  const expected = `delete ${ctx.workspaceId}`;
+  if (String(options.confirm || '').trim() === expected) return true;
+
+  console.log('');
+  console.log('This will sleep the computer first, then delete the workspace record.');
+  console.log(`Business:  ${ctx.businessName}`);
+  console.log(`Workspace: ${ctx.workspaceId}`);
+  console.log(`Type "${expected}" to continue.`);
+
+  if (!useInteractiveTerminalUi()) {
+    console.error(`Confirmation required. Re-run with: --confirm "${expected}"`);
+    return false;
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = String(await questionAsync(rl, 'Confirm: ') || '').trim();
+  rl.close();
+  if (answer === expected) return true;
+
+  console.error('Delete cancelled.');
+  return false;
+}
+
+async function computerDelete(token, ctx, options = {}, args = []) {
+  const deleteOptions = parseComputerDeleteArgs(args);
+  if (deleteOptions.help) {
+    console.log('Usage: atris computer delete --business <slug> --workspace <workspace-id>');
+    console.log('');
+    console.log('Sleeps the computer first, then deletes the non-default workspace after confirmation.');
+    console.log('');
+    console.log('Examples:');
+    console.log('  atris computer delete --business atris-labs --workspace ws_123');
+    console.log('  atris computer delete --business atris-labs --workspace ws_123 --confirm "delete ws_123"');
+    return;
+  }
+
+  if (!ctx?.businessId) {
+    console.error('No business found.');
+    console.error('Pass: --business <slug> --workspace <workspace-id>');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!options.workspaceId || !ctx.workspaceId) {
+    console.error('Refusing to delete without an explicit workspace id.');
+    console.error('Pass: --workspace <workspace-id>');
+    process.exitCode = 1;
+    return;
+  }
+
+  const confirmed = await confirmComputerDelete(ctx, deleteOptions);
+  if (!confirmed) {
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`Sleeping computer for ${ctx.businessName}...`);
+  const slept = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/sleep`, {
+    method: 'POST',
+    token,
+    body: {},
+  });
+  if (!slept.ok) {
+    console.error(`Failed to sleep computer: ${slept.errorMessage || slept.error || slept.status}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log('  Computer is sleeping. Files persist.');
+  console.log(`Deleting workspace ${ctx.workspaceId}...`);
+  const deleted = await apiRequestJson(`/business/${ctx.businessId}/workspaces/${ctx.workspaceId}`, {
+    method: 'DELETE',
+    token,
+  });
+  if (!deleted.ok) {
+    console.error(`Failed to delete computer: ${deleted.errorMessage || deleted.error || deleted.status}`);
+    if (deleted.status === 400) console.error('Default workspaces cannot be deleted.');
+    process.exitCode = 1;
+    return;
+  }
+
+  rememberDeletedComputer(ctx);
+  console.log('  Computer deleted.');
+  console.log('  Cost gate: sleeping before delete completed.');
 }
 
 async function computerRun(token, command, ctx = null) {
@@ -2849,8 +2983,9 @@ async function runComputer() {
     console.log('                  /status shows lane, Claude auth, and billing');
     console.log('                  /audit [n] shows recent cloud runs inside chat');
     console.log('  status          Show computer status');
-    console.log('  wake            Start the computer');
+    console.log('  up|wake         Start the computer');
     console.log('  sleep           Stop the computer (files persist)');
+    console.log('  delete          Sleep, confirm, and delete a business computer');
     console.log('  run <cmd>       Run bash on EC2 (no LLM cost)');
     console.log('  grep <pattern>  Search files on EC2');
     console.log('  ls [path]       List files');
@@ -2866,6 +3001,8 @@ async function runComputer() {
     console.log('  atris computer card --write');
     console.log('  atris computer create "My Business Computer" --business atris-labs');
     console.log('  atris computer --business atris-labs --workspace <workspace-id>');
+    console.log('  atris computer sleep --business atris-labs --workspace <workspace-id>');
+    console.log('  atris computer delete --business atris-labs --workspace <workspace-id>');
     console.log('  atris business init "My Lab"     # shared owner + first/default computer');
     console.log('  atris computer proof');
     console.log('  atris computer local');
@@ -2953,8 +3090,11 @@ async function runComputer() {
     case 'card': return computerCard(args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
+    case 'up':
     case 'wake': return computerWake(token, ctx);
     case 'sleep': return computerSleep(token, ctx);
+    case 'delete':
+    case 'rm': return computerDelete(token, ctx, cloudOptions, args.slice(1));
     case 'run': return computerRun(token, rest, ctx);
     case 'grep': return computerGrep(token, rest, ctx);
     case 'ls': return computerLs(token, rest || undefined, ctx);
