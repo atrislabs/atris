@@ -707,7 +707,8 @@ function worktreeReceipt(before, after, { verifier = '' } = {}) {
 // ---------------------------------------------------------------------------
 // `atris mission run <id>` — bounded local headless loop. v0.1.
 // Spawns `claude -p --resume <session>` per tick. Honors cadence, active-hours,
-// rate-limit info, and a flock per mission. Only consumes max-ticks on `ran`.
+// rate-limit info, and a flock per mission. `max-ticks` bounds total attempts;
+// `ran_ticks` separately reports ticks that actually made progress.
 // ---------------------------------------------------------------------------
 
 const MISSION_RUN_DEFAULTS = {
@@ -1284,7 +1285,7 @@ async function runMission(args) {
     const sessionLabel = skipWorker ? 'caller-session' : (sessionId || `pending=${pendingSessionId}`);
     console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
 
-    while (ranTicks < effectiveMaxTicks) {
+    while (ticks.length < effectiveMaxTicks) {
       const elapsedSec = (Date.now() - startedAt) / 1000;
       const remainingWall = maxWallSeconds - elapsedSec;
       if (remainingWall <= 0) { pauseReason = 'max-wall-reached'; break; }
@@ -1462,10 +1463,15 @@ async function runMission(args) {
       }
       const remainingMs = remainingWall * 1000 - 1;
       sleepMs = Math.min(Math.max(0, sleepMs), Math.max(0, remainingMs));
-      if (sleepMs > 0 && ranTicks < effectiveMaxTicks) {
+      if (sleepMs > 0 && ticks.length < effectiveMaxTicks) {
         try { await sleep(sleepMs, controller.signal); }
         catch (e) { if (e.code === 'ABORTED') { pauseReason = 'aborted'; break; } throw e; }
       }
+    }
+
+    if (!pauseReason && ticks.length >= effectiveMaxTicks) {
+      const lastTick = ticks[ticks.length - 1];
+      if (lastTick && lastTick.status !== 'ran') pauseReason = 'max-ticks-reached';
     }
 
     if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
