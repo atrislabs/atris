@@ -77,6 +77,18 @@ function startApiServer(requests) {
         });
         return;
       }
+      if (req.method === 'POST' && req.url === '/api/business/biz-1/ai-computer/sleep') {
+        send(200, {
+          status: 'sleeping',
+          business_id: 'biz-1',
+          service_name: 'svc-biz-1',
+        });
+        return;
+      }
+      if (req.method === 'DELETE' && req.url === '/api/business/biz-1/workspaces/ws-new') {
+        send(200, { status: 'deleted' });
+        return;
+      }
       if (req.method === 'GET' && req.url === '/api/business/biz-1/workspaces/ws-new/files?path=.') {
         send(200, {
           files: [{ name: 'README.md', type: 'file', size: 42 }],
@@ -193,6 +205,144 @@ test('computer create creates workspace, activates it, wakes it, and prints next
       authorization: 'Bearer test-token',
       body: null,
     });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer delete refuses noninteractive delete without confirmation', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'delete',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /Confirmation required/);
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url]),
+      [['GET', '/api/business/']]
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer up and sleep are simple lifecycle commands', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const up = await runCliAsync([
+      'computer',
+      'up',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], { cwd, env });
+    const sleep = await runCliAsync([
+      'computer',
+      'sleep',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], { cwd, env });
+
+    assert.equal(up.status, 0, up.stderr || up.stdout);
+    assert.match(up.stdout, /Computer is awake/);
+    assert.equal(sleep.status, 0, sleep.stderr || sleep.stdout);
+    assert.match(sleep.stdout, /No compute cost while sleeping/);
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url]),
+      [
+        ['GET', '/api/business/'],
+        ['POST', '/api/business/biz-1/ai-computer/wake'],
+        ['POST', '/api/business/biz-1/ai-computer/sleep'],
+      ]
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer delete sleeps before deleting confirmed workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'delete',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      '--confirm',
+      'delete ws-new',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Computer is sleeping/);
+    assert.match(res.stdout, /Computer deleted/);
+    assert.match(res.stdout, /Cost gate/);
+    assert.deepEqual(
+      requests.map((request) => [request.method, request.url]),
+      [
+        ['GET', '/api/business/'],
+        ['POST', '/api/business/biz-1/ai-computer/sleep'],
+        ['DELETE', '/api/business/biz-1/workspaces/ws-new'],
+      ]
+    );
+    assert.ok(requests.every((request) => request.authorization === 'Bearer test-token'));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
