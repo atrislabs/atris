@@ -1,13 +1,51 @@
 #!/usr/bin/env node
 
+const fs = require('fs');
 const http = require('http');
+const https = require('https');
+const os = require('os');
+const path = require('path');
 const readline = require('readline');
+const { loadCredentials } = require('./utils/auth');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
   host: '127.0.0.1',
   port: 8000,
   path: '/api/atris2/turn'
+};
+const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
+const CONNECTION_STATUS_PATH = '/api/integrations/status';
+const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
+const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
+const CONNECTOR_NAMES = {
+  gmail: 'Gmail',
+  google_calendar: 'Google Calendar',
+  google_drive: 'Google Drive',
+  google_docs: 'Google Docs',
+  github: 'GitHub',
+  slack: 'Slack',
+  linear: 'Linear',
+  notion: 'Notion',
+  hubspot: 'HubSpot',
+  twitter: 'Twitter',
+  microsoft: 'Microsoft',
+  discord: 'Discord',
+  jira: 'Jira',
+  linkedin: 'LinkedIn',
+  whatsapp: 'WhatsApp',
+  salesforce: 'Salesforce'
+};
+const CONNECTOR_SCOPES = {
+  gmail: ['mail'],
+  google_calendar: ['calendar'],
+  google_drive: ['drive'],
+  google_docs: ['docs'],
+  github: ['repos', 'issues', 'pull_requests'],
+  slack: ['messages'],
+  linear: ['issues'],
+  notion: ['pages', 'databases'],
+  hubspot: ['crm']
 };
 const ANSI = {
   reset: '\x1b[0m',
@@ -50,37 +88,54 @@ function formatUsage() {
     'ax - Atris 2 local coding agent',
     '',
     'Usage:',
-    '  ax [--pro|--fast] <message>',
-    '  ax [--pro|--fast] --chat',
+    '  ax [--pro|--fast] [--local|--cloud] <message>',
+    '  ax [--pro|--fast] [--local|--cloud] --chat',
     '  ax [--pro|--fast] --doctor',
+    '  ax [--fast] --benchmark',
     '',
     'Modes:',
     '  --pro   local workspace agent, deeper tool loop',
     '  --fast  local workspace agent, faster low-latency turns',
+    '  --local force local workspace tools',
+    '  --cloud force authenticated cloud connectors/chat',
     '',
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
+    '  ax --fast what is on my calendar today',
     '  ax --pro --chat',
   ].join('\n');
 }
 
+function backendBaseUrl() {
+  return (process.env.AX_BACKEND_URL
+    || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL
+    || process.env.OBELISK_ATRIS2_BACKEND_URL
+    || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
+}
+
 function backendUrl() {
-  return `http://${BACKEND.host}:${BACKEND.port}${BACKEND.path}`;
+  return new URL(BACKEND.path, backendBaseUrl()).toString();
+}
+
+function backendPathUrl(pathname) {
+  return new URL(pathname, backendBaseUrl()).toString();
 }
 
 function buildRunProfile(options = {}) {
   const mode = options.mode === 'fast' ? 'fast' : 'pro';
   const cwd = options.cwd || process.cwd();
-  const payload = buildPayload(options.message || 'doctor', { mode, cwd });
+  const route = resolveRoute(options.message || 'doctor', options);
+  const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
   return {
     endpoint: backendUrl(),
     mode,
+    route,
     model: payload.model,
-    workspace_path: payload.workspace_path,
+    workspace_path: payload.workspace_path || 'cloud',
     max_turns: payload.max_turns,
     streaming: true,
-    runtime: 'local workspace',
+    runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
     reasoning: mode === 'pro'
       ? 'backend reports run row; Pro workspace tool loop uses API default medium'
       : 'backend reports run row; Fast workspace tool loop uses provider default'
@@ -91,6 +146,7 @@ function formatRunProfile(profile, options = {}) {
   const rows = [
     ['mode', `${profile.mode} (${profile.model})`],
     ['endpoint', profile.endpoint],
+    ['route', profile.route || 'auto'],
     ['workspace', formatPathSubject(profile.workspace_path, options)],
     ['turns', String(profile.max_turns)],
     ['streaming', profile.streaming ? 'yes' : 'no'],
@@ -98,6 +154,196 @@ function formatRunProfile(profile, options = {}) {
     ['thinking', profile.reasoning],
   ];
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
+}
+
+function canonicalConnectorId(value) {
+  return String(value || '').trim().toLowerCase().replace(/-/g, '_');
+}
+
+function connectorDisplayName(id) {
+  const key = canonicalConnectorId(id);
+  if (CONNECTOR_NAMES[key]) return CONNECTOR_NAMES[key];
+  return key.split('_').map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
+}
+
+function authToken() {
+  if (process.env.OBELISK_AUTH_TOKEN) return process.env.OBELISK_AUTH_TOKEN;
+  if (process.env.ATRIS_TOKEN) return process.env.ATRIS_TOKEN;
+  try {
+    const creds = loadCredentials();
+    return creds && creds.token ? creds.token : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function authUserId() {
+  if (process.env.OBELISK_USER_ID) return process.env.OBELISK_USER_ID;
+  if (process.env.ATRIS_USER_ID) return process.env.ATRIS_USER_ID;
+  try {
+    const creds = loadCredentials();
+    return creds && creds.user_id ? creds.user_id : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function isLoopbackBackend() {
+  try {
+    const parsed = new URL(backendBaseUrl());
+    return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
+  const url = backendPathUrl(pathname);
+  const parsed = new URL(url);
+  const transport = parsed.protocol === 'https:' ? https : http;
+  return new Promise((resolve) => {
+    const req = transport.request({
+      method: 'GET',
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: `${parsed.pathname}${parsed.search}`,
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    }, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        try {
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data: text ? JSON.parse(text) : null, text });
+        } catch (_) {
+          resolve({ ok: false, status: res.statusCode, data: null, text });
+        }
+      });
+    });
+    req.on('error', error => resolve({ ok: false, status: 0, data: null, text: '', error: error.message }));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: null, text: '', error: `timeout after ${timeoutMs}ms` });
+    });
+    req.end();
+  });
+}
+
+function defaultAuthority(id) {
+  const key = canonicalConnectorId(id);
+  if (key === 'gmail') return { list_messages: 'read_only', get_message: 'read_only', send_message: 'approval_required' };
+  if (key === 'google_calendar') return { list_events: 'read_only', get_event: 'read_only', create_event: 'approval_required' };
+  if (key === 'google_drive') return { list_files: 'read_only', search_files: 'read_only', download_file: 'read_only', upload_file: 'approval_required' };
+  if (key === 'google_docs') return { list_documents: 'read_only', get_document: 'read_only', create_document: 'approval_required' };
+  if (key === 'github') return { list_repos: 'read_only', get_repo: 'read_only', list_issues: 'read_only', create_issue: 'approval_required' };
+  if (key === 'slack') return { list_channels: 'read_only', search_messages: 'read_only', post_message: 'approval_required' };
+  if (key === 'linear') return { list_issues: 'read_only', get_issue: 'read_only', create_issue: 'approval_required' };
+  if (key === 'notion') return { search: 'read_only', get_page: 'read_only', create_page: 'approval_required' };
+  if (key === 'hubspot') return { list_contacts: 'read_only', search_contacts: 'read_only', create_contact: 'approval_required' };
+  return { inspect_status: 'read_only' };
+}
+
+function connectionFromStatus(id, connected, contractConnector = null) {
+  const key = canonicalConnectorId(id);
+  const authority = contractConnector && contractConnector.authority && typeof contractConnector.authority === 'object'
+    ? contractConnector.authority
+    : defaultAuthority(key);
+  return {
+    id: key,
+    name: connectorDisplayName(key),
+    connected: connected === true,
+    local: false,
+    actions: Object.keys(authority),
+    scopes: CONNECTOR_SCOPES[key] || [],
+    authority,
+    source: 'ax_integrations_status'
+  };
+}
+
+function statusConnected(statuses, id) {
+  const keys = [id, id.replace(/_/g, '-'), canonicalConnectorId(id)];
+  for (const key of keys) {
+    const value = statuses[key];
+    if (value === true) return true;
+    if (value && typeof value === 'object') {
+      if (value.connected === true) return true;
+      if (String(value.status || '').toLowerCase() === 'connected') return true;
+    }
+  }
+  return false;
+}
+
+async function buildConnectionContext(options = {}) {
+  const token = options.token || authToken();
+  const localStatusUserId = isLoopbackBackend() ? authUserId() : '';
+  const statusPath = localStatusUserId
+    ? `${ATRIS2_CONNECTION_STATUS_PATH}?connection_user_id=${encodeURIComponent(localStatusUserId)}`
+    : CONNECTION_STATUS_PATH;
+  const [statusRes, contractRes] = await Promise.all([
+    localStatusUserId || token ? requestJson(statusPath, { token: localStatusUserId ? '' : token }) : Promise.resolve({ ok: false, data: null }),
+    requestJson(CONNECTION_CAPABILITIES_PATH, { token: '' })
+  ]);
+  const statusData = statusRes.ok && statusRes.data && typeof statusRes.data === 'object' ? statusRes.data : {};
+  const statuses = statusData.statuses && typeof statusData.statuses === 'object' ? statusData.statuses : statusData;
+  const contractConnectors = new Map();
+  if (contractRes.ok && contractRes.data && Array.isArray(contractRes.data.connectors)) {
+    for (const connector of contractRes.data.connectors) {
+      const key = canonicalConnectorId(connector.id);
+      if (key) contractConnectors.set(key, connector);
+    }
+  }
+  const ids = new Set([
+    ...Object.keys(CONNECTOR_NAMES),
+    ...Object.keys(statuses).map(canonicalConnectorId),
+    ...contractConnectors.keys(),
+  ]);
+  const connections = [...ids].sort().map(id => connectionFromStatus(
+    id,
+    statusConnected(statuses, id),
+    contractConnectors.get(id)
+  ));
+  connections.push({
+    id: 'computer.local',
+    name: 'This Mac workspace',
+    connected: options.localWorkspace === true,
+    local: true,
+    status: options.localWorkspace === true ? 'available' : 'cloud_only',
+    actions: ['inspect_status', 'use_local_workspace'],
+    scopes: ['computer', 'workspace'],
+    authority: { inspect_status: 'read_only', use_local_workspace: 'read_only' },
+    source: 'ax'
+  });
+  return {
+    schema: 'atris.connection_capabilities.v1',
+    source: 'ax',
+    stale: false,
+    capability_contract_source: contractRes.ok ? 'backend' : 'fallback',
+    capability_contract_schema: contractRes.data && contractRes.data.schema,
+    capability_contract_connectors: contractConnectors.size || undefined,
+    connections
+  };
+}
+
+function mentionsConnector(message) {
+  return /\b(gmail|email|mail|inbox|calendar|events?|meetings?|schedule|google drive|drive|docs?|sheets?|github|slack|linear|notion|hubspot|integrations?|connectors?|connections?|connected apps?|connected tools?)\b/i.test(message || '');
+}
+
+function connectorWriteIntent(message) {
+  return mentionsConnector(message) && /\b(send|post|dm|message|reply|draft|compose|schedule|book|create|update|delete|archive|move|share|comment|invite)\b/i.test(message || '');
+}
+
+function workspaceIntent(message) {
+  return /\b(files?|folders?|repo|workspace|project|directory|tree|read|open|inspect|search|grep|find|locate|where|edit|write|change|modify|patch|fix|test|tests?|build|src|source|code|diff|git|backend|frontend|atris task|atris xp|xp game|career xp|agentxp|todo|map)\b/i.test(message || '');
+}
+
+function resolveRoute(message, options = {}) {
+  if (options.route === 'local' || options.forceLocal) return 'local';
+  if (options.route === 'cloud' || options.forceCloud) return 'cloud';
+  if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
+  return 'local';
 }
 
 function formatPrompt() {
@@ -342,13 +588,29 @@ function buildMessage(message, history = []) {
 
 function buildPayload(message, options = {}) {
   const mode = options.mode === 'fast' ? 'fast' : 'pro';
-  return {
+  const route = resolveRoute(message, options);
+  const local = route !== 'cloud';
+  const payload = {
     message: buildMessage(message, options.history || []),
-    workspace_path: options.cwd || process.cwd(),
     model: modelForMode(mode),
-    max_turns: mode === 'pro' ? 14 : 6,
+    max_turns: local ? (mode === 'pro' ? 14 : 8) : 1,
     verify_command: 'true'
   };
+  if (local) {
+    payload.workspace_path = options.cwd || process.cwd();
+  }
+  if (options.connectionContext) {
+    payload.connection_context = options.connectionContext;
+  }
+  if (!local && options.connectionUserId) {
+    payload.connection_user_id = options.connectionUserId;
+  }
+  if (!local && connectorWriteIntent(message)) {
+    payload.allow_external_actions = true;
+    payload.cleanup_external_actions = true;
+    payload.max_turns = mode === 'pro' ? 4 : 2;
+  }
+  return payload;
 }
 
 function handleEvent(event, state, output) {
@@ -401,11 +663,24 @@ function handleEvent(event, state, output) {
   }
 }
 
-function postTurn(message, options = {}) {
-  const payload = buildPayload(message, options);
+async function postTurn(message, options = {}) {
+  const route = resolveRoute(message, options);
+  const local = route !== 'cloud';
+  const token = authToken();
+  const shouldSendConnectionContext = options.connectionContext
+    || route === 'cloud'
+    || mentionsConnector(message)
+    || /\b(can you use|can you access|connected|connections?|integrations?|tools?|capabilities)\b/i.test(message || '');
+  const connectionContext = options.connectionContext || (shouldSendConnectionContext
+    ? await buildConnectionContext({ token, localWorkspace: local })
+    : null);
+  const connectionUserId = !local && isLoopbackBackend() ? authUserId() : '';
+  const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
   const timeoutMs = payload.model === 'atris:pro' ? 180000 : 60000;
+  const turnUrl = new URL(backendUrl());
+  const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
     events: [],
     errors: [],
@@ -435,15 +710,16 @@ function postTurn(message, options = {}) {
       else resolve(value);
     };
 
-    const req = http.request({
-      hostname: BACKEND.host,
-      port: BACKEND.port,
-      path: BACKEND.path,
+    const req = transport.request({
+      hostname: turnUrl.hostname,
+      port: turnUrl.port || (turnUrl.protocol === 'https:' ? 443 : 80),
+      path: `${turnUrl.pathname}${turnUrl.search}`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(postData),
-        Accept: 'text/event-stream'
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
     }, (res) => {
       res.setEncoding('utf8');
@@ -554,7 +830,174 @@ async function chat(options = {}) {
 function printBackendHint() {
   console.log('');
   console.log('Start backend:');
-  console.log(`cd /Users/keshavrao/arena/atrisos-backend/backend && uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`);
+  console.log(`cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`);
+}
+
+function bufferedOutput() {
+  let text = '';
+  return {
+    isTTY: false,
+    write(chunk) {
+      text += String(chunk || '');
+      return true;
+    },
+    text() {
+      return text;
+    }
+  };
+}
+
+function receiptFromState(state) {
+  const event = [...(state.events || [])].reverse().find(item => item && item.type === 'receipt' && item.receipt);
+  return event ? event.receipt : null;
+}
+
+function toolEventsFromState(state) {
+  const receipt = receiptFromState(state);
+  if (receipt && Array.isArray(receipt.tool_events)) return receipt.tool_events;
+  return [];
+}
+
+function assertBenchmark(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function toolEventText(events) {
+  return JSON.stringify(events || []);
+}
+
+async function runBenchmarkCase(label, fn, results, output) {
+  const startedAt = Date.now();
+  output.write(`- ${label} ... `);
+  try {
+    const detail = await fn();
+    const duration = formatDuration(Date.now() - startedAt);
+    output.write(`ok (${duration})${detail ? ` - ${detail}` : ''}\n`);
+    results.push({ label, ok: true, duration_ms: Date.now() - startedAt, detail });
+  } catch (error) {
+    const duration = formatDuration(Date.now() - startedAt);
+    output.write(`fail (${duration}) - ${error.message}\n`);
+    results.push({ label, ok: false, duration_ms: Date.now() - startedAt, error: error.message });
+  }
+}
+
+async function runBenchmark(options = {}) {
+  const mode = options.mode === 'pro' ? 'pro' : 'fast';
+  const output = options.output || process.stdout;
+  const results = [];
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-atris2-benchmark-'));
+  const localOut = () => bufferedOutput();
+
+  output.write(`Atris 2 ${mode === 'fast' ? 'Fast' : 'Pro'} benchmark\n`);
+  output.write(`${backendUrl()}\n\n`);
+
+  try {
+    await runBenchmarkCase('search through files', async () => {
+      const workspace = path.join(tempRoot, 'search');
+      fs.mkdirSync(path.join(workspace, 'src', 'deep'), { recursive: true });
+      fs.writeFileSync(path.join(workspace, 'package.json'), '{"name":"ax-search-bench"}\n');
+      fs.writeFileSync(path.join(workspace, 'src', 'deep', 'needle.txt'), 'AX_SEARCH_SENTINEL=found-here\n');
+      const sink = localOut();
+      const state = await postTurn(
+        'Use local tools to search for AX_SEARCH_SENTINEL and answer with the exact file path. Do not edit.',
+        { mode, cwd: workspace, route: 'local', output: sink, showProgress: false }
+      );
+      const combined = `${state.output}\n${toolEventText(toolEventsFromState(state))}`;
+      assertBenchmark(/src\/deep\/needle\.txt/.test(combined), 'missing proof path src/deep/needle.txt');
+      assertBenchmark(/AX_SEARCH_SENTINEL/.test(combined), 'missing sentinel proof');
+      return 'found src/deep/needle.txt';
+    }, results, output);
+
+    await runBenchmarkCase('modify files', async () => {
+      const workspace = path.join(tempRoot, 'edit');
+      fs.mkdirSync(path.join(workspace, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(workspace, 'package.json'), '{"name":"ax-edit-bench"}\n');
+      const target = path.join(workspace, 'src', 'bench-target.txt');
+      fs.writeFileSync(target, 'status=AX_BEFORE\n');
+      const sink = localOut();
+      const state = await postTurn(
+        'Use local tools to edit src/bench-target.txt. Replace AX_BEFORE with AX_AFTER, then report the changed file. Do not create any other files.',
+        { mode, cwd: workspace, route: 'local', output: sink, showProgress: false }
+      );
+      const text = fs.readFileSync(target, 'utf8');
+      assertBenchmark(text.includes('AX_AFTER'), 'src/bench-target.txt was not modified');
+      const combined = `${state.output}\n${toolEventText(toolEventsFromState(state))}`;
+      assertBenchmark(/bench-target\.txt/.test(combined), 'missing changed-file proof in response or receipt');
+      return 'edited src/bench-target.txt';
+    }, results, output);
+
+    await runBenchmarkCase('use Atris workspace state', async () => {
+      const cwd = options.cwd || process.cwd();
+      assertBenchmark(fs.existsSync(path.join(cwd, 'atris')), 'current workspace has no atris/ directory');
+      const sink = localOut();
+      const state = await postTurn(
+        'Use Atris local tools to inspect current task or map state. Report one concrete Atris file or task source you used. Do not edit files.',
+        { mode, cwd, route: 'local', output: sink, showProgress: false }
+      );
+      const combined = `${state.output}\n${toolEventText(toolEventsFromState(state))}`;
+      assertBenchmark(/atris\/(TODO|MAP|atris)\.md|local_task_op|local_map_op|Task|Map/.test(combined), 'missing Atris task/map proof');
+      return 'read Atris task/map surface';
+    }, results, output);
+
+    await runBenchmarkCase('know XP system', async () => {
+      const cwd = options.cwd || process.cwd();
+      assertBenchmark(fs.existsSync(path.join(cwd, 'atris')), 'current workspace has no atris/ directory');
+      const sink = localOut();
+      const state = await postTurn(
+        'Use the local RewardRubric/Atris tools or workspace files to explain the Career XP reward system in this workspace. Mention proof, review/acceptance, and reward/XP. Cite the exact tool or file you used. Do not edit files.',
+        { mode, cwd, route: 'local', output: sink, showProgress: false }
+      );
+      const combined = `${state.output}\n${toolEventText(toolEventsFromState(state))}`;
+      assertBenchmark(/xp|reward|rubric/i.test(combined), 'missing XP/reward/rubric proof');
+      assertBenchmark(/proof|review|accept|approval/i.test(combined), 'missing proof/review/acceptance explanation');
+      assertBenchmark(/RewardRubric|local_reward_rubric_op|atris\/|main\.js|taskBoard/i.test(combined), 'missing cited XP source or tool');
+      return 'explained XP reward loop';
+    }, results, output);
+
+    await runBenchmarkCase('list connections', async () => {
+      const context = await buildConnectionContext({ token: authToken(), localWorkspace: false });
+      const connected = (context.connections || []).filter(row => row.connected);
+      assertBenchmark((context.connections || []).length >= 5, 'connection capability context is missing');
+      const sink = localOut();
+      const state = await postTurn(
+        'Which Atris integrations are connected for me? Include Google Calendar status. Answer from live connection context.',
+        { mode, route: 'cloud', output: sink, showProgress: false, connectionContext: context }
+      );
+      const receipt = receiptFromState(state);
+      assertBenchmark(receipt && receipt.connection_context, 'receipt missing connection_context');
+      const answer = `${state.output}\n${receipt && receipt.final ? receipt.final : ''}`;
+      assertBenchmark(/calendar|gmail|github|slack|drive|integration|connected/i.test(answer), 'answer did not discuss integrations');
+      return `${connected.length} connected reported`;
+    }, results, output);
+
+    await runBenchmarkCase('read calendar', async () => {
+      const sink = localOut();
+      const state = await postTurn(
+        'What is on my calendar today? Use the connected Google Calendar read path and be concise.',
+        { mode, route: 'cloud', output: sink, showProgress: false }
+      );
+      const events = toolEventsFromState(state);
+      const text = toolEventText(events);
+      assertBenchmark(/google_calendar/.test(text), 'calendar tool event missing');
+      assertBenchmark(!/"status":"not_connected"/.test(text), 'Google Calendar is not connected for this account');
+      assertBenchmark(/Calendar|event|No calendar events|meeting/i.test(state.output), 'calendar answer missing');
+      return 'calendar read path responded';
+    }, results, output);
+  } finally {
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    } catch (_) {}
+  }
+
+  const failed = results.filter(result => !result.ok);
+  output.write('\n');
+  output.write(failed.length ? `Benchmark failed: ${failed.length}/${results.length} failed\n` : `Benchmark passed: ${results.length}/${results.length}\n`);
+  if (failed.length) {
+    const error = new Error(failed.map(result => `${result.label}: ${result.error}`).join('; '));
+    error.results = results;
+    throw error;
+  }
+  return results;
 }
 
 async function main() {
@@ -566,27 +1009,36 @@ async function main() {
 
   const mode = args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
+  const benchmark = args.includes('--benchmark');
+  const forceCloud = args.includes('--cloud');
+  const forceLocal = args.includes('--local');
+  const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--fast', '--pro', '--chat', '--doctor', '--help', '-h'].includes(arg))
+    .filter(arg => !['--fast', '--pro', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
   try {
+    if (benchmark) {
+      await runBenchmark({ mode, cwd: process.cwd(), output: process.stdout });
+      return;
+    }
+
     if (doctor) {
       console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
       console.log('');
-      console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd() }), process.stdout));
+      console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route }), process.stdout));
       return;
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd() });
+      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
       return;
     }
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
     console.log('');
-    const result = await postTurn(prompt, { mode, cwd: process.cwd() });
+    const result = await postTurn(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
     console.log('');
     console.log(formatDoneLine(result.durationMs));
   } catch (error) {
@@ -601,8 +1053,12 @@ if (require.main === module) {
 }
 
 module.exports = {
+  authToken,
+  authUserId,
+  backendBaseUrl,
   backendUrl,
   buildPayload,
+  buildConnectionContext,
   buildRunProfile,
   chat,
   createProgressReporter,
@@ -620,6 +1076,8 @@ module.exports = {
   modelForMode,
   parseSseBlock,
   postTurn,
+  resolveRoute,
+  runBenchmark,
   summarizeToolInput,
   summarizeToolResult
 };
