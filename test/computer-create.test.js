@@ -159,8 +159,14 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Computer created: ws-new/);
     assert.match(res.stdout, /Dashboard: http:\/\/app\.local\/dashboard\/gm\/biz-1/);
-    assert.match(res.stdout, /Next:/);
+    assert.match(res.stdout, /Start here:/);
     assert.match(res.stdout, /atris computer --business atris-labs --workspace ws-new/);
+    assert.match(res.stdout, /Onboard the org:/);
+    assert.match(res.stdout, /atris pull atris-labs/);
+    assert.match(res.stdout, /atris member create operator/);
+    assert.match(res.stdout, /atris member create validator/);
+    assert.match(res.stdout, /Cost control:/);
+    assert.match(res.stdout, /atris computer sleep --business atris-labs --workspace ws-new/);
 
     assert.deepEqual(
       requests.map((request) => [request.method, request.url]),
