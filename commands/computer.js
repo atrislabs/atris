@@ -1477,9 +1477,18 @@ async function computerCreate(token, args = [], defaults = {}) {
   if (endpoint) console.log(`  Endpoint:  ${endpoint}`);
   console.log(`  Dashboard: ${appBase}/dashboard/gm/${ctx.businessId}`);
   console.log('');
-  console.log('Next:');
-  console.log(`  atris computer --business ${ctx.slug || ctx.businessId} --workspace ${workspaceId}`);
-  console.log(`  atris computer ls / --business ${ctx.slug || ctx.businessId} --workspace ${workspaceId}`);
+  const owner = ctx.slug || ctx.businessId;
+  console.log('Start here:');
+  console.log(`  atris computer --business ${owner} --workspace ${workspaceId}`);
+  console.log('');
+  console.log('Onboard the org:');
+  console.log(`  atris pull ${owner}`);
+  console.log(`  cd ~/arena/atris-business/${owner}`);
+  console.log('  atris member create operator --role "Operator" --description "Owns the business computer and next action"');
+  console.log('  atris member create validator --role "Validator" --description "Checks proof before XP or customer action"');
+  console.log('');
+  console.log('Cost control:');
+  console.log(`  atris computer sleep --business ${owner} --workspace ${workspaceId}`);
 }
 
 async function computerSleep(token, ctx = null) {
