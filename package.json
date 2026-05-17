@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.15.36",
+  "version": "3.15.37",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris.js",

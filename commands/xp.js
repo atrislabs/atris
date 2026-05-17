@@ -1,4 +1,4 @@
-const { ensureValidCredentials } = require('../utils/auth');
+const { ensureValidCredentials, getSessionProfile, loadCredentials, profileNameFromEmail } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const fs = require('fs');
 const os = require('os');
@@ -1740,18 +1740,54 @@ function projectionWorkspaceSummaries(projection) {
   }];
 }
 
+function credentialHandle(credentials) {
+  return slugify(
+    credentials?.username
+    || credentials?.handle
+    || credentials?.display_name
+    || credentials?.name
+    || profileNameFromEmail(credentials?.email)
+    || credentials?.user_id
+  );
+}
+
+function activeAccountHandle() {
+  const envPlayer = slugify(process.env.ATRIS_PLAYER || process.env.ATRIS_USERNAME);
+  if (envPlayer) return envPlayer;
+
+  const envProfile = slugify(process.env.ATRIS_PROFILE);
+  if (envProfile) return envProfile;
+
+  try {
+    const sessionProfile = slugify(getSessionProfile());
+    if (sessionProfile) return sessionProfile;
+  } catch {}
+
+  try {
+    const credentials = loadCredentials();
+    const handle = credentialHandle(credentials);
+    if (handle) return handle;
+  } catch {}
+
+  return null;
+}
+
+function projectionHandle(projection) {
+  return slugify(
+    projection?.operator
+    || projection?.latest_accepted_proof?.actor
+    || projection?.latest_accepted_proof?.assignee
+    || projection?.latest_accepted_proof?.assigned_to
+  );
+}
+
 function syncPlayer(args, projection) {
   const explicit = readFirstFlag(args, ['--as', '--player', '--user', '--operator'], null);
-  return slugify(
-    explicit
-    || process.env.ATRIS_PLAYER
-    || process.env.ATRIS_USERNAME
-    || process.env.ATRIS_PROFILE
-    || process.env.USER
-    || os.userInfo().username
-    || projection?.operator
-    || 'player'
-  ) || 'player';
+  return slugify(explicit)
+    || activeAccountHandle()
+    || projectionHandle(projection)
+    || slugify(process.env.USER || os.userInfo().username)
+    || 'player';
 }
 
 function buildAgentXpSyncPacket(args = []) {
@@ -1899,7 +1935,7 @@ function renderSync(payload) {
   console.log(`Player ${payload.player || entry.username || 'player'} | AgentXP ${formatNumber(entry.agent_xp)} | receipts ${formatNumber(entry.verified_receipts)}`);
   if (payload.dry_run) {
     console.log(`Packet ${payload.packet?.packet_hash || 'unhashed'} ready; no network upload ran.`);
-    console.log(`Run atris login, then atris xp sync --local --as ${payload.player || entry.username || '<player>'} to publish to the hosted leaderboard.`);
+    console.log('Run atris login, then atris xp sync --local to publish to the hosted leaderboard.');
     console.log('Guided demos can pass --token <owner-provided-token>.');
     console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
     return;
