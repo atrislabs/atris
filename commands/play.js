@@ -258,8 +258,8 @@ function starterMissionPrompt(player) {
 function globalSyncCommands(player) {
   return [
     'atris login',
-    `atris xp sync --local --as ${player}`,
-    `atris xp sync --local --as ${player} --token <owner-provided-token>`,
+    'atris xp sync --local',
+    'atris xp sync --local --token <owner-provided-token>',
   ];
 }
 
