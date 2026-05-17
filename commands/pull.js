@@ -933,12 +933,12 @@ async function pullBusiness(slug) {
           const relativePath = path.relative(path.dirname(symlinkPath), fullPath);
 
           // Business skills override init skills (remove existing symlink if present)
-          if (fs.existsSync(symlinkPath)) {
-            try {
-              const stat = fs.lstatSync(symlinkPath);
-              if (stat.isSymbolicLink()) fs.unlinkSync(symlinkPath);
-              else continue; // Don't overwrite real directories
-            } catch { continue; }
+          try {
+            const stat = fs.lstatSync(symlinkPath);
+            if (stat.isSymbolicLink()) fs.unlinkSync(symlinkPath);
+            else continue; // Don't overwrite real directories
+          } catch (err) {
+            if (err && err.code !== 'ENOENT') continue;
           }
           try {
             fs.symlinkSync(relativePath, symlinkPath);
@@ -959,7 +959,11 @@ async function pullBusiness(slug) {
     // Count wired skills
     const wiredSkills = fs.readdirSync(claudeSkillsDir).filter(f => {
       const p = path.join(claudeSkillsDir, f);
-      return fs.statSync(p).isDirectory();
+      try {
+        return fs.statSync(p).isDirectory();
+      } catch {
+        return false;
+      }
     });
     if (wiredSkills.length > 0) {
       console.log(`  Wired ${wiredSkills.length} skills → .claude/skills/`);
