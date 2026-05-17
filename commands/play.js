@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 const { getSessionProfile, loadCredentials } = require('../utils/auth');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
-const AGENTXP_GLOBAL_SYNC_RULE = 'Use the owner-provided sync token first; fallback is atris login before sync.';
+const AGENTXP_GLOBAL_SYNC_RULE = 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.';
 
 function showHelp() {
   console.log('');
@@ -257,9 +257,9 @@ function starterMissionPrompt(player) {
 
 function globalSyncCommands(player) {
   return [
-    `atris xp sync --local --as ${player} --token <owner-provided-token>`,
     'atris login',
     `atris xp sync --local --as ${player}`,
+    `atris xp sync --local --as ${player} --token <owner-provided-token>`,
   ];
 }
 
@@ -431,7 +431,7 @@ function render(state) {
   console.log('');
   console.log('Win condition: real artifact + verifier + human accept.');
   console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
-  console.log('Global sync: use owner token first; fallback to atris login before hosted leaderboard sync.');
+  console.log('Global sync: run atris login, then sync; owner tokens are guided-demo fallback only.');
   console.log(`Leaderboard: ${state.leaderboard_url}`);
   console.log('');
   console.log('Next commands:');
