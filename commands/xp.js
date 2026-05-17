@@ -1769,7 +1769,10 @@ async function syncAgentXp(args = []) {
   } else {
     const ensured = await ensureValidCredentials(apiRequestJson);
     if (ensured.error) {
-      throw new Error(`Missing sync auth. Run atris login, or set ATRIS_AGENTXP_SYNC_TOKEN${ensured.detail ? ` (${ensured.detail})` : ''}.`);
+      throw new Error(
+        `Missing sync auth. Run atris login, then retry atris xp sync. `
+        + `Guided demos can pass --token <owner-provided-token>${ensured.detail ? ` (${ensured.detail})` : ''}.`
+      );
     }
     options.token = ensured.credentials.token;
   }
@@ -1795,7 +1798,8 @@ function renderSync(payload) {
   console.log(`Player ${payload.player || entry.username || 'player'} | AgentXP ${formatNumber(entry.agent_xp)} | receipts ${formatNumber(entry.verified_receipts)}`);
   if (payload.dry_run) {
     console.log(`Packet ${payload.packet?.packet_hash || 'unhashed'} ready; no network upload ran.`);
-    console.log('Run with ATRIS_AGENTXP_SYNC_TOKEN set to publish to the hosted leaderboard.');
+    console.log(`Run atris login, then atris xp sync --local --as ${payload.player || entry.username || '<player>'} to publish to the hosted leaderboard.`);
+    console.log('Guided demos can pass --token <owner-provided-token>.');
     console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
     return;
   }
