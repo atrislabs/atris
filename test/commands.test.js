@@ -4367,7 +4367,7 @@ test('task ready holds work in review until human accept', () => {
   }
 });
 
-test('task next blocks new claims until required second review pass', () => {
+test('task next claims open work before surfacing review debt', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -4388,12 +4388,40 @@ test('task next blocks new claims until required second review pass', () => {
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
-    assert.equal(payload.action, 'agent_review_again');
-    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+    assert.equal(payload.action, 'next');
+    assert.equal(payload.task_id, openPayload.task.id);
 
     const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
     assert.equal(openShow.status, 0, openShow.stderr);
-    assert.equal(JSON.parse(openShow.stdout).status, 'open');
+    assert.equal(JSON.parse(openShow.stdout).status, 'claimed');
+
+    const reviewShow = runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env });
+    assert.equal(reviewShow.status, 0, reviewShow.stderr);
+    assert.equal(JSON.parse(reviewShow.stdout).status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task next surfaces review debt when no open work exists', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
+    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass proof', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    const payload = JSON.parse(next.stdout);
+    assert.equal(payload.action, 'agent_review_again');
+    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
   } finally {
     cleanupTempDir(dir);
   }
