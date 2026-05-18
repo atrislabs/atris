@@ -763,9 +763,13 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
     .filter((mission) => missionDueAt(mission, now));
 
   candidates.sort((a, b) => {
-    const aTime = Date.parse(a.last_tick_at || a.created_at || '') || 0;
-    const bTime = Date.parse(b.last_tick_at || b.created_at || '') || 0;
-    return aTime - bTime;
+    const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
+    const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
+    if (aCaller !== bCaller) return bCaller - aCaller;
+
+    const aTime = missionSortTime(a);
+    const bTime = missionSortTime(b);
+    return bTime - aTime;
   });
   return candidates[0] || null;
 }
