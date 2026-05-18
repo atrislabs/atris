@@ -3465,8 +3465,61 @@ test('task render preserves Endgame metadata and markdown-only T rows', () => {
     assert.equal(renderAgain.status, 0, renderAgain.stderr);
     const second = fs.readFileSync(todoPath, 'utf8');
     assert.equal((second.match(/## Endgame/g) || []).length, 1);
-    assert.equal((second.match(/Keep markdown horizon/g) || []).length, 1);
-    assert.equal((second.match(/Pending human approval/g) || []).length, 1);
+    assert.equal((second.match(/Keep markdown horizon/g) || []).length, 0);
+    assert.equal((second.match(/Pending human approval/g) || []).length, 0);
+    assert.equal((second.match(/DB state task/g) || []).length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task render drops stale generated markdown rows for DB-backed tasks', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    const created = runCli(['task', 'new', 'Move review work forward', '--tag', 'task-plane', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'render smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- **[T9]** Legacy migration row [agent-xp]',
+      '',
+      '## In Progress',
+      '',
+      `- **[${ref}]** Move review work forward [task-plane]`,
+      '  **Claimed by:** codex',
+      '',
+      '## Review',
+      '',
+      `- **[${ref}]** Move review work forward [task-plane]`,
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const legacyRender = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(legacyRender.status, 0, legacyRender.stderr);
+    const legacy = fs.readFileSync(todoPath, 'utf8');
+    assert.match(legacy, /Legacy migration row \[agent-xp\]/);
+    assert.equal((legacy.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
+    assert.doesNotMatch(legacy, new RegExp(`## In Progress\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward`));
+
+    const generatedRender = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(generatedRender.status, 0, generatedRender.stderr);
+    const generated = fs.readFileSync(todoPath, 'utf8');
+    assert.doesNotMatch(generated, /Legacy migration row/);
+    assert.equal((generated.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
+    assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward \\[task-plane\\]`));
   } finally {
     cleanupTempDir(dir);
   }
@@ -4261,6 +4314,11 @@ test('task ready holds work in review until human accept', () => {
     const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
     const statusPayload = JSON.parse(statusAfterCertification.stdout);
+    assert.equal(statusPayload.status.current, null);
+    assert.equal(statusPayload.status.counts.active, 0);
+    assert.equal(statusPayload.status.counts.review, 1);
+    assert.equal(statusPayload.status.counts.review_blocking, 0);
+    assert.equal(statusPayload.status.counts.review_certified, 1);
     assert.equal(statusPayload.status.needs_review[0].review.proof, 'typecheck passed and diff reviewed again');
     assert.equal(statusPayload.status.needs_review[0].review.lesson, 'Double-check proof before awarding XP');
     assert.equal(statusPayload.status.needs_review[0].review.next_task, 'Queue the next proof loop');
