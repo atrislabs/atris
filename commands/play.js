@@ -242,14 +242,14 @@ function selectMission(tasks, player) {
 }
 
 function starterMissionTitle() {
-  return 'AgentXP Mode first rep: complete one proof-backed customer-motion mission';
+  return 'AgentXP Mode first rep: complete one proof-backed useful mission';
 }
 
 function starterMissionPrompt(player) {
   return [
     `Player ${player}: enter AgentXP Mode in this local workspace.`,
-    'Pick one concrete Atris Labs customer-motion rep you can finish today.',
-    'Have an agent help create a real artifact and verifier proof.',
+    'Pick one small useful contribution you can finish today: improve a doc, verify setup, create a handoff, or fix a tiny tool.',
+    'Have an agent help produce a real artifact plus verifier proof.',
     'Do not self-accept; when proof is ready, show accept/revise.',
     'Win condition: one accepted proof-backed rep visible on the local AgentXP card.',
   ].join(' ');

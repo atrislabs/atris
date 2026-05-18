@@ -3902,7 +3902,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
       '--tag',
       'agent-xp',
       '--note',
-      'Win condition: one proof-backed customer-motion rep.',
+      'Win condition: one proof-backed useful rep.',
       '--json',
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
@@ -3912,7 +3912,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
     assert.match(play.stdout, /AgentXP Mode first rep/);
-    assert.match(play.stdout, /Win condition: one proof-backed customer-motion rep/);
+    assert.match(play.stdout, /Win condition: one proof-backed useful rep/);
     assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
     assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --as game-manager --proof/);
     assert.match(play.stdout, /atris xp card --local/);
@@ -3991,7 +3991,7 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
     assert.match(play.stdout, /Starter mission created locally/);
-    assert.match(play.stdout, /AgentXP Mode first rep: complete one proof-backed customer-motion mission/);
+    assert.match(play.stdout, /AgentXP Mode first rep: complete one proof-backed useful mission/);
     assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
 
     const json = runCli(['play', '--json'], { cwd: dir, env });
@@ -4001,7 +4001,7 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.equal(body.player_source, 'local_user_team_match');
     assert.equal(body.seeded, null);
     assert.equal(body.mission.assigned_to, 'justin');
-    assert.equal(body.mission.title, 'AgentXP Mode first rep: complete one proof-backed customer-motion mission');
+    assert.equal(body.mission.title, 'AgentXP Mode first rep: complete one proof-backed useful mission');
 
     const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
     assert.equal(list.status, 0, list.stderr);
@@ -4026,7 +4026,7 @@ test('play mode makes a plain folder playable on first run', () => {
     assert.equal(body.player, 'justin');
     assert.equal(body.player_source, 'flag');
     assert.equal(body.workspace_root, fs.realpathSync(dir));
-    assert.equal(body.seeded.title, 'AgentXP Mode first rep: complete one proof-backed customer-motion mission');
+    assert.equal(body.seeded.title, 'AgentXP Mode first rep: complete one proof-backed useful mission');
     assert.equal(body.mission.assigned_to, 'justin');
     assert.deepEqual(body.next_commands.slice(0, 2), [
       `atris task claim ${body.mission.ref} --as game-manager`,
