@@ -287,7 +287,7 @@ function defaultAuthority(id) {
   if (key === 'google_drive') return { list_files: 'read_only', search_files: 'read_only', download_file: 'read_only', upload_file: 'approval_required' };
   if (key === 'google_docs') return { list_documents: 'read_only', get_document: 'read_only', create_document: 'approval_required' };
   if (key === 'github') return { list_repos: 'read_only', get_repo: 'read_only', list_issues: 'read_only', create_issue: 'approval_required' };
-  if (key === 'slack') return { list_channels: 'read_only', search_messages: 'read_only', post_message: 'approval_required' };
+  if (key === 'slack') return { list_channels: 'read_only', list_messages: 'read_only', post_message: 'approval_required' };
   if (key === 'linear') return { list_issues: 'read_only', get_issue: 'read_only', create_issue: 'approval_required' };
   if (key === 'notion') return { search: 'read_only', get_page: 'read_only', create_page: 'approval_required' };
   if (key === 'hubspot') return { list_contacts: 'read_only', search_contacts: 'read_only', create_contact: 'approval_required' };
@@ -324,6 +324,20 @@ function statusConnected(statuses, id) {
   return false;
 }
 
+function cachedIntegrationStatus(options = {}) {
+  const homeDir = options.homeDir || os.homedir();
+  try {
+    const raw = fs.readFileSync(path.join(homeDir, '.obelisk', 'integrations-status.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.status && typeof parsed.status === 'object') return parsed.status;
+    if (parsed && parsed.statuses && typeof parsed.statuses === 'object') return parsed.statuses;
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {
+    return {};
+  }
+  return {};
+}
+
 async function buildConnectionContext(options = {}) {
   const token = options.token || authToken();
   const localStatusUserId = isLoopbackBackend() ? authUserId() : '';
@@ -331,11 +345,22 @@ async function buildConnectionContext(options = {}) {
     ? `${ATRIS2_CONNECTION_STATUS_PATH}?connection_user_id=${encodeURIComponent(localStatusUserId)}`
     : CONNECTION_STATUS_PATH;
   const [statusRes, contractRes] = await Promise.all([
-    localStatusUserId || token ? requestJson(statusPath, { token: localStatusUserId ? '' : token }) : Promise.resolve({ ok: false, data: null }),
-    requestJson(CONNECTION_CAPABILITIES_PATH, { token: '' })
+    options.statusRes
+      ? Promise.resolve(options.statusRes)
+      : localStatusUserId || token
+        ? requestJson(statusPath, { token: localStatusUserId ? '' : token })
+        : Promise.resolve({ ok: false, data: null }),
+    options.contractRes ? Promise.resolve(options.contractRes) : requestJson(CONNECTION_CAPABILITIES_PATH, { token: '' })
   ]);
   const statusData = statusRes.ok && statusRes.data && typeof statusRes.data === 'object' ? statusRes.data : {};
-  const statuses = statusData.statuses && typeof statusData.statuses === 'object' ? statusData.statuses : statusData;
+  const backendStatuses = statusData.statuses && typeof statusData.statuses === 'object' ? statusData.statuses : statusData;
+  const cacheStatuses = statusRes.ok ? {} : cachedIntegrationStatus({ homeDir: options.integrationStatusHomeDir });
+  const statuses = Object.keys(backendStatuses).length ? backendStatuses : cacheStatuses;
+  const statusSource = Object.keys(backendStatuses).length
+    ? 'backend'
+    : Object.keys(cacheStatuses).length
+      ? 'local_cache'
+      : 'fallback';
   const contractConnectors = new Map();
   if (contractRes.ok && contractRes.data && Array.isArray(contractRes.data.connectors)) {
     for (const connector of contractRes.data.connectors) {
@@ -368,6 +393,8 @@ async function buildConnectionContext(options = {}) {
     schema: 'atris.connection_capabilities.v1',
     source: 'ax',
     stale: false,
+    connection_status_source: statusSource,
+    status_source: statusSource,
     capability_contract_source: contractRes.ok ? 'backend' : 'fallback',
     capability_contract_schema: contractRes.data && contractRes.data.schema,
     capability_contract_connectors: contractConnectors.size || undefined,
@@ -828,6 +855,14 @@ function handleEvent(event, state, output) {
     return;
   }
 
+  if (event.type === 'result' && event.result && !state.output) {
+    const content = String(event.result || '');
+    state.output += content;
+    if (output && output.isTTY) writeStreamingText(state, output, content);
+    else state.pendingText += content;
+    return;
+  }
+
   if (event.type === 'error' || event.error) {
     state.errors.push(event.error || event.message || 'Atris2 stream error');
   }
@@ -1237,6 +1272,7 @@ module.exports = {
   backendBaseUrl,
   backendUrl,
   buildPayload,
+  cachedIntegrationStatus,
   buildConnectionContext,
   buildRunProfile,
   chat,
