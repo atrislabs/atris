@@ -15,6 +15,7 @@ const {
   renderPublishVerification,
   renderTrustedPublishHelp,
   verifyPublishedVersion,
+  verifyPublishedVersionWithRetry,
 } = require('../scripts/publish-atris-release');
 
 const publishWorkflowPath = path.resolve(__dirname, '../.github/workflows/publish.yml');
@@ -81,6 +82,16 @@ test('publish helper fails verification when npm latest is stale', () => {
   }));
   assert.equal(verification.ok, false);
   assert.match(renderPublishVerification(verification), /expected 3\.15\.30, got 3\.15\.23/);
+});
+
+test('publish helper retries stale npm latest verification', () => {
+  const versions = ['3.15.23', '3.15.30'];
+  const verification = verifyPublishedVersionWithRetry('3.15.30', () => ({
+    status: 0,
+    stdout: JSON.stringify({ version: versions.shift(), gitHead: 'abc123' }),
+  }), { attempts: 3, delayMs: 0 });
+  assert.equal(verification.ok, true);
+  assert.equal(verification.attempt, 2);
 });
 
 test('publish helper replays captured npm output and prints OTP help', () => {
@@ -196,6 +207,32 @@ test('publish helper verifies registry latest after a successful publish run', (
     assert.equal(status, 0);
     assert.equal(calls.length, 2);
     assert.match(stdout.join(''), /published/);
+    assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+  }
+});
+
+test('publish helper retries registry lag after a successful publish run', () => {
+  const stdout = [];
+  const originalStdoutWrite = process.stdout.write;
+  process.stdout.write = chunk => {
+    stdout.push(String(chunk));
+    return true;
+  };
+  try {
+    let views = 0;
+    const status = publishAtrisRelease([], (cmd, args) => {
+      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
+      if (args[0] === 'view') {
+        views += 1;
+        const version = views === 1 ? '3.15.23' : packageVersion;
+        return { status: 0, stdout: JSON.stringify({ version, gitHead: 'abc123' }) };
+      }
+      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
+    }, { verificationAttempts: 3, verificationDelayMs: 0 });
+    assert.equal(status, 0);
+    assert.equal(views, 2);
     assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
   } finally {
     process.stdout.write = originalStdoutWrite;

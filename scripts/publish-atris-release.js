@@ -106,6 +106,27 @@ function verifyPublishedVersion(version, runner = spawnSync) {
   };
 }
 
+function sleepMs(ms) {
+  if (!ms) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts || 6));
+  const delayMs = Math.max(0, Number(options.delayMs ?? 2000));
+  let verification = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    verification = {
+      ...verifyPublishedVersion(version, runner),
+      attempt,
+      attempts,
+    };
+    if (verification.ok) return verification;
+    if (attempt < attempts) sleepMs(delayMs);
+  }
+  return verification;
+}
+
 function renderPublishVerification(verification) {
   if (verification.ok) {
     return `Verified npm latest: atris@${verification.actual} gitHead ${verification.gitHead || 'unknown'}\n`;
@@ -113,7 +134,7 @@ function renderPublishVerification(verification) {
   return `npm latest verification failed: expected ${verification.expected || 'unknown'}, got ${verification.actual || verification.error || 'unknown'}\n`;
 }
 
-function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
+function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, options = {}) {
   const version = readPackageVersion();
   if (args.includes('--help') || args.includes('-h')) {
     console.log('Usage: npm run publish:release -- [--otp <code>] [--dry-run]');
@@ -134,7 +155,10 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync) {
     process.stderr.write(renderTrustedPublishHelp());
   }
   if (result.status === 0 && !args.includes('--dry-run')) {
-    const verification = verifyPublishedVersion(version, runner);
+    const verification = verifyPublishedVersionWithRetry(version, runner, {
+      attempts: options.verificationAttempts,
+      delayMs: options.verificationDelayMs,
+    });
     const output = renderPublishVerification(verification);
     if (verification.ok) process.stdout.write(output);
     else process.stderr.write(output);
@@ -157,4 +181,5 @@ module.exports = {
   renderPublishVerification,
   renderTrustedPublishHelp,
   verifyPublishedVersion,
+  verifyPublishedVersionWithRetry,
 };
