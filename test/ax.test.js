@@ -63,6 +63,47 @@ test('ax carries local connector lookup id only on cloud payloads', () => {
   assert.equal(cloudPayload.connection_user_id, '00000000-0000-4000-8000-000000000001');
 });
 
+test('ax falls back to local integration status cache when backend status is unavailable', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-integrations-cache-'));
+  fs.mkdirSync(path.join(homeDir, '.obelisk'), { recursive: true });
+  fs.writeFileSync(
+    path.join(homeDir, '.obelisk', 'integrations-status.json'),
+    JSON.stringify({ status: { gmail: true, slack: { connected: true }, notion: false } }),
+  );
+
+  try {
+    const cached = ax.cachedIntegrationStatus({ homeDir });
+    assert.equal(cached.gmail, true);
+    assert.equal(cached.slack.connected, true);
+
+    const context = await ax.buildConnectionContext({
+      token: '',
+      localWorkspace: false,
+      integrationStatusHomeDir: homeDir,
+      statusRes: { ok: false, data: null },
+      contractRes: {
+        ok: true,
+        data: {
+          schema: 'atris.connection_capabilities.v1',
+          connectors: [
+            { id: 'gmail', authority: { list_messages: 'read_only', send_message: 'approval_required' } },
+            { id: 'slack', authority: { list_channels: 'read_only', list_messages: 'read_only' } },
+          ],
+        },
+      },
+    });
+
+    const byId = new Map(context.connections.map(connection => [connection.id, connection]));
+    assert.equal(context.connection_status_source, 'local_cache');
+    assert.equal(byId.get('gmail').connected, true);
+    assert.equal(byId.get('slack').connected, true);
+    assert.equal(byId.get('notion').connected, false);
+    assert.deepEqual(byId.get('gmail').authority, { list_messages: 'read_only', send_message: 'approval_required' });
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 test('ax can force local or cloud routing', () => {
   assert.equal(ax.resolveRoute('what files are here?', { route: 'cloud' }), 'cloud');
   assert.equal(ax.resolveRoute('what is on my calendar?', { route: 'local' }), 'local');
@@ -106,6 +147,36 @@ test('ax streaming markdown handles split bold delimiters', () => {
   assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), 'This is ');
   assert.equal(ax.renderStreamingMarkdown(state, '*bold', options), '');
   assert.equal(ax.renderStreamingMarkdown(state, '** now', options), 'bold now');
+});
+
+test('ax renders connector result when no text delta was emitted', () => {
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const state = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    markdownMode: 'normal',
+    markdownBuffer: '',
+    markdownCarry: '',
+  };
+
+  ax.handleEvent({ type: 'result', result: 'No Slack user matched jared.' }, state, output);
+
+  assert.equal(state.output, 'No Slack user matched jared.');
+  assert.equal(state.pendingText, 'No Slack user matched jared.');
 });
 
 test('ax auto logger writes clean chat transcripts under atris/runs', () => {
