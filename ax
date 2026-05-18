@@ -446,7 +446,14 @@ function resetMarkdownState(state) {
   state.markdownCarry = '';
 }
 
+function ensureMarkdownState(state) {
+  if (!state.markdownMode) state.markdownMode = 'normal';
+  if (typeof state.markdownBuffer !== 'string') state.markdownBuffer = '';
+  if (typeof state.markdownCarry !== 'string') state.markdownCarry = '';
+}
+
 function renderStreamingMarkdown(state, text, options = {}) {
+  ensureMarkdownState(state);
   const input = `${state.markdownCarry || ''}${String(text || '')}`;
   state.markdownCarry = '';
   let out = '';
@@ -512,6 +519,7 @@ function renderStreamingMarkdown(state, text, options = {}) {
 }
 
 function flushStreamingMarkdown(state, output) {
+  ensureMarkdownState(state);
   let out = state.markdownCarry || '';
   if (state.markdownMode === 'bold' && state.markdownBuffer) {
     out += paint(state.markdownBuffer, [ANSI.bold], output);
