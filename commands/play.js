@@ -273,6 +273,16 @@ function globalSyncCommands(player) {
   ];
 }
 
+function handleSourceLine(state) {
+  const source = state.player_source || 'unknown';
+  if (source === 'flag') return 'Handle source: --as/--player.';
+  if (source === 'env') return 'Handle source: ATRIS_PLAYER/ATRIS_USERNAME.';
+  if (source === 'atris_account' || source === 'atris_session' || source === 'atris_profile') {
+    return `Handle source: ${source.replace(/_/g, ' ')}.`;
+  }
+  return 'Handle source: inferred. To choose one, run atris play --as <handle> or ATRIS_PLAYER=<handle> atris play.';
+}
+
 function ensureStarterMission(taskDb, db, workspaceRoot, player, tasks, args = []) {
   if (hasFlag(args, '--no-seed')) return { tasks, seeded: null };
   if (selectMission(tasks, player)) return { tasks, seeded: null };
@@ -418,6 +428,7 @@ function render(state) {
   console.log('');
   console.log('AgentXP Mode');
   console.log(`Player ${state.player} | Workspace ${state.workspace_name}`);
+  console.log(handleSourceLine(state));
   console.log('');
 
   if (!state.mission) {
