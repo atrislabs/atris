@@ -3911,6 +3911,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(play.status, 0, play.stderr);
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
+    assert.match(play.stdout, /Handle source: --as\/--player\./);
     assert.match(play.stdout, /AgentXP Mode first rep/);
     assert.match(play.stdout, /Win condition: one proof-backed useful rep/);
     assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
@@ -3994,6 +3995,7 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.equal(play.status, 0, play.stderr);
     assert.match(play.stdout, /AgentXP Mode/);
     assert.match(play.stdout, /Player justin/);
+    assert.match(play.stdout, /Handle source: inferred\. To choose one, run atris play --as <handle> or ATRIS_PLAYER=<handle> atris play\./);
     assert.match(play.stdout, /Starter mission created locally/);
     assert.match(play.stdout, /AgentXP Mode first rep: complete one proof-backed useful mission/);
     assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
