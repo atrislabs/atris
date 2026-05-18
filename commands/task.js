@@ -795,6 +795,15 @@ function taskStatusSummary(projection, { history = false } = {}) {
     done: tasks.filter(task => taskColumn(task) === 'done'),
   };
   const active = [...columns.do, ...columns.review, ...columns.plan];
+  const reviewNeedingAgentAction = columns.review.filter(task => {
+    const handoff = reviewHandoffForTask(task);
+    return handoff && handoff.next_action === 'agent_review_again';
+  });
+  const reviewAgentCertified = columns.review.filter(task => {
+    const handoff = reviewHandoffForTask(task);
+    return handoff && handoff.next_action === 'continue_work';
+  }).length;
+  const blocked = columns.review.filter(task => taskColumn(task) === 'blocked').length;
   const lastUpdated = tasks.reduce((max, task) => Math.max(max, Number(task.updated_at || 0)), 0);
   const swarloFeed = history ? tasks
     .flatMap(task => (task.events || []).map(event => ({
@@ -830,14 +839,17 @@ function taskStatusSummary(projection, { history = false } = {}) {
     goals: projection.goals || { source_path: null, items: [] },
     counts: {
       total: fullTaskCount,
-      active: columns.plan.length + columns.do.length + columns.review.length,
+      active: columns.plan.length + columns.do.length + reviewNeedingAgentAction.length,
       backlog: columns.backlog.length,
       plan: columns.plan.length,
       do: columns.do.length,
       review: columns.review.length,
+      review_blocking: reviewNeedingAgentAction.length,
+      review_certified: reviewAgentCertified,
+      blocked,
       done: tasks.filter(task => task.status === 'done' || (task.status === 'failed' && taskHasReview(task))).length + hiddenDoneCount,
     },
-    current: compactTaskForStatus(columns.do[0] || columns.review[0] || null),
+    current: compactTaskForStatus(columns.do[0] || reviewNeedingAgentAction[0] || null),
     next: compactTaskForStatus(columns.plan[0] || null),
     needs_review: columns.review.slice(0, 5).map(compactTaskForStatus),
     streams: (projection.streams || []).slice(0, 8).map(stream => ({
@@ -1995,11 +2007,34 @@ function extractTodoSectionMarkdown(content, sectionName) {
   return match ? match[1].trimEnd() : null;
 }
 
+function normalizeRenderedTaskRef(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+function renderedTaskRefSet(taskDb, rows, refRows) {
+  const byId = new Map();
+  for (const row of [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(refRows) ? refRows : [])]) {
+    if (row && row.id && !byId.has(row.id)) byId.set(row.id, row);
+  }
+  const displayRows = taskDb.withTaskDisplayRefs([...byId.values()]);
+  const refs = new Set();
+  for (const row of displayRows) {
+    for (const value of [row.id, row.display_id, row.legacy_ref]) {
+      const ref = normalizeRenderedTaskRef(value);
+      if (ref) refs.add(ref);
+    }
+  }
+  return refs;
+}
+
 function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
   if (!existingTodoPath || !fs.existsSync(existingTodoPath)) return [];
   const { parseTodoFile } = require('../lib/todo-fallback');
+  const existingTodo = fs.readFileSync(existingTodoPath, 'utf8');
+  const generatedTodo = existingTodo.includes('Regenerated from durable Atris task state');
   const parsed = parseTodoFile(existingTodoPath);
   const ws = taskDb.workspaceRoot();
+  const existingRefs = renderedTaskRefSet(taskDb, rows, refRows);
   const existingSourceKeys = new Set(
     (Array.isArray(refRows) ? refRows : [])
       .map(row => row && row.source_key)
@@ -2023,7 +2058,13 @@ function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
       if (!task.title) continue;
       const sk = taskDb.sourceKey(existingTodoPath, task.title);
       const normalizedTitle = taskDb.normalizeTitle(task.title);
-      if ((sk && existingSourceKeys.has(sk)) || existingTitles.has(normalizedTitle)) continue;
+      const renderedRef = normalizeRenderedTaskRef(task.id);
+      if (
+        (renderedRef && existingRefs.has(renderedRef)) ||
+        (sk && existingSourceKeys.has(sk)) ||
+        existingTitles.has(normalizedTitle) ||
+        generatedTodo
+      ) continue;
       out.push({
         id: `markdown:${status}:${task.id || index}:${sk ? sk.slice(0, 10) : index}`,
         title: task.title,
