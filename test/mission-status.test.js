@@ -37,6 +37,21 @@ function startMission(dir, title) {
   return JSON.parse(res.stdout).mission;
 }
 
+function appendMissionState(dir, mission) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.appendFileSync(path.join(stateDir, 'missions.jsonl'), JSON.stringify({
+    schema: 'atris.mission.v1',
+    owner: 'mission-lead',
+    cadence: 'manual',
+    lane: 'workspace',
+    task_ids: [],
+    human_asks: [],
+    next_action: 'next move',
+    ...mission,
+  }) + '\n', 'utf8');
+}
+
 test('mission status filters by status and limits list output', () => {
   const dir = makeTempDir();
   try {
@@ -276,6 +291,36 @@ test('mission run --due selects an active verifier mission for loop heartbeats',
   }
 });
 
+test('mission run --due skips paused missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'paused-due',
+      slug: 'paused-due',
+      objective: 'paused due mission',
+      status: 'paused',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'runnable-due',
+      slug: 'runnable-due',
+      objective: 'runnable due mission',
+      status: 'running',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const due = selectDueMission(dir);
+    assert.equal(due.id, 'runnable-due');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal emits the Codex goal candidate from mission state', () => {
   const dir = makeTempDir();
   try {
@@ -326,6 +371,39 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(state.action, 'codex_goal_candidate');
     assert.equal(state.goal.mission_id, mission.id);
     assert.match(fs.readFileSync(payload.status_path, 'utf8'), /Codex Goal Controller/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal prefers the latest caller-session mission over stale due history', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'old-codex-due',
+      slug: 'old-codex-due',
+      objective: 'old codex goal mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'current-codex-due',
+      slug: 'current-codex-due',
+      objective: 'current codex goal mission',
+      status: 'blocked',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'current-codex-due');
+    assert.equal(selected.reason, 'due');
   } finally {
     cleanupTempDir(dir);
   }
