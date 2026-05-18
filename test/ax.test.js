@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const ax = require('../ax');
@@ -22,6 +24,8 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
 test('ax routes connector reads to authenticated cloud context', () => {
   assert.equal(ax.resolveRoute('what is on my calendar today?'), 'cloud');
   assert.equal(ax.resolveRoute('which integrations are connected?'), 'cloud');
+  assert.equal(ax.resolveRoute('what github repos do I have?'), 'cloud');
+  assert.equal(ax.resolveRoute('create a github issue for this bug'), 'cloud');
 
   const payload = ax.buildPayload('what is on my calendar today?', {
     mode: 'fast',
@@ -36,6 +40,12 @@ test('ax routes connector reads to authenticated cloud context', () => {
   assert.equal(payload.workspace_path, undefined);
   assert.equal(payload.max_turns, 1);
   assert.equal(payload.connection_context.schema, 'atris.connection_capabilities.v1');
+});
+
+test('ax routes GitHub repo mutations to local workspace tools', () => {
+  assert.equal(ax.resolveRoute('push something to github'), 'local');
+  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'local');
+  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'local');
 });
 
 test('ax carries local connector lookup id only on cloud payloads', () => {
@@ -74,4 +84,57 @@ test('ax backend URL is configurable', () => {
 test('ax formats paths with filename emphasis spacing', () => {
   const formatted = ax.formatPathSubject(path.join('/tmp', 'project', 'src', 'App.tsx'), { color: false });
   assert.equal(formatted, '/tmp/project/src/  App.tsx');
+});
+
+test('ax renders basic markdown for terminal output', () => {
+  assert.equal(ax.renderTerminalMarkdown('## Heading\nUse **bold** and `code`.', { color: false }), 'Heading\nUse bold and code.');
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  try {
+    const rendered = ax.renderTerminalMarkdown('Use **bold** and `code`.', { color: true, isTTY: true });
+    assert.match(rendered, /\x1b\[1mbold\x1b\[0m/);
+    assert.match(rendered, /\x1b\[36mcode\x1b\[0m/);
+  } finally {
+    if (previousNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previousNoColor;
+  }
+});
+
+test('ax streaming markdown handles split bold delimiters', () => {
+  const state = { markdownMode: 'normal', markdownBuffer: '', markdownCarry: '' };
+  const options = { color: false, isTTY: true };
+  assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), 'This is ');
+  assert.equal(ax.renderStreamingMarkdown(state, '*bold', options), '');
+  assert.equal(ax.renderStreamingMarkdown(state, '** now', options), 'bold now');
+});
+
+test('ax auto logger writes clean chat transcripts under atris/runs', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-log-test-'));
+  fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+  const chunks = [];
+  const logger = ax.createRunLogger({
+    cwd,
+    mode: 'pro',
+    kind: 'play',
+    output: {
+      isTTY: true,
+      write(chunk) {
+        chunks.push(String(chunk));
+      }
+    }
+  });
+
+  try {
+    logger.output.write('\x1b[32matris text\x1b[0m\n');
+    logger.close(0);
+    assert.ok(logger.path.startsWith(path.join(cwd, 'atris', 'runs')));
+    const text = fs.readFileSync(logger.path, 'utf8');
+    assert.match(text, /mode: pro/);
+    assert.match(text, /atris text/);
+    assert.doesNotMatch(text, /\x1b\[/);
+    assert.match(text, /exit_code: 0/);
+    assert.match(chunks.join(''), /\x1b\[32matris text/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
