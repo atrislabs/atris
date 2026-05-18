@@ -150,13 +150,13 @@ function playersFromWorkspace(workspaceRoot) {
 }
 
 function starterMissionTitle() {
-  return 'AgentXP Mode first rep: complete one proof-backed customer-motion mission';
+  return 'AgentXP Mode first rep: complete one proof-backed useful mission';
 }
 
 function starterMissionPrompt(player) {
   return [
     `Player ${player}: enter AgentXP Mode in this local workspace.`,
-    'Pick one concrete customer-motion rep you can finish today.',
+    'Pick one small useful contribution you can finish today: improve a doc, verify setup, create a handoff, or fix a tiny tool.',
     'Use an agent for the artifact and verifier proof.',
     'Human accept/revise gates the XP.',
   ].join(' ');
