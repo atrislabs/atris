@@ -747,9 +747,17 @@ function secondsUntilMissionDue(mission, now = new Date()) {
   return Math.max(0, Math.ceil((dueAt - now.getTime()) / 1000));
 }
 
+function missionIsRunnable(mission) {
+  return mission && !TERMINAL_STATUSES.has(mission.status) && mission.status !== 'paused';
+}
+
+function missionSortTime(mission) {
+  return Date.parse(mission?.updated_at || mission?.created_at || '') || 0;
+}
+
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter((mission) => !TERMINAL_STATUSES.has(mission.status))
+    .filter(missionIsRunnable)
     .filter((mission) => mission.verifier)
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
     .filter((mission) => missionDueAt(mission, now));
@@ -763,11 +771,8 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
 }
 
 function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
-  const due = selectDueMission(root, now);
-  if (due) return { mission: due, reason: 'due' };
-
   const candidates = listMissions(root)
-    .filter((mission) => !TERMINAL_STATUSES.has(mission.status));
+    .filter(missionIsRunnable);
 
   candidates.sort((a, b) => {
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
@@ -778,14 +783,15 @@ function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
     const bVerifier = b.verifier ? 1 : 0;
     if (aVerifier !== bVerifier) return bVerifier - aVerifier;
 
-    const aTime = Date.parse(a.updated_at || a.created_at || '') || 0;
-    const bTime = Date.parse(b.updated_at || b.created_at || '') || 0;
+    const aTime = missionSortTime(a);
+    const bTime = missionSortTime(b);
     return bTime - aTime;
   });
 
   const mission = candidates[0] || null;
   if (!mission) return null;
-  return { mission, reason: 'active' };
+  const due = mission.verifier && missionDueAt(mission, now);
+  return { mission, reason: due ? 'due' : 'active' };
 }
 
 function codexGoalObjective(mission) {
