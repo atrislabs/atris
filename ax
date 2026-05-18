@@ -107,6 +107,54 @@ function formatUsage() {
   ].join('\n');
 }
 
+function timestampForFile(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
+function stripAnsi(value) {
+  return String(value || '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', output = process.stdout } = {}) {
+  if (process.env.AX_AUTO_LOG === '0') return null;
+  if (output !== process.stdout && output !== process.stderr && !output.isTTY) return null;
+
+  const baseDir = fs.existsSync(path.join(cwd, 'atris'))
+    ? path.join(cwd, 'atris', 'runs')
+    : path.join(os.homedir(), '.atris', 'runs');
+  fs.mkdirSync(baseDir, { recursive: true });
+  const logPath = path.join(baseDir, `ax-${kind}-${timestampForFile()}.log`);
+  fs.appendFileSync(logPath, [
+    `command: ${process.argv.join(' ')}`,
+    `cwd: ${cwd}`,
+    `mode: ${mode}`,
+    `started_at: ${new Date().toISOString()}`,
+    '',
+  ].join('\n'));
+
+  const writeLog = (chunk) => {
+    fs.appendFileSync(logPath, stripAnsi(chunk));
+  };
+  const teeOutput = {
+    isTTY: Boolean(output && output.isTTY),
+    write(chunk) {
+      const text = String(chunk || '');
+      if (output && typeof output.write === 'function') output.write(text);
+      writeLog(text);
+      return true;
+    }
+  };
+
+  return {
+    path: logPath,
+    output: teeOutput,
+    write: writeLog,
+    close(exitCode = 0) {
+      writeLog(`\nexit_code: ${exitCode}\nfinished_at: ${new Date().toISOString()}\n`);
+    }
+  };
+}
+
 function backendBaseUrl() {
   return (process.env.AX_BACKEND_URL
     || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL
@@ -339,9 +387,16 @@ function workspaceIntent(message) {
   return /\b(files?|folders?|repo|workspace|project|directory|tree|read|open|inspect|search|grep|find|locate|where|edit|write|change|modify|patch|fix|test|tests?|build|src|source|code|diff|git|backend|frontend|atris task|atris xp|xp game|career xp|agentxp|todo|map)\b/i.test(message || '');
 }
 
+function githubWorkspaceIntent(message) {
+  const text = String(message || '');
+  if (!/\bgithub\b/i.test(text)) return false;
+  return /\b(push|commit|commits?|branch|branches|checkout|merge|rebase|tag|release|pr|pull request|pull-request|repo change|code change|small change)\b/i.test(text);
+}
+
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
+  if (githubWorkspaceIntent(message)) return 'local';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
   return 'local';
 }
@@ -368,6 +423,104 @@ function useColor(options = {}) {
 function paint(text, codes, options = {}) {
   if (!useColor(options)) return String(text);
   return `${codes.join('')}${text}${ANSI.reset}`;
+}
+
+function renderTerminalMarkdown(text, options = {}) {
+  let rendered = String(text || '');
+  const codeSpans = [];
+  rendered = rendered.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `\u0000CODE${codeSpans.length}\u0000`;
+    codeSpans.push(code);
+    return token;
+  });
+  rendered = rendered.replace(/^#{1,6}\s+(.+)$/gm, (_, title) => paint(title, [ANSI.bold], options));
+  rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, (_, value) => paint(value, [ANSI.bold], options));
+  rendered = rendered.replace(/__([^_\n]+)__/g, (_, value) => paint(value, [ANSI.bold], options));
+  rendered = rendered.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => paint(codeSpans[Number(index)] || '', [ANSI.accent], options));
+  return rendered;
+}
+
+function resetMarkdownState(state) {
+  state.markdownMode = 'normal';
+  state.markdownBuffer = '';
+  state.markdownCarry = '';
+}
+
+function renderStreamingMarkdown(state, text, options = {}) {
+  const input = `${state.markdownCarry || ''}${String(text || '')}`;
+  state.markdownCarry = '';
+  let out = '';
+
+  for (let i = 0; i < input.length;) {
+    const char = input[i];
+    const next = input[i + 1];
+
+    if (state.markdownMode === 'normal') {
+      if (char === '*' && next === undefined) {
+        state.markdownCarry = '*';
+        break;
+      }
+      if (char === '*' && next === '*') {
+        state.markdownMode = 'bold';
+        state.markdownBuffer = '';
+        i += 2;
+        continue;
+      }
+      if (char === '`') {
+        state.markdownMode = 'code';
+        state.markdownBuffer = '';
+        i += 1;
+        continue;
+      }
+      out += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'bold') {
+      if (char === '*' && next === undefined) {
+        state.markdownCarry = '*';
+        break;
+      }
+      if (char === '*' && next === '*') {
+        out += paint(state.markdownBuffer, [ANSI.bold], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        i += 2;
+        continue;
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'code') {
+      if (char === '`') {
+        out += paint(state.markdownBuffer, [ANSI.accent], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        i += 1;
+        continue;
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
+  }
+
+  return out;
+}
+
+function flushStreamingMarkdown(state, output) {
+  let out = state.markdownCarry || '';
+  if (state.markdownMode === 'bold' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.bold], output);
+  } else if (state.markdownMode === 'code' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.accent], output);
+  }
+  resetMarkdownState(state);
+  if (out) output.write(out);
+  return out;
 }
 
 function truncateMiddle(value, limit = 120) {
@@ -523,6 +676,7 @@ function clearRetriedText(state) {
   state.wroteText = false;
   state.lastChar = '\n';
   state.inAuxBlock = false;
+  resetMarkdownState(state);
 }
 
 function stopProgress(state) {
@@ -532,13 +686,20 @@ function stopProgress(state) {
 }
 
 function flushPendingText(state, output) {
-  if (!state.pendingText) return;
+  const hasMarkdownRemainder = output && output.isTTY && (
+    state.markdownCarry
+    || state.markdownBuffer
+    || (state.markdownMode && state.markdownMode !== 'normal')
+  );
+  if (!state.pendingText && !hasMarkdownRemainder) return;
   stopProgress(state);
   if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
-  output.write(state.pendingText);
+  if (state.pendingText) output.write(output && output.isTTY ? renderTerminalMarkdown(state.pendingText, output) : state.pendingText);
+  const flushedMarkdown = hasMarkdownRemainder ? flushStreamingMarkdown(state, output) : '';
   state.wroteText = true;
   state.wroteActivity = true;
-  state.lastChar = state.pendingText.slice(-1);
+  const written = `${state.pendingText || ''}${flushedMarkdown || ''}`;
+  state.lastChar = written.slice(-1);
   state.pendingText = '';
   state.inAuxBlock = false;
 }
@@ -547,10 +708,11 @@ function writeStreamingText(state, output, content) {
   if (!content) return;
   stopProgress(state);
   if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
-  output.write(content);
+  const rendered = renderStreamingMarkdown(state, content, output);
+  if (rendered) output.write(rendered);
   state.wroteText = true;
   state.wroteActivity = true;
-  state.lastChar = String(content).slice(-1);
+  state.lastChar = String(rendered || content).slice(-1);
   state.inAuxBlock = false;
 }
 
@@ -691,7 +853,10 @@ async function postTurn(message, options = {}) {
     durationMs: 0,
     lastChar: '\n',
     progress: null,
-    inAuxBlock: false
+    inAuxBlock: false,
+    markdownMode: 'normal',
+    markdownBuffer: '',
+    markdownCarry: ''
   };
 
   return new Promise((resolve, reject) => {
@@ -789,16 +954,20 @@ async function chat(options = {}) {
   const mode = options.mode === 'fast' ? 'fast' : 'pro';
   const cwd = options.cwd || process.cwd();
   const input = options.input || process.stdin;
-  const output = options.output || process.stdout;
+  const baseOutput = options.output || process.stdout;
+  const logger = createRunLogger({ cwd, mode, kind: 'play', output: baseOutput });
+  const output = logger ? logger.output : baseOutput;
   const history = [];
 
   output.write(`${formatHeader({ mode, cwd, chat: true })}\n\n`);
+  if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
 
   const runLine = async (line) => {
     const trimmed = String(line || '').trim();
     if (!trimmed) return false;
     if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
 
+    if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
     const result = await postTurn(trimmed, { mode, cwd, history, output });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
@@ -813,10 +982,11 @@ async function chat(options = {}) {
     for await (const line of rl) {
       if (await runLine(line)) break;
     }
+    if (logger) logger.close(0);
     return;
   }
 
-  const rl = readline.createInterface({ input, output });
+  const rl = readline.createInterface({ input, output: baseOutput });
   const ask = () => new Promise(resolve => rl.question(formatPrompt(mode), resolve));
   while (true) {
     const line = await ask();
@@ -825,6 +995,7 @@ async function chat(options = {}) {
       break;
     }
   }
+  if (logger) logger.close(0);
 }
 
 function printBackendHint() {
@@ -1061,6 +1232,7 @@ module.exports = {
   buildConnectionContext,
   buildRunProfile,
   chat,
+  createRunLogger,
   createProgressReporter,
   formatDoneLine,
   formatDuration,
@@ -1076,6 +1248,8 @@ module.exports = {
   modelForMode,
   parseSseBlock,
   postTurn,
+  renderStreamingMarkdown,
+  renderTerminalMarkdown,
   resolveRoute,
   runBenchmark,
   summarizeToolInput,
