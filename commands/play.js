@@ -250,9 +250,19 @@ function starterMissionPrompt(player) {
     `Player ${player}: enter AgentXP Mode in this local workspace.`,
     'Pick one small useful contribution you can finish today: improve a doc, verify setup, create a handoff, or fix a tiny tool.',
     'Have an agent help produce a real artifact plus verifier proof.',
-    'Do not self-accept; when proof is ready, show accept/revise.',
+    'When proof is ready, review it before accept/revise; weak proof should be revised.',
     'Win condition: one accepted proof-backed rep visible on the local AgentXP card.',
   ].join(' ');
+}
+
+function proofRecipe() {
+  return {
+    artifact: 'Create or update one concrete artifact in this folder, for example AGENTXP_PROOF.md, README.md, or a small fixed file.',
+    verifier: 'Run a command that can fail if proof is missing or broken, for example test -s AGENTXP_PROOF.md or npm test.',
+    ready_proof: 'Paste the artifact path and verifier result into atris task ready.',
+    review: 'Accept only after reviewing the proof; weak proof should be revised.',
+    solo_review_rule: 'For a solo public smoke, accept only after you inspect the proof. For team missions, use a separate human reviewer.',
+  };
 }
 
 function globalSyncCommands(player) {
@@ -319,7 +329,7 @@ function nextCommands(task, player) {
   if (task.status === 'open') {
     return [
       `atris task claim ${ref} --as ${helper}`,
-      `atris task ready ${ref} --as ${helper} --proof "<artifact path + verifier result>"`,
+      `atris task ready ${ref} --as ${helper} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       ...globalSyncCommands(player),
@@ -329,7 +339,7 @@ function nextCommands(task, player) {
   if (task.status === 'claimed') {
     const actor = task.claimed_by || helper;
     return [
-      `atris task ready ${ref} --as ${actor} --proof "<artifact path + verifier result>"`,
+      `atris task ready ${ref} --as ${actor} --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
       `atris task accept ${ref} --as ${player} --proof "<human review>"`,
       'atris xp card --local',
       ...globalSyncCommands(player),
@@ -396,7 +406,8 @@ function modeState(args = []) {
       claimed_by: mission.claimed_by || null,
       prompt: latestMessage(events),
     } : null,
-    xp_rule: 'AgentXP lands only after proof is ready and a human accepts the task.',
+    proof_recipe: proofRecipe(),
+    xp_rule: 'AgentXP lands only after a useful artifact has verifier proof and review accepts it.',
     global_sync_rule: AGENTXP_GLOBAL_SYNC_RULE,
     leaderboard_url: AGENTXP_LEADERBOARD_URL,
     next_commands: commandList,
@@ -430,9 +441,17 @@ function render(state) {
   }
   console.log('');
   console.log('Win condition: real artifact + verifier + human accept.');
-  console.log('XP rule: no proof, no AgentXP; accept/revise stays human-gated.');
+  console.log('XP rule: no proof, no AgentXP; accept/revise is the review gate.');
   console.log('Global sync: run atris login, then sync; owner tokens are guided-demo fallback only.');
   console.log(`Leaderboard: ${state.leaderboard_url}`);
+  if (state.proof_recipe) {
+    console.log('');
+    console.log('Proof recipe:');
+    console.log(`- Artifact: ${state.proof_recipe.artifact}`);
+    console.log(`- Verifier: ${state.proof_recipe.verifier}`);
+    console.log(`- Ready proof: ${state.proof_recipe.ready_proof}`);
+    console.log(`- Review: ${state.proof_recipe.review}`);
+  }
   console.log('');
   console.log('Next commands:');
   for (const command of state.next_commands) console.log(`- ${command}`);

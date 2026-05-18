@@ -3920,6 +3920,8 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /atris login/);
     assert.match(play.stdout, /atris xp sync --local/);
     assert.match(play.stdout, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
+    assert.match(play.stdout, /Proof recipe:/);
+    assert.match(play.stdout, /Ready proof:/);
 
     const json = runCli(['play', '--as', 'justin', '--json'], { cwd: dir, env: { ...env, USER: 'keshav' } });
     assert.equal(json.status, 0, json.stderr);
@@ -3931,6 +3933,8 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.global_sync_rule, 'Run atris login, then sync. Owner-provided sync tokens are guided-demo fallback only.');
     assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
+    assert.match(body.proof_recipe.verifier, /test -s AGENTXP_PROOF\.md/);
+    assert.match(body.proof_recipe.solo_review_rule, /solo public smoke/);
     assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as game-manager`);
     assert.ok(
       body.next_commands.indexOf('atris login')
@@ -4002,6 +4006,9 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.equal(body.seeded, null);
     assert.equal(body.mission.assigned_to, 'justin');
     assert.equal(body.mission.title, 'AgentXP Mode first rep: complete one proof-backed useful mission');
+    assert.doesNotMatch(body.mission.prompt, /Do not self-accept/);
+    assert.match(body.mission.prompt, /weak proof should be revised/);
+    assert.match(body.proof_recipe.ready_proof, /atris task ready/);
 
     const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
     assert.equal(list.status, 0, list.stderr);
@@ -4030,8 +4037,9 @@ test('play mode makes a plain folder playable on first run', () => {
     assert.equal(body.mission.assigned_to, 'justin');
     assert.deepEqual(body.next_commands.slice(0, 2), [
       `atris task claim ${body.mission.ref} --as game-manager`,
-      `atris task ready ${body.mission.ref} --as game-manager --proof "<artifact path + verifier result>"`,
+      `atris task ready ${body.mission.ref} --as game-manager --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
     ]);
+    assert.match(body.proof_recipe.artifact, /AGENTXP_PROOF\.md/);
     assert.equal(body.next_commands.includes('atris xp sync --local --token <owner-provided-token>'), true);
     assert.equal(body.next_commands.includes('atris login'), true);
     assert.equal(body.next_commands.includes('atris xp sync --local'), true);
