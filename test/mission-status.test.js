@@ -321,6 +321,38 @@ test('mission run --due skips paused missions', () => {
   }
 });
 
+test('mission run --due prefers the latest caller-session mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'old-codex-due',
+      slug: 'old-codex-due',
+      objective: 'old codex due mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'current-codex-due',
+      slug: 'current-codex-due',
+      objective: 'current codex due mission',
+      status: 'blocked',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const due = selectDueMission(dir);
+    assert.equal(due.id, 'current-codex-due');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal emits the Codex goal candidate from mission state', () => {
   const dir = makeTempDir();
   try {
