@@ -1289,7 +1289,7 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   const result = await runBusinessTerminalCommand(token, ctx, command, 120);
   if (!result.ok) {
     console.log('  Runtime: bootstrap could not run.');
-    console.log(`  Recovery: atris computer run "npm install -g atris@latest" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
     return { ok: false, result };
   }
 
