@@ -321,7 +321,7 @@ test('mission run --due skips paused missions', () => {
   }
 });
 
-test('mission run --due prefers the latest caller-session mission', () => {
+test('mission run --due skips blocked caller-session missions', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -347,7 +347,7 @@ test('mission run --due prefers the latest caller-session mission', () => {
     });
 
     const due = selectDueMission(dir);
-    assert.equal(due.id, 'current-codex-due');
+    assert.equal(due.id, 'old-codex-due');
   } finally {
     cleanupTempDir(dir);
   }
@@ -408,7 +408,7 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
   }
 });
 
-test('mission goal prefers the latest caller-session mission over stale due history', () => {
+test('mission goal skips blocked caller-session missions', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -434,7 +434,7 @@ test('mission goal prefers the latest caller-session mission over stale due hist
     });
 
     const selected = selectCodexGoalMission(dir);
-    assert.equal(selected.mission.id, 'current-codex-due');
+    assert.equal(selected.mission.id, 'old-codex-due');
     assert.equal(selected.reason, 'due');
   } finally {
     cleanupTempDir(dir);
