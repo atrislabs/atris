@@ -184,6 +184,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.agents[1].task_workspace, 'tmp/other');
   assert.equal(data.agents[2].task, '-');
   assert.equal(data.agents[2].task_reason, 'no task projection');
+  assert.equal(data.agents[2].task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 if idle');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /CLI-95/);
@@ -207,7 +208,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /1 untasked/);
   assert.match(top, /Next: resolve 1 untasked session: 1 no task projection/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
-  assert.match(top, /333 .*no task projection/);
+  assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 if idle/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
 });
 
@@ -231,10 +232,11 @@ test('renderAgentTop explains workspaces with no active task', () => {
         owner: '-',
         task_workspace: 'tmp/web',
         task_reason: 'no active task',
+        task_action: "cd '/tmp/web' && atris task next --as codex",
       },
     ],
   };
   const top = renderAgentTop(data);
   assert.match(top, /Next: resolve 1 untasked session: 1 no active task/);
-  assert.match(top, /44 tmp\/web: no active task/);
+  assert.match(top, /44 tmp\/web: no active task -> cd '\/tmp\/web' && atris task next --as codex/);
 });

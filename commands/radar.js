@@ -153,6 +153,20 @@ function untaskedReason(agent, taskWorkspaceRoot, tasks) {
   return 'no active task';
 }
 
+function shellQuote(value) {
+  return `'${String(value || '').replace(/'/g, "'\\''")}'`;
+}
+
+function untaskedAction(agent, taskWorkspaceRoot, tasks) {
+  const reason = untaskedReason(agent, taskWorkspaceRoot, tasks);
+  const pid = agent.pid || '?';
+  const actor = agent.agent || 'agent';
+  if (reason === 'cwd unknown') return `inspect pid ${pid} cwd with lsof`;
+  if (reason === 'no active task') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task next --as ${actor}`;
+  if (reason === 'empty task projection') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task new "<small concrete title>" --tag ops`;
+  return `inspect ${agent.cwd || 'unknown cwd'} for missing Atris task plane or close pid ${pid} if idle`;
+}
+
 function readJsonFile(file, deps, fallback = null) {
   if (!deps.exists(file)) return fallback;
   return safeJson(deps.readFile(file, 'utf8'), fallback);
@@ -459,13 +473,15 @@ function collectRadar(options = {}) {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
     const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot);
+    const taskReason = task ? null : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
     return {
       ...agent,
       task: taskRef(task),
       task_status: task?.status || null,
       owner: ownerForTask(task),
       task_workspace: taskWorkspaceRoot ? repoLabel(taskWorkspaceRoot) : null,
-      task_reason: task ? null : untaskedReason(agent, taskWorkspaceRoot, agentTasks),
+      task_reason: taskReason,
+      task_action: task ? null : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
     };
   });
   const osState = {
@@ -638,7 +654,7 @@ function renderAgentTop(data) {
     const reasonText = payload.summary.untasked_reasons.map(row => `${row.count} ${row.reason}`).join(', ');
     lines.push(`Untasked: ${payload.summary.untasked} sessions (${reasonText}).`);
     for (const agent of payload.agents.filter(row => !row.task || row.task === '-').slice(0, 8)) {
-      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'}`);
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'} -> ${agent.task_action || 'inspect session'}`);
     }
   }
   return lines.join('\n');
