@@ -544,6 +544,7 @@ function parseComputerOptions(argv) {
   let workspaceId = null;
   let waitForResult = true;
   let message = null;
+  let force = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -600,6 +601,10 @@ function parseComputerOptions(argv) {
       waitForResult = false;
       continue;
     }
+    if (arg === '--force') {
+      force = true;
+      continue;
+    }
     positional.push(arg);
   }
 
@@ -618,6 +623,7 @@ function parseComputerOptions(argv) {
       workspaceId: workspaceId ? String(workspaceId).trim() : null,
       waitForResult,
       message,
+      force,
     },
   };
 }
@@ -1174,7 +1180,8 @@ function printComputerCommandFailure(result, ctx = null) {
   if (result?.status === 409) {
     const mismatch = extractAttachedWorkspaceMismatch(detail, result?.data);
     const targetWorkspace = mismatch?.requestedWorkspaceId || ctx?.workspaceId || '<workspace-id>';
-    console.error(`Run: atris computer activate --business ${businessSelector(ctx)} --workspace ${targetWorkspace}`);
+    const forceFlag = /--force|force to take over|re-run with --force/i.test(detail) ? ' --force' : '';
+    console.error(`Run: atris computer activate --business ${businessSelector(ctx)} --workspace ${targetWorkspace}${forceFlag}`);
   }
 }
 
@@ -1253,6 +1260,17 @@ function formatWorkspaceRef(workspace) {
   return workspace.name ? `${workspace.name} (${workspace.id})` : workspace.id;
 }
 
+function formatLeaseAge(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return '-';
+  if (value < 60) return `${Math.floor(value)}s`;
+  const minutes = Math.floor(value / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 async function probeAttachedWorkspace(token, ctx) {
   const result = await apiRequestJson(
     `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/terminal`,
@@ -1272,7 +1290,7 @@ async function probeAttachedWorkspace(token, ctx) {
   return { workspaceId: null, health: 'degraded', result };
 }
 
-async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake') {
+async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake', options = {}) {
   if (!ctx?.businessId || !ctx?.workspaceId) {
     return { ok: false, skipped: true, reason: 'missing_workspace' };
   }
@@ -1288,8 +1306,10 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   });
   const result = await runBusinessTerminalCommand(token, ctx, command, 120);
   if (!result.ok) {
-    console.log('  Runtime: bootstrap could not run.');
-    console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    if (!options.quiet) {
+      console.log('  Runtime: bootstrap could not run.');
+      console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
     return { ok: false, result };
   }
 
@@ -1297,13 +1317,15 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   const output = String(data.stdout || data.output || data.result || '').trim();
   const line = output.split('\n').find((entry) => entry.includes('atris_runtime_bootstrap'));
   const recovery = output.split('\n').find((entry) => entry.startsWith('recovery='));
-  if (line) {
-    console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
-  } else {
-    console.log('  Runtime: Atris bootstrap receipt written.');
-  }
-  if (recovery) {
-    console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+  if (!options.quiet) {
+    if (line) {
+      console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
+    } else {
+      console.log('  Runtime: Atris bootstrap receipt written.');
+    }
+    if (recovery) {
+      console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
   }
   return { ok: true, output };
 }
@@ -1471,7 +1493,7 @@ async function ensureBusinessAwake(token, ctx, maxWaitSec = 90, options = {}) {
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
       if (!options.quiet) console.log(`awake (${elapsed}s)`);
-      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake');
+      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake', options);
       return true;
     }
   }
@@ -1500,10 +1522,24 @@ async function computerStatus(token, ctx = null) {
     const targetWorkspace = workspaces.find((workspace) => workspace.id === ctx.workspaceId) || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
     console.log(`    Default workspace:  ${formatWorkspaceRef(defaultWorkspace)}`);
     console.log(`    Target workspace:   ${formatWorkspaceRef(targetWorkspace)}`);
+    const attachedFromStatus = d.attached_workspace_id
+      ? { workspaceId: d.attached_workspace_id, health: null }
+      : null;
+    if (attachedFromStatus) {
+      const attachedWorkspace = workspaces.find((workspace) => workspace.id === attachedFromStatus.workspaceId)
+        || { id: attachedFromStatus.workspaceId, name: d.attached_workspace_name || null };
+      console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      console.log(`    Attached by:        ${d.attached_by || '-'}`);
+      console.log(`    Attached at:        ${d.attached_at || '-'}`);
+      console.log(`    Lease age:          ${formatLeaseAge(d.lease_age_seconds)}`);
+      if (d.takeover_hint) console.log(`    Takeover hint:      ${d.takeover_hint}`);
+    }
     if (status === 'running' && d.endpoint && ctx.workspaceId) {
       const attached = await probeAttachedWorkspace(token, ctx);
-      const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
-      console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      if (!attachedFromStatus) {
+        const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
+        console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      }
       if (attached.health === 'workspace_mismatch') {
         printComputerCommandFailure(attached.result, ctx);
       } else if (attached.health !== 'ready') {
@@ -1686,7 +1722,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log(`  atris computer sleep --business ${owner} --workspace ${workspaceId}`);
 }
 
-async function computerActivate(token, ctx = null) {
+async function computerActivate(token, ctx = null, options = {}) {
   if (!ctx?.businessId || !ctx?.workspaceId) {
     console.error('Usage: atris computer activate --business <slug> --workspace <id>');
     process.exitCode = 1;
@@ -1696,7 +1732,7 @@ async function computerActivate(token, ctx = null) {
   const result = await apiRequestJson(`/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/activate`, {
     method: 'POST',
     token,
-    body: {},
+    body: { force: Boolean(options.force) },
   });
   if (!result.ok) {
     printComputerCommandFailure(result, ctx);
@@ -2581,10 +2617,10 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const oneShotMessage = initialOptions.message != null;
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
-  const oneShotMessage = initialOptions.message != null;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
   const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
@@ -3398,7 +3434,7 @@ async function runComputer() {
     case 'chat': return computerChat(token, ctx, cloudOptions);
     case 'card': return computerCard(args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
-    case 'activate': return computerActivate(token, ctx);
+    case 'activate': return computerActivate(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'up':
     case 'wake': return computerWake(token, ctx);
