@@ -205,6 +205,7 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   assert.doesNotMatch(ax, /atris2-fast-local/);
   assert.equal(pkg.bin.ax, 'ax');
   assert.ok(pkg.files.includes('ax'), 'published package must include the ax entrypoint');
+  assert.ok(pkg.files.includes('templates/'), 'published package must include workspace templates');
 });
 
 test('ax help stays local and does not start an agent turn', () => {
