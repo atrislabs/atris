@@ -3050,6 +3050,40 @@ test('brain activate routes executor away from fake build work when no task is o
   }
 });
 
+test('brain activate routes executor to certified review before creating work', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CLI-9',
+          title: 'Certified checkpoint',
+          status: 'review',
+          metadata: {
+            agent_certified: true,
+            agent_review_pass_count: 2,
+          },
+        },
+      ],
+    }), 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Executor — Builder: hand off certified review CLI-9 to the operator/);
+    assert.match(res.stdout, /atris task accept CLI-9/);
+    assert.match(res.stdout, /atris task revise CLI-9 --note "<what must change>"/);
+    assert.doesNotMatch(res.stdout, /ask Navigator to create one bounded task/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain activate routes navigator members to concrete planning work', () => {
   const dir = makeTempDir();
   try {
@@ -3112,6 +3146,39 @@ test('brain activate routes launcher away from fake closeout work when no task r
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Launcher — The Closer: wait for one validated task receipt before closeout/);
     assert.doesNotMatch(res.stdout, /close one validated task into release-ready proof/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate routes launcher to certified review before closeout fallback', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CLI-10',
+          title: 'Certified launch checkpoint',
+          status: 'review',
+          review: {
+            agent_certified: true,
+            agent_review_pass_count: 2,
+          },
+        },
+      ],
+    }), 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'launcher');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Launcher — The Closer\n\nCloses validated work into release notes and proof.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Close one validated task into release-ready proof.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'launcher', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Launcher — The Closer: hand off certified review CLI-10 to the operator/);
+    assert.match(res.stdout, /atris task accept CLI-10/);
+    assert.doesNotMatch(res.stdout, /wait for one validated task receipt before closeout/);
   } finally {
     cleanupTempDir(dir);
   }
