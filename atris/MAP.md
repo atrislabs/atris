@@ -58,14 +58,15 @@ rg "runAtris" commands/run.js               # Run command (autonomous loop)
 rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands.test.js # Verify command, rubric, and non-mutating help
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
 rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, open TODO counts, proof receipts, portfolio signals, non-mutating help
+rg "radarCommand|collectRadar|Operator radar|whats going on|loadBusinessCollaboration" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with task, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, and Codex goal state
 rg "releaseAtris" commands/release.js      # Release command
 rg "showSearchHelp|searchJournal|search help flags" bin/atris.js test/commands.test.js # Search command + workspace-free help flags
 rg "showLearnHelp|learnAtris|learn help" commands/learn.js test/commands.test.js # Project learnings command + workspace-free help
 rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.test.js # Soul/persona command + workspace-free help
 rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp" bin/atris.js commands/learn.js commands/soul.js test/commands.test.js  # Broad workspace-free help smoke coverage
 rg "alignAtris" commands/align.js           # Business workspace alignment
-rg "businessCommand|createCanonicalBusinessWorkspace" commands/business.js  # Business workspace flows
-rg "computerCreate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake" commands/computer.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card
+rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js  # Business workspace flows and collaborator handoffs
+rg "computerCreate|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint" commands/computer.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, explicit business-computer activation, readiness, and workspace-mismatch recovery
 rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|codex_goal.json|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters and terminal next-action normalization
@@ -289,16 +290,19 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Entry point:** `commands/business.js`
 - **Key flows:**
 - `createBusinessInternal()` (`commands/business.js`) creates the cloud business record, caches IDs locally, and can now scaffold a default business environment
+- `renderBusinessCreatedNextSteps()` (`commands/business.js`) renders the post-`business init` operator path: `business start`, `radar`, `task next`, member activation, mission bootstrap, onboarding, record/share, and `align --fix`
 - `initBusinessWorkspace()` (`commands/business.js`) is the first-class path for `atris business init <name>`; product meaning is "create shared owner + first/default computer"
-- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, and a starter task in `atris/TODO.md`. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
+- `onboardBusiness()` (`commands/business.js`) works from sparse input or loose local files, then seeds raw intake, a starter brief, one person page, a first-loop page, a safe next action, an operator one-pager, a fallback starter row in `atris/TODO.md`, and a durable starter task in `.atris/state/tasks.projection.json` when `lib/task-db` is available. Accepts `--name` to auto-scaffold `.atris/business.json` in a bare directory.
+- `startBusinessWorkspace()` (`commands/business.js`) powers `atris business start|check|ready`; it reads a received workspace, prints readiness, missing artifacts, first reads, first-loop commands including `atris radar`, `atris task next`, and `atris do`, mission bootstrap commands (`mission status`, `mission start`, `member goal-from-mission`), compact local Atris OS state from `.atris/state` + `atris/team`, and the `atris update` repair command when root agent adapters are missing. Supports `--cwd <path>` for handoff links.
+- `shareBusinessWorkspace()` (`commands/business.js`) prints/writes a collaborator handoff with workspace identity, local `cd` path, cloud-aware remote `atris pull <slug>` setup when IDs exist, readiness, exact start commands with `atris radar`, `atris task next`, and `atris do`, first-loop/proof commands, mission bootstrap/resume commands, sync commands, task/review counts, mission loop state, team active-goal counts, AgentXP gate state, and missing next action. Missing root agent adapters point collaborators to `atris update`.
 - `recordBusinessRun()` (`commands/business.js`) appends a finished recap into `.atris/state/events.jsonl`, `episodes.jsonl`, and `scorecards.jsonl`
-- `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json` then reuses `syncBusinessCanonical()` from `commands/sync.js`
-- `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files
-- Starter business environments seed `operator` and `validator` member folders so the default computer has an owner and proof checker from day one
+- `createCanonicalBusinessWorkspace()` (`commands/business.js`) writes `.atris/business.json`, reuses `syncBusinessCanonical()` from `commands/sync.js`, then calls `ensureBusinessRootAgentAdapters()` from `commands/sync.js` to seed root `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` adapters for collaborator first-run guidance while preserving custom existing adapters
+- `syncBusinessCanonical()` (`commands/sync.js`) applies `templates/business-starter/` into a business workspace without clobbering custom files and repairs missing root agent adapters during `atris sync` / `atris update`; `renderBusinessAgentAdapter()` seeds root `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` with `atris business start`, `atris radar`, task next, member activation, mission bootstrap, and `atris do`
+- Starter business environments seed `atris/team/START_HERE.md`, `operator`, and `validator` member folders so a collaborator knows which lane to wake first and when proof needs review
 - **Default local target:** `~/arena/atris-business/<slug>/`, or `--here` / `--root <dir>` when you want to bind an existing folder
 - **Value:** Makes shared owners and their computers a real CLI primitive instead of a manual `.atris/business.json` + `atris update` ritual
 
-**Search:** `rg "initBusinessWorkspace|onboardBusiness|createCanonicalBusinessWorkspace|syncBusinessCanonical" commands/business.js commands/sync.js`
+**Search:** `rg "initBusinessWorkspace|onboardBusiness|startBusinessWorkspace|shareBusinessWorkspace|createCanonicalBusinessWorkspace|ensureBusinessRootAgentAdapters|syncBusinessCanonical" commands/business.js commands/sync.js`
 
 ### Feature: Computer Card (`atris computer card`)
 
