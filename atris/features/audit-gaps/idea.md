@@ -1,20 +1,20 @@
 # Audit Gaps
 
-> **Status:** in-progress
+> **Status:** complete
 > **Created:** 2026-02-09
-> **Last Updated:** 2026-02-09
+> **Last Updated:** 2026-05-19
 
 ---
 
 ## Problem Statement
 
-The self-audit found gaps that wire-the-loop didn't cover: no agent spec references PERSONA.md for communication style, and the self-improving-loop feature is still marked "planning" when it shipped.
+The self-audit found gaps that wire-the-loop did not cover: agent specs needed an explicit PERSONA.md communication-style pointer, and shipped feature statuses needed to stop appearing as active work.
 
 ---
 
 ## Solution Design
 
-Add PERSONA.md reference to all 5 agent specs. Clean up stale feature statuses. Small, mechanical.
+Keep the current `atris/team/*/MEMBER.md` specs pointed at `atris/PERSONA.md`, keep completed features under Completed Features, and keep the audit-gaps feature record aligned with those current paths.
 
 ---
 
