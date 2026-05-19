@@ -7,6 +7,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
+const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 
 function stampIso() {
@@ -763,7 +764,7 @@ function secondsUntilMissionDue(mission, now = new Date()) {
 }
 
 function missionIsRunnable(mission) {
-  return mission && !TERMINAL_STATUSES.has(mission.status) && mission.status !== 'paused';
+  return mission && GOAL_LOOP_STATUSES.has(String(mission.status || ''));
 }
 
 function missionSortTime(mission) {
