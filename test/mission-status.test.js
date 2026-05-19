@@ -826,6 +826,44 @@ test('always-on missions become due again after cadence even after verifier pass
   }
 });
 
+test('manual always-on missions do not auto-rerun after verifier passes', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'manual no-op mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+
+    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
+    const firstPayload = JSON.parse(firstRun.stdout);
+    assert.equal(firstPayload.mission.status, 'ready');
+    assert.equal(firstPayload.mission.verifier_result.passed, true);
+    assert.equal(selectDueMission(dir), null);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    assert.equal(JSON.parse(goal.stdout).action, 'no_goal_candidate');
+
+    const directRun = runCli(['mission', 'run', firstPayload.mission.id, '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(directRun.status, 0, directRun.stderr || directRun.stdout);
+    const directPayload = JSON.parse(directRun.stdout);
+    assert.equal(directPayload.mission.status, 'ready');
+    assert.equal(directPayload.ticks[0].tick_index, 2);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission lock busy errors are JSON-readable', () => {
   const dir = makeTempDir();
   try {
