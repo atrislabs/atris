@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
-const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
+const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, prMergeRef, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
 const {
@@ -183,6 +183,12 @@ branch refs/heads/codex/security-task
     { path: '/repo/main', branch: 'main', head: 'abc123' },
     { path: '/repo/.agent-worktrees/security', branch: 'codex/security-task', head: 'def456' },
   ]);
+});
+
+test('worktree PR merge refs parse from gh output', () => {
+  assert.equal(prMergeRef('123 https://github.com/acme/repo/pull/123'), '123');
+  assert.equal(prMergeRef('https://github.com/acme/repo/pull/456'), 'https://github.com/acme/repo/pull/456');
+  assert.equal(prMergeRef('dry-run: gh pr create --base master --head branch'), '');
 });
 
 test('worktree swarlo claim is best-effort when local bridge is absent', () => {
@@ -395,6 +401,93 @@ test('worktree ship commits verifies and pushes an isolated branch', () => {
       runGit(['--git-dir', remote, 'show-ref', '--verify', `refs/heads/${branch}`], dir),
       new RegExp(`refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
     );
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree ship merge avoids local branch checkout collision', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const remote = path.join(dir, 'remote.git');
+    const repo = path.join(dir, 'repo');
+    const binDir = path.join(dir, 'bin');
+    const ghLog = path.join(dir, 'gh.log');
+    const runGit = (args, cwd = repo) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    fs.mkdirSync(repo, { recursive: true });
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'gh'), `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.GH_LOG, args.join(' ') + '\\n');
+if (args[0] === 'pr' && args[1] === 'view') process.exit(1);
+if (args[0] === 'pr' && args[1] === 'create') {
+  console.log('https://github.com/acme/repo/pull/1');
+  process.exit(0);
+}
+if (args[0] === 'pr' && args[1] === 'merge') {
+  if (args.includes('--delete-branch')) {
+    console.error("failed to run git: fatal: 'master' is already used by worktree at '/tmp/repo'");
+    process.exit(1);
+  }
+  console.log('Merged pull request #1');
+  process.exit(0);
+}
+process.exit(2);
+`, 'utf8');
+    fs.chmodSync(path.join(binDir, 'gh'), 0o755);
+    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', remote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+
+    worktreePath = path.join(dir, 'merge-worktree');
+    const start = runCli([
+      'worktree',
+      'start',
+      '--agent',
+      'codex-shipper',
+      '--task',
+      'Merge Smoke',
+      '--path',
+      worktreePath,
+    ], { cwd: repo });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
+
+    const shipped = runCli([
+      'worktree',
+      'ship',
+      '--message',
+      'merge smoke',
+      '--verify',
+      'git status --short',
+      '--merge',
+    ], {
+      cwd: worktreePath,
+      env: { PATH: `${binDir}:${process.env.PATH}`, GH_LOG: ghLog },
+    });
+    assert.equal(shipped.status, 0, shipped.stderr || shipped.stdout);
+    assert.match(shipped.stdout, /merge: requested/);
+    assert.match(shipped.stdout, /merge: merged/);
+    assert.match(shipped.stdout, /merge: remote branch deleted/);
+    assert.match(shipped.stdout, /done: worktree shipped/);
+    const ghCalls = fs.readFileSync(ghLog, 'utf8');
+    assert.match(ghCalls, /pr merge https:\/\/github\.com\/acme\/repo\/pull\/1 --merge/);
+    assert.doesNotMatch(ghCalls, /--delete-branch/);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
