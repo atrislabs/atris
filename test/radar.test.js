@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
+  agentTopPayload,
   agentTypeForCommand,
   collectRadar,
   parsePsOutput,
@@ -115,6 +116,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
     + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n'
+    + '223 1 1.5 0.3 S Mon May 18 12:01:30 2026 codex exec backend\n'
     + '333 1 0.0 0.1 S Mon May 18 12:02:00 2026 devin --workspace none\n';
   const worktreeOutput = [
     `worktree ${root}`,
@@ -130,7 +132,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
     if (cmd === 'lsof') {
-      const cwd = args[2] === '111' ? root : args[2] === '222' ? otherRoot : '/tmp/no-proj';
+      const cwd = args[2] === '111' ? root : ['222', '223'].includes(args[2]) ? otherRoot : '/tmp/no-proj';
       return `p${args[2]}\nn${cwd}\n`;
     }
     if (cmd === 'git' && args[1] === root && args[2] === 'worktree') return worktreeOutput;
@@ -158,7 +160,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     },
   });
 
-  assert.equal(data.summary.agents.total, 3);
+  assert.equal(data.summary.agents.total, 4);
   assert.equal(data.summary.tasks.claimed, 0);
   assert.equal(data.summary.tasks.certifiedReview, 1);
   assert.equal(data.summary.missions.stale, 1);
@@ -182,9 +184,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.agents[0].task, 'CLI-95');
   assert.equal(data.agents[1].task, 'BCK-294');
   assert.equal(data.agents[1].task_workspace, 'tmp/other');
-  assert.equal(data.agents[2].task, '-');
-  assert.equal(data.agents[2].task_reason, 'no task projection');
-  assert.equal(data.agents[2].task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 if idle');
+  assert.equal(data.agents[2].task, 'BCK-294');
+  const untaskedAgent = data.agents.find(agent => agent.task === '-');
+  assert.equal(untaskedAgent.task_reason, 'no task projection');
+  assert.equal(untaskedAgent.task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 if idle');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /CLI-95/);
@@ -209,7 +212,17 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /Next: resolve 1 untasked session: 1 no task projection/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
   assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 if idle/);
+  assert.match(top, /Task load: 1 pileup, 1 review-bound task/);
+  assert.match(top, /BCK-294: 2 sessions, 4\.0% CPU, claimed, tmp\/other/);
+  assert.match(top, /CLI-95: 1 sessions, 0\.1% CPU, review, tmp\/atris-radar/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
+  const payload = agentTopPayload(data);
+  assert.equal(payload.summary.task_pileups, 1);
+  assert.equal(payload.summary.review_bound_tasks, 1);
+  assert.deepEqual(payload.task_load.map(row => [row.task, row.sessions, row.attention]).slice(0, 2), [
+    ['BCK-294', 2, true],
+    ['CLI-95', 1, true],
+  ]);
 });
 
 test('renderAgentTop explains workspaces with no active task', () => {
