@@ -1708,7 +1708,7 @@ function cmdReady(args) {
     next_action: agentCertified ? 'continue_work' : 'agent_review_again',
     rule: agentCertified
       ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
-      : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
+      : 'Proof is in Review; human accept can award AgentXP now. A second agent review only certifies autonomous continuation.',
   };
   if (wantsJson(args)) {
     printJson({
