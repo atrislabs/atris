@@ -332,6 +332,8 @@ function loadBusinessCollaboration(root, deps, team = {}) {
   const episodes = countJsonLines(path.join(root, '.atris', 'state', 'episodes.jsonl'), deps);
   const scorecards = countJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps);
   const computerDirs = countDirectoryEntries(path.join(root, 'atris', 'computers'), deps, name => !name.startsWith('.'));
+  const runtimeComputer = runtime && (runtime.workspace_id || runtime.business_id || runtime.scope === 'local-business-computer') ? 1 : 0;
+  const computers = Math.max(computerDirs, runtimeComputer);
   const hasOnboarding = ingestPacks > 0 || starterBriefs > 0 || onePagers > 0;
   const hasProofLoop = events > 0 || episodes > 0 || scorecards > 0 || localReceipts > 0;
   const hasTeam = Number(team.total || 0) > 0;
@@ -360,7 +362,7 @@ function loadBusinessCollaboration(root, deps, team = {}) {
     } : null,
     onboarding: { packs: ingestPacks, starter_briefs: starterBriefs, first_loops: firstLoops, one_pagers: onePagers, reports },
     proof: { events, episodes, scorecards, receipts: localReceipts },
-    computers: computerDirs,
+    computers,
     team_members: Number(team.total || 0),
     active_goal_members: Number(team.active_goal_members || 0),
     share_ready: missing.length === 0,
