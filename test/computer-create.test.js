@@ -115,6 +115,12 @@ function startApiServer(requests) {
           status: 'running',
           business_id: 'biz-1',
           endpoint: 'https://runner.example',
+          attached_workspace_id: 'ws-new',
+          attached_workspace_name: 'My Business Computer',
+          attached_by: 'operator-1',
+          attached_at: '2026-05-19T09:00:00+00:00',
+          lease_age_seconds: 120,
+          takeover_hint: 'Use --force to take over Main.',
         });
         return;
       }
@@ -131,7 +137,8 @@ function startApiServer(requests) {
           send(200, { status: 'failed', events: [{ type: 'error', error: 'stream failed for test' }] });
           return;
         }
-        send(200, { status: 'completed', events: [{ type: 'assistant_text', content: '4' }, { type: 'complete' }] });
+        const reply = lastChatMessage.includes('CHAT_OK') ? 'CHAT_OK' : '4';
+        send(200, { status: 'completed', events: [{ type: 'assistant_text', content: reply }, { type: 'complete' }] });
         return;
       }
       if (
@@ -462,7 +469,46 @@ test('computer activate attaches workspace and updates the cached default', asyn
     assert.match(res.stdout, /CLI default: ws-new/);
     const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
     assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
-    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/activate'));
+    const activateRequest = requests.find((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/activate');
+    assert.ok(activateRequest);
+    assert.equal(activateRequest.body.force, false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer activate --force sends explicit takeover flag', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'activate',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      '--force',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const activateRequest = requests.find((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/activate');
+    assert.ok(activateRequest);
+    assert.equal(activateRequest.body.force, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
@@ -538,6 +584,10 @@ test('computer status shows default target and attached workspace truth', async 
     assert.match(res.stdout, /Default workspace:\s+Main \(ws-old\)/);
     assert.match(res.stdout, /Target workspace:\s+My Business Computer \(ws-new\)/);
     assert.match(res.stdout, /Attached workspace:\s+My Business Computer \(ws-new\)/);
+    assert.match(res.stdout, /Attached by:\s+operator-1/);
+    assert.match(res.stdout, /Attached at:\s+2026-05-19T09:00:00\+00:00/);
+    assert.match(res.stdout, /Lease age:\s+2m/);
+    assert.match(res.stdout, /Takeover hint:\s+Use --force to take over Main\./);
     assert.match(res.stdout, /Health:\s+ready/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -670,7 +720,7 @@ test('computer chat sends piped prompts non-interactively', async () => {
   }
 });
 
-test('computer chat --message sends one non-interactive prompt', async () => {
+test('computer chat --message sends one quiet non-interactive prompt', async () => {
   const home = makeTempDir();
   const cwd = makeTempDir();
   const requests = [];
@@ -693,18 +743,20 @@ test('computer chat --message sends one non-interactive prompt', async () => {
       'atris-labs',
       '--workspace',
       'ws-new',
+      '--worker',
+      'claude',
       '--message',
-      'What is 2+2?',
+      'Reply exactly CHAT_OK',
     ], { cwd, env });
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.equal(res.stdout, '4\n');
+    assert.equal(res.stdout.trim(), 'CHAT_OK');
     assert.doesNotMatch(res.stdout, /Atris Cloud Computer/);
     assert.doesNotMatch(res.stdout, /Running on cloud/);
     assert.ok(requests.some((request) => (
       request.method === 'POST' &&
       request.url === '/api/business/biz-1/chat' &&
-      request.body?.message === 'What is 2+2?' &&
+      request.body?.message === 'Reply exactly CHAT_OK' &&
       request.body?.worker === 'claude'
     )));
   } finally {
