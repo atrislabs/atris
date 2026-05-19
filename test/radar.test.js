@@ -6,6 +6,7 @@ const {
   collectRadar,
   parsePsOutput,
   parseWorktrees,
+  renderAgentTop,
   renderRadar,
 } = require('../commands/radar');
 
@@ -105,7 +106,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   ]);
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
-    + '222 1 0.1 0.2 S Mon May 18 12:01:00 2026 claude -p run\n';
+    + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n';
   const worktreeOutput = [
     `worktree ${root}`,
     'HEAD aaa',
@@ -181,4 +182,11 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(renderRadar(data), /Business ready: yes; team 1\/1 active-goal; onboarding 1 packs\/1 briefs\/1 loops; proof 1 scorecards\/1 events; computers 1/);
   assert.match(renderRadar(data), /AgentXP: 42 total, 5 today, 2 receipts/);
   assert.match(renderRadar(data), /Codex goal: Advance the mission loop/);
+  const top = renderAgentTop(data);
+  assert.match(top, /Agent process top/);
+  assert.match(top, /CPU/);
+  assert.match(top, /MEM/);
+  assert.match(top, /CLI-95/);
+  assert.match(top, /1 untasked/);
+  assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
 });
