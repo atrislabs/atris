@@ -12,6 +12,7 @@
 - [[atris/wiki/concepts/intent-capability-composition.md]] — the operating loop; roadmap from gaps
 - [[atris/wiki/concepts/wiki-as-memory-substrate.md]] — what `atris/wiki/` is and isn't
 - [[atris/wiki/concepts/plan-do-review-loop.md]] — core Atris workflow and how local memory fits into it
+- [[atris/wiki/concepts/rebased-pack-co-first-loop.md]] — local-only business workspace first loop and proof guardrails
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
 - [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — reward, scorecards, and why the repo now acts like an RL-style environment
@@ -21,6 +22,7 @@
 
 ## Briefs
 
+- [[atris/wiki/briefs/rebased-pack-co-starter-brief.md]] — starter brief for the local-only Rebased Pack Co smoke workspace
 - [[atris/wiki/briefs/atris-cli-overview.md]] — summary of CLI, owner/computer model, workspace layers, and why `atris/wiki/` exists
 - [[atris/wiki/briefs/atris-labs-workspace-protocol.md]] — atris-labs workspace protocol: on-load sequence, layout, surfaces, north star
 - [[atris/wiki/briefs/atrisos-generative-ui-product-surface.md]] — historical AtrisOS generative UI / block surface design note
