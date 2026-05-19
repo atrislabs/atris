@@ -226,6 +226,37 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(payload.next_action, /close or hand off 1 session still bound to review task CLI-95/);
 });
 
+test('collectRadar counts a bound runtime receipt as a business computer', () => {
+  const root = '/tmp/atris-runtime-computer';
+  const businessFile = path.join(root, '.atris', 'business.json');
+  const runtimeFile = path.join(root, '.atris', 'state', 'runtime.json');
+  const syncFile = path.join(root, '.atris', 'state', '_sync.json');
+  const files = new Map([
+    [businessFile, JSON.stringify({ business_id: 'biz-42', workspace_id: 'ws-42', name: 'Cashmere AI', slug: 'cashmere-ai', workspace_template: 'business' })],
+    [runtimeFile, JSON.stringify({ scope: 'local-business-computer', business_id: 'biz-42', workspace_id: 'ws-42', install_status: 'local_cli_present' })],
+    [syncFile, JSON.stringify({ workspace_slug: 'cashmere-ai', business_id: 'biz-42', workspace_id: 'ws-42', workspace_template: 'business' })],
+  ]);
+  const dirs = new Set([
+    path.join(root, 'atris'),
+    path.join(root, 'atris', 'context', '_ingest'),
+    path.join(root, 'atris', 'wiki', 'briefs'),
+    path.join(root, 'atris', 'wiki', 'concepts'),
+    path.join(root, 'atris', 'reports'),
+    path.join(root, 'atris', 'team'),
+  ]);
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    execFileSync: () => '',
+    existsSync: file => files.has(file) || dirs.has(file) || ['MAP.md', 'TODO.md', 'PERSONA.md'].some(name => file === path.join(root, 'atris', name)),
+    readFileSync: file => files.get(file) || '',
+    readdirSync: () => [],
+  });
+
+  assert.equal(data.os.business.computers, 1);
+  assert.match(renderRadar(data), /computers 1/);
+});
+
 test('renderAgentTop explains workspaces with no active task', () => {
   const data = {
     root: '/tmp/root',
