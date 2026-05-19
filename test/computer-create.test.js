@@ -698,7 +698,9 @@ test('computer chat --message sends one non-interactive prompt', async () => {
     ], { cwd, env });
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /4/);
+    assert.equal(res.stdout, '4\n');
+    assert.doesNotMatch(res.stdout, /Atris Cloud Computer/);
+    assert.doesNotMatch(res.stdout, /Running on cloud/);
     assert.ok(requests.some((request) => (
       request.method === 'POST' &&
       request.url === '/api/business/biz-1/chat' &&
