@@ -729,15 +729,24 @@ test('always-on missions become due again after cadence even after verifier pass
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
 
-    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--complete-on-pass', '--json'], { cwd: dir });
+    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
     const firstPayload = JSON.parse(firstRun.stdout);
-    assert.equal(firstPayload.mission.status, 'running');
+    assert.equal(firstPayload.mission.status, 'ready');
+    assert.equal(firstPayload.ticks[0].tick_index, 1);
+    assert.equal(firstPayload.mission.last_tick_index, 1);
     assert.equal(firstPayload.mission.verifier_result.passed, true);
 
     const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + 2000);
     const dueAgain = selectDueMission(dir, afterCadence);
     assert.equal(dueAgain.id, firstPayload.mission.id);
+
+    const secondRun = runCli(['mission', 'run', firstPayload.mission.id, '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+    const secondPayload = JSON.parse(secondRun.stdout);
+    assert.equal(secondPayload.mission.status, 'ready');
+    assert.equal(secondPayload.ticks[0].tick_index, 2);
+    assert.equal(secondPayload.mission.last_tick_index, 2);
   } finally {
     cleanupTempDir(dir);
   }
