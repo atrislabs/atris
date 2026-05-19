@@ -5268,6 +5268,51 @@ test('task status gives web and Swarlo a compact live contract', () => {
   }
 });
 
+test('task reviews gives a compact certified accept queue', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const certifiedCreated = runCli(['task', 'new', 'Ship certified proof packet', '--tag', 'review', '--json'], { cwd: dir, env });
+    assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
+    const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
+    assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', certifiedTask.display_id, '--proof', 'node --test proof passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+
+    const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
+    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
+    const blockingTask = JSON.parse(blockingCreated.stdout).task;
+    assert.equal(runCli(['task', 'claim', blockingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review only', '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(queue.status, 0, queue.stderr);
+    const payload = JSON.parse(queue.stdout);
+    assert.equal(payload.action, 'review_queue');
+    assert.equal(payload.queue.schema, 'atris.task_review_queue.v1');
+    assert.equal(payload.queue.counts.review, 2);
+    assert.equal(payload.queue.counts.certified, 1);
+    assert.equal(payload.queue.counts.blocking, 1);
+    assert.equal(payload.queue.items.length, 1);
+    assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
+    assert.equal(payload.queue.items[0].accept_command, `atris task accept ${certifiedTask.display_id}`);
+    assert.equal(payload.queue.items[0].revise_command, `atris task revise ${certifiedTask.display_id} --note "<what must change>"`);
+    assert.match(payload.queue.items[0].proof, /node --test proof passed/);
+
+    const text = runCli(['task', 'reviews'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /CERTIFIED REVIEW QUEUE/);
+    assert.match(text.stdout, new RegExp(`accept: atris task accept ${certifiedTask.display_id}`));
+    assert.doesNotMatch(text.stdout, new RegExp(`accept: atris task accept ${blockingTask.display_id}`));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task status resolves goal_id display refs to parent task objectives', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
