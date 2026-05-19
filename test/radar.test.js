@@ -183,6 +183,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.agents[1].task, 'BCK-294');
   assert.equal(data.agents[1].task_workspace, 'tmp/other');
   assert.equal(data.agents[2].task, '-');
+  assert.equal(data.agents[2].task_reason, 'no task projection');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /CLI-95/);
@@ -204,7 +205,36 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /CLI-95/);
   assert.match(top, /BCK-294/);
   assert.match(top, /1 untasked/);
-  assert.match(top, /Next: map 1 untasked agent session to tasks or close idle sessions/);
-  assert.match(top, /Untasked:/);
+  assert.match(top, /Next: resolve 1 untasked session: 1 no task projection/);
+  assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
+  assert.match(top, /333 .*no task projection/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
+});
+
+test('renderAgentTop explains workspaces with no active task', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      {
+        pid: '44',
+        agent: 'codex',
+        status: 'active',
+        cwd: '/tmp/web',
+        repo: 'tmp/web',
+        branch: 'main',
+        cpu: 0,
+        mem: 0,
+        task: '-',
+        task_status: null,
+        owner: '-',
+        task_workspace: 'tmp/web',
+        task_reason: 'no active task',
+      },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: resolve 1 untasked session: 1 no active task/);
+  assert.match(top, /44 tmp\/web: no active task/);
 });

@@ -146,6 +146,13 @@ function loadTasksCached(root, deps, cache) {
   return cache.get(root);
 }
 
+function untaskedReason(agent, taskWorkspaceRoot, tasks) {
+  if (!agent.cwd) return 'cwd unknown';
+  if (!taskWorkspaceRoot) return 'no task projection';
+  if (!tasks.length) return 'empty task projection';
+  return 'no active task';
+}
+
 function readJsonFile(file, deps, fallback = null) {
   if (!deps.exists(file)) return fallback;
   return safeJson(deps.readFile(file, 'utf8'), fallback);
@@ -457,7 +464,8 @@ function collectRadar(options = {}) {
       task: taskRef(task),
       task_status: task?.status || null,
       owner: ownerForTask(task),
-      task_workspace: task ? repoLabel(taskWorkspaceRoot) : null,
+      task_workspace: taskWorkspaceRoot ? repoLabel(taskWorkspaceRoot) : null,
+      task_reason: task ? null : untaskedReason(agent, taskWorkspaceRoot, agentTasks),
     };
   });
   const osState = {
@@ -569,10 +577,26 @@ function agentProcessNextAction(agents = [], fallback = 'no obvious process acti
   const stopped = agents.filter(agent => agent.status !== 'active').length;
   if (stopped > 0) return `inspect ${stopped} stopped agent session${stopped === 1 ? '' : 's'}`;
   const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
-  if (untasked > 0) return `map ${untasked} untasked agent session${untasked === 1 ? '' : 's'} to tasks or close idle sessions`;
+  if (untasked > 0) {
+    const reasons = summarizeUntaskedReasons(agents);
+    const summary = reasons.map(row => `${row.count} ${row.reason}`).join(', ');
+    return `resolve ${untasked} untasked session${untasked === 1 ? '' : 's'}${summary ? `: ${summary}` : ''}`;
+  }
   const hot = agents.find(agent => number(agent.cpu) >= 50);
   if (hot) return `inspect high-CPU ${hot.agent} ${hot.pid} in ${hot.repo || hot.cwd || 'unknown repo'}`;
   return fallback;
+}
+
+function summarizeUntaskedReasons(agents = []) {
+  const counts = new Map();
+  for (const agent of agents) {
+    if (agent.task && agent.task !== '-') continue;
+    const reason = agent.task_reason || 'unmapped';
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
 }
 
 function agentTopPayload(data) {
@@ -587,6 +611,7 @@ function agentTopPayload(data) {
       total: agents.length,
       active: agents.filter(agent => agent.status === 'active').length,
       untasked,
+      untasked_reasons: summarizeUntaskedReasons(agents),
       cpu: Number(cpu.toFixed(1)),
       mem: Number(mem.toFixed(1)),
     },
@@ -610,7 +635,11 @@ function renderAgentTop(data) {
   if (payload.agents.length > 32) lines.push(`... ${payload.agents.length - 32} more agents`);
   if (payload.summary.untasked > 0) {
     lines.push('');
-    lines.push(`Untasked: ${payload.summary.untasked} sessions have no Atris task binding.`);
+    const reasonText = payload.summary.untasked_reasons.map(row => `${row.count} ${row.reason}`).join(', ');
+    lines.push(`Untasked: ${payload.summary.untasked} sessions (${reasonText}).`);
+    for (const agent of payload.agents.filter(row => !row.task || row.task === '-').slice(0, 8)) {
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'}`);
+    }
   }
   return lines.join('\n');
 }
