@@ -188,5 +188,6 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /MEM/);
   assert.match(top, /CLI-95/);
   assert.match(top, /1 untasked/);
+  assert.match(top, /Next: map 1 untasked agent session to tasks or close idle sessions/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
 });
