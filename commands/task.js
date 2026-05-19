@@ -79,6 +79,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task done <id> [--failed] [--proof "..."]  Mark complete (or failed), optionally reviewed
   atris task finish <id> [--proof "..."]   Legacy alias for done
   atris task review <id> --reward <n>      Write review event + RSI episode
+  atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
   atris task status [--json] [--history]   Compact live status for web/Swarlo
   atris task setup [--import-todo]         Create/refresh task projection
   atris task serve [--port <n>]            Open local task factory board
@@ -876,6 +877,86 @@ function taskStatusSummary(projection, { history = false } = {}) {
     };
   }
   return status;
+}
+
+function reviewQueueLimit(args, total) {
+  if (hasFlag(args, '--all')) return total;
+  const raw = flag(args, '--limit');
+  const limit = raw && raw !== true ? Number(raw) : 12;
+  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
+}
+
+function reviewQueueItem(task) {
+  const ref = taskRef(task);
+  return {
+    id: task.id,
+    display_id: task.display_id || null,
+    title: task.title,
+    tag: task.tag || null,
+    updated_at: task.updated_at || null,
+    review_pass_count: task.review?.agent_review_pass_count || null,
+    proof: task.review?.proof || null,
+    accept_command: `atris task accept ${ref}`,
+    revise_command: `atris task revise ${ref} --note "<what must change>"`,
+  };
+}
+
+function taskReviewQueue(projection, args = []) {
+  const reviewTasks = (projection.tasks || [])
+    .map(compactTaskForStatus)
+    .filter(task => task && task.status === 'review' && task.review && task.review.approval_status === 'pending')
+    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
+  const blocking = reviewTasks.filter(task => task.review?.handoff?.next_action === 'agent_review_again');
+  const certified = reviewTasks.filter(task => task.review?.handoff?.next_action === 'continue_work' || task.review?.agent_certified === true);
+  const limit = reviewQueueLimit(args, certified.length);
+  const items = certified.slice(0, limit).map(reviewQueueItem);
+  return {
+    schema: 'atris.task_review_queue.v1',
+    generated_at: projection.generated_at,
+    workspace_root: projection.workspace_root,
+    counts: {
+      review: reviewTasks.length,
+      certified: certified.length,
+      blocking: blocking.length,
+      shown: items.length,
+    },
+    items,
+  };
+}
+
+function cmdReviews(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const queue = taskReviewQueue(projection, args);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'review_queue',
+      projection_path: outPath,
+      queue,
+    });
+    return;
+  }
+  console.log('CERTIFIED REVIEW QUEUE');
+  console.log(`${queue.counts.certified} certified / ${queue.counts.blocking} need agent review / ${queue.counts.review} total review`);
+  if (!queue.items.length) {
+    console.log('No certified review items.');
+    return;
+  }
+  queue.items.forEach((item, index) => {
+    const tag = item.tag ? ` [${item.tag}]` : '';
+    const passes = item.review_pass_count ? ` (${item.review_pass_count} reviews)` : '';
+    console.log('');
+    console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}`);
+    if (item.proof) console.log(`   proof: ${item.proof}`);
+    console.log(`   accept: ${item.accept_command}`);
+    console.log(`   revise: ${item.revise_command}`);
+  });
+  if (queue.counts.shown < queue.counts.certified) {
+    console.log('');
+    console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all or --limit ${queue.counts.certified}.`);
+  }
 }
 
 function humanEventType(type) {
@@ -2743,6 +2824,9 @@ async function run(args) {
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'review': return cmdReview(rest);
+    case 'reviews':
+    case 'review-queue':
+      return cmdReviews(rest);
     case 'status': return cmdStatus(rest);
     case 'setup':  return cmdSetup(rest);
     case 'serve':  return cmdServe(rest);

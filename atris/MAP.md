@@ -67,7 +67,7 @@ rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp" bin/atr
 rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js  # Business workspace flows and collaborator handoffs
 rg "computerCreate|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint" commands/computer.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, explicit business-computer activation, readiness, and workspace-mismatch recovery
-rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdDone|getTaskDb" commands/task.js  # Local agent task plane
+rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdReviews|cmdDone|getTaskDb" commands/task.js  # Local agent task plane, proof-ready review, human accept, and compact certified review queue
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|missionIsRunnable|codex_goal.json|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters, runnable mission selection, and terminal next-action normalization
 rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features/codex-goal-replacement commands/mission.js test/mission-status.test.js  # Contract for Atris mission -> visible Codex /goal replacement
@@ -348,6 +348,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris task setup --import-todo` bootstraps durable state and writes `.atris/state/tasks.projection.json`
 - `atris task serve` starts the local Task Factory board backed by the same task events and projection; the board shows goals, work streams, task objectives, parent/child lineage, proof, lessons, and the compounding chain
 - task projections are enriched with `goals`, `streams`, `objective`, `review`, `lineage`, `history`, and `surface` fields for compact visual surfaces; older done rows and long event/message trails stay behind explicit task history commands
+- `atris task reviews` prints/exports the compact certified Review queue with proof snippets and exact human `accept`/`revise` commands; it does not accept work or award AgentXP.
 - `atris task sync --dry-run` maps local projection rows to canonical backend `/business/{business_id}/work/tasks` POST/PATCH plans, including Swarlo lease metadata from `claimed_by`
 - `atris task export --out .atris/state/tasks.projection.json` writes the compact web/desktop projection (`atris.task_projection.v1`)
 - `atris task events [id]` prints the append-only event trail for a task; `atris task events --all` prints the full workspace ledger
