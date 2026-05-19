@@ -13,6 +13,7 @@
     "commands/",
     "utils/",
     "lib/",
+    "templates/",
     "README.md",
     "AGENTS.md",
     "atris.md",

@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
-const { syncBusinessCanonical, ensureWorkspaceStateFiles } = require('./sync');
+const { syncBusinessCanonical, ensureWorkspaceStateFiles, ensureBusinessRootAgentAdapters } = require('./sync');
 const { ensureContextScaffold, writeWikiStatus, appendWikiLog } = require('../lib/wiki');
 const { writeRuntimeReceipt } = require('../lib/runtime-bootstrap');
 
@@ -398,7 +398,8 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
     created_at: new Date().toISOString(),
   }, null, 2));
 
-  syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false, templateName: workspaceTemplate });
+  const syncResult = syncBusinessCanonical(targetRoot, bizMeta, { force: false, dryRun: false, templateName: workspaceTemplate });
+  const agentAdapters = syncResult?.agentAdapterList || ensureBusinessRootAgentAdapters(targetRoot, bizMeta);
   writeRuntimeReceipt(targetRoot, {
     scope: 'local-business-computer',
     boundary: 'business-workspace-scaffold',
@@ -409,8 +410,9 @@ function createCanonicalBusinessWorkspace(targetRoot, bizMeta, options = {}) {
     workspace_template: workspaceTemplate,
     install_status: 'local_cli_present',
     sync_status: 'templates_seeded',
+    agent_adapters: agentAdapters,
   });
-  return { targetRoot, businessJsonPath, workspaceTemplate };
+  return { targetRoot, businessJsonPath, workspaceTemplate, agentAdapters };
 }
 
 function parseRecordFlags(args, cwd = process.cwd()) {
@@ -449,6 +451,50 @@ function parseRecordFlags(args, cwd = process.cwd()) {
       i++;
     } else if (!arg.startsWith('-') && !options.reportPath) {
       options.reportPath = arg;
+    }
+  }
+
+  return options;
+}
+
+function parseShareFlags(args, cwd = process.cwd()) {
+  const options = {
+    cwd,
+    role: 'collaborator',
+    name: '',
+    email: '',
+    write: false,
+    out: null,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+    if ((arg === '--role' || arg === '-r') && next) {
+      options.role = next;
+      i++;
+    } else if ((arg === '--name' || arg === '--person') && next) {
+      options.name = next;
+      i++;
+    } else if (arg === '--email' && next) {
+      options.email = next;
+      i++;
+    } else if (arg === '--write') {
+      options.write = true;
+    } else if (arg === '--out' && next) {
+      options.out = next;
+      options.write = true;
+      i++;
+    } else if (arg.startsWith('--out=')) {
+      options.out = arg.slice('--out='.length);
+      options.write = true;
+    } else if ((arg === '--cwd' || arg === '--workspace') && next) {
+      options.cwd = path.resolve(cwd, next);
+      i++;
+    } else if (arg.startsWith('--cwd=')) {
+      options.cwd = path.resolve(cwd, arg.slice('--cwd='.length));
+    } else if (arg.startsWith('--workspace=')) {
+      options.cwd = path.resolve(cwd, arg.slice('--workspace='.length));
     }
   }
 
@@ -565,6 +611,478 @@ function defaultRewardForOutcome(outcome) {
 function appendJsonl(filePath, record) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+function countJsonlRows(filePath) {
+  if (!fs.existsSync(filePath)) return 0;
+  return fs.readFileSync(filePath, 'utf8').split(/\r?\n/).filter(line => line.trim()).length;
+}
+
+function readJsonFile(filePath, fallback = null) {
+  if (!fs.existsSync(filePath)) return fallback;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function readJsonlRows(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, 'utf8')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .filter(Boolean);
+}
+
+function countFiles(dir, predicate = () => true) {
+  if (!fs.existsSync(dir)) return 0;
+  try {
+    return fs.readdirSync(dir).filter(predicate).length;
+  } catch {
+    return 0;
+  }
+}
+
+function latestMatchingFile(dir, predicate = () => true) {
+  if (!fs.existsSync(dir)) return null;
+  const rows = fs.readdirSync(dir)
+    .filter(predicate)
+    .map((name) => {
+      const full = path.join(dir, name);
+      let mtime = 0;
+      try { mtime = fs.statSync(full).mtimeMs; } catch {}
+      return { name, full, mtime };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+  return rows[0]?.full || null;
+}
+
+function rel(cwd, filePath) {
+  return filePath ? path.relative(cwd, filePath).replace(/\\/g, '/') : null;
+}
+
+function hasCloudWorkspaceId(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Boolean(normalized && normalized !== 'local-only');
+}
+
+function countBusinessTeamGoals(teamDir) {
+  if (!fs.existsSync(teamDir)) return { members: 0, activeGoalMembers: 0 };
+  let members = 0;
+  let activeGoalMembers = 0;
+  for (const name of fs.readdirSync(teamDir).filter(entry => !entry.startsWith('.'))) {
+    const memberDir = path.join(teamDir, name);
+    if (!fs.existsSync(path.join(memberDir, 'MEMBER.md'))) continue;
+    members++;
+    const goals = readJsonFile(path.join(memberDir, 'goals.json'), { goals: [] });
+    const activeGoals = Array.isArray(goals?.goals) ? goals.goals.filter(goal => goal.status === 'active') : [];
+    if (activeGoals.length > 0) activeGoalMembers++;
+  }
+  return { members, activeGoalMembers };
+}
+
+function collectBusinessOperatingState(cwd = process.cwd(), nowMs = Date.now()) {
+  const stateDir = path.join(cwd, '.atris', 'state');
+  const projection = readJsonFile(path.join(stateDir, 'tasks.projection.json'), { tasks: [] }) || { tasks: [] };
+  const tasks = Array.isArray(projection.tasks) ? projection.tasks : [];
+  const taskCounts = {
+    open: tasks.filter(task => task.status === 'open').length,
+    claimed: tasks.filter(task => task.status === 'claimed').length,
+    review: tasks.filter(task => task.status === 'review').length,
+    certifiedReview: tasks.filter(task => task.status === 'review' && task.metadata?.agent_certified).length,
+    blocked: tasks.filter(task => task.status === 'blocked').length,
+  };
+
+  const missionsById = new Map();
+  for (const mission of readJsonlRows(path.join(stateDir, 'missions.jsonl'))) {
+    if (mission?.id) missionsById.set(mission.id, mission);
+  }
+  const missions = [...missionsById.values()];
+  const terminal = new Set(['complete', 'completed', 'stopped', 'cancelled', 'done']);
+  const activeMissions = missions.filter(mission => !terminal.has(String(mission.status || '').toLowerCase()));
+  const staleMissions = activeMissions.filter((mission) => {
+    const status = String(mission.status || '').toLowerCase();
+    const lastTick = mission.last_tick_at ? Date.parse(mission.last_tick_at) : 0;
+    return status === 'running' && (!mission.verifier || !lastTick || nowMs - lastTick > 3 * 24 * 60 * 60 * 1000);
+  });
+  const missionEvents = readJsonlRows(path.join(stateDir, 'mission_events.jsonl'));
+  const codexGoal = readJsonFile(path.join(stateDir, 'codex_goal.json'), {}) || {};
+  const xp = readJsonFile(path.join(stateDir, 'career_xp.projection.json'), {}) || {};
+  const team = countBusinessTeamGoals(path.join(cwd, 'atris', 'team'));
+
+  return {
+    tasks: taskCounts,
+    missions: {
+      active: activeMissions.length,
+      running: activeMissions.filter(mission => mission.status === 'running').length,
+      alwaysOn: activeMissions.filter(mission => mission.always_on).length,
+      stale: staleMissions.length,
+    },
+    loop: {
+      ticks: missionEvents.filter(event => event.type === 'mission_tick').length,
+      codexGoal: codexGoal.goal?.objective || '',
+    },
+    team,
+    xp: {
+      metric: xp.metric_label || 'AgentXP',
+      total: Number(xp.total_agent_xp ?? xp.agent_xp ?? xp.total_xp ?? 0) || 0,
+      today: Number(xp.today_agent_xp ?? xp.today_xp ?? 0) || 0,
+      receipts: countJsonlRows(path.join(stateDir, 'career_xp_receipts.jsonl')),
+      integrity: xp.integrity_status || 'unknown',
+    },
+  };
+}
+
+function seedBusinessStarterTask(cwd, todoPath, starterAction) {
+  const title = `${starterAction.title} — ${starterAction.action}`;
+  try {
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open();
+    const workspaceRoot = taskDb.workspaceRoot(cwd);
+    const sourceKey = taskDb.sourceKey(todoPath, title);
+    const result = taskDb.addTask(db, {
+      title,
+      tag: 'execute',
+      workspaceRoot,
+      sourceKey,
+      metadata: {
+        source: 'business_onboard',
+        todo_id: 'Onboard',
+        todo_tags: ['execute'],
+        business_slug: readWorkspaceBusinessMeta(cwd).slug || null,
+        verify: 'atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
+      },
+    });
+    const projection = taskDb.taskProjection(db, { workspaceRoot, limit: 500 });
+    const projectionPath = path.join(cwd, '.atris', 'state', 'tasks.projection.json');
+    fs.mkdirSync(path.dirname(projectionPath), { recursive: true });
+    fs.writeFileSync(projectionPath, `${JSON.stringify(projection, null, 2)}\n`, 'utf8');
+    return { ok: true, inserted: Boolean(result.inserted), taskId: result.id, projectionPath };
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : String(error) };
+  }
+}
+
+function collectBusinessShareState(cwd = process.cwd()) {
+  const bizMeta = readWorkspaceBusinessMeta(cwd);
+  const remoteReady = hasCloudWorkspaceId(bizMeta.business_id) && hasCloudWorkspaceId(bizMeta.workspace_id);
+  const reportsDir = path.join(cwd, 'atris', 'reports');
+  const briefsDir = path.join(cwd, 'atris', 'wiki', 'briefs');
+  const conceptsDir = path.join(cwd, 'atris', 'wiki', 'concepts');
+  const ingestDir = path.join(cwd, 'atris', 'context', '_ingest');
+  const teamDir = path.join(cwd, 'atris', 'team');
+  const teamStartPath = path.join(teamDir, 'START_HERE.md');
+  const stateDir = path.join(cwd, '.atris', 'state');
+  const rootAgentAdapterNames = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
+  const rootAgentAdapters = rootAgentAdapterNames.filter(name => fs.existsSync(path.join(cwd, name)));
+  const scaffold = {
+    map: fs.existsSync(path.join(cwd, 'atris', 'MAP.md')),
+    todo: fs.existsSync(path.join(cwd, 'atris', 'TODO.md')),
+    persona: fs.existsSync(path.join(cwd, 'atris', 'PERSONA.md')),
+    runtime: fs.existsSync(path.join(stateDir, 'runtime.json')),
+    sync: fs.existsSync(path.join(stateDir, '_sync.json')),
+  };
+  const starterBrief = latestMatchingFile(briefsDir, name => /starter-brief\.md$/i.test(name));
+  const expectedFirstLoop = `${bizMeta.slug || slugifyName(bizMeta.name)}-first-loop.md`;
+  const firstLoop = latestMatchingFile(conceptsDir, name => name === expectedFirstLoop);
+  const onePager = latestMatchingFile(reportsDir, name => /one-pager|cheat-sheet|onboarding/i.test(name));
+  const reports = countFiles(reportsDir, name => /\.(md|json)$/i.test(name));
+  const teamMembers = countFiles(teamDir, name => !name.startsWith('.') && fs.existsSync(path.join(teamDir, name, 'MEMBER.md')));
+  const events = countJsonlRows(path.join(stateDir, 'events.jsonl'));
+  const episodes = countJsonlRows(path.join(stateDir, 'episodes.jsonl'));
+  const scorecards = countJsonlRows(path.join(stateDir, 'scorecards.jsonl'));
+  const missing = [];
+  if (!scaffold.map || !scaffold.todo || !scaffold.persona) missing.push('canonical Atris scaffold');
+  if (!scaffold.runtime) missing.push('runtime receipt');
+  if (!scaffold.sync) missing.push('sync state');
+  if (!starterBrief) missing.push('starter brief');
+  if (!firstLoop) missing.push('first loop');
+  if (!onePager) missing.push('operator one-pager');
+  if (teamMembers < 1) missing.push('team member lanes');
+  if (!fs.existsSync(teamStartPath)) missing.push('team start guide');
+  if (rootAgentAdapters.length < rootAgentAdapterNames.length) missing.push('root agent adapters');
+  if (scorecards < 1 && events < 1 && episodes < 1) missing.push('first proof recap');
+
+  return {
+    bizMeta,
+    scaffold,
+    starterBrief: rel(cwd, starterBrief),
+    firstLoop: rel(cwd, firstLoop),
+    onePager: rel(cwd, onePager),
+    teamStart: rel(cwd, fs.existsSync(teamStartPath) ? teamStartPath : null),
+    rootAgentAdapters,
+    missingRootAgentAdapters: rootAgentAdapterNames.filter(name => !rootAgentAdapters.includes(name)),
+    remoteReady,
+    os: collectBusinessOperatingState(cwd),
+    ingestPacks: countFiles(ingestDir, name => !name.startsWith('.')),
+    reports,
+    teamMembers,
+    proof: { events, episodes, scorecards },
+    ready: missing.length === 0,
+    missing,
+  };
+}
+
+function renderBusinessOsLines(os = {}, prefix = '- ') {
+  const tasks = os.tasks || {};
+  const missions = os.missions || {};
+  const team = os.team || {};
+  const xp = os.xp || {};
+  const loop = os.loop || {};
+  return [
+    `${prefix}Tasks: ${tasks.open || 0} open, ${tasks.claimed || 0} claimed, ${tasks.review || 0} review (${tasks.certifiedReview || 0} certified), ${tasks.blocked || 0} blocked`,
+    `${prefix}Missions: ${missions.active || 0} active, ${missions.running || 0} running, ${missions.alwaysOn || 0} always-on, ${missions.stale || 0} stale/no-verifier`,
+    `${prefix}Team goals: ${team.members || 0} member lanes, ${team.activeGoalMembers || 0} with active goals`,
+    `${prefix}${xp.metric || 'AgentXP'}: ${xp.total || 0} total, ${xp.today || 0} today, ${xp.receipts || 0} receipts, integrity ${xp.integrity || 'unknown'}`,
+    `${prefix}Loop: ${loop.ticks || 0} mission ticks; Codex goal ${loop.codexGoal || 'none'}`,
+    `${prefix}XP gate: proof can move to Review; XP lands only after human accept`,
+  ];
+}
+
+function shellDoubleQuote(value) {
+  return `"${String(value || '').replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+function renderBusinessMissionBootstrapLines(bizMeta = {}, prefix = '') {
+  const missionTitle = shellDoubleQuote(`Run the first useful loop for ${bizMeta.name || bizMeta.slug || 'this business'}`);
+  return [
+    `${prefix}atris mission status --status active --json`,
+    `${prefix}# If no active mission exists:`,
+    `${prefix}atris mission start ${missionTitle} --owner operator --runner codex_goal --lane business --verify "atris business check" --stop "first proof recap recorded"`,
+    `${prefix}atris member goal-from-mission operator`,
+  ];
+}
+
+function renderBusinessMissingAction(missing) {
+  if (!missing) return 'Start from the first loop, ship one small artifact, then record the recap.';
+  if (missing === 'root agent adapters') {
+    return 'Run `atris update` to restore root AGENTS.md, CLAUDE.md, and GEMINI.md adapters.';
+  }
+  return `Add ${missing}.`;
+}
+
+function renderBusinessCreatedNextSteps(bizMeta = {}, workspaceRoot = '.') {
+  const slug = bizMeta.slug || slugifyName(bizMeta.name) || 'business';
+  const lines = [
+    '  Atris:     seeded local computer + operator + validator',
+    '',
+    '  Start here:',
+    `    cd ${workspaceRoot}`,
+    '    atris',
+    '    atris business start',
+    '    atris radar',
+    '    atris task next',
+    '    atris member activate operator',
+    ...renderBusinessMissionBootstrapLines(bizMeta, '    '),
+    '',
+    '  First loop:',
+    '    atris business onboard --website <url> --contact "Name" --note "what they do"',
+    '    atris do',
+    '    atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
+    '    atris business share --write',
+    '',
+    '  Sync when ready:',
+    `    atris align ${slug} --fix`,
+  ];
+  return lines.join('\n');
+}
+
+function renderBusinessShareHandoff(state, options = {}) {
+  const { bizMeta } = state;
+  const role = options.role || 'collaborator';
+  const person = options.name || role;
+  const workspacePath = options.cwd || process.cwd();
+  const firstMissing = state.missing[0] || null;
+  const lines = [
+    `# ${bizMeta.name} Share Handoff`,
+    '',
+    `For: ${person}${options.email ? ` <${options.email}>` : ''}`,
+    `Role: ${role}`,
+    `Business: ${bizMeta.name} (${bizMeta.slug})`,
+    `Business ID: ${bizMeta.business_id || 'local-only'}`,
+    `Workspace ID: ${bizMeta.workspace_id || 'local-only'}`,
+    `Local path: ${workspacePath}`,
+    `Ready to share: ${state.ready ? 'yes' : 'no'}`,
+    `Remote pull: ${state.remoteReady ? 'available' : 'local-only'}`,
+    '',
+    '## Get The Workspace',
+    '',
+    'If this folder is already on your machine:',
+    '',
+    '```bash',
+    `cd ${workspacePath}`,
+    'atris business start',
+    '```',
+    '',
+    state.remoteReady ? 'If you need to pull it first:' : 'Remote pull is not available yet:',
+    '',
+    ...(state.remoteReady ? [
+      '```bash',
+      `atris pull ${bizMeta.slug}`,
+      `cd ${bizMeta.slug}`,
+      'atris business start',
+      '```',
+    ] : [
+      '- This workspace is local-only because it is missing a cloud business ID or workspace ID.',
+      '- Share the folder directly, or create/pull the cloud business workspace before sending this handoff.',
+    ]),
+    '',
+    '## Start Here',
+    '',
+    '```bash',
+    `cd ${workspacePath}`,
+    'atris',
+    'atris business start',
+    'atris radar',
+    'atris task next',
+    'atris member activate operator',
+    ...renderBusinessMissionBootstrapLines(bizMeta),
+    '```',
+    '',
+    '## What To Read',
+    '',
+    `- Map: atris/MAP.md`,
+    `- Queue: atris/TODO.md`,
+    `- Agent adapters: ${state.rootAgentAdapters && state.rootAgentAdapters.length ? state.rootAgentAdapters.join(', ') : 'missing'}`,
+    `- Team start: ${state.teamStart || 'missing'}`,
+    `- Starter brief: ${state.starterBrief || 'missing'}`,
+    `- First loop: ${state.firstLoop || 'missing'}`,
+    `- Operator one-pager: ${state.onePager || 'missing'}`,
+    '',
+    '## First Useful Loop',
+    '',
+    '```bash',
+    'atris business onboard --website <url> --contact "Name" --note "what changed"',
+    'atris pull --dry-run',
+    'atris task next',
+    ...renderBusinessMissionBootstrapLines(bizMeta),
+    'atris do',
+    'atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
+    'atris business share --write',
+    'atris align --fix',
+    '```',
+    '',
+    '## Proof State',
+    '',
+    `- Team lanes: ${state.teamMembers}`,
+    `- Onboarding packs: ${state.ingestPacks}`,
+    `- Reports: ${state.reports}`,
+    `- Events: ${state.proof.events}`,
+    `- Episodes: ${state.proof.episodes}`,
+    `- Scorecards: ${state.proof.scorecards}`,
+    '',
+    '## Atris OS State',
+    '',
+    ...renderBusinessOsLines(state.os),
+    '',
+    'Useful commands:',
+    '',
+    '```bash',
+    'atris radar',
+    'atris task next',
+    ...renderBusinessMissionBootstrapLines(bizMeta),
+    'atris xp status --local --json',
+    '```',
+    '',
+    '## Next Action',
+    '',
+    `- ${renderBusinessMissingAction(firstMissing)}`,
+    '',
+    '## Guardrails',
+    '',
+    '- Do not mix another business into this workspace.',
+    '- No external sends without operator approval.',
+    '- No XP until proof is accepted by a human.',
+    '',
+  ];
+  return lines.join('\n');
+}
+
+function renderBusinessStartCard(state, options = {}) {
+  const { bizMeta } = state;
+  const workspacePath = options.cwd || process.cwd();
+  const firstMissing = state.missing[0] || null;
+  const lines = [
+    `${bizMeta.name} collaborator start`,
+    '',
+    `Business: ${bizMeta.name} (${bizMeta.slug})`,
+    `Workspace: ${workspacePath}`,
+    `Ready: ${state.ready ? 'yes' : 'no'}`,
+    `Remote pull: ${state.remoteReady ? 'available' : 'local-only'}`,
+    '',
+    'Read:',
+    `- atris/MAP.md`,
+    `- atris/TODO.md`,
+    `- ${(state.rootAgentAdapters && state.rootAgentAdapters.length === 3) ? state.rootAgentAdapters.join(', ') : 'missing root agent adapters'}`,
+    `- ${state.teamStart || 'missing team start guide'}`,
+    `- ${state.starterBrief || 'missing starter brief'}`,
+    `- ${state.firstLoop || 'missing first loop'}`,
+    `- ${state.onePager || 'missing operator one-pager'}`,
+    '',
+    'Run:',
+    state.remoteReady ? '  atris pull --dry-run' : '  # local-only: no cloud pull is available yet',
+    '  atris',
+    '  atris business start',
+    '  atris radar',
+    '  atris task next',
+    '  atris member activate operator',
+    ...renderBusinessMissionBootstrapLines(bizMeta, '  '),
+    '  atris do',
+    '  atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
+    '  atris business share --write',
+    '  atris align --fix',
+    '',
+    'Proof:',
+    `- team lanes: ${state.teamMembers}`,
+    `- onboarding packs: ${state.ingestPacks}`,
+    `- scorecards: ${state.proof.scorecards}`,
+    '',
+    'OS:',
+    ...renderBusinessOsLines(state.os, '  '),
+    '',
+    'Next:',
+    `- ${state.ready ? 'Work the first loop, record the recap, then rewrite the share handoff.' : renderBusinessMissingAction(firstMissing)}`,
+    '',
+  ];
+  return lines.join('\n');
+}
+
+async function startBusinessWorkspace(...args) {
+  const options = parseShareFlags(args, process.cwd());
+  const state = collectBusinessShareState(options.cwd);
+  const content = renderBusinessStartCard(state, options);
+  console.log(content);
+  return state;
+}
+
+function defaultSharePath(cwd, role) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const roleSlug = slugifyName(role || 'collaborator');
+  return path.join(cwd, 'atris', 'reports', `${stamp}-share-${roleSlug}.md`);
+}
+
+async function shareBusinessWorkspace(...args) {
+  const options = parseShareFlags(args, process.cwd());
+  const state = collectBusinessShareState(options.cwd);
+  const content = renderBusinessShareHandoff(state, options);
+  console.log(content);
+
+  if (options.write || options.out) {
+    const outputPath = options.out
+      ? (path.isAbsolute(options.out) ? options.out : path.join(options.cwd, options.out))
+      : defaultSharePath(options.cwd, options.role);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, content, 'utf8');
+    console.log(`Wrote ${path.relative(options.cwd, outputPath).replace(/\\/g, '/')}`);
+    return outputPath;
+  }
+
+  return state;
 }
 
 function slugifyName(value) {
@@ -955,6 +1473,7 @@ ${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` :
     '- Open the starter brief and correct anything false.',
     `- ${starterAction.action}`,
     '- After the first real run, write a recap and record it with `atris business record ...`.',
+    '- Before sharing the workspace, run `atris business share --write` and send the handoff.',
   ].filter(Boolean).join('\n') + '\n';
   fs.writeFileSync(cheatSheetPath, operatorSummary, 'utf8');
   fs.writeFileSync(onePagerPath, operatorSummary.replace('# ', '# One Pager — '), 'utf8');
@@ -972,6 +1491,7 @@ ${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` :
     }
     fs.writeFileSync(todoPath, todoContent, 'utf8');
   }
+  const taskSeed = seedBusinessStarterTask(cwd, todoPath, starterAction);
 
   writeWikiStatus(cwd, {
     health: `starter onboarding compiled from ${intakeRel}`,
@@ -997,6 +1517,12 @@ ${stagedSources.length > 0 ? `- Local evidence files: ${stagedSources.length}` :
   console.log(`  Cheat sheet: ${path.relative(cwd, cheatSheetPath).replace(/\\/g, '/')}`);
   console.log(`  One pager:   ${path.relative(cwd, onePagerPath).replace(/\\/g, '/')}`);
   console.log(`  Next action: ${starterAction.title}`);
+  if (taskSeed.ok) {
+    console.log(`  Task plane:  ${taskSeed.inserted ? 'seeded starter task' : 'starter task already present'}`);
+  } else {
+    console.log(`  Task plane:  TODO fallback only (${taskSeed.error})`);
+  }
+  console.log('  Share:       atris business share --write');
   console.log('');
 }
 
@@ -1839,15 +2365,7 @@ async function createBusinessInternal(name, flags = [], mode = 'auto') {
   console.log(`  Dashboard: https://atris.ai/dashboard/gm/${biz.id}`);
   if (shouldCreateCanonicalWorkspace) {
     const workspaceRoot = resolveWorkspaceRoot(biz.slug, options);
-    console.log('  Atris:     seeded local computer + operator + validator');
-    console.log('');
-    console.log('  Start here:');
-    console.log(`    cd ${workspaceRoot}`);
-    console.log('    atris member activate operator');
-    console.log('    atris business onboard --website <url> --contact "Name" --note "what they do"');
-    console.log('');
-    console.log('  Sync when ready:');
-    console.log(`    atris align ${biz.slug} --fix`);
+    console.log(renderBusinessCreatedNextSteps(biz, workspaceRoot));
   }
   console.log('');
 }
@@ -2279,7 +2797,7 @@ function findAtrisDir() {
 async function quickstart() {
   console.log(`
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Start a Business in 3 Commands
+  Start a Business With An Operating Loop
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   1. Create:
@@ -2288,17 +2806,35 @@ async function quickstart() {
   2. Open the local workspace:
      cd ~/arena/atris-business/my-company
 
-  3. Seed onboarding context:
+  3. See what Atris knows:
+     atris
+     atris business start
+     atris radar
+
+  4. Claim the first real action:
+     atris task next
+     atris member activate operator
+     atris mission status --status active --json
+
+  5. If no active mission exists:
+     atris mission start "Run the first useful loop for My Company" --owner operator --runner codex_goal --lane business --verify "atris business check" --stop "first proof recap recorded"
+     atris member goal-from-mission operator
+
+  6. Seed onboarding context:
      atris business onboard --website https://example.com --contact "Founder Name" --note "what they do"
 
-  4. Push local state to cloud:
+  7. Do one useful loop:
+     atris do
+     atris business record atris/reports/YYYY-MM-DD-your-recap.md --outcome mixed --metric "operator speed"
+
+  8. Write the handoff before sharing:
+     atris business share --write
+
+  9. Push local state to cloud:
      atris align --fix
 
-  Then open atris/TODO.md and work the starter queue:
-     define the first loop -> add named humans -> write the first recap
-
-  After the first recap lands:
-     atris business record atris/reports/YYYY-MM-DD-your-recap.md --outcome mixed --metric "operator speed"
+  Repeat:
+     atris radar -> atris task next -> atris do -> record -> share
 
   Optional:
      atris business connect slack --business my-company
@@ -2336,6 +2872,9 @@ function printBusinessHelp() {
   console.log('  notify <mode>        Set notification mode (digest/silent/push)');
   console.log('  deploy <slug>        Push local business to cloud');
   console.log('  onboard              Seed brief, person, first loop, safe next action, and one-pager from sparse input');
+  console.log('  start                Check a received business workspace and show the first loop');
+  console.log('  check                Alias for start');
+  console.log('  share                Print/write a collaborator handoff for this business workspace');
   console.log('  record <report>      Append recap state into events, episodes, and scorecards');
   console.log('  remove <slug>        Unregister locally');
   console.log('');
@@ -2421,8 +2960,16 @@ async function businessCommand(subcommand, ...args) {
     case 'onboard':
       await onboardBusiness(...args);
       break;
-    case 'quickstart':
     case 'start':
+    case 'check':
+    case 'ready':
+      await startBusinessWorkspace(...args);
+      break;
+    case 'share':
+    case 'handoff':
+      await shareBusinessWorkspace(...args);
+      break;
+    case 'quickstart':
     case 'guide':
       await quickstart();
       break;
@@ -2449,5 +2996,11 @@ module.exports = {
   createCanonicalBusinessWorkspace,
   initBusinessWorkspace,
   onboardBusiness,
+  startBusinessWorkspace,
+  shareBusinessWorkspace,
+  collectBusinessShareState,
+  renderBusinessCreatedNextSteps,
+  renderBusinessShareHandoff,
+  renderBusinessStartCard,
   recordBusinessRun,
 };
