@@ -137,7 +137,8 @@ function startApiServer(requests) {
           send(200, { status: 'failed', events: [{ type: 'error', error: 'stream failed for test' }] });
           return;
         }
-        send(200, { status: 'completed', events: [{ type: 'assistant_text', content: '4' }, { type: 'complete' }] });
+        const reply = lastChatMessage.includes('CHAT_OK') ? 'CHAT_OK' : '4';
+        send(200, { status: 'completed', events: [{ type: 'assistant_text', content: reply }, { type: 'complete' }] });
         return;
       }
       if (
@@ -719,7 +720,7 @@ test('computer chat sends piped prompts non-interactively', async () => {
   }
 });
 
-test('computer chat --message sends one non-interactive prompt', async () => {
+test('computer chat --message sends one quiet non-interactive prompt', async () => {
   const home = makeTempDir();
   const cwd = makeTempDir();
   const requests = [];
@@ -742,18 +743,20 @@ test('computer chat --message sends one non-interactive prompt', async () => {
       'atris-labs',
       '--workspace',
       'ws-new',
+      '--worker',
+      'claude',
       '--message',
-      'What is 2+2?',
+      'Reply exactly CHAT_OK',
     ], { cwd, env });
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.equal(res.stdout, '4\n');
+    assert.equal(res.stdout.trim(), 'CHAT_OK');
     assert.doesNotMatch(res.stdout, /Atris Cloud Computer/);
     assert.doesNotMatch(res.stdout, /Running on cloud/);
     assert.ok(requests.some((request) => (
       request.method === 'POST' &&
       request.url === '/api/business/biz-1/chat' &&
-      request.body?.message === 'What is 2+2?' &&
+      request.body?.message === 'Reply exactly CHAT_OK' &&
       request.body?.worker === 'claude'
     )));
   } finally {

@@ -1290,7 +1290,7 @@ async function probeAttachedWorkspace(token, ctx) {
   return { workspaceId: null, health: 'degraded', result };
 }
 
-async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake') {
+async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake', options = {}) {
   if (!ctx?.businessId || !ctx?.workspaceId) {
     return { ok: false, skipped: true, reason: 'missing_workspace' };
   }
@@ -1306,8 +1306,10 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   });
   const result = await runBusinessTerminalCommand(token, ctx, command, 120);
   if (!result.ok) {
-    console.log('  Runtime: bootstrap could not run.');
-    console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    if (!options.quiet) {
+      console.log('  Runtime: bootstrap could not run.');
+      console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
     return { ok: false, result };
   }
 
@@ -1315,13 +1317,15 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   const output = String(data.stdout || data.output || data.result || '').trim();
   const line = output.split('\n').find((entry) => entry.includes('atris_runtime_bootstrap'));
   const recovery = output.split('\n').find((entry) => entry.startsWith('recovery='));
-  if (line) {
-    console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
-  } else {
-    console.log('  Runtime: Atris bootstrap receipt written.');
-  }
-  if (recovery) {
-    console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+  if (!options.quiet) {
+    if (line) {
+      console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
+    } else {
+      console.log('  Runtime: Atris bootstrap receipt written.');
+    }
+    if (recovery) {
+      console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
   }
   return { ok: true, output };
 }
@@ -1489,7 +1493,7 @@ async function ensureBusinessAwake(token, ctx, maxWaitSec = 90, options = {}) {
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
       if (!options.quiet) console.log(`awake (${elapsed}s)`);
-      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake');
+      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake', options);
       return true;
     }
   }
@@ -2613,10 +2617,10 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const oneShotMessage = initialOptions.message != null;
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
-  const oneShotMessage = initialOptions.message != null;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
   const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
