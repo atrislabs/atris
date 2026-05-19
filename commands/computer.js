@@ -542,6 +542,8 @@ function parseComputerOptions(argv) {
   let model = process.env.ATRIS_CLOUD_MODEL || null;
   let businessSlug = null;
   let workspaceId = null;
+  let waitForResult = true;
+  let message = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -585,6 +587,19 @@ function parseComputerOptions(argv) {
       model = arg.split('=', 2)[1] || null;
       continue;
     }
+    if (arg === '--message' && argv[i + 1]) {
+      message = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--message=')) {
+      message = arg.slice('--message='.length);
+      continue;
+    }
+    if (arg === '--no-wait' || arg === '--async') {
+      waitForResult = false;
+      continue;
+    }
     positional.push(arg);
   }
 
@@ -601,6 +616,8 @@ function parseComputerOptions(argv) {
       model: model || null,
       businessSlug: businessSlug ? String(businessSlug).trim() : null,
       workspaceId: workspaceId ? String(workspaceId).trim() : null,
+      waitForResult,
+      message,
     },
   };
 }
@@ -609,6 +626,7 @@ function parseComputerCreateArgs(argv = []) {
   const nameParts = [];
   let businessSlug = null;
   let help = false;
+  let setDefault = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -625,6 +643,10 @@ function parseComputerCreateArgs(argv = []) {
       businessSlug = arg.split('=', 2)[1] || null;
       continue;
     }
+    if (arg === '--set-default') {
+      setDefault = true;
+      continue;
+    }
     nameParts.push(arg);
   }
 
@@ -632,6 +654,7 @@ function parseComputerCreateArgs(argv = []) {
     name: nameParts.join(' ').trim(),
     businessSlug: businessSlug ? String(businessSlug).trim() : null,
     help,
+    setDefault,
   };
 }
 
@@ -1137,19 +1160,58 @@ async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
   return resolveBusinessContext(token);
 }
 
-function rememberCreatedComputer(ctx, workspace, endpoint = null) {
+function businessSelector(ctx) {
+  return ctx?.slug || ctx?.businessId || '<business>';
+}
+
+function apiFailureDetail(result) {
+  return String(result?.errorMessage || result?.error || result?.data?.detail || result?.status || 'Request failed');
+}
+
+function printComputerCommandFailure(result, ctx = null) {
+  const detail = apiFailureDetail(result);
+  console.error(detail);
+  if (result?.status === 409) {
+    const mismatch = extractAttachedWorkspaceMismatch(detail, result?.data);
+    const targetWorkspace = mismatch?.requestedWorkspaceId || ctx?.workspaceId || '<workspace-id>';
+    console.error(`Run: atris computer activate --business ${businessSelector(ctx)} --workspace ${targetWorkspace}`);
+  }
+}
+
+function rememberBusinessWorkspace(ctx, workspaceId, options = {}) {
+  const slug = ctx.slug || (ctx.businessName || '').toLowerCase().replace(/\s+/g, '-');
+  if (!slug || !workspaceId) return;
+  const businesses = loadBusinesses();
+  const existing = businesses[slug] || {};
+  businesses[slug] = {
+    ...existing,
+    business_id: ctx.businessId,
+    workspace_id: workspaceId,
+    name: ctx.businessName,
+    slug,
+    computer_name: options.computerName || existing.computer_name,
+    endpoint: options.endpoint || existing.endpoint,
+    added_at: existing.added_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  saveBusinesses(businesses);
+}
+
+function rememberCreatedComputer(ctx, workspace, endpoint = null, options = {}) {
   const slug = ctx.slug || (ctx.businessName || '').toLowerCase().replace(/\s+/g, '-');
   if (!slug) return;
   const businesses = loadBusinesses();
+  const existing = businesses[slug] || {};
+  const shouldSetDefault = Boolean(options.setDefault || !existing.workspace_id);
   businesses[slug] = {
-    ...(businesses[slug] || {}),
+    ...existing,
     business_id: ctx.businessId,
-    workspace_id: workspace.id,
+    workspace_id: shouldSetDefault ? workspace.id : existing.workspace_id,
     name: ctx.businessName,
     slug,
-    computer_name: workspace.name,
-    endpoint: endpoint || undefined,
-    added_at: businesses[slug]?.added_at || new Date().toISOString(),
+    computer_name: shouldSetDefault ? workspace.name : existing.computer_name,
+    endpoint: shouldSetDefault ? (endpoint || existing.endpoint) : existing.endpoint,
+    added_at: existing.added_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
   saveBusinesses(businesses);
@@ -1174,6 +1236,40 @@ async function runBusinessTerminalCommand(token, ctx, command, timeout = 30) {
       timeoutMs: Math.max(timeout + 10, 40) * 1000,
     }
   );
+}
+
+async function listBusinessWorkspaces(token, ctx) {
+  const result = await apiRequestJson(`/business/${ctx.businessId}/workspaces`, {
+    method: 'GET',
+    token,
+    timeoutMs: 15000,
+    retries: 0,
+  });
+  return result.ok && Array.isArray(result.data) ? result.data : [];
+}
+
+function formatWorkspaceRef(workspace) {
+  if (!workspace) return '-';
+  return workspace.name ? `${workspace.name} (${workspace.id})` : workspace.id;
+}
+
+async function probeAttachedWorkspace(token, ctx) {
+  const result = await apiRequestJson(
+    `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/terminal`,
+    {
+      method: 'POST',
+      token,
+      body: { command: 'printf "ATRIS_STATUS_OK\\n"', timeout: 5 },
+      timeoutMs: 8000,
+      retries: 0,
+    }
+  );
+  if (result.ok) return { workspaceId: ctx.workspaceId, health: 'ready' };
+  const mismatch = extractAttachedWorkspaceMismatch(apiFailureDetail(result), result.data);
+  if (mismatch?.attachedWorkspaceId) {
+    return { workspaceId: mismatch.attachedWorkspaceId, health: 'workspace_mismatch', result };
+  }
+  return { workspaceId: null, health: 'degraded', result };
 }
 
 async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake') {
@@ -1399,6 +1495,23 @@ async function computerStatus(token, ctx = null) {
     console.log(`  ${icon} Computer: ${status}`);
     console.log(`    Business: ${ctx.businessName}`);
     if (d.endpoint) console.log(`    Endpoint: ${d.endpoint}`);
+    const workspaces = await listBusinessWorkspaces(token, ctx);
+    const defaultWorkspace = workspaces.find((workspace) => workspace.is_default);
+    const targetWorkspace = workspaces.find((workspace) => workspace.id === ctx.workspaceId) || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
+    console.log(`    Default workspace:  ${formatWorkspaceRef(defaultWorkspace)}`);
+    console.log(`    Target workspace:   ${formatWorkspaceRef(targetWorkspace)}`);
+    if (status === 'running' && d.endpoint && ctx.workspaceId) {
+      const attached = await probeAttachedWorkspace(token, ctx);
+      const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
+      console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      if (attached.health === 'workspace_mismatch') {
+        printComputerCommandFailure(attached.result, ctx);
+      } else if (attached.health !== 'ready') {
+        console.log(`    Health:   degraded (${apiFailureDetail(attached.result)})`);
+      } else {
+        console.log('    Health:   ready');
+      }
+    }
     return;
   }
 
@@ -1472,7 +1585,7 @@ async function computerCreate(token, args = [], defaults = {}) {
     options.businessSlug = defaults.businessSlug;
   }
   if (options.help || !options.name) {
-    console.log('Usage: atris computer create <name> --business <slug>');
+    console.log('Usage: atris computer create <name> --business <slug> [--set-default]');
     console.log('');
     console.log('Create a business computer, activate it, and wake it in one command.');
     console.log('');
@@ -1537,7 +1650,9 @@ async function computerCreate(token, args = [], defaults = {}) {
   const status = endpoint
     ? 'running'
     : (wake.data?.status || (activate.ok ? 'activated' : 'warming_up'));
-  rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint);
+  rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint, {
+    setDefault: options.setDefault,
+  });
   await bootstrapBusinessComputerRuntime(token, { ...ctx, workspaceId }, 'computer-create');
 
   const appBase = getAppBaseUrl();
@@ -1548,8 +1663,14 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log(`  Status:    ${status}`);
   if (endpoint) console.log(`  Endpoint:  ${endpoint}`);
   console.log(`  Dashboard: ${appBase}/dashboard/gm/${ctx.businessId}`);
-  console.log('');
   const owner = ctx.slug || ctx.businessId;
+  if (options.setDefault || !ctx.workspaceId) {
+    console.log(`  Default:   now ${workspaceId}`);
+  } else {
+    console.log(`  Default:   unchanged (${ctx.workspaceId})`);
+    console.log(`  Switch default: atris computer activate --business ${owner} --workspace ${workspaceId}`);
+  }
+  console.log('');
   console.log('Start here:');
   console.log(`  atris computer --business ${owner} --workspace ${workspaceId}`);
   console.log('');
@@ -1563,6 +1684,37 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log('');
   console.log('Cost control:');
   console.log(`  atris computer sleep --business ${owner} --workspace ${workspaceId}`);
+}
+
+async function computerActivate(token, ctx = null) {
+  if (!ctx?.businessId || !ctx?.workspaceId) {
+    console.error('Usage: atris computer activate --business <slug> --workspace <id>');
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = await apiRequestJson(`/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/activate`, {
+    method: 'POST',
+    token,
+    body: {},
+  });
+  if (!result.ok) {
+    printComputerCommandFailure(result, ctx);
+    process.exitCode = 1;
+    return;
+  }
+
+  const workspaces = await listBusinessWorkspaces(token, ctx);
+  const workspace = workspaces.find((row) => row.id === ctx.workspaceId) || { id: ctx.workspaceId };
+  rememberBusinessWorkspace(ctx, ctx.workspaceId, {
+    computerName: workspace.name,
+    endpoint: result.data?.endpoint,
+  });
+
+  console.log(`Activated workspace ${ctx.workspaceId} for ${ctx.businessName}.`);
+  if (workspace.name) console.log(`  Name:     ${workspace.name}`);
+  if (result.data?.endpoint) console.log(`  Endpoint: ${result.data.endpoint}`);
+  console.log(`  CLI default: ${ctx.workspaceId}`);
 }
 
 async function computerSleep(token, ctx = null) {
@@ -1724,11 +1876,7 @@ async function computerRun(token, command, ctx = null) {
       }
     );
     if (!result.ok) {
-      if (result.status === 409 || (result.errorMessage || '').includes('running')) {
-        console.error('Computer is off. Run: atris computer wake');
-      } else {
-        console.error(`Failed: ${result.errorMessage || result.status}`);
-      }
+      printComputerCommandFailure(result, ctx);
       return;
     }
     const d = result.data || {};
@@ -1746,11 +1894,7 @@ async function computerRun(token, command, ctx = null) {
     body: { command },
   });
   if (!result.ok) {
-    if (result.status === 409 || (result.errorMessage || '').includes('running')) {
-      console.error('Computer is off. Run: atris computer wake');
-    } else {
-      console.error(`Failed: ${result.errorMessage || result.status}`);
-    }
+    printComputerCommandFailure(result);
     return;
   }
   const d = result.data;
@@ -2057,18 +2201,21 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
       console.error('  Computer did not become ready in time.');
       return;
     }
+    const worker = activeWorker(options.worker);
+    console.log(`  Lane: ${formatWorkerName(worker)}  ${formatCloudSelection({ worker, model: options.model })}`);
     const result = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
       method: 'POST',
       token,
       body: {
         message: prompt,
         workspace_id: ctx.workspaceId,
-        ...(options.worker ? { worker: options.worker } : {}),
+        worker,
         ...(options.model ? { model: options.model } : {}),
         ...(options.systemPrompt ? { system_prompt: options.systemPrompt } : {}),
         ...(options.allowedTools ? { allowed_tools: options.allowedTools } : {}),
       },
       timeoutMs: 40000,
+      retries: 0,
     });
     if (!result.ok) {
       const fallback = await runBusinessPromptViaRunnerProxy(token, ctx, prompt, options);
@@ -2094,8 +2241,13 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
     const base = getApiBaseUrl();
     console.log(`  Execution: ${data.execution_id}`);
     console.log(`  Session:   ${data.session_id}`);
-    console.log(`  Stream: ${base}/business/${ctx.businessId}/chat/stream?execution_id=${data.execution_id}&workspace_id=${ctx.workspaceId}`);
-    console.log('  Use the stream URL to watch progress.');
+    if (options.waitForResult === false) {
+      console.log(`  Stream: ${base}/business/${ctx.businessId}/chat/stream?execution_id=${data.execution_id}&workspace_id=${ctx.workspaceId}`);
+      console.log('  Use the stream URL to watch progress.');
+      return;
+    }
+    const streamed = await streamBusinessChatResult(token, ctx, data.execution_id, null);
+    if (!streamed.ok) process.exitCode = 1;
     return;
   }
 
@@ -2274,6 +2426,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
   let cancelling = false;
   let cancelPromise = null;
   let sawVisibleOutput = false;
+  let terminalStatus = null;
 
   const requestCancel = async () => {
     if (cancelling) return;
@@ -2302,9 +2455,8 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
     }
   };
 
-  if (rl) {
-    rl.on('SIGINT', onSigint);
-  }
+  const sigintTarget = rl || process;
+  sigintTarget.on('SIGINT', onSigint);
 
   console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
 
@@ -2319,7 +2471,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
       if (!events.ok) {
         if (++errors >= 5) {
           console.error('\nLost connection to AI computer.');
-          return;
+          return { ok: false, status: 'connection_lost' };
         }
         continue;
       }
@@ -2343,25 +2495,27 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
           }
         } else if (event.type === 'error') {
           if (event.error) console.error(`\n${event.error}`);
+          terminalStatus = 'error';
           done = true;
           break;
         } else if (event.type === 'complete') {
+          terminalStatus = 'completed';
           done = true;
           break;
         }
       }
 
-      if (done || ['completed', 'error', 'failed'].includes(events.data?.status)) {
+      if (done || ['completed', 'error', 'failed', 'cancelled'].includes(events.data?.status)) {
         if (!process.stdout.write('\n')) {
           // no-op: keep line handling stable
         }
-        return;
+        if (!sawVisibleOutput && events.data?.status === 'completed') console.log('(no result)');
+        const finalStatus = terminalStatus || events.data?.status || (done ? 'completed' : 'unknown');
+        return { ok: finalStatus === 'completed', status: finalStatus };
       }
     }
   } finally {
-    if (rl) {
-      rl.removeListener('SIGINT', onSigint);
-    }
+    sigintTarget.removeListener('SIGINT', onSigint);
   }
 }
 
@@ -2431,10 +2585,12 @@ async function computerChat(token, ctx, initialOptions = {}) {
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
+  const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
+  const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
   printCloudWordmark();
   const selection = await chooseCloudLane(token, ctx, initialOptions);
   if (selection.cancelled) return;
-  let worker = selection.worker || null;
+  let worker = activeWorker(selection.worker);
   let model = selection.model || null;
   let awaitingLoginCode = false;
   let billingLabel = await describeBillingMode(token, ctx, worker);
@@ -2450,6 +2606,43 @@ async function computerChat(token, ctx, initialOptions = {}) {
     printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
   } else {
     printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+  }
+
+  if (scriptedInput !== null) {
+    for (const rawLine of scriptedInput.split(/\r?\n/)) {
+      const line = String(rawLine || '').trim();
+      if (!line) continue;
+      if (line === '/exit' || line === '/quit') break;
+      if (line.startsWith('/run ')) {
+        await computerRun(token, line.slice(5), ctx);
+        continue;
+      }
+      if (line === '/pwd') {
+        await computerRun(token, 'pwd', ctx);
+        continue;
+      }
+      if (line === '/audit' || line.startsWith('/audit ')) {
+        const rawLimit = line.split(/\s+/, 2)[1];
+        const limit = rawLimit ? Number.parseInt(rawLimit, 10) : 10;
+        await computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
+        continue;
+      }
+      if (line.startsWith('/')) {
+        const command = line.split(/\s+/, 1)[0];
+        if (!KNOWN_CHAT_COMMANDS.has(command)) {
+          console.log(`Unknown command: ${command}`);
+          console.log('Type /help for commands, or remove the slash to ask the model.');
+        }
+        continue;
+      }
+      sessionId = await sendBusinessChat(token, ctx, line, sessionId, false, null, {
+        worker,
+        model,
+        systemPrompt: chatSystemPrompt,
+        allowedTools: initialOptions.allowedTools,
+      });
+    }
+    return;
   }
 
   const rl = readline.createInterface({
@@ -3080,11 +3273,14 @@ async function runComputer() {
     console.log('  --workspace     Select a specific workspace/computer id');
     console.log('  --worker        Cloud worker override: claude | openai');
     console.log('  --model         Cloud model override');
+    console.log('  --no-wait       Start exec and print stream URL without waiting');
     console.log('  claude|codex    Legacy local console backends');
     console.log('');
     console.log('Cloud commands:');
     console.log('  create <name>    Create and wake an extra business computer');
+    console.log('  activate         Attach EC2 to --workspace and remember it as the default');
     console.log('  chat            Interactive cloud workspace chat');
+    console.log('  chat --message  Send one non-interactive message and print the reply');
     console.log('                  Ctrl-C during a cloud run interrupts it');
     console.log('                  /start shows the beginner flow');
     console.log('                  /status shows lane, Claude auth, and billing');
@@ -3196,6 +3392,7 @@ async function runComputer() {
     case 'chat': return computerChat(token, ctx, cloudOptions);
     case 'card': return computerCard(args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
+    case 'activate': return computerActivate(token, ctx);
     case 'status': return computerStatus(token, ctx);
     case 'up':
     case 'wake': return computerWake(token, ctx);
