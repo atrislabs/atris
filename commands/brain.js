@@ -292,7 +292,7 @@ function collectState(root) {
 }
 
 function prepareBrainState(root) {
-  refreshNowFile(root);
+  refreshNowFile(root, { preserveCustom: true });
   return collectState(root);
 }
 

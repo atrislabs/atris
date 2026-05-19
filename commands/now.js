@@ -201,6 +201,18 @@ ${workspaces.map((workspace) => `- \`${workspace.slug}/atris/MAP.md\``).join('\n
 `;
 }
 
+function isGeneratedNowFile(content) {
+  const text = String(content || '');
+  const hasGeneratedSignature = (
+    text.includes('> Current operating truth for this workspace.') ||
+    text.includes('> Current operating truth for this portfolio of Atris workspaces.')
+  ) && text.includes('## Receipts');
+  const hasLegacyGeneratedCounters = /^#\s+now\s*$/m.test(text)
+    && /Open TODO items:\s*\d+/m.test(text)
+    && /Completed receipts today:\s*\d+/m.test(text);
+  return hasGeneratedSignature || hasLegacyGeneratedCounters;
+}
+
 function ensureNowFile(root = process.cwd()) {
   let atrisDir = path.join(root, 'atris');
   const isWorkspace = fs.existsSync(atrisDir) && hasWorkspaceMarkers(atrisDir);
@@ -220,7 +232,7 @@ function ensureNowFile(root = process.cwd()) {
   return { created: false, path: nowPath };
 }
 
-function refreshNowFile(root = process.cwd()) {
+function refreshNowFile(root = process.cwd(), options = {}) {
   const atrisDir = path.join(root, 'atris');
   const isWorkspace = fs.existsSync(atrisDir) && hasWorkspaceMarkers(atrisDir);
   const childWorkspaces = isWorkspace ? [] : findChildWorkspaces(root);
@@ -231,9 +243,15 @@ function refreshNowFile(root = process.cwd()) {
     fs.mkdirSync(atrisDir, { recursive: true });
   }
   const nowPath = path.join(atrisDir, 'now.md');
+  if (options.preserveCustom && fs.existsSync(nowPath)) {
+    const current = fs.readFileSync(nowPath, 'utf8');
+    if (!isGeneratedNowFile(current)) {
+      return { path: nowPath, preserved: true };
+    }
+  }
   const content = isWorkspace ? renderDefaultNow(root) : renderPortfolioNow(root);
   fs.writeFileSync(nowPath, content, 'utf8');
-  return { path: nowPath };
+  return { path: nowPath, preserved: false };
 }
 
 function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
@@ -297,6 +315,7 @@ module.exports = {
   countJournalCompletedReceipts,
   countOpenTodoItems,
   findChildWorkspaces,
+  isGeneratedNowFile,
   nowAtris,
   refreshNowFile,
   renderDefaultNow,
