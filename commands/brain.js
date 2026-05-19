@@ -183,7 +183,7 @@ function countTodoItems(todoText) {
     if (!isTitled) continue;
 
     titled += 1;
-    if (hasRenderedSections && ['Backlog', 'In Progress', 'Blocked'].includes(section)) renderedOpen += 1;
+    if (hasRenderedSections && ['Backlog', 'In Progress'].includes(section)) renderedOpen += 1;
     if (hasRenderedSections && section === 'Completed') renderedDone += 1;
   }
 
@@ -193,6 +193,34 @@ function countTodoItems(todoText) {
     titled,
     done: hasRenderedSections ? renderedDone : checked + (text.match(/~~|DONE|✅/g) || []).length,
   };
+}
+
+const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
+const COMPLETED_TASK_STATUSES = new Set(['done', 'completed', 'accepted']);
+
+function countTaskProjectionItems(root) {
+  const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json'));
+  const tasks = Array.isArray(projection?.tasks) ? projection.tasks : null;
+  if (!tasks) return null;
+
+  let open = 0;
+  let done = 0;
+  for (const task of tasks) {
+    const status = String(task?.status || '').toLowerCase();
+    if (EXECUTABLE_TASK_STATUSES.has(status)) open += 1;
+    if (COMPLETED_TASK_STATUSES.has(status)) done += 1;
+  }
+
+  return {
+    open,
+    checked: done,
+    titled: tasks.length,
+    done,
+  };
+}
+
+function countWorkItems(root, todoText) {
+  return countTaskProjectionItems(root) || countTodoItems(todoText);
 }
 
 function listMarkdown(root, relDir, limit = 12) {
@@ -271,7 +299,7 @@ function collectState(root) {
     name: business.name || business.slug || firstHeading(status || mapText, path.basename(root)),
     slug: business.slug || path.basename(root),
     business,
-    todo: countTodoItems(todoText),
+    todo: countWorkItems(root, todoText),
     hasNow: nowText.length > 0,
     nowHeading: firstHeading(nowText, null),
     hasMap: mapText.length > 0,

@@ -2421,7 +2421,7 @@ test('brain unknown --json returns machine-readable usage errors', () => {
   }
 });
 
-test('brain state counts rendered open TODO rows without counting completed rows', () => {
+test('brain state counts rendered executable TODO rows without counting blocked or completed rows', () => {
   const dir = makeTempDir();
   try {
     seedBrainWorkspace(dir);
@@ -2438,7 +2438,7 @@ test('brain state counts rendered open TODO rows without counting completed rows
       '',
       '## Blocked',
       '',
-      '(Empty)',
+      '- **[CLI-3]** Blocked task [brain]',
       '',
       '## Completed',
       '',
@@ -2450,7 +2450,43 @@ test('brain state counts rendered open TODO rows without counting completed rows
 
     assert.equal(state.todo.open, 1);
     assert.equal(state.todo.done, 1);
-    assert.equal(state.todo.titled, 2);
+    assert.equal(state.todo.titled, 3);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain state prefers task projection for executable work counts', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## Blocked',
+      '',
+      '- **[CLI-3]** Blocked fallback row [brain]',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        { display_id: 'CLI-1', status: 'open' },
+        { display_id: 'CLI-2', status: 'claimed' },
+        { display_id: 'CLI-3', status: 'blocked' },
+        { display_id: 'CLI-4', status: 'review' },
+        { display_id: 'CLI-5', status: 'done' },
+      ],
+    }), 'utf8');
+
+    const state = collectState(dir);
+
+    assert.equal(state.todo.open, 2);
+    assert.equal(state.todo.done, 1);
+    assert.equal(state.todo.titled, 5);
   } finally {
     cleanupTempDir(dir);
   }

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const NOW_PATH = path.join('atris', 'now.md');
+const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
 
 function formatLocalDate(date = new Date()) {
   const year = String(date.getFullYear());
@@ -79,12 +80,31 @@ function countOpenTodoItems(filePath) {
     }
     const isTaskBullet = /^-\s+(?:\[[ ]\]\s+)?\*\*.+?\*\*/.test(line);
     if (!isTaskBullet) continue;
-    if (!hasRenderedSections || ['Backlog', 'In Progress', 'Blocked'].includes(section)) {
+    if (!hasRenderedSections || ['Backlog', 'In Progress'].includes(section)) {
       count += 1;
     }
   }
 
   return count;
+}
+
+function countTaskProjectionItems(root = process.cwd()) {
+  const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  if (!fs.existsSync(projectionPath)) return null;
+  try {
+    const projection = JSON.parse(fs.readFileSync(projectionPath, 'utf8'));
+    const tasks = Array.isArray(projection?.tasks) ? projection.tasks : null;
+    if (!tasks) return null;
+    return tasks.filter(task => EXECUTABLE_TASK_STATUSES.has(String(task?.status || '').toLowerCase())).length;
+  } catch {
+    return null;
+  }
+}
+
+function countOpenWorkItems(root = process.cwd(), todoPath = path.join(root, 'atris', 'TODO.md')) {
+  const projectionCount = countTaskProjectionItems(root);
+  if (projectionCount !== null) return projectionCount;
+  return countOpenTodoItems(todoPath);
 }
 
 function countJournalCompletedReceipts(filePath) {
@@ -107,7 +127,7 @@ function renderDefaultNow(root = process.cwd()) {
   const mapHeading = readFirstHeading(path.join(atrisDir, 'MAP.md')) || 'MAP not filled yet';
   const todoPath = path.join(atrisDir, 'TODO.md');
   const journalPath = currentJournalPath(root);
-  const openTodoCount = countOpenTodoItems(todoPath);
+  const openTodoCount = countOpenWorkItems(root, todoPath);
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
   const completedCount = countJournalCompletedReceipts(journalPath);
   const generated = todayIso();
@@ -161,7 +181,7 @@ function renderPortfolioNow(root = process.cwd()) {
   const generated = todayIso();
   const lines = workspaces.map((workspace) => {
     const heading = readFirstHeading(workspace.mapPath) || workspace.slug;
-    const todoCount = countOpenTodoItems(workspace.todoPath);
+    const todoCount = countOpenWorkItems(workspace.root, workspace.todoPath);
     const nowState = fs.existsSync(workspace.nowPath) ? 'has now.md' : 'needs now.md';
     return `- ${workspace.slug}: ${heading}; ${todoCount} open TODO item${todoCount === 1 ? '' : 's'}; ${nowState}.`;
   });
@@ -313,6 +333,7 @@ module.exports = {
   ensureNowFile,
   formatLocalDate,
   countJournalCompletedReceipts,
+  countOpenWorkItems,
   countOpenTodoItems,
   findChildWorkspaces,
   isGeneratedNowFile,
