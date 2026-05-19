@@ -8,6 +8,7 @@ const path = require('node:path');
 const {
   countJournalCompletedReceipts,
   countOpenTodoItems,
+  countOpenWorkItems,
   ensureNowFile,
   formatLocalDate,
   nowAtris,
@@ -87,7 +88,7 @@ test('refreshNowFile regenerates now.md from current local signals', () => {
   }
 });
 
-test('countOpenTodoItems ignores rendered completed task rows', () => {
+test('countOpenTodoItems ignores rendered blocked and completed task rows', () => {
   const dir = makeTempDir();
   try {
     const todoPath = path.join(dir, 'TODO.md');
@@ -104,7 +105,7 @@ test('countOpenTodoItems ignores rendered completed task rows', () => {
       '',
       '## Blocked',
       '',
-      '(Empty)',
+      '- **[CLI-3]** Blocked task [brain]',
       '',
       '## Completed',
       '',
@@ -113,6 +114,42 @@ test('countOpenTodoItems ignores rendered completed task rows', () => {
     ].join('\n'), 'utf8');
 
     assert.equal(countOpenTodoItems(todoPath), 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('countOpenWorkItems prefers task projection over rendered TODO fallbacks', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const todoPath = path.join(dir, 'atris', 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '(Empty)',
+      '',
+      '## Blocked',
+      '',
+      '- **[CLI-3]** Blocked fallback row [brain]',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        { display_id: 'CLI-1', status: 'open' },
+        { display_id: 'CLI-2', status: 'claimed' },
+        { display_id: 'CLI-3', status: 'blocked' },
+        { display_id: 'CLI-4', status: 'review' },
+        { display_id: 'CLI-5', status: 'done' },
+      ],
+    }), 'utf8');
+
+    assert.equal(countOpenTodoItems(todoPath), 0);
+    assert.equal(countOpenWorkItems(dir, todoPath), 2);
+    assert.match(renderDefaultNow(dir), /Open TODO items: 2/);
   } finally {
     cleanup(dir);
   }
