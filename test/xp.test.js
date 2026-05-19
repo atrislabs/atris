@@ -275,6 +275,96 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
   }
 });
 
+test('xp sync dry-run carries local business binding for org attribution', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJson(path.join(workspace, '.atris', 'business.json'), {
+      business_id: 'biz-atris',
+      workspace_id: 'ws-atris',
+      name: 'Atris Labs',
+      slug: 'atris-labs',
+      workspace_template: 'research',
+      owner_email: 'private@example.com',
+    });
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-bound-org',
+        task_id: 'SYNC-ORG',
+        title: 'Sync bound org proof',
+        xp: 9,
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'justin', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    const packetText = JSON.stringify(payload.packet);
+    const workspaceSummary = payload.packet.local_evidence.workspaces[0];
+
+    assert.equal(payload.packet.attribution_scope, 'business_bound');
+    assert.equal(payload.packet.business_id, 'biz-atris');
+    assert.equal(payload.packet.workspace_id, 'ws-atris');
+    assert.equal(payload.packet.business_slug, 'atris-labs');
+    assert.equal(payload.packet.workspace_template, 'research');
+    assert.equal(payload.packet.computer, 'atris-labs');
+    assert.equal(payload.packet.local_evidence.business_id, 'biz-atris');
+    assert.equal(payload.packet.gm_projection.business_id, 'biz-atris');
+    assert.equal(workspaceSummary.business_id, 'biz-atris');
+    assert.equal(workspaceSummary.workspace_id, 'ws-atris');
+    assert.equal(workspaceSummary.business_slug, 'atris-labs');
+    assert.equal(workspaceSummary.computer_slug, 'atris-labs');
+    assert.equal(packetText.includes('private@example.com'), false);
+    assert.equal(packetText.includes(workspace), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync all avoids top-level org attribution across multiple businesses', () => {
+  const root = makeTempDir();
+  const alpha = path.join(root, 'alpha');
+  const beta = path.join(root, 'beta');
+  try {
+    writeJson(path.join(alpha, '.atris', 'business.json'), {
+      business_id: 'biz-alpha',
+      workspace_id: 'ws-alpha',
+      slug: 'alpha-lab',
+      workspace_template: 'research',
+    });
+    writeJson(path.join(beta, '.atris', 'business.json'), {
+      business_id: 'biz-beta',
+      workspace_id: 'ws-beta',
+      slug: 'beta-lab',
+      workspace_template: 'product',
+    });
+    writeJsonl(path.join(alpha, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(alpha, { episode_id: 'alpha-proof', task_id: 'SYNC-A', xp: 4 }),
+    ]);
+    writeJsonl(path.join(beta, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(beta, { episode_id: 'beta-proof', task_id: 'SYNC-B', xp: 6 }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--all', '--root', root, '--as', 'justin', '--dry-run', '--json'], {
+      cwd: root,
+      env: { HOME: path.join(root, 'home') },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+
+    assert.equal(payload.packet.attribution_scope, 'multi_business');
+    assert.equal(payload.packet.business_id, null);
+    assert.equal(payload.packet.workspace_id, null);
+    assert.equal(payload.packet.computer, 'multiple-workspaces');
+    assert.equal(payload.packet.local_evidence.attribution_scope, 'multi_business');
+    assert.deepEqual(
+      payload.packet.local_evidence.workspaces.map(workspace => workspace.business_id).sort(),
+      ['biz-alpha', 'biz-beta'],
+    );
+  } finally {
+    cleanupTempDir(root);
+  }
+});
+
 test('xp sync infers player from accepted local proof before OS user', () => {
   const workspace = makeTempDir();
   try {
