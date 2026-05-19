@@ -209,7 +209,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /CLI-95/);
   assert.match(top, /BCK-294/);
   assert.match(top, /1 untasked/);
-  assert.match(top, /Next: resolve 1 untasked session: 1 no task projection/);
+  assert.match(top, /Next: close or hand off 1 session still bound to review task CLI-95/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
   assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 if idle/);
   assert.match(top, /Task load: 1 pileup, 1 review-bound task/);
@@ -223,6 +223,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     ['BCK-294', 2, true],
     ['CLI-95', 1, true],
   ]);
+  assert.match(payload.next_action, /close or hand off 1 session still bound to review task CLI-95/);
 });
 
 test('renderAgentTop explains workspaces with no active task', () => {
@@ -252,4 +253,21 @@ test('renderAgentTop explains workspaces with no active task', () => {
   const top = renderAgentTop(data);
   assert.match(top, /Next: resolve 1 untasked session: 1 no active task/);
   assert.match(top, /44 tmp\/web: no active task -> cd '\/tmp\/web' && atris task next --as codex/);
+});
+
+test('renderAgentTop prioritizes pileups before untasked cleanup', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      { pid: '1', agent: 'codex', status: 'active', repo: 'tmp/app', branch: 'main', cpu: 2, mem: 0.1, task: 'APP-1', task_status: 'claimed', owner: 'codex' },
+      { pid: '2', agent: 'claude', status: 'active', repo: 'tmp/app', branch: 'main', cpu: 3, mem: 0.2, task: 'APP-1', task_status: 'claimed', owner: 'claude' },
+      { pid: '3', agent: 'codex', status: 'active', repo: 'tmp/loose', branch: 'main', cpu: 1, mem: 0.1, task: '-', task_reason: 'no active task', task_action: "cd '/tmp/loose' && atris task next --as codex" },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: inspect 2 sessions on APP-1 \(5\.0% CPU\)/);
+  assert.match(top, /Untasked: 1 sessions \(1 no active task\)/);
+  assert.match(top, /Task load: 1 pileup, 0 review-bound tasks/);
 });

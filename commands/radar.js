@@ -592,6 +592,11 @@ function sortedAgents(agents = []) {
 function agentProcessNextAction(agents = [], fallback = 'no obvious process action') {
   const stopped = agents.filter(agent => agent.status !== 'active').length;
   if (stopped > 0) return `inspect ${stopped} stopped agent session${stopped === 1 ? '' : 's'}`;
+  const taskLoad = summarizeTaskLoad(agents);
+  const reviewBound = taskLoad.find(row => row.status.split(/,\s*/).includes('review'));
+  if (reviewBound) return `close or hand off ${reviewBound.sessions} session${reviewBound.sessions === 1 ? '' : 's'} still bound to review task ${reviewBound.task}`;
+  const pileup = taskLoad.find(row => row.sessions > 1);
+  if (pileup) return `inspect ${pileup.sessions} sessions on ${pileup.task} (${pileup.cpu.toFixed(1)}% CPU)`;
   const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
   if (untasked > 0) {
     const reasons = summarizeUntaskedReasons(agents);
