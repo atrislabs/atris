@@ -327,7 +327,7 @@ function playWorkspaceRoot(taskDb, workspaceArg) {
 }
 
 function nextCommands(task, player) {
-  const helper = 'game-manager';
+  const helper = player || 'player';
   if (!task) {
     return [
       `atris task delegate "AgentXP first rep: one proof-backed mission" --to ${player} --tag agent-xp`,
