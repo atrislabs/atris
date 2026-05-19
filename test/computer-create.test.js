@@ -326,6 +326,15 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /atris member activate validator/);
     assert.match(res.stdout, /Runtime: install=installed_latest/);
     assert.match(res.stdout, /receipt=.atris\/state\/runtime\.json/);
+    const bootstrapRequest = requests.find((request) => (
+      request.method === 'POST' &&
+      request.url === '/api/business/biz-1/workspaces/ws-new/terminal' &&
+      String(request.body?.command || '').includes('atris-runtime-bootstrap-npm.log')
+    ));
+    assert.ok(bootstrapRequest, 'expected runtime bootstrap terminal command');
+    assert.match(bootstrapRequest.body.command, /npm install --prefix "\$LOCAL_NPM_PREFIX" atris@latest/);
+    assert.match(bootstrapRequest.body.command, /\$LOCAL_ATRIS_BIN" update/);
+    assert.doesNotMatch(bootstrapRequest.body.command, /npm install -g atris@latest/);
     assert.match(res.stdout, /Default:\s+unchanged \(ws-old\)/);
     assert.match(res.stdout, /Switch default: atris computer activate --business atris-labs --workspace ws-new/);
     assert.match(res.stdout, /If the org workspace does not exist yet:/);
