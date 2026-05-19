@@ -1,10 +1,10 @@
 # Atris Wiki Status
 
-- Last ingest: 2026-05-10 00:42
+- Last ingest: 2026-05-19 09:36
 - Last lint: never
-- Last loop: 2026-05-10 00:42
-- Health: ingest staged from atris/context/_ingest/2026-05-10-0042-help
-- Next move: compile atris/context/_ingest/2026-05-10-0042-help/request.txt into atris/wiki
+- Last loop: 2026-05-19 09:36
+- Health: Rebased Pack Co starter pack compiled from existing onboarding intake
+- Next move: run `atris business check`, record the first proof recap, then refresh the share handoff
 
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Brain Compile

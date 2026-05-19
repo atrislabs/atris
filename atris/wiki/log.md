@@ -1,5 +1,16 @@
 # Atris Wiki Log
 
+## 2026-05-19
+
+- ONBOARD Rebased Pack Co starter pack
+  - source: atris/context/_ingest/2026-05-19T03-50-onboarding/intake.md
+  - durable: Rebased Pack Co is a local-only packaged CLI onboarding smoke unless operator supplies real business evidence
+  - created: atris/wiki/briefs/rebased-pack-co-starter-brief.md
+  - created: atris/wiki/concepts/rebased-pack-co-first-loop.md
+  - created: atris/reports/2026-05-19-rebased-pack-co-operator-one-pager.md
+  - created: atris/reports/2026-05-19-rebased-pack-co-first-loop-recap.md
+  - guardrail: no external send or AgentXP acceptance from agent-only proof
+
 ## 2026-04-27
 
 - PRODUCT MEMORY owner -> computer -> group boundary tightened
