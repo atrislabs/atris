@@ -2358,6 +2358,37 @@ test('brain compile refreshes stale now.md before collecting state', () => {
   }
 });
 
+test('brain compile preserves a custom now.md front door', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const customNow = [
+      '# FairPlay Now',
+      '',
+      '## What Matters Now',
+      '',
+      'FairPlay should feel like a playable autonomous org.',
+      '',
+      '## Current Priority',
+      '',
+      'Run the overnight readiness gate before deploying tokens.',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(dir, 'atris', 'now.md'), customNow, 'utf8');
+
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+
+    const now = fs.readFileSync(path.join(dir, 'atris', 'now.md'), 'utf8');
+    assert.equal(now, customNow);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /Now loaded: yes \(FairPlay Now\)/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile --json returns machine-readable missing-workspace errors', () => {
   const dir = makeTempDir();
   try {
