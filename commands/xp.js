@@ -10,6 +10,7 @@ const DEFAULT_GRAPH_DAYS = 365;
 const INTENSITY_CHARS = [' ', '.', ':', '*', '#'];
 const ROW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TASK_EPISODES_FILE = path.join('.atris', 'state', 'task_episodes.jsonl');
+const BUSINESS_BINDING_FILE = path.join('.atris', 'business.json');
 const CAREER_XP_RECEIPTS_FILE = path.join('.atris', 'state', 'career_xp_receipts.jsonl');
 const CAREER_XP_PROJECTION_FILE = path.join('.atris', 'state', 'career_xp.projection.json');
 const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.json');
@@ -1122,6 +1123,24 @@ function workspaceName(workspace) {
   return path.basename(workspace) || workspace;
 }
 
+function publicWorkspaceBinding(workspace) {
+  const binding = readJsonFile(path.join(workspace, BUSINESS_BINDING_FILE), null);
+  if (!binding || typeof binding !== 'object') return null;
+  const businessId = String(binding.business_id || binding.id || '').trim();
+  const workspaceId = String(binding.workspace_id || '').trim();
+  const businessSlug = slugify(binding.slug || binding.business_slug || binding.name);
+  const workspaceTemplate = slugify(binding.workspace_template || binding.organization_type || binding.computer_type);
+  if (!businessId && !workspaceId && !businessSlug) return null;
+  return {
+    business_id: businessId || null,
+    workspace_id: workspaceId || null,
+    business_slug: businessSlug || null,
+    workspace_template: workspaceTemplate || null,
+    computer: businessSlug || workspaceName(workspace),
+    computer_slug: businessSlug || slugify(workspaceName(workspace)),
+  };
+}
+
 function isVerifiedProjection(projection) {
   return projection?.schema === 'atris.career_xp_projection.v1'
     && projection.integrity_status === 'verified'
@@ -1719,14 +1738,18 @@ function verifiedProjection(projection) {
 
 function projectionWorkspaceSummaries(projection) {
   if (Array.isArray(projection?.workspaces)) {
-    return projection.workspaces.map(workspace => ({
-      name: workspace.name || workspaceName(workspace.workspace_root || 'workspace'),
-      workspace_root_hash: workspace.workspace_root ? sha256(path.resolve(workspace.workspace_root)) : null,
-      included: Boolean(workspace.included),
-      agent_xp: asNumber(workspace.total_xp),
-      receipts_count: asNumber(workspace.receipts_count),
-      integrity_status: workspace.integrity_status || 'unknown',
-    }));
+    return projection.workspaces.map((workspace) => {
+      const workspaceRoot = workspace.workspace_root || '';
+      return {
+        name: workspace.name || workspaceName(workspaceRoot || 'workspace'),
+        workspace_root_hash: workspaceRoot ? sha256(path.resolve(workspaceRoot)) : null,
+        included: Boolean(workspace.included),
+        agent_xp: asNumber(workspace.total_xp),
+        receipts_count: asNumber(workspace.receipts_count),
+        integrity_status: workspace.integrity_status || 'unknown',
+        ...(workspaceRoot ? publicWorkspaceBinding(workspaceRoot) : null),
+      };
+    });
   }
 
   const workspaceRoot = projection?.workspace_root || path.resolve(process.cwd());
@@ -1737,7 +1760,41 @@ function projectionWorkspaceSummaries(projection) {
     agent_xp: asNumber(projection?.total_agent_xp ?? projection?.total_xp),
     receipts_count: asNumber(projection?.receipts_count),
     integrity_status: projection?.integrity_status || projection?.integrity?.status || 'unknown',
+    ...publicWorkspaceBinding(workspaceRoot),
   }];
+}
+
+function uniqueTruthy(values) {
+  return Array.from(new Set(values.map(value => String(value || '').trim()).filter(Boolean))).sort();
+}
+
+function syncAttribution(workspaces) {
+  const included = workspaces.filter(workspace => workspace.included !== false);
+  const scoped = included.length ? included : workspaces;
+  const businessIds = uniqueTruthy(scoped.map(workspace => workspace.business_id));
+  const workspaceIds = uniqueTruthy(scoped.map(workspace => workspace.workspace_id));
+  const businessSlugs = uniqueTruthy(scoped.map(workspace => workspace.business_slug || workspace.computer_slug));
+  const templates = uniqueTruthy(scoped.map(workspace => workspace.workspace_template));
+
+  if (businessIds.length > 1) {
+    return { attribution_scope: 'multi_business', computer: 'multiple-workspaces' };
+  }
+  if (businessIds.length === 0 && scoped.length > 1 && businessSlugs.length > 1) {
+    return { attribution_scope: 'multi_workspace', computer: 'multiple-workspaces' };
+  }
+
+  const businessId = businessIds[0] || null;
+  const workspaceId = workspaceIds.length === 1 ? workspaceIds[0] : null;
+  const businessSlug = businessSlugs.length === 1 ? businessSlugs[0] : null;
+  const workspaceTemplate = templates.length === 1 ? templates[0] : null;
+  return {
+    attribution_scope: businessId || businessSlug ? 'business_bound' : 'workspace_only',
+    business_id: businessId,
+    workspace_id: workspaceId,
+    business_slug: businessSlug,
+    workspace_template: workspaceTemplate,
+    computer: businessSlug || scoped[0]?.computer || scoped[0]?.name || 'local',
+  };
 }
 
 function credentialHandle(credentials) {
@@ -1798,6 +1855,7 @@ function buildAgentXpSyncPacket(args = []) {
     : collectLocalXpProjection(projectionArgs);
   const player = syncPlayer(args, projection);
   const workspaces = projectionWorkspaceSummaries(projection);
+  const attribution = syncAttribution(workspaces);
   const totalXp = asNumber(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? projection.career_xp);
   const receiptsCount = asNumber(projection.receipts_count);
   const eligible = verifiedProjection(projection) && receiptsCount > 0 && totalXp > 0;
@@ -1825,7 +1883,12 @@ function buildAgentXpSyncPacket(args = []) {
     schema: 'atris.agentxp_sync_packet.v1',
     generated_at: new Date().toISOString(),
     workspace_root_hash: workspaceRootHash,
-    computer: projection.workspace_name || workspaces[0]?.name || 'local',
+    attribution_scope: attribution.attribution_scope,
+    business_id: attribution.business_id || null,
+    workspace_id: attribution.workspace_id || null,
+    business_slug: attribution.business_slug || null,
+    workspace_template: attribution.workspace_template || null,
+    computer: attribution.computer || projection.workspace_name || workspaces[0]?.name || 'local',
     operator: player,
     privacy: {
       raw_proofs_included: false,
@@ -1840,6 +1903,12 @@ function buildAgentXpSyncPacket(args = []) {
     local_evidence: {
       schema: 'atris.agentxp_local_evidence.v1',
       workspace_root_hash: workspaceRootHash,
+      attribution_scope: attribution.attribution_scope,
+      business_id: attribution.business_id || null,
+      workspace_id: attribution.workspace_id || null,
+      business_slug: attribution.business_slug || null,
+      workspace_template: attribution.workspace_template || null,
+      computer: attribution.computer || null,
       workspaces,
       verified_workspace_count: asNumber(projection.verified_workspace_count, verifiedProjection(projection) ? 1 : 0),
       receipts_count: receiptsCount,
@@ -1864,6 +1933,12 @@ function buildAgentXpSyncPacket(args = []) {
     gm_projection: {
       schema: 'atris.gm_xp_projection.v1',
       workspace_root_hash: workspaceRootHash,
+      attribution_scope: attribution.attribution_scope,
+      business_id: attribution.business_id || null,
+      workspace_id: attribution.workspace_id || null,
+      business_slug: attribution.business_slug || null,
+      workspace_template: attribution.workspace_template || null,
+      computer: attribution.computer || null,
       operator: player,
       player_score: {
         agent_xp: totalXp,
