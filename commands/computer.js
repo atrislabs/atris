@@ -1457,12 +1457,12 @@ async function runBusinessPromptViaRunnerProxy(token, ctx, prompt, options = {})
   return { ok: false, error: 'runner proxy timed out', status: 0 };
 }
 
-async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
+async function ensureBusinessAwake(token, ctx, maxWaitSec = 90, options = {}) {
   const status = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
   if (status.ok && status.data && status.data.status === 'running' && status.data.endpoint) {
     return true;
   }
-  process.stdout.write('  Waking business computer... ');
+  if (!options.quiet) process.stdout.write('  Waking business computer... ');
   await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, { method: 'POST', token, body: {} });
   const start = Date.now();
   while (Date.now() - start < maxWaitSec * 1000) {
@@ -1470,12 +1470,12 @@ async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
     const next = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
-      console.log(`awake (${elapsed}s)`);
+      if (!options.quiet) console.log(`awake (${elapsed}s)`);
       await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake');
       return true;
     }
   }
-  console.log('timeout');
+  if (!options.quiet) console.log('timeout');
   return false;
 }
 
@@ -2420,7 +2420,7 @@ async function computerAudit(token, ctx, limit = 10) {
   printBusinessChatAudit(result.data?.rows || []);
 }
 
-async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
+async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
   let fromIndex = 0;
   let errors = 0;
   let cancelling = false;
@@ -2458,7 +2458,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
   const sigintTarget = rl || process;
   sigintTarget.on('SIGINT', onSigint);
 
-  console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
+  if (!options.quiet) console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
 
   try {
     while (true) {
@@ -2486,7 +2486,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
         } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
           sawVisibleOutput = true;
           process.stdout.write(String(event.result));
-        } else if (event.type === 'tool_use' && event.tool) {
+        } else if (!options.quiet && event.type === 'tool_use' && event.tool) {
           const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
           if (arg) {
             console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
@@ -2566,7 +2566,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
   const nextSessionId = data.session_id || sessionId;
   if (rl) rl.pause();
   try {
-    await streamBusinessChatResult(token, ctx, data.execution_id, rl);
+    await streamBusinessChatResult(token, ctx, data.execution_id, rl, { quiet: Boolean(options.quiet) });
   } finally {
     if (rl) rl.resume();
   }
@@ -2584,28 +2584,33 @@ async function computerChat(token, ctx, initialOptions = {}) {
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
+  const oneShotMessage = initialOptions.message != null;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
   const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
-  printCloudWordmark();
-  const selection = await chooseCloudLane(token, ctx, initialOptions);
+  if (!oneShotMessage) printCloudWordmark();
+  const selection = oneShotMessage
+    ? { worker: initialOptions.worker, model: initialOptions.model }
+    : await chooseCloudLane(token, ctx, initialOptions);
   if (selection.cancelled) return;
   let worker = activeWorker(selection.worker);
   let model = selection.model || null;
   let awaitingLoginCode = false;
-  let billingLabel = await describeBillingMode(token, ctx, worker);
-  let authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+  let billingLabel = oneShotMessage ? null : await describeBillingMode(token, ctx, worker);
+  let authSummary = oneShotMessage || activeWorker(worker) !== 'claude' ? null : await describeClaudeAuth(token, ctx);
 
-  const awake = await ensureBusinessAwake(token, ctx);
+  const awake = await ensureBusinessAwake(token, ctx, 90, { quiet: oneShotMessage });
   if (!awake) {
     console.error('  Computer did not become ready in time.');
     return;
   }
 
-  if (isCodeOps) {
-    printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
-  } else {
-    printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+  if (!oneShotMessage) {
+    if (isCodeOps) {
+      printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+    } else {
+      printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+    }
   }
 
   if (scriptedInput !== null) {
@@ -2640,6 +2645,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
         model,
         systemPrompt: chatSystemPrompt,
         allowedTools: initialOptions.allowedTools,
+        quiet: oneShotMessage,
       });
     }
     return;
