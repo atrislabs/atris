@@ -114,18 +114,26 @@ function loadTasks(root, deps) {
   if (!deps.exists(file)) return [];
   const payload = safeJson(deps.readFile(file, 'utf8'), {});
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
-  return tasks.map(task => ({
-    id: task.id,
-    display_id: task.display_id,
-    legacy_ref: task.legacy_ref,
-    title: task.title,
-    status: task.status,
-    tag: task.tag,
-    workspace_root: task.workspace_root,
-    claimed_by: task.claimed_by,
-    assigned_to: task.metadata?.assigned_to || task.assigned_to || null,
-    metadata: task.metadata || {},
-  }));
+  return tasks.map(task => {
+    const messages = Array.isArray(task.messages) ? task.messages : [];
+    const row = {
+      id: task.id,
+      display_id: task.display_id,
+      legacy_ref: task.legacy_ref,
+      title: task.title,
+      status: task.status,
+      tag: task.tag,
+      workspace_root: task.workspace_root,
+      claimed_by: task.claimed_by,
+      assigned_to: task.metadata?.assigned_to || task.assigned_to || null,
+      metadata: task.metadata || {},
+    };
+    Object.defineProperty(row, 'routing_text', {
+      enumerable: false,
+      value: messages.map(message => message && message.content).filter(Boolean).join(' '),
+    });
+    return row;
+  });
 }
 
 function findTaskWorkspaceRoot(cwd, deps) {
@@ -439,9 +447,31 @@ function summarize(tasks, missions, worktrees, agents) {
   };
 }
 
+function ownerActionRequired(task) {
+  const metadata = task?.metadata || {};
+  if (metadata.owner_action_required === true || metadata.agent_executable === false) return true;
+  if (String(metadata.agent_executable || '').toLowerCase() === 'false') return true;
+  const text = [
+    task?.title,
+    task?.tag,
+    metadata.status,
+    metadata.blocker,
+    metadata.human_revision_note,
+    metadata.latest_agent_proof,
+    metadata.latest_agent_lesson,
+    task?.routing_text,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (text.includes('owner_action_required') || text.includes('agent_executable=false')) return true;
+  if (text.includes('owner-only') || text.includes('owner only') || text.includes('not agent-executable')) return true;
+  return text.includes('owner') && text.includes('billing') && (text.includes('spending limit') || text.includes('failed payments'));
+}
+
 function nextAction(tasks, missions, worktrees, agents, os = {}) {
-  const activeTask = tasks.find(t => t.status === 'claimed' || t.status === 'open');
+  const activeTasks = tasks.filter(t => t.status === 'claimed' || t.status === 'open');
+  const activeTask = activeTasks.find(t => !ownerActionRequired(t));
   if (activeTask) return `work ${taskRef(activeTask)}: ${activeTask.title || 'active task'}`;
+  const ownerTask = activeTasks.find(ownerActionRequired);
+  if (ownerTask) return `owner action required ${taskRef(ownerTask)}: ${ownerTask.title || 'owner-only task'}`;
   const needsReview = tasks.find(t => t.status === 'review' && !(t.metadata && t.metadata.agent_certified));
   if (needsReview) return `review ${taskRef(needsReview)}: ${needsReview.title || 'uncertified review task'}`;
   const certified = tasks.find(t => t.status === 'review' && t.metadata && t.metadata.agent_certified);
