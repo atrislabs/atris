@@ -198,23 +198,59 @@ function countTodoItems(todoText) {
 const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
 const COMPLETED_TASK_STATUSES = new Set(['done', 'completed', 'accepted']);
 
-function countTaskProjectionItems(root) {
+function readTaskProjectionTasks(root) {
   const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json'));
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : null;
+  return tasks || null;
+}
+
+function isCertifiedReviewTask(task) {
+  if (String(task?.status || '').toLowerCase() !== 'review') return false;
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const passCount = Number(metadata.agent_review_pass_count || review.agent_review_pass_count || 0);
+  return Boolean(metadata.agent_certified || review.agent_certified || passCount >= 2);
+}
+
+function summarizeTaskProjection(root) {
+  const tasks = readTaskProjectionTasks(root);
   if (!tasks) return null;
+
+  const counts = {};
+  const certifiedReviewTasks = [];
+  for (const task of tasks) {
+    const status = String(task?.status || '').toLowerCase();
+    counts[status] = (counts[status] || 0) + 1;
+    if (isCertifiedReviewTask(task)) {
+      certifiedReviewTasks.push({
+        ref: task.display_id || task.legacy_ref || task.id,
+        title: task.title || 'Untitled task',
+      });
+    }
+  }
+
+  return {
+    tasks,
+    counts,
+    certifiedReviewTasks,
+  };
+}
+
+function countTaskProjectionItems(root) {
+  const summary = summarizeTaskProjection(root);
+  if (!summary) return null;
 
   let open = 0;
   let done = 0;
-  for (const task of tasks) {
-    const status = String(task?.status || '').toLowerCase();
-    if (EXECUTABLE_TASK_STATUSES.has(status)) open += 1;
-    if (COMPLETED_TASK_STATUSES.has(status)) done += 1;
+  for (const [status, count] of Object.entries(summary.counts)) {
+    if (EXECUTABLE_TASK_STATUSES.has(status)) open += count;
+    if (COMPLETED_TASK_STATUSES.has(status)) done += count;
   }
 
   return {
     open,
     checked: done,
-    titled: tasks.length,
+    titled: summary.tasks.length,
     done,
   };
 }
@@ -300,6 +336,7 @@ function collectState(root) {
     slug: business.slug || path.basename(root),
     business,
     todo: countWorkItems(root, todoText),
+    taskProjection: summarizeTaskProjection(root),
     hasNow: nowText.length > 0,
     nowHeading: firstHeading(nowText, null),
     hasMap: mapText.length > 0,
@@ -510,6 +547,12 @@ function memberNextMove(member, state = null) {
   const name = member.name || member.slug;
   const context = `${member.startHere}\n${member.goals}`;
   const identity = `${member.slug}\n${member.name}`;
+  const certifiedReview = state?.taskProjection?.certifiedReviewTasks?.[0] || null;
+  const certifiedReviewMove = certifiedReview
+    ? `${name}: hand off certified review ${certifiedReview.ref} to the operator: run ` +
+      `\`atris task accept ${certifiedReview.ref}\` if approved or ` +
+      `\`atris task revise ${certifiedReview.ref} --note "<what must change>"\` if not; do not create new work until this checkpoint is clear.`
+    : null;
   if (member.slug === 'justin' || /justin/i.test(member.name || '')) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
   }
@@ -524,6 +567,7 @@ function memberNextMove(member, state = null) {
     return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
   }
   if (/validator|reviewer/i.test(identity)) {
+    if (certifiedReviewMove) return certifiedReviewMove;
     if ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0) {
       return `${name}: wait for one concrete artifact or ask Navigator to create a reviewable task with verifier, proof target, and residual-risk checklist.`;
     }
@@ -531,6 +575,7 @@ function memberNextMove(member, state = null) {
   }
   if (/executor|builder/i.test(identity)) {
     if ((state?.todo?.open || 0) === 0) {
+      if (certifiedReviewMove) return certifiedReviewMove;
       return `${name}: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch.`;
     }
     return `${name}: execute the highest-leverage claimed task one scoped step at a time, run the verifier after the patch, and hand off proof for review.`;
@@ -539,6 +584,7 @@ function memberNextMove(member, state = null) {
     return `${name}: turn one messy or unclaimed intent into a MAP-backed plan with ASCII visualization, exact files, verifier, rollback, and a review-ready task.`;
   }
   if (/launcher|closer/i.test(identity)) {
+    if (certifiedReviewMove) return certifiedReviewMove;
     if ((state?.todo?.done || 0) === 0) {
       return `${name}: wait for one validated task receipt before closeout, or ask Validator to produce a review decision with proof.`;
     }
