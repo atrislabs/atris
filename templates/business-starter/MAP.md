@@ -56,6 +56,7 @@ Keep owner metadata in `.atris/business.json`; keep computer memory, files, tool
 | Path | What |
 |------|------|
 | `atris/team/` | Role lenses inside the shared business environment |
+| `atris/team/START_HERE.md` | Collaborator guide for which member lane to wake first |
 | `atris/team/_template/MEMBER.md` | Starter member template for real humans or new lanes |
 | `atris/team/ops/MEMBER.md` | Default operating lane |
 | `atris/team/operator/MEMBER.md` | Default owner for the business computer |

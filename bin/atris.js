@@ -103,7 +103,7 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
     });
 }
 
-const command = process.argv[2];
+let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
 const isBusinessSyncSafetyCommand = command === 'sync'
@@ -333,6 +333,7 @@ function showHelp() {
   console.log('  log        - Add ideas to inbox');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
+  console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
@@ -764,7 +765,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'radar', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'xp', 'play', 'gm', 'x',
@@ -800,8 +801,9 @@ const voiceTriggers = {
   'start a business': 'business',
   'new business': 'business',
   'show status': 'status',
-  'what happened': 'status',
-  'whats going on': 'status',
+  'what happened': 'radar',
+  'whats going on': 'radar',
+  'what is going on': 'radar',
   'run tests': 'verify',
   'check health': 'status',
   'deploy': 'business',
@@ -1178,6 +1180,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
   Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'radar') {
+  Promise.resolve(require('../commands/radar').radarCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'codex-goal') {

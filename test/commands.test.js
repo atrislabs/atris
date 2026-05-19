@@ -11,8 +11,11 @@ const { formatLocalDate } = require('../commands/now');
 const {
   analyzeBusinessDoctor,
   businessMatchesSlug,
+  collectBusinessShareState,
   createCanonicalBusinessWorkspace,
   onboardBusiness,
+  renderBusinessCreatedNextSteps,
+  shareBusinessWorkspace,
   recordBusinessRun
 } = require('../commands/business');
 const {
@@ -77,6 +80,47 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function seedBusinessOsState(dir) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+    tasks: [
+      { display_id: 'BIZ-1', title: 'Work next loop', status: 'open', metadata: {} },
+      { display_id: 'BIZ-2', title: 'Ship handoff proof', status: 'claimed', metadata: { assigned_to: 'operator' } },
+      { display_id: 'BIZ-3', title: 'Review proof', status: 'review', metadata: { agent_certified: true } },
+    ],
+  }, null, 2));
+  fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), `${JSON.stringify({
+    id: 'mission-biz-loop',
+    objective: 'Keep the business loop moving',
+    status: 'running',
+    always_on: true,
+    verifier: 'atris business check',
+    last_tick_at: new Date().toISOString(),
+  })}\n`);
+  fs.writeFileSync(path.join(stateDir, 'mission_events.jsonl'), `${JSON.stringify({
+    type: 'mission_tick',
+    at: new Date().toISOString(),
+  })}\n`);
+  fs.writeFileSync(path.join(stateDir, 'codex_goal.json'), JSON.stringify({
+    goal: { objective: 'Keep the business loop moving', mission_id: 'mission-biz-loop' },
+  }, null, 2));
+  fs.writeFileSync(path.join(stateDir, 'career_xp.projection.json'), JSON.stringify({
+    metric_label: 'AgentXP',
+    total_agent_xp: 12,
+    today_agent_xp: 2,
+    integrity_status: 'ok',
+  }, null, 2));
+  fs.writeFileSync(path.join(stateDir, 'career_xp_receipts.jsonl'), `${JSON.stringify({
+    task_ref: 'BIZ-0',
+    reward: 2,
+  })}\n`);
+  const goalsPath = path.join(dir, 'atris', 'team', 'operator', 'goals.json');
+  fs.writeFileSync(goalsPath, JSON.stringify({
+    goals: [{ title: 'Run first customer loop', status: 'active' }],
+  }, null, 2));
 }
 
 function runCli(args, { cwd, input, env } = {}) {
@@ -4268,13 +4312,15 @@ test('task ready holds work in review until human accept', () => {
     ], { cwd: dir, env });
     assert.equal(prooflessReview.status, 0, prooflessReview.stderr);
     assert.equal(JSON.parse(prooflessReview.stdout).task.review.proof, 'typecheck passed and diff reviewed');
+    assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_review_pass_count, 2);
+    assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_certified, true);
+    assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.agent_certified, true);
 
-    const nextAfterFirstReview = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(nextAfterFirstReview.status, 0, nextAfterFirstReview.stderr);
-    const firstNextPayload = JSON.parse(nextAfterFirstReview.stdout);
-    assert.equal(firstNextPayload.action, 'agent_review_again');
-    assert.equal(firstNextPayload.task_id, readyPayload.task.id);
-    assert.equal(firstNextPayload.handoff.career_xp_status, 'pending_human_accept');
+    const nextAfterReviewCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(nextAfterReviewCertification.status, 0, nextAfterReviewCertification.stderr);
+    const firstNextPayload = JSON.parse(nextAfterReviewCertification.stdout);
+    assert.equal(firstNextPayload.action, 'continue_work');
+    assert.equal(firstNextPayload.task_id, null);
 
     const certified = runCli([
       'task', 'ready', ref,
@@ -4286,7 +4332,7 @@ test('task ready holds work in review until human accept', () => {
     ], { cwd: dir, env });
     assert.equal(certified.status, 0, certified.stderr);
     const certifiedPayload = JSON.parse(certified.stdout);
-    assert.equal(certifiedPayload.review_pass_count, 2);
+    assert.equal(certifiedPayload.review_pass_count, 3);
     assert.equal(certifiedPayload.agent_certified, true);
     assert.deepEqual(certifiedPayload.handoff, {
       native_goal_status: 'agent_certified',
@@ -4296,7 +4342,7 @@ test('task ready holds work in review until human accept', () => {
     });
     assert.equal(certifiedPayload.task.status, 'review');
     assert.equal(certifiedPayload.task.review.approval_status, 'pending');
-    assert.equal(certifiedPayload.task.review.agent_review_pass_count, 2);
+    assert.equal(certifiedPayload.task.review.agent_review_pass_count, 3);
     assert.equal(certifiedPayload.task.review.agent_certified, true);
     assert.equal(certifiedPayload.task.metadata.agent_certified, true);
 
@@ -4314,7 +4360,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
 	    assert.match(certifiedShow.stdout, /Proof: typecheck passed and diff reviewed again/);
 	    assert.match(certifiedShow.stdout, /Approval: pending/);
-	    assert.match(certifiedShow.stdout, /Agent certified: yes \(2 reviews\)/);
+	    assert.match(certifiedShow.stdout, /Agent certified: yes \(3 reviews\)/);
 
 	    for (let i = 0; i < 10; i += 1) {
 	      const note = runCli(['task', 'note', ref, `post-ready context ${i}`, '--as', 'codex'], { cwd: dir, env });
@@ -5890,6 +5936,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['activate', '--help'],
     ['next', '--help'],
     ['now', '--help'],
+    ['radar', '--help'],
     ['clean', '--help'],
     ['verify', '--help'],
     ['loop', '--help'],
@@ -6478,7 +6525,7 @@ test('sync command works as alias for update', () => {
   const dir = makeTempDir();
   try {
     initWorkspace(dir);
-    const res = runCli(['sync'], { cwd: dir });
+    const res = runCli(['update'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /up to date|Updated/i);
   } finally {
@@ -6768,6 +6815,9 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'goals.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'PERSONA.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'AGENTS.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'CLAUDE.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'GEMINI.md')));
     assert.ok(fs.readdirSync(path.join(dir, 'atris')).includes('PERSONA.md'));
     assert.equal(fs.readdirSync(path.join(dir, 'atris')).includes('persona.md'), false);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'policies', 'REWARD.md')));
@@ -6780,6 +6830,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'reports', 'operating-recap-template.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', 'concepts', 'first-loop-template.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'START_HERE.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', '_template', 'MEMBER.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'operator', 'MEMBER.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'validator', 'MEMBER.md')));
@@ -6805,10 +6856,33 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.equal(runtime.scope, 'local-business-computer');
     assert.equal(runtime.install_status, 'local_cli_present');
     assert.equal(runtime.sync_status, 'templates_seeded');
+    assert.deepEqual(runtime.agent_adapters, ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']);
+
+    const rootAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
+    assert.match(rootAgents, /atris business start/);
+    assert.match(rootAgents, /atris radar/);
+    assert.match(rootAgents, /atris task next/);
+    assert.match(rootAgents, /atris member activate operator/);
+    assert.match(rootAgents, /atris mission start "Run the first useful loop for BLOND:ISH"/);
+    assert.match(rootAgents, /atris do/);
+    assert.match(rootAgents, /atris task ready <id> --proof/);
+    assert.match(rootAgents, /Do not run `atris task accept` or claim XP unless a human approved the proof/);
+    assert.match(rootAgents, /atris business share --write/);
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /BLOND:ISH/);
     assert.match(map, /\.atris\/state\/events\.jsonl/);
+    assert.match(map, /atris\/team\/START_HERE\.md/);
+
+    const teamStart = fs.readFileSync(path.join(dir, 'atris', 'team', 'START_HERE.md'), 'utf8');
+    assert.match(teamStart, /Run `atris radar`/);
+    assert.match(teamStart, /Claim the seeded first task with `atris task next`/);
+    assert.match(teamStart, /Wake `operator` with `atris member activate operator`/);
+    assert.match(teamStart, /atris mission start "Run the first useful loop for this business"/);
+    assert.match(teamStart, /atris member goal-from-mission operator/);
+    assert.match(teamStart, /Execute the loop with `atris do`/);
+    assert.match(teamStart, /Ask `validator` to check proof/);
 
     const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
     assert.match(persona, /BLOND:ISH/);
@@ -6833,6 +6907,61 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
 
     const teamReadme = fs.readFileSync(path.join(dir, 'atris', 'team', 'README.md'), 'utf8');
     assert.match(teamReadme, /real humans/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business workspace scaffold preserves existing root agent adapter files', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# Custom Agent Rules\n', 'utf8');
+
+    const result = createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-preserve',
+      workspace_id: 'ws-preserve',
+      name: 'Preserve Co',
+      slug: 'preserve-co',
+      owner_email: 'team@preserve.co',
+    }, { here: true });
+
+    assert.deepEqual(result.agentAdapters, ['CLAUDE.md', 'GEMINI.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), '# Custom Agent Rules\n');
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Preserve Co Atris Workspace/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris task next/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync repairs missing root agent adapters without overwriting custom ones', () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-repair',
+      workspace_id: 'ws-repair',
+      name: 'Repair Co',
+      slug: 'repair-co',
+      owner_email: 'team@repair.co',
+    }, { here: true });
+
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# Custom Agent Rules\n', 'utf8');
+    fs.rmSync(path.join(dir, 'CLAUDE.md'), { force: true });
+    fs.rmSync(path.join(dir, 'GEMINI.md'), { force: true });
+
+    const beforeCustom = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    const res = runCli(['update'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), beforeCustom);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Repair Co Atris Workspace/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris mission status --status active --json/);
+    assert.match(res.stdout, /Root agent adapters:/);
+    assert.match(res.stdout, /\+ CLAUDE\.md/);
+    assert.match(res.stdout, /\+ GEMINI\.md/);
+
+    const state = collectBusinessShareState(dir);
+    assert.deepEqual(state.missingRootAgentAdapters, []);
+    assert.equal(state.missing.includes('root agent adapters'), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -6894,11 +7023,58 @@ test('business help exposes default workspace creation', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /init <name>/);
     assert.match(res.stdout, /create <name>/);
+    assert.match(res.stdout, /start\s+Check a received business workspace/);
     assert.match(res.stdout, /business environment/i);
     assert.doesNotMatch(res.stdout, /canonical business workspace/i);
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('business quickstart includes the full first-loop operating path', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['business', 'quickstart'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Start a Business With An Operating Loop/);
+    assert.match(res.stdout, /atris business start/);
+    assert.match(res.stdout, /atris radar/);
+    assert.match(res.stdout, /atris task next/);
+    assert.match(res.stdout, /atris member activate operator/);
+    assert.match(res.stdout, /atris mission status --status active --json/);
+    assert.match(res.stdout, /atris mission start "Run the first useful loop for My Company"/);
+    assert.match(res.stdout, /atris member goal-from-mission operator/);
+    assert.match(res.stdout, /atris business onboard --website https:\/\/example\.com --contact "Founder Name" --note "what they do"/);
+    assert.match(res.stdout, /atris do/);
+    assert.match(res.stdout, /atris business record atris\/reports\/YYYY-MM-DD-your-recap\.md --outcome mixed --metric "operator speed"/);
+    assert.match(res.stdout, /Write the handoff before sharing/);
+    assert.match(res.stdout, /atris business share --write/);
+    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /Repeat:[\s\S]*atris radar -> atris task next -> atris do -> record -> share/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business init next steps include start task mission record share and sync', () => {
+  const rendered = renderBusinessCreatedNextSteps({
+    name: 'Loop Works',
+    slug: 'loop-works',
+  }, '/tmp/loop-works');
+
+  assert.match(rendered, /seeded local computer \+ operator \+ validator/);
+  assert.match(rendered, /cd \/tmp\/loop-works/);
+  assert.match(rendered, /atris business start/);
+  assert.match(rendered, /atris radar/);
+  assert.match(rendered, /atris task next/);
+  assert.match(rendered, /atris member activate operator/);
+  assert.match(rendered, /atris mission status --status active --json/);
+  assert.match(rendered, /atris mission start "Run the first useful loop for Loop Works"/);
+  assert.match(rendered, /atris member goal-from-mission operator/);
+  assert.match(rendered, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
+  assert.match(rendered, /atris business record atris\/reports\/<recap>\.md --outcome mixed --metric "operator speed"/);
+  assert.match(rendered, /atris business share --write/);
+  assert.match(rendered, /atris align loop-works --fix/);
 });
 
 test('fresh business environment starter exposes an endgame task with explicit verify', async () => {
@@ -7041,6 +7217,7 @@ test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse i
     assert.match(fs.readFileSync(conceptPath, 'utf8'), /Candidate Loop/);
     assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Next 3 Moves/);
     assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Best Next Action/);
+    assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /atris business share --write/);
     assert.match(fs.readFileSync(cheatSheetPath, 'utf8'), /Swarlo join/);
     assert.match(fs.readFileSync(onePagerPath, 'utf8'), /One Pager/);
     assert.match(fs.readFileSync(onePagerPath, 'utf8'), /Swarlo join/);
@@ -7058,6 +7235,17 @@ test('business onboard seeds intake, wiki pages, and a cheat sheet from sparse i
     const todoContent = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
     assert.match(todoContent, /\[execute\]/);
     assert.match(todoContent, /Draft a founder-context note/);
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    assert.ok(projection.tasks.some(task =>
+      task.title.includes('Draft a founder-context note')
+      && task.status === 'open'
+      && task.tag === 'execute'
+      && task.metadata?.source === 'business_onboard'
+    ));
+    const next = runCli(['task', 'next', '--json'], { cwd: dir });
+    assert.equal(next.status, 0, next.stderr);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.match(nextPayload.task.title, /Draft a founder-context note/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -7133,6 +7321,400 @@ test('business onboard bootstraps from bare directory with --name flag', async (
     const todoContent = fs.readFileSync(todoPath, 'utf8');
     assert.match(todoContent, /Backlog/);
     assert.match(todoContent, /\[execute\]/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business share prints and writes a collaborator handoff from workspace state', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-share',
+      workspace_id: 'ws-share',
+      name: 'Share Co',
+      slug: 'share-co',
+      owner_email: 'team@share.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--website', 'https://share.co',
+        '--contact', 'Sam Share',
+        '--email', 'sam@share.co',
+        '--note', 'Needs a clean collaborator handoff'
+      );
+      fs.writeFileSync(path.join(dir, 'atris', 'reports', 'first-recap.md'), '# First Recap\n\nUseful loop happened.\n', 'utf8');
+      await recordBusinessRun('atris/reports/first-recap.md', '--outcome', 'positive', '--metric', 'first loop');
+      seedBusinessOsState(dir);
+      await shareBusinessWorkspace('--role', 'operator', '--name', 'Sam Share', '--email', 'sam@share.co', '--write');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    assert.ok(fs.existsSync(handoffPath));
+    const body = fs.readFileSync(handoffPath, 'utf8');
+    assert.match(body, /Share Co Share Handoff/);
+    assert.match(body, /For: Sam Share <sam@share\.co>/);
+    assert.match(body, /Ready to share: yes/);
+    assert.match(body, /Remote pull: available/);
+    assert.match(body, /Get The Workspace/);
+    assert.match(body, /atris pull share-co/);
+    assert.match(body, /atris business start/);
+    assert.match(body, /atris radar/);
+    assert.match(body, /atris task next/);
+    assert.match(body, /atris member activate operator/);
+    assert.match(body, /## Start Here[\s\S]*atris member activate operator[\s\S]*atris mission status --status active --json[\s\S]*atris mission start "Run the first useful loop for Share Co"[\s\S]*atris member goal-from-mission operator/);
+    assert.match(body, /atris mission start "Run the first useful loop for Share Co"/);
+    assert.match(body, /atris member goal-from-mission operator/);
+    assert.match(body, /Team start: atris\/team\/START_HERE\.md/);
+    assert.match(body, /atris pull --dry-run/);
+    assert.match(body, /atris align --fix/);
+    assert.match(body, /atris business record atris\/reports\/<recap>\.md/);
+    assert.match(body, /Starter brief: atris\/wiki\/briefs\/share-co-starter-brief\.md/);
+    assert.match(body, /First loop: atris\/wiki\/concepts\/share-co-first-loop\.md/);
+    assert.match(body, /Scorecards: 1/);
+    assert.match(body, /Atris OS State/);
+    assert.match(body, /Tasks: 1 open, 1 claimed, 1 review \(1 certified\), 0 blocked/);
+    assert.match(body, /Missions: 1 active, 1 running, 1 always-on, 0 stale\/no-verifier/);
+    assert.match(body, /Team goals: 6 member lanes, 1 with active goals/);
+    assert.match(body, /AgentXP: 12 total, 2 today, 1 receipts, integrity ok/);
+    assert.match(body, /Loop: 1 mission ticks; Codex goal Keep the business loop moving/);
+    assert.match(body, /XP gate: proof can move to Review; XP lands only after human accept/);
+    assert.match(body, /atris radar/);
+    assert.match(body, /atris mission status --status active --json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business start gives a collaborator first-run card for a ready workspace', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-start',
+      workspace_id: 'ws-start',
+      name: 'Start Co',
+      slug: 'start-co',
+      owner_email: 'team@start.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--website', 'https://start.co',
+        '--contact', 'Sid Start',
+        '--email', 'sid@start.co',
+        '--note', 'Needs a collaborator landing check'
+      );
+      fs.writeFileSync(path.join(dir, 'atris', 'reports', 'first-recap.md'), '# First Recap\n\nUseful loop happened.\n', 'utf8');
+      await recordBusinessRun('atris/reports/first-recap.md', '--outcome', 'positive', '--metric', 'first loop');
+      seedBusinessOsState(dir);
+      await shareBusinessWorkspace('--role', 'operator', '--write');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const res = runCli(['business', 'start'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Start Co collaborator start/);
+    assert.match(res.stdout, /Ready: yes/);
+    assert.match(res.stdout, /Remote pull: available/);
+    assert.match(res.stdout, /atris\/team\/START_HERE\.md/);
+    assert.match(res.stdout, /atris\/wiki\/briefs\/start-co-starter-brief\.md/);
+    assert.match(res.stdout, /atris pull --dry-run/);
+    assert.match(res.stdout, /atris business start/);
+    assert.match(res.stdout, /atris radar/);
+    assert.match(res.stdout, /atris task next/);
+    assert.match(res.stdout, /atris mission start "Run the first useful loop for Start Co"/);
+    assert.match(res.stdout, /atris member goal-from-mission operator/);
+    assert.match(res.stdout, /atris do/);
+    assert.match(res.stdout, /atris business record atris\/reports\/<recap>\.md/);
+    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /OS:/);
+    assert.match(res.stdout, /Tasks: 1 open, 1 claimed, 1 review \(1 certified\), 0 blocked/);
+    assert.match(res.stdout, /Missions: 1 active, 1 running, 1 always-on, 0 stale\/no-verifier/);
+    assert.match(res.stdout, /AgentXP: 12 total, 2 today, 1 receipts, integrity ok/);
+    assert.match(res.stdout, /XP gate: proof can move to Review; XP lands only after human accept/);
+    assert.match(res.stdout, /Work the first loop/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business handoff mission bootstrap executes in a generated workspace', () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-executable',
+      workspace_id: 'ws-executable',
+      name: 'Executable Co',
+      slug: 'executable-co',
+      owner_email: 'team@executable.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const startCard = runCli(['business', 'start'], { cwd: dir });
+    assert.equal(startCard.status, 0, startCard.stderr);
+    assert.match(startCard.stdout, /atris mission start "Run the first useful loop for Executable Co"/);
+
+    const mission = runCli([
+      'mission', 'start', 'Run the first useful loop for Executable Co',
+      '--owner', 'operator',
+      '--runner', 'codex_goal',
+      '--lane', 'business',
+      '--verify', 'atris business check',
+      '--stop', 'first proof recap recorded',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    const missionPayload = JSON.parse(mission.stdout);
+    assert.equal(missionPayload.action, 'mission_started');
+    assert.equal(missionPayload.mission.owner, 'operator');
+    assert.equal(missionPayload.mission.runner, 'codex_goal');
+    assert.equal(missionPayload.mission.lane, 'business');
+    assert.equal(missionPayload.mission.verifier, 'atris business check');
+
+    const goal = runCli(['member', 'goal-from-mission', 'operator', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'goal_from_mission_created');
+    assert.equal(goalPayload.goal.source, 'mission');
+    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+
+    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.action, 'mission_tick');
+    assert.equal(tickPayload.verifier_result.passed, true);
+    assert.match(tickPayload.verifier_result.command, /atris business check/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business collaborator handoff loop connects tasks missions goals proof and share state', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-loop',
+      workspace_id: 'ws-loop',
+      name: 'Loop Co',
+      slug: 'loop-co',
+      owner_email: 'team@loop.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--website', 'https://loop.co',
+        '--contact', 'Liv Loop',
+        '--email', 'liv@loop.co',
+        '--note', 'Needs a complete collaborator proof loop'
+      );
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    const next = runCli(['task', 'next', '--json'], { cwd: dir });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.match(nextPayload.task.title, /Draft a founder-context note/);
+    assert.equal(nextPayload.task.status, 'claimed');
+
+    const mission = runCli([
+      'mission', 'start', 'Run the first useful loop for Loop Co',
+      '--owner', 'operator',
+      '--runner', 'codex_goal',
+      '--lane', 'business',
+      '--verify', 'atris business check',
+      '--stop', 'first proof recap recorded',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(mission.status, 0, mission.stderr || mission.stdout);
+    const missionPayload = JSON.parse(mission.stdout);
+
+    const goal = runCli(['member', 'goal-from-mission', 'operator', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+
+    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.verifier_result.passed, true);
+
+    fs.writeFileSync(path.join(dir, 'atris', 'reports', 'first-loop.md'), '# First Loop\n\nProof recap recorded.\n', 'utf8');
+    const record = runCli(['business', 'record', 'atris/reports/first-loop.md', '--outcome', 'positive', '--metric', 'first loop'], { cwd: dir });
+    assert.equal(record.status, 0, record.stderr || record.stdout);
+
+    const share = runCli(['business', 'share', '--role', 'operator', '--name', 'Liv Loop', '--email', 'liv@loop.co', '--write'], { cwd: dir });
+    assert.equal(share.status, 0, share.stderr || share.stdout);
+    assert.match(share.stdout, /Ready to share: yes/);
+    assert.match(share.stdout, /Tasks: 0 open, 1 claimed, 0 review \(0 certified\), 0 blocked/);
+    assert.match(share.stdout, /Missions: 1 active, 0 running, 0 always-on, 0 stale\/no-verifier/);
+    assert.match(share.stdout, /Team goals: 6 member lanes, 1 with active goals/);
+    assert.match(share.stdout, /Loop: 1 mission ticks; Codex goal .*Run the first useful loop for Loop Co/);
+    assert.match(share.stdout, /Events: 1/);
+    assert.match(share.stdout, /Scorecards: 1/);
+    assert.match(share.stdout, /atris task next/);
+    assert.match(share.stdout, /atris mission start "Run the first useful loop for Loop Co"/);
+    assert.match(share.stdout, /atris member goal-from-mission operator/);
+
+    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    const handoff = fs.readFileSync(handoffPath, 'utf8');
+    assert.match(handoff, /For: Liv Loop <liv@loop\.co>/);
+    assert.match(handoff, /atris business record atris\/reports\/<recap>\.md/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business check names missing readiness for a received bare workspace', () => {
+  const dir = makeTempDir();
+  const outside = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-check',
+      workspace_id: 'ws-check',
+      name: 'Check Co',
+      slug: 'check-co',
+      owner_email: 'team@check.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const res = runCli(['business', 'check', '--cwd', dir], { cwd: outside });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Check Co collaborator start/);
+    assert.match(res.stdout, /Ready: no/);
+    assert.match(res.stdout, /missing starter brief/);
+    assert.match(res.stdout, /Add starter brief/);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(outside);
+  }
+});
+
+test('business share surfaces missing readiness in a fresh workspace', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-bare',
+      workspace_id: 'ws-bare',
+      name: 'Bare Co',
+      slug: 'bare-co',
+      owner_email: 'team@bare.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    let state;
+    process.chdir(dir);
+    try {
+      state = await shareBusinessWorkspace('--role', 'validator');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    assert.equal(state.ready, false);
+    assert.ok(state.missing.includes('starter brief'));
+    assert.ok(state.missing.includes('first loop'));
+    assert.ok(state.missing.includes('operator one-pager'));
+    assert.ok(state.missing.includes('first proof recap'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business share surfaces missing root agent adapters for older workspaces', async () => {
+  const dir = makeTempDir();
+  try {
+    createCanonicalBusinessWorkspace(dir, {
+      business_id: 'biz-old',
+      workspace_id: 'ws-old',
+      name: 'Old Co',
+      slug: 'old-co',
+      owner_email: 'team@old.co',
+      workspace_template: 'business',
+    }, { here: true });
+
+    const prevCwd = process.cwd();
+    let state;
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--website', 'https://old.co',
+        '--contact', 'Ola Old',
+        '--email', 'ola@old.co',
+        '--note', 'Older shared folder missing root adapters'
+      );
+      fs.writeFileSync(path.join(dir, 'atris', 'reports', 'first-recap.md'), '# First Recap\n\nUseful loop happened.\n', 'utf8');
+      await recordBusinessRun('atris/reports/first-recap.md', '--outcome', 'positive', '--metric', 'first loop');
+      fs.rmSync(path.join(dir, 'AGENTS.md'), { force: true });
+      fs.rmSync(path.join(dir, 'CLAUDE.md'), { force: true });
+      fs.rmSync(path.join(dir, 'GEMINI.md'), { force: true });
+      state = await shareBusinessWorkspace('--role', 'operator');
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    assert.equal(state.ready, false);
+    assert.ok(state.missing.includes('root agent adapters'));
+    assert.deepEqual(state.missingRootAgentAdapters, ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']);
+
+    const start = runCli(['business', 'start'], { cwd: dir });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    assert.match(start.stdout, /missing root agent adapters/);
+    assert.match(start.stdout, /Run `atris update` to restore root AGENTS\.md, CLAUDE\.md, and GEMINI\.md adapters\./);
+
+    const share = runCli(['business', 'share', '--role', 'operator'], { cwd: dir });
+    assert.equal(share.status, 0, share.stderr || share.stdout);
+    assert.match(share.stdout, /Agent adapters: missing/);
+    assert.match(share.stdout, /Run `atris update` to restore root AGENTS\.md, CLAUDE\.md, and GEMINI\.md adapters\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business share is honest for local-only workspaces without cloud ids', async () => {
+  const dir = makeTempDir();
+  try {
+    const prevCwd = process.cwd();
+    let state;
+    process.chdir(dir);
+    try {
+      await onboardBusiness(
+        '--name', 'Local Only Co',
+        '--website', 'https://local-only.example',
+        '--contact', 'Local Owner',
+        '--note', 'local workspace first'
+      );
+      await shareBusinessWorkspace('--role', 'operator', '--write');
+      state = collectBusinessShareState(dir);
+    } finally {
+      process.chdir(prevCwd);
+    }
+
+    assert.equal(state.remoteReady, false);
+    const handoffPath = path.join(dir, 'atris', 'reports', `${new Date().toISOString().slice(0, 10)}-share-operator.md`);
+    const body = fs.readFileSync(handoffPath, 'utf8');
+    assert.match(body, /Remote pull: local-only/);
+    assert.match(body, /Remote pull is not available yet/);
+    assert.match(body, /missing a cloud business ID or workspace ID/);
+    assert.doesNotMatch(body, /atris pull local-only-co/);
+
+    const res = runCli(['business', 'start'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Remote pull: local-only/);
+    assert.match(res.stdout, /local-only: no cloud pull is available yet/);
   } finally {
     cleanupTempDir(dir);
   }

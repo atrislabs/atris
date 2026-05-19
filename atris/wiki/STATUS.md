@@ -9,10 +9,10 @@
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Brain Compile
 
-- Last compile: 2026-05-11T10:49:08.864Z
-- State rows: 233 raw / 233 valid JSONL
-- Strongest signal: 77 scorecard row(s) and 156 episode row(s) are available for feedback-driven learning.
-- Next move: Run `atris brain activate --member <name> --root /Users/keshavrao/arena/empire/atris-cli --verify` to bind the operator and get a concrete work block.
+- Last compile: 2026-05-19T03:30:46.163Z
+- State rows: 100 raw / 100 valid JSONL
+- Strongest signal: 100 episode row(s) are available; compile them into scorecards and next-action memory.
+- Next move: Turn existing episode rows into the first scorecard so the next run has reward, not just traces.
 - Brain status: `atris/brain/STATUS.md`
 - Ledger: `atris/brain/self_improvement_ledger.md`
 <!-- ATRIS_BRAIN_COMPILE:END -->
