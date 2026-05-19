@@ -222,6 +222,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.business.proof.events, 1);
   assert.equal(data.os.business.computers, 1);
   assert.equal(data.agents[0].task, 'CLI-95');
+  assert.equal(data.agents[0].task_reason, 'review task');
+  assert.equal(data.agents[0].task_action, "review or hand off CLI-95: cd '/tmp/atris-radar' && atris task reviews --limit 5");
   assert.equal(data.agents[1].task, 'BCK-294');
   assert.equal(data.agents[1].task_workspace, 'tmp/other');
   assert.equal(data.agents[2].task, 'BCK-294');
@@ -252,6 +254,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /Next: close or hand off 1 session still bound to review task CLI-95/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
   assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 if idle/);
+  assert.match(top, /Review-bound: 1 session still tied to Review tasks/);
+  assert.match(top, /111 .*CLI-95: review task -> review or hand off CLI-95: cd '\/tmp\/atris-radar' && atris task reviews --limit 5/);
   assert.match(top, /Task load: 1 pileup, 1 review-bound task/);
   assert.match(top, /BCK-294: 2 sessions, 4\.0% CPU, claimed, tmp\/other/);
   assert.match(top, /CLI-95: 1 sessions, 0\.1% CPU, review, tmp\/atris-radar/);
@@ -264,6 +268,81 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     ['CLI-95', 1, true],
   ]);
   assert.match(payload.next_action, /close or hand off 1 session still bound to review task CLI-95/);
+});
+
+test('renderAgentTop shows certified review handoff actions', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      {
+        pid: '88',
+        agent: 'codex',
+        status: 'active',
+        cwd: '/tmp/cli',
+        repo: 'tmp/cli',
+        branch: 'master',
+        cpu: 0.2,
+        mem: 0.1,
+        task: 'CLI-148',
+        task_status: 'review',
+        owner: 'codex',
+        task_workspace: 'tmp/cli',
+        task_reason: 'certified review',
+        task_action: 'handoff complete for CLI-148; close pid 88 or claim fresh work as codex',
+      },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Review-bound: 1 session still tied to Review tasks/);
+  assert.match(top, /88 tmp\/cli CLI-148: certified review -> handoff complete for CLI-148; close pid 88 or claim fresh work as codex/);
+});
+
+test('renderAgentTop prioritizes owner-gated task actions', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      {
+        pid: '77',
+        agent: 'claude',
+        status: 'active',
+        cwd: '/tmp/backend',
+        repo: 'tmp/backend',
+        branch: 'master',
+        cpu: 1.5,
+        mem: 0.7,
+        task: 'BCK-292',
+        task_status: 'claimed',
+        owner: 'keshavrao',
+        task_workspace: 'tmp/backend',
+        task_reason: 'owner action required',
+        task_action: 'owner-gated BCK-292; close pid 77 or wait for owner action',
+      },
+      {
+        pid: '78',
+        agent: 'codex',
+        status: 'active',
+        cwd: '/tmp/backend',
+        repo: 'tmp/backend',
+        branch: 'master',
+        cpu: 0.5,
+        mem: 0.3,
+        task: 'BCK-292',
+        task_status: 'claimed',
+        owner: 'keshavrao',
+        task_workspace: 'tmp/backend',
+        task_reason: 'owner action required',
+        task_action: 'owner-gated BCK-292; close pid 78 or wait for owner action',
+      },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: owner gate blocks 2 sessions on BCK-292; wait for owner action or close idle sessions/);
+  assert.match(top, /Owner-gated: 2 sessions waiting on owner-only tasks/);
+  assert.match(top, /77 tmp\/backend BCK-292: owner-gated BCK-292; close pid 77 or wait for owner action/);
 });
 
 test('collectRadar counts a bound runtime receipt as a business computer', () => {
