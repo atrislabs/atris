@@ -7544,6 +7544,7 @@ test('business share prints and writes a collaborator handoff from workspace sta
     assert.match(body, /For: Sam Share <sam@share\.co>/);
     assert.match(body, /Ready to share: yes/);
     assert.match(body, /Remote pull: available/);
+    assert.match(body, /Agent setup: ready/);
     assert.match(body, /Get The Workspace/);
     assert.match(body, /atris pull share-co/);
     assert.match(body, /atris business start/);
@@ -7553,6 +7554,7 @@ test('business share prints and writes a collaborator handoff from workspace sta
     assert.match(body, /## Start Here[\s\S]*atris member activate operator[\s\S]*atris mission status --status active --json[\s\S]*atris mission start "Run the first useful loop for Share Co"[\s\S]*atris member goal-from-mission operator/);
     assert.match(body, /atris mission start "Run the first useful loop for Share Co"/);
     assert.match(body, /atris member goal-from-mission operator/);
+    assert.match(body, /Protocol: atris\/atris\.md/);
     assert.match(body, /Team start: atris\/team\/START_HERE\.md/);
     assert.match(body, /atris pull --dry-run/);
     assert.match(body, /atris align --fix/);
@@ -7608,6 +7610,8 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /Start Co collaborator start/);
     assert.match(res.stdout, /Ready: yes/);
     assert.match(res.stdout, /Remote pull: available/);
+    assert.match(res.stdout, /Agent setup: ready/);
+    assert.match(res.stdout, /atris\/atris\.md/);
     assert.match(res.stdout, /atris\/team\/START_HERE\.md/);
     assert.match(res.stdout, /atris\/wiki\/briefs\/start-co-starter-brief\.md/);
     assert.match(res.stdout, /atris pull --dry-run/);
@@ -7866,7 +7870,8 @@ test('business share surfaces missing root agent adapters for older workspaces',
 
     const share = runCli(['business', 'share', '--role', 'operator'], { cwd: dir });
     assert.equal(share.status, 0, share.stderr || share.stdout);
-    assert.match(share.stdout, /Agent adapters: missing/);
+    assert.match(share.stdout, /Agent setup: missing root agent adapters/);
+    assert.doesNotMatch(share.stdout, /Agent adapters:/);
     assert.match(share.stdout, /Run `atris update` to restore root AGENTS\.md, CLAUDE\.md, and GEMINI\.md adapters\./);
   } finally {
     cleanupTempDir(dir);
