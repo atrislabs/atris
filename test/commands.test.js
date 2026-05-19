@@ -1304,7 +1304,7 @@ test('always-on mission run keeps ticking after verifier passes', () => {
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ran_ticks, 2);
     assert.equal(payload.tick_count, 2);
-    assert.equal(payload.mission.status, 'running');
+    assert.equal(payload.mission.status, 'ready');
     assert.match(payload.mission.next_action, /mission run/);
   } finally {
     cleanupTempDir(dir);
@@ -4422,7 +4422,7 @@ test('task ready holds work in review until human accept', () => {
       native_goal_status: 'needs_second_agent_review',
       career_xp_status: 'pending_human_accept',
       next_action: 'agent_review_again',
-      rule: 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
+      rule: 'Proof is in Review; human accept can award AgentXP now. A second agent review only certifies autonomous continuation.',
     });
     assert.equal(readyPayload.task.status, 'review');
     assert.equal(readyPayload.task.review.summary, 'This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
@@ -4549,7 +4549,7 @@ test('task ready holds work in review until human accept', () => {
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
     assert.match(readyText.stdout, /ready .* pending approval/);
-    assert.match(readyText.stdout, /Proof is in Review; one more agent review pass certifies continuation\. AgentXP waits for human accept\./);
+    assert.match(readyText.stdout, /Proof is in Review; human accept can award AgentXP now\. A second agent review only certifies autonomous continuation\./);
 
     const accept = runCli([
       'task', 'accept', ref,
