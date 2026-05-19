@@ -1,0 +1,546 @@
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+function safeJson(text, fallback = null) {
+  try { return JSON.parse(text); } catch { return fallback; }
+}
+
+function readJsonLines(file, readFile = fs.readFileSync, exists = fs.existsSync) {
+  if (!exists(file)) return [];
+  return String(readFile(file, 'utf8'))
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => safeJson(line))
+    .filter(Boolean);
+}
+
+function truncate(value, width) {
+  const text = String(value == null || value === '' ? '-' : value);
+  if (text.length <= width) return text.padEnd(width, ' ');
+  return `${text.slice(0, Math.max(0, width - 1))}…`;
+}
+
+function repoLabel(cwd) {
+  if (!cwd) return '-';
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  return parts[0] || cwd;
+}
+
+function parsePsOutput(text) {
+  const rows = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 10) continue;
+    const [pid, ppid, cpu, mem, stat] = parts;
+    const start = parts.slice(5, 10).join(' ');
+    const command = parts.slice(10).join(' ');
+    rows.push({ pid, ppid, cpu: Number(cpu) || 0, mem: Number(mem) || 0, stat, start, command });
+  }
+  return rows;
+}
+
+function agentTypeForCommand(command) {
+  const cmd = String(command || '');
+  if (/ctop|grep|node\s+.*atris\.js\s+radar/.test(cmd)) return null;
+  if (/(^|\s|\/)codex(\s|$)|codex-darwin|codex-linux|codex-win/.test(cmd)) return 'codex';
+  if (/(^|\s|\/)claude(\s|$)/.test(cmd) && !/Claude\.app/.test(cmd)) return 'claude';
+  if (/(^|\s|\/)opencode(\s|$)/.test(cmd)) return 'opencode';
+  if (/(^|\s|\/)devin(\s|$)/.test(cmd)) return 'devin';
+  return null;
+}
+
+function processCwd(pid, deps) {
+  const { platform, execFile } = deps;
+  try {
+    if (platform === 'linux') {
+      return deps.readlink(`/proc/${pid}/cwd`);
+    }
+    if (platform === 'darwin') {
+      const out = execFile('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const line = String(out).split(/\r?\n/).find(value => value.startsWith('n'));
+      return line ? line.slice(1) : '';
+    }
+  } catch {}
+  return '';
+}
+
+function gitBranch(cwd, execFile) {
+  if (!cwd) return '';
+  try {
+    return String(execFile('git', ['-C', cwd, 'branch', '--show-current'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })).trim();
+  } catch {
+    return '';
+  }
+}
+
+function collectAgents(deps) {
+  let ps = '';
+  try {
+    ps = deps.execFile('ps', ['-eo', 'pid=,ppid=,pcpu=,pmem=,stat=,lstart=,command='], { encoding: 'utf8' });
+  } catch {
+    return [];
+  }
+  const agentRows = parsePsOutput(ps)
+    .map(row => ({ ...row, agent: agentTypeForCommand(row.command) }))
+    .filter(row => row.agent);
+  const parentPids = new Set(agentRows.map(row => String(row.ppid || '')).filter(Boolean));
+  return agentRows
+    .filter(row => !parentPids.has(String(row.pid)))
+    .map(row => {
+      const cwd = processCwd(row.pid, deps);
+      return {
+        pid: row.pid,
+        agent: row.agent,
+        status: row.stat.includes('Z') ? 'zombie' : row.stat.includes('T') ? 'stopped' : 'active',
+        cwd,
+        repo: repoLabel(cwd),
+        branch: gitBranch(cwd, deps.execFile),
+        cpu: row.cpu,
+        mem: row.mem,
+      };
+    });
+}
+
+function loadTasks(root, deps) {
+  const file = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  if (!deps.exists(file)) return [];
+  const payload = safeJson(deps.readFile(file, 'utf8'), {});
+  const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+  return tasks.map(task => ({
+    id: task.id,
+    display_id: task.display_id,
+    legacy_ref: task.legacy_ref,
+    title: task.title,
+    status: task.status,
+    tag: task.tag,
+    workspace_root: task.workspace_root,
+    claimed_by: task.claimed_by,
+    assigned_to: task.metadata?.assigned_to || task.assigned_to || null,
+    metadata: task.metadata || {},
+  }));
+}
+
+function readJsonFile(file, deps, fallback = null) {
+  if (!deps.exists(file)) return fallback;
+  return safeJson(deps.readFile(file, 'utf8'), fallback);
+}
+
+function countJsonLines(file, deps) {
+  return readJsonLines(file, deps.readFile, deps.exists).length;
+}
+
+function loadMissions(root, deps, nowMs) {
+  const file = path.join(root, '.atris', 'state', 'missions.jsonl');
+  const byId = new Map();
+  for (const mission of readJsonLines(file, deps.readFile, deps.exists)) {
+    if (mission && mission.id) byId.set(mission.id, mission);
+  }
+  return [...byId.values()].map(mission => {
+    const lastTick = mission.last_tick_at ? Date.parse(mission.last_tick_at) : 0;
+    const stale = mission.status === 'running' && (!mission.verifier || !lastTick || nowMs - lastTick > 3 * 24 * 60 * 60 * 1000);
+    return { ...mission, stale };
+  });
+}
+
+function parseWorktrees(text) {
+  const out = [];
+  let current = {};
+  for (const raw of `${text || ''}\n`.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      if (current.worktree) {
+        out.push({
+          path: current.worktree,
+          branch: String(current.branch || 'detached').replace(/^refs\/heads\//, ''),
+          head: current.HEAD || '',
+        });
+      }
+      current = {};
+      continue;
+    }
+    const idx = line.indexOf(' ');
+    if (idx === -1) current[line] = true;
+    else current[line.slice(0, idx)] = line.slice(idx + 1);
+  }
+  return out;
+}
+
+function dirtyCount(worktreePath, execFile) {
+  try {
+    const out = String(execFile('git', ['-C', worktreePath, 'status', '--porcelain'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }));
+    return out.split(/\r?\n/).filter(Boolean).length;
+  } catch {
+    return null;
+  }
+}
+
+function loadWorktrees(root, deps) {
+  let raw = '';
+  try {
+    raw = deps.execFile('git', ['-C', root, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+  } catch {
+    return [];
+  }
+  return parseWorktrees(raw).map(wt => ({ ...wt, dirty: dirtyCount(wt.path, deps.execFile) }));
+}
+
+function loadXp(root, deps) {
+  const projection = readJsonFile(path.join(root, '.atris', 'state', 'career_xp.projection.json'), deps, {});
+  return {
+    metric: projection.metric_label || 'AgentXP',
+    total: Number(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? 0) || 0,
+    today: Number(projection.today_agent_xp ?? projection.today_xp ?? 0) || 0,
+    level: Number(projection.level ?? projection.career?.level ?? 0) || 0,
+    integrity: projection.integrity_status || 'unknown',
+    leaderboard_eligible: Boolean(projection.leaderboard_eligible),
+    receipts: countJsonLines(path.join(root, '.atris', 'state', 'career_xp_receipts.jsonl'), deps),
+    generated_at: projection.generated_at || null,
+  };
+}
+
+function memberTitle(markdown, fallback) {
+  const heading = String(markdown || '').split(/\r?\n/).find(line => /^#\s+/.test(line));
+  return heading ? heading.replace(/^#\s+/, '').trim() : fallback;
+}
+
+function loadTeam(root, deps) {
+  const teamDir = path.join(root, 'atris', 'team');
+  if (!deps.exists(teamDir)) return { total: 0, active_goal_members: 0, members: [] };
+  let names = [];
+  try {
+    names = deps.readdir(teamDir).filter(name => !name.startsWith('_'));
+  } catch {
+    return { total: 0, active_goal_members: 0, members: [] };
+  }
+  const members = [];
+  for (const name of names) {
+    const memberFile = path.join(teamDir, name, 'MEMBER.md');
+    if (!deps.exists(memberFile)) continue;
+    const goals = readJsonFile(path.join(teamDir, name, 'goals.json'), deps, { goals: [] }) || { goals: [] };
+    const activeGoals = Array.isArray(goals.goals) ? goals.goals.filter(goal => goal.status === 'active') : [];
+    const nowFile = path.join(teamDir, name, 'now.md');
+    members.push({
+      slug: name,
+      title: memberTitle(deps.readFile(memberFile, 'utf8'), name),
+      active_goals: activeGoals.length,
+      current_goal: activeGoals[0]?.title || null,
+      has_now: deps.exists(nowFile),
+      updated_at: goals.updated_at || null,
+    });
+  }
+  return {
+    total: members.length,
+    active_goal_members: members.filter(member => member.active_goals > 0).length,
+    members,
+  };
+}
+
+function loadBrain(root, deps) {
+  const scorecards = readJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps.readFile, deps.exists);
+  const operatorDir = path.join(root, '.atris', 'state', 'operator-scorecards');
+  let operatorScorecards = 0;
+  try {
+    if (deps.exists(operatorDir)) operatorScorecards = deps.readdir(operatorDir).filter(name => name.endsWith('.json')).length;
+  } catch {}
+  const latest = [...scorecards].reverse().find(row => row && (row.type === 'scorecard' || row.schema));
+  return {
+    scorecards: scorecards.length,
+    operator_scorecards: operatorScorecards,
+    latest_reward: latest?.reward ?? latest?.score ?? null,
+    latest_next: latest?.next_task_suggestion || latest?.next || null,
+  };
+}
+
+function listNames(dir, deps) {
+  try {
+    if (!deps.exists(dir)) return [];
+    return deps.readdir(dir);
+  } catch {
+    return [];
+  }
+}
+
+function countDirectoryEntries(dir, deps, predicate = () => true) {
+  return listNames(dir, deps).filter(predicate).length;
+}
+
+function loadBusinessCollaboration(root, deps, team = {}) {
+  const business = readJsonFile(path.join(root, '.atris', 'business.json'), deps, null);
+  const runtime = readJsonFile(path.join(root, '.atris', 'state', 'runtime.json'), deps, null);
+  const sync = readJsonFile(path.join(root, '.atris', 'state', '_sync.json'), deps, null);
+  const cache = readJsonFile(path.join(deps.homeDir || os.homedir(), '.atris', 'businesses.json'), deps, {}) || {};
+  const slug = business?.slug || sync?.workspace_slug || null;
+  const cacheEntry = slug && cache ? cache[slug] : null;
+  const hasAtris = deps.exists(path.join(root, 'atris'));
+  const hasMap = deps.exists(path.join(root, 'atris', 'MAP.md'));
+  const hasTodo = deps.exists(path.join(root, 'atris', 'TODO.md'));
+  const hasPersona = deps.exists(path.join(root, 'atris', 'PERSONA.md'));
+  const ingestPacks = countDirectoryEntries(path.join(root, 'atris', 'context', '_ingest'), deps, name => !name.startsWith('.'));
+  const starterBriefs = countDirectoryEntries(path.join(root, 'atris', 'wiki', 'briefs'), deps, name => /starter-brief\.md$/i.test(name));
+  const firstLoops = countDirectoryEntries(path.join(root, 'atris', 'wiki', 'concepts'), deps, name => /first-loop/i.test(name));
+  const reports = countDirectoryEntries(path.join(root, 'atris', 'reports'), deps, name => /\.(md|json)$/i.test(name));
+  const onePagers = countDirectoryEntries(path.join(root, 'atris', 'reports'), deps, name => /one-pager|cheat-sheet|onboarding/i.test(name));
+  const localReceipts = countDirectoryEntries(path.join(root, '.atris', 'receipts'), deps, name => /\.(json|md|txt)$/i.test(name));
+  const events = countJsonLines(path.join(root, '.atris', 'state', 'events.jsonl'), deps);
+  const episodes = countJsonLines(path.join(root, '.atris', 'state', 'episodes.jsonl'), deps);
+  const scorecards = countJsonLines(path.join(root, '.atris', 'state', 'scorecards.jsonl'), deps);
+  const computerDirs = countDirectoryEntries(path.join(root, 'atris', 'computers'), deps, name => !name.startsWith('.'));
+  const hasOnboarding = ingestPacks > 0 || starterBriefs > 0 || onePagers > 0;
+  const hasProofLoop = events > 0 || episodes > 0 || scorecards > 0 || localReceipts > 0;
+  const hasTeam = Number(team.total || 0) > 0;
+  const missing = [];
+  if (!business) missing.push('business binding');
+  if (!hasAtris || !hasMap || !hasTodo || !hasPersona) missing.push('canonical atris scaffold');
+  if (!runtime) missing.push('runtime receipt');
+  if (!sync) missing.push('sync state');
+  if (!hasTeam) missing.push('team members');
+  if (!hasOnboarding) missing.push('onboarding intake/brief');
+  if (firstLoops < 1) missing.push('first loop');
+  if (!hasProofLoop) missing.push('proof/scorecard loop');
+  return {
+    bound: Boolean(business),
+    slug,
+    name: business?.name || cacheEntry?.name || slug || null,
+    business_id: business?.business_id || cacheEntry?.business_id || null,
+    workspace_id: business?.workspace_id || cacheEntry?.workspace_id || null,
+    template: business?.workspace_template || sync?.workspace_template || 'unknown',
+    cache_bound: Boolean(cacheEntry),
+    scaffold: { atris: hasAtris, map: hasMap, todo: hasTodo, persona: hasPersona },
+    runtime: runtime ? {
+      scope: runtime.scope || null,
+      install_status: runtime.install_status || null,
+      sync_status: runtime.sync_status || null,
+    } : null,
+    onboarding: { packs: ingestPacks, starter_briefs: starterBriefs, first_loops: firstLoops, one_pagers: onePagers, reports },
+    proof: { events, episodes, scorecards, receipts: localReceipts },
+    computers: computerDirs,
+    team_members: Number(team.total || 0),
+    active_goal_members: Number(team.active_goal_members || 0),
+    share_ready: missing.length === 0,
+    missing,
+    next_action: missing.length > 0 ? `add ${missing[0]}` : 'share workspace and start first proof loop',
+  };
+}
+
+function loadSwarlo(tasks) {
+  const handoffs = tasks
+    .filter(task => task.metadata?.delegate_via || task.metadata?.swarlo_channel || task.assigned_to)
+    .map(task => ({
+      task: taskRef(task),
+      status: task.status,
+      assigned_to: task.assigned_to || task.metadata?.assigned_to || null,
+      delegate_via: task.metadata?.delegate_via || null,
+      swarlo_channel: task.metadata?.swarlo_channel || null,
+    }));
+  return {
+    handoffs: handoffs.length,
+    swarlo_leases: handoffs.filter(row => row.delegate_via === 'swarlo' || row.swarlo_channel).length,
+    local_delegations: handoffs.filter(row => row.delegate_via && row.delegate_via !== 'swarlo').length,
+    rows: handoffs,
+  };
+}
+
+function loadLoop(missions, root, deps) {
+  const events = readJsonLines(path.join(root, '.atris', 'state', 'mission_events.jsonl'), deps.readFile, deps.exists);
+  const codexGoal = readJsonFile(path.join(root, '.atris', 'state', 'codex_goal.json'), deps, {}) || {};
+  const tickEvents = events.filter(event => event.type === 'mission_tick');
+  return {
+    running: missions.filter(mission => mission.status === 'running').length,
+    always_on: missions.filter(mission => mission.always_on).length,
+    stale: missions.filter(mission => mission.stale).length,
+    no_verifier: missions.filter(mission => mission.status === 'running' && !mission.verifier).length,
+    ticks: tickEvents.length,
+    last_event_at: events[events.length - 1]?.at || null,
+    codex_goal: codexGoal.goal?.objective || null,
+    codex_goal_mission: codexGoal.goal?.mission_id || null,
+    infinite_loop_risk: missions.some(mission => mission.stale || (mission.status === 'running' && !mission.verifier)),
+  };
+}
+
+function taskRef(task) {
+  return task ? (task.display_id || task.legacy_ref || task.id || '-') : '-';
+}
+
+function taskForCwd(tasks, cwd) {
+  if (!cwd) return null;
+  return tasks.find(task => task.workspace_root === cwd && ['claimed', 'open'].includes(task.status))
+    || tasks.find(task => task.workspace_root === cwd && task.status === 'review')
+    || null;
+}
+
+function ownerForTask(task) {
+  if (!task) return '-';
+  return task.assigned_to || task.claimed_by || task.metadata?.assigned_to || '-';
+}
+
+function summarize(tasks, missions, worktrees, agents) {
+  const count = (rows, pred) => rows.filter(pred).length;
+  return {
+    agents: { total: agents.length, active: count(agents, a => a.status === 'active'), stopped: count(agents, a => a.status !== 'active') },
+    tasks: {
+      open: count(tasks, t => t.status === 'open'),
+      claimed: count(tasks, t => t.status === 'claimed'),
+      review: count(tasks, t => t.status === 'review'),
+      certifiedReview: count(tasks, t => t.status === 'review' && t.metadata && t.metadata.agent_certified),
+    },
+    missions: { running: count(missions, m => m.status === 'running'), stale: count(missions, m => m.stale) },
+    worktrees: { total: worktrees.length, dirty: count(worktrees, w => Number(w.dirty) > 0) },
+  };
+}
+
+function nextAction(tasks, missions, worktrees, agents, os = {}) {
+  const activeTask = tasks.find(t => t.status === 'claimed' || t.status === 'open');
+  if (activeTask) return `work ${taskRef(activeTask)}: ${activeTask.title || 'active task'}`;
+  const needsReview = tasks.find(t => t.status === 'review' && !(t.metadata && t.metadata.agent_certified));
+  if (needsReview) return `review ${taskRef(needsReview)}: ${needsReview.title || 'uncertified review task'}`;
+  const certified = tasks.find(t => t.status === 'review' && t.metadata && t.metadata.agent_certified);
+  if (certified) return `human accept/revise ${taskRef(certified)} or clear certified review queue`;
+  const stale = missions.find(m => m.stale);
+  if (stale) return `close or repair stale mission ${stale.id}`;
+  if (os.xp && os.xp.integrity !== 'verified') return `repair ${os.xp.metric || 'AgentXP'} integrity`;
+  const dirty = worktrees.find(w => Number(w.dirty) > 0);
+  if (dirty) return `inspect dirty worktree ${dirty.path}`;
+  if (agents.some(a => !a.task || a.task === '-')) return 'map untasked live agents to tasks or shut down idle sessions';
+  return 'no obvious action';
+}
+
+function collectRadar(options = {}) {
+  const root = options.root || process.cwd();
+  const deps = {
+    execFile: options.execFileSync || execFileSync,
+    readFile: options.readFileSync || fs.readFileSync,
+    exists: options.existsSync || fs.existsSync,
+    readlink: options.readlinkSync || fs.readlinkSync,
+    readdir: options.readdirSync || fs.readdirSync,
+    platform: options.platform || os.platform(),
+    homeDir: options.homeDir || os.homedir(),
+  };
+  const nowMs = options.nowMs || Date.now();
+  const tasks = loadTasks(root, deps);
+  const missions = loadMissions(root, deps, nowMs);
+  const worktrees = loadWorktrees(root, deps);
+  const agents = collectAgents(deps).map(agent => {
+    const task = taskForCwd(tasks, agent.cwd);
+    return { ...agent, task: taskRef(task), task_status: task?.status || null, owner: ownerForTask(task) };
+  });
+  const osState = {
+    xp: loadXp(root, deps),
+    team: loadTeam(root, deps),
+    brain: loadBrain(root, deps),
+    swarlo: loadSwarlo(tasks),
+    loop: loadLoop(missions, root, deps),
+  };
+  osState.business = loadBusinessCollaboration(root, deps, osState.team);
+  return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
+}
+
+function renderRadar(data) {
+  const lines = [];
+  const s = data.summary;
+  lines.push('Operator radar');
+  lines.push('');
+  lines.push(`Agents: ${s.agents.active}/${s.agents.total} active`);
+  lines.push(`Tasks: ${s.tasks.open} open, ${s.tasks.claimed} claimed, ${s.tasks.review} review (${s.tasks.certifiedReview} certified)`);
+  lines.push(`Missions: ${s.missions.running} running, ${s.missions.stale} stale/no-verifier`);
+  lines.push(`Worktrees: ${s.worktrees.total} registered, ${s.worktrees.dirty} dirty`);
+  lines.push(`Next: ${data.next_action}`);
+  if (data.os) {
+    const xp = data.os.xp || {};
+    const team = data.os.team || {};
+    const brain = data.os.brain || {};
+    const swarlo = data.os.swarlo || {};
+    const loop = data.os.loop || {};
+    const business = data.os.business || {};
+    const bizLabel = business.bound ? `${business.slug || business.name || 'bound'} ${business.share_ready ? 'share-ready' : 'not-ready'}` : 'no-binding';
+    lines.push(`OS: ${xp.metric || 'AgentXP'} ${xp.total || 0} L${xp.level || 0} (${xp.integrity || 'unknown'}), team ${team.total || 0}/${team.active_goal_members || 0} active-goal, business ${bizLabel}, loop ${loop.stale || 0} stale, Swarlo ${swarlo.swarlo_leases || 0} leases/${swarlo.handoffs || 0} handoffs, brain ${brain.scorecards || 0}+${brain.operator_scorecards || 0} scorecards`);
+  }
+  lines.push('');
+  lines.push(`${truncate('PID', 7)} ${truncate('AGENT', 8)} ${truncate('REPO', 24)} ${truncate('BRANCH', 16)} ${truncate('TASK', 10)} ${truncate('OWNER', 14)} ${truncate('STATE', 8)}`);
+  for (const agent of data.agents.slice(0, 24)) {
+    lines.push(`${truncate(agent.pid, 7)} ${truncate(agent.agent, 8)} ${truncate(agent.repo, 24)} ${truncate(agent.branch, 16)} ${truncate(agent.task, 10)} ${truncate(agent.owner, 14)} ${truncate(agent.status, 8)}`);
+  }
+  if (data.agents.length > 24) lines.push(`... ${data.agents.length - 24} more agents`);
+  const stale = data.missions.filter(m => m.stale).slice(0, 3);
+  if (stale.length) {
+    lines.push('');
+    lines.push('Stale mission candidates:');
+    for (const mission of stale) lines.push(`- ${mission.id}: ${mission.next_action || mission.objective || 'review'}`);
+  }
+  const review = data.tasks.filter(t => t.status === 'review').slice(0, 5);
+  if (review.length) {
+    lines.push('');
+    lines.push('Review queue:');
+    for (const task of review) {
+      const passes = task.metadata?.agent_review_pass_count || 0;
+      const cert = task.metadata?.agent_certified ? 'certified' : `${passes} pass${passes === 1 ? '' : 'es'}`;
+      lines.push(`- ${taskRef(task)} ${cert}: ${task.title || 'untitled'}`);
+    }
+  }
+  const dirty = data.worktrees.filter(w => Number(w.dirty) > 0).slice(0, 5);
+  if (dirty.length) {
+    lines.push('');
+    lines.push('Dirty worktrees:');
+    for (const worktree of dirty) lines.push(`- ${worktree.dirty} files: ${worktree.path}`);
+  }
+  if (data.os) {
+    const members = data.os.team?.members?.filter(member => member.active_goals > 0).slice(0, 5) || [];
+    if (members.length) {
+      lines.push('');
+      lines.push('Team goals:');
+      for (const member of members) lines.push(`- ${member.slug}: ${member.current_goal || `${member.active_goals} active goals`}`);
+    }
+    const swarloRows = data.os.swarlo?.rows?.slice(0, 5) || [];
+    if (swarloRows.length) {
+      lines.push('');
+      lines.push('Delegation/Swarlo:');
+      for (const row of swarloRows) lines.push(`- ${row.task} ${row.delegate_via || 'assigned'} -> ${row.assigned_to || row.swarlo_channel || 'unassigned'}`);
+    }
+    const xp = data.os.xp || {};
+    lines.push('');
+    if (data.os.business) {
+      const business = data.os.business;
+      lines.push(`Business: ${business.bound ? `${business.name || business.slug} (${business.slug || 'no-slug'})` : 'no local business binding'}`);
+      if (business.bound) {
+        lines.push(`Business ready: ${business.share_ready ? 'yes' : 'no'}; team ${business.team_members || 0}/${business.active_goal_members || 0} active-goal; onboarding ${business.onboarding?.packs || 0} packs/${business.onboarding?.starter_briefs || 0} briefs/${business.onboarding?.first_loops || 0} loops; proof ${business.proof?.scorecards || 0} scorecards/${business.proof?.events || 0} events; computers ${business.computers || 0}`);
+        if (!business.share_ready) lines.push(`Business next: ${business.next_action}`);
+      } else {
+        lines.push('Business next: run `atris business init <name>` or `atris pull <slug>` before sharing work.');
+      }
+    }
+    lines.push(`${xp.metric || 'AgentXP'}: ${xp.total || 0} total, ${xp.today || 0} today, ${xp.receipts || 0} receipts, integrity ${xp.integrity || 'unknown'}`);
+    if (data.os.loop?.codex_goal) {
+      lines.push(`Codex goal: ${data.os.loop.codex_goal}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function radarCommand(args = [], options = {}) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('Usage: atris radar [--json]');
+    console.log('');
+    console.log('Shows live agent processes joined with Atris tasks, missions, and worktrees.');
+    return 0;
+  }
+  const data = collectRadar(options);
+  if (args.includes('--json')) console.log(JSON.stringify(data, null, 2));
+  else console.log(renderRadar(data));
+  return 0;
+}
+
+module.exports = {
+  agentTypeForCommand,
+  collectRadar,
+  parsePsOutput,
+  parseWorktrees,
+  radarCommand,
+  renderRadar,
+};
