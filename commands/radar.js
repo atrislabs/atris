@@ -432,6 +432,31 @@ function ownerForTask(task) {
   return task.assigned_to || task.claimed_by || task.metadata?.assigned_to || '-';
 }
 
+function taskSessionReason(task) {
+  if (!task) return null;
+  if (task.status === 'review') return task.metadata?.agent_certified ? 'certified review' : 'review task';
+  if (ownerActionRequired(task)) return 'owner action required';
+  return null;
+}
+
+function taskSessionAction(agent, task, taskWorkspaceRoot) {
+  if (!task) return null;
+  const ref = taskRef(task);
+  const pid = agent?.pid || '?';
+  const actor = agent?.agent || 'agent';
+  const reviewCommand = taskWorkspaceRoot
+    ? `cd ${shellQuote(taskWorkspaceRoot)} && atris task reviews --limit 5`
+    : 'atris task reviews --limit 5';
+  if (task.status === 'review') {
+    if (task.metadata?.agent_certified) {
+      return `handoff complete for ${ref}; close pid ${pid} or claim fresh work as ${actor}`;
+    }
+    return `review or hand off ${ref}: ${reviewCommand}`;
+  }
+  if (ownerActionRequired(task)) return `owner-gated ${ref}; close pid ${pid} or wait for owner action`;
+  return null;
+}
+
 function summarize(tasks, missions, worktrees, agents) {
   const count = (rows, pred) => rows.filter(pred).length;
   return {
@@ -505,7 +530,7 @@ function collectRadar(options = {}) {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
     const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot);
-    const taskReason = task ? null : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
+    const taskReason = task ? taskSessionReason(task) : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
     return {
       ...agent,
       task: taskRef(task),
@@ -513,7 +538,7 @@ function collectRadar(options = {}) {
       owner: ownerForTask(task),
       task_workspace: taskWorkspaceRoot ? repoLabel(taskWorkspaceRoot) : null,
       task_reason: taskReason,
-      task_action: task ? null : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
+      task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
     };
   });
   const osState = {
@@ -624,6 +649,11 @@ function sortedAgents(agents = []) {
 function agentProcessNextAction(agents = [], fallback = 'no obvious process action') {
   const stopped = agents.filter(agent => agent.status !== 'active').length;
   if (stopped > 0) return `inspect ${stopped} stopped agent session${stopped === 1 ? '' : 's'}`;
+  const ownerGated = agents.filter(agent => agent.task_reason === 'owner action required');
+  if (ownerGated.length > 0) {
+    const tasks = [...new Set(ownerGated.map(agent => agent.task).filter(Boolean))].slice(0, 3).join(', ');
+    return `owner gate blocks ${ownerGated.length} session${ownerGated.length === 1 ? '' : 's'}${tasks ? ` on ${tasks}` : ''}; wait for owner action or close idle sessions`;
+  }
   const taskLoad = summarizeTaskLoad(agents);
   const reviewBound = taskLoad.find(row => row.status.split(/,\s*/).includes('review'));
   if (reviewBound) return `close or hand off ${reviewBound.sessions} session${reviewBound.sessions === 1 ? '' : 's'} still bound to review task ${reviewBound.task}`;
@@ -742,6 +772,22 @@ function renderAgentTop(data) {
     lines.push(`Untasked: ${payload.summary.untasked} sessions (${reasonText}).`);
     for (const agent of payload.agents.filter(row => !row.task || row.task === '-').slice(0, 8)) {
       lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'} -> ${agent.task_action || 'inspect session'}`);
+    }
+  }
+  const ownerGatedAgents = payload.agents.filter(row => row.task_reason === 'owner action required').slice(0, 8);
+  if (ownerGatedAgents.length) {
+    lines.push('');
+    lines.push(`Owner-gated: ${ownerGatedAgents.length} session${ownerGatedAgents.length === 1 ? '' : 's'} waiting on owner-only tasks.`);
+    for (const agent of ownerGatedAgents) {
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'} ${agent.task}: ${agent.task_action || 'wait for owner action'}`);
+    }
+  }
+  const reviewBoundAgents = payload.agents.filter(row => row.task_status === 'review').slice(0, 8);
+  if (reviewBoundAgents.length) {
+    lines.push('');
+    lines.push(`Review-bound: ${reviewBoundAgents.length} session${reviewBoundAgents.length === 1 ? '' : 's'} still tied to Review tasks.`);
+    for (const agent of reviewBoundAgents) {
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'} ${agent.task}: ${agent.task_reason || 'review'} -> ${agent.task_action || 'close or hand off session'}`);
     }
   }
   const taskLoadRows = payload.task_load.filter(row => row.attention).slice(0, 8);
