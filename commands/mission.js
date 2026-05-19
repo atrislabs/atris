@@ -748,10 +748,16 @@ function missionVerifierPassed(mission) {
 
 function missionDueAt(mission, now = new Date()) {
   const cadenceSeconds = parseCadenceSeconds(mission.cadence);
-  if (!mission.last_tick_at || cadenceSeconds === 0) return true;
+  if (!mission.last_tick_at) return true;
+  if (cadenceSeconds === 0) return !(mission.always_on && missionVerifierPassed(mission));
   const lastTickAt = Date.parse(mission.last_tick_at);
   if (!Number.isFinite(lastTickAt)) return true;
   return now.getTime() - lastTickAt >= cadenceSeconds * 1000;
+}
+
+function missionSelectableForLoop(mission, now = new Date()) {
+  return missionIsRunnable(mission)
+    && !(mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now));
 }
 
 function secondsUntilMissionDue(mission, now = new Date()) {
@@ -780,7 +786,7 @@ function missionSortTime(mission) {
 
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter(missionIsRunnable)
+    .filter((mission) => missionSelectableForLoop(mission, now))
     .filter((mission) => mission.verifier)
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
     .filter((mission) => missionDueAt(mission, now));
@@ -799,7 +805,7 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
 
 function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter(missionIsRunnable);
+    .filter((mission) => missionSelectableForLoop(mission, now));
 
   candidates.sort((a, b) => {
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
