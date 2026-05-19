@@ -536,6 +536,16 @@ function sortedAgents(agents = []) {
   });
 }
 
+function agentProcessNextAction(agents = [], fallback = 'no obvious process action') {
+  const stopped = agents.filter(agent => agent.status !== 'active').length;
+  if (stopped > 0) return `inspect ${stopped} stopped agent session${stopped === 1 ? '' : 's'}`;
+  const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
+  if (untasked > 0) return `map ${untasked} untasked agent session${untasked === 1 ? '' : 's'} to tasks or close idle sessions`;
+  const hot = agents.find(agent => number(agent.cpu) >= 50);
+  if (hot) return `inspect high-CPU ${hot.agent} ${hot.pid} in ${hot.repo || hot.cwd || 'unknown repo'}`;
+  return fallback;
+}
+
 function agentTopPayload(data) {
   const agents = sortedAgents(data.agents || []);
   const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
@@ -551,7 +561,7 @@ function agentTopPayload(data) {
       cpu: Number(cpu.toFixed(1)),
       mem: Number(mem.toFixed(1)),
     },
-    next_action: data.next_action,
+    next_action: agentProcessNextAction(agents, data.next_action),
     agents,
   };
 }
