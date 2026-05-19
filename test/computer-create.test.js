@@ -32,6 +32,7 @@ function writeCredentials(home) {
 }
 
 function startApiServer(requests) {
+  let lastChatMessage = '';
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
@@ -52,6 +53,14 @@ function startApiServer(requests) {
 
       if (req.method === 'GET' && req.url === '/api/business/') {
         send(200, [{ id: 'biz-1', slug: 'atris-labs', name: 'Atris Labs', workspace_id: 'ws-old' }]);
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/api/business/biz-1/workspaces') {
+        send(200, [
+          { id: 'ws-old', business_id: 'biz-1', name: 'Main', type: 'general', status: 'active', is_default: true },
+          { id: 'ws-new', business_id: 'biz-1', name: 'My Business Computer', type: 'general', status: 'active', is_default: false },
+          { id: 'ws-mismatch', business_id: 'biz-1', name: 'Mismatch', type: 'general', status: 'active', is_default: false },
+        ]);
         return;
       }
       if (req.method === 'POST' && req.url === '/api/business/') {
@@ -101,9 +110,50 @@ function startApiServer(requests) {
         });
         return;
       }
-      if (req.method === 'POST' && req.url === '/api/business/biz-1/workspaces/ws-new/terminal') {
+      if (req.method === 'GET' && req.url === '/api/business/biz-1/ai-computer/status') {
+        send(200, {
+          status: 'running',
+          business_id: 'biz-1',
+          endpoint: 'https://runner.example',
+        });
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/api/business/biz-1/chat') {
+        lastChatMessage = String(body?.message || '');
+        send(200, {
+          execution_id: 'exec-1',
+          session_id: 'session-1',
+        });
+        return;
+      }
+      if (req.method === 'GET' && req.url.startsWith('/api/business/biz-1/chat/events?')) {
+        if (lastChatMessage.includes('FAIL_STREAM')) {
+          send(200, { status: 'failed', events: [{ type: 'error', error: 'stream failed for test' }] });
+          return;
+        }
+        send(200, { status: 'completed', events: [{ type: 'assistant_text', content: '4' }, { type: 'complete' }] });
+        return;
+      }
+      if (
+        req.method === 'POST' &&
+        (
+          req.url === '/api/business/biz-1/workspaces/ws-new/terminal' ||
+          req.url === '/api/business/biz-1/workspaces/ws-old/terminal' ||
+          req.url === '/api/business/biz-1/workspaces/ws-mismatch/terminal'
+        )
+      ) {
+        if (req.url.includes('/ws-mismatch/')) {
+          send(409, { detail: 'AI computer is attached to workspace ws-old. Activate workspace ws-mismatch to switch.' });
+          return;
+        }
+        const command = String(body?.command || '');
+        if (command.includes('ATRIS_STATUS_OK')) {
+          send(200, { stdout: 'ATRIS_STATUS_OK\n', exit_code: 0 });
+          return;
+        }
         send(200, {
           stdout: 'atris_runtime_bootstrap install=installed_latest version=atris v3.15.31 sync=synced receipt=.atris/state/runtime.json\n',
+          exit_code: 0,
         });
         return;
       }
@@ -119,7 +169,13 @@ function startApiServer(requests) {
         send(200, { status: 'deleted' });
         return;
       }
-      if (req.method === 'GET' && req.url === '/api/business/biz-1/workspaces/ws-new/files?path=.') {
+      if (
+        req.method === 'GET' &&
+        (
+          req.url === '/api/business/biz-1/workspaces/ws-new/files?path=.' ||
+          req.url === '/api/business/biz-1/workspaces/ws-old/files?path=.'
+        )
+      ) {
         send(200, {
           files: [{ name: 'README.md', type: 'file', size: 42 }],
         });
@@ -134,12 +190,12 @@ function startApiServer(requests) {
   });
 }
 
-function runCliAsync(args, { cwd, env }) {
+function runCliAsync(args, { cwd, env, input = null }) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
@@ -157,6 +213,7 @@ function runCliAsync(args, { cwd, env }) {
       clearTimeout(timer);
       resolve({ status, signal, stdout, stderr });
     });
+    if (input !== null) child.stdin.end(input);
   });
 }
 
@@ -269,6 +326,8 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /atris member activate validator/);
     assert.match(res.stdout, /Runtime: install=installed_latest/);
     assert.match(res.stdout, /receipt=.atris\/state\/runtime\.json/);
+    assert.match(res.stdout, /Default:\s+unchanged \(ws-old\)/);
+    assert.match(res.stdout, /Switch default: atris computer activate --business atris-labs --workspace ws-new/);
     assert.match(res.stdout, /If the org workspace does not exist yet:/);
     assert.match(res.stdout, /atris business init "Atris Labs"/);
     assert.doesNotMatch(res.stdout, /atris member create operator/);
@@ -290,8 +349,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
 
     const cachePath = path.join(home, '.atris', 'businesses.json');
     const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
-    assert.equal(cache['atris-labs'].computer_name, 'My Business Computer');
+    assert.equal(cache['atris-labs'].workspace_id, 'ws-old');
 
     const ls = await runCliAsync([
       'computer',
@@ -315,10 +373,329 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.equal(requests.length, 6);
     assert.deepEqual(requests.at(-1), {
       method: 'GET',
-      url: '/api/business/biz-1/workspaces/ws-new/files?path=.',
+      url: '/api/business/biz-1/workspaces/ws-old/files?path=.',
       authorization: 'Bearer test-token',
       body: null,
     });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer create --set-default updates the cached workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'create',
+      'My Business Computer',
+      '--business',
+      'atris-labs',
+      '--set-default',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Default:\s+now ws-new/);
+    const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
+    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
+    assert.equal(cache['atris-labs'].computer_name, 'My Business Computer');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer activate attaches workspace and updates the cached default', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'activate',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Activated workspace ws-new/);
+    assert.match(res.stdout, /CLI default: ws-new/);
+    const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
+    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/activate'));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer run prints workspace mismatch detail instead of saying off', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'run',
+      'echo hello',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-mismatch',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stderr, /AI computer is attached to workspace ws-old/);
+    assert.match(res.stderr, /atris computer activate --business atris-labs --workspace ws-mismatch/);
+    assert.doesNotMatch(res.stderr, /Computer is off/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer status shows default target and attached workspace truth', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'status',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Default workspace:\s+Main \(ws-old\)/);
+    assert.match(res.stdout, /Target workspace:\s+My Business Computer \(ws-new\)/);
+    assert.match(res.stdout, /Attached workspace:\s+My Business Computer \(ws-new\)/);
+    assert.match(res.stdout, /Health:\s+ready/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer exec waits and streams the business chat result by default', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'exec',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      'What is 2+2?',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Lane: Claude/);
+    assert.match(res.stdout, /Execution: exec-1/);
+    assert.match(res.stdout, /Running on cloud/);
+    assert.match(res.stdout, /4/);
+    assert.doesNotMatch(res.stdout, /Use the stream URL/);
+    assert.ok(requests.some((request) => request.url.startsWith('/api/business/biz-1/chat/events?')));
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/chat' && request.body?.worker === 'claude'));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer exec --no-wait keeps async stream URL mode', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'exec',
+      '--no-wait',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      'What is 2+2?',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Use the stream URL/);
+    assert.ok(!requests.some((request) => request.url.startsWith('/api/business/biz-1/chat/events?')));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer chat sends piped prompts non-interactively', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'chat',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+    ], {
+      cwd,
+      env,
+      input: 'What is 2+2?\n/exit\n',
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris Cloud Computer/);
+    assert.match(res.stdout, /Running on cloud/);
+    assert.match(res.stdout, /4/);
+    assert.ok(requests.some((request) => (
+      request.method === 'POST' &&
+      request.url === '/api/business/biz-1/chat' &&
+      request.body?.message === 'What is 2+2?' &&
+      request.body?.worker === 'claude'
+    )));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer chat --message sends one non-interactive prompt', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'chat',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      '--message',
+      'What is 2+2?',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /4/);
+    assert.ok(requests.some((request) => (
+      request.method === 'POST' &&
+      request.url === '/api/business/biz-1/chat' &&
+      request.body?.message === 'What is 2+2?' &&
+      request.body?.worker === 'claude'
+    )));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
