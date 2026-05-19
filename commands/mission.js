@@ -1330,7 +1330,7 @@ async function runMission(args) {
       if (mission.verifier !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
 
-      const tickIdx = ticks.length + 1;
+      const tickIdx = Number(mission.last_tick_index || 0) + 1;
       const tickStart = stampIso();
       const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
@@ -1431,7 +1431,7 @@ async function runMission(args) {
       });
 
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-      const newStatus = (verifierResult?.passed && mission.always_on) ? 'running' :
+      const newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
                         (verifierResult?.passed && completeOnPass) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
@@ -1455,6 +1455,7 @@ async function runMission(args) {
         last_tick_at: finishedAt,
         last_tick_status: result.status,
         last_tick_reason: result.reason,
+        last_tick_index: tickIdx,
         verifier_result: verifierResult || mission.verifier_result || null,
         receipt_path: receiptPath,
         next_action: nextAction,
