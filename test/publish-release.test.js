@@ -7,6 +7,7 @@ const packageVersion = require('../package.json').version;
 
 const {
   buildPublishArgs,
+  checkVersionAvailability,
   currentGitRef,
   isOtpFailure,
   isTrustedPublishAuthFailure,
@@ -14,6 +15,7 @@ const {
   renderOtpHelp,
   renderPublishVerification,
   renderTrustedPublishHelp,
+  renderVersionAvailabilityFailure,
   verifyPublishedVersion,
   verifyPublishedVersionWithRetry,
 } = require('../scripts/publish-atris-release');
@@ -66,6 +68,47 @@ test('publish helper reads current git ref for fallback help', () => {
   assert.equal(ref, 'abc123');
 });
 
+test('publish helper detects an already-published package version', () => {
+  const check = checkVersionAvailability('3.15.51', (cmd, args) => {
+    assert.equal(cmd, 'npm');
+    assert.deepEqual(args, ['view', 'atris@3.15.51', 'version', 'gitHead', '--json']);
+    return { status: 0, stdout: JSON.stringify({ version: '3.15.51', gitHead: 'old-head' }) };
+  });
+  assert.equal(check.ok, false);
+  assert.equal(check.reason, 'version_exists');
+  assert.match(renderVersionAvailabilityFailure(check), /npm already has atris@3\.15\.51/);
+  assert.match(renderVersionAvailabilityFailure(check), /Bump package\.json and package-lock\.json/);
+});
+
+test('publish helper treats npm E404 as an available package version', () => {
+  const check = checkVersionAvailability('3.15.52', () => ({
+    status: 1,
+    stderr: 'npm error code E404\nnpm error 404 No match found for version 3.15.52',
+  }));
+  assert.equal(check.ok, true);
+});
+
+test('publish helper refuses to publish when version preflight is inconclusive', () => {
+  const stderr = [];
+  const originalStderrWrite = process.stderr.write;
+  process.stderr.write = chunk => {
+    stderr.push(String(chunk));
+    return true;
+  };
+  try {
+    const status = publishAtrisRelease([], (cmd, args) => {
+      assert.equal(cmd, 'npm');
+      assert.equal(args[0], 'view');
+      return { status: 1, stderr: 'npm registry timeout\n' };
+    });
+    assert.equal(status, 1);
+    assert.match(stderr.join(''), /Could not verify npm availability/);
+    assert.match(stderr.join(''), /Refusing to publish/);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+  }
+});
+
 test('publish helper verifies npm latest after successful publish', () => {
   const verification = verifyPublishedVersion('3.15.30', () => ({
     status: 0,
@@ -111,6 +154,7 @@ test('publish helper replays captured npm output and prints OTP help', () => {
     const status = publishAtrisRelease([], (cmd, args) => {
       if (cmd === 'git') return { status: 0, stdout: 'abc123\n' };
       assert.equal(cmd, 'npm');
+      if (args[0] === 'view') return { status: 1, stderr: 'npm error code E404\n' };
       assert.deepEqual(args, ['publish', '--access', 'public']);
       return {
         status: 1,
@@ -141,6 +185,7 @@ test('publish helper prints trusted publisher setup help in GitHub Actions', () 
   try {
     const status = publishAtrisRelease([], (cmd, args) => {
       assert.equal(cmd, 'npm');
+      if (args[0] === 'view') return { status: 1, stderr: 'npm error code E404\n' };
       assert.deepEqual(args, ['publish', '--access', 'public']);
       return {
         status: 1,
@@ -170,6 +215,7 @@ test('publish helper prints trusted publisher setup help for GitHub ENEEDAUTH', 
   try {
     const status = publishAtrisRelease([], (cmd, args) => {
       assert.equal(cmd, 'npm');
+      if (args[0] === 'view') return { status: 1, stderr: 'npm error code E404\n' };
       assert.deepEqual(args, ['publish', '--access', 'public']);
       return {
         status: 1,
@@ -199,13 +245,16 @@ test('publish helper verifies registry latest after a successful publish run', (
     const status = publishAtrisRelease([], (cmd, args) => {
       calls.push([cmd, args]);
       if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
+      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
+        return { status: 1, stderr: 'npm error code E404\n' };
+      }
       if (args[0] === 'view') {
         return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
       }
       throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
     });
     assert.equal(status, 0);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
     assert.match(stdout.join(''), /published/);
     assert.ok(stdout.join('').includes(`Verified npm latest: atris@${packageVersion} gitHead abc123`));
   } finally {
@@ -224,6 +273,9 @@ test('publish helper retries registry lag after a successful publish run', () =>
     let views = 0;
     const status = publishAtrisRelease([], (cmd, args) => {
       if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
+      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
+        return { status: 1, stderr: 'npm error code E404\n' };
+      }
       if (args[0] === 'view') {
         views += 1;
         const version = views === 1 ? '3.15.23' : packageVersion;
