@@ -4440,15 +4440,17 @@ test('task ready holds work in review until human accept', () => {
 
     const prooflessReview = runCli([
       'task', 'review', ref,
-      '--reward', '0',
+      '--reward', '1',
       '--as', 'validator',
       '--json',
     ], { cwd: dir, env });
     assert.equal(prooflessReview.status, 0, prooflessReview.stderr);
-    assert.equal(JSON.parse(prooflessReview.stdout).task.review.proof, 'typecheck passed and diff reviewed');
-    assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_review_pass_count, 2);
-    assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_certified, true);
-    assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.agent_certified, true);
+    const prooflessReviewPayload = JSON.parse(prooflessReview.stdout);
+    assert.equal(prooflessReviewPayload.task.review.proof, 'typecheck passed and diff reviewed');
+    assert.equal(prooflessReviewPayload.task.review.agent_review_pass_count, 2);
+    assert.equal(prooflessReviewPayload.task.review.agent_certified, true);
+    assert.equal(prooflessReviewPayload.task.metadata.agent_certified, true);
+    assert.equal(prooflessReviewPayload.episode.career_xp.eligible, false);
 
     const nextAfterReviewCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterReviewCertification.status, 0, nextAfterReviewCertification.stderr);
