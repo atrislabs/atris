@@ -5,6 +5,9 @@ Anything durable and structured belongs under `atris/`.
 
 ## Role Lenses
 
+Start with `atris/team/START_HERE.md`.
+It explains which lane to wake first and when proof needs validator review.
+
 Create lanes that match the real business workflow.
 Examples: intake, scheduling, reactivation, revops, content, partnerships, support.
 

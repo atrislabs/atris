@@ -172,6 +172,85 @@ function ensureWorkspaceStateFiles(targetRoot, params, options = {}) {
   return created;
 }
 
+function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
+  const name = bizMeta.name || bizMeta.slug || 'this business';
+  const slug = bizMeta.slug || 'business';
+  const rootHint = targetRoot || '.';
+  return [
+    `# AGENTS.md - ${name} Atris Workspace`,
+    '',
+    `You are operating inside the shared Atris workspace for ${name} (${slug}).`,
+    '',
+    '## Start Here',
+    '',
+    'Run these first from the workspace root:',
+    '',
+    '```bash',
+    'atris',
+    'atris business start',
+    'atris radar',
+    'atris task next',
+    'atris member activate operator',
+    '```',
+    '',
+    'If no active mission exists, start the first bounded business loop:',
+    '',
+    '```bash',
+    'atris mission status --status active --json',
+    `atris mission start "Run the first useful loop for ${name}" --owner operator --runner codex_goal --lane business --verify "atris business check" --stop "first proof recap recorded"`,
+    'atris member goal-from-mission operator',
+    'atris do',
+    '```',
+    '',
+    '## Core Files',
+    '',
+    '| File | Purpose |',
+    '|------|---------|',
+    '| `atris/atris.md` | Workspace boot protocol |',
+    '| `atris/MAP.md` | Navigation and where-is-X index |',
+    '| `.atris/state/tasks.projection.json` | Current task projection |',
+    '| `atris/TODO.md` | Rendered task fallback only |',
+    '| `atris/team/START_HERE.md` | Team lanes and first-run flow |',
+    '| `atris/wiki/` | Business context and source-backed briefs |',
+    '| `atris/reports/` | Proof recaps and share handoffs |',
+    '',
+    '## Rules',
+    '',
+    '- Check `atris/MAP.md` before broad code or file search.',
+    '- Use `atris task` for ownership, notes, proof, and review state.',
+    '- Use `atris mission` when work should survive the current chat.',
+    '- Put completed agent work in Review with `atris task ready <id> --proof "<receipt>".`',
+    '- Do not run `atris task accept` or claim XP unless a human approved the proof.',
+    '- Do not mix another business into this workspace.',
+    '- No external sends, spend, or launches without operator approval.',
+    '',
+    '## Proof Loop',
+    '',
+    '```bash',
+    'atris business check',
+    'atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
+    'atris business share --write',
+    '```',
+    '',
+    `Workspace root at creation: ${rootHint}`,
+    '',
+  ].join('\n');
+}
+
+function ensureBusinessRootAgentAdapters(targetRoot, bizMeta = {}, options = {}) {
+  const dryRun = options.dryRun === true;
+  const written = [];
+  const adapter = renderBusinessAgentAdapter(bizMeta, targetRoot);
+  const files = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
+  for (const file of files) {
+    const fullPath = path.join(targetRoot, file);
+    if (fs.existsSync(fullPath)) continue;
+    written.push(file);
+    if (!dryRun) fs.writeFileSync(fullPath, adapter, 'utf8');
+  }
+  return written;
+}
+
 /**
  * Sync canonical business template files into a business workspace.
  * Used when .atris/business.json is present (business mode).
@@ -243,6 +322,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
   }
 
   const stateAddedList = ensureWorkspaceStateFiles(targetRoot, params, { dryRun });
+  const agentAdapterList = ensureBusinessRootAgentAdapters(targetRoot, params, { dryRun });
 
   // Skills: sync the canonical skill set from atris-cli package into the
   // customer workspace. Business-starter template ships skill infra (README,
@@ -277,16 +357,34 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     stateAddedList.forEach(p => console.log(`    + ${p}`));
     console.log('');
   }
+  if (agentAdapterList.length > 0) {
+    console.log('  Root agent adapters:');
+    agentAdapterList.forEach(p => console.log(`    + ${p}`));
+    console.log('');
+  }
 
   if (dryRun) {
     console.log('  (--dry-run, no changes made)');
-  } else if (added === 0 && updated === 0 && stateAddedList.length === 0) {
+  } else if (added === 0 && updated === 0 && stateAddedList.length === 0 && agentAdapterList.length === 0) {
     ensureWikiScaffold(targetRoot);
     console.log('  ✓ Already up to date');
   } else {
     ensureWikiScaffold(targetRoot);
     console.log(`  ✓ Local workspace updated. Run \`atris align ${params.slug} --fix\` to push to EC2.`);
   }
+
+  return {
+    added,
+    updated,
+    preserved,
+    skipped,
+    skillsUpdated,
+    addedList,
+    updatedList,
+    preservedList,
+    stateAddedList,
+    agentAdapterList,
+  };
 }
 
 function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
@@ -862,4 +960,6 @@ module.exports = {
   syncWorkspaceTemplate,
   resolveWorkspaceTemplate,
   ensureWorkspaceStateFiles,
+  renderBusinessAgentAdapter,
+  ensureBusinessRootAgentAdapters,
 };

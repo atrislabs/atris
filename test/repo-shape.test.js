@@ -5,6 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { detectDefaultVerify, getVerifyCommand } = require('../commands/autopilot');
 
+const packageJson = require('../package.json');
+
 function makeTempRepo() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-shape-'));
 }
@@ -16,6 +18,14 @@ test('detectDefaultVerify returns null for a bare directory', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('npm package includes runtime workspace templates', () => {
+  const files = packageJson.files || [];
+  assert.ok(files.includes('templates/'), 'package.json files must include templates/ for business init');
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'business-starter', 'MAP.md')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'business-starter', 'team', 'START_HERE.md')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
 });
 
 test('detectDefaultVerify returns npm test for Node package with real test script', () => {
