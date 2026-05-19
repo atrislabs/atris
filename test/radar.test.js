@@ -42,7 +42,9 @@ test('parseWorktrees reads porcelain worktree output', () => {
 
 test('collectRadar joins live agents with task, mission, and worktree state', () => {
   const root = '/tmp/atris-radar';
+  const otherRoot = '/tmp/other';
   const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const otherTaskFile = path.join(otherRoot, '.atris', 'state', 'tasks.projection.json');
   const missionFile = path.join(root, '.atris', 'state', 'missions.jsonl');
   const xpFile = path.join(root, '.atris', 'state', 'career_xp.projection.json');
   const receiptsFile = path.join(root, '.atris', 'state', 'career_xp_receipts.jsonl');
@@ -68,6 +70,12 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
       tasks: [
         { display_id: 'CLI-95', title: 'Add live operator radar command', status: 'review', workspace_root: root, claimed_by: 'codex', metadata: { agent_review_pass_count: 1 } },
         { display_id: 'CLI-90', title: 'Old certified work', status: 'review', workspace_root: root, metadata: { agent_certified: true, assigned_to: 'mission-lead', delegate_via: 'swarlo', swarlo_channel: 'ops' } },
+      ],
+    })],
+    [otherTaskFile, JSON.stringify({
+      tasks: [
+        { display_id: 'BCK-298', title: 'Backend old open task', status: 'open', workspace_root: otherRoot },
+        { display_id: 'BCK-294', title: 'Backend lease safety', status: 'claimed', workspace_root: otherRoot, claimed_by: 'computer-lead' },
       ],
     })],
     [missionFile, `${JSON.stringify({
@@ -106,7 +114,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   ]);
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
-    + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n';
+    + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n'
+    + '333 1 0.0 0.1 S Mon May 18 12:02:00 2026 devin --workspace none\n';
   const worktreeOutput = [
     `worktree ${root}`,
     'HEAD aaa',
@@ -120,7 +129,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
 
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return psOutput;
-    if (cmd === 'lsof') return `p${args[2]}\nn${args[2] === '111' ? root : '/tmp/other'}\n`;
+    if (cmd === 'lsof') {
+      const cwd = args[2] === '111' ? root : args[2] === '222' ? otherRoot : '/tmp/no-proj';
+      return `p${args[2]}\nn${cwd}\n`;
+    }
     if (cmd === 'git' && args[1] === root && args[2] === 'worktree') return worktreeOutput;
     if (cmd === 'git' && args[2] === 'branch') return args[1] === root ? 'master\n' : 'other\n';
     if (cmd === 'git' && args[2] === 'status') return args[1] === root ? ' M bin/atris.js\n' : '';
@@ -146,7 +158,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     },
   });
 
-  assert.equal(data.summary.agents.total, 2);
+  assert.equal(data.summary.agents.total, 3);
   assert.equal(data.summary.tasks.claimed, 0);
   assert.equal(data.summary.tasks.certifiedReview, 1);
   assert.equal(data.summary.missions.stale, 1);
@@ -168,6 +180,9 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.business.proof.events, 1);
   assert.equal(data.os.business.computers, 1);
   assert.equal(data.agents[0].task, 'CLI-95');
+  assert.equal(data.agents[1].task, 'BCK-294');
+  assert.equal(data.agents[1].task_workspace, 'tmp/other');
+  assert.equal(data.agents[2].task, '-');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /CLI-95/);
@@ -187,7 +202,9 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /CPU/);
   assert.match(top, /MEM/);
   assert.match(top, /CLI-95/);
+  assert.match(top, /BCK-294/);
   assert.match(top, /1 untasked/);
   assert.match(top, /Next: map 1 untasked agent session to tasks or close idle sessions/);
+  assert.match(top, /Untasked:/);
   assert.ok(top.indexOf('222') < top.indexOf('111'), 'higher CPU agent should sort first');
 });

@@ -128,6 +128,24 @@ function loadTasks(root, deps) {
   }));
 }
 
+function findTaskWorkspaceRoot(cwd, deps) {
+  if (!cwd) return null;
+  let current = path.resolve(cwd);
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (deps.exists(path.join(current, '.atris', 'state', 'tasks.projection.json'))) return current;
+    const parent = path.dirname(current);
+    if (!parent || parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
+function loadTasksCached(root, deps, cache) {
+  if (!root) return [];
+  if (!cache.has(root)) cache.set(root, loadTasks(root, deps));
+  return cache.get(root);
+}
+
 function readJsonFile(file, deps, fallback = null) {
   if (!deps.exists(file)) return fallback;
   return safeJson(deps.readFile(file, 'utf8'), fallback);
@@ -369,10 +387,12 @@ function taskRef(task) {
   return task ? (task.display_id || task.legacy_ref || task.id || '-') : '-';
 }
 
-function taskForCwd(tasks, cwd) {
-  if (!cwd) return null;
-  return tasks.find(task => task.workspace_root === cwd && ['claimed', 'open'].includes(task.status))
-    || tasks.find(task => task.workspace_root === cwd && task.status === 'review')
+function taskForCwd(tasks, cwd, workspaceRoot = cwd) {
+  if (!cwd && !workspaceRoot) return null;
+  const matchesWorkspace = task => !task.workspace_root || task.workspace_root === cwd || task.workspace_root === workspaceRoot;
+  return tasks.find(task => matchesWorkspace(task) && task.status === 'claimed')
+    || tasks.find(task => matchesWorkspace(task) && task.status === 'open')
+    || tasks.find(task => matchesWorkspace(task) && task.status === 'review')
     || null;
 }
 
@@ -425,11 +445,20 @@ function collectRadar(options = {}) {
   };
   const nowMs = options.nowMs || Date.now();
   const tasks = loadTasks(root, deps);
+  const taskCache = new Map([[root, tasks]]);
   const missions = loadMissions(root, deps, nowMs);
   const worktrees = loadWorktrees(root, deps);
   const agents = collectAgents(deps).map(agent => {
-    const task = taskForCwd(tasks, agent.cwd);
-    return { ...agent, task: taskRef(task), task_status: task?.status || null, owner: ownerForTask(task) };
+    const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
+    const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
+    const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot);
+    return {
+      ...agent,
+      task: taskRef(task),
+      task_status: task?.status || null,
+      owner: ownerForTask(task),
+      task_workspace: task ? repoLabel(taskWorkspaceRoot) : null,
+    };
   });
   const osState = {
     xp: loadXp(root, deps),
