@@ -41,6 +41,46 @@ test('parseWorktrees reads porcelain worktree output', () => {
   assert.deepEqual(rows.map(row => [row.path, row.branch]), [['/repo', 'main'], ['/repo-wt', 'agent/test']]);
 });
 
+test('collectRadar surfaces owner-only active tasks without calling them agent work', () => {
+  const root = '/tmp/atris-owner-gate';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'BCK-292',
+          title: 'Owner gate: unblock backend Actions billing',
+          status: 'claimed',
+          workspace_root: root,
+          claimed_by: 'keshavrao',
+          metadata: {
+            approval_status: 'revise',
+            human_revision_note: 'GitHub Actions billing is blocked because failed payments require owner billing action.',
+          },
+          messages: [
+            { content: 'status=owner_action_required, agent_executable=false, blocker=github_actions_billing_or_spending_limit' },
+          ],
+        },
+      ],
+    })],
+  ]);
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    execFileSync: cmd => {
+      if (cmd === 'ps') return '';
+      throw new Error(`unexpected command ${cmd}`);
+    },
+    existsSync: file => files.has(file),
+    readFileSync: file => files.get(file) || '',
+  });
+
+  assert.match(data.next_action, /owner action required BCK-292/);
+  assert.doesNotMatch(data.next_action, /^work BCK-292/);
+  assert.match(renderRadar(data), /Next: owner action required BCK-292/);
+});
+
 test('collectRadar joins live agents with task, mission, and worktree state', () => {
   const root = '/tmp/atris-radar';
   const otherRoot = '/tmp/other';
