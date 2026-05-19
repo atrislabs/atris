@@ -622,9 +622,23 @@ function writeReceipt(mission, result, root = process.cwd()) {
   return path.relative(root, receiptPath);
 }
 
+function shellQuote(value) {
+  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function resolveVerifierCommand(command) {
+  const raw = String(command || '');
+  const leading = raw.match(/^\s*/)?.[0] || '';
+  const trimmed = raw.trimStart();
+  if (!trimmed || !/^atris(?:\s|$)/.test(trimmed)) return raw;
+  const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
+}
+
 function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
-  const result = spawnSync(command, {
+  const resolvedCommand = resolveVerifierCommand(command);
+  const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
@@ -633,6 +647,7 @@ function runVerifier(command, root = process.cwd()) {
   });
   return {
     command,
+    resolved_command: resolvedCommand === command ? null : resolvedCommand,
     status: result.status,
     signal: result.signal || null,
     passed: result.status === 0,

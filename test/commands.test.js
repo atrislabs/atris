@@ -7488,12 +7488,16 @@ test('business handoff mission bootstrap executes in a generated workspace', () 
     assert.equal(goalPayload.goal.source, 'mission');
     assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
 
-    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], { cwd: dir });
+    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+      cwd: dir,
+      env: { PATH: path.dirname(process.execPath) },
+    });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.action, 'mission_tick');
     assert.equal(tickPayload.verifier_result.passed, true);
     assert.match(tickPayload.verifier_result.command, /atris business check/);
+    assert.match(tickPayload.verifier_result.resolved_command, /bin\/atris\.js/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -7547,7 +7551,10 @@ test('business collaborator handoff loop connects tasks missions goals proof and
     const goalPayload = JSON.parse(goal.stdout);
     assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
 
-    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], { cwd: dir });
+    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+      cwd: dir,
+      env: { PATH: path.dirname(process.execPath) },
+    });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.verifier_result.passed, true);
