@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { selectDueMission, selectCodexGoalMission } = require('../commands/mission');
+const {
+  cappedClaudeReceiptText,
+  selectDueMission,
+  selectCodexGoalMission,
+  usefulClaudeReceiptSummary,
+} = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -17,7 +22,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -25,6 +30,7 @@ function runCli(args, { cwd } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
@@ -51,6 +57,74 @@ function appendMissionState(dir, mission) {
     ...mission,
   }) + '\n', 'utf8');
 }
+
+test('Claude mission receipt summaries skip generic markdown headings', () => {
+  const text = [
+    '## Receipt',
+    '',
+    '- Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.',
+    '- Next tick: monitor payout surfaces only.',
+  ].join('\n');
+
+  assert.equal(
+    usefulClaudeReceiptSummary(text),
+    'Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.',
+  );
+  assert.match(cappedClaudeReceiptText(text), /Next tick: monitor payout surfaces only/);
+});
+
+test('mission run JSON preserves useful Claude receipt text', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const binDir = path.join(dir, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const fakeClaude = path.join(binDir, 'claude');
+    fs.writeFileSync(fakeClaude, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes('--help')) {
+  console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
+  process.exit(0);
+}
+const sessionFlag = args.includes('--session-id') ? '--session-id' : '--resume';
+const sessionId = args[args.indexOf(sessionFlag) + 1] || 'fake-session';
+console.log(JSON.stringify({ type: 'system', session_id: sessionId }));
+console.log(JSON.stringify({
+  type: 'result',
+  session_id: sessionId,
+  result: '## Receipt\\n- Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.\\n- Next tick: monitor payout surfaces only.',
+  total_cost_usd: 0.01,
+  duration_api_ms: 2,
+  num_turns: 1
+}));
+`, 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+
+    const started = runCli([
+      'mission',
+      'start',
+      'fake claude receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const run = runCli(['mission', 'run', mission.id, '--max-ticks', '1', '--json'], {
+      cwd: dir,
+      env: { PATH: `${binDir}:${process.env.PATH}` },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ticks[0].claude.summary, 'Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.');
+    assert.match(payload.ticks[0].claude.receipt_text, /## Receipt/);
+    assert.match(payload.ticks[0].claude.receipt_text, /Next tick: monitor payout surfaces only/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
 test('mission status filters by status and limits list output', () => {
   const dir = makeTempDir();
