@@ -1183,7 +1183,8 @@ function spawnClaudeTick(mission, opts) {
         exitCode: code,
         sessionIds: Array.from(observedSessionIds),
         result: finalText,
-        summary: (finalText || '').split('\n').filter(Boolean)[0]?.slice(0, 240) || (ok ? 'no-text' : 'error'),
+        summary: usefulClaudeReceiptSummary(finalText, ok ? 'no-text' : 'error'),
+        receipt_text: cappedClaudeReceiptText(finalText),
         api_equivalent_estimate: costEstimate,
         duration_api_ms: durationApiMs,
         duration_total_ms: Date.now() - startedAt,
@@ -1201,6 +1202,33 @@ function spawnClaudeTick(mission, opts) {
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
     });
   });
+}
+
+function stripClaudeReceiptLine(line) {
+  return String(line || '')
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function usefulClaudeReceiptSummary(text, fallback = 'no-text') {
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    const clean = stripClaudeReceiptLine(line);
+    if (!clean) continue;
+    if (/^(receipt|summary|final|final answer|result)$/i.test(clean)) continue;
+    return clean.slice(0, 240);
+  }
+  return fallback;
+}
+
+function cappedClaudeReceiptText(text, limit = 4000) {
+  const clean = String(text || '').trim();
+  if (!clean) return '';
+  if (clean.length <= limit) return clean;
+  return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
 }
 
 async function runMission(args) {
@@ -1365,6 +1393,7 @@ async function runMission(args) {
         result.claude = {
           ok: claudeResult.ok,
           summary: claudeResult.summary,
+          receipt_text: claudeResult.receipt_text,
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,
@@ -1923,4 +1952,6 @@ module.exports = {
   renderMissionStatus,
   selectDueMission,
   selectCodexGoalMission,
+  usefulClaudeReceiptSummary,
+  cappedClaudeReceiptText,
 };
