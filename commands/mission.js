@@ -763,8 +763,15 @@ function secondsUntilMissionDue(mission, now = new Date()) {
   return Math.max(0, Math.ceil((dueAt - now.getTime()) / 1000));
 }
 
+function missionHasHumanAsks(mission) {
+  return Array.isArray(mission?.human_asks)
+    && mission.human_asks.some((ask) => String(ask || '').trim());
+}
+
 function missionIsRunnable(mission) {
-  return mission && GOAL_LOOP_STATUSES.has(String(mission.status || ''));
+  return mission
+    && GOAL_LOOP_STATUSES.has(String(mission.status || ''))
+    && !missionHasHumanAsks(mission);
 }
 
 function missionSortTime(mission) {

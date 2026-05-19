@@ -353,6 +353,39 @@ test('mission run --due skips blocked caller-session missions', () => {
   }
 });
 
+test('mission run --due skips human-gated verifier missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'old-agent-due',
+      slug: 'old-agent-due',
+      objective: 'old agent due mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'current-human-gated',
+      slug: 'current-human-gated',
+      objective: 'current human gated mission',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      human_asks: ['Keshav approves publish voice and title'],
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const due = selectDueMission(dir);
+    assert.equal(due.id, 'old-agent-due');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal emits the Codex goal candidate from mission state', () => {
   const dir = makeTempDir();
   try {
@@ -403,6 +436,45 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(state.action, 'codex_goal_candidate');
     assert.equal(state.goal.mission_id, mission.id);
     assert.match(fs.readFileSync(payload.status_path, 'utf8'), /Codex Goal Controller/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal skips human-gated ready missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'older-codex-work',
+      slug: 'older-codex-work',
+      objective: 'older executable codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'new-human-review',
+      slug: 'new-human-review',
+      objective: 'new human review mission',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      human_asks: ['Keshav approves publish voice and title'],
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'older-codex-work');
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.mission_id, 'older-codex-work');
   } finally {
     cleanupTempDir(dir);
   }
