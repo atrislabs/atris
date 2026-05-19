@@ -615,11 +615,58 @@ function summarizeUntaskedReasons(agents = []) {
     .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
 }
 
+function summarizeTaskLoad(agents = []) {
+  const byTask = new Map();
+  for (const agent of agents) {
+    if (!agent.task || agent.task === '-') continue;
+    if (!byTask.has(agent.task)) {
+      byTask.set(agent.task, {
+        task: agent.task,
+        sessions: 0,
+        active: 0,
+        cpu: 0,
+        mem: 0,
+        statuses: new Set(),
+        owners: new Set(),
+        repos: new Set(),
+        pids: [],
+      });
+    }
+    const row = byTask.get(agent.task);
+    row.sessions += 1;
+    if (agent.status === 'active') row.active += 1;
+    row.cpu += number(agent.cpu);
+    row.mem += number(agent.mem);
+    if (agent.task_status) row.statuses.add(agent.task_status);
+    if (agent.owner && agent.owner !== '-') row.owners.add(agent.owner);
+    if (agent.repo) row.repos.add(agent.repo);
+    if (agent.pid) row.pids.push(agent.pid);
+  }
+  return [...byTask.values()]
+    .map(row => {
+      const statuses = [...row.statuses].sort();
+      return {
+        task: row.task,
+        sessions: row.sessions,
+        active: row.active,
+        cpu: Number(row.cpu.toFixed(1)),
+        mem: Number(row.mem.toFixed(1)),
+        status: statuses.join(', ') || '-',
+        owners: [...row.owners].sort(),
+        repos: [...row.repos].sort(),
+        pids: row.pids.sort((a, b) => number(a) - number(b)),
+        attention: row.sessions > 1 || statuses.includes('review'),
+      };
+    })
+    .sort((a, b) => Number(b.attention) - Number(a.attention) || b.sessions - a.sessions || b.cpu - a.cpu || a.task.localeCompare(b.task));
+}
+
 function agentTopPayload(data) {
   const agents = sortedAgents(data.agents || []);
   const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
   const cpu = agents.reduce((sum, agent) => sum + number(agent.cpu), 0);
   const mem = agents.reduce((sum, agent) => sum + number(agent.mem), 0);
+  const taskLoad = summarizeTaskLoad(agents);
   return {
     root: data.root,
     generated_at: data.generated_at,
@@ -628,10 +675,13 @@ function agentTopPayload(data) {
       active: agents.filter(agent => agent.status === 'active').length,
       untasked,
       untasked_reasons: summarizeUntaskedReasons(agents),
+      task_pileups: taskLoad.filter(row => row.sessions > 1).length,
+      review_bound_tasks: taskLoad.filter(row => row.status === 'review').length,
       cpu: Number(cpu.toFixed(1)),
       mem: Number(mem.toFixed(1)),
     },
     next_action: agentProcessNextAction(agents, data.next_action),
+    task_load: taskLoad,
     agents,
   };
 }
@@ -657,6 +707,15 @@ function renderAgentTop(data) {
       lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'} -> ${agent.task_action || 'inspect session'}`);
     }
   }
+  const taskLoadRows = payload.task_load.filter(row => row.attention).slice(0, 8);
+  if (taskLoadRows.length) {
+    lines.push('');
+    lines.push(`Task load: ${payload.summary.task_pileups} pileup${payload.summary.task_pileups === 1 ? '' : 's'}, ${payload.summary.review_bound_tasks} review-bound task${payload.summary.review_bound_tasks === 1 ? '' : 's'}.`);
+    for (const row of taskLoadRows) {
+      const repoText = row.repos.slice(0, 3).join(', ') || '-';
+      lines.push(`- ${row.task}: ${row.sessions} sessions, ${row.cpu.toFixed(1)}% CPU, ${row.status}, ${repoText}`);
+    }
+  }
   return lines.join('\n');
 }
 
@@ -680,6 +739,7 @@ function radarCommand(args = [], options = {}) {
 
 module.exports = {
   agentTypeForCommand,
+  agentTopPayload,
   collectRadar,
   parsePsOutput,
   parseWorktrees,
