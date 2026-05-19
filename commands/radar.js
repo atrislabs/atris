@@ -523,15 +523,73 @@ function renderRadar(data) {
   return lines.join('\n');
 }
 
+function number(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function sortedAgents(agents = []) {
+  return [...agents].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+    const cpuDelta = number(b.cpu) - number(a.cpu);
+    if (cpuDelta) return cpuDelta;
+    return String(a.repo || '').localeCompare(String(b.repo || ''));
+  });
+}
+
+function agentTopPayload(data) {
+  const agents = sortedAgents(data.agents || []);
+  const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
+  const cpu = agents.reduce((sum, agent) => sum + number(agent.cpu), 0);
+  const mem = agents.reduce((sum, agent) => sum + number(agent.mem), 0);
+  return {
+    root: data.root,
+    generated_at: data.generated_at,
+    summary: {
+      total: agents.length,
+      active: agents.filter(agent => agent.status === 'active').length,
+      untasked,
+      cpu: Number(cpu.toFixed(1)),
+      mem: Number(mem.toFixed(1)),
+    },
+    next_action: data.next_action,
+    agents,
+  };
+}
+
+function renderAgentTop(data) {
+  const payload = agentTopPayload(data);
+  const lines = [];
+  lines.push('Agent process top');
+  lines.push('');
+  lines.push(`Agents: ${payload.summary.active}/${payload.summary.total} active; ${payload.summary.untasked} untasked; CPU ${payload.summary.cpu.toFixed(1)}%; MEM ${payload.summary.mem.toFixed(1)}%`);
+  lines.push(`Next: ${payload.next_action}`);
+  lines.push('');
+  lines.push(`${truncate('PID', 7)} ${truncate('AGENT', 8)} ${truncate('CPU', 6)} ${truncate('MEM', 6)} ${truncate('REPO', 24)} ${truncate('BRANCH', 16)} ${truncate('TASK', 10)} ${truncate('STATE', 8)}`);
+  for (const agent of payload.agents.slice(0, 32)) {
+    lines.push(`${truncate(agent.pid, 7)} ${truncate(agent.agent, 8)} ${truncate(`${number(agent.cpu).toFixed(1)}%`, 6)} ${truncate(`${number(agent.mem).toFixed(1)}%`, 6)} ${truncate(agent.repo, 24)} ${truncate(agent.branch, 16)} ${truncate(agent.task, 10)} ${truncate(agent.status, 8)}`);
+  }
+  if (payload.agents.length > 32) lines.push(`... ${payload.agents.length - 32} more agents`);
+  if (payload.summary.untasked > 0) {
+    lines.push('');
+    lines.push(`Untasked: ${payload.summary.untasked} sessions have no Atris task binding.`);
+  }
+  return lines.join('\n');
+}
+
 function radarCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('Usage: atris radar [--json]');
+    console.log('Usage: atris radar [--json] [--agents]');
+    console.log('Usage: atris radar agents');
+    console.log('Usage: atris ctop');
     console.log('');
     console.log('Shows live agent processes joined with Atris tasks, missions, and worktrees.');
+    console.log('Use --agents or ctop for a process-first CPU/memory view.');
     return 0;
   }
   const data = collectRadar(options);
-  if (args.includes('--json')) console.log(JSON.stringify(data, null, 2));
+  const agentsOnly = args.includes('--agents') || args[0] === 'agents';
+  if (args.includes('--json')) console.log(JSON.stringify(agentsOnly ? agentTopPayload(data) : data, null, 2));
+  else if (agentsOnly) console.log(renderAgentTop(data));
   else console.log(renderRadar(data));
   return 0;
 }
@@ -542,5 +600,6 @@ module.exports = {
   parsePsOutput,
   parseWorktrees,
   radarCommand,
+  renderAgentTop,
   renderRadar,
 };

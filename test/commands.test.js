@@ -6013,6 +6013,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['next', '--help'],
     ['now', '--help'],
     ['radar', '--help'],
+    ['ctop', '--help'],
     ['clean', '--help'],
     ['verify', '--help'],
     ['loop', '--help'],
