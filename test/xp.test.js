@@ -374,6 +374,48 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
   }
 });
 
+test('xp sync dry-run allows public AgentXP opt-in for a business workspace', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJson(path.join(workspace, '.atris', 'business.json'), {
+      business_id: 'biz-atris',
+      workspace_id: 'ws-atris',
+      name: 'Atris Labs',
+      slug: 'atris-labs',
+      agentxp_visibility: 'public',
+      owner_email: 'private@example.com',
+    });
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-public-org',
+        task_id: 'SYNC-PUBLIC-ORG',
+        title: 'Sync public org proof',
+        xp: 195,
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'keshav', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    const packetText = JSON.stringify(payload.packet);
+
+    assert.equal(payload.entry.agent_xp, 195);
+    assert.equal(payload.packet.attribution_scope, 'business_bound');
+    assert.equal(payload.packet.scope, 'global');
+    assert.equal(payload.packet.org_id, 'biz-atris');
+    assert.equal(payload.packet.business_id, 'biz-atris');
+    assert.equal(payload.packet.computer_id, 'ws-atris');
+    assert.equal(payload.packet.visibility, 'public');
+    assert.equal(payload.packet.public_agentxp, true);
+    assert.equal(payload.packet.local_evidence.public_agentxp, true);
+    assert.equal(payload.packet.gm_projection.public_agentxp, true);
+    assert.equal(packetText.includes('private@example.com'), false);
+    assert.equal(packetText.includes(workspace), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp sync all avoids top-level org attribution across multiple businesses', () => {
   const root = makeTempDir();
   const alpha = path.join(root, 'alpha');
