@@ -1727,8 +1727,32 @@ function loadLocalPayload(args) {
   return normalizeLocalScore(JSON.parse(result.stdout), workspace);
 }
 
-function publicAgentXp(value) {
+function earnedAgentXp(value) {
+  return Math.max(0, asNumber(value));
+}
+
+function currentFormScore(value) {
   return Math.max(0, Math.min(99, asNumber(value)));
+}
+
+function agentXpLevelProgress(totalXp) {
+  const levelXp = Math.max(0, asNumber(totalXp));
+  const level = levelFromXp(levelXp);
+  const currentLevelFloor = (level - 1) * LEVEL_XP;
+  const nextLevelXp = level * LEVEL_XP;
+  const xpIntoLevel = levelXp - currentLevelFloor;
+  return {
+    schema: 'atris.agentxp_level_progress.v1',
+    level,
+    stage: `Level ${level}`,
+    level_xp: levelXp,
+    current_level_floor: currentLevelFloor,
+    next_level_xp: nextLevelXp,
+    xp_into_level: xpIntoLevel,
+    xp_to_next: Math.max(0, nextLevelXp - levelXp),
+    progress_pct: Math.max(0, Math.min(99, Math.round((xpIntoLevel / LEVEL_XP) * 100))),
+    uncapped: true,
+  };
 }
 
 function verifiedProjection(projection) {
@@ -1873,16 +1897,19 @@ function buildAgentXpSyncPacket(args = []) {
   const totalXp = asNumber(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? projection.career_xp);
   const receiptsCount = asNumber(projection.receipts_count);
   const eligible = verifiedProjection(projection) && receiptsCount > 0 && totalXp > 0;
-  const publicXp = publicAgentXp(totalXp);
+  const publicXp = earnedAgentXp(totalXp);
+  const currentForm = currentFormScore(totalXp);
+  const levelProgress = agentXpLevelProgress(publicXp);
   const workspaceRootHash = sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':'));
   const entry = {
     user_id: player,
     username: player,
     agent_xp: publicXp,
     career_xp: publicXp,
-    current_form: publicXp,
-    ovr: publicXp,
-    level: Math.max(1, asNumber(projection.level, 1)),
+    current_form: currentForm,
+    ovr: currentForm,
+    level: levelProgress.level,
+    level_progress: levelProgress,
     verified_receipts: receiptsCount,
     reviewed_tasks: receiptsCount,
     recent_verified_receipts: receiptsCount,

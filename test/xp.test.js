@@ -283,6 +283,37 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
   }
 });
 
+test('xp sync dry-run keeps earned AgentXP uncapped while form stays capped', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-high-xp',
+        task_id: 'SYNC-HIGH',
+        title: 'Sync high XP proof',
+        xp: 1200,
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'keshavrao', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+
+    assert.equal(payload.entry.agent_xp, 1200);
+    assert.equal(payload.entry.career_xp, 1200);
+    assert.equal(payload.entry.current_form, 99);
+    assert.equal(payload.entry.ovr, 99);
+    assert.equal(payload.entry.level, 2);
+    assert.equal(payload.entry.level_progress.uncapped, true);
+    assert.equal(payload.entry.level_progress.current_level_floor, 1000);
+    assert.equal(payload.entry.level_progress.next_level_xp, 2000);
+    assert.equal(payload.entry.level_progress.xp_to_next, 800);
+    assert.equal(payload.packet.user_leaderboard.entries[0].agent_xp, 1200);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
 test('xp sync dry-run carries local business binding for org attribution', () => {
   const workspace = makeTempDir();
   try {
