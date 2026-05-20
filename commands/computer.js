@@ -1260,6 +1260,18 @@ function formatWorkspaceRef(workspace) {
   return workspace.name ? `${workspace.name} (${workspace.id})` : workspace.id;
 }
 
+function workspaceMatchesInput(workspace, input) {
+  if (!workspace || !input) return false;
+  const wanted = String(input).trim().toLowerCase();
+  if (!wanted) return false;
+  return String(workspace.id || '').toLowerCase() === wanted
+    || String(workspace.name || '').toLowerCase() === wanted;
+}
+
+function resolveWorkspaceFromList(workspaces, input) {
+  return (workspaces || []).find((workspace) => workspaceMatchesInput(workspace, input)) || null;
+}
+
 function formatLeaseAge(seconds) {
   const value = Number(seconds);
   if (!Number.isFinite(value) || value < 0) return '-';
@@ -1519,7 +1531,11 @@ async function computerStatus(token, ctx = null) {
     if (d.endpoint) console.log(`    Endpoint: ${d.endpoint}`);
     const workspaces = await listBusinessWorkspaces(token, ctx);
     const defaultWorkspace = workspaces.find((workspace) => workspace.is_default);
-    const targetWorkspace = workspaces.find((workspace) => workspace.id === ctx.workspaceId) || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
+    const resolvedTargetWorkspace = resolveWorkspaceFromList(workspaces, ctx.workspaceId);
+    const targetWorkspace = resolvedTargetWorkspace || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
+    const probeCtx = resolvedTargetWorkspace?.id
+      ? { ...ctx, workspaceId: resolvedTargetWorkspace.id }
+      : ctx;
     console.log(`    Default workspace:  ${formatWorkspaceRef(defaultWorkspace)}`);
     console.log(`    Target workspace:   ${formatWorkspaceRef(targetWorkspace)}`);
     const attachedFromStatus = d.attached_workspace_id
@@ -1534,8 +1550,8 @@ async function computerStatus(token, ctx = null) {
       console.log(`    Lease age:          ${formatLeaseAge(d.lease_age_seconds)}`);
       if (d.takeover_hint) console.log(`    Takeover hint:      ${d.takeover_hint}`);
     }
-    if (status === 'running' && d.endpoint && ctx.workspaceId) {
-      const attached = await probeAttachedWorkspace(token, ctx);
+    if (status === 'running' && d.endpoint && probeCtx.workspaceId) {
+      const attached = await probeAttachedWorkspace(token, probeCtx);
       if (!attachedFromStatus) {
         const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
         console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
