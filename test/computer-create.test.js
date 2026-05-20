@@ -188,6 +188,16 @@ function startApiServer(requests) {
         });
         return;
       }
+      if (
+        req.method === 'GET' &&
+        (
+          req.url === '/api/business/biz-1/workspaces/ws-new/file?path=README.md' ||
+          req.url === '/api/business/biz-1/workspaces/ws-old/file?path=README.md'
+        )
+      ) {
+        send(200, { content: '# Atris\n' });
+        return;
+      }
       send(404, { detail: `unexpected ${req.method} ${req.url}` });
     });
   });
@@ -627,6 +637,69 @@ test('computer status resolves workspace name before probing health', async () =
     assert.match(res.stdout, /Health:\s+ready/);
     assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/terminal'));
     assert.ok(!requests.some((request) => request.url.includes('My%20Business%20Computer')));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer action commands resolve workspace name before backend calls', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const run = await runCliAsync([
+      'computer',
+      'run',
+      'echo ACTION_ALIAS_OK',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'Main',
+    ], { cwd, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const exec = await runCliAsync([
+      'computer',
+      'exec',
+      '--no-wait',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'Main',
+      'Reply briefly',
+    ], { cwd, env });
+    assert.equal(exec.status, 0, exec.stderr || exec.stdout);
+    assert.match(exec.stdout, /workspace_id=ws-old/);
+
+    const cat = await runCliAsync([
+      'computer',
+      'cat',
+      'README.md',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'Main',
+    ], { cwd, env });
+    assert.equal(cat.status, 0, cat.stderr || cat.stdout);
+    assert.match(cat.stdout, /# Atris/);
+
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-old/terminal'));
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/chat' && request.body?.workspace_id === 'ws-old'));
+    assert.ok(requests.some((request) => request.method === 'GET' && request.url === '/api/business/biz-1/workspaces/ws-old/file?path=README.md'));
+    assert.ok(!requests.some((request) => request.url.includes('/workspaces/Main/')));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
