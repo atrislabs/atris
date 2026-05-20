@@ -114,6 +114,42 @@ test('activate prints core file paths', () => {
   }
 });
 
+test('skill list and audit include bundled skills from any workspace', () => {
+  const dir = makeTempDir();
+  try {
+    const localSkillDir = path.join(dir, 'atris', 'skills', 'local-only');
+    fs.mkdirSync(localSkillDir, { recursive: true });
+    fs.writeFileSync(path.join(localSkillDir, 'SKILL.md'), [
+      '---',
+      'name: local-only',
+      'description: Use when testing local project skill discovery from a temporary workspace.',
+      'version: 1.0.0',
+      'tags:',
+      '  - test',
+      '---',
+      '',
+      '# Local Only',
+      '',
+      '1. Check the local workspace.',
+      '2. Keep the proof bounded.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const list = runCli(['skill', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr);
+    assert.match(list.stdout, /local-only/);
+    assert.match(list.stdout, /x-search/);
+    assert.match(list.stdout, /calendar/);
+
+    const audit = runCli(['skill', 'audit', 'x-search'], { cwd: dir });
+    assert.equal(audit.status, 0, audit.stderr);
+    assert.match(audit.stdout, /Audit: x-search/);
+    assert.match(audit.stdout, /Score: 12\/12/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('loop refreshes wiki STATUS and appends wiki log entries', () => {
   const dir = makeTempDir();
   try {
