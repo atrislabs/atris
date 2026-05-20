@@ -596,6 +596,44 @@ test('computer status shows default target and attached workspace truth', async 
   }
 });
 
+test('computer status resolves workspace name before probing health', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'status',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'My Business Computer',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Target workspace:\s+My Business Computer \(ws-new\)/);
+    assert.match(res.stdout, /Health:\s+ready/);
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/terminal'));
+    assert.ok(!requests.some((request) => request.url.includes('My%20Business%20Computer')));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
 test('computer exec waits and streams the business chat result by default', async () => {
   const home = makeTempDir();
   const cwd = makeTempDir();
