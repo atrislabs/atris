@@ -88,6 +88,39 @@ function findAllSkills(skillsDir) {
   return skills;
 }
 
+function localSkillsDir() {
+  return path.join(process.cwd(), 'atris', 'skills');
+}
+
+function bundledSkillsDir() {
+  return path.join(__dirname, '..', 'atris', 'skills');
+}
+
+function readableSkillRoots() {
+  const roots = [localSkillsDir(), bundledSkillsDir()];
+  const seen = new Set();
+  return roots.filter((root) => {
+    if (!root || !fs.existsSync(root)) return false;
+    const real = fs.realpathSync(root);
+    if (seen.has(real)) return false;
+    seen.add(real);
+    return true;
+  });
+}
+
+function findReadableSkills() {
+  const seen = new Set();
+  const skills = [];
+  for (const root of readableSkillRoots()) {
+    for (const skill of findAllSkills(root)) {
+      if (seen.has(skill.folder)) continue;
+      seen.add(skill.folder);
+      skills.push(skill);
+    }
+  }
+  return skills;
+}
+
 // --- Audit Checks ---
 
 function runAuditChecks(skill) {
@@ -355,11 +388,10 @@ function generateTags(folderName, description) {
 // --- Subcommand Handlers ---
 
 function skillList() {
-  const skillsDir = path.join(process.cwd(), 'atris', 'skills');
-  const skills = findAllSkills(skillsDir);
+  const skills = findReadableSkills();
 
   if (skills.length === 0) {
-    console.log('No skills found in atris/skills/. Run "atris init" first.');
+    console.log('No skills found in local or bundled Atris skill roots.');
     return;
   }
 
@@ -396,15 +428,14 @@ function skillList() {
 }
 
 function skillAudit(name) {
-  const skillsDir = path.join(process.cwd(), 'atris', 'skills');
-  const allSkills = findAllSkills(skillsDir);
+  const allSkills = findReadableSkills();
 
   const targets = name === '--all'
     ? allSkills
     : allSkills.filter(s => s.folder === name || s.leafFolder === name);
 
   if (targets.length === 0) {
-    console.error(`Skill "${name}" not found. Run "atris skill list" to see available skills.`);
+    console.error(`Skill "${name}" not found. Run "atris skill list" to see available local and bundled skills.`);
     process.exit(1);
   }
 

@@ -614,6 +614,31 @@ function printImessageDoctor(result, json = false) {
   }
 }
 
+function boundedImessageLimit(value) {
+  const parsed = Number(value || 20);
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.max(1, Math.min(100, Math.trunc(parsed)));
+}
+
+function printImessageRows(result, options = {}) {
+  if (options.json) {
+    const rows = String(result.stdout || '').trim();
+    let messages = [];
+    try {
+      messages = rows ? JSON.parse(rows) : [];
+    } catch {
+      messages = [];
+    }
+    console.log(JSON.stringify({
+      ok: result.status === 0,
+      count: Array.isArray(messages) ? messages.length : 0,
+      messages: Array.isArray(messages) ? messages : [],
+    }, null, 2));
+    return;
+  }
+  console.log(String(result.stdout || '').trim() || 'No recent messages found.');
+}
+
 function imessageRecent(handle, options = {}) {
   if (!handle) {
     console.error('Usage: atris imessage recent <phone-or-email> [--limit 20]');
@@ -625,7 +650,7 @@ function imessageRecent(handle, options = {}) {
     process.exit(1);
   }
 
-  const limit = Number(options.limit || 20);
+  const limit = boundedImessageLimit(options.limit);
   const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
   const sql = `
     SELECT datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime') AS ts,
@@ -635,14 +660,44 @@ function imessageRecent(handle, options = {}) {
     JOIN handle h ON h.rowid = m.handle_id
     WHERE h.id = '${String(handle).replace(/'/g, "''")}'
     ORDER BY m.date DESC
-    LIMIT ${Math.max(1, Math.min(100, limit))};
+    LIMIT ${limit};
   `;
-  const result = spawnSync('sqlite3', ['-readonly', chatDb, sql], { encoding: 'utf8' });
+  const sqliteArgs = options.json ? ['-json', '-readonly', chatDb, sql] : ['-readonly', chatDb, sql];
+  const result = spawnSync('sqlite3', sqliteArgs, { encoding: 'utf8' });
   if (result.status !== 0) {
     console.error(result.stderr || 'Failed to read Messages database.');
     process.exit(1);
   }
-  console.log(result.stdout.trim() || 'No recent messages found.');
+  printImessageRows(result, options);
+}
+
+function imessageLatest(options = {}) {
+  const doctor = imessageDoctor();
+  if (!doctor.connected) {
+    printImessageDoctor(doctor, Boolean(options.json));
+    process.exit(1);
+  }
+
+  const limit = boundedImessageLimit(options.limit);
+  const chatDb = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+  const sql = `
+    SELECT datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime') AS ts,
+           CASE m.is_from_me WHEN 1 THEN 'me' ELSE COALESCE(h.id, 'unknown') END AS sender,
+           COALESCE(h.id, 'unknown') AS handle,
+           replace(replace(COALESCE(m.text,''), char(10), ' '), char(13), ' ') AS text
+    FROM message m
+    LEFT JOIN handle h ON h.rowid = m.handle_id
+    WHERE length(COALESCE(m.text,'')) > 0
+    ORDER BY m.date DESC
+    LIMIT ${limit};
+  `;
+  const sqliteArgs = options.json ? ['-json', '-readonly', chatDb, sql] : ['-readonly', chatDb, sql];
+  const result = spawnSync('sqlite3', sqliteArgs, { encoding: 'utf8' });
+  if (result.status !== 0) {
+    console.error(result.stderr || 'Failed to read Messages database.');
+    process.exit(1);
+  }
+  printImessageRows(result, options);
 }
 
 function escapeSqlString(value) {
@@ -1169,10 +1224,20 @@ async function imessageCommand(subcommand, ...args) {
       break;
     }
     case 'recent': {
-      const handle = args[0];
       const limitFlag = args.findIndex((x) => x === '--limit');
       const limit = limitFlag >= 0 ? args[limitFlag + 1] : 20;
+      const handle = args.find((arg) => arg && !arg.startsWith('--') && arg !== String(limit));
+      if (!handle) {
+        imessageLatest({ limit, json: args.includes('--json') });
+        break;
+      }
       imessageRecent(handle, { limit, json: args.includes('--json') });
+      break;
+    }
+    case 'latest': {
+      const limitFlag = args.findIndex((x) => x === '--limit');
+      const limit = limitFlag >= 0 ? args[limitFlag + 1] : 20;
+      imessageLatest({ limit, json: args.includes('--json') });
       break;
     }
     case 'lookup': {
@@ -1188,6 +1253,7 @@ async function imessageCommand(subcommand, ...args) {
       console.log('  atris imessage doctor [--json]   - Check local Messages access');
       console.log('  atris imessage lookup --name <name> [--json] [--refresh]');
       console.log('  atris imessage recent <handle>   - Read recent local messages');
+      console.log('  atris imessage latest [--limit 20] [--json] - Read latest local messages');
       console.log('  atris imessage send --to <handle> --text <text> --approved [--json] [--receipt]');
   }
 }
