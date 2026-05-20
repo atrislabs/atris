@@ -257,7 +257,15 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
     assert.equal(payload.entry.verified_receipts, 1);
     assert.equal(payload.entry.leaderboard_eligible, true);
     assert.equal(payload.packet.schema, 'atris.agentxp_sync_packet.v1');
+    assert.equal(payload.packet.scope, 'global');
+    assert.equal(payload.packet.org_id, null);
+    assert.equal(payload.packet.computer_id, path.basename(workspace));
+    assert.equal(payload.packet.visibility, 'public');
+    assert.equal(payload.packet.public_agentxp, true);
     assert.equal(payload.packet.gm_projection.schema, 'atris.gm_xp_projection.v1');
+    assert.equal(payload.packet.gm_projection.scope, 'global');
+    assert.equal(payload.packet.gm_projection.visibility, 'public');
+    assert.equal(payload.packet.gm_projection.public_agentxp, true);
     assert.equal(payload.packet.gm_projection.workspace_root_hash, payload.packet.workspace_root_hash);
     assert.equal(payload.packet.gm_projection.operator, 'justin');
     assert.equal(payload.packet.gm_projection.player_score.agent_xp, 7);
@@ -302,13 +310,28 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
     const workspaceSummary = payload.packet.local_evidence.workspaces[0];
 
     assert.equal(payload.packet.attribution_scope, 'business_bound');
+    assert.equal(payload.packet.scope, 'org');
+    assert.equal(payload.packet.org_id, 'biz-atris');
     assert.equal(payload.packet.business_id, 'biz-atris');
     assert.equal(payload.packet.workspace_id, 'ws-atris');
     assert.equal(payload.packet.business_slug, 'atris-labs');
     assert.equal(payload.packet.workspace_template, 'research');
+    assert.equal(payload.packet.computer_id, 'ws-atris');
     assert.equal(payload.packet.computer, 'atris-labs');
+    assert.equal(payload.packet.visibility, 'internal');
+    assert.equal(payload.packet.public_agentxp, false);
+    assert.equal(payload.packet.local_evidence.scope, 'org');
+    assert.equal(payload.packet.local_evidence.org_id, 'biz-atris');
+    assert.equal(payload.packet.local_evidence.computer_id, 'ws-atris');
+    assert.equal(payload.packet.local_evidence.visibility, 'internal');
+    assert.equal(payload.packet.local_evidence.public_agentxp, false);
     assert.equal(payload.packet.local_evidence.business_id, 'biz-atris');
+    assert.equal(payload.packet.gm_projection.scope, 'org');
+    assert.equal(payload.packet.gm_projection.org_id, 'biz-atris');
     assert.equal(payload.packet.gm_projection.business_id, 'biz-atris');
+    assert.equal(payload.packet.gm_projection.computer_id, 'ws-atris');
+    assert.equal(payload.packet.gm_projection.visibility, 'internal');
+    assert.equal(payload.packet.gm_projection.public_agentxp, false);
     assert.equal(workspaceSummary.business_id, 'biz-atris');
     assert.equal(workspaceSummary.workspace_id, 'ws-atris');
     assert.equal(workspaceSummary.business_slug, 'atris-labs');
@@ -352,10 +375,19 @@ test('xp sync all avoids top-level org attribution across multiple businesses', 
     const payload = JSON.parse(result.stdout);
 
     assert.equal(payload.packet.attribution_scope, 'multi_business');
+    assert.equal(payload.packet.scope, 'org');
+    assert.equal(payload.packet.org_id, null);
     assert.equal(payload.packet.business_id, null);
     assert.equal(payload.packet.workspace_id, null);
+    assert.equal(payload.packet.computer_id, 'multiple-workspaces');
     assert.equal(payload.packet.computer, 'multiple-workspaces');
+    assert.equal(payload.packet.visibility, 'internal');
+    assert.equal(payload.packet.public_agentxp, false);
     assert.equal(payload.packet.local_evidence.attribution_scope, 'multi_business');
+    assert.equal(payload.packet.local_evidence.scope, 'org');
+    assert.equal(payload.packet.local_evidence.visibility, 'internal');
+    assert.equal(payload.packet.gm_projection.scope, 'org');
+    assert.equal(payload.packet.gm_projection.visibility, 'internal');
     assert.deepEqual(
       payload.packet.local_evidence.workspaces.map(workspace => workspace.business_id).sort(),
       ['biz-alpha', 'biz-beta'],
@@ -579,6 +611,11 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
     assert.equal(captured.url, '/api/agentxp/leaderboard/sync');
     assert.equal(captured.token, 'sync-secret');
     assert.equal(captured.body.operator, 'justin');
+    assert.equal(captured.body.scope, 'global');
+    assert.equal(captured.body.visibility, 'public');
+    assert.equal(captured.body.public_agentxp, true);
+    assert.equal(captured.body.org_id, null);
+    assert.equal(captured.body.computer_id, path.basename(workspace));
     assert.equal(captured.body.gm_projection.schema, 'atris.gm_xp_projection.v1');
     assert.equal(captured.body.gm_projection.workspace_root_hash, captured.body.workspace_root_hash);
     assert.equal(captured.body.gm_projection.player_score.agent_xp, 4);

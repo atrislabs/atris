@@ -1797,6 +1797,19 @@ function syncAttribution(workspaces) {
   };
 }
 
+function syncScopeFields(attribution = {}) {
+  const attributionScope = slugify(attribution.attribution_scope);
+  const orgId = String(attribution.business_id || attribution.business_slug || '').trim() || null;
+  const businessBound = Boolean(orgId) || attributionScope === 'business-bound' || attributionScope === 'multi-business';
+  return {
+    scope: businessBound ? 'org' : 'global',
+    org_id: orgId,
+    computer_id: String(attribution.workspace_id || attribution.computer || 'local').trim() || 'local',
+    visibility: businessBound ? 'internal' : 'public',
+    public_agentxp: !businessBound,
+  };
+}
+
 function credentialHandle(credentials) {
   return slugify(
     credentials?.username
@@ -1856,6 +1869,7 @@ function buildAgentXpSyncPacket(args = []) {
   const player = syncPlayer(args, projection);
   const workspaces = projectionWorkspaceSummaries(projection);
   const attribution = syncAttribution(workspaces);
+  const scopeFields = syncScopeFields(attribution);
   const totalXp = asNumber(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? projection.career_xp);
   const receiptsCount = asNumber(projection.receipts_count);
   const eligible = verifiedProjection(projection) && receiptsCount > 0 && totalXp > 0;
@@ -1883,12 +1897,17 @@ function buildAgentXpSyncPacket(args = []) {
     schema: 'atris.agentxp_sync_packet.v1',
     generated_at: new Date().toISOString(),
     workspace_root_hash: workspaceRootHash,
+    scope: scopeFields.scope,
+    org_id: scopeFields.org_id,
     attribution_scope: attribution.attribution_scope,
     business_id: attribution.business_id || null,
     workspace_id: attribution.workspace_id || null,
     business_slug: attribution.business_slug || null,
     workspace_template: attribution.workspace_template || null,
+    computer_id: scopeFields.computer_id,
     computer: attribution.computer || projection.workspace_name || workspaces[0]?.name || 'local',
+    visibility: scopeFields.visibility,
+    public_agentxp: scopeFields.public_agentxp,
     operator: player,
     privacy: {
       raw_proofs_included: false,
@@ -1903,12 +1922,17 @@ function buildAgentXpSyncPacket(args = []) {
     local_evidence: {
       schema: 'atris.agentxp_local_evidence.v1',
       workspace_root_hash: workspaceRootHash,
+      scope: scopeFields.scope,
+      org_id: scopeFields.org_id,
       attribution_scope: attribution.attribution_scope,
       business_id: attribution.business_id || null,
       workspace_id: attribution.workspace_id || null,
       business_slug: attribution.business_slug || null,
       workspace_template: attribution.workspace_template || null,
+      computer_id: scopeFields.computer_id,
       computer: attribution.computer || null,
+      visibility: scopeFields.visibility,
+      public_agentxp: scopeFields.public_agentxp,
       workspaces,
       verified_workspace_count: asNumber(projection.verified_workspace_count, verifiedProjection(projection) ? 1 : 0),
       receipts_count: receiptsCount,
@@ -1933,12 +1957,17 @@ function buildAgentXpSyncPacket(args = []) {
     gm_projection: {
       schema: 'atris.gm_xp_projection.v1',
       workspace_root_hash: workspaceRootHash,
+      scope: scopeFields.scope,
+      org_id: scopeFields.org_id,
       attribution_scope: attribution.attribution_scope,
       business_id: attribution.business_id || null,
       workspace_id: attribution.workspace_id || null,
       business_slug: attribution.business_slug || null,
       workspace_template: attribution.workspace_template || null,
+      computer_id: scopeFields.computer_id,
       computer: attribution.computer || null,
+      visibility: scopeFields.visibility,
+      public_agentxp: scopeFields.public_agentxp,
       operator: player,
       player_score: {
         agent_xp: totalXp,
