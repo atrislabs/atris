@@ -1123,6 +1123,36 @@ function workspaceName(workspace) {
   return path.basename(workspace) || workspace;
 }
 
+function booleanSetting(value) {
+  if (value === true || value === false) return value;
+  const text = String(value || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'public', 'global'].includes(text)) return true;
+  if (['0', 'false', 'no', 'private', 'internal', 'org'].includes(text)) return false;
+  return null;
+}
+
+function agentXpPublicBinding(binding = {}) {
+  const nested = binding.agentxp && typeof binding.agentxp === 'object' ? binding.agentxp : {};
+  const explicit = booleanSetting(
+    binding.agentxp_public
+    ?? binding.public_agentxp
+    ?? binding.agentxp_public_leaderboard
+    ?? nested.public
+    ?? nested.public_agentxp
+  );
+  if (explicit !== null) return explicit;
+
+  const visibility = slugify(binding.agentxp_visibility || nested.visibility);
+  if (visibility === 'public') return true;
+  if (['internal', 'private'].includes(visibility)) return false;
+
+  const scope = slugify(binding.agentxp_scope || nested.scope);
+  if (scope === 'global') return true;
+  if (['org', 'internal', 'private'].includes(scope)) return false;
+
+  return null;
+}
+
 function publicWorkspaceBinding(workspace) {
   const binding = readJsonFile(path.join(workspace, BUSINESS_BINDING_FILE), null);
   if (!binding || typeof binding !== 'object') return null;
@@ -1130,6 +1160,7 @@ function publicWorkspaceBinding(workspace) {
   const workspaceId = String(binding.workspace_id || '').trim();
   const businessSlug = slugify(binding.slug || binding.business_slug || binding.name);
   const workspaceTemplate = slugify(binding.workspace_template || binding.organization_type || binding.computer_type);
+  const agentxpPublic = agentXpPublicBinding(binding);
   if (!businessId && !workspaceId && !businessSlug) return null;
   return {
     business_id: businessId || null,
@@ -1138,6 +1169,7 @@ function publicWorkspaceBinding(workspace) {
     workspace_template: workspaceTemplate || null,
     computer: businessSlug || workspaceName(workspace),
     computer_slug: businessSlug || slugify(workspaceName(workspace)),
+    ...(agentxpPublic === null ? {} : { agentxp_public: agentxpPublic }),
   };
 }
 
@@ -1792,19 +1824,22 @@ function uniqueTruthy(values) {
   return Array.from(new Set(values.map(value => String(value || '').trim()).filter(Boolean))).sort();
 }
 
-function syncAttribution(workspaces) {
+function syncAttribution(workspaces, options = {}) {
   const included = workspaces.filter(workspace => workspace.included !== false);
   const scoped = included.length ? included : workspaces;
   const businessIds = uniqueTruthy(scoped.map(workspace => workspace.business_id));
   const workspaceIds = uniqueTruthy(scoped.map(workspace => workspace.workspace_id));
   const businessSlugs = uniqueTruthy(scoped.map(workspace => workspace.business_slug || workspace.computer_slug));
   const templates = uniqueTruthy(scoped.map(workspace => workspace.workspace_template));
+  const explicitPublic = typeof options.publicAgentXp === 'boolean' ? options.publicAgentXp : null;
+  const workspacePublic = scoped.length === 1 && scoped[0]?.agentxp_public === true;
+  const agentxpPublic = explicitPublic === null ? (workspacePublic ? true : null) : explicitPublic;
 
   if (businessIds.length > 1) {
-    return { attribution_scope: 'multi_business', computer: 'multiple-workspaces' };
+    return { attribution_scope: 'multi_business', computer: 'multiple-workspaces', agentxp_public: explicitPublic === true };
   }
   if (businessIds.length === 0 && scoped.length > 1 && businessSlugs.length > 1) {
-    return { attribution_scope: 'multi_workspace', computer: 'multiple-workspaces' };
+    return { attribution_scope: 'multi_workspace', computer: 'multiple-workspaces', agentxp_public: explicitPublic === true };
   }
 
   const businessId = businessIds[0] || null;
@@ -1818,6 +1853,7 @@ function syncAttribution(workspaces) {
     business_slug: businessSlug,
     workspace_template: workspaceTemplate,
     computer: businessSlug || scoped[0]?.computer || scoped[0]?.name || 'local',
+    agentxp_public: agentxpPublic,
   };
 }
 
@@ -1825,13 +1861,22 @@ function syncScopeFields(attribution = {}) {
   const attributionScope = slugify(attribution.attribution_scope);
   const orgId = String(attribution.business_id || attribution.business_slug || '').trim() || null;
   const businessBound = Boolean(orgId) || attributionScope === 'business-bound' || attributionScope === 'multi-business';
+  const publicAgentXp = typeof attribution.agentxp_public === 'boolean'
+    ? attribution.agentxp_public
+    : !businessBound;
   return {
-    scope: businessBound ? 'org' : 'global',
+    scope: publicAgentXp ? 'global' : (businessBound ? 'org' : 'global'),
     org_id: orgId,
     computer_id: String(attribution.workspace_id || attribution.computer || 'local').trim() || 'local',
-    visibility: businessBound ? 'internal' : 'public',
-    public_agentxp: !businessBound,
+    visibility: publicAgentXp ? 'public' : 'internal',
+    public_agentxp: publicAgentXp,
   };
+}
+
+function publicAgentXpOverride(args = []) {
+  if (hasFlag(args, '--public')) return true;
+  if (hasFlag(args, '--private') || hasFlag(args, '--internal')) return false;
+  return null;
 }
 
 function credentialHandle(credentials) {
@@ -1886,13 +1931,13 @@ function syncPlayer(args, projection) {
 
 function buildAgentXpSyncPacket(args = []) {
   const localMode = hasFlag(args, '--local') || hasFlag(args, '--workspace') || hasFlag(args, '--operator');
-  const projectionArgs = args.filter(arg => !['--dry-run', '--no-post', '--packet'].includes(arg));
+  const projectionArgs = args.filter(arg => !['--dry-run', '--no-post', '--packet', '--public', '--private', '--internal'].includes(arg));
   const projection = hasFlag(args, '--all') || !localMode
     ? collectAllLocalXpProjection(projectionArgs)
     : collectLocalXpProjection(projectionArgs);
   const player = syncPlayer(args, projection);
   const workspaces = projectionWorkspaceSummaries(projection);
-  const attribution = syncAttribution(workspaces);
+  const attribution = syncAttribution(workspaces, { publicAgentXp: publicAgentXpOverride(args) });
   const scopeFields = syncScopeFields(attribution);
   const totalXp = asNumber(projection.total_agent_xp ?? projection.agent_xp ?? projection.total_xp ?? projection.career_xp);
   const receiptsCount = asNumber(projection.receipts_count);
