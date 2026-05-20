@@ -10,6 +10,8 @@
  *   atris calendar date YYYY-MM-DD - Show events on a date
  *   atris twitter post      - Post a tweet (interactive)
  *   atris slack channels    - List Slack channels
+ *   atris slack messages <channel> [--limit 20] - Read recent messages
+ *   atris slack search <query> [--limit 20] - Search Slack messages
  */
 
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
@@ -163,6 +165,29 @@ function localDateBounds(dateText) {
   return { start, end };
 }
 
+function calendarEventTimeValue(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value.dateTime || value.date || '';
+}
+
+function isDateOnly(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+function formatCalendarTimeRange(event) {
+  const start = calendarEventTimeValue(event.start || event.start_time || event.startTime);
+  const end = calendarEventTimeValue(event.end || event.end_time || event.endTime);
+  if (!start || isDateOnly(start)) return 'All day';
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return 'Time unavailable';
+  const startText = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  if (!end || isDateOnly(end)) return startText;
+  const endDate = new Date(end);
+  if (Number.isNaN(endDate.getTime())) return startText;
+  return `${startText}-${endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
 function formatCalendarEvents(label, events) {
   if (events.length === 0) {
     console.log(`No events ${label}. 🎉`);
@@ -172,8 +197,7 @@ function formatCalendarEvents(label, events) {
   console.log('─'.repeat(50));
 
   for (const event of events) {
-    const start = event.start?.dateTime || event.start?.date || '';
-    const time = start ? new Date(start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'All day';
+    const time = formatCalendarTimeRange(event);
     const title = event.summary || '(no title)';
 
     console.log(`${time}  ${title}`);
@@ -331,7 +355,7 @@ async function slackChannels() {
 
   console.log('💬 Fetching Slack channels...\n');
 
-  const result = await apiRequestJson('/integrations/slack/channels', {
+  const result = await apiRequestJson('/integrations/slack/me/channels', {
     method: 'GET',
     token,
   });
@@ -359,8 +383,137 @@ async function slackChannels() {
   for (const ch of channels) {
     const name = ch.name || ch.id;
     const priv = ch.is_private ? '🔒' : '#';
-    console.log(`  ${priv} ${name}`);
+    console.log(`  ${priv} ${name}  ${ch.id || ''}`.trimEnd());
   }
+}
+
+async function slackDms() {
+  const token = await getAuthToken();
+
+  console.log('💬 Fetching Slack DMs...\n');
+
+  const result = await apiRequestJson('/integrations/slack/me/dms', {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch DMs'}`);
+    process.exit(1);
+  }
+
+  const dms = result.data?.dms || result.data?.channels || result.data || [];
+  if (!dms.length) {
+    console.log('No DMs found.');
+    return;
+  }
+  for (const dm of dms) {
+    const name = dm.name || dm.user_name || dm.user || dm.id;
+    console.log(`  ${name}  ${dm.id || ''}`.trimEnd());
+  }
+}
+
+function parseLimit(args, fallback = 20) {
+  const idx = args.findIndex((arg) => arg === '--limit' || arg === '-n');
+  const raw = idx >= 0 ? args[idx + 1] : '';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 100) : fallback;
+}
+
+function argsWithoutLimit(args = []) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '--limit' || args[i] === '-n') {
+      i += 1;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
+}
+
+async function slackPersonalChannels(token) {
+  const result = await apiRequestJson('/integrations/slack/me/channels', {
+    method: 'GET',
+    token,
+  });
+  if (!result.ok) return [];
+  return result.data?.channels || result.data || [];
+}
+
+async function resolveSlackChannel(token, channel) {
+  const text = String(channel || '').trim();
+  if (!text) return '';
+  if (/^[A-Z][A-Z0-9]{5,}$/.test(text)) return text;
+  const wanted = text.replace(/^#/, '').toLowerCase();
+  const channels = await slackPersonalChannels(token);
+  const match = channels.find((ch) => String(ch.name || '').toLowerCase() === wanted || String(ch.id || '').toLowerCase() === wanted);
+  return match?.id || text;
+}
+
+function formatSlackMessages(messages) {
+  if (!messages.length) {
+    console.log('No Slack messages found.');
+    return;
+  }
+  console.log('─'.repeat(60));
+  for (const message of messages) {
+    const author = message.user_name || message.username || message.user || message.sender || 'unknown';
+    const ts = message.datetime || message.time || message.ts || message.created_at || '';
+    const text = String(message.text || message.content || message.message || '').replace(/\s+/g, ' ').trim();
+    console.log(`${ts}  ${author}: ${text || '(no text)'}`);
+  }
+  console.log('─'.repeat(60));
+}
+
+async function slackMessages(channel, args = []) {
+  if (!channel) {
+    console.error('Usage: atris slack messages <channel-or-id> [--limit 20]');
+    process.exit(1);
+  }
+  const token = await getAuthToken();
+  const limit = parseLimit(args);
+  const channelId = await resolveSlackChannel(token, channel);
+
+  console.log(`💬 Reading Slack messages from ${channel}...\n`);
+
+  const result = await apiRequestJson(`/integrations/slack/me/messages/${encodeURIComponent(channelId)}?limit=${limit}`, {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch Slack messages'}`);
+    process.exit(1);
+  }
+
+  const messages = result.data?.messages || result.data || [];
+  formatSlackMessages(messages);
+}
+
+async function slackSearch(query, args = []) {
+  if (!query) {
+    console.error('Usage: atris slack search <query> [--limit 20]');
+    process.exit(1);
+  }
+  const token = await getAuthToken();
+  const limit = parseLimit(args);
+  const q = encodeURIComponent(query);
+
+  console.log(`💬 Searching Slack for "${query}"...\n`);
+
+  const result = await apiRequestJson(`/integrations/slack/me/search?q=${q}&count=${limit}`, {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to search Slack messages'}`);
+    process.exit(1);
+  }
+
+  const messages = result.data?.messages || result.data?.results || result.data || [];
+  formatSlackMessages(messages);
 }
 
 async function slackCommand(subcommand, ...args) {
@@ -369,9 +522,22 @@ async function slackCommand(subcommand, ...args) {
     case 'list':
       await slackChannels();
       break;
+    case 'dms':
+      await slackDms();
+      break;
+    case 'messages':
+    case 'read':
+      await slackMessages(args[0], args.slice(1));
+      break;
+    case 'search':
+      await slackSearch(argsWithoutLimit(args).join(' '), args);
+      break;
     default:
       console.log('Slack commands:');
-      console.log('  atris slack channels    - List Slack channels');
+      console.log('  atris slack channels             - List Slack channels');
+      console.log('  atris slack dms                  - List Slack DMs');
+      console.log('  atris slack messages <channel>   - Read recent messages');
+      console.log('  atris slack search <query>       - Search Slack messages');
   }
 }
 
