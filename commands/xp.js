@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const DEFAULT_GRAPH_DAYS = 365;
+const MAX_SYNC_GRAPH_DAYS = 370;
 const INTENSITY_CHARS = [' ', '.', ':', '*', '#'];
 const ROW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TASK_EPISODES_FILE = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -208,6 +209,38 @@ function combineAgentXpContributionGraphs(graphs, windowDays = DEFAULT_GRAPH_DAY
     }
   }
   return graphFromDailyTotals(totals, windowDays);
+}
+
+function sanitizeContributionGraphForSync(graph) {
+  if (!graph || typeof graph !== 'object') return null;
+  const rawDays = Array.isArray(graph.days) ? graph.days : [];
+  const days = rawDays
+    .slice(-MAX_SYNC_GRAPH_DAYS)
+    .map((day) => {
+      const date = typeof day?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day.date)
+        ? day.date
+        : null;
+      if (!date) return null;
+      const xp = Math.max(0, asNumber(day.xp ?? day.total_xp));
+      return {
+        date,
+        xp,
+        total_xp: Math.max(0, asNumber(day.total_xp, xp)),
+        intensity: Math.max(0, Math.min(4, asNumber(day.intensity))),
+      };
+    })
+    .filter(Boolean);
+  if (days.length === 0) return null;
+  return {
+    schema: 'atris.agent_xp_contribution_graph.v1',
+    metric_label: AGENT_XP_LABEL,
+    window_days: days.length,
+    total_xp: days.reduce((sum, day) => sum + day.xp, 0),
+    active_days: days.filter(day => day.xp > 0).length,
+    first_date: days[0]?.date || null,
+    last_date: days[days.length - 1]?.date || null,
+    days,
+  };
 }
 
 function currentForm(payload) {
@@ -1945,6 +1978,7 @@ function buildAgentXpSyncPacket(args = []) {
   const publicXp = earnedAgentXp(totalXp);
   const currentForm = currentFormScore(totalXp);
   const levelProgress = agentXpLevelProgress(publicXp);
+  const contributionGraph = sanitizeContributionGraphForSync(projection.contribution_graph);
   const workspaceRootHash = sha256(workspaces.map(item => item.workspace_root_hash || item.name).sort().join(':'));
   const entry = {
     user_id: player,
@@ -1964,6 +1998,7 @@ function buildAgentXpSyncPacket(args = []) {
     lock_reason: eligible ? null : 'not_enough_trusted_proof',
     public_adjustment: null,
     next_move: eligible ? 'Play the next proof-backed AgentXP mission.' : 'Complete one proof-backed AgentXP rep.',
+    contribution_graph: contributionGraph,
   };
   const packet = {
     schema: 'atris.agentxp_sync_packet.v1',

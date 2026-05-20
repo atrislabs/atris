@@ -65,6 +65,7 @@ function runCli(args, { cwd, env = {} } = {}) {
     cwd,
     encoding: 'utf8',
     timeout: 15000,
+    maxBuffer: 2 * 1024 * 1024,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -256,6 +257,9 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
     assert.equal(payload.entry.agent_xp, 7);
     assert.equal(payload.entry.verified_receipts, 1);
     assert.equal(payload.entry.leaderboard_eligible, true);
+    assert.equal(payload.entry.contribution_graph.total_xp, 7);
+    assert.equal(payload.entry.contribution_graph.active_days, 1);
+    assert.equal(payload.entry.contribution_graph.days.some(day => day.xp === 7), true);
     assert.equal(payload.packet.schema, 'atris.agentxp_sync_packet.v1');
     assert.equal(payload.packet.scope, 'global');
     assert.equal(payload.packet.org_id, null);
@@ -272,6 +276,8 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
     assert.equal(payload.packet.gm_projection.player_score.leaderboard_eligible, true);
     assert.equal(payload.packet.user_leaderboard.schema, 'atris.agentxp_user_leaderboard.v1');
     assert.equal(payload.packet.user_leaderboard.workspace_root_hash, payload.packet.workspace_root_hash);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.total_xp, 7);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.active_days, 1);
     assert.equal(payload.packet.privacy.raw_proofs_included, false);
     assert.equal(payload.packet.privacy.raw_receipts_included, false);
     assert.equal(payload.packet.privacy.contains_absolute_workspace_root, false);
@@ -461,6 +467,9 @@ test('xp sync all avoids top-level org attribution across multiple businesses', 
     assert.equal(payload.packet.local_evidence.visibility, 'internal');
     assert.equal(payload.packet.gm_projection.scope, 'org');
     assert.equal(payload.packet.gm_projection.visibility, 'internal');
+    assert.equal(payload.entry.contribution_graph.total_xp, 10);
+    assert.equal(payload.entry.contribution_graph.active_days, 1);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.total_xp, 10);
     assert.deepEqual(
       payload.packet.local_evidence.workspaces.map(workspace => workspace.business_id).sort(),
       ['biz-alpha', 'biz-beta'],
