@@ -5,7 +5,9 @@
  *   atris gmail inbox       - List recent emails
  *   atris gmail read <id>   - Read specific email
  *   atris calendar today    - Show today's events
+ *   atris calendar yesterday - Show yesterday's events
  *   atris calendar week     - Show this week's events
+ *   atris calendar date YYYY-MM-DD - Show events on a date
  *   atris twitter post      - Post a tweet (interactive)
  *   atris slack channels    - List Slack channels
  */
@@ -137,31 +139,33 @@ async function gmailCommand(subcommand, ...args) {
 // CALENDAR
 // ============================================================================
 
-async function calendarToday() {
-  const { token, email } = await getAuth();
+function localDayBounds(offsetDays = 0) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + offsetDays);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
 
-  console.log('📅 Today\'s events:\n');
-
-  const result = await apiRequestJson('/integrations/google-calendar/events/today', {
-    method: 'GET',
-    token,
-  });
-
-  if (!result.ok) {
-    if (result.status === 400 || result.status === 401) {
-      console.error(`Calendar not connected for ${email}.`);
-      console.error('Connect at: https://atris.ai/dashboard/settings');
-      console.error(`Make sure you're signed in as ${email} on the web.`);
-    } else {
-      console.error(`Error: ${result.error || 'Failed to fetch events'}`);
-    }
+function localDateBounds(dateText) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateText || ''))) {
+    console.error('Usage: atris calendar date YYYY-MM-DD');
     process.exit(1);
   }
+  const start = new Date(`${dateText}T00:00:00`);
+  if (Number.isNaN(start.getTime())) {
+    console.error('Invalid date. Use YYYY-MM-DD.');
+    process.exit(1);
+  }
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
 
-  const events = result.data?.events || result.data || [];
-
+function formatCalendarEvents(label, events) {
   if (events.length === 0) {
-    console.log('No events today. 🎉');
+    console.log(`No events ${label}. 🎉`);
     return;
   }
 
@@ -181,18 +185,75 @@ async function calendarToday() {
   console.log('─'.repeat(50));
 }
 
+async function calendarRange(label, { timeMin, timeMax, days } = {}) {
+  const { token, email } = await getAuth();
+
+  console.log(`📅 ${label}:\n`);
+
+  const params = new URLSearchParams();
+  if (timeMin) params.set('time_min', timeMin);
+  if (timeMax) params.set('time_max', timeMax);
+  if (days) params.set('days', String(days));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const result = await apiRequestJson(`/integrations/google-calendar/events${suffix}`, {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    if (result.status === 400 || result.status === 401) {
+      console.error(`Calendar not connected for ${email}.`);
+      console.error('Connect at: https://atris.ai/dashboard/settings');
+      console.error(`Make sure you're signed in as ${email} on the web.`);
+    } else {
+      console.error(`Error: ${result.error || 'Failed to fetch events'}`);
+    }
+    process.exit(1);
+  }
+
+  const events = result.data?.events || result.data || [];
+  formatCalendarEvents(label.toLowerCase(), events);
+}
+
+async function calendarToday() {
+  await calendarRange("Today's events", { days: 1 });
+}
+
+async function calendarYesterday() {
+  const { start, end } = localDayBounds(-1);
+  await calendarRange("Yesterday's events", { timeMin: start.toISOString(), timeMax: end.toISOString() });
+}
+
+async function calendarWeek() {
+  await calendarRange("This week's events", { days: 7 });
+}
+
+async function calendarDate(dateText) {
+  const { start, end } = localDateBounds(dateText);
+  await calendarRange(`Events on ${dateText}`, { timeMin: start.toISOString(), timeMax: end.toISOString() });
+}
+
 async function calendarCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'today':
       await calendarToday();
       break;
+    case 'yesterday':
+    case 'yday':
+      await calendarYesterday();
+      break;
     case 'week':
-      console.log('Week view coming soon...');
+      await calendarWeek();
+      break;
+    case 'date':
+      await calendarDate(args[0]);
       break;
     default:
       console.log('Calendar commands:');
-      console.log('  atris calendar today    - Show today\'s events');
-      console.log('  atris calendar week     - Show this week\'s events');
+      console.log('  atris calendar today          - Show today\'s events');
+      console.log('  atris calendar yesterday      - Show yesterday\'s events');
+      console.log('  atris calendar week           - Show this week\'s events');
+      console.log('  atris calendar date YYYY-MM-DD - Show events on a date');
   }
 }
 
