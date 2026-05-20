@@ -1126,13 +1126,33 @@ async function resolveComputerCommandContext(token, options = {}) {
       ? await resolveBusinessContextBySlug(token, options.businessSlug, { preferCache: true })
       : await resolveBusinessContext(token);
     if (!ctx?.businessId) return null;
+    const workspaceId = options.workspaceId
+      ? await resolveWorkspaceSelector(token, ctx, options.workspaceId)
+      : ctx.workspaceId;
     return {
       ...ctx,
-      workspaceId: options.workspaceId || ctx.workspaceId,
+      workspaceId,
     };
   }
 
   return resolveBusinessContext(token);
+}
+
+function looksLikeWorkspaceId(input) {
+  const value = String(input || '').trim();
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    || /^ws-[a-z0-9_-]+$/i.test(value);
+}
+
+async function resolveWorkspaceSelector(token, ctx, input) {
+  const selector = String(input || '').trim();
+  if (!selector) return ctx.workspaceId;
+  if (selector === ctx.workspaceId || looksLikeWorkspaceId(selector)) return selector;
+
+  const workspaces = await listBusinessWorkspaces(token, ctx);
+  const workspace = resolveWorkspaceFromList(workspaces, selector);
+  return workspace?.id || selector;
 }
 
 async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
