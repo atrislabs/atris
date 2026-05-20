@@ -1567,7 +1567,7 @@ if (command === 'init') {
   searchJournal(keyword);
 } else if (command === 'xp') {
   require('../commands/xp').xpCommand(...process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then(() => { process.exitCode = 0; })
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'play') {
   require('../commands/play').playCommand(...process.argv.slice(3))
