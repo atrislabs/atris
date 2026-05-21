@@ -2550,34 +2550,56 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
 
       errors = 0;
       let done = false;
-      for (const event of (events.data?.events || [])) {
-        fromIndex++;
-        if (event.type === 'assistant_text' && event.content) {
-          sawVisibleOutput = true;
-          process.stdout.write(event.content);
-        } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
-          sawVisibleOutput = true;
-          process.stdout.write(String(event.result));
-        } else if (!options.quiet && event.type === 'tool_use' && event.tool) {
-          const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
-          if (arg) {
-            console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
-          } else {
-            console.log(`\n  [${event.tool}]`);
+      const emitEvents = (items, { showTools = true } = {}) => {
+        let batchDone = false;
+        for (const event of (items || [])) {
+          if ((event.type === 'assistant_text' || event.type === 'text') && event.content) {
+            sawVisibleOutput = true;
+            process.stdout.write(event.content);
+          } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
+            sawVisibleOutput = true;
+            process.stdout.write(String(event.result));
+          } else if (showTools && !options.quiet && event.type === 'tool_use' && event.tool) {
+            const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
+            if (arg) {
+              console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
+            } else {
+              console.log(`\n  [${event.tool}]`);
+            }
+          } else if (event.type === 'error') {
+            if (event.error) console.error(`\n${event.error}`);
+            terminalStatus = 'error';
+            batchDone = true;
+            break;
+          } else if (event.type === 'complete') {
+            terminalStatus = 'completed';
+            batchDone = true;
+            break;
           }
-        } else if (event.type === 'error') {
-          if (event.error) console.error(`\n${event.error}`);
-          terminalStatus = 'error';
-          done = true;
-          break;
-        } else if (event.type === 'complete') {
-          terminalStatus = 'completed';
-          done = true;
-          break;
         }
+        return batchDone;
+      };
+
+      const batch = events.data?.events || [];
+      done = emitEvents(batch);
+      const nextIndex = events.data?.next_index;
+      if (Number.isInteger(nextIndex) && nextIndex >= fromIndex) {
+        fromIndex = nextIndex;
+      } else {
+        fromIndex += batch.length;
       }
 
       if (done || ['completed', 'error', 'failed', 'cancelled'].includes(events.data?.status)) {
+        if (!sawVisibleOutput && events.data?.status === 'completed') {
+          const fullEvents = await apiRequestJson(
+            `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=0`,
+            { method: 'GET', token, timeoutMs: 60000 }
+          );
+          if (fullEvents.ok) {
+            emitEvents(fullEvents.data?.events || [], { showTools: false });
+          }
+        }
+
         if (!process.stdout.write('\n')) {
           // no-op: keep line handling stable
         }
