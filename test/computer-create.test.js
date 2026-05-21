@@ -33,6 +33,7 @@ function writeCredentials(home) {
 
 function startApiServer(requests) {
   let lastChatMessage = '';
+  let emptyDeltaReplayServed = false;
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
@@ -135,6 +136,15 @@ function startApiServer(requests) {
       if (req.method === 'GET' && req.url.startsWith('/api/business/biz-1/chat/events?')) {
         if (lastChatMessage.includes('FAIL_STREAM')) {
           send(200, { status: 'failed', events: [{ type: 'error', error: 'stream failed for test' }] });
+          return;
+        }
+        if (lastChatMessage.includes('EMPTY_DELTA_REFETCH')) {
+          if (!emptyDeltaReplayServed) {
+            emptyDeltaReplayServed = true;
+            send(200, { status: 'completed', events: [], next_index: 2 });
+            return;
+          }
+          send(200, { status: 'completed', events: [{ type: 'assistant_text', content: 'RECOVERED_RESULT' }, { type: 'complete' }], next_index: 2 });
           return;
         }
         const reply = lastChatMessage.includes('CHAT_OK') ? 'CHAT_OK' : '4';
@@ -741,6 +751,45 @@ test('computer exec waits and streams the business chat result by default', asyn
     assert.doesNotMatch(res.stdout, /Use the stream URL/);
     assert.ok(requests.some((request) => request.url.startsWith('/api/business/biz-1/chat/events?')));
     assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/chat' && request.body?.worker === 'claude'));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer exec replays buffered result when completed poll delta is empty', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+
+    const res = await runCliAsync([
+      'computer',
+      'exec',
+      '--business',
+      'atris-labs',
+      '--workspace',
+      'ws-new',
+      'EMPTY_DELTA_REFETCH',
+    ], { cwd, env });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /RECOVERED_RESULT/);
+    assert.doesNotMatch(res.stdout, /\(no result\)/);
+    const eventPolls = requests.filter((request) => request.url.startsWith('/api/business/biz-1/chat/events?'));
+    assert.equal(eventPolls.length, 2);
+    assert.ok(eventPolls.every((request) => request.url.includes('from_index=0')));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
