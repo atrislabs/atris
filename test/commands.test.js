@@ -5699,6 +5699,49 @@ test('task render labels failed records as failed no-go and can suppress them', 
   }
 });
 
+test('task list --status blocked returns failed rows counted as blocked', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const blockedCreated = runCli(['task', 'new', 'Needs owner input', '--json'], { cwd: dir, env });
+    assert.equal(blockedCreated.status, 0, blockedCreated.stderr);
+    const blockedTask = JSON.parse(blockedCreated.stdout).task;
+    const blocked = runCli(['task', 'done', blockedTask.display_id, '--failed', '--json'], { cwd: dir, env });
+    assert.equal(blocked.status, 0, blocked.stderr);
+
+    const reviewedCreated = runCli(['task', 'new', 'Reviewed no-go', '--json'], { cwd: dir, env });
+    assert.equal(reviewedCreated.status, 0, reviewedCreated.stderr);
+    const reviewedTask = JSON.parse(reviewedCreated.stdout).task;
+    const reviewed = runCli([
+      'task',
+      'done',
+      reviewedTask.display_id,
+      '--failed',
+      '--proof',
+      'No-go was reviewed and closed with explicit proof.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(reviewed.status, 0, reviewed.stderr);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.blocked, 1);
+    assert.equal(statusPayload.status.counts.done, 1);
+
+    const list = runCli(['task', 'list', '--status', 'blocked', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr);
+    const listPayload = JSON.parse(list.stdout);
+    assert.deepEqual(listPayload.tasks.map(task => task.display_id), [blockedTask.display_id]);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review can create the next RSI task from the review suggestion', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
