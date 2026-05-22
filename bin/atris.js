@@ -1045,7 +1045,6 @@ async function interactiveEntry(userInput) {
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
   const { getBacklogTasks, getInProgressTasks } = require('../lib/state-detection');
-  const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
@@ -1059,16 +1058,6 @@ function showWelcomeVisualization() {
   let isInitialized = fs.existsSync(atrisDir);
 
   if (isInitialized) {
-    // Auto-create today's journal if missing
-    try {
-      ensureLogDirectory();
-      const { logFile, dateFormatted } = getLogPath();
-      if (!fs.existsSync(logFile)) {
-        createLogFile(logFile, dateFormatted);
-      }
-    } catch {
-      // Silently fail - don't block welcome display
-    }
     // Check MAP.md
     const mapPath = path.join(atrisDir, 'MAP.md');
     if (fs.existsSync(mapPath)) {
