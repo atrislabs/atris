@@ -114,6 +114,28 @@ test('activate prints core file paths', () => {
   }
 });
 
+test('atris.md boot visualization does not create an empty daily journal', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'atris.md'), '# atris.md\n', 'utf8');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), '# MAP.md\n\n- `bin/atris.js`\n', 'utf8');
+    fs.writeFileSync(
+      path.join(atrisDir, 'TODO.md'),
+      ['# TODO.md', '', '## Backlog', '', '## In Progress', '', '## Completed', ''].join('\n'),
+      'utf8'
+    );
+
+    const res = runCli(['atris.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /WORKSPACE DETECTED/);
+    assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('skill list and audit include bundled skills from any workspace', () => {
   const dir = makeTempDir();
   try {
