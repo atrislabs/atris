@@ -5661,6 +5661,44 @@ test('task render archives old completed records from TODO view', () => {
   }
 });
 
+test('task render labels failed records as failed no-go and can suppress them', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    for (let i = 0; i < 10; i += 1) {
+      const created = runCli(['task', 'new', `Failed no-go task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
+      assert.equal(created.status, 0, created.stderr);
+      const id = JSON.parse(created.stdout).task_id;
+      const failed = runCli(['task', 'done', id, '--failed', '--json'], { cwd: dir, env });
+      assert.equal(failed.status, 0, failed.stderr);
+    }
+
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
+    assert.equal(render.status, 0, render.stderr);
+    const regenerated = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    const failedLines = regenerated.match(/\*\*\[[^\]]+\]\*\* Failed no-go task/g) || [];
+    assert.equal(failedLines.length, 8);
+    assert.match(regenerated, /## Failed \/ No-go/);
+    assert.doesNotMatch(regenerated, /## Blocked/);
+    assert.match(regenerated, /2 older failed\/no-go tasks archived/);
+
+    const hiddenRender = runCli(['task', 'render', '--out', 'atris/TODO.md', '--failed-limit', '0'], { cwd: dir, env });
+    assert.equal(hiddenRender.status, 0, hiddenRender.stderr);
+    const hidden = fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8');
+    const hiddenFailedLines = hidden.match(/\*\*\[[^\]]+\]\*\* Failed no-go task/g) || [];
+    assert.equal(hiddenFailedLines.length, 0);
+    assert.match(hidden, /## Failed \/ No-go/);
+    assert.doesNotMatch(hidden, /## Blocked/);
+    assert.match(hidden, /10 older failed\/no-go tasks archived/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review can create the next RSI task from the review suggestion', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
