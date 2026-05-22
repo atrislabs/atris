@@ -5793,6 +5793,67 @@ test('task list --status active and do return rows counted as active work', () =
   }
 });
 
+test('task list --status review aliases return rows counted as review work', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const unreviewedCreated = runCli(['task', 'new', 'Done without review proof', '--json'], { cwd: dir, env });
+    assert.equal(unreviewedCreated.status, 0, unreviewedCreated.stderr);
+    const unreviewedTask = JSON.parse(unreviewedCreated.stdout).task;
+    const unreviewedDone = runCli(['task', 'done', unreviewedTask.display_id, '--json'], { cwd: dir, env });
+    assert.equal(unreviewedDone.status, 0, unreviewedDone.stderr);
+
+    const blockingCreated = runCli(['task', 'new', 'Needs second agent review', '--json'], { cwd: dir, env });
+    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
+    const blockingTask = JSON.parse(blockingCreated.stdout).task;
+    const blockingReady = runCli(['task', 'ready', blockingTask.display_id, '--proof', 'first review proof is present', '--json'], { cwd: dir, env });
+    assert.equal(blockingReady.status, 0, blockingReady.stderr);
+
+    const certifiedCreated = runCli(['task', 'new', 'Certified review work', '--json'], { cwd: dir, env });
+    assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
+    const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
+    for (const proof of ['first certified proof pass', 'second certified proof pass']) {
+      const ready = runCli(['task', 'ready', certifiedTask.display_id, '--proof', proof, '--json'], { cwd: dir, env });
+      assert.equal(ready.status, 0, ready.stderr);
+    }
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.review, 3);
+    assert.equal(statusPayload.status.counts.review_blocking, 1);
+    assert.equal(statusPayload.status.counts.review_certified, 1);
+
+    const review = runCli(['task', 'list', '--status', 'review', '--json'], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+    const reviewPayload = JSON.parse(review.stdout);
+    assert.deepEqual(
+      reviewPayload.tasks.map(task => task.display_id).sort(),
+      [unreviewedTask.display_id, blockingTask.display_id, certifiedTask.display_id].sort(),
+    );
+
+    for (const alias of ['review_blocking', 'review-blocking']) {
+      const list = runCli(['task', 'list', '--status', alias, '--json'], { cwd: dir, env });
+      assert.equal(list.status, 0, list.stderr);
+      const listPayload = JSON.parse(list.stdout);
+      assert.deepEqual(listPayload.tasks.map(task => task.display_id), [blockingTask.display_id]);
+    }
+
+    for (const alias of ['review_certified', 'review-certified']) {
+      const list = runCli(['task', 'list', '--status', alias, '--json'], { cwd: dir, env });
+      assert.equal(list.status, 0, list.stderr);
+      const listPayload = JSON.parse(list.stdout);
+      assert.deepEqual(listPayload.tasks.map(task => task.display_id), [certifiedTask.display_id]);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review can create the next RSI task from the review suggestion', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

@@ -792,7 +792,8 @@ function taskStatusSummary(projection, { history = false } = {}) {
     backlog: tasks.filter(task => taskColumn(task) === 'backlog'),
     plan: tasks.filter(task => taskColumn(task) === 'open'),
     do: tasks.filter(task => taskColumn(task) === 'doing'),
-    review: tasks.filter(task => taskColumn(task) === 'review' || taskColumn(task) === 'blocked'),
+    review: tasks.filter(task => taskColumn(task) === 'review'),
+    blocked: tasks.filter(task => taskColumn(task) === 'blocked'),
     done: tasks.filter(task => taskColumn(task) === 'done'),
   };
   const active = [...columns.do, ...columns.review, ...columns.plan];
@@ -804,7 +805,7 @@ function taskStatusSummary(projection, { history = false } = {}) {
     const handoff = reviewHandoffForTask(task);
     return handoff && handoff.next_action === 'continue_work';
   }).length;
-  const blocked = columns.review.filter(task => taskColumn(task) === 'blocked').length;
+  const blocked = columns.blocked.length;
   const lastUpdated = tasks.reduce((max, task) => Math.max(max, Number(task.updated_at || 0)), 0);
   const swarloFeed = history ? tasks
     .flatMap(task => (task.events || []).map(event => ({
@@ -1298,15 +1299,27 @@ function cmdList(args) {
   const all = hasFlag(args, '--all');
   const status = flag(args, '--status');
   const statusFilter = typeof status === 'string' ? status.trim().toLowerCase() : null;
-  const queryStatus = statusFilter === 'blocked' ? 'failed' : statusFilter;
+  const statusAlias = statusFilter ? statusFilter.replace(/_/g, '-') : null;
+  const queryStatus = statusAlias === 'blocked' ? 'failed' : statusFilter;
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  if (['active', 'do', 'doing', 'blocked'].includes(statusFilter)) {
+  if (['active', 'do', 'doing', 'review', 'review-blocking', 'review-certified', 'blocked'].includes(statusAlias)) {
     const { projection } = writeDefaultProjection(taskDb, db, { all });
     const displayRows = (projection.tasks || []).filter(task => {
       const column = taskColumn(task);
-      if (statusFilter === 'blocked') return column === 'blocked';
-      if (statusFilter === 'do' || statusFilter === 'doing') return column === 'doing';
+      if (statusAlias === 'blocked') return column === 'blocked';
+      if (statusAlias === 'do' || statusAlias === 'doing') return column === 'doing';
+      if (statusAlias === 'review') return column === 'review';
+      if (statusAlias === 'review-blocking') {
+        if (column !== 'review') return false;
+        const handoff = reviewHandoffForTask(task);
+        return handoff && handoff.next_action === 'agent_review_again';
+      }
+      if (statusAlias === 'review-certified') {
+        if (column !== 'review') return false;
+        const handoff = reviewHandoffForTask(task);
+        return handoff && handoff.next_action === 'continue_work';
+      }
       if (column === 'open' || column === 'doing') return true;
       if (column !== 'review') return false;
       const handoff = reviewHandoffForTask(task);
