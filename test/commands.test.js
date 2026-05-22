@@ -4424,6 +4424,10 @@ test('task done with proof writes a reviewed proof event', () => {
     assert.equal(donePayload.episode.career_xp.eligible, false);
     assert.equal(donePayload.xp_projection.total_xp, 0);
     assert.equal(donePayload.xp_projection.collected_receipts, 0);
+    assert.equal(
+      donePayload.xp_projection.earning_model.policies.task_done_with_proof,
+      'Records proof for review and RL context; emits no Career XP receipt until human accept.',
+    );
 
     const show = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
