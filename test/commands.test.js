@@ -5742,6 +5742,57 @@ test('task list --status blocked returns failed rows counted as blocked', () => 
   }
 });
 
+test('task list --status active and do return rows counted as active work', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const plannedCreated = runCli(['task', 'new', 'Plan next route', '--tag', 'plan', '--json'], { cwd: dir, env });
+    assert.equal(plannedCreated.status, 0, plannedCreated.stderr);
+    const plannedTask = JSON.parse(plannedCreated.stdout).task;
+
+    const doingCreated = runCli(['task', 'new', 'Execute current route', '--json'], { cwd: dir, env });
+    assert.equal(doingCreated.status, 0, doingCreated.stderr);
+    const doingTask = JSON.parse(doingCreated.stdout).task;
+    const claimed = runCli(['task', 'claim', doingTask.display_id, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    const reviewCreated = runCli(['task', 'new', 'Needs one more agent review', '--json'], { cwd: dir, env });
+    assert.equal(reviewCreated.status, 0, reviewCreated.stderr);
+    const reviewTask = JSON.parse(reviewCreated.stdout).task;
+    const ready = runCli(['task', 'ready', reviewTask.display_id, '--proof', 'node --test test/commands.test.js passed once', '--json'], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.plan, 1);
+    assert.equal(statusPayload.status.counts.do, 1);
+    assert.equal(statusPayload.status.counts.review_blocking, 1);
+    assert.equal(statusPayload.status.counts.active, 3);
+
+    const active = runCli(['task', 'list', '--status', 'active', '--json'], { cwd: dir, env });
+    assert.equal(active.status, 0, active.stderr);
+    const activePayload = JSON.parse(active.stdout);
+    assert.deepEqual(
+      activePayload.tasks.map(task => task.display_id).sort(),
+      [plannedTask.display_id, doingTask.display_id, reviewTask.display_id].sort(),
+    );
+
+    for (const alias of ['do', 'doing']) {
+      const list = runCli(['task', 'list', '--status', alias, '--json'], { cwd: dir, env });
+      assert.equal(list.status, 0, list.stderr);
+      const listPayload = JSON.parse(list.stdout);
+      assert.deepEqual(listPayload.tasks.map(task => task.display_id), [doingTask.display_id]);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review can create the next RSI task from the review suggestion', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
