@@ -2610,7 +2610,7 @@ test('brain compile counts task review episodes as learning state', () => {
 
     const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.match(res.stdout, /State rows: 3 raw \/ 3 valid/);
     assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
 
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
@@ -2621,6 +2621,69 @@ test('brain compile counts task review episodes as learning state', () => {
     const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
     assert.match(status, /1 episode row\(s\) are available/);
     assert.doesNotMatch(status, /Capture one operator approval/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain compile renders loop-health channels from live state files', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const stateDir = path.join(dir, '.atris', 'state');
+    fs.writeFileSync(path.join(stateDir, 'overnight_rl_self_heal.jsonl'), JSON.stringify({
+      at: '2026-05-22T01:00:00Z',
+      status: 'blocked',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'career_xp_receipts.jsonl'), JSON.stringify({
+      accepted_at: '2026-05-22T02:00:00Z',
+      xp: 1,
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'career_xp.projection.json'), JSON.stringify({
+      generated_at: '2026-05-22T03:00:00Z',
+      accepted_xp: 12,
+    }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'master_loop_events.jsonl'), JSON.stringify({
+      created_at: '2026-05-22T04:00:00Z',
+      status: 'advance_blocked',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'mission_events.jsonl'), JSON.stringify({
+      created_at: '2026-05-22T05:00:00Z',
+      mission: 'business-computer',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'company_yc_wow_latest.json'), JSON.stringify({
+      generated_at: '2026-05-22T06:00:00Z',
+      aggregate_slice_score: '50/50',
+    }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'pulse_agi_loop_receipts.jsonl'), JSON.stringify({
+      created_at: '2026-05-22T07:00:00Z',
+      status: 'passed',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      generated_at: '2026-05-22T08:00:00Z',
+      tasks: [],
+    }), 'utf8');
+
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /State rows: 9 raw \/ 9 valid/);
+
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /## Loop Health/);
+    assert.match(status, /overnight_rl/);
+    assert.match(status, /career_xp_receipts/);
+    assert.match(status, /career_xp_projection/);
+    assert.match(status, /master_loop/);
+    assert.match(status, /missions/);
+    assert.match(status, /company_yc_latest/);
+    assert.match(status, /pulse_agi_loop/);
+    assert.match(status, /task_projection/);
+    assert.match(status, /loop-health channel\(s\) are visible/);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
+    assert.equal(state.loopHealth.find(row => row.channel === 'overnight_rl').status, 'seen');
+    assert.equal(state.loopHealth.find(row => row.channel === 'career_xp_projection').latestTs, '2026-05-22T03:00:00Z');
+    assert.equal(state.stateFiles.find(row => row.path.endsWith('tasks.projection.json')).validRows, 1);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2667,7 +2730,7 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
 
     const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /State rows: 2 raw \/ 2 valid/);
+    assert.match(compile.stdout, /State rows: 4 raw \/ 4 valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
   } finally {
     cleanupTempDir(dir);

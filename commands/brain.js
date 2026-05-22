@@ -18,6 +18,31 @@ const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/TODO.md',
   'atris/wiki/index.md',
 ];
+const CORE_STATE_FILES = [
+  'events.jsonl',
+  'episodes.jsonl',
+  'task_episodes.jsonl',
+  'scorecards.jsonl',
+  'agent_tasks.jsonl',
+  'agent_mail.jsonl',
+  'agent_inboxes.jsonl',
+  'agents.jsonl',
+  'approvals.jsonl',
+];
+const LOOP_HEALTH_CHANNELS = [
+  { name: 'overnight_rl', file: 'overnight_rl_self_heal.jsonl' },
+  { name: 'career_xp_receipts', file: 'career_xp_receipts.jsonl' },
+  { name: 'career_xp_projection', file: 'career_xp.projection.json' },
+  { name: 'gm_xp_projection', file: 'gm_xp.projection.json' },
+  { name: 'master_loop', file: 'master_loop_events.jsonl' },
+  { name: 'missions', file: 'mission_events.jsonl' },
+  { name: 'mission_registry', file: 'missions.jsonl' },
+  { name: 'company_yc_events', file: 'company_yc_wow_events.jsonl' },
+  { name: 'company_yc_latest', file: 'company_yc_wow_latest.json' },
+  { name: 'pulse_agi_loop', file: 'pulse_agi_loop_receipts.jsonl' },
+  { name: 'task_events', file: 'task_events.jsonl' },
+  { name: 'task_projection', file: 'tasks.projection.json' },
+];
 
 function parseArgs(args) {
   const options = {
@@ -116,6 +141,29 @@ function shortHash(value) {
   return sha256Text(value).slice(0, 12);
 }
 
+function latestTimestampFromValue(value) {
+  const keys = ['ts', 'timestamp', 'created_at', 'updated_at', 'sent_at', 'date', 'at', 'generated_at', 'accepted_at', 'recorded_at', 'synced_at'];
+  const seen = [];
+
+  function visit(item, depth = 0) {
+    if (!item || depth > 4) return;
+    if (Array.isArray(item)) {
+      for (const child of item.slice(0, 200)) visit(child, depth + 1);
+      return;
+    }
+    if (typeof item !== 'object') return;
+    for (const key of keys) {
+      if (item[key]) seen.push(String(item[key]));
+    }
+    for (const value of Object.values(item).slice(0, 200)) {
+      if (value && typeof value === 'object') visit(value, depth + 1);
+    }
+  }
+
+  visit(value);
+  return seen.sort().pop() || null;
+}
+
 function readJsonlStats(filePath) {
   const text = readText(filePath);
   const lines = text.split('\n').filter(line => line.trim());
@@ -126,7 +174,7 @@ function readJsonlStats(filePath) {
     try {
       const row = JSON.parse(line);
       valid += 1;
-      const ts = row.ts || row.timestamp || row.created_at || row.updated_at || row.sent_at || row.date;
+      const ts = latestTimestampFromValue(row);
       if (ts && (!latestTs || String(ts) > String(latestTs))) latestTs = String(ts);
     } catch {
       // Keep the raw count honest but do not fail compilation on one bad line.
@@ -140,6 +188,22 @@ function readJsonlStats(filePath) {
     validRows: valid,
     latestTs,
   };
+}
+
+function readJsonStats(filePath) {
+  const exists = fs.existsSync(filePath);
+  const value = readJson(filePath);
+  return {
+    path: filePath,
+    exists,
+    rows: exists ? 1 : 0,
+    validRows: value ? 1 : 0,
+    latestTs: value ? latestTimestampFromValue(value) : null,
+  };
+}
+
+function readStateFileStats(filePath) {
+  return filePath.endsWith('.json') ? readJsonStats(filePath) : readJsonlStats(filePath);
 }
 
 function readJsonlRows(filePath) {
@@ -305,17 +369,23 @@ function collectState(root) {
   const wikiStatus = readText(path.join(atrisDir, 'wiki', 'STATUS.md'));
   const status = readText(path.join(atrisDir, 'STATUS.md'));
 
-  const stateFiles = [
-    'events.jsonl',
-    'episodes.jsonl',
-    'task_episodes.jsonl',
-    'scorecards.jsonl',
-    'agent_tasks.jsonl',
-    'agent_mail.jsonl',
-    'agent_inboxes.jsonl',
-    'agents.jsonl',
-    'approvals.jsonl',
-  ].map(name => readJsonlStats(path.join(stateDir, name)));
+  const stateFileNames = Array.from(new Set([
+    ...CORE_STATE_FILES,
+    ...LOOP_HEALTH_CHANNELS.map(channel => channel.file),
+  ]));
+  const stateFiles = stateFileNames.map(name => readStateFileStats(path.join(stateDir, name)));
+  const loopHealth = LOOP_HEALTH_CHANNELS.map(channel => {
+    const item = stateFiles.find(file => path.basename(file.path) === channel.file) || readStateFileStats(path.join(stateDir, channel.file));
+    const status = !item.exists ? 'missing' : item.validRows > 0 ? 'seen' : 'empty';
+    return {
+      channel: channel.name,
+      file: channel.file,
+      status,
+      rows: item.rows,
+      validRows: item.validRows,
+      latestTs: item.latestTs,
+    };
+  });
 
   const totalRows = stateFiles.reduce((sum, item) => sum + item.rows, 0);
   const validRows = stateFiles.reduce((sum, item) => sum + item.validRows, 0);
@@ -344,6 +414,7 @@ function collectState(root) {
     mapLineCount: mapText ? mapText.split('\n').length : 0,
     wikiPages: listMarkdown(root, 'atris/wiki', 20),
     stateFiles,
+    loopHealth,
     totalRows,
     validRows,
     latestScorecard: latestScorecard ? {
@@ -373,11 +444,17 @@ function strongestSignal(state) {
   const tasks = countStateRows(state, 'agent_tasks.jsonl');
   const scorecards = countStateRows(state, 'scorecards.jsonl');
   const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
-  if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.`;
-  if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.`;
-  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.`;
-  if (mail > 0) return `${mail} agent-mail row(s) are available; compile them into decisions, follow-ups, and CRM memory.`;
-  if (tasks > 0) return `${tasks} agent-task row(s) are available; use them to choose the next action.`;
+  const loopChannels = Array.isArray(state.loopHealth) ? state.loopHealth : [];
+  const visibleLoopChannels = loopChannels.filter(row => row.status === 'seen');
+  const loopSignal = loopChannels.length > 0
+    ? ` ${visibleLoopChannels.length}/${loopChannels.length} loop-health channel(s) are visible.`
+    : '';
+  if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.${loopSignal}`;
+  if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.${loopSignal}`;
+  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.${loopSignal}`;
+  if (mail > 0) return `${mail} agent-mail row(s) are available; compile them into decisions, follow-ups, and CRM memory.${loopSignal}`;
+  if (tasks > 0) return `${tasks} agent-task row(s) are available; use them to choose the next action.${loopSignal}`;
+  if (visibleLoopChannels.length > 0) return `${visibleLoopChannels.length}/${loopChannels.length} loop-health channel(s) are visible; inspect the loop-health panel before picking work.`;
   return 'Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.';
 }
 
@@ -1026,6 +1103,10 @@ This run compiled scattered workspace state into one loadable brain:
 
 ${strongestSignal(state)}
 
+## Loop Health
+
+${renderLoopHealth(state)}
+
 ## Next Move
 
 ${nextMove(state)}
@@ -1039,6 +1120,19 @@ Purpose: optimize for decision-speed; lead with the move, then use descriptions 
 Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now>\` -> \`Ready: <draft/proof/context>\` -> \`Go deeper: <paths>\`.
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 `;
+}
+
+function renderLoopHealth(state) {
+  const rows = Array.isArray(state.loopHealth) ? state.loopHealth : [];
+  if (rows.length === 0) return '(no loop-health channels configured)';
+  const lines = [
+    '| Channel | Status | Rows | Latest timestamp | Source |',
+    '|---|---:|---:|---|---|',
+  ];
+  for (const row of rows) {
+    lines.push(`| ${row.channel} | ${row.status} | ${row.rows} | ${row.latestTs || ''} | \`.atris/state/${row.file}\` |`);
+  }
+  return lines.join('\n');
 }
 
 function renderLedger(state) {
