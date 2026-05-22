@@ -88,7 +88,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task events [id] [--limit <n>]     Print recent task events
   atris task events --all                  Print the full append-only ledger
   atris task export [--out <file>]         Write web/desktop JSON projection
-  atris task render [--out <file>]         Regenerate compact TODO.md view from state
+  atris task render [--out <file>] [--failed-limit <n>]  Regenerate compact TODO.md view from state
   atris task where                          Print db path + workspace scope
   atris task help                           This help
 
@@ -2178,6 +2178,8 @@ function cmdRender(args) {
   const all = hasFlag(args, '--all');
   const doneLimitRaw = flag(args, '--done-limit');
   const doneLimit = doneLimitRaw && doneLimitRaw !== true ? Number(doneLimitRaw) : undefined;
+  const failedLimitRaw = flag(args, '--failed-limit');
+  const failedLimit = failedLimitRaw && failedLimitRaw !== true ? Number(failedLimitRaw) : undefined;
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const rows = taskDb.listTasks(db, {
@@ -2194,7 +2196,7 @@ function cmdRender(args) {
   if (endgameSection) preservedSections.push(endgameSection);
   const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
   const rowsToRender = [...rows, ...markdownRows];
-  const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, refRows, preservedSections });
+  const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, failedLimit, refRows, preservedSections });
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, markdown, 'utf8');
   if (wantsJson(args)) {
