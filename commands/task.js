@@ -1301,9 +1301,17 @@ function cmdList(args) {
   const queryStatus = statusFilter === 'blocked' ? 'failed' : statusFilter;
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  if (statusFilter === 'blocked') {
+  if (['active', 'do', 'doing', 'blocked'].includes(statusFilter)) {
     const { projection } = writeDefaultProjection(taskDb, db, { all });
-    const displayRows = (projection.tasks || []).filter(task => taskColumn(task) === 'blocked');
+    const displayRows = (projection.tasks || []).filter(task => {
+      const column = taskColumn(task);
+      if (statusFilter === 'blocked') return column === 'blocked';
+      if (statusFilter === 'do' || statusFilter === 'doing') return column === 'doing';
+      if (column === 'open' || column === 'doing') return true;
+      if (column !== 'review') return false;
+      const handoff = reviewHandoffForTask(task);
+      return handoff && handoff.next_action === 'agent_review_again';
+    });
     if (wantsJson(args)) {
       printJson({ ok: true, action: 'list', tasks: displayRows });
       return;
