@@ -111,6 +111,42 @@ test('ax can force local or cloud routing', () => {
   assert.equal(ax.buildPayload('what files are here?', { route: 'cloud', cwd: '/tmp/project' }).workspace_path, undefined);
 });
 
+test('ax exposes Atris Code Fast as an explicit public lane', () => {
+  const previousBackend = process.env.AX_CODE_FAST_BACKEND_URL;
+  const previousApiBase = process.env.AX_CODE_FAST_API_BASE;
+  delete process.env.AX_CODE_FAST_BACKEND_URL;
+  delete process.env.AX_CODE_FAST_API_BASE;
+
+  try {
+    assert.equal(ax.modelForMode('code-fast'), 'composer-2-5-fast');
+    assert.equal(ax.codeFastUrl(), 'https://api.atris.ai/api/cursor/turn');
+    assert.deepEqual(ax.buildCodeFastPayload('say ok', { cwd: '/tmp/project' }), {
+      message: 'say ok',
+      model: 'composer-2-5-fast',
+      timeout_seconds: 180,
+    });
+
+    process.env.AX_CODE_FAST_BACKEND_URL = 'http://127.0.0.1:8000';
+    assert.equal(ax.codeFastUrl(), 'http://127.0.0.1:8000/api/cursor/turn');
+    assert.equal(
+      ax.buildCodeFastPayload('say ok', { route: 'local', cwd: '/tmp/project' }).workspace_path,
+      '/tmp/project'
+    );
+    assert.match(ax.formatHeader({ mode: 'code-fast', cwd: '/tmp/project' }), /Atris Code Fast \(composer-2-5-fast\)/);
+    assert.equal(ax.buildRunProfile({ mode: 'code-fast', cwd: '/tmp/project' }).model, 'composer-2-5-fast');
+    assert.equal(
+      ax.codeFastWorkspaceNotice({ billing: { workspace_mode: 'cloud_scratch' } }),
+      'cloud scratch files are temporary and are not saved to your Mac'
+    );
+    assert.equal(ax.codeFastWorkspaceNotice({ workspace: { mode: 'local_workspace', persistence: 'local' } }), null);
+  } finally {
+    if (previousBackend === undefined) delete process.env.AX_CODE_FAST_BACKEND_URL;
+    else process.env.AX_CODE_FAST_BACKEND_URL = previousBackend;
+    if (previousApiBase === undefined) delete process.env.AX_CODE_FAST_API_BASE;
+    else process.env.AX_CODE_FAST_API_BASE = previousApiBase;
+  }
+});
+
 test('ax backend URL is configurable', () => {
   const previous = process.env.AX_BACKEND_URL;
   process.env.AX_BACKEND_URL = 'http://127.0.0.1:9001';

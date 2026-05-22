@@ -15,6 +15,11 @@ const BACKEND = {
   path: '/api/atris2/turn'
 };
 const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
+const CODE_FAST = {
+  path: '/api/cursor/turn',
+  model: 'composer-2-5-fast',
+  publicBase: 'https://api.atris.ai'
+};
 const CONNECTION_STATUS_PATH = '/api/integrations/status';
 const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
 const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
@@ -57,6 +62,7 @@ const ANSI = {
 };
 
 function modelForMode(mode) {
+  if (mode === 'code-fast') return CODE_FAST.model;
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
 }
 
@@ -75,7 +81,7 @@ function formatSeconds(totalSeconds) {
 }
 
 function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) {
-  const label = mode === 'fast' ? 'Atris 2 Fast' : 'Atris 2 Pro';
+  const label = mode === 'code-fast' ? 'Atris Code Fast' : mode === 'fast' ? 'Atris 2 Fast' : 'Atris 2 Pro';
   return [
     `${label}${chat ? ' chat' : ''} (${modelForMode(mode)})`,
     cwd,
@@ -85,23 +91,25 @@ function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) 
 
 function formatUsage() {
   return [
-    'ax - Atris 2 local coding agent',
+    'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--pro|--fast] [--local|--cloud] <message>',
-    '  ax [--pro|--fast] [--local|--cloud] --chat',
-    '  ax [--pro|--fast] --doctor',
+    '  ax [--pro|--fast|--code-fast] [--local|--cloud] <message>',
+    '  ax [--pro|--fast|--code-fast] [--local|--cloud] --chat',
+    '  ax [--pro|--fast|--code-fast] --doctor',
     '  ax [--fast] --benchmark',
     '',
     'Modes:',
     '  --pro   local workspace agent, deeper tool loop',
     '  --fast  local workspace agent, faster low-latency turns',
+    '  --code-fast  Atris Code Fast public lane (composer-2-5-fast)',
     '  --local force local workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
     '',
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
+    '  ax --code-fast explain this error',
     '  ax --fast what is on my calendar today',
     '  ax --pro --chat',
   ].join('\n');
@@ -170,9 +178,48 @@ function backendPathUrl(pathname) {
   return new URL(pathname, backendBaseUrl()).toString();
 }
 
+function codeFastBaseUrl() {
+  return (process.env.AX_CODE_FAST_BACKEND_URL
+    || process.env.AX_CODE_FAST_API_BASE
+    || process.env.ATRIS_API_BASE
+    || CODE_FAST.publicBase).replace(/\/$/, '');
+}
+
+function codeFastUrl() {
+  return new URL(CODE_FAST.path, codeFastBaseUrl()).toString();
+}
+
+function isLoopbackUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+function isCodeFastLocal(options = {}) {
+  const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
+  return route === 'local' && isLoopbackUrl(options.codeFastBaseUrl || codeFastBaseUrl());
+}
+
 function buildRunProfile(options = {}) {
-  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  const mode = normalizeMode(options.mode);
   const cwd = options.cwd || process.cwd();
+  if (mode === 'code-fast') {
+    const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
+    return {
+      endpoint: codeFastUrl(),
+      mode,
+      route,
+      model: CODE_FAST.model,
+      workspace_path: isCodeFastLocal(options) ? cwd : 'cloud scratch',
+      max_turns: 1,
+      streaming: false,
+      runtime: isCodeFastLocal(options) ? 'local Cursor SDK through backend' : 'authenticated Code Fast cloud scratch',
+      reasoning: 'Composer 2.5 fast lane; charges 10 credits per public turn'
+    };
+  }
   const route = resolveRoute(options.message || 'doctor', options);
   const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
   return {
@@ -426,6 +473,11 @@ function resolveRoute(message, options = {}) {
   if (githubWorkspaceIntent(message)) return 'local';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
   return 'local';
+}
+
+function normalizeMode(mode) {
+  if (mode === 'code-fast' || mode === 'code') return 'code-fast';
+  return mode === 'fast' ? 'fast' : 'pro';
 }
 
 function formatPrompt() {
@@ -784,7 +836,7 @@ function buildMessage(message, history = []) {
 }
 
 function buildPayload(message, options = {}) {
-  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  const mode = normalizeMode(options.mode);
   const route = resolveRoute(message, options);
   const local = route !== 'cloud';
   const payload = {
@@ -808,6 +860,29 @@ function buildPayload(message, options = {}) {
     payload.max_turns = mode === 'pro' ? 4 : 2;
   }
   return payload;
+}
+
+function buildCodeFastPayload(message, options = {}) {
+  const payload = {
+    message: buildMessage(message, options.history || []),
+    model: CODE_FAST.model,
+    timeout_seconds: Number(options.timeoutSeconds || 180)
+  };
+  if (isCodeFastLocal(options)) {
+    payload.workspace_path = options.cwd || process.cwd();
+  }
+  return payload;
+}
+
+function codeFastWorkspaceNotice(result) {
+  const workspace = result && typeof result === 'object' ? result.workspace || {} : {};
+  const billing = result && typeof result === 'object' ? result.billing || {} : {};
+  const mode = workspace.mode || billing.workspace_mode || '';
+  const persistence = workspace.persistence || billing.workspace_persistence || '';
+  if (mode === 'cloud_scratch' || persistence === 'ephemeral') {
+    return 'cloud scratch files are temporary and are not saved to your Mac';
+  }
+  return null;
 }
 
 function handleEvent(event, state, output) {
@@ -993,8 +1068,119 @@ async function postTurn(message, options = {}) {
   });
 }
 
+async function postCodeFastTurn(message, options = {}) {
+  const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
+  if (route === 'local' && !isCodeFastLocal(options)) {
+    throw new Error('Atris Code Fast local workspace requires AX_CODE_FAST_BACKEND_URL=http://127.0.0.1:8000; use --cloud for the public lane.');
+  }
+
+  const payload = buildCodeFastPayload(message, { ...options, route });
+  const postData = JSON.stringify(payload);
+  const output = options.output || process.stdout;
+  const token = authToken();
+  const timeoutMs = Math.max(10000, Math.min(600000, Number(payload.timeout_seconds || 180) * 1000));
+  const turnUrl = new URL(codeFastUrl());
+  const transport = turnUrl.protocol === 'https:' ? https : http;
+  const state = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    durationMs: 0,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    markdownMode: 'normal',
+    markdownBuffer: '',
+    markdownCarry: ''
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const startedAt = Date.now();
+    state.progress = createProgressReporter(output, options);
+    state.progress.start();
+
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (state.progress) state.progress.stop();
+      state.progress = null;
+      state.durationMs = Date.now() - startedAt;
+      if (error) reject(error);
+      else resolve(value);
+    };
+
+    const req = transport.request({
+      hostname: turnUrl.hostname,
+      port: turnUrl.port || (turnUrl.protocol === 'https:' ? 443 : 80),
+      path: `${turnUrl.pathname}${turnUrl.search}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    }, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const rawBody = Buffer.concat(chunks).toString('utf8');
+        let parsed = null;
+        try {
+          parsed = rawBody ? JSON.parse(rawBody) : null;
+        } catch (_) {
+          parsed = null;
+        }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const detail = parsed && (parsed.detail || parsed.error || parsed.message);
+          finish(new Error(detail || rawBody || `HTTP ${res.statusCode}`));
+          return;
+        }
+
+        const text = String((parsed && (parsed.text || parsed.result || parsed.message)) || '').trim();
+        if (text) {
+          state.output = text;
+          if (output && output.isTTY) output.write(renderTerminalMarkdown(text, output));
+          else output.write(text);
+          state.wroteText = true;
+          state.wroteActivity = true;
+          state.lastChar = text.slice(-1);
+        }
+        const notice = codeFastWorkspaceNotice(parsed);
+        if (notice) {
+          if (state.lastChar && state.lastChar !== '\n') output.write('\n');
+          output.write(`${formatAuxRow('note', notice, output)}\n`);
+          state.wroteActivity = true;
+          state.lastChar = '\n';
+        }
+        state.events.push({ type: 'result', result: text, raw: parsed });
+        state.billing = parsed && parsed.billing ? parsed.billing : null;
+        if (parsed && parsed.duration_ms) state.durationMs = parsed.duration_ms;
+        finish(null, state);
+      });
+    });
+
+    req.on('error', finish);
+    req.setTimeout(timeoutMs, () => {
+      finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
+      req.destroy();
+    });
+    req.write(postData);
+    req.end();
+  });
+}
+
+function turnFunctionForMode(mode) {
+  return normalizeMode(mode) === 'code-fast' ? postCodeFastTurn : postTurn;
+}
+
 async function chat(options = {}) {
-  const mode = options.mode === 'fast' ? 'fast' : 'pro';
+  const mode = normalizeMode(options.mode);
   const cwd = options.cwd || process.cwd();
   const input = options.input || process.stdin;
   const baseOutput = options.output || process.stdout;
@@ -1012,7 +1198,7 @@ async function chat(options = {}) {
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
-    const result = await postTurn(trimmed, { mode, cwd, history, output });
+    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     output.write(`${formatDoneLine(result.durationMs)}\n\n`);
     history.push({ role: 'user', content: trimmed });
@@ -1096,7 +1282,7 @@ async function runBenchmarkCase(label, fn, results, output) {
 }
 
 async function runBenchmark(options = {}) {
-  const mode = options.mode === 'pro' ? 'pro' : 'fast';
+  const mode = normalizeMode(options.mode) === 'pro' ? 'pro' : 'fast';
   const output = options.output || process.stdout;
   const results = [];
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-atris2-benchmark-'));
@@ -1221,14 +1407,14 @@ async function main() {
     return;
   }
 
-  const mode = args.includes('--fast') ? 'fast' : 'pro';
+  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
   const benchmark = args.includes('--benchmark');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--fast', '--pro', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -1252,7 +1438,7 @@ async function main() {
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
     console.log('');
-    const result = await postTurn(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
+    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
     console.log('');
     console.log(formatDoneLine(result.durationMs));
   } catch (error) {
@@ -1271,11 +1457,15 @@ module.exports = {
   authUserId,
   backendBaseUrl,
   backendUrl,
+  buildCodeFastPayload,
   buildPayload,
   cachedIntegrationStatus,
   buildConnectionContext,
   buildRunProfile,
   chat,
+  codeFastWorkspaceNotice,
+  codeFastBaseUrl,
+  codeFastUrl,
   createRunLogger,
   createProgressReporter,
   formatDoneLine,
@@ -1291,6 +1481,7 @@ module.exports = {
   handleEvent,
   modelForMode,
   parseSseBlock,
+  postCodeFastTurn,
   postTurn,
   renderStreamingMarkdown,
   renderTerminalMarkdown,
