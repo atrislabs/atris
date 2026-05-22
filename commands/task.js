@@ -1297,11 +1297,31 @@ function cmdHome(args) {
 function cmdList(args) {
   const all = hasFlag(args, '--all');
   const status = flag(args, '--status');
+  const statusFilter = typeof status === 'string' ? status.trim().toLowerCase() : null;
+  const queryStatus = statusFilter === 'blocked' ? 'failed' : statusFilter;
   const taskDb = getTaskDb();
   const db = taskDb.open();
+  if (statusFilter === 'blocked') {
+    const { projection } = writeDefaultProjection(taskDb, db, { all });
+    const displayRows = (projection.tasks || []).filter(task => taskColumn(task) === 'blocked');
+    if (wantsJson(args)) {
+      printJson({ ok: true, action: 'list', tasks: displayRows });
+      return;
+    }
+    if (displayRows.length === 0) {
+      console.log('(no tasks)');
+      return;
+    }
+    for (const r of displayRows) {
+      const claim = r.claimed_by ? ` [${r.claimed_by}]` : '';
+      const tag = r.tag ? ` #${r.tag}` : '';
+      console.log(`${r.status.padEnd(8)} ${taskRef(r)}${claim}${tag}\t${r.title}`);
+    }
+    return;
+  }
   const rows = taskDb.listTasks(db, {
     workspaceRoot: all ? null : taskDb.workspaceRoot(),
-    status: typeof status === 'string' ? status : null,
+    status: queryStatus,
     limit: 200,
   });
   const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, all));
@@ -1309,7 +1329,7 @@ function cmdList(args) {
     printJson({ ok: true, action: 'list', tasks: displayRows });
     return;
   }
-  if (rows.length === 0) {
+  if (displayRows.length === 0) {
     console.log('(no tasks)');
     return;
   }
