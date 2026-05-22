@@ -5854,6 +5854,69 @@ test('task list --status review aliases return rows counted as review work', () 
   }
 });
 
+test('task list --status done returns rows counted as done work', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  const taskDb = require('../lib/task-db');
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open(dbPath);
+    const workspaceRoot = taskDb.workspaceRoot(dir);
+
+    const completedRefs = [];
+    for (let i = 0; i < 205; i += 1) {
+      const created = taskDb.addTask(db, {
+        title: `Reviewed done task ${i}`,
+        workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskDb.doneTask(db, { id: created.id, status: 'done', actor: 'codex' }).updated, true);
+      assert.equal(taskDb.reviewTask(db, {
+        id: created.id,
+        actor: 'codex',
+        reward: 1,
+        proof: `completed proof ${i}`,
+        careerXpEligible: false,
+      }).reviewed, true);
+    }
+
+    const unreviewedCreated = taskDb.addTask(db, {
+      title: 'Done but awaiting review',
+      workspaceRoot,
+    });
+    assert.equal(unreviewedCreated.inserted, true);
+    assert.equal(taskDb.doneTask(db, { id: unreviewedCreated.id, status: 'done', actor: 'codex' }).updated, true);
+
+    const refRows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
+    const refByTitle = new Map(refRows.map(task => [task.title, task.display_id]));
+    for (let i = 0; i < 205; i += 1) completedRefs.push(refByTitle.get(`Reviewed done task ${i}`));
+    const unreviewedRef = refByTitle.get('Done but awaiting review');
+    taskDb.close();
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.done, 206);
+    assert.equal(statusPayload.status.counts.review, 1);
+
+    const list = runCli(['task', 'list', '--status', 'done', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr);
+    const listPayload = JSON.parse(list.stdout);
+    assert.equal(listPayload.tasks.length, statusPayload.status.counts.done);
+    assert.deepEqual(
+      listPayload.tasks.map(task => task.display_id).sort(),
+      [...completedRefs, unreviewedRef].sort(),
+    );
+
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    assert.equal(projection.surface.done_limit, 8);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review can create the next RSI task from the review suggestion', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
