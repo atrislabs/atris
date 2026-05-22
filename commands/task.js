@@ -849,7 +849,7 @@ function taskStatusSummary(projection, { history = false } = {}) {
       review_blocking: reviewNeedingAgentAction.length,
       review_certified: reviewAgentCertified,
       blocked,
-      done: tasks.filter(task => task.status === 'done' || (task.status === 'failed' && taskHasReview(task))).length + hiddenDoneCount,
+      done: tasks.filter(taskCountsAsDone).length + hiddenDoneCount,
     },
     current: compactTaskForStatus(columns.do[0] || reviewNeedingAgentAction[0] || null),
     next: compactTaskForStatus(columns.plan[0] || null),
@@ -1303,10 +1303,18 @@ function cmdList(args) {
   const queryStatus = statusAlias === 'blocked' ? 'failed' : statusFilter;
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  if (['active', 'do', 'doing', 'review', 'review-blocking', 'review-certified', 'blocked'].includes(statusAlias)) {
+  if (['active', 'do', 'doing', 'review', 'review-blocking', 'review-certified', 'blocked', 'done'].includes(statusAlias)) {
     const { projection } = writeDefaultProjection(taskDb, db, { all });
-    const displayRows = (projection.tasks || []).filter(task => {
+    const listProjection = statusAlias === 'done'
+      ? enrichTaskProjection(taskDb.taskProjection(db, {
+        workspaceRoot: all ? null : taskDb.workspaceRoot(),
+        limit: 500,
+        doneLimit: 500,
+      }))
+      : projection;
+    const displayRows = (listProjection.tasks || []).filter(task => {
       const column = taskColumn(task);
+      if (statusAlias === 'done') return taskCountsAsDone(task);
       if (statusAlias === 'blocked') return column === 'blocked';
       if (statusAlias === 'do' || statusAlias === 'doing') return column === 'doing';
       if (statusAlias === 'review') return column === 'review';
@@ -2319,6 +2327,10 @@ function taskHasReview(task) {
   if (task.latest_event_type === 'reviewed') return true;
   const review = task.review || {};
   return review.reward != null || Boolean(review.proof || review.lesson || review.next_task);
+}
+
+function taskCountsAsDone(task) {
+  return task.status === 'done' || (task.status === 'failed' && taskHasReview(task));
 }
 
 function taskBoardHtml() {
