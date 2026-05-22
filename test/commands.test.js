@@ -4397,6 +4397,61 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
   }
 });
 
+test('task review gates lesson capture on positive reward', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const zeroAdd = runCli(['task', 'add', 'Revise weak lesson capture', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(zeroAdd.status, 0, zeroAdd.stderr);
+    const zeroRef = JSON.parse(zeroAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'done', zeroRef], { cwd: dir, env }).status, 0);
+
+    const zeroReview = runCli([
+      'task', 'review', zeroRef,
+      '--reward', '0',
+      '--lesson', 'Do not learn from a revised task',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(zeroReview.status, 0, zeroReview.stderr);
+    const zeroPayload = JSON.parse(zeroReview.stdout);
+    assert.equal(zeroPayload.episode.reward.value, 0);
+    assert.equal(zeroPayload.episode.lesson, '');
+    assert.equal(zeroPayload.episode.rl.label, 'revised');
+    assert.equal(zeroPayload.episode.rl.has_lesson, false);
+    assert.equal(Object.prototype.hasOwnProperty.call(zeroPayload.task.review, 'lesson'), false);
+
+    const negativeAdd = runCli(['task', 'add', 'Reject weak lesson capture', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(negativeAdd.status, 0, negativeAdd.stderr);
+    const negativeRef = JSON.parse(negativeAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'done', negativeRef], { cwd: dir, env }).status, 0);
+
+    const negativeReview = runCli([
+      'task', 'review', negativeRef,
+      '--reward', '-1',
+      '--lesson', 'Do not learn from a rejected task',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(negativeReview.status, 0, negativeReview.stderr);
+    const negativePayload = JSON.parse(negativeReview.stdout);
+    assert.equal(negativePayload.episode.reward.value, -1);
+    assert.equal(negativePayload.episode.lesson, '');
+    assert.equal(negativePayload.episode.rl.label, 'rejected');
+    assert.equal(negativePayload.episode.rl.has_lesson, false);
+
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episodes = fs.readFileSync(episodePath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(episodes.map(episode => episode.lesson), ['', '']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task done with proof writes a reviewed proof event', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
