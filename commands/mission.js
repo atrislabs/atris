@@ -739,7 +739,8 @@ function runnerUsesCallerSession(runner) {
 }
 
 function nextCandidateTickAction(mission) {
-  return `next move: run atris mission run ${mission.id} --complete-on-pass`;
+  const completeFlag = mission.always_on ? '' : ' --complete-on-pass';
+  return `next move: run atris mission run ${mission.id}${completeFlag}`;
 }
 
 function missionVerifierPassed(mission) {
@@ -803,9 +804,17 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
   return candidates[0] || null;
 }
 
+function missionSelectableForCodexGoal(mission, now = new Date()) {
+  if (!missionIsRunnable(mission)) return false;
+  if (mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now)) {
+    return parseCadenceSeconds(mission.cadence) > 0;
+  }
+  return true;
+}
+
 function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter((mission) => missionSelectableForLoop(mission, now));
+    .filter((mission) => missionSelectableForCodexGoal(mission, now));
 
   candidates.sort((a, b) => {
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
@@ -837,7 +846,8 @@ function codexGoalNextCommand(mission) {
     if (xpAction) return xpAction.replace(/^queue AgentXP review: /, '');
   }
   if (mission.verifier && missionDueAt(mission)) {
-    return 'atris mission run --due --max-ticks 1 --complete-on-pass';
+    const completeFlag = mission.always_on ? '' : ' --complete-on-pass';
+    return `atris mission run --due --max-ticks 1${completeFlag}`;
   }
   if (mission.verifier) {
     return `atris mission tick ${mission.id} --verify --summary "<what changed>"`;
