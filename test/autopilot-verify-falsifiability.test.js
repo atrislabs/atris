@@ -217,6 +217,32 @@ test('picker does not promote verify-not-falsifiable lessons to self-heal work',
   }
 });
 
+test('picker does not promote no-verify-field lessons to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-05-04] no-verify-field** — fail — Task "Old shipped task" has no explicit **Verify:** field in TODO.md. Tick halted.\n',
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not promote ungrounded legacy fail lessons to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-05-04] codex-cli-hangs-on-substantive-prompts** — fail — codex exec hangs on substantive prompts; cause unknown.\n',
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('picker does not promote legacy verify-failed receipts to self-heal work', async () => {
   const cwd = setupPickerFixture({
     lesson: '# lessons\n\n---\n\n- **[2026-04-29] verify-failed** — fail — Task "Capture rejection path". Touch `backend/rl/etl/action_queue_to_trajectories.py`. Verify command failed.\n',
@@ -237,6 +263,21 @@ test('picker does not promote legacy verify-failed receipts to self-heal work', 
 test('picker replays passing inline python verify failures before self-heal', async () => {
   const cwd = setupPickerFixture({
     lesson: "# lessons\n\n---\n\n- **[2026-04-29] verify-fail-doc-edit-attribution** — fail — Verify command ``python3 -c \"open('proof.txt').read(); assert True\"`` failed: Command failed.\n",
+  });
+  try {
+    fs.writeFileSync(path.join(cwd, 'proof.txt'), 'now present\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker replays embedded inline python assertion in compound verify failure', async () => {
+  const cwd = setupPickerFixture({
+    lesson: "# lessons\n\n---\n\n- **[2026-04-29] verify-fail-doc-edit-attribution-compound** — fail — Verify command ``echo preflight && python3 -c \"open('proof.txt').read(); assert True\" && echo done`` failed: Command failed.\n",
   });
   try {
     fs.writeFileSync(path.join(cwd, 'proof.txt'), 'now present\n');

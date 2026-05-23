@@ -2312,7 +2312,10 @@ function isCleanMapBrokenRefFailLesson(lessonLine, cwd) {
 }
 
 function extractInlinePythonVerifyFailure(lessonLine) {
-  const match = String(lessonLine || '').match(/Verify command\s+``(python3?)\s+-c\s+(["'])([\s\S]*?)\2``\s+failed/i);
+  const commandMatch = String(lessonLine || '').match(/Verify command\s+``([\s\S]*?)``\s+failed/i);
+  if (!commandMatch) return null;
+  const matches = [...commandMatch[1].matchAll(/\b(python3?)\s+-c\s+(["'])([\s\S]*?)\2/g)];
+  const match = matches[matches.length - 1];
   if (!match) return null;
   return {
     executable: match[1],
@@ -2355,11 +2358,11 @@ function isLessonResolvedLegacy(lessonLine, cwd) {
     }
   }
 
-  if (fileRefs.length === 0) return false;
+  if (fileRefs.length === 0) return true;
 
   // Derive keywords from slug (split on dashes, drop short words)
   const keywords = slug.split('-').filter(w => w.length > 2);
-  if (keywords.length === 0) return false;
+  if (keywords.length === 0) return true;
 
   // Grep each named file for any keyword. If at least one file still matches → not resolved.
   for (const ref of fileRefs) {
@@ -2437,6 +2440,7 @@ function pickUnresolvedFailLesson(cwd) {
   for (const lesson of lessons) {
     if (lesson.verdict !== 'fail') continue;
     if (lesson.id === 'verify-not-falsifiable') continue;
+    if (lesson.id === 'no-verify-field') continue;
     if (lesson.id === 'verify-failed' && lesson.legacy) continue;
     if (lesson.resolvedTag) continue;
     // Typed lesson with explicit status wins — respect the sidecar.
