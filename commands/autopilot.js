@@ -2291,14 +2291,45 @@ function isLessonResolved(lessonLine, cwd, options = {}) {
   if (!slugMatch) return false;
   const slug = slugMatch[1];
 
+  if (isCleanMapBrokenRefFailLesson(lessonLine, cwd)) return true;
+
   // Detector-backed check (typed lesson sidecar)
   const meta = options.meta || loadLessonMetadata(cwd)[slug];
   if (meta && meta.detector) {
     return runLessonDetector(meta.detector, cwd, options.detectorTimeout);
   }
 
+  if (inlinePythonVerifyFailureNowPasses(lessonLine, cwd, options.detectorTimeout)) return true;
+
   // Legacy fallback: keyword grep against referenced files.
   return isLessonResolvedLegacy(lessonLine, cwd);
+}
+
+function isCleanMapBrokenRefFailLesson(lessonLine, cwd) {
+  const text = String(lessonLine || '').toLowerCase();
+  if (!/fix \d+ broken references? in map\.md/.test(text)) return false;
+  return repoMapAuditReportsClean(cwd);
+}
+
+function extractInlinePythonVerifyFailure(lessonLine) {
+  const match = String(lessonLine || '').match(/Verify command\s+``(python3?)\s+-c\s+(["'])([\s\S]*?)\2``\s+failed/i);
+  if (!match) return null;
+  return {
+    executable: match[1],
+    code: match[3].replace(/\\"/g, '"').replace(/\\'/g, "'")
+  };
+}
+
+function inlinePythonVerifyFailureNowPasses(lessonLine, cwd, timeout = 10000) {
+  const parsed = extractInlinePythonVerifyFailure(lessonLine);
+  if (!parsed) return false;
+  const result = spawnSync(parsed.executable, ['-c', parsed.code], {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    stdio: ['ignore', 'ignore', 'ignore']
+  });
+  return result.status === 0;
 }
 
 /**
@@ -2405,6 +2436,8 @@ function pickUnresolvedFailLesson(cwd) {
   const candidates = [];
   for (const lesson of lessons) {
     if (lesson.verdict !== 'fail') continue;
+    if (lesson.id === 'verify-not-falsifiable') continue;
+    if (lesson.id === 'verify-failed' && lesson.legacy) continue;
     if (lesson.resolvedTag) continue;
     // Typed lesson with explicit status wins — respect the sidecar.
     // `resolved` = done. `observed` = process rule, not a fixable code state.
@@ -3185,6 +3218,8 @@ module.exports = {
   recordTickCommit,
   regressionCheck,
   repoMapAuditReportsClean,
+  isCleanMapBrokenRefFailLesson,
+  inlinePythonVerifyFailureNowPasses,
   runPlanReview,
   runTaskOnce,
   buildPlanReviewPrompt,
