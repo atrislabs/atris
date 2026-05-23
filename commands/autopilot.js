@@ -2106,12 +2106,13 @@ function findCodeTodos(cwd) {
   try {
     const out = execFileSync('git', [
       'grep', '-n', '-I', '-E', '(TODO|FIXME)',
-      '--', ':!test/', ':!node_modules/', ':!atris/', ':!**/*.md'
+      '--', ':!test/', ':!node_modules/', ':!atris/', ':!**/_archive/**', ':!**/*.md'
     ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const results = [];
     for (const raw of out.split('\n').filter(Boolean)) {
       const m = raw.match(/^([^:]+):(\d+):(.*)$/);
       if (!m) continue;
+      if (m[1].split(/[\\/]/).includes('_archive')) continue;
       const line = m[3];
       // A real TODO is a comment marker at the start of the line (allowing
       // leading indent) followed by TODO/FIXME and at least one word. This
