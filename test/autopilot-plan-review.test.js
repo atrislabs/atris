@@ -426,6 +426,45 @@ test('auto picker skips owner-gated in-progress tasks', async () => {
   }
 });
 
+test('auto picker trusts clean repo MAP audit over healer false positives', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-map-audit-'));
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+- **T2:** Run local code health check
+
+## In Progress
+
+## Completed
+`);
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'),
+`# MAP
+
+\`\`\`
+RL Stack (backend/rl/)
+  core.py:17    TaskType enum
+\`\`\`
+`);
+    fs.writeFileSync(path.join(cwd, 'scripts', 'audit_map_refs.py'),
+`#!/usr/bin/env python3
+print("Total broken references: 0")
+`);
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), '# lessons\n\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.equal(suggestion.task, 'Run local code health check');
+    assert.equal(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('auto human-gate classifier keeps normal agent work runnable', () => {
   assert.equal(shouldSkipAutoHumanGate({
     title: 'Confirm Pallet destination before AEO owner approval',

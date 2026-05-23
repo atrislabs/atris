@@ -48,6 +48,23 @@ function shouldSkipAutoHumanGate(task) {
   return looksOwnerClaimed(task.claimed) || looksOwnerGatedTitle(task.title || task.task);
 }
 
+function repoMapAuditReportsClean(cwd) {
+  const auditPath = path.join(cwd, 'scripts', 'audit_map_refs.py');
+  if (!fs.existsSync(auditPath)) return false;
+
+  const result = spawnSync('python3', [auditPath], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 120000,
+    maxBuffer: 1024 * 1024
+  });
+  if (result.status !== 0) return false;
+
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  const match = output.match(/Total broken references:\s*(\d+)/i);
+  return Boolean(match && Number(match[1]) === 0);
+}
+
 /**
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
@@ -119,7 +136,9 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   }
 
   // --- Broken MAP.md references ---
-  const { unhealable } = healBrokenMapRefs(cwd, atrisDir, true); // dry-run
+  const { unhealable } = repoMapAuditReportsClean(cwd)
+    ? { unhealable: [] }
+    : healBrokenMapRefs(cwd, atrisDir, true); // dry-run
   if (unhealable.length > 0 && !skipped.has('fix-map-refs')) {
     const sample = unhealable.slice(0, 3).map(r => `${r.file}:${r.line}`).join(', ');
     suggestions.push({
@@ -3165,6 +3184,7 @@ module.exports = {
   proposeCandidateHorizons,
   recordTickCommit,
   regressionCheck,
+  repoMapAuditReportsClean,
   runPlanReview,
   runTaskOnce,
   buildPlanReviewPrompt,
