@@ -63,17 +63,18 @@ test('findCodeTodos finds // TODO in JS source', () => {
   }
 });
 
-test('findCodeTodos skips test/ and atris/ directories', () => {
+test('findCodeTodos skips test/, atris/, and _archive directories', () => {
   const dir = makeGitRepo();
   try {
     fs.mkdirSync(path.join(dir, 'test'), { recursive: true });
     commit(dir, 'init', {
       'commands/foo.js': 'const x = 1;\n',
       'test/foo.test.js': '// TODO: add more tests\n',
-      'atris/MAP.md': '# TODO: refresh MAP\n'
+      'atris/MAP.md': '# TODO: refresh MAP\n',
+      'backend/_archive/dead_code.py': '# TODO: delete later\n'
     });
     const todos = findCodeTodos(dir);
-    assert.equal(todos.length, 0, 'test/ and atris/ should be skipped');
+    assert.equal(todos.length, 0, 'test/, atris/, and _archive should be skipped');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
