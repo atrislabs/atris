@@ -238,6 +238,21 @@ function startWorktree(args) {
   runGit(['config', `branch.${branch}.atris-base`, base], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-task`, task], { cwd: target, check: false });
+  fs.mkdirSync(path.join(target, '.atris'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.atris', 'agent-worktree.json'),
+    JSON.stringify({
+      agent: agent || null,
+      member: member || null,
+      owner,
+      task,
+      branch,
+      base,
+      workspace_root: root,
+      created_at: now.toISOString(),
+    }, null, 2) + '\n',
+    'utf8'
+  );
 
   const counts = statusCounts(root);
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
