@@ -249,6 +249,11 @@ test('worktree start creates a member-scoped isolated checkout', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, new RegExp(`path: ${worktreePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.equal(fs.existsSync(path.join(worktreePath, 'atris', 'team', 'security', 'MEMBER.md')), true);
+    const meta = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
+    assert.equal(meta.workspace_root, fs.realpathSync(dir));
+    assert.equal(meta.member, 'security');
+    assert.equal(meta.owner, 'security');
+    assert.equal(meta.task, 'Smoke Task');
     assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/security-smoke-task-/);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
@@ -288,6 +293,10 @@ test('worktree start supports generic subagent checkout without a member persona
     assert.match(res.stdout, /agent: codex-reviewer/);
     assert.doesNotMatch(res.stderr, /no member persona/);
     assert.equal(fs.existsSync(path.join(worktreePath, 'README.md')), true);
+    const meta = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
+    assert.equal(meta.workspace_root, fs.realpathSync(dir));
+    assert.equal(meta.agent, 'codex-reviewer');
+    assert.equal(meta.owner, 'codex-reviewer');
     assert.match(runGit(['branch', '--show-current'], worktreePath), /^codex\/codex-reviewer-smoke-task-/);
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
@@ -338,6 +347,9 @@ test('worktree start defaults to upstream remote base and records ship metadata'
     const branch = runGit(['branch', '--show-current'], worktreePath);
     assert.match(branch, /^codex\/codex-shipper-ship-smoke-/);
     assert.equal(runGit(['config', '--get', `branch.${branch}.atris-base`], worktreePath), 'origin/master');
+    const meta = JSON.parse(fs.readFileSync(path.join(worktreePath, '.atris', 'agent-worktree.json'), 'utf8'));
+    assert.equal(meta.workspace_root, fs.realpathSync(repo));
+    assert.equal(meta.base, 'origin/master');
   } finally {
     if (worktreePath) cleanupTempDir(worktreePath);
     cleanupTempDir(dir);
@@ -3659,6 +3671,41 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     assert.match(regenerated, /Regenerated from durable Atris task state/);
     assert.match(regenerated, new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Ship task plane`));
     assert.match(regenerated, /## Completed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task render in agent worktree uses launcher workspace root metadata', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const launcher = path.join(dir, 'atrisos-backend');
+  const worktree = path.join(dir, 'atrisos-backend-worktrees', 'codex-render-test');
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(launcher, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(worktree, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(worktree, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(worktree, '.atris'), { recursive: true });
+    fs.writeFileSync(
+      path.join(worktree, '.atris', 'agent-worktree.json'),
+      JSON.stringify({ workspace_root: launcher, branch: 'agent/codex/render-test' }),
+      'utf8'
+    );
+
+    const add = runCli(['task', 'add', 'Preserve launcher projection', '--tag', 'task-plane', '--json'], { cwd: launcher, env });
+    assert.equal(add.status, 0, add.stderr);
+
+    const where = runCli(['task', 'where', '--json'], { cwd: worktree, env });
+    assert.equal(where.status, 0, where.stderr);
+    assert.equal(JSON.parse(where.stdout).workspace, fs.realpathSync(launcher));
+
+    const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: worktree, env });
+    assert.equal(render.status, 0, render.stderr);
+    assert.match(render.stdout, /rendered 1 task/);
+    const regenerated = fs.readFileSync(path.join(worktree, 'atris', 'TODO.md'), 'utf8');
+    assert.match(regenerated, /\*\*\[[A-Z0-9]{3}-1\]\*\* Preserve launcher projection \[task-plane\]/);
   } finally {
     cleanupTempDir(dir);
   }
