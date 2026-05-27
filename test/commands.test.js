@@ -4801,7 +4801,9 @@ test('task ready surfaces backend GitHub Actions risk receipt state', () => {
     assert.equal(receiptState.has_deploy_fallback, true);
     const validatorReview = runCli(['task', 'review', refWithReceipt, '--reward', '1', '--as', 'validator', '--json'], { cwd: dir, env });
     assert.equal(validatorReview.status, 0, validatorReview.stderr);
-    assert.equal(JSON.parse(validatorReview.stdout).task.review.agent_certified, true);
+    const validatorPayload = JSON.parse(validatorReview.stdout);
+    assert.equal(validatorPayload.github_actions_risk_receipt.status, 'present');
+    assert.equal(validatorPayload.task.review.agent_certified, true);
   } finally {
     cleanupTempDir(root);
   }
