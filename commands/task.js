@@ -198,6 +198,54 @@ function failTask(label, reason, detail, exitCode = 2) {
   process.exit(exitCode);
 }
 
+function githubActionsRiskReceipt(proof, taskDb) {
+  const workspaceRoot = taskDb && typeof taskDb.workspaceRoot === 'function'
+    ? taskDb.workspaceRoot()
+    : process.cwd();
+  const root = path.resolve(String(workspaceRoot || process.cwd()));
+  const required = /(^|[\/\\])atrisos-backend($|[\/\\])/.test(root);
+  const text = String(proof || '').toLowerCase();
+  const notApplicable = /\bgithub[_ -]?actions\b[^\n.;]*\bnot[_ -]?applicable\b/.test(text)
+    || /\bactions[_ -]?risk\b[^\n.;:]*[:=]?\s*not[_ -]?applicable\b/.test(text);
+  const hasOwnerGate = /\bgithub[_ -]?actions[_ -]?owner[_ -]?gate\b/.test(text)
+    || /\bactions[_ -]?owner[_ -]?gate\b/.test(text);
+  const optionalTelemetryUnavailable = /\boptional[_ -]?telemetry[_ -]?unavailable\b/.test(text)
+    || /\bgithub[_ -]?actions[_ -]?billing[_ -]?or[_ -]?spending[_ -]?limit\b/.test(text)
+    || /\b(billing|spending)[-/ ]?limit\b/.test(text);
+  const hasDeployFallback = /\bblocks_backend_deploy\s*=\s*false\b/.test(text)
+    || /\blocal verification\b/.test(text)
+    || /\bpinned render deploy\b/.test(text)
+    || /\blive canar/.test(text);
+  let status = 'not_applicable';
+  if (required) {
+    if (notApplicable) status = 'not_applicable';
+    else if ((hasOwnerGate || optionalTelemetryUnavailable) && optionalTelemetryUnavailable && !hasDeployFallback) {
+      status = 'fallback_missing';
+    } else if (hasOwnerGate || optionalTelemetryUnavailable) {
+      status = 'present';
+    } else {
+      status = 'missing';
+    }
+  }
+  return {
+    required,
+    status,
+    has_owner_gate: hasOwnerGate,
+    optional_telemetry_unavailable: optionalTelemetryUnavailable,
+    has_deploy_fallback: hasDeployFallback,
+    recommendation: status === 'missing'
+      ? 'Run scripts/github_actions_owner_gate.py or record github actions: not_applicable.'
+      : status === 'fallback_missing'
+      ? 'Add blocks_backend_deploy=false, local verification, pinned Render deploy, or live canary fallback proof.'
+      : null,
+  };
+}
+
+function printGithubActionsRiskReceipt(receipt) {
+  if (!receipt || !receipt.required || receipt.status === 'present' || receipt.status === 'not_applicable') return;
+  console.log(`github actions risk receipt: ${receipt.status}; ${receipt.recommendation}`);
+}
+
 function positional(args) {
   return args.filter((a, i) => {
     if (a.startsWith('--')) return false;
@@ -1606,6 +1654,9 @@ function cmdDone(args) {
     }) : null;
     const xpProjection = refreshCareerXpAfterReview(review);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const githubActionsReceipt = review && review.episode
+      ? githubActionsRiskReceipt(review.episode.proof, taskDb)
+      : null;
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -1615,6 +1666,7 @@ function cmdDone(args) {
         reward: review && review.episode ? review.episode.reward.value : null,
         episode: review && review.episode || null,
         xp_projection: xpProjection,
+        github_actions_risk_receipt: githubActionsReceipt,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
       });
@@ -1626,6 +1678,7 @@ function cmdDone(args) {
     } else {
       console.log(`${failed ? 'failed' : 'done'} ${taskRef(task)}`);
     }
+    printGithubActionsRiskReceipt(githubActionsReceipt);
   } else {
     const detail = `done failed: ${taskId} not in open|claimed`;
     if (wantsJson(args)) {
@@ -1684,6 +1737,7 @@ function cmdFinish(args) {
     const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
     const xpProjection = refreshCareerXpAfterReview(result);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const githubActionsReceipt = githubActionsRiskReceipt(result.episode.proof, taskDb);
     if (wantsJson(args)) {
       printJson({
         ok: true,
@@ -1693,6 +1747,7 @@ function cmdFinish(args) {
         reward: result.episode.reward.value,
         episode: result.episode,
         xp_projection: xpProjection,
+        github_actions_risk_receipt: githubActionsReceipt,
         next_task_id: nextCreated ? nextCreated.id : null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
@@ -1703,6 +1758,7 @@ function cmdFinish(args) {
     console.log(`finished ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${result.episode.reward.value}`);
     if (result.episode.next_task_suggestion) console.log(`next: ${result.episode.next_task_suggestion}`);
     if (nextCreated) console.log(`created next ${taskRef(compactTaskFromProjection(projection, nextCreated.id))}`);
+    printGithubActionsRiskReceipt(githubActionsReceipt);
     return;
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -1751,6 +1807,7 @@ function cmdReady(args) {
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
+  const githubActionsReceipt = githubActionsRiskReceipt(String(proof), taskDb);
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
     career_xp_status: 'pending_human_accept',
@@ -1769,6 +1826,7 @@ function cmdReady(args) {
       review_pass_count: result.event.payload.review_pass_count,
       agent_certified: agentCertified,
       handoff,
+      github_actions_risk_receipt: githubActionsReceipt,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
@@ -1776,6 +1834,7 @@ function cmdReady(args) {
   }
   console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
   console.log(handoff.rule);
+  printGithubActionsRiskReceipt(githubActionsReceipt);
 }
 
 function cmdAccept(args) {
@@ -1841,6 +1900,7 @@ function cmdAccept(args) {
   });
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const githubActionsReceipt = githubActionsRiskReceipt(proof, taskDb);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -1850,12 +1910,14 @@ function cmdAccept(args) {
       reward: reviewed.episode.reward.value,
       episode: reviewed.episode,
       xp_projection: xpProjection,
+      github_actions_risk_receipt: githubActionsReceipt,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
     return;
   }
   console.log(`accepted ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${reviewed.episode.reward.value}`);
+  printGithubActionsRiskReceipt(githubActionsReceipt);
 }
 
 function cmdRevise(args) {
@@ -1927,6 +1989,7 @@ function cmdReview(args) {
   const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
   const xpProjection = refreshCareerXpAfterReview(result);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const githubActionsReceipt = githubActionsRiskReceipt(result.episode.proof, taskDb);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -1936,6 +1999,7 @@ function cmdReview(args) {
       reward: result.episode.reward.value,
       episode: result.episode,
       xp_projection: xpProjection,
+      github_actions_risk_receipt: githubActionsReceipt,
       next_task_id: nextCreated ? nextCreated.id : null,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -1946,6 +2010,7 @@ function cmdReview(args) {
   console.log(`reviewed ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} reward=${result.episode.reward.value}`);
   if (result.episode.next_task_suggestion) console.log(`next: ${result.episode.next_task_suggestion}`);
   if (nextCreated) console.log(`created next ${taskRef(compactTaskFromProjection(projection, nextCreated.id))}`);
+  printGithubActionsRiskReceipt(githubActionsReceipt);
 }
 
 function importTodoFile(taskDb, db, target) {
