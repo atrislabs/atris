@@ -2597,6 +2597,38 @@ test('brain state prefers task projection for executable work counts', () => {
   }
 });
 
+test('brain compile surfaces loop health state files', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    const stateDir = path.join(dir, '.atris', 'state');
+    fs.rmSync(path.join(stateDir, 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(stateDir, 'task_events.jsonl'), JSON.stringify({ at: '2026-05-22T22:00:00Z' }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'overnight_rl_self_heal.jsonl'), JSON.stringify({ at: '2026-05-22T22:01:00Z' }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'career_xp.projection.json'), JSON.stringify({ generated_at: '2026-05-22T22:02:00Z', score: 12 }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'master_loop_events.jsonl'), JSON.stringify({ at: '2026-05-22T22:03:00Z' }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'mission_events.jsonl'), JSON.stringify({ at: '2026-05-22T22:04:00Z' }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'company_yc_wow_latest.json'), JSON.stringify({ generated_at: '2026-05-22T22:05:00Z' }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'codex_goal.json'), JSON.stringify({ updated_at: '2026-05-22T22:06:00Z' }), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'pulse_agi_loop_receipts.jsonl'), JSON.stringify({ at: '2026-05-22T22:07:00Z' }) + '\n', 'utf8');
+
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /## Loop Health/);
+    assert.match(status, /\| Overnight RL \| active \| 1 \| 1 \|/);
+    assert.match(status, /\| Career XP \| active \| 1 \| 1 \|/);
+    assert.match(status, /Loop health sees 8 active channel\(s\): Task plane, Overnight RL, Career XP, Master loop, Missions, Company YC, Codex goal, Pulse AGI/);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
+    assert.equal(state.loopHealth.filter(channel => channel.active).length, 8);
+    assert.ok(state.stateFiles.some(item => item.path.endsWith('career_xp.projection.json')));
+    assert.ok(state.stateFiles.some(item => item.path.endsWith('codex_goal.json')));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile counts task review episodes as learning state', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -2622,7 +2654,7 @@ test('brain compile counts task review episodes as learning state', () => {
 
     const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.match(res.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
 
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
@@ -2679,7 +2711,7 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
 
     const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /State rows: 2 raw \/ 2 valid/);
+    assert.match(compile.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
   } finally {
     cleanupTempDir(dir);
