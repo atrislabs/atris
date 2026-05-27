@@ -4757,6 +4757,51 @@ test('task ready holds work in review until human accept', () => {
   }
 });
 
+test('task ready surfaces backend GitHub Actions risk receipt state', () => {
+  if (!hasNodeSqlite()) return;
+  const root = makeTempDir();
+  const dir = path.join(root, 'atrisos-backend');
+  const dbPath = path.join(root, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Backend proof should name CI risk', '--tag', 'reliability', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'node --test test/commands.test.js passed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const payload = JSON.parse(ready.stdout);
+    assert.equal(payload.github_actions_risk_receipt.required, true);
+    assert.equal(payload.github_actions_risk_receipt.status, 'missing');
+    assert.match(payload.github_actions_risk_receipt.recommendation, /github_actions_owner_gate/);
+    assert.equal(payload.task.status, 'review');
+
+    const addWithReceipt = runCli(['task', 'add', 'Backend proof carries owner gate', '--tag', 'reliability', '--json'], { cwd: dir, env });
+    assert.equal(addWithReceipt.status, 0, addWithReceipt.stderr);
+    const refWithReceipt = JSON.parse(addWithReceipt.stdout).task.display_id;
+    const proof = [
+      'github_actions_owner_gate status=optional_telemetry_unavailable',
+      'blocker=github_actions_billing_or_spending_limit',
+      'blocks_backend_deploy=false',
+      'local verification node --test passed',
+    ].join('; ');
+    const readyWithReceipt = runCli(['task', 'ready', refWithReceipt, '--proof', proof, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(readyWithReceipt.status, 0, readyWithReceipt.stderr);
+    const receiptState = JSON.parse(readyWithReceipt.stdout).github_actions_risk_receipt;
+    assert.equal(receiptState.status, 'present');
+    assert.equal(receiptState.has_owner_gate, true);
+    assert.equal(receiptState.optional_telemetry_unavailable, true);
+    assert.equal(receiptState.has_deploy_fallback, true);
+  } finally {
+    cleanupTempDir(root);
+  }
+});
+
 test('task next claims open work before surfacing review debt', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
