@@ -4774,12 +4774,14 @@ test('task ready surfaces backend GitHub Actions risk receipt state', () => {
       '--as', 'codex',
       '--json',
     ], { cwd: dir, env });
-    assert.equal(ready.status, 0, ready.stderr);
+    assert.equal(ready.status, 2, ready.stderr);
     const payload = JSON.parse(ready.stdout);
+    assert.equal(payload.reason, 'github_actions_risk_receipt_required');
     assert.equal(payload.github_actions_risk_receipt.required, true);
     assert.equal(payload.github_actions_risk_receipt.status, 'missing');
     assert.match(payload.github_actions_risk_receipt.recommendation, /github_actions_owner_gate/);
-    assert.equal(payload.task.status, 'review');
+    const stillOpen = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(JSON.parse(stillOpen.stdout).status, 'open');
 
     const addWithReceipt = runCli(['task', 'add', 'Backend proof carries owner gate', '--tag', 'reliability', '--json'], { cwd: dir, env });
     assert.equal(addWithReceipt.status, 0, addWithReceipt.stderr);
@@ -4797,6 +4799,9 @@ test('task ready surfaces backend GitHub Actions risk receipt state', () => {
     assert.equal(receiptState.has_owner_gate, true);
     assert.equal(receiptState.optional_telemetry_unavailable, true);
     assert.equal(receiptState.has_deploy_fallback, true);
+    const validatorReview = runCli(['task', 'review', refWithReceipt, '--reward', '1', '--as', 'validator', '--json'], { cwd: dir, env });
+    assert.equal(validatorReview.status, 0, validatorReview.stderr);
+    assert.equal(JSON.parse(validatorReview.stdout).task.review.agent_certified, true);
   } finally {
     cleanupTempDir(root);
   }
