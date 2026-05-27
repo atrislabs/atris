@@ -2015,7 +2015,7 @@ function cmdReview(args) {
   const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
   const xpProjection = refreshCareerXpAfterReview(result);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
-  const githubActionsReceipt = githubActionsRiskReceipt(result.episode.proof, taskDb);
+  const githubActionsReceipt = githubActionsRiskReceipt(effectiveProof, taskDb);
   if (wantsJson(args)) {
     printJson({
       ok: true,
