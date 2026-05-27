@@ -5558,6 +5558,46 @@ test('task reviews gives a compact certified accept queue', () => {
   }
 });
 
+test('task review surfaces GitHub Actions risk receipt from proof', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli(['task', 'new', 'Surface backend Actions risk', '--tag', 'reliability', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const proof = 'Focused tests passed. REVIEW PROOF: not_applicable for GitHub Actions risk receipt because this is a docs-only artifact with no runtime or deploy code.';
+
+    assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', task.display_id, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+
+    const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(queue.status, 0, queue.stderr);
+    const queuePayload = JSON.parse(queue.stdout);
+    assert.equal(queuePayload.queue.items[0].github_actions_risk_receipt.status, 'not_applicable');
+    assert.match(queuePayload.queue.items[0].github_actions_risk_receipt.summary, /docs-only artifact/);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.needs_review[0].review.github_actions_risk_receipt.status, 'not_applicable');
+
+    const show = runCli(['task', 'show', task.display_id], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    assert.match(show.stdout, /GitHub Actions risk: not_applicable - .*docs-only artifact/);
+
+    const textQueue = runCli(['task', 'reviews'], { cwd: dir, env });
+    assert.equal(textQueue.status, 0, textQueue.stderr);
+    assert.match(textQueue.stdout, /github actions risk: not_applicable - .*docs-only artifact/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task status resolves goal_id display refs to parent task objectives', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();

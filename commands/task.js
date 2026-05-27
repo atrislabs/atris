@@ -347,6 +347,32 @@ function reviewSummary(task, payload = {}) {
   return `This explains what accepting ${plainTitle} would make real.`;
 }
 
+function githubActionsRiskReceiptFromProof(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  const mentionsActions = lower.includes('github actions')
+    || lower.includes('github_actions')
+    || lower.includes('actions owner gate');
+  if (!mentionsActions) return null;
+
+  const reviewProofMatch = text.match(/review proof:\s*(.+)$/i);
+  const sentenceMatch = text.match(/[^.]*github[_ ]actions[^.]*\.?/i);
+  const summary = clipStatusText(
+    (reviewProofMatch && reviewProofMatch[1]) || (sentenceMatch && sentenceMatch[0]) || text,
+    240,
+  );
+  const status = lower.includes('not_applicable') || lower.includes('not applicable')
+    ? 'not_applicable'
+    : lower.includes('risk receipt')
+      || lower.includes('owner gate')
+      || lower.includes('billing')
+      || lower.includes('spend')
+        ? 'receipt_present'
+        : 'mentioned';
+  return { status, summary };
+}
+
 function taskReviewSummary(task) {
   const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed' || e.event_type === 'proof_ready' || e.event_type === 'revision_requested');
   const payload = reviewed && reviewed.payload || {};
@@ -382,10 +408,12 @@ function taskReviewSummary(task) {
     }
     return payload[key] || metadata[metadataKey] || null;
   };
-  return {
+  const proof = readyField('proof', 'latest_agent_proof');
+  const githubActionsRiskReceipt = githubActionsRiskReceiptFromProof(proof);
+  const review = {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
-    proof: readyField('proof', 'latest_agent_proof'),
+    proof,
     lesson: readyField('lesson', 'latest_agent_lesson'),
     next_task: readyField('next_task', 'latest_agent_next_task'),
     approval_status: metadata.approval_status || (task.status === 'review' ? 'pending' : null),
@@ -396,6 +424,8 @@ function taskReviewSummary(task) {
       || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
   };
+  if (githubActionsRiskReceipt) review.github_actions_risk_receipt = githubActionsRiskReceipt;
+  return review;
 }
 
 function taskAssignee(task) {
@@ -725,6 +755,7 @@ function compactTaskForStatus(task) {
     else if (task.review.reward === null) review.reward = null;
     if (task.review.summary) review.summary = clipStatusText(task.review.summary, 240);
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
+    if (task.review.github_actions_risk_receipt) review.github_actions_risk_receipt = task.review.github_actions_risk_receipt;
     if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
     if (task.review.next_task) review.next_task = clipStatusText(task.review.next_task, 140);
     if (task.review.approval_status) review.approval_status = task.review.approval_status;
@@ -889,7 +920,7 @@ function reviewQueueLimit(args, total) {
 
 function reviewQueueItem(task) {
   const ref = taskRef(task);
-  return {
+  const item = {
     id: task.id,
     display_id: task.display_id || null,
     title: task.title,
@@ -900,6 +931,10 @@ function reviewQueueItem(task) {
     accept_command: `atris task accept ${ref}`,
     revise_command: `atris task revise ${ref} --note "<what must change>"`,
   };
+  if (task.review?.github_actions_risk_receipt) {
+    item.github_actions_risk_receipt = task.review.github_actions_risk_receipt;
+  }
+  return item;
 }
 
 function taskReviewQueue(projection, args = []) {
@@ -951,6 +986,10 @@ function cmdReviews(args) {
     console.log('');
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}`);
     if (item.proof) console.log(`   proof: ${item.proof}`);
+    if (item.github_actions_risk_receipt) {
+      const receipt = item.github_actions_risk_receipt;
+      console.log(`   github actions risk: ${receipt.status} - ${receipt.summary}`);
+    }
     console.log(`   accept: ${item.accept_command}`);
     console.log(`   revise: ${item.revise_command}`);
   });
@@ -1566,6 +1605,10 @@ function cmdShow(args) {
     console.log('');
     if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
     if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
+    if (task.review.github_actions_risk_receipt) {
+      const receipt = task.review.github_actions_risk_receipt;
+      console.log(`GitHub Actions risk: ${receipt.status} - ${receipt.summary}`);
+    }
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
     if (task.review.next_task) console.log(`Next: ${task.review.next_task}`);
     if (task.review.approval_status) console.log(`Approval: ${task.review.approval_status}`);
