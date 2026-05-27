@@ -18,6 +18,39 @@ const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/TODO.md',
   'atris/wiki/index.md',
 ];
+const CORE_STATE_FILES = [
+  'events.jsonl',
+  'episodes.jsonl',
+  'task_episodes.jsonl',
+  'scorecards.jsonl',
+  'agent_tasks.jsonl',
+  'agent_mail.jsonl',
+  'agent_inboxes.jsonl',
+  'agents.jsonl',
+  'approvals.jsonl',
+];
+const LOOP_HEALTH_CHANNELS = [
+  { label: 'Task plane', files: ['task_events.jsonl', 'tasks.projection.json'] },
+  { label: 'Overnight RL', files: ['overnight_rl_self_heal.jsonl'] },
+  { label: 'Career XP', files: ['career_xp_receipts.jsonl', 'career_xp.projection.json', 'gm_xp.projection.json'] },
+  { label: 'Master loop', files: ['master_loop_events.jsonl'] },
+  { label: 'Missions', files: ['mission_events.jsonl', 'missions.jsonl'] },
+  { label: 'Company YC', files: ['company_yc_wow_events.jsonl', 'company_yc_wow_latest.json'] },
+  { label: 'Codex goal', files: ['codex_goal.json'] },
+  { label: 'Pulse AGI', files: ['pulse_agi_loop_receipts.jsonl'] },
+];
+const TIMESTAMP_KEYS = new Set([
+  'at',
+  'created_at',
+  'date',
+  'generated_at',
+  'last_checked_at',
+  'started_at',
+  'synced_at',
+  'timestamp',
+  'ts',
+  'updated_at',
+]);
 
 function parseArgs(args) {
   const options = {
@@ -140,6 +173,60 @@ function readJsonlStats(filePath) {
     validRows: valid,
     latestTs,
   };
+}
+
+function latestTimestampFromValue(value, depth = 0) {
+  if (depth > 5 || value == null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map(item => latestTimestampFromValue(item, depth + 1))
+      .filter(Boolean)
+      .sort()
+      .pop() || null;
+  }
+  if (typeof value !== 'object') return null;
+
+  let latest = null;
+  for (const [key, child] of Object.entries(value)) {
+    if (TIMESTAMP_KEYS.has(key) && (typeof child === 'string' || typeof child === 'number')) {
+      const ts = String(child);
+      if (!latest || ts > latest) latest = ts;
+      continue;
+    }
+    const childTs = latestTimestampFromValue(child, depth + 1);
+    if (childTs && (!latest || childTs > latest)) latest = childTs;
+  }
+  return latest;
+}
+
+function readJsonStats(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { path: filePath, exists: false, rows: 0, validRows: 0, latestTs: null };
+  }
+  const parsed = readJson(filePath);
+  return {
+    path: filePath,
+    exists: true,
+    rows: 1,
+    validRows: parsed === null ? 0 : 1,
+    latestTs: latestTimestampFromValue(parsed),
+  };
+}
+
+function readStateFileStats(filePath) {
+  if (filePath.endsWith('.jsonl')) return readJsonlStats(filePath);
+  if (filePath.endsWith('.json')) return readJsonStats(filePath);
+  return { path: filePath, exists: fs.existsSync(filePath), rows: 0, validRows: 0, latestTs: null };
+}
+
+function collectStateFileStats(stateDir) {
+  const names = new Set(CORE_STATE_FILES);
+  if (fs.existsSync(stateDir)) {
+    for (const name of fs.readdirSync(stateDir).sort()) {
+      if (name.endsWith('.json') || name.endsWith('.jsonl')) names.add(name);
+    }
+  }
+  return Array.from(names).map(name => readStateFileStats(path.join(stateDir, name)));
 }
 
 function readJsonlRows(filePath) {
@@ -305,17 +392,7 @@ function collectState(root) {
   const wikiStatus = readText(path.join(atrisDir, 'wiki', 'STATUS.md'));
   const status = readText(path.join(atrisDir, 'STATUS.md'));
 
-  const stateFiles = [
-    'events.jsonl',
-    'episodes.jsonl',
-    'task_episodes.jsonl',
-    'scorecards.jsonl',
-    'agent_tasks.jsonl',
-    'agent_mail.jsonl',
-    'agent_inboxes.jsonl',
-    'agents.jsonl',
-    'approvals.jsonl',
-  ].map(name => readJsonlStats(path.join(stateDir, name)));
+  const stateFiles = collectStateFileStats(stateDir);
 
   const totalRows = stateFiles.reduce((sum, item) => sum + item.rows, 0);
   const validRows = stateFiles.reduce((sum, item) => sum + item.validRows, 0);
@@ -344,6 +421,7 @@ function collectState(root) {
     mapLineCount: mapText ? mapText.split('\n').length : 0,
     wikiPages: listMarkdown(root, 'atris/wiki', 20),
     stateFiles,
+    loopHealth: buildLoopHealth(stateFiles),
     totalRows,
     validRows,
     latestScorecard: latestScorecard ? {
@@ -368,14 +446,46 @@ function countStateRows(state, names) {
     .reduce((sum, item) => sum + item.rows, 0);
 }
 
+function stateFilesForNames(stateFiles, names) {
+  const wanted = new Set(names);
+  return stateFiles.filter(item => wanted.has(path.basename(item.path)));
+}
+
+function buildLoopHealth(stateFiles) {
+  return LOOP_HEALTH_CHANNELS.map(channel => {
+    const files = stateFilesForNames(stateFiles, channel.files);
+    const rows = files.reduce((sum, item) => sum + item.rows, 0);
+    const validRows = files.reduce((sum, item) => sum + item.validRows, 0);
+    const latestTs = files
+      .map(item => item.latestTs)
+      .filter(Boolean)
+      .sort()
+      .pop() || null;
+    return {
+      label: channel.label,
+      files: channel.files,
+      rows,
+      validRows,
+      latestTs,
+      active: validRows > 0,
+    };
+  });
+}
+
 function strongestSignal(state) {
   const mail = countStateRows(state, 'agent_mail.jsonl');
   const tasks = countStateRows(state, 'agent_tasks.jsonl');
   const scorecards = countStateRows(state, 'scorecards.jsonl');
   const episodes = countStateRows(state, ['episodes.jsonl', 'task_episodes.jsonl']);
-  if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.`;
-  if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.`;
-  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.`;
+  const activeLoops = (state.loopHealth || buildLoopHealth(state.stateFiles || []))
+    .filter(channel => channel.active);
+  const loopSuffix = activeLoops.length > 0
+    ? ` Loop health sees ${activeLoops.length} active channel(s): ${activeLoops.map(channel => channel.label).join(', ')}.`
+    : '';
+  if (scorecards > 0 && episodes > 0) return `${scorecards} scorecard row(s) and ${episodes} episode row(s) are available for feedback-driven learning.${loopSuffix}`;
+  if (scorecards > 0) return `${scorecards} scorecard row(s) are available for outcome scoring.${loopSuffix}`;
+  if (episodes > 0) return `${episodes} episode row(s) are available; compile them into scorecards and next-action memory.${loopSuffix}`;
+  if (activeLoops.length > 0) return `Loop health sees ${activeLoops.length} active channel(s): ${activeLoops.map(channel => channel.label).join(', ')}.`;
   if (mail > 0) return `${mail} agent-mail row(s) are available; compile them into decisions, follow-ups, and CRM memory.`;
   if (tasks > 0) return `${tasks} agent-task row(s) are available; use them to choose the next action.`;
   return 'Workspace has structure, but little scored state yet; first improvement is to create scorecards and episodes.';
@@ -997,6 +1107,19 @@ function renderBulletedLoadOrder(state) {
     .join('\n');
 }
 
+function renderLoopHealthPanel(state) {
+  const rows = (state.loopHealth || []).map(channel => {
+    const status = channel.active ? 'active' : 'missing';
+    return `| ${channel.label} | ${status} | ${channel.rows} | ${channel.validRows} | ${channel.latestTs || ''} | \`${channel.files.join('`, `')}\` |`;
+  }).join('\n');
+
+  return `## Loop Health
+
+| Channel | Status | Rows | Valid | Latest timestamp | Files |
+|---|---|---:|---:|---|---|
+${rows}`;
+}
+
 function renderStatus(state) {
   return `# Atris Brain Status
 
@@ -1008,8 +1131,10 @@ function renderStatus(state) {
 - MAP loaded: ${state.hasMap ? `yes (${state.mapLineCount} lines)` : 'no'}
 - Wiki status loaded: ${state.hasWikiStatus ? 'yes' : 'no'}
 - TODO open estimate: ${state.todo.open}
-- State rows: ${state.totalRows} raw / ${state.validRows} valid JSONL
+- State rows: ${state.totalRows} raw / ${state.validRows} valid state rows
 - Latest state timestamp: ${state.latestStateTs || 'none found'}
+
+${renderLoopHealthPanel(state)}
 
 ## What Improved
 
@@ -1059,7 +1184,7 @@ This is not model-weight improvement yet. It is workspace-policy and context imp
 
 ## Current State Inputs
 
-| Source | Exists | Rows | Valid JSONL | Latest timestamp |
+| Source | Exists | Rows | Valid JSON/JSONL | Latest timestamp |
 |---|---:|---:|---:|---|
 ${rows}
 
