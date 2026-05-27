@@ -246,6 +246,23 @@ function printGithubActionsRiskReceipt(receipt) {
   console.log(`github actions risk receipt: ${receipt.status}; ${receipt.recommendation}`);
 }
 
+function enforceGithubActionsRiskReceipt(label, receipt) {
+  if (!receipt || !receipt.required || receipt.status === 'present' || receipt.status === 'not_applicable') return;
+  const detail = `github actions risk receipt ${receipt.status}: ${receipt.recommendation}`;
+  if (jsonModeActive()) {
+    printJson({
+      ok: false,
+      command: label,
+      reason: 'github_actions_risk_receipt_required',
+      detail,
+      github_actions_risk_receipt: receipt,
+    });
+  } else {
+    console.error(detail);
+  }
+  process.exit(2);
+}
+
 function positional(args) {
   return args.filter((a, i) => {
     if (a.startsWith('--')) return false;
@@ -1640,16 +1657,18 @@ function cmdDone(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task done');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  const proofText = typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '';
+  if (hasReview) enforceGithubActionsRiskReceipt('atris task done', githubActionsRiskReceipt(proofText, taskDb));
   const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
   if (result.updated) {
-    const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
     const review = hasReview ? taskDb.reviewTask(db, {
       id: taskId,
       actor,
       reward: flag(args, '--reward') || (failed ? 0 : 1),
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
-      proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      proof: proofText,
       careerXpEligible: false,
     }) : null;
     const xpProjection = refreshCareerXpAfterReview(review);
@@ -1707,6 +1726,9 @@ function cmdFinish(args) {
   const taskId = requireTaskId(taskDb, db, id, 'atris task finish');
   const currentTask = taskDb.getTask(db, taskId);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  const proofText = typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '';
+  if (hasReview) enforceGithubActionsRiskReceipt('atris task finish', githubActionsRiskReceipt(proofText, taskDb));
   const done = taskDb.doneTask(db, { id: taskId, status: hasFlag(args, '--failed') ? 'failed' : 'done', actor });
   if (!done.updated) {
     const detail = `finish failed: ${taskId} not in open|claimed`;
@@ -1723,7 +1745,6 @@ function cmdFinish(args) {
     console.error(detail);
     process.exit(1);
   }
-  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
   if (hasReview) {
     const result = taskDb.reviewTask(db, {
       id: taskId,
@@ -1731,7 +1752,7 @@ function cmdFinish(args) {
       reward: flag(args, '--reward') || 1,
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
-      proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      proof: proofText,
       careerXpEligible: false,
     });
     const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
@@ -1794,6 +1815,7 @@ function cmdReady(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+  enforceGithubActionsRiskReceipt('atris task ready', githubActionsRiskReceipt(String(proof), taskDb));
   const result = taskDb.readyTask(db, {
     id: taskId,
     actor,
@@ -1862,6 +1884,7 @@ function cmdAccept(args) {
     console.error('atris task accept: proof required or task must already have fresh proof_ready proof');
     process.exit(2);
   }
+  enforceGithubActionsRiskReceipt('atris task accept', githubActionsRiskReceipt(proof, taskDb));
   const readyReview = beforeTask?.review || {};
   const clearLesson = hasEmptyFlagValue(args, '--lesson');
   const clearNextTask = hasEmptyFlagValue(args, '--next');
@@ -1972,14 +1995,17 @@ function cmdReview(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task review');
+  const proofText = typeof proof === 'string' ? proof : '';
   const currentTask = taskDb.getTask(db, taskId);
+  const effectiveProof = proofText || String(currentTask?.metadata?.latest_agent_proof || '');
+  enforceGithubActionsRiskReceipt('atris task review', githubActionsRiskReceipt(effectiveProof, taskDb));
   const result = taskDb.reviewTask(db, {
     id: taskId,
     actor: String(actor),
     reward: reward === true || reward === null ? 0 : reward,
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: typeof nextTask === 'string' ? nextTask : '',
-    proof: typeof proof === 'string' ? proof : '',
+    proof: proofText,
     careerXpEligible: false,
   });
   if (!result.reviewed) {
