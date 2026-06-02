@@ -182,12 +182,15 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.business.proof.events, 1);
   assert.equal(data.os.business.computers, 1);
   assert.equal(data.agents[0].task, 'CLI-95');
+  assert.equal(data.agents[0].task_source, 'repo_task_projection');
+  assert.equal(data.agents[0].task_scope, 'repo');
   assert.equal(data.agents[1].task, 'BCK-294');
   assert.equal(data.agents[1].task_workspace, 'tmp/other');
+  assert.equal(data.agents[1].task_source, 'repo_task_projection');
   assert.equal(data.agents[2].task, 'BCK-294');
   const untaskedAgent = data.agents.find(agent => agent.task === '-');
   assert.equal(untaskedAgent.task_reason, 'no task projection');
-  assert.equal(untaskedAgent.task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 if idle');
+  assert.equal(untaskedAgent.task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 only with operator approval if idle');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /CLI-95/);
@@ -209,9 +212,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(top, /CLI-95/);
   assert.match(top, /BCK-294/);
   assert.match(top, /1 untasked/);
-  assert.match(top, /Next: close or hand off 1 session still bound to review task CLI-95/);
+  assert.match(top, /Next: inspect 2 sessions on BCK-294 \(4\.0% CPU; repo projection; verify ownership\)/);
+  assert.match(top, /Task binding: repo projection; verify ownership before assuming every session owns the displayed task/);
   assert.match(top, /Untasked: 1 sessions \(1 no task projection\)/);
-  assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 if idle/);
+  assert.match(top, /333 .*no task projection -> inspect \/tmp\/no-proj for missing Atris task plane or close pid 333 only with operator approval if idle/);
   assert.match(top, /Task load: 1 pileup, 1 review-bound task/);
   assert.match(top, /BCK-294: 2 sessions, 4\.0% CPU, claimed, tmp\/other/);
   assert.match(top, /CLI-95: 1 sessions, 0\.1% CPU, review, tmp\/atris-radar/);
@@ -223,7 +227,9 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     ['BCK-294', 2, true],
     ['CLI-95', 1, true],
   ]);
-  assert.match(payload.next_action, /close or hand off 1 session still bound to review task CLI-95/);
+  assert.deepEqual(payload.task_load[0].task_sources, ['repo_task_projection']);
+  assert.deepEqual(payload.task_load[0].task_scopes, ['repo']);
+  assert.match(payload.next_action, /inspect 2 sessions on BCK-294 \(4\.0% CPU; repo projection; verify ownership\)/);
 });
 
 test('renderAgentTop explains workspaces with no active task', () => {
@@ -253,6 +259,376 @@ test('renderAgentTop explains workspaces with no active task', () => {
   const top = renderAgentTop(data);
   assert.match(top, /Next: resolve 1 untasked session: 1 no active task/);
   assert.match(top, /44 tmp\/web: no active task -> cd '\/tmp\/web' && atris task next --as codex/);
+});
+
+test('collectRadar marks owner-gated tasks as owner action required', () => {
+  const root = '/tmp/owner-gate';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'BCK-292',
+          title: 'Owner gate: unblock backend Actions billing',
+          status: 'claimed',
+          workspace_root: root,
+          claimed_by: 'keshavrao',
+          metadata: {
+            agent_executable: false,
+            human_revision_note: 'GitHub Actions failed payments or spending limit still requires owner action.',
+          },
+        },
+      ],
+    })],
+  ]);
+  const psOutput = '900 1 3.0 0.5 S Tue May 19 09:00:00 2026 codex exec backend\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'master\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/master', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === path.join(root, '.atris', 'state', 'tasks.projection.json'),
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+  });
+
+  assert.match(data.next_action, /owner action required BCK-292/);
+  assert.equal(data.agents[0].task, 'BCK-292');
+  assert.equal(data.agents[0].task_source, 'repo_task_projection');
+  assert.equal(data.agents[0].task_reason, 'owner action required');
+  assert.match(data.agents[0].task_action, /owner-gated BCK-292/);
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: owner-gated repo projection covers 1 session on BCK-292; verify ownership, wait for owner action, avoid duplicate work, close only with operator approval/);
+  assert.match(top, /Owner-gated projection: 1 session verify ownership and wait on human\/owner action; do not start duplicate work/);
+  assert.match(top, /owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid 900 only with operator approval/);
+});
+
+test('collectRadar prefers the task owned by the live process agent', () => {
+  const root = '/tmp/process-owner';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'OBL-529',
+          title: 'Human live microphone signoff',
+          status: 'claimed',
+          workspace_root: root,
+          claimed_by: 'claude',
+        },
+        {
+          display_id: 'OBL-309',
+          title: 'Close live customer bug and feedback loops',
+          status: 'claimed',
+          workspace_root: root,
+          claimed_by: 'codex',
+        },
+      ],
+    })],
+  ]);
+  const psOutput = '39745 1 0.0 0.1 S Tue May 19 09:00:00 2026 codex exec obelisk\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'main\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === taskFile,
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+  });
+
+  assert.equal(data.agents[0].agent, 'codex');
+  assert.equal(data.agents[0].task, 'OBL-309');
+  assert.equal(data.agents[0].owner, 'codex');
+  assert.notEqual(data.agents[0].task, 'OBL-529');
+});
+
+test('collectRadar marks production-gated task messages as owner action required', () => {
+  const root = '/tmp/production-gated';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'OBL-309',
+          title: 'Close live customer bug and feedback loops',
+          status: 'claimed',
+          workspace_root: root,
+          claimed_by: 'codex',
+          messages: [
+            {
+              content: 'Remaining blocker is unchanged and human/production gated: deploy receipt, live canary or 24h recurrence receipt, and decision-trace receipt before feedback mutation, customer proof, parent closeout, task accept, or production claim.',
+            },
+          ],
+        },
+      ],
+    })],
+  ]);
+  const psOutput = '39745 1 0.0 0.1 S Tue May 19 09:00:00 2026 codex exec obelisk\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'main\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === taskFile,
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+  });
+
+  assert.equal(data.agents[0].task, 'OBL-309');
+  assert.equal(data.agents[0].task_reason, 'owner action required');
+  assert.match(data.agents[0].task_action, /owner-gated OBL-309/);
+  assert.match(agentTopPayload(data).next_action, /owner-gated repo projection covers 1 session on OBL-309/);
+  assert.doesNotMatch(agentTopPayload(data).next_action, /executable lane/);
+});
+
+test('collectRadar does not inherit production gates from radar task notes', () => {
+  const root = '/tmp/radar-note';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CLI-174',
+          title: 'Classify production-gated task messages in ctop',
+          status: 'claimed',
+          tag: 'radar',
+          workspace_root: root,
+          claimed_by: 'codex',
+          messages: [
+            {
+              content: 'Evidence: OBL-309 is human/production gated and needs deploy receipt plus live canary before feedback mutation.',
+            },
+          ],
+        },
+      ],
+    })],
+  ]);
+  const psOutput = '34091 1 1.0 0.1 S Tue May 19 09:00:00 2026 codex exec radar-fix\n';
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return psOutput;
+    if (cmd === 'lsof') return `p${args[2]}\nn${root}\n`;
+    if (cmd === 'git' && args[2] === 'branch') return 'master\n';
+    if (cmd === 'git' && args[2] === 'worktree') {
+      return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/master', ''].join('\n');
+    }
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-19T16:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file) || file === taskFile,
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+  });
+
+  assert.equal(data.agents[0].task, 'CLI-174');
+  assert.equal(data.agents[0].task_reason, null);
+  assert.equal(data.agents[0].task_action, null);
+  assert.match(agentTopPayload(data).next_action, /work CLI-174/);
+});
+
+test('renderAgentTop prioritizes owner-gated sessions before review cleanup', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      { pid: '1', agent: 'codex', status: 'active', repo: 'tmp/backend', branch: 'main', cpu: 2, mem: 0.1, task: 'BCK-292', task_status: 'claimed', owner: 'keshavrao', task_reason: 'owner action required', task_action: 'owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid 1 only with operator approval' },
+      { pid: '2', agent: 'codex', status: 'active', repo: 'tmp/cli', branch: 'main', cpu: 3, mem: 0.2, task: 'CLI-157', task_status: 'review', owner: 'codex', task_reason: 'certified review', task_action: 'handoff complete for CLI-157; claim fresh work as codex or close pid 2 only with operator approval' },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: owner gate blocks 1 session on BCK-292; wait for owner action; review checkpoint: accept\/revise CLI-157 in tmp\/cli; avoid duplicate work, close only with operator approval/);
+  assert.match(top, /Owner-gated: 1 session waiting on human\/owner action; do not start duplicate work/);
+  assert.match(top, /Review-bound: 1 session should hand off or claim fresh work/);
+});
+
+test('renderAgentTop shows certified review checkpoint beside owner gates when no executable lane exists', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      {
+        pid: '1',
+        agent: 'codex',
+        status: 'active',
+        repo: 'tmp/backend',
+        branch: 'main',
+        cpu: 1,
+        mem: 0.1,
+        task: 'BCK-292',
+        task_status: 'claimed',
+        owner: 'keshavrao',
+        task_source: 'repo_task_projection',
+        task_reason: 'owner action required',
+        task_action: 'owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid 1 only with operator approval',
+      },
+      {
+        pid: '2',
+        agent: 'codex',
+        status: 'active',
+        repo: 'tmp/cli',
+        branch: 'main',
+        cpu: 0,
+        mem: 0.1,
+        task: 'CLI-176',
+        task_status: 'review',
+        owner: 'codex',
+        task_source: 'repo_task_projection',
+        task_reason: 'certified review',
+        task_action: 'handoff complete for CLI-176; claim fresh work as codex or close pid 2 only with operator approval',
+      },
+    ],
+  };
+
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: owner-gated repo projection covers 1 session on BCK-292; verify ownership, wait for owner action; review checkpoint: accept\/revise CLI-176 in tmp\/cli; avoid duplicate work, close only with operator approval/);
+  assert.doesNotMatch(top, /executable lane/);
+});
+
+test('renderAgentTop keeps each owner-gated task visible under row cap', () => {
+  const backendRows = Array.from({ length: 9 }, (_, index) => ({
+    pid: String(100 + index),
+    agent: index % 2 ? 'claude' : 'codex',
+    status: 'active',
+    repo: 'tmp/backend',
+    branch: 'main',
+    cpu: 1,
+    mem: 0.1,
+    task: 'BCK-292',
+    task_status: 'claimed',
+    owner: 'keshavrao',
+    task_source: 'repo_task_projection',
+    task_reason: 'owner action required',
+    task_action: `owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid ${100 + index} only with operator approval`,
+  }));
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      ...backendRows,
+      {
+        pid: '39745',
+        agent: 'codex',
+        status: 'active',
+        repo: 'tmp/obelisk',
+        branch: 'main',
+        cpu: 0,
+        mem: 0.1,
+        task: 'OBL-309',
+        task_status: 'claimed',
+        owner: 'codex',
+        task_source: 'repo_task_projection',
+        task_reason: 'owner action required',
+        task_action: 'owner-gated OBL-309; wait for owner action, do not start duplicate work; close pid 39745 only with operator approval',
+      },
+    ],
+  };
+
+  const top = renderAgentTop(data);
+  assert.match(top, /Owner-gated projection: 10 sessions verify ownership and wait on human\/owner action; showing 8; do not start duplicate work/);
+  assert.match(top, /100 tmp\/backend BCK-292/);
+  assert.match(top, /39745 tmp\/obelisk OBL-309/);
+});
+
+test('renderAgentTop shows executable lanes beside owner-gated pileups', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      {
+        pid: '1',
+        agent: 'codex',
+        status: 'active',
+        repo: 'tmp/backend',
+        branch: 'main',
+        cpu: 1,
+        mem: 0.1,
+        task: 'BCK-292',
+        task_status: 'claimed',
+        owner: 'keshavrao',
+        task_source: 'repo_task_projection',
+        task_reason: 'owner action required',
+        task_action: 'owner-gated BCK-292; wait for owner action, do not start duplicate work; close pid 1 only with operator approval',
+      },
+      {
+        pid: '2',
+        agent: 'codex',
+        status: 'active',
+        repo: 'tmp/obelisk',
+        branch: 'main',
+        cpu: 0,
+        mem: 0.1,
+        task: 'OBL-309',
+        task_status: 'claimed',
+        owner: 'codex',
+        task_source: 'repo_task_projection',
+      },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: owner-gated repo projection covers 1 session on BCK-292; verify ownership, wait for owner action; executable lane: continue OBL-309 in tmp\/obelisk as codex; avoid duplicate work, close only with operator approval/);
+});
+
+test('renderAgentTop prioritizes active pileups before review cleanup', () => {
+  const data = {
+    root: '/tmp/root',
+    generated_at: '2026-05-19T00:00:00.000Z',
+    next_action: 'fallback',
+    agents: [
+      { pid: '1', agent: 'codex', status: 'active', repo: 'tmp/backend', branch: 'main', cpu: 2, mem: 0.1, task: 'BCK-341', task_status: 'claimed', owner: 'codex' },
+      { pid: '2', agent: 'claude', status: 'active', repo: 'tmp/backend', branch: 'main', cpu: 3, mem: 0.2, task: 'BCK-341', task_status: 'claimed', owner: 'codex' },
+      { pid: '3', agent: 'codex', status: 'active', repo: 'tmp/web', branch: 'main', cpu: 0, mem: 0.1, task: 'WEB-51', task_status: 'review', owner: 'codex', task_reason: 'certified review', task_action: 'handoff complete for WEB-51; claim fresh work as codex or close pid 3 only with operator approval' },
+    ],
+  };
+  const top = renderAgentTop(data);
+  assert.match(top, /Next: inspect 2 sessions on BCK-341 \(5\.0% CPU\)/);
+  assert.match(top, /Review-bound: 1 session should hand off or claim fresh work/);
 });
 
 test('renderAgentTop prioritizes pileups before untasked cleanup', () => {

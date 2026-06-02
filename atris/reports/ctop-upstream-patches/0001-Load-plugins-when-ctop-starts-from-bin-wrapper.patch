@@ -1,0 +1,87 @@
+From 9dbdb7d17e310108ddb99e4adedd0566c8eaef5a Mon Sep 17 00:00:00 2001
+From: Keshav <keshavrao250@gmail.com>
+Date: Tue, 19 May 2026 04:51:13 -0700
+Subject: [PATCH 1/2] Load plugins when ctop starts from bin wrapper
+
+---
+ src/_core.js         | 11 ++++++++---
+ test/plugins.test.js | 20 +++++++++++++++++++-
+ 2 files changed, 27 insertions(+), 4 deletions(-)
+
+diff --git a/src/_core.js b/src/_core.js
+index 1997794..570a9b6 100755
+--- a/src/_core.js
++++ b/src/_core.js
+@@ -264,9 +264,11 @@ function loadPlugins(pluginDir) {
+ }
+ 
+ let plugins = [];
+-// Load plugins at startup (only when running as main)
+-if (require.main === module) {
+-  plugins = loadPlugins();
++
++function ensurePluginsLoaded(pluginDir) {
++  if (plugins.length > 0) return plugins;
++  plugins = loadPlugins(pluginDir);
++  return plugins;
+ }
+ 
+ // Pricing per million tokens (USD) — as of 2025
+@@ -6035,6 +6037,8 @@ function cleanup() {
+ }
+ 
+ async function main() {
++  ensurePluginsLoaded();
++
+   // Setup terminal
+   if (!process.stdin.isTTY) {
+     console.error('This program requires an interactive terminal.');
+@@ -6167,6 +6171,7 @@ module.exports = {
+   buildGroupedFlatList,
+   // Plugin system
+   loadPlugins,
++  ensurePluginsLoaded,
+   // History tracking
+   loadHistory,
+   pruneHistory,
+diff --git a/test/plugins.test.js b/test/plugins.test.js
+index 0af8e51..97bccf4 100644
+--- a/test/plugins.test.js
++++ b/test/plugins.test.js
+@@ -4,7 +4,7 @@ const fs = require('fs');
+ const path = require('path');
+ const os = require('os');
+ 
+-const { loadPlugins, _state } = require('../claude-manager');
++const { loadPlugins, ensurePluginsLoaded, _state } = require('../claude-manager');
+ 
+ // Helper: create a temp plugin directory with plugin files
+ function makeTempPluginDir() {
+@@ -86,6 +86,24 @@ describe('Plugin loading', () => {
+     assert.strictEqual(plugins.length, 1);
+     assert.strictEqual(plugins[0].wasInitialized(), true);
+   });
++
++  it('loads plugins from main startup path', () => {
++    writePlugin(tmpDir, 'startup-plugin.js', `
++      module.exports = {
++        name: 'startup-plugin',
++        column: {
++          header: 'START',
++          width: 8,
++          getValue: () => 'loaded',
++        },
++      };
++    `);
++    _state.plugins = [];
++    const plugins = ensurePluginsLoaded(tmpDir);
++    assert.strictEqual(plugins.length, 1);
++    assert.strictEqual(plugins[0].name, 'startup-plugin');
++    assert.strictEqual(_state.plugins[0].column.getValue({}), 'loaded');
++  });
+ });
+ 
+ describe('Plugin column integration', () => {
+-- 
+2.49.0
+

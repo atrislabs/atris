@@ -191,7 +191,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     taskDb.noteTask(db, {
       id: task.id,
       actor: process.env.ATRIS_AGENT_ID || mission.owner || 'mission-lead',
-      content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task ready; AgentXP lands only after human accept.`,
+      content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task current-step; AgentXP lands only after human accept.`,
     });
   }
   const { outPath } = writeMissionTaskProjection(taskDb, db, workspaceRoot);
@@ -461,7 +461,8 @@ function missionXpTaskRefFromMission(mission) {
 function missionXpReadyAction(mission, receiptPath) {
   const ref = missionXpTaskRefFromMission(mission);
   if (!ref || !receiptPath) return null;
-  return `queue AgentXP review: atris task ready ${ref} --proof "${receiptPath}"`;
+  const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${receiptPath}" --json`;
 }
 
 function missionFromArgs(args) {
@@ -532,7 +533,7 @@ function startMission(args) {
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
     if (!mission.verifier && !mission.always_on) {
-      mission.next_action = `work task then run: atris task ready ${xpTask.ref} --proof "<proof>"`;
+      mission.next_action = `work task then run: atris task current-step --goal-id ${mission.id} --as ${mission.owner} --proof "<proof>" --json`;
     }
   }
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
@@ -1843,7 +1844,7 @@ Autonomy recipe:
   4. Do one bounded step, then record it:
      atris mission tick <id> --verify --summary "what changed"
   5. Close or continue from the receipt:
-     atris task ready <xp_task_ref> --proof "<receipt_path>"  (if --xp-task)
+     atris task current-step --goal-id <mission_id> --as <owner> --proof "<receipt_path>" --json  (if --xp-task)
      atris task accept <xp_task_ref> --reward <n>             (human accept mints AgentXP)
      atris mission complete <id> --proof "<receipt_path>"
      repeat status -> step -> tick for current-agent work

@@ -164,6 +164,12 @@ Finish with proof:
 atris task ready <task_ref> --proof "npm run typecheck && npm run build passed" --as codex
 ```
 
+Start a specific `/codex` verification chat from Review:
+
+```bash
+atris task review-chat <task_ref> --as codex-review
+```
+
 Record review, lesson, and the next task:
 
 ```bash
@@ -271,6 +277,7 @@ The recursive self-improvement loop is:
 atris task next --as <agent>
   -> work the task
   -> atris task ready <id> --proof "..."
+  -> atris task review-chat <id> --as codex-review
   -> human approves with atris task accept <id>
   -> atris task review <id> --reward 1 --lesson "..." --next "..." --create-next
   -> atris task --json
