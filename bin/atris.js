@@ -67,8 +67,8 @@ const ensureValidCredentials = (opts) => _ensureValidCredentials(apiRequestJson,
 const fetchMyAgents = (token) => _fetchMyAgents(token, apiRequestJson);
 const displayAccountSummary = () => _displayAccountSummary(apiRequestJson);
 
-// Run update check in background (non-blocking)
-// Skip for 'version', 'update', and help commands to avoid redundant messages or help side effects.
+// Run update check in background (non-blocking).
+// Skip for machine-readable JSON and help commands to avoid corrupting stdout.
 let updateCheckPromise = null;
 const updateCommand = process.argv[2];
 const updateArgs = process.argv.slice(3);
@@ -78,7 +78,8 @@ const helpRequested = updateCommand === 'help'
   || updateArgs.includes('--help')
   || updateArgs.includes('-h')
   || updateArgs[0] === 'help';
-const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested);
+const jsonRequested = updateArgs.includes('--json');
+const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
 if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {

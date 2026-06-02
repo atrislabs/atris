@@ -125,6 +125,7 @@ function loadTasks(root, deps) {
     claimed_by: task.claimed_by,
     assigned_to: task.metadata?.assigned_to || task.assigned_to || null,
     metadata: task.metadata || {},
+    messages: Array.isArray(task.messages) ? task.messages : [],
   }));
 }
 
@@ -164,7 +165,7 @@ function untaskedAction(agent, taskWorkspaceRoot, tasks) {
   if (reason === 'cwd unknown') return `inspect pid ${pid} cwd with lsof`;
   if (reason === 'no active task') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task next --as ${actor}`;
   if (reason === 'empty task projection') return `cd ${shellQuote(taskWorkspaceRoot)} && atris task new "<small concrete title>" --tag ops`;
-  return `inspect ${agent.cwd || 'unknown cwd'} for missing Atris task plane or close pid ${pid} if idle`;
+  return `inspect ${agent.cwd || 'unknown cwd'} for missing Atris task plane or close pid ${pid} only with operator approval if idle`;
 }
 
 function readJsonFile(file, deps, fallback = null) {
@@ -408,18 +409,102 @@ function taskRef(task) {
   return task ? (task.display_id || task.legacy_ref || task.id || '-') : '-';
 }
 
-function taskForCwd(tasks, cwd, workspaceRoot = cwd) {
+function taskOwnerMatchesAgent(task, agent) {
+  const actor = String(agent?.agent || '').toLowerCase();
+  if (!actor) return false;
+  return [
+    task.assigned_to,
+    task.claimed_by,
+    task.metadata?.assigned_to,
+    task.metadata?.claimed_by,
+    task.metadata?.owner,
+  ]
+    .filter(Boolean)
+    .some(owner => String(owner).toLowerCase() === actor);
+}
+
+function taskForCwd(tasks, cwd, workspaceRoot = cwd, agent = null) {
   if (!cwd && !workspaceRoot) return null;
   const matchesWorkspace = task => !task.workspace_root || task.workspace_root === cwd || task.workspace_root === workspaceRoot;
-  return tasks.find(task => matchesWorkspace(task) && task.status === 'claimed')
-    || tasks.find(task => matchesWorkspace(task) && task.status === 'open')
-    || tasks.find(task => matchesWorkspace(task) && task.status === 'review')
+  const candidates = tasks.filter(matchesWorkspace);
+  const firstByStatus = status => {
+    const statusMatches = candidates.filter(task => task.status === status);
+    return statusMatches.find(task => taskOwnerMatchesAgent(task, agent)) || statusMatches[0] || null;
+  };
+  return firstByStatus('claimed')
+    || firstByStatus('open')
+    || firstByStatus('review')
     || null;
+}
+
+function taskBindingForProjection(task) {
+  if (!task) return { task_source: null, task_scope: null };
+  return {
+    task_source: 'repo_task_projection',
+    task_scope: 'repo',
+  };
+}
+
+function taskSourceLabel(sources = []) {
+  if (sources.includes('repo_task_projection')) return 'repo projection; verify ownership';
+  return sources.filter(Boolean).join(', ');
 }
 
 function ownerForTask(task) {
   if (!task) return '-';
   return task.assigned_to || task.claimed_by || task.metadata?.assigned_to || '-';
+}
+
+function taskSessionReason(task) {
+  if (!task) return null;
+  if (task.status === 'review') return task.metadata?.agent_certified ? 'certified review' : 'review task';
+  if (ownerActionRequired(task)) return 'owner action required';
+  return null;
+}
+
+function taskSessionAction(agent, task, taskWorkspaceRoot) {
+  if (!task) return null;
+  const ref = taskRef(task);
+  const pid = agent?.pid || '?';
+  const actor = agent?.agent || 'agent';
+  const reviewCommand = taskWorkspaceRoot
+    ? `cd ${shellQuote(taskWorkspaceRoot)} && atris task reviews --limit 5`
+    : 'atris task reviews --limit 5';
+  if (task.status === 'review') {
+    if (task.metadata?.agent_certified) {
+      return `handoff complete for ${ref}; claim fresh work as ${actor} or close pid ${pid} only with operator approval`;
+    }
+    return `review or hand off ${ref}: ${reviewCommand}`;
+  }
+  if (ownerActionRequired(task)) return `owner-gated ${ref}; wait for owner action, do not start duplicate work; close pid ${pid} only with operator approval`;
+  return null;
+}
+
+function ownerActionRequired(task) {
+  const metadata = task?.metadata || {};
+  if (metadata.owner_action_required === true || metadata.agent_executable === false) return true;
+  if (String(metadata.agent_executable || '').toLowerCase() === 'false') return true;
+  const recentMessages = Array.isArray(task?.messages)
+    ? task.messages.slice(-8).map(message => message?.content || message?.payload?.content || '')
+    : [];
+  const text = [
+    task?.title,
+    task?.tag,
+    metadata.status,
+    metadata.blocker,
+    metadata.human_revision_note,
+    metadata.latest_agent_proof,
+    metadata.latest_agent_lesson,
+    task?.routing_text,
+    ...recentMessages,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (text.includes('owner_action_required') || text.includes('agent_executable=false')) return true;
+  if (text.includes('owner-only') || text.includes('owner only') || text.includes('not agent-executable')) return true;
+  const productionGateEligible = !['radar', 'task-plane', 'review'].includes(String(task?.tag || '').toLowerCase());
+  if (productionGateEligible && (text.includes('human/production gated') || text.includes('production execution proof is still missing'))) return true;
+  if (productionGateEligible && text.includes('remaining blocker') && text.includes('deploy receipt') && text.includes('live canary')) return true;
+  if (productionGateEligible && text.includes('human approval required') && (text.includes('production deploy') || text.includes('feedback mutation'))) return true;
+  return text.includes('owner') && text.includes('billing') && (text.includes('spending limit') || text.includes('failed payments'));
 }
 
 function summarize(tasks, missions, worktrees, agents) {
@@ -438,8 +523,11 @@ function summarize(tasks, missions, worktrees, agents) {
 }
 
 function nextAction(tasks, missions, worktrees, agents, os = {}) {
-  const activeTask = tasks.find(t => t.status === 'claimed' || t.status === 'open');
+  const activeTasks = tasks.filter(t => t.status === 'claimed' || t.status === 'open');
+  const activeTask = activeTasks.find(t => !ownerActionRequired(t));
   if (activeTask) return `work ${taskRef(activeTask)}: ${activeTask.title || 'active task'}`;
+  const ownerTask = activeTasks.find(ownerActionRequired);
+  if (ownerTask) return `owner action required ${taskRef(ownerTask)}: ${ownerTask.title || 'owner-only task'}`;
   const needsReview = tasks.find(t => t.status === 'review' && !(t.metadata && t.metadata.agent_certified));
   if (needsReview) return `review ${taskRef(needsReview)}: ${needsReview.title || 'uncertified review task'}`;
   const certified = tasks.find(t => t.status === 'review' && t.metadata && t.metadata.agent_certified);
@@ -472,16 +560,18 @@ function collectRadar(options = {}) {
   const agents = collectAgents(deps).map(agent => {
     const taskWorkspaceRoot = findTaskWorkspaceRoot(agent.cwd, deps);
     const agentTasks = taskWorkspaceRoot ? loadTasksCached(taskWorkspaceRoot, deps, taskCache) : [];
-    const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot);
-    const taskReason = task ? null : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
+    const task = taskForCwd(agentTasks, agent.cwd, taskWorkspaceRoot, agent);
+    const taskReason = task ? taskSessionReason(task) : untaskedReason(agent, taskWorkspaceRoot, agentTasks);
+    const taskBinding = taskBindingForProjection(task);
     return {
       ...agent,
       task: taskRef(task),
       task_status: task?.status || null,
       owner: ownerForTask(task),
       task_workspace: taskWorkspaceRoot ? repoLabel(taskWorkspaceRoot) : null,
+      ...taskBinding,
       task_reason: taskReason,
-      task_action: task ? null : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
+      task_action: task ? taskSessionAction(agent, task, taskWorkspaceRoot) : untaskedAction(agent, taskWorkspaceRoot, agentTasks),
     };
   });
   const osState = {
@@ -589,14 +679,73 @@ function sortedAgents(agents = []) {
   });
 }
 
+function executableAgentLanes(agents = []) {
+  return sortedAgents(agents).filter(agent => {
+    if (agent.status !== 'active') return false;
+    if (!agent.task || agent.task === '-') return false;
+    if (!['claimed', 'open'].includes(agent.task_status)) return false;
+    return !agent.task_reason;
+  });
+}
+
+function formatExecutableLane(agent) {
+  const repo = agent.repo || agent.cwd || 'unknown repo';
+  const actor = agent.agent || 'agent';
+  return `continue ${agent.task} in ${repo} as ${actor}`;
+}
+
+function certifiedReviewLanes(agents = []) {
+  return sortedAgents(agents).filter(agent => {
+    if (agent.status !== 'active') return false;
+    if (!agent.task || agent.task === '-') return false;
+    if (agent.task_status !== 'review') return false;
+    return agent.task_reason === 'certified review';
+  });
+}
+
+function formatReviewCheckpoint(agent) {
+  const repo = agent.repo || agent.cwd || 'unknown repo';
+  return `accept/revise ${agent.task} in ${repo}`;
+}
+
 function agentProcessNextAction(agents = [], fallback = 'no obvious process action') {
   const stopped = agents.filter(agent => agent.status !== 'active').length;
   if (stopped > 0) return `inspect ${stopped} stopped agent session${stopped === 1 ? '' : 's'}`;
+  const ownerGated = agents.filter(agent => agent.task_reason === 'owner action required');
+  if (ownerGated.length > 0) {
+    const tasks = [...new Set(ownerGated.map(agent => agent.task).filter(Boolean))].slice(0, 3).join(', ');
+    const projectionBound = ownerGated.some(agent => agent.task_source === 'repo_task_projection');
+    const executable = executableAgentLanes(agents)[0];
+    const reviewCheckpoint = executable ? null : certifiedReviewLanes(agents)[0];
+    const ownerGateAction = executable
+      ? `wait for owner action; executable lane: ${formatExecutableLane(executable)}; avoid duplicate work, close only with operator approval`
+      : reviewCheckpoint
+        ? `wait for owner action; review checkpoint: ${formatReviewCheckpoint(reviewCheckpoint)}; avoid duplicate work, close only with operator approval`
+      : 'wait for owner action, avoid duplicate work, close only with operator approval';
+    if (projectionBound) {
+      return `owner-gated repo projection covers ${ownerGated.length} session${ownerGated.length === 1 ? '' : 's'}${tasks ? ` on ${tasks}` : ''}; verify ownership, ${ownerGateAction}`;
+    }
+    return `owner gate blocks ${ownerGated.length} session${ownerGated.length === 1 ? '' : 's'}${tasks ? ` on ${tasks}` : ''}; ${ownerGateAction}`;
+  }
   const taskLoad = summarizeTaskLoad(agents);
+  const activePileup = taskLoad.find(row => row.sessions > 1 && !row.status.split(/,\s*/).includes('review'));
+  if (activePileup) {
+    const source = taskSourceLabel(activePileup.task_sources);
+    const sourceHint = source ? `; ${source}` : '';
+    return `inspect ${activePileup.sessions} sessions on ${activePileup.task} (${activePileup.cpu.toFixed(1)}% CPU${sourceHint})`;
+  }
   const reviewBound = taskLoad.find(row => row.status.split(/,\s*/).includes('review'));
-  if (reviewBound) return `close or hand off ${reviewBound.sessions} session${reviewBound.sessions === 1 ? '' : 's'} still bound to review task ${reviewBound.task}`;
+  if (reviewBound) {
+    const source = taskSourceLabel(reviewBound.task_sources);
+    const sourceHint = source ? `; ${source}` : '';
+    return `close or hand off ${reviewBound.sessions} session${reviewBound.sessions === 1 ? '' : 's'} still bound to review task ${reviewBound.task}${sourceHint}`;
+  }
   const pileup = taskLoad.find(row => row.sessions > 1);
-  if (pileup) return `inspect ${pileup.sessions} sessions on ${pileup.task} (${pileup.cpu.toFixed(1)}% CPU)`;
+  if (pileup) {
+    const source = taskSourceLabel(pileup.task_sources);
+    const sourceHint = source ? `; ${source}` : '';
+    return `inspect ${pileup.sessions} sessions on ${pileup.task} (${pileup.cpu.toFixed(1)}% CPU${sourceHint})`;
+  }
   const untasked = agents.filter(agent => !agent.task || agent.task === '-').length;
   if (untasked > 0) {
     const reasons = summarizeUntaskedReasons(agents);
@@ -634,6 +783,8 @@ function summarizeTaskLoad(agents = []) {
         statuses: new Set(),
         owners: new Set(),
         repos: new Set(),
+        task_sources: new Set(),
+        task_scopes: new Set(),
         pids: [],
       });
     }
@@ -645,6 +796,8 @@ function summarizeTaskLoad(agents = []) {
     if (agent.task_status) row.statuses.add(agent.task_status);
     if (agent.owner && agent.owner !== '-') row.owners.add(agent.owner);
     if (agent.repo) row.repos.add(agent.repo);
+    if (agent.task_source) row.task_sources.add(agent.task_source);
+    if (agent.task_scope) row.task_scopes.add(agent.task_scope);
     if (agent.pid) row.pids.push(agent.pid);
   }
   return [...byTask.values()]
@@ -659,6 +812,8 @@ function summarizeTaskLoad(agents = []) {
         status: statuses.join(', ') || '-',
         owners: [...row.owners].sort(),
         repos: [...row.repos].sort(),
+        task_sources: [...row.task_sources].sort(),
+        task_scopes: [...row.task_scopes].sort(),
         pids: row.pids.sort((a, b) => number(a) - number(b)),
         attention: row.sessions > 1 || statuses.includes('review'),
       };
@@ -691,6 +846,26 @@ function agentTopPayload(data) {
   };
 }
 
+function representativeAgentsByTask(agents = [], limit = 8) {
+  const selected = [];
+  const selectedRows = new Set();
+  const seenTasks = new Set();
+  for (const agent of agents) {
+    const task = agent.task || '-';
+    if (seenTasks.has(task)) continue;
+    seenTasks.add(task);
+    selected.push(agent);
+    selectedRows.add(agent);
+    if (selected.length >= limit) return selected;
+  }
+  for (const agent of agents) {
+    if (selected.length >= limit) break;
+    if (selectedRows.has(agent)) continue;
+    selected.push(agent);
+  }
+  return selected;
+}
+
 function renderAgentTop(data) {
   const payload = agentTopPayload(data);
   const lines = [];
@@ -698,6 +873,9 @@ function renderAgentTop(data) {
   lines.push('');
   lines.push(`Agents: ${payload.summary.active}/${payload.summary.total} active; ${payload.summary.untasked} untasked; CPU ${payload.summary.cpu.toFixed(1)}%; MEM ${payload.summary.mem.toFixed(1)}%`);
   lines.push(`Next: ${payload.next_action}`);
+  if (payload.agents.some(agent => agent.task_source === 'repo_task_projection')) {
+    lines.push('Task binding: repo projection; verify ownership before assuming every session owns the displayed task.');
+  }
   lines.push('');
   lines.push(`${truncate('PID', 7)} ${truncate('AGENT', 8)} ${truncate('CPU', 6)} ${truncate('MEM', 6)} ${truncate('REPO', 24)} ${truncate('BRANCH', 16)} ${truncate('TASK', 10)} ${truncate('STATE', 8)}`);
   for (const agent of payload.agents.slice(0, 32)) {
@@ -712,13 +890,38 @@ function renderAgentTop(data) {
       lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'}: ${agent.task_reason || 'unmapped'} -> ${agent.task_action || 'inspect session'}`);
     }
   }
+  const ownerGatedAll = payload.agents.filter(row => row.task_reason === 'owner action required');
+  const ownerGatedAgents = representativeAgentsByTask(ownerGatedAll, 8);
+  if (ownerGatedAgents.length) {
+    lines.push('');
+    const shown = ownerGatedAll.length > ownerGatedAgents.length ? `; showing ${ownerGatedAgents.length}` : '';
+    const projectionBound = ownerGatedAll.some(agent => agent.task_source === 'repo_task_projection');
+    const label = projectionBound ? 'Owner-gated projection' : 'Owner-gated';
+    const actionText = projectionBound ? 'verify ownership and wait on human/owner action' : 'waiting on human/owner action';
+    lines.push(`${label}: ${ownerGatedAll.length} session${ownerGatedAll.length === 1 ? '' : 's'} ${actionText}${shown}; do not start duplicate work.`);
+    for (const agent of ownerGatedAgents) {
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'} ${agent.task}: ${agent.task_action || 'wait for owner action'}`);
+    }
+  }
+  const reviewAll = payload.agents.filter(row => row.task_reason === 'certified review' || row.task_reason === 'review task');
+  const reviewAgents = reviewAll.slice(0, 8);
+  if (reviewAgents.length) {
+    lines.push('');
+    const shown = reviewAll.length > reviewAgents.length ? `; showing ${reviewAgents.length}` : '';
+    lines.push(`Review-bound: ${reviewAll.length} session${reviewAll.length === 1 ? '' : 's'} should hand off or claim fresh work${shown}.`);
+    for (const agent of reviewAgents) {
+      lines.push(`- ${agent.pid} ${agent.repo || agent.cwd || '-'} ${agent.task}: ${agent.task_reason || 'review'} -> ${agent.task_action || 'close or hand off session'}`);
+    }
+  }
   const taskLoadRows = payload.task_load.filter(row => row.attention).slice(0, 8);
   if (taskLoadRows.length) {
     lines.push('');
     lines.push(`Task load: ${payload.summary.task_pileups} pileup${payload.summary.task_pileups === 1 ? '' : 's'}, ${payload.summary.review_bound_tasks} review-bound task${payload.summary.review_bound_tasks === 1 ? '' : 's'}.`);
     for (const row of taskLoadRows) {
       const repoText = row.repos.slice(0, 3).join(', ') || '-';
-      lines.push(`- ${row.task}: ${row.sessions} sessions, ${row.cpu.toFixed(1)}% CPU, ${row.status}, ${repoText}`);
+      const source = taskSourceLabel(row.task_sources);
+      const sourceText = source ? `, ${source}` : '';
+      lines.push(`- ${row.task}: ${row.sessions} sessions, ${row.cpu.toFixed(1)}% CPU, ${row.status}, ${repoText}${sourceText}`);
     }
   }
   return lines.join('\n');

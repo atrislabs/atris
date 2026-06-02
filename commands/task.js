@@ -7,12 +7,16 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
+const { taskProofState } = require('../lib/task-proof');
+const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
   || os.userInfo().username
   || 'unknown';
 const AGENT_CERTIFICATION_REVIEW_PASSES = 2;
+const REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS = 3;
+const REVIEW_LANE_LOOP_MAX_STEPS = 10;
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -34,6 +38,22 @@ const STATUS_PLAN_TAGS = new Set([
   'ui',
   'ux',
 ]);
+const TASK_QUEUE_COLUMN_ORDER = ['do', 'review', 'plan', 'backlog', 'blocked', 'done'];
+const TASK_QUEUE_COLUMN_LABELS = {
+  backlog: 'Backlog',
+  plan: 'Plan',
+  do: 'Do',
+  review: 'Review',
+  blocked: 'Blocked',
+  done: 'Done',
+};
+const TASK_REVIEW_STATE_LANES = ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified'];
+const TASK_REVIEW_STATE_ALIASES = {
+  'needs-agent': ['needs-review', 'agent-review'],
+  'continue-work': ['continue', 'agent-actionable', 'executable'],
+  'human-accept-waiting': ['human-accept', 'accept-waiting', 'waiting-accept', 'no-next-task'],
+  certified: ['waiting-human', 'human-waiting'],
+};
 
 let taskDbModule = null;
 
@@ -64,20 +84,46 @@ atris task - durable local task state (SQLite, gitignored)
   atris task                              Show the task desk
   atris task new "<title>"                Create a task
   atris task next                         Claim/show the next open task
+  atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
+  atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
   atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
+  atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
   atris task accept <id> [--proof "..."]   Human accepts proof, marks done
+  atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
+                                           Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
   atris task delegate "<title>" --to <id>  Create an assigned task
+  atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
+                                           Record a task-owned Plan stage
+  atris task do <id> --as <owner> --first-move "..."
+                                           Start task-owned Do work from the plan
+  atris task backlog <id> [--reason "..."] Move a planned open task back to Backlog
+  atris task clear-plan --yes              Move all planned open tasks back to Backlog
   atris task day [--json]                  Show today's owner-grouped task list
   atris task list [--all] [--status <s>]   List tasks (default: this workspace)
   atris task claim <id> [--as <owner>]     Atomic claim
+  atris task capabilities [--json]         Read-only task CLI/API capability contract
+  atris task capabilities-check [--json]   Verify task capability contract conformance
+  atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
+  atris task review-lane-act [--json]      Execute next safe Review-lane agent action
+  atris task review-lane-loop [--json]     Run bounded safe Review-lane actions
+  atris task current [--json] [--goal-id <id>] [--tag <tag>] [--status <s>] [--review-state <lane>]
+                                           Read-only best next task page + queue
+  atris task queue [--json] [--goal-id <id>] [--tag <tag>] [--status <s>] [--review-state <lane>]
+                                           Read-only task lanes + current page
+  atris task current-step [--json] [--goal-id <id>] [--tag <tag>] [--review-state <lane>]
+                                           Advance the scoped current task one safe step
+                                           review-state lanes: needs-agent, continue-work, human-accept-waiting, certified
   atris task note <id> "<message>"         Append dialogue/context to a task
   atris task show <id> [--json]            Show a task card + dialogue
-  atris task done <id> [--failed] [--proof "..."]  Mark complete (or failed), optionally reviewed
-  atris task finish <id> [--proof "..."]   Legacy alias for done
+  atris task page <id> [--json]            Show the one-task page contract
+  atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
+  atris task done <id> --proof "..."       Mark complete with proof
+  atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
+  atris task finish <id> --proof "..."     Legacy alias for done with proof
   atris task review <id> --reward <n>      Write review event + RSI episode
   atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
   atris task status [--json] [--history]   Compact live status for web/Swarlo
@@ -146,6 +192,12 @@ function parseAcceptReward(value, { defaultValue = 1 } = {}) {
   return { ok: true, value: numeric };
 }
 
+function validHumanActorFlag(value) {
+  if (typeof value !== 'string') return false;
+  const actor = value.trim();
+  return Boolean(actor) && !actor.startsWith('--') && actor !== 'auto-accept-certified';
+}
+
 function printJson(value) {
   const buffer = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
   const retryWait = new Int32Array(new SharedArrayBuffer(4));
@@ -198,6 +250,46 @@ function failTask(label, reason, detail, exitCode = 2) {
   process.exit(exitCode);
 }
 
+function proofFlagValue(args) {
+  const proof = flag(args, '--proof');
+  return typeof proof === 'string' ? proof.trim() : '';
+}
+
+function textFlag(args, names) {
+  for (const name of names) {
+    const value = flag(args, name);
+    if (typeof value === 'string') return value.trim();
+  }
+  return '';
+}
+
+function numericFlag(args, name) {
+  const value = flag(args, name);
+  if (value === null || value === true || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function meaningfulTaskProofIssue(proof, { required = true } = {}) {
+  const text = String(proof || '').trim();
+  if (!required && !text) return null;
+  const state = taskProofState(text);
+  return state.ok ? null : state.reason;
+}
+
+function requireMeaningfulTaskProof(label, proof, { required = true } = {}) {
+  const issue = meaningfulTaskProofIssue(proof, { required });
+  if (issue) failTask(label, 'weak_proof', `meaningful proof required: ${issue}`);
+}
+
+function sendProofIssue(res, proof, issue) {
+  return sendJson(res, 400, {
+    ok: false,
+    reason: String(proof || '').trim() ? 'weak_proof' : 'proof_required',
+    detail: `meaningful proof required: ${issue}`,
+  });
+}
+
 function positional(args) {
   return args.filter((a, i) => {
     if (a.startsWith('--')) return false;
@@ -243,19 +335,126 @@ function resolveProjectionTaskRef(ref, taskByRef) {
   return key ? taskByRef.get(key) || null : null;
 }
 
-function createNextTaskIfRequested(taskDb, db, args, currentTask, title) {
-  const nextTitle = String(title || '').trim();
-  if (!hasFlag(args, '--create-next') || !nextTitle) return null;
-  const result = taskDb.addTask(db, {
-    title: nextTitle,
-    tag: currentTask && currentTask.tag || null,
-    workspaceRoot: taskDb.workspaceRoot(),
-    metadata: {
-      parent_task_id: currentTask && currentTask.id || null,
-      source: 'task_review_next',
+function reviewNextTaskTitle(task) {
+  return normalizeReviewNextTaskInput(rawReviewNextTaskTitle(task)).nextTask;
+}
+
+function rawReviewNextTaskTitle(task) {
+  const review = task && task.review || {};
+  const metadata = task && task.metadata || {};
+  return String(review.next_task || metadata.latest_agent_next_task || '').trim();
+}
+
+function reviewNextTaskTitleIsSpecific(title) {
+  const text = String(title || '').trim();
+  if (!text) return false;
+  const compact = text.toLowerCase().replace(/\s+/g, ' ');
+  return ![
+    /^human accept remains pending\b/,
+    /^agent double-check complete\b/,
+    /^proof is in review\b/,
+    /^continue work elsewhere\b/,
+    /\bnext agent-actionable work can continue\b/,
+    /\bagentxp waits for human accept\b/,
+  ].some(pattern => pattern.test(compact));
+}
+
+function normalizeReviewNextTaskInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { nextTask: '', ignored: null };
+  if (reviewNextTaskTitleIsSpecific(raw)) return { nextTask: raw, ignored: null };
+  return {
+    nextTask: '',
+    ignored: {
+      reason: 'non_specific_next_task',
+      value: raw,
     },
-  });
-  return result;
+  };
+}
+
+function genericContinuationIssues(task) {
+  const issues = [];
+  const titleInput = normalizeReviewNextTaskInput(task && task.title);
+  if (titleInput.ignored) {
+    issues.push({
+      field: 'title',
+      reason: titleInput.ignored.reason,
+      value: titleInput.ignored.value,
+    });
+  }
+  const nextTitle = rawReviewNextTaskTitle(task);
+  const nextInput = normalizeReviewNextTaskInput(nextTitle);
+  if (nextInput.ignored) {
+    issues.push({
+      field: 'review.next_task',
+      reason: nextInput.ignored.reason,
+      value: nextInput.ignored.value,
+    });
+  }
+  return issues;
+}
+
+function findExistingReviewNextTask(taskDb, db, currentTask, title) {
+  const parentId = currentTask && currentTask.id || null;
+  const nextTitle = String(title || '').trim();
+  if (!parentId || !nextTitle) return null;
+  return taskDb.listTasks(db, {
+    workspaceRoot: taskDb.workspaceRoot(),
+  }).find(task => {
+    const metadata = task.metadata || {};
+    return metadata.parent_task_id === parentId
+      && metadata.source === 'task_review_next'
+      && String(task.title || '').trim() === nextTitle;
+  }) || null;
+}
+
+function createReviewNextTask(taskDb, db, currentTask, title) {
+  const nextTitle = String(title || '').trim();
+  if (!nextTitle) return null;
+  const currentMetadata = currentTask && currentTask.metadata && typeof currentTask.metadata === 'object'
+    ? currentTask.metadata
+    : {};
+  const existing = findExistingReviewNextTask(taskDb, db, currentTask, nextTitle);
+  if (existing) return { id: existing.id, inserted: false };
+  const goalId = currentMetadata.goal_id || currentMetadata.goalId || null;
+  const parentId = currentTask && currentTask.id || null;
+  const sourceKey = parentId && typeof taskDb.sourceKey === 'function'
+    ? taskDb.sourceKey(`task_review_next:${parentId}`, nextTitle)
+    : null;
+  try {
+    return taskDb.addTask(db, {
+      title: nextTitle,
+      tag: currentTask && currentTask.tag || null,
+      workspaceRoot: taskDb.workspaceRoot(),
+      sourceKey,
+      metadata: {
+        parent_task_id: parentId,
+        ...(goalId ? { goal_id: String(goalId) } : {}),
+        source: 'task_review_next',
+      },
+    });
+  } catch (error) {
+    if (sourceKey && /constraint|unique/i.test(String(error && (error.code || error.message) || error))) {
+      const racedExisting = findExistingReviewNextTask(taskDb, db, currentTask, nextTitle);
+      if (racedExisting) return { id: racedExisting.id, inserted: false };
+    }
+    throw error;
+  }
+}
+
+function createNextTaskIfRequested(taskDb, db, args, currentTask, title) {
+  if (!hasFlag(args, '--create-next')) return null;
+  return createReviewNextTask(taskDb, db, currentTask, title);
+}
+
+function continueWorkCommandForTask(task, { owner } = {}) {
+  if (!reviewNextTaskTitle(task)) return null;
+  const actor = String(owner || (task && (task.claimed_by || taskAssignee(task))) || DEFAULT_OWNER).trim() || DEFAULT_OWNER;
+  return `atris task continue-work ${taskRef(task)} --as ${actor} --json`;
+}
+
+function certifiedReviewNextAction(nextTaskTitle) {
+  return String(nextTaskTitle || '').trim() ? 'continue_work' : 'human_accept_waiting';
 }
 
 function readLocalBusinessBinding(root = process.cwd()) {
@@ -321,6 +520,7 @@ function reviewSummary(task, payload = {}) {
   const careerText = [
     task.tag,
     metadata.goal_id,
+    metadata.task_goal,
     metadata.goal_objective,
     metadata.review_goal,
   ].filter(Boolean).join(' ').toLowerCase();
@@ -353,7 +553,7 @@ function taskReviewSummary(task) {
   const metadata = task.metadata || {};
   if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
   if (reviewed && reviewed.event_type === 'revision_requested') {
-    return {
+    return reviewSummaryWithVerificationChat(task, {
       summary: reviewSummary(task, payload),
       reward: null,
       proof: null,
@@ -365,7 +565,7 @@ function taskReviewSummary(task) {
       agent_certification_policy: null,
       human_revision_count: metadata.human_revision_count || payload.revision_count || null,
       human_revision_note: metadata.human_revision_note || payload.note || null,
-    };
+    });
   }
   const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
   const agentCertified = metadata.agent_certified === true
@@ -375,6 +575,9 @@ function taskReviewSummary(task) {
     && Object.prototype.hasOwnProperty.call(payload, key);
   const clearedReviewFields = new Set(Array.isArray(payload.cleared_review_fields) ? payload.cleared_review_fields : []);
   const readyField = (key, metadataKey) => {
+    if (task.status === 'review' && metadata.approval_status === 'pending' && metadata[metadataKey]) {
+      return metadata[metadataKey];
+    }
     if (reviewedEventHas(key)) {
       if (payload[key]) return payload[key];
       if (key === 'proof' || !clearedReviewFields.has(key)) return metadata[metadataKey] || null;
@@ -382,7 +585,7 @@ function taskReviewSummary(task) {
     }
     return payload[key] || metadata[metadataKey] || null;
   };
-  return {
+  return reviewSummaryWithVerificationChat(task, {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
     proof: readyField('proof', 'latest_agent_proof'),
@@ -395,7 +598,18 @@ function taskReviewSummary(task) {
       || payload.agent_certification_policy
       || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
-  };
+  });
+}
+
+function reviewSummaryWithVerificationChat(task, review) {
+  if (!review || task.status !== 'review' || review.approval_status !== 'pending') return review;
+  const verifierTask = taskWithReviewEvidence(task, {
+    proof: review.proof,
+    lesson: review.lesson,
+    nextTask: review.next_task,
+  });
+  const reviewChat = taskReviewChatHandoff(verifierTask);
+  return reviewChat ? { ...review, verification_chat: reviewChat } : review;
 }
 
 function taskAssignee(task) {
@@ -442,6 +656,7 @@ function pickTaskGoal(task, goals) {
 function taskBaseObjective(task, goals) {
   const metadata = task && task.metadata || {};
   return task.objective
+    || metadata.task_goal
     || metadata.goal_objective
     || metadata.objective
     || pickTaskGoal(task, goals);
@@ -449,7 +664,7 @@ function taskBaseObjective(task, goals) {
 
 function taskObjective(task, parent, goals, { parentLinkType = null, baseObjectives = new Map() } = {}) {
   const metadata = task && task.metadata || {};
-  const explicit = task.objective || metadata.goal_objective || metadata.objective;
+  const explicit = task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective;
   if (explicit) return explicit;
   if (parent) {
     if (parentLinkType === 'parent_task_id') return baseObjectives.get(parent.id) || parent.title;
@@ -690,16 +905,315 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
-function reviewHandoffForTask(task) {
+function reviewHandoffForTask(task, { suppressExistingFollowUp = false } = {}) {
   const review = task && task.review || {};
   if (task && task.status !== 'review') return null;
   if (review.approval_status !== 'pending') return null;
   const agentCertified = review.agent_certified === true;
-  return {
+  const nextTask = reviewNextTaskTitle(task);
+  const hasExistingFollowUp = Boolean(suppressExistingFollowUp && taskHasReviewFollowUpChild(task));
+  const nextAction = agentCertified
+    ? certifiedReviewNextAction(hasExistingFollowUp ? '' : nextTask)
+    : 'agent_review_again';
+  const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
     career_xp_status: 'pending_human_accept',
-    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+    next_action: nextAction,
   };
+  if (agentCertified && nextTask && !hasExistingFollowUp) {
+    handoff.next_task = nextTask;
+    handoff.continue_work_command = continueWorkCommandForTask(task);
+  } else if (agentCertified && nextTask && hasExistingFollowUp) {
+    handoff.next_task = nextTask;
+    handoff.existing_follow_up_child = true;
+  }
+  return handoff;
+}
+
+function reviewActor(value) {
+  const actor = String(value || 'codex-review').trim().replace(/[^a-zA-Z0-9:_-]/g, '-');
+  return actor || 'codex-review';
+}
+
+function taskReviewClip(value, max = 500) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 3)).trim()}...` : text;
+}
+
+function taskReviewEvidencePaths(text, limit = 8) {
+  const source = String(text || '');
+  const matches = source.match(/(?:\.{0,2}\/|~\/|\/)?[\w@.+-]+(?:\/[\w@.+-]+)+(?:\.[A-Za-z0-9]+)?|[\w@.+-]+\.(?:js|mjs|cjs|ts|tsx|jsx|json|md|py|sh|yml|yaml|toml|lock|txt)/g) || [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of matches) {
+    const clean = raw.replace(/[),.;:]+$/g, '');
+    const basename = clean.split('/').pop() || clean;
+    const hasPathPrefix = /^(?:\.{1,2}\/|~\/|\/)/.test(clean);
+    const hasFileExtension = /\.[A-Za-z0-9]+$/.test(basename);
+    if (!hasPathPrefix && !hasFileExtension) continue;
+    if (!clean || clean.includes('://') || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function taskReviewCommandLooksSpecific(command) {
+  const text = String(command || '').trim();
+  if (!text) return false;
+  if (/^(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)$/i.test(text)) return false;
+  if (/^atris\s+task\s+\w+\s*$/i.test(text)) return false;
+  if (/^atris\s+task\s+\w+\s+json\s*$/i.test(text) && !/--json\b/i.test(text)) return false;
+  if (/^atris\s+(?:command|review-chat|smoke|temp)\b/i.test(text)) return false;
+  if (/^(?:npm|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg|git)\s+commands?\b/i.test(text)) return false;
+  if (/^(?:npm|pnpm|yarn)\s+(?:tests|checks?)$/i.test(text)) return false;
+  if (/^(?:git|gh|rg|curl|bash|sh|tsc)\s+(?:tests?|checks?)$/i.test(text)) return false;
+  if (/\s+(?:and|then)\s+\S+/i.test(text)) return false;
+  if (/^node\s+(?!-|\S*(?:[/.]))/i.test(text)) return false;
+  if (/^node\s+--test\s+[\w-]+(?:\s+[\w-]+)+$/i.test(text)) return false;
+  return true;
+}
+
+function taskReviewEvidenceCommands(text, limit = 8) {
+  const source = String(text || '').trim();
+  if (!source) return [];
+  const commandWord = '(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)';
+  const envPrefix = '(?:(?:[A-Z_][A-Z0-9_]*=[^\\s,;|]+)\\s+)*';
+  const prosePrefix = '(?:(?:rechecked|reran|re-run|run|verified|validated|validation(?:\\s+passed)?|verification(?:\\s+passed)?|focused|live|scoped|installed|direct|full|current|fresh|then|and|commands?|checks?)[:\\s]+)*';
+  const commandStart = `${prosePrefix}${envPrefix}${commandWord}\\b`;
+  const commandStartPattern = new RegExp(`(^|[^\\w./-])(${commandStart})`, 'i');
+  const commandStartInnerPattern = new RegExp(`${envPrefix}${commandWord}\\b`, 'i');
+  const commandBoundaryPattern = new RegExp(`(?:;\\s*|\\n\\s*|\\s+&&\\s+|,\\s+|\\.\\s+|\\s+and\\s+|\\s+then\\s+)(?=${commandStart})`, 'gi');
+  const clauses = source
+    .replace(/\r/g, '\n')
+    .replace(/```[ \t]*(?:bash|sh|shell|zsh|console|text|txt)?[ \t]*\n/gi, '\n')
+    .replace(/```/g, '\n')
+    .replace(/`/g, '')
+    .replace(/(?:;\s*|\n\s*|\s+&&\s+)/g, '\n')
+    .replace(commandBoundaryPattern, '\n')
+    .split('\n');
+  const out = [];
+  const seen = new Set();
+  for (const clause of clauses) {
+    const start = clause.match(commandStartPattern);
+    if (!start || start.index == null) continue;
+    const commandStartOffset = start[0].indexOf(start[2]);
+    const raw = clause.slice(start.index + Math.max(0, commandStartOffset));
+    const prefix = raw.match(commandStartInnerPattern);
+    const commandOffset = prefix && prefix.index != null ? prefix.index : 0;
+    const command = raw.slice(Math.max(0, commandOffset));
+    const clean = command
+      .replace(/\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns)\b.*$/i, '')
+      .replace(/\s+(?:showed|shows|showing|returned|returns)\b.*$/i, '')
+      .replace(/\.\s+(?:Reward remains|No human|Human accept|AgentXP|XP)\b.*$/i, '')
+      .replace(/\s+\((?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)$/i, '')
+      .replace(/\s+\(?(?:exit|status|code)\s+\d+\)?$/i, '')
+      .replace(/[\]),.;:]+$/g, '')
+      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
+      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)(?:[.:]\s+.*|\s+after\b.*)$/i, '')
+      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)?$/i, '')
+      .replace(/\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
+      .replace(/[\]),.;:]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!taskReviewCommandLooksSpecific(clean) || seen.has(clean.toLowerCase())) continue;
+    seen.add(clean.toLowerCase());
+    out.push(clean);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function taskReviewRecentThread(task, limit = 4) {
+  return (task && Array.isArray(task.messages) ? task.messages : [])
+    .slice(-limit)
+    .map(message => ({
+      version: message.version || null,
+      actor: message.actor || null,
+      content: taskReviewClip(message.content, 220),
+    }))
+    .filter(message => message.content);
+}
+
+function taskReviewVerificationFocus(task) {
+  const review = task && task.review || {};
+  const metadata = task && task.metadata || {};
+  const proof = review.proof || metadata.latest_agent_proof || '';
+  const lesson = review.lesson || metadata.latest_agent_lesson || '';
+  const nextTask = review.next_task || metadata.latest_agent_next_task || '';
+  const objective = task && (task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective) || '';
+  const evidenceText = [proof].filter(Boolean).join('\n');
+  return {
+    objective: taskReviewClip(objective, 260) || null,
+    proof_claim: taskReviewClip(proof, 900) || null,
+    commands_to_verify: taskReviewEvidenceCommands(evidenceText),
+    files_to_inspect: taskReviewEvidencePaths(evidenceText),
+    recent_thread: taskReviewRecentThread(task),
+    decision_rule: 'Certify only if the current files, commands, receipts, and task thread prove the Review proof. Otherwise revise with the exact missing proof.',
+  };
+}
+
+function taskReviewSpecificCodexPrompt(task, focus, actor) {
+  const ref = taskRef(task);
+  const title = taskReviewClip(task && task.title, 180);
+  const proof = focus && focus.proof_claim ? ` Proof: ${focus.proof_claim}` : '';
+  const commands = focus && focus.commands_to_verify && focus.commands_to_verify.length
+    ? ` Commands: ${focus.commands_to_verify.join(' | ')}.`
+    : '';
+  const files = focus && focus.files_to_inspect && focus.files_to_inspect.length
+    ? ` Files/artifacts: ${focus.files_to_inspect.join(', ')}.`
+    : '';
+  return `/codex review ${ref}: verify "${title}".${proof}${commands}${files} Inspect the task thread, then run ${`atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>"`} or revise with the exact missing proof. Do not accept XP.`;
+}
+
+function taskReviewChatHandoff(task, { reviewer = 'codex-review', allowCertified = false } = {}) {
+  if (!task) return null;
+  if (!taskAllowsReviewChat(task, { allowCertified })) return null;
+  const ref = taskRef(task);
+  const actor = reviewActor(reviewer);
+  const verificationFocus = taskReviewVerificationFocus(task);
+  return {
+    schema: 'atris.task_review_chat.v1',
+    command: `atris task review-chat ${ref} --as ${actor}`,
+    codex_prompt: taskReviewSpecificCodexPrompt(task, verificationFocus, actor),
+    pass_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>"`,
+    revise_command: `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`,
+    human_accept_command: `atris task accept ${ref}`,
+    verification_focus: {
+      objective: verificationFocus.objective,
+      proof_claim: verificationFocus.proof_claim,
+      commands_to_verify: verificationFocus.commands_to_verify,
+      files_to_inspect: verificationFocus.files_to_inspect,
+      decision_rule: verificationFocus.decision_rule,
+    },
+  };
+}
+
+function taskWithReviewEvidence(task, { proof, lesson, nextTask } = {}) {
+  if (!task) return task;
+  const metadata = { ...(task.metadata || {}) };
+  const review = { ...(task.review || {}) };
+  if (proof !== undefined && proof !== null) {
+    const text = String(proof);
+    metadata.latest_agent_proof = text;
+    review.proof = text;
+  }
+  if (lesson !== undefined && lesson !== null) {
+    const text = String(lesson);
+    metadata.latest_agent_lesson = text;
+    review.lesson = text;
+  }
+  if (nextTask !== undefined && nextTask !== null) {
+    const text = String(nextTask);
+    metadata.latest_agent_next_task = text;
+    review.next_task = text;
+  }
+  return {
+    ...task,
+    metadata,
+    review,
+  };
+}
+
+function taskWithAgentCertification(task, agentCertified) {
+  if (!task || !agentCertified) return task;
+  return {
+    ...task,
+    metadata: {
+      ...(task.metadata || {}),
+      agent_certified: true,
+      agent_review_pass_count: Math.max(Number(task.metadata?.agent_review_pass_count || 0), AGENT_CERTIFICATION_REVIEW_PASSES),
+      approval_status: task.metadata?.approval_status || 'pending',
+    },
+    review: {
+      ...(task.review || {}),
+      agent_certified: true,
+      agent_review_pass_count: Math.max(Number(task.review?.agent_review_pass_count || 0), AGENT_CERTIFICATION_REVIEW_PASSES),
+      approval_status: task.review?.approval_status || task.metadata?.approval_status || 'pending',
+    },
+  };
+}
+
+function taskReviewChatContract(task, { reviewer = 'codex-review', allowCertified = false } = {}) {
+  const handoff = taskReviewChatHandoff(task, { reviewer, allowCertified });
+  const review = task && task.review || {};
+  const metadata = task && task.metadata || {};
+  const proof = review.proof || metadata.latest_agent_proof || '';
+  const lesson = review.lesson || metadata.latest_agent_lesson || '';
+  const nextTask = review.next_task || metadata.latest_agent_next_task || '';
+  const objective = task && (task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective) || '';
+  const verificationFocus = taskReviewVerificationFocus(task);
+  const actor = reviewActor(reviewer);
+  return {
+    ...handoff,
+    codex_prompt: taskReviewSpecificCodexPrompt(task, verificationFocus, actor),
+    task: {
+      id: task.id,
+      ref: taskRef(task),
+      title: task.title,
+      status: task.status,
+      objective: objective || null,
+      claimed_by: task.claimed_by || null,
+    },
+    review: {
+      approval_status: review.approval_status || metadata.approval_status || null,
+      agent_review_pass_count: review.agent_review_pass_count || metadata.agent_review_pass_count || null,
+      agent_certified: review.agent_certified === true || metadata.agent_certified === true,
+      proof: proof || null,
+      lesson: lesson || null,
+      next_task: nextTask || null,
+    },
+    verification_focus: verificationFocus,
+    required_checks: [
+      `Run ${`atris task show ${taskRef(task)} --json`} and read the current proof plus dialogue.`,
+      verificationFocus.commands_to_verify.length
+        ? `Re-run or inspect these proof commands: ${verificationFocus.commands_to_verify.join(' | ')}.`
+        : 'Find the concrete verifier command because the proof did not name one.',
+      verificationFocus.files_to_inspect.length
+        ? `Inspect these named files/artifacts before certifying: ${verificationFocus.files_to_inspect.join(', ')}.`
+        : 'Inspect the relevant diff/artifact boundary before certifying.',
+      'Compare current task thread state against the proof claim; stale or unrelated proof must be revised.',
+      'Use revise instead of review when proof is vague, stale, too narrow, or missing.',
+      'Do not run task accept unless the human explicitly approves XP.',
+    ],
+  };
+}
+
+function taskReviewChatNote(contract) {
+  const checks = (contract.required_checks || []).map((check, index) => `${index + 1}. ${check}`).join('\n');
+  return [
+    'TASK_REVIEW_CHAT',
+    `task: ${contract.task.ref}`,
+    `reviewer: ${reviewActor(contract.command.split('--as ')[1] || 'codex-review')}`,
+    `pass: ${contract.pass_command}`,
+    `revise: ${contract.revise_command}`,
+    `human_accept_xp: ${contract.human_accept_command}`,
+    '',
+    `objective: ${contract.verification_focus.objective || 'unknown'}`,
+    `proof_claim: ${taskReviewClip(contract.verification_focus.proof_claim, 280) || 'missing'}`,
+    '',
+    'commands_to_verify:',
+    ...(contract.verification_focus.commands_to_verify.length
+      ? contract.verification_focus.commands_to_verify.map(command => `- ${command}`)
+      : ['- missing: find or request a concrete verifier command']),
+    '',
+    'files_to_inspect:',
+    ...(contract.verification_focus.files_to_inspect.length
+      ? contract.verification_focus.files_to_inspect.map(file => `- ${file}`)
+      : ['- missing: inspect the relevant diff/artifact boundary']),
+    '',
+    'recent_thread:',
+    ...(contract.verification_focus.recent_thread.length
+      ? contract.verification_focus.recent_thread.map(message => `- v${message.version || '?'} ${message.actor || 'unknown'}: ${message.content}`)
+      : ['- no recent task dialogue captured']),
+    '',
+    contract.codex_prompt,
+    '',
+    'checks:',
+    checks,
+  ].join('\n');
 }
 
 function compactTaskForStatus(task) {
@@ -732,7 +1246,8 @@ function compactTaskForStatus(task) {
     if (task.review.agent_certified) review.agent_certified = task.review.agent_certified;
     if (task.review.agent_certification_policy) review.agent_certification_policy = task.review.agent_certification_policy;
     if (task.review.human_revision_count) review.human_revision_count = task.review.human_revision_count;
-    const handoff = reviewHandoffForTask(task);
+    if (task.review.verification_chat) review.verification_chat = task.review.verification_chat;
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
     if (handoff) review.handoff = handoff;
     if (Object.keys(review).length) out.review = review;
   }
@@ -745,7 +1260,7 @@ function compactTaskForStatus(task) {
     if (Object.keys(lineage).length) out.lineage = lineage;
   }
   const compactMetadata = {};
-  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'task_goal', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
     if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
   }
   if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
@@ -759,7 +1274,7 @@ function compactTaskFromProjection(projection, id) {
 function compactEventPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const out = {};
-  for (const key of ['title', 'status', 'tag', 'content', 'proof', 'lesson', 'reward', 'next_task']) {
+  for (const key of ['title', 'status', 'tag', 'content', 'goal', 'summary', 'proof', 'lesson', 'reward', 'next_task']) {
     if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') out[key] = payload[key];
   }
   return Object.keys(out).length ? out : null;
@@ -784,6 +1299,22 @@ function clipStatusText(value, max = 180) {
   return `${text.slice(0, max - 1)}…`;
 }
 
+function compactReviewActionRef(task) {
+  if (!task) return null;
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true }) || {};
+  return {
+    id: task.id,
+    display_id: task.display_id || null,
+    ref: taskRef(task),
+    title: clipStatusText(task.title, 120),
+    claimed_by: task.claimed_by || null,
+    assigned_to: taskAssignee(task),
+    next_action: handoff.next_action || null,
+    next_task: handoff.next_task || null,
+    command: handoff.continue_work_command || null,
+  };
+}
+
 function taskStatusSummary(projection, { history = false } = {}) {
   const tasks = projection.tasks || [];
   const hiddenDoneCount = Math.max(0, Number(projection.surface && projection.surface.hidden_done_count || 0));
@@ -792,19 +1323,25 @@ function taskStatusSummary(projection, { history = false } = {}) {
     backlog: tasks.filter(task => taskColumn(task) === 'backlog'),
     plan: tasks.filter(task => taskColumn(task) === 'open'),
     do: tasks.filter(task => taskColumn(task) === 'doing'),
-    review: tasks.filter(task => taskColumn(task) === 'review' || taskColumn(task) === 'blocked'),
+    review: tasks.filter(task => taskColumn(task) === 'review'),
+    blocked: tasks.filter(task => taskColumn(task) === 'blocked'),
     done: tasks.filter(task => taskColumn(task) === 'done'),
   };
-  const active = [...columns.do, ...columns.review, ...columns.plan];
+  const active = [...columns.do, ...columns.review, ...columns.blocked, ...columns.plan];
   const reviewNeedingAgentAction = columns.review.filter(task => {
-    const handoff = reviewHandoffForTask(task);
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
     return handoff && handoff.next_action === 'agent_review_again';
   });
-  const reviewAgentCertified = columns.review.filter(task => {
-    const handoff = reviewHandoffForTask(task);
+  const reviewContinueWork = columns.review.filter(task => {
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
     return handoff && handoff.next_action === 'continue_work';
-  }).length;
-  const blocked = columns.review.filter(task => taskColumn(task) === 'blocked').length;
+  });
+  const reviewHumanAcceptWaiting = columns.review.filter(task => {
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    return handoff && handoff.next_action === 'human_accept_waiting';
+  });
+  const reviewAgentCertified = reviewContinueWork.length + reviewHumanAcceptWaiting.length;
+  const blocked = columns.blocked.length;
   const lastUpdated = tasks.reduce((max, task) => Math.max(max, Number(task.updated_at || 0)), 0);
   const swarloFeed = history ? tasks
     .flatMap(task => (task.events || []).map(event => ({
@@ -847,11 +1384,23 @@ function taskStatusSummary(projection, { history = false } = {}) {
       review: columns.review.length,
       review_blocking: reviewNeedingAgentAction.length,
       review_certified: reviewAgentCertified,
+      review_continue_work: reviewContinueWork.length,
+      review_human_accept_waiting: reviewHumanAcceptWaiting.length,
       blocked,
       done: tasks.filter(task => task.status === 'done' || (task.status === 'failed' && taskHasReview(task))).length + hiddenDoneCount,
     },
     current: compactTaskForStatus(columns.do[0] || reviewNeedingAgentAction[0] || null),
     next: compactTaskForStatus(columns.plan[0] || null),
+    review_actions: {
+      continue_work: {
+        count: reviewContinueWork.length,
+        first: compactReviewActionRef(reviewContinueWork[0] || null),
+      },
+      human_accept_waiting: {
+        count: reviewHumanAcceptWaiting.length,
+        first: compactReviewActionRef(reviewHumanAcceptWaiting[0] || null),
+      },
+    },
     needs_review: columns.review.slice(0, 5).map(compactTaskForStatus),
     streams: (projection.streams || []).slice(0, 8).map(stream => ({
       objective: stream.objective,
@@ -879,6 +1428,1558 @@ function taskStatusSummary(projection, { history = false } = {}) {
   return status;
 }
 
+function taskQueueColumnKey(task) {
+  const column = taskColumn(task);
+  if (column === 'open') return 'plan';
+  if (column === 'doing') return 'do';
+  return column;
+}
+
+function sortTasksNewestFirst(tasks) {
+  return [...tasks].sort((a, b) => {
+    const byUpdated = Number(b.updated_at || 0) - Number(a.updated_at || 0);
+    if (byUpdated) return byUpdated;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  });
+}
+
+function taskQueueItem(task, { reviewer = 'codex-review' } = {}) {
+  const page = taskPageContract(task, { reviewer });
+  const item = compactTaskForStatus(task) || {};
+  if (item.review && item.review.verification_chat) {
+    item.review = { ...item.review };
+    delete item.review.verification_chat;
+  }
+  item.column = taskQueueColumnKey(task);
+  item.stage_current = page.stage.current;
+  item.next_action = page.stage.next_action;
+  item.commands = {
+    page: page.actions.page_command,
+    step: page.actions.step_command,
+    chat: page.actions.chat_command,
+  };
+  if (page.actions.review_chat_command) item.commands.review_chat = page.actions.review_chat_command;
+  if (page.actions.continue_work_command) {
+    item.commands.continue_work = page.actions.continue_work_command;
+    item.continue_work_command = page.actions.continue_work_command;
+  }
+  if (page.actions.human_accept_command) item.commands.human_accept = page.actions.human_accept_command;
+  item.api = {
+    detail: page.api.detail,
+    page: page.api.page,
+    step: page.api.step,
+  };
+  if (page.stage.next_action.api) item.api.next_action = page.stage.next_action.api;
+  return item;
+}
+
+function taskQueueLimit(args) {
+  if (hasFlag(args, '--all')) return Number.POSITIVE_INFINITY;
+  const raw = flag(args, '--limit');
+  const limit = raw && raw !== true ? Number(raw) : 8;
+  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8;
+}
+
+function cleanTaskScopeValue(value) {
+  if (value === undefined || value === null || value === true) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function normalizeTaskQueueScope(scope = {}) {
+  return {
+    goal_id: cleanTaskScopeValue(scope.goal_id || scope.goalId),
+    tag: cleanTaskScopeValue(scope.tag),
+    status: cleanTaskScopeValue(scope.status),
+    review_state: cleanTaskScopeValue(scope.review_state || scope.reviewState),
+  };
+}
+
+function taskQueueScopeFromArgs(args = []) {
+  return normalizeTaskQueueScope({
+    goal_id: flag(args, '--goal-id') || flag(args, '--goal_id'),
+    tag: flag(args, '--tag'),
+    status: flag(args, '--status'),
+    review_state: flag(args, '--review-state') || flag(args, '--review_state'),
+  });
+}
+
+function taskQueueScopeFromSearchParams(searchParams) {
+  return normalizeTaskQueueScope({
+    goal_id: searchParams.get('goal_id') || searchParams.get('goal-id') || searchParams.get('goalId'),
+    tag: searchParams.get('tag'),
+    status: searchParams.get('status'),
+    review_state: searchParams.get('review_state') || searchParams.get('review-state') || searchParams.get('reviewState'),
+  });
+}
+
+function taskQueueScopeFromBody(body = {}) {
+  const scope = body.scope && typeof body.scope === 'object' ? body.scope : {};
+  return normalizeTaskQueueScope({
+    goal_id: body.goal_id || body.goalId || scope.goal_id || scope.goalId,
+    tag: body.tag || scope.tag,
+    status: body.status || scope.status,
+    review_state: body.review_state || body.reviewState || scope.review_state || scope.reviewState,
+  });
+}
+
+function mergeTaskQueueScopes(primary = {}, fallback = {}) {
+  const a = normalizeTaskQueueScope(primary);
+  const b = normalizeTaskQueueScope(fallback);
+  return normalizeTaskQueueScope({
+    goal_id: a.goal_id || b.goal_id,
+    tag: a.tag || b.tag,
+    status: a.status || b.status,
+    review_state: a.review_state || b.review_state,
+  });
+}
+
+function taskQueueScopeIsEmpty(scope = {}) {
+  const normalized = normalizeTaskQueueScope(scope);
+  return !normalized.goal_id && !normalized.tag && !normalized.status && !normalized.review_state;
+}
+
+function taskScopeEquals(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
+function taskGoalScopeValues(task) {
+  const metadata = task && task.metadata || {};
+  const lineage = task && task.lineage || {};
+  return [
+    task && task.id,
+    task && task.display_id,
+    task && task.legacy_ref,
+    metadata.goal_id,
+    metadata.goalId,
+    metadata.goal && metadata.goal.id,
+    metadata.parent_task_id,
+    lineage.parent_task_id,
+    task && task.parent_task_id,
+  ].filter(Boolean);
+}
+
+function taskReviewStateMatches(task, reviewState) {
+  const wanted = String(reviewState || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!wanted || wanted === 'any') return true;
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+  if (wanted === 'continue-work' || wanted === 'continue' || wanted === 'agent-actionable' || wanted === 'executable') {
+    return handoff?.next_action === 'continue_work';
+  }
+  if (wanted === 'human-accept-waiting' || wanted === 'human-accept' || wanted === 'accept-waiting' || wanted === 'waiting-accept' || wanted === 'no-next-task') {
+    return handoff?.next_action === 'human_accept_waiting';
+  }
+  if (wanted === 'needs-agent' || wanted === 'needs-review' || wanted === 'agent-review') {
+    return handoff?.next_action === 'agent_review_again';
+  }
+  if (wanted === 'certified' || wanted === 'waiting-human' || wanted === 'human-waiting') {
+    return handoff?.next_action === 'continue_work' || handoff?.next_action === 'human_accept_waiting';
+  }
+  return false;
+}
+
+function taskMatchesQueueScope(task, scope = {}) {
+  const normalized = normalizeTaskQueueScope(scope);
+  if (normalized.goal_id && !taskGoalScopeValues(task).some(value => taskScopeEquals(value, normalized.goal_id))) {
+    return false;
+  }
+  if (normalized.tag && !taskScopeEquals(task && task.tag, normalized.tag)) {
+    return false;
+  }
+  if (normalized.status) {
+    const rawStatus = task && task.status;
+    const columnStatus = taskQueueColumnKey(task);
+    if (!taskScopeEquals(rawStatus, normalized.status) && !taskScopeEquals(columnStatus, normalized.status)) {
+      return false;
+    }
+  }
+  if (normalized.review_state && !taskReviewStateMatches(task, normalized.review_state)) {
+    return false;
+  }
+  return true;
+}
+
+function filterTasksByScope(tasks = [], scope = {}) {
+  const normalized = normalizeTaskQueueScope(scope);
+  if (taskQueueScopeIsEmpty(normalized)) return tasks;
+  return tasks.filter(task => taskMatchesQueueScope(task, normalized));
+}
+
+function taskQueueScopeWithoutReviewState(scope = {}) {
+  const normalized = normalizeTaskQueueScope(scope);
+  return normalizeTaskQueueScope({
+    goal_id: normalized.goal_id,
+    tag: normalized.tag,
+    status: normalized.status,
+  });
+}
+
+function taskReviewStateCounts(tasks = []) {
+  const counts = {
+    total: 0,
+    needs_agent: 0,
+    continue_work: 0,
+    human_accept_waiting: 0,
+    certified: 0,
+  };
+  for (const task of tasks || []) {
+    if (!task || taskQueueColumnKey(task) !== 'review') continue;
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    if (!handoff) continue;
+    counts.total += 1;
+    if (handoff.next_action === 'agent_review_again') counts.needs_agent += 1;
+    if (handoff.next_action === 'continue_work') counts.continue_work += 1;
+    if (handoff.next_action === 'human_accept_waiting') counts.human_accept_waiting += 1;
+  }
+  counts.certified = counts.continue_work + counts.human_accept_waiting;
+  return counts;
+}
+
+function taskHasReviewFollowUpChild(task) {
+  const nextTitle = reviewNextTaskTitle(task);
+  if (!nextTitle) return false;
+  const childTitles = task && task.lineage && task.lineage.child_titles;
+  if (Array.isArray(childTitles) && childTitles.some(title => String(title || '').trim() === nextTitle)) return true;
+  const childIds = task && task.lineage && task.lineage.child_task_ids;
+  return Array.isArray(childIds) && childIds.some(Boolean) && !Array.isArray(childTitles);
+}
+
+function taskQueueReviewStateCounts(projection, scope = {}) {
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const countScope = taskQueueScopeWithoutReviewState(normalizedScope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), countScope);
+  return {
+    schema: 'atris.task_review_state_counts.v1',
+    scope: countScope,
+    active_filter: normalizedScope.review_state || null,
+    ...taskReviewStateCounts(tasks),
+  };
+}
+
+function taskReviewStateActionSample(task, { reviewer = 'codex-review' } = {}) {
+  if (!task) return null;
+  const page = taskPageContract(task, { reviewer });
+  const nextAction = page.stage && page.stage.next_action || {};
+  const sample = {
+    id: task.id,
+    display_id: task.display_id || null,
+    ref: taskRef(task),
+    title: clipStatusText(task.title, 120),
+    claimed_by: task.claimed_by || null,
+    assigned_to: taskAssignee(task),
+    next_action: nextAction.key || null,
+    label: nextAction.label || null,
+    command: nextAction.command || null,
+    api: nextAction.api || null,
+    step_command: page.actions.step_command,
+    step_api: page.api.step,
+    human_accept: {
+      enabled: Boolean(page.review && page.review.human_accept && page.review.human_accept.enabled),
+      human_only: true,
+      command: page.review && page.review.human_accept ? page.review.human_accept.command : null,
+    },
+  };
+  if (page.actions.review_chat_command) sample.review_chat_command = page.actions.review_chat_command;
+  if (page.actions.continue_work_command) sample.continue_work_command = page.actions.continue_work_command;
+  return sample;
+}
+
+function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex-review' } = {}) {
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const actionScope = taskQueueScopeWithoutReviewState(normalizedScope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), actionScope);
+  const firstByState = {
+    needs_agent: null,
+    continue_work: null,
+    human_accept_waiting: null,
+  };
+  const skippedContinueWorkWithFollowUp = [];
+  for (const task of tasks || []) {
+    if (!task || taskQueueColumnKey(task) !== 'review') continue;
+    const rawHandoff = reviewHandoffForTask(task);
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    if (!handoff) continue;
+    if (handoff.next_action === 'agent_review_again' && !firstByState.needs_agent) {
+      firstByState.needs_agent = task;
+    }
+    if (rawHandoff?.next_action === 'continue_work' && taskHasReviewFollowUpChild(task)) {
+      skippedContinueWorkWithFollowUp.push(task);
+    }
+    if (handoff.next_action === 'continue_work' && !firstByState.continue_work) {
+      firstByState.continue_work = task;
+    }
+    if (handoff.next_action === 'human_accept_waiting' && !firstByState.human_accept_waiting) {
+      firstByState.human_accept_waiting = task;
+    }
+  }
+  return {
+    schema: 'atris.task_review_state_actions.v1',
+    scope: actionScope,
+    active_filter: normalizedScope.review_state || null,
+    needs_agent: taskReviewStateActionSample(firstByState.needs_agent, { reviewer }),
+    continue_work: taskReviewStateActionSample(firstByState.continue_work, { reviewer }),
+    human_accept_waiting: taskReviewStateActionSample(firstByState.human_accept_waiting, { reviewer }),
+    skipped_continue_work_with_follow_up_count: skippedContinueWorkWithFollowUp.length,
+    skipped_continue_work_with_follow_up: skippedContinueWorkWithFollowUp
+      .slice(0, 5)
+      .map(task => taskReviewStateActionSample(task, { reviewer })),
+  };
+}
+
+function taskQueueCapabilities() {
+  return {
+    schema: 'atris.task_capabilities.v1',
+    read_only_semantics: 'read_only means no task DB mutation; some read surfaces may refresh projection cache files',
+    surfaces: {
+      capabilities: {
+        command: 'atris task capabilities --json',
+        api: { method: 'GET', path: '/api/tasks/capabilities' },
+        read_only: true,
+        mutates_task_db: false,
+        writes_projection: false,
+        requires_task_db: {
+          cli: false,
+          api_route_handler: false,
+          api_server: true,
+        },
+      },
+      capabilities_check: {
+        command: 'atris task capabilities-check --json',
+        api: { method: 'GET', path: '/api/tasks/capabilities/check' },
+        read_only: true,
+        mutates_task_db: false,
+        writes_projection: true,
+        requires_task_db: true,
+      },
+      review_lane_drain: {
+        command: 'atris task review-lane-drain --json',
+        api: { method: 'GET', path: '/api/tasks/review-lane-drain' },
+        read_only: true,
+        mutates_task_db: false,
+        writes_projection: true,
+        requires_task_db: true,
+        skips_existing_follow_up_children: true,
+      },
+      review_lane_act: {
+        command: 'atris task review-lane-act --json',
+        api: { method: 'POST', path: '/api/tasks/review-lane-act' },
+        read_only: false,
+        mutates_task_db: 'conditional',
+        writes_projection: true,
+        requires_task_db: true,
+        dry_run_flag: '--dry-run',
+        allowed_actions: ['review_chat', 'continue_work'],
+        blocked_actions: ['human_accept_waiting', 'capabilities_drift', 'none'],
+      },
+      review_lane_loop: {
+        command: 'atris task review-lane-loop --json',
+        api: { method: 'POST', path: '/api/tasks/review-lane-loop' },
+        read_only: false,
+        mutates_task_db: 'conditional',
+        writes_projection: true,
+        requires_task_db: true,
+        dry_run_flag: '--dry-run',
+        max_steps_flag: '--max-steps <n>',
+        default_max_steps: REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS,
+        max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
+        orchestrates: 'review_lane_act',
+        allowed_actions: ['review_chat', 'continue_work'],
+        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', 'capabilities_check_failed', 'no_review_lane_action', 'repeat_selection', 'max_steps_reached'],
+        blocked_actions: ['human_accept_waiting'],
+      },
+      current: {
+        command: 'atris task current --review-state <lane> --json',
+        api: { method: 'GET', path: '/api/tasks/current?review_state=<lane>' },
+        read_only: true,
+        mutates_task_db: false,
+        writes_projection: true,
+        requires_task_db: true,
+      },
+      queue: {
+        command: 'atris task queue --review-state <lane> --json',
+        api: { method: 'GET', path: '/api/tasks/queue?review_state=<lane>' },
+        read_only: true,
+        mutates_task_db: false,
+        writes_projection: true,
+        requires_task_db: true,
+      },
+    },
+    filters: {
+      review_state: {
+        cli_flag: '--review-state <lane>',
+        query: 'review_state=<lane>',
+        accepted: [...TASK_REVIEW_STATE_LANES],
+        aliases: { ...TASK_REVIEW_STATE_ALIASES },
+      },
+    },
+    commands: {
+      capabilities: 'atris task capabilities --json',
+      capabilities_check: 'atris task capabilities-check --json',
+      review_lane_drain: 'atris task review-lane-drain --json',
+      review_lane_act: 'atris task review-lane-act --json',
+      review_lane_loop: 'atris task review-lane-loop --json',
+      current: 'atris task current --review-state <lane> --json',
+      queue: 'atris task queue --review-state <lane> --json',
+      current_step: 'atris task current-step --review-state <lane> --json',
+    },
+    current_step: {
+      api: { method: 'POST', path: '/api/tasks/current/step?review_state=<lane>' },
+      safety: {
+        read_only: false,
+        claims_work: 'conditional',
+        claiming_stages: ['plan'],
+        human_accept: false,
+        xp_after_human_accept: true,
+      },
+      stage_safety: {
+        backlog: { step_action: 'planned', claims_work: false },
+        plan: { step_action: 'doing', claims_work: true },
+        do: { step_action: 'ready', claims_work: false },
+        review: { step_action: 'review_chat_or_continue_work_or_blocked', claims_work: false },
+      },
+      lanes: {
+        'needs-agent': {
+          selected_next_action: 'review_chat',
+          step_action: 'review_chat',
+          claims_work: false,
+          safe_for_agent: true,
+        },
+        'continue-work': {
+          selected_next_action: 'continue_work',
+          step_action: 'continue_work',
+          claims_work: false,
+          safe_for_agent: true,
+          creates_or_reuses_follow_up: true,
+        },
+        'human-accept-waiting': {
+          selected_next_action: 'human_accept_waiting',
+          step_action: null,
+          claims_work: false,
+          safe_for_agent: false,
+          reason: 'agent_certified_waiting_human',
+        },
+        certified: {
+          selected_next_action: ['continue_work', 'human_accept_waiting'],
+          step_action: 'depends_on_selected_next_action',
+          claims_work: false,
+          safe_for_agent: 'depends_on_selected_next_action',
+        },
+      },
+    },
+  };
+}
+
+function taskCapabilitiesContract() {
+  return taskQueueCapabilities();
+}
+
+function stableCapabilityJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableCapabilityJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableCapabilityJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function capabilityValuesEqual(left, right) {
+  return stableCapabilityJson(left) === stableCapabilityJson(right);
+}
+
+function capabilityCheck(name, ok, detail = null) {
+  return {
+    name,
+    ok: Boolean(ok),
+    ...(detail ? { detail } : {}),
+  };
+}
+
+function reviewLaneDrainBehaviorConformance() {
+  const needsAgent = {
+    id: 'needs-agent-id',
+    ref: 'OBL-NEEDS',
+    title: 'Needs agent review',
+    status: 'review',
+    next_action: 'review_chat',
+    command: 'atris task review-chat OBL-NEEDS --as codex-review',
+    api: { method: 'POST', path: '/api/tasks/needs-agent-id/review-chat' },
+  };
+  const continueWork = {
+    id: 'continue-work-id',
+    ref: 'OBL-CONTINUE',
+    title: 'Continue certified work',
+    status: 'review',
+    next_action: 'continue_work',
+    command: 'atris task continue-work OBL-CONTINUE --as codex --json',
+    api: { method: 'POST', path: '/api/tasks/continue-work-id/continue-work' },
+  };
+  const humanAcceptWaiting = {
+    id: 'human-accept-id',
+    ref: 'OBL-HUMAN',
+    title: 'Human accept only',
+    status: 'review',
+    next_action: 'human_accept_waiting',
+    command: 'atris task accept OBL-HUMAN',
+    api: { method: 'POST', path: '/api/tasks/human-accept-id/accept' },
+  };
+  const capabilityOk = { ok: true };
+  const withAll = taskReviewLaneDrainSelection({
+    needs_agent: needsAgent,
+    continue_work: continueWork,
+    human_accept_waiting: humanAcceptWaiting,
+  }, capabilityOk);
+  const continueOnly = taskReviewLaneDrainSelection({
+    continue_work: continueWork,
+    human_accept_waiting: humanAcceptWaiting,
+  }, capabilityOk);
+  const humanOnly = taskReviewLaneDrainSelection({
+    human_accept_waiting: humanAcceptWaiting,
+  }, capabilityOk);
+  const drift = taskReviewLaneDrainSelection({
+    needs_agent: needsAgent,
+    continue_work: continueWork,
+    human_accept_waiting: humanAcceptWaiting,
+  }, { ok: false });
+  const followedContinueWork = taskHasReviewFollowUpChild({
+    ...continueWork,
+    review: { next_task: 'Add child follow-up' },
+    lineage: { child_task_ids: ['child-task-id'], child_titles: ['Add child follow-up'] },
+  });
+  const freshContinueWork = !taskHasReviewFollowUpChild({
+    ...continueWork,
+    review: { next_task: 'Add child follow-up' },
+    lineage: { child_task_ids: [], child_titles: [] },
+  });
+  const checks = {
+    prefers_review_chat: withAll.next_action === 'review_chat'
+      && withAll.review_state === 'needs-agent'
+      && withAll.command === needsAgent.command
+      && capabilityValuesEqual(withAll.api, needsAgent.api),
+    uses_continue_work_from_review_state_actions: continueOnly.next_action === 'continue_work'
+      && continueOnly.review_state === 'continue-work'
+      && continueOnly.command === continueWork.command
+      && capabilityValuesEqual(continueOnly.api, continueWork.api),
+    selected_human_accept_waiting_is_non_executable: humanOnly.next_action === 'human_accept_waiting'
+      && humanOnly.safe_for_agent === false
+      && humanOnly.command === null
+      && humanOnly.api === null
+      && humanOnly.human_accept_waiting
+      && humanOnly.human_accept_waiting.command === null
+      && humanOnly.human_accept_waiting.api === null,
+    capability_drift_blocks_execution: drift.next_action === 'capabilities_drift'
+      && drift.safe_for_agent === false
+      && drift.command === null
+      && drift.api === null,
+    skips_continue_work_with_existing_follow_up_child: followedContinueWork && freshContinueWork,
+  };
+  return {
+    ok: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
+function taskReviewLaneActDecision(drain = {}) {
+  const nextAction = drain && drain.next_action;
+  if (nextAction !== 'review_chat' && nextAction !== 'continue_work') {
+    return {
+      ok: false,
+      step_action: nextAction || 'none',
+      reason: drain && drain.reason || 'unsafe_review_lane_action',
+    };
+  }
+  if (!drain.safe_for_agent || !drain.command || !drain.task || !drain.task.id) {
+    return {
+      ok: false,
+      step_action: nextAction,
+      reason: 'unsafe_review_lane_action',
+    };
+  }
+  return {
+    ok: true,
+    step_action: nextAction,
+    task_id: drain.task.id,
+    command: drain.command,
+    api: drain.api || null,
+  };
+}
+
+function reviewLaneActBehaviorConformance() {
+  const reviewChat = taskReviewLaneActDecision({
+    next_action: 'review_chat',
+    safe_for_agent: true,
+    command: 'atris task review-chat OBL-NEEDS --as codex-review',
+    api: { method: 'POST', path: '/api/tasks/needs-agent-id/review-chat' },
+    task: { id: 'needs-agent-id' },
+  });
+  const continueWork = taskReviewLaneActDecision({
+    next_action: 'continue_work',
+    safe_for_agent: true,
+    command: 'atris task continue-work OBL-CONTINUE --as codex --json',
+    api: { method: 'POST', path: '/api/tasks/continue-work-id/continue-work' },
+    task: { id: 'continue-work-id' },
+  });
+  const humanAccept = taskReviewLaneActDecision({
+    next_action: 'human_accept_waiting',
+    safe_for_agent: true,
+    command: 'atris task accept OBL-HUMAN',
+    api: { method: 'POST', path: '/api/tasks/human-accept-id/accept' },
+    task: { id: 'human-accept-id' },
+  });
+  const drift = taskReviewLaneActDecision({
+    next_action: 'capabilities_drift',
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    task: null,
+    reason: 'capability_conformance_failed',
+  });
+  const checks = {
+    allows_review_chat: reviewChat.ok === true && reviewChat.step_action === 'review_chat',
+    allows_continue_work: continueWork.ok === true && continueWork.step_action === 'continue_work',
+    blocks_human_accept_waiting_even_if_marked_safe: humanAccept.ok === false && humanAccept.reason !== null,
+    blocks_capability_drift: drift.ok === false && drift.reason === 'capability_conformance_failed',
+  };
+  return {
+    ok: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
+function reviewLaneLoopBehaviorConformance() {
+  const dryRun = taskReviewLaneLoopStopIsSafe('dry_run_preview');
+  const humanOnly = taskReviewLaneLoopStopIsSafe('human_accept_waiting_is_human_only');
+  const noAction = taskReviewLaneLoopStopIsSafe('no_review_lane_action');
+  const repeated = taskReviewLaneLoopStopIsSafe('repeat_selection');
+  const drift = taskReviewLaneLoopStopIsSafe('capabilities_check_failed');
+  const maxSteps = normalizeReviewLaneLoopMaxSteps(99) === REVIEW_LANE_LOOP_MAX_STEPS
+    && normalizeReviewLaneLoopMaxSteps(0) === 1
+    && normalizeReviewLaneLoopMaxSteps(undefined) === REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS;
+  const checks = {
+    dry_run_stops_without_mutation: dryRun.ok === true && dryRun.read_only === true,
+    human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
+    no_action_stops_without_execution: noAction.ok === true,
+    repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
+    capability_drift_blocks_loop: drift.ok === false,
+    max_steps_are_bounded: maxSteps,
+  };
+  return {
+    ok: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
+function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
+  const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
+  const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
+  const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
+  const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
+  const standalone = taskCapabilitiesContract();
+  const { outPath, current } = buildTaskCurrent(taskDb, db, [], {
+    owner,
+    reviewer,
+    all,
+    limit,
+    scope,
+  });
+  const acceptedLanes = standalone.filters.review_state.accepted || [];
+  const currentStepLanes = standalone.current_step.lanes || {};
+  const drainBehavior = reviewLaneDrainBehaviorConformance();
+  const actBehavior = reviewLaneActBehaviorConformance();
+  const loopBehavior = reviewLaneLoopBehaviorConformance();
+  const checks = [
+    capabilityCheck('current_capabilities_match_standalone', capabilityValuesEqual(current.capabilities, standalone)),
+    capabilityCheck('queue_capabilities_match_standalone', capabilityValuesEqual(current.queue.capabilities, standalone)),
+    capabilityCheck('current_queue_capabilities_match', capabilityValuesEqual(current.capabilities, current.queue.capabilities)),
+    capabilityCheck(
+      'review_state_lanes_cover_current_step_lanes',
+      acceptedLanes.every(lane => Object.prototype.hasOwnProperty.call(currentStepLanes, lane)),
+      { accepted: acceptedLanes, current_step_lanes: Object.keys(currentStepLanes) }
+    ),
+    capabilityCheck(
+      'current_step_declares_mutating_conditional_claims',
+      standalone.current_step.safety.read_only === false
+        && standalone.current_step.safety.claims_work === 'conditional'
+        && Array.isArray(standalone.current_step.safety.claiming_stages)
+        && standalone.current_step.safety.claiming_stages.includes('plan')
+    ),
+    capabilityCheck(
+      'current_step_never_human_accepts',
+      standalone.current_step.safety.human_accept === false
+        && standalone.current_step.safety.xp_after_human_accept === true
+        && standalone.current_step.lanes['human-accept-waiting']
+        && standalone.current_step.lanes['human-accept-waiting'].safe_for_agent === false
+    ),
+    capabilityCheck(
+      'read_only_projection_semantics_declared',
+      standalone.surfaces.capabilities.mutates_task_db === false
+        && standalone.surfaces.capabilities.writes_projection === false
+        && standalone.surfaces.capabilities_check.mutates_task_db === false
+        && standalone.surfaces.capabilities_check.writes_projection === true
+        && standalone.surfaces.review_lane_drain.mutates_task_db === false
+        && standalone.surfaces.review_lane_drain.writes_projection === true
+        && standalone.surfaces.review_lane_act.mutates_task_db === 'conditional'
+        && standalone.surfaces.review_lane_act.writes_projection === true
+        && standalone.surfaces.review_lane_loop.mutates_task_db === 'conditional'
+        && standalone.surfaces.review_lane_loop.writes_projection === true
+        && standalone.surfaces.current.mutates_task_db === false
+        && standalone.surfaces.current.writes_projection === true
+        && standalone.surfaces.queue.mutates_task_db === false
+        && standalone.surfaces.queue.writes_projection === true
+    ),
+    capabilityCheck(
+      'capabilities_check_surface_declared',
+      standalone.commands.capabilities_check === 'atris task capabilities-check --json'
+        && standalone.surfaces.capabilities_check.command === 'atris task capabilities-check --json'
+        && standalone.surfaces.capabilities_check.api.path === '/api/tasks/capabilities/check'
+        && standalone.surfaces.capabilities_check.requires_task_db === true
+    ),
+    capabilityCheck(
+      'review_lane_drain_surface_declared',
+      standalone.commands.review_lane_drain === 'atris task review-lane-drain --json'
+        && standalone.surfaces.review_lane_drain.command === 'atris task review-lane-drain --json'
+        && standalone.surfaces.review_lane_drain.api.path === '/api/tasks/review-lane-drain'
+        && standalone.surfaces.review_lane_drain.requires_task_db === true
+        && standalone.surfaces.review_lane_drain.skips_existing_follow_up_children === true
+    ),
+    capabilityCheck(
+      'review_lane_drain_behavior_conforms',
+      drainBehavior.ok,
+      drainBehavior.checks
+    ),
+    capabilityCheck(
+      'review_lane_act_surface_declared',
+      standalone.commands.review_lane_act === 'atris task review-lane-act --json'
+        && standalone.surfaces.review_lane_act.command === 'atris task review-lane-act --json'
+        && standalone.surfaces.review_lane_act.api.method === 'POST'
+        && standalone.surfaces.review_lane_act.api.path === '/api/tasks/review-lane-act'
+        && standalone.surfaces.review_lane_act.requires_task_db === true
+        && standalone.surfaces.review_lane_act.allowed_actions.includes('review_chat')
+        && standalone.surfaces.review_lane_act.allowed_actions.includes('continue_work')
+        && standalone.surfaces.review_lane_act.blocked_actions.includes('human_accept_waiting')
+    ),
+    capabilityCheck(
+      'review_lane_act_behavior_conforms',
+      actBehavior.ok,
+      actBehavior.checks
+    ),
+    capabilityCheck(
+      'review_lane_loop_surface_declared',
+      standalone.commands.review_lane_loop === 'atris task review-lane-loop --json'
+        && standalone.surfaces.review_lane_loop.command === 'atris task review-lane-loop --json'
+        && standalone.surfaces.review_lane_loop.api.method === 'POST'
+        && standalone.surfaces.review_lane_loop.api.path === '/api/tasks/review-lane-loop'
+        && standalone.surfaces.review_lane_loop.requires_task_db === true
+        && standalone.surfaces.review_lane_loop.default_max_steps === REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS
+        && standalone.surfaces.review_lane_loop.max_steps_cap === REVIEW_LANE_LOOP_MAX_STEPS
+        && standalone.surfaces.review_lane_loop.orchestrates === 'review_lane_act'
+        && standalone.surfaces.review_lane_loop.allowed_actions.includes('review_chat')
+        && standalone.surfaces.review_lane_loop.allowed_actions.includes('continue_work')
+        && standalone.surfaces.review_lane_loop.stopped_by.includes('human_accept_waiting_is_human_only')
+        && standalone.surfaces.review_lane_loop.stopped_by.includes('capabilities_check_failed')
+        && standalone.surfaces.review_lane_loop.stopped_by.includes('repeat_selection')
+    ),
+    capabilityCheck(
+      'review_lane_loop_behavior_conforms',
+      loopBehavior.ok,
+      loopBehavior.checks
+    ),
+  ];
+  const failed = checks.filter(check => !check.ok);
+  return {
+    schema: 'atris.task_capabilities_check.v1',
+    generated_at: new Date().toISOString(),
+    ok: failed.length === 0,
+    action: 'capabilities_check',
+    projection_path: outPath,
+    scope: current.scope,
+    owner: String(owner || DEFAULT_OWNER),
+    reviewer,
+    capabilities: standalone,
+    checks,
+    summary: {
+      total: checks.length,
+      passed: checks.length - failed.length,
+      failed: failed.length,
+    },
+    safety: {
+      mutates_task_db: false,
+      writes_projection: true,
+      human_accept: false,
+      xp_after_human_accept: true,
+    },
+  };
+}
+
+function formatTaskQueueScope(scope = {}) {
+  const normalized = normalizeTaskQueueScope(scope);
+  return Object.entries(normalized)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+}
+
+function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, scope = {} } = {}) {
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope);
+  const reviewStateCounts = taskQueueReviewStateCounts(projection, normalizedScope);
+  const reviewStateActions = taskQueueReviewStateActions(projection, normalizedScope, { reviewer });
+  const grouped = new Map(TASK_QUEUE_COLUMN_ORDER.map(key => [key, []]));
+  for (const task of tasks) {
+    const key = taskQueueColumnKey(task);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(task);
+  }
+  const columns = TASK_QUEUE_COLUMN_ORDER.map(key => {
+    const columnTasks = grouped.get(key) || [];
+    const shown = Number.isFinite(limit) ? columnTasks.slice(0, limit) : columnTasks;
+    return {
+      key,
+      label: TASK_QUEUE_COLUMN_LABELS[key] || key,
+      count: columnTasks.length,
+      items: shown.map(task => taskQueueItem(task, { reviewer })),
+    };
+  });
+  const counts = {};
+  for (const column of columns) counts[column.key] = column.count;
+  counts.active = counts.plan + counts.do + counts.review + counts.blocked;
+  counts.total = tasks.length;
+  return {
+    schema: 'atris.task_queue.v1',
+    generated_at: projection.generated_at,
+    workspace_root: projection.workspace_root,
+    scope: normalizedScope,
+    columns,
+    counts,
+    review_state_counts: reviewStateCounts,
+    review_state_actions: reviewStateActions,
+    capabilities: taskQueueCapabilities(),
+  };
+}
+
+function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {} } = {}) {
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), scope);
+  const columns = {
+    backlog: [],
+    plan: [],
+    do: [],
+    review: [],
+    blocked: [],
+    done: [],
+  };
+  for (const task of tasks) {
+    const key = taskQueueColumnKey(task);
+    if (!columns[key]) columns[key] = [];
+    columns[key].push(task);
+  }
+  const actor = String(owner || DEFAULT_OWNER);
+  const claimedByOwner = columns.do.find(task => task.claimed_by === actor);
+  if (claimedByOwner) return { task: claimedByOwner, reason: 'claimed_by_owner' };
+  const reviewNeedsAgent = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true })?.next_action === 'agent_review_again');
+  if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
+  const planReady = columns.plan[0];
+  if (planReady) return { task: planReady, reason: 'plan_ready' };
+  const backlogIdea = columns.backlog[0];
+  if (backlogIdea) return { task: backlogIdea, reason: 'backlog_idea' };
+  const activeOther = columns.do[0];
+  if (activeOther) return { task: activeOther, reason: 'active_do_elsewhere' };
+  const blocked = columns.blocked[0];
+  if (blocked) return { task: blocked, reason: 'blocked_task' };
+  const certifiedReview = columns.review.find(task => {
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    return handoff?.next_action === 'continue_work' || handoff?.next_action === 'human_accept_waiting';
+  });
+  if (certifiedReview) return { task: certifiedReview, reason: 'review_certified_waiting_human' };
+  const done = columns.done[0];
+  if (done) return { task: done, reason: 'done_reference' };
+  return { task: null, reason: 'none' };
+}
+
+function taskCurrentContract(projection, { owner = DEFAULT_OWNER, reviewer = 'codex-review', limit = 8, scope = {} } = {}) {
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const queue = taskQueueContract(projection, { reviewer, limit, scope: normalizedScope });
+  const selection = selectTaskForCurrent(projection, { owner, scope: normalizedScope });
+  const page = selection.task ? taskPageContract(selection.task, { reviewer }) : null;
+  const selected = selection.task ? taskQueueItem(selection.task, { reviewer }) : null;
+  return {
+    schema: 'atris.task_current.v1',
+    generated_at: projection.generated_at,
+    workspace_root: projection.workspace_root,
+    owner: String(owner || DEFAULT_OWNER),
+    reviewer: reviewActor(reviewer || 'codex-review'),
+    scope: normalizedScope,
+    selected_reason: selection.reason,
+    selected_task_id: selection.task ? selection.task.id : null,
+    selected,
+    page,
+    next: page ? {
+      key: page.stage.next_action.key,
+      label: page.stage.next_action.label,
+      command: page.stage.next_action.command || null,
+      api: page.stage.next_action.api || null,
+      human_accept_command: page.stage.next_action.human_accept_command || null,
+      step_command: page.actions.step_command,
+      step_api: page.api.step,
+    } : null,
+    review_state_counts: queue.review_state_counts,
+    review_state_actions: queue.review_state_actions,
+    capabilities: queue.capabilities,
+    queue,
+    safety: {
+      read_only: true,
+      claims_work: false,
+      human_accept: false,
+      xp_after_human_accept: true,
+    },
+  };
+}
+
+function buildTaskCurrent(taskDb, db, args = [], options = {}) {
+  const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
+  const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
+  const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
+  const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
+  const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  return {
+    projection,
+    outPath,
+    current: taskCurrentContract(projection, { owner, reviewer, limit, scope }),
+  };
+}
+
+function printTaskCurrent(current) {
+  if (!current.page) {
+    console.log('TASK CURRENT');
+    console.log('No task selected.');
+    return;
+  }
+  console.log('TASK CURRENT');
+  const scopeText = formatTaskQueueScope(current.scope);
+  if (scopeText) console.log(`Scope: ${scopeText}`);
+  console.log(`${current.page.task.ref} ${current.selected_reason}`);
+  console.log(current.page.task.title);
+  console.log(`Stage: ${current.page.stage.current}`);
+  console.log(`Next: ${current.next.command || current.next.label}`);
+  console.log(`Step: ${current.next.step_command}`);
+}
+
+function printTaskQueue(queue, current = null) {
+  console.log('TASK QUEUE');
+  const scopeText = formatTaskQueueScope(queue.scope);
+  if (scopeText) console.log(`Scope: ${scopeText}`);
+  if (current && current.page) console.log(`current ${current.page.task.ref} ${current.page.stage.current}`);
+  for (const column of queue.columns) {
+    console.log(`${column.label}: ${column.count}`);
+    for (const item of column.items.slice(0, 5)) {
+      console.log(`  ${taskRef(item)} ${item.title}`);
+    }
+  }
+}
+
+function cmdCurrent(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { outPath, current } = buildTaskCurrent(taskDb, db, args);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'current',
+      projection_path: outPath,
+      current,
+      selected: current.selected,
+      page: current.page,
+      queue: current.queue,
+    });
+    return;
+  }
+  printTaskCurrent(current);
+}
+
+function cmdQueue(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { outPath, current } = buildTaskCurrent(taskDb, db, args);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'queue',
+      projection_path: outPath,
+      current,
+      selected: current.selected,
+      page: current.page,
+      queue: current.queue,
+    });
+    return;
+  }
+  printTaskQueue(current.queue, current);
+}
+
+function cmdCapabilities(args) {
+  const capabilities = taskCapabilitiesContract();
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'capabilities',
+      capabilities,
+      safety: {
+        read_only: true,
+        claims_work: false,
+        human_accept: false,
+        xp_after_human_accept: true,
+      },
+    });
+    return;
+  }
+  console.log(capabilities.schema);
+  console.log(`current: ${capabilities.commands.current}`);
+  console.log(`queue: ${capabilities.commands.queue}`);
+  console.log(`current-step: ${capabilities.commands.current_step}`);
+  console.log(`review-state lanes: ${capabilities.filters.review_state.accepted.join(', ')}`);
+}
+
+function cmdCapabilitiesCheck(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const report = taskCapabilitiesCheckReport(taskDb, db, args);
+  if (wantsJson(args)) {
+    printJson(report);
+    if (!report.ok) process.exit(1);
+    return;
+  }
+  console.log(`TASK CAPABILITIES CHECK ${report.ok ? 'ok' : 'failed'}`);
+  for (const check of report.checks) {
+    console.log(`${check.ok ? 'ok' : 'fail'} ${check.name}`);
+  }
+  if (!report.ok) process.exit(1);
+}
+
+function taskReviewLaneDrainTask(action) {
+  if (!action) return null;
+  return {
+    id: action.id,
+    ref: action.ref,
+    title: action.title,
+    status: action.status,
+    next_action: action.next_action,
+  };
+}
+
+function humanAcceptWaitingDrain(action) {
+  if (!action) return null;
+  return {
+    task: taskReviewLaneDrainTask(action),
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    reason: 'human_accept_waiting_is_human_only',
+  };
+}
+
+function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
+  if (!capabilitiesCheck.ok) {
+    return {
+      key: 'capabilities_drift',
+      next_action: 'capabilities_drift',
+      review_state: null,
+      safe_for_agent: false,
+      command: null,
+      api: null,
+      task: null,
+      reason: 'capability_conformance_failed',
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  if (actions.needs_agent) {
+    return {
+      key: 'review_chat',
+      next_action: 'review_chat',
+      review_state: 'needs-agent',
+      safe_for_agent: true,
+      command: actions.needs_agent.command || null,
+      api: actions.needs_agent.api || null,
+      task: taskReviewLaneDrainTask(actions.needs_agent),
+      reason: 'needs_agent_review',
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  if (actions.continue_work) {
+    return {
+      key: 'continue_work',
+      next_action: 'continue_work',
+      review_state: 'continue-work',
+      safe_for_agent: true,
+      command: actions.continue_work.command || null,
+      api: actions.continue_work.api || null,
+      task: taskReviewLaneDrainTask(actions.continue_work),
+      reason: 'certified_review_has_follow_up',
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  if (actions.human_accept_waiting) {
+    return {
+      key: 'human_accept_waiting',
+      next_action: 'human_accept_waiting',
+      review_state: 'human-accept-waiting',
+      safe_for_agent: false,
+      command: null,
+      api: null,
+      task: taskReviewLaneDrainTask(actions.human_accept_waiting),
+      reason: 'human_accept_waiting_is_human_only',
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  return {
+    key: 'none',
+    next_action: 'none',
+    review_state: null,
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    task: null,
+    reason: 'no_review_lane_action',
+    human_accept_waiting: null,
+  };
+}
+
+function taskReviewLaneDrainReport(taskDb, db, args = [], options = {}) {
+  const owner = options.owner || flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER;
+  const reviewer = reviewActor(options.reviewer || flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review');
+  const all = options.all !== undefined ? Boolean(options.all) : hasFlag(args, '--all');
+  const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
+  const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
+  const capabilitiesCheck = taskCapabilitiesCheckReport(taskDb, db, [], {
+    owner,
+    reviewer,
+    all,
+    limit,
+    scope,
+  });
+  const { outPath, current } = buildTaskCurrent(taskDb, db, [], {
+    owner,
+    reviewer,
+    all,
+    limit,
+    scope,
+  });
+  const reviewStateActions = current.review_state_actions || {};
+  const drain = taskReviewLaneDrainSelection(reviewStateActions, capabilitiesCheck);
+  return {
+    schema: 'atris.task_review_lane_drain.v1',
+    generated_at: new Date().toISOString(),
+    ok: Boolean(capabilitiesCheck.ok),
+    action: 'review_lane_drain',
+    projection_path: outPath,
+    scope: current.scope,
+    owner: String(owner || DEFAULT_OWNER),
+    reviewer,
+    capabilities_check: {
+      schema: capabilitiesCheck.schema,
+      ok: capabilitiesCheck.ok,
+      summary: capabilitiesCheck.summary,
+      checks: capabilitiesCheck.checks,
+      safety: capabilitiesCheck.safety,
+    },
+    review_state_counts: current.review_state_counts,
+    review_state_actions: reviewStateActions,
+    drain,
+    safety: {
+      read_only: true,
+      mutates_task_db: false,
+      writes_projection: true,
+      human_accept: false,
+      xp_after_human_accept: true,
+      safe_to_execute_next_action: Boolean(drain.safe_for_agent && drain.command),
+    },
+  };
+}
+
+function cmdReviewLaneDrain(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const report = taskReviewLaneDrainReport(taskDb, db, args);
+  if (wantsJson(args)) {
+    printJson(report);
+    if (!report.ok) process.exit(1);
+    return;
+  }
+  console.log(`TASK REVIEW LANE DRAIN ${report.ok ? 'ok' : 'failed'}`);
+  console.log(`next: ${report.drain.next_action}`);
+  console.log(`safe_for_agent: ${report.drain.safe_for_agent ? 'true' : 'false'}`);
+  console.log(`command: ${report.drain.command || 'none'}`);
+  if (!report.ok) process.exit(1);
+}
+
+function taskReviewLaneActOptionsFromArgs(args = []) {
+  return {
+    owner: flag(args, '--as') || flag(args, '--owner') || DEFAULT_OWNER,
+    reviewer: reviewActor(flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review'),
+    all: hasFlag(args, '--all'),
+    limit: taskQueueLimit(args),
+    scope: taskQueueScopeFromArgs(args),
+    dryRun: hasFlag(args, '--dry-run'),
+  };
+}
+
+function taskReviewLaneActOptionsFromBody(body = {}, searchParams = new URLSearchParams()) {
+  const queryScope = taskQueueScopeFromSearchParams(searchParams);
+  const bodyScope = taskQueueScopeFromBody(body);
+  const queryOwner = searchParams.get('owner') || searchParams.get('as') || searchParams.get('actor');
+  const queryReviewer = searchParams.get('reviewer') || searchParams.get('as_reviewer') || searchParams.get('as-reviewer');
+  const limitParam = searchParams.get('limit') || body.limit;
+  const limit = limitParam ? Number(limitParam) : 8;
+  return {
+    owner: String(queryOwner || body.owner || body.as || body.actor || DEFAULT_OWNER),
+    reviewer: reviewActor(queryReviewer || body.reviewer || body.review_actor || body.reviewActor || 'codex-review'),
+    all: searchParams.get('all') === '1' || searchParams.get('all') === 'true' || Boolean(body.all),
+    limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
+    scope: mergeTaskQueueScopes(queryScope, bodyScope),
+    dryRun: searchParams.get('dry_run') === '1'
+      || searchParams.get('dry-run') === '1'
+      || searchParams.get('dryRun') === 'true'
+      || Boolean(body.dry_run || body.dryRun),
+  };
+}
+
+function taskReviewLaneAct(taskDb, db, options = {}) {
+  const owner = String(options.owner || DEFAULT_OWNER);
+  const reviewer = reviewActor(options.reviewer || 'codex-review');
+  const scope = normalizeTaskQueueScope(options.scope || {});
+  const dryRun = Boolean(options.dryRun);
+  const drainReport = taskReviewLaneDrainReport(taskDb, db, [], {
+    owner,
+    reviewer,
+    all: Boolean(options.all),
+    limit: options.limit !== undefined ? options.limit : 8,
+    scope,
+  });
+  const drain = drainReport.drain || null;
+  const decision = taskReviewLaneActDecision(drain || {});
+  const base = {
+    schema: 'atris.task_review_lane_act.v1',
+    generated_at: new Date().toISOString(),
+    action: 'review_lane_act',
+    owner,
+    reviewer,
+    scope,
+    dry_run: dryRun,
+    drain,
+    drain_report: drainReport,
+    decision,
+    safety: {
+      read_only: dryRun,
+      mutates_task_db: dryRun ? false : 'conditional',
+      writes_projection: true,
+      human_accept: false,
+      xp_after_human_accept: true,
+      allowed_actions: ['review_chat', 'continue_work'],
+    },
+  };
+  if (!drainReport.ok) {
+    return {
+      ...base,
+      ok: false,
+      acted: false,
+      reason: 'capabilities_check_failed',
+      detail: 'review-lane-act refuses to execute while capabilities-check is failing',
+      status: 409,
+    };
+  }
+  if (!decision.ok) {
+    return {
+      ...base,
+      ok: false,
+      acted: false,
+      reason: decision.reason || 'unsafe_review_lane_action',
+      detail: 'review-lane-act only executes review_chat or continue_work actions selected by review-lane-drain',
+      status: 409,
+    };
+  }
+  if (dryRun) {
+    return {
+      ...base,
+      ok: true,
+      acted: false,
+      result: null,
+      projection_path: drainReport.projection_path,
+    };
+  }
+  try {
+    if (decision.step_action === 'review_chat') {
+      const result = appendTaskReviewChat(taskDb, db, decision.task_id, { reviewer });
+      return {
+        ...base,
+        ok: true,
+        acted: true,
+        selected_action: 'review_chat',
+        projection_path: result.projection_path,
+        result,
+      };
+    }
+    if (decision.step_action === 'continue_work') {
+      const result = continueWorkForReviewTask(taskDb, db, decision.task_id, { owner });
+      return {
+        ...base,
+        ok: true,
+        acted: true,
+        selected_action: 'continue_work',
+        projection_path: result.projection_path,
+        result,
+      };
+    }
+  } catch (error) {
+    return {
+      ...base,
+      ok: false,
+      acted: false,
+      selected_action: decision.step_action,
+      reason: error.reason || 'review_lane_act_failed',
+      detail: error.message,
+      status: error.status || 409,
+    };
+  }
+  return {
+    ...base,
+    ok: false,
+    acted: false,
+    reason: 'unsupported_review_lane_action',
+    detail: `unsupported review-lane action: ${decision.step_action}`,
+    status: 409,
+  };
+}
+
+function cmdReviewLaneAct(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const result = taskReviewLaneAct(taskDb, db, taskReviewLaneActOptionsFromArgs(args));
+  if (wantsJson(args)) {
+    printJson(result);
+    if (!result.ok) process.exit(1);
+    return;
+  }
+  console.log(`TASK REVIEW LANE ACT ${result.ok ? 'ok' : 'blocked'}`);
+  console.log(`next: ${result.drain ? result.drain.next_action : 'none'}`);
+  console.log(`acted: ${result.acted ? 'true' : 'false'}`);
+  console.log(`dry_run: ${result.dry_run ? 'true' : 'false'}`);
+  if (result.reason) console.log(`reason: ${result.reason}`);
+  if (!result.ok) process.exit(1);
+}
+
+function normalizeReviewLaneLoopMaxSteps(value) {
+  const parsed = Number(value === undefined || value === null || value === true ? REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS : value);
+  if (!Number.isFinite(parsed)) return REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS;
+  return Math.max(1, Math.min(REVIEW_LANE_LOOP_MAX_STEPS, Math.floor(parsed)));
+}
+
+function taskReviewLaneLoopStopIsSafe(reason) {
+  const expected = new Set([
+    'dry_run_preview',
+    'human_accept_waiting_is_human_only',
+    'no_review_lane_action',
+    'repeat_selection',
+    'max_steps_reached',
+  ]);
+  return {
+    ok: expected.has(reason),
+    read_only: reason === 'dry_run_preview',
+    human_accept: false,
+  };
+}
+
+function taskReviewLaneActSelectionKey(act) {
+  const decision = act && act.decision || {};
+  if (!decision.step_action || !decision.task_id) return null;
+  return `${decision.step_action}:${decision.task_id}`;
+}
+
+function taskReviewLaneLoopOptionsFromArgs(args = []) {
+  return {
+    ...taskReviewLaneActOptionsFromArgs(args),
+    maxSteps: normalizeReviewLaneLoopMaxSteps(flag(args, '--max-steps') || flag(args, '--limit')),
+  };
+}
+
+function taskReviewLaneLoopOptionsFromBody(body = {}, searchParams = new URLSearchParams()) {
+  const options = taskReviewLaneActOptionsFromBody(body, searchParams);
+  const maxSteps = searchParams.get('max_steps')
+    || searchParams.get('max-steps')
+    || searchParams.get('limit')
+    || body.max_steps
+    || body.maxSteps
+    || body.limit;
+  return {
+    ...options,
+    maxSteps: normalizeReviewLaneLoopMaxSteps(maxSteps),
+  };
+}
+
+function compactReviewLaneLoopStep(index, act, { phase = 'act' } = {}) {
+  return {
+    index,
+    phase,
+    ok: Boolean(act && act.ok),
+    acted: Boolean(act && act.acted),
+    dry_run: Boolean(act && act.dry_run),
+    selected_action: act && act.selected_action || null,
+    reason: act && act.reason || null,
+    decision: act && act.decision || null,
+    drain: act && act.drain ? {
+      next_action: act.drain.next_action,
+      review_state: act.drain.review_state,
+      safe_for_agent: act.drain.safe_for_agent,
+      task: act.drain.task || null,
+      reason: act.drain.reason || null,
+      command: act.drain.command || null,
+      api: act.drain.api || null,
+    } : null,
+    result: act && act.result ? {
+      ok: act.result.ok,
+      action: act.result.action,
+      task_id: act.result.task_id,
+      parent_task_id: act.result.parent_task_id,
+      next_task_id: act.result.next_task_id,
+      appended: act.result.appended,
+      created: act.result.created,
+      projection_path: act.result.projection_path,
+    } : null,
+  };
+}
+
+function taskReviewLaneLoop(taskDb, db, options = {}) {
+  const owner = String(options.owner || DEFAULT_OWNER);
+  const reviewer = reviewActor(options.reviewer || 'codex-review');
+  const scope = normalizeTaskQueueScope(options.scope || {});
+  const dryRun = Boolean(options.dryRun);
+  const maxSteps = normalizeReviewLaneLoopMaxSteps(options.maxSteps);
+  const steps = [];
+  const seenActions = new Set();
+  let stoppedReason = 'max_steps_reached';
+  let status = 200;
+  let finalDrain = null;
+  let finalDecision = null;
+  let projectionPath = null;
+
+  for (let index = 1; index <= maxSteps; index += 1) {
+    const preview = taskReviewLaneAct(taskDb, db, {
+      owner,
+      reviewer,
+      all: Boolean(options.all),
+      limit: options.limit !== undefined ? options.limit : 8,
+      scope,
+      dryRun: true,
+    });
+    finalDrain = preview.drain || null;
+    finalDecision = preview.decision || null;
+    projectionPath = preview.projection_path || projectionPath;
+
+    if (!preview.ok) {
+      stoppedReason = preview.reason || 'review_lane_act_failed';
+      status = taskReviewLaneLoopStopIsSafe(stoppedReason).ok ? 200 : preview.status || 409;
+      steps.push(compactReviewLaneLoopStep(index, preview, { phase: 'preview' }));
+      break;
+    }
+
+    const actionKey = taskReviewLaneActSelectionKey(preview);
+    if (!actionKey) {
+      stoppedReason = 'no_review_lane_action';
+      steps.push(compactReviewLaneLoopStep(index, {
+        ...preview,
+        ok: true,
+        acted: false,
+        reason: stoppedReason,
+      }, { phase: 'preview' }));
+      break;
+    }
+
+    if (seenActions.has(actionKey)) {
+      stoppedReason = 'repeat_selection';
+      steps.push(compactReviewLaneLoopStep(index, {
+        ...preview,
+        reason: stoppedReason,
+      }, { phase: 'preview' }));
+      break;
+    }
+    seenActions.add(actionKey);
+
+    if (dryRun) {
+      stoppedReason = 'dry_run_preview';
+      steps.push(compactReviewLaneLoopStep(index, preview, { phase: 'dry_run' }));
+      break;
+    }
+
+    const act = taskReviewLaneAct(taskDb, db, {
+      owner,
+      reviewer,
+      all: Boolean(options.all),
+      limit: options.limit !== undefined ? options.limit : 8,
+      scope,
+      dryRun: false,
+    });
+    finalDrain = act.drain || finalDrain;
+    finalDecision = act.decision || finalDecision;
+    projectionPath = act.projection_path || act.result && act.result.projection_path || projectionPath;
+    const liveKey = taskReviewLaneActSelectionKey(act);
+    if (liveKey) seenActions.add(liveKey);
+    steps.push(compactReviewLaneLoopStep(index, act, { phase: 'act' }));
+
+    if (!act.ok) {
+      stoppedReason = act.reason || 'review_lane_act_failed';
+      status = taskReviewLaneLoopStopIsSafe(stoppedReason).ok ? 200 : act.status || 409;
+      break;
+    }
+    if (!act.acted) {
+      stoppedReason = act.reason || 'no_review_lane_action';
+      break;
+    }
+  }
+
+  const actedCount = steps.filter(step => step.acted).length;
+  const stopSafety = taskReviewLaneLoopStopIsSafe(stoppedReason);
+  return {
+    schema: 'atris.task_review_lane_loop.v1',
+    generated_at: new Date().toISOString(),
+    ok: status < 400 || stopSafety.ok,
+    action: 'review_lane_loop',
+    owner,
+    reviewer,
+    scope,
+    dry_run: dryRun,
+    max_steps: maxSteps,
+    acted_count: actedCount,
+    stopped_reason: stoppedReason,
+    stopped_on: finalDrain ? finalDrain.next_action : null,
+    final_decision: finalDecision,
+    final_drain: finalDrain,
+    steps,
+    status,
+    projection_path: projectionPath,
+    safety: {
+      read_only: dryRun,
+      mutates_task_db: dryRun ? false : 'conditional',
+      writes_projection: true,
+      human_accept: false,
+      xp_after_human_accept: true,
+      max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
+      repeat_selection_guard: true,
+    },
+  };
+}
+
+function cmdReviewLaneLoop(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const result = taskReviewLaneLoop(taskDb, db, taskReviewLaneLoopOptionsFromArgs(args));
+  if (wantsJson(args)) {
+    printJson(result);
+    if (!result.ok) process.exit(1);
+    return;
+  }
+  console.log(`TASK REVIEW LANE LOOP ${result.ok ? 'ok' : 'blocked'}`);
+  console.log(`acted: ${result.acted_count}`);
+  console.log(`stopped: ${result.stopped_reason}`);
+  console.log(`dry_run: ${result.dry_run ? 'true' : 'false'}`);
+  if (!result.ok) process.exit(1);
+}
+
 function reviewQueueLimit(args, total) {
   if (hasFlag(args, '--all')) return total;
   const raw = flag(args, '--limit');
@@ -888,26 +2989,66 @@ function reviewQueueLimit(args, total) {
 
 function reviewQueueItem(task) {
   const ref = taskRef(task);
-  return {
+  const reviewChat = taskReviewChatHandoff(task, { reviewer: 'codex-review', allowCertified: true });
+  const continueWorkCommand = continueWorkCommandForTask(task);
+  const genericIssues = genericContinuationIssues(task);
+  const item = {
     id: task.id,
     display_id: task.display_id || null,
     title: task.title,
     tag: task.tag || null,
     updated_at: task.updated_at || null,
     review_pass_count: task.review?.agent_review_pass_count || null,
-    proof: task.review?.proof || null,
+    proof: taskReviewClip(task.review?.proof, 500) || null,
     accept_command: `atris task accept ${ref}`,
     revise_command: `atris task revise ${ref} --note "<what must change>"`,
+  };
+  if (continueWorkCommand && reviewHandoffForTask(task, { suppressExistingFollowUp: true })?.next_action === 'continue_work') {
+    item.continue_work_command = continueWorkCommand;
+    item.continue_work_api = { method: 'POST', path: `/api/tasks/${encodeURIComponent(task.id)}/continue-work` };
+  }
+  if (reviewChat) {
+    item.review_chat_command = reviewChat.command;
+    item.codex_prompt = reviewChat.codex_prompt;
+    item.verification_focus = reviewChat.verification_focus;
+  }
+  if (genericIssues.length) {
+    item.hygiene = {
+      generic_continuation_issues: genericIssues,
+    };
+  }
+  return item;
+}
+
+function reviewQueueHygiene(tasks) {
+  const genericContinuations = (tasks || []).map(task => {
+    const issues = genericContinuationIssues(task);
+    if (!issues.length) return null;
+    return {
+      id: task.id,
+      display_id: task.display_id || null,
+      title: task.title,
+      issues,
+    };
+  }).filter(Boolean);
+  return {
+    generic_continuation_count: genericContinuations.length,
+    generic_continuations: genericContinuations,
   };
 }
 
 function taskReviewQueue(projection, args = []) {
   const reviewTasks = (projection.tasks || [])
-    .map(compactTaskForStatus)
     .filter(task => task && task.status === 'review' && task.review && task.review.approval_status === 'pending')
     .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
-  const blocking = reviewTasks.filter(task => task.review?.handoff?.next_action === 'agent_review_again');
-  const certified = reviewTasks.filter(task => task.review?.handoff?.next_action === 'continue_work' || task.review?.agent_certified === true);
+  const reviewHandoff = (task) => task.review?.handoff || reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+  const blocking = reviewTasks.filter(task => reviewHandoff(task)?.next_action === 'agent_review_again');
+  const certified = reviewTasks.filter(task => {
+    const handoff = reviewHandoff(task);
+    return handoff?.next_action === 'continue_work'
+      || handoff?.next_action === 'human_accept_waiting'
+      || task.review?.agent_certified === true;
+  });
   const limit = reviewQueueLimit(args, certified.length);
   const items = certified.slice(0, limit).map(reviewQueueItem);
   return {
@@ -920,6 +3061,7 @@ function taskReviewQueue(projection, args = []) {
       blocking: blocking.length,
       shown: items.length,
     },
+    hygiene: reviewQueueHygiene(reviewTasks),
     items,
   };
 }
@@ -950,6 +3092,8 @@ function cmdReviews(args) {
     console.log('');
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}`);
     if (item.proof) console.log(`   proof: ${item.proof}`);
+    if (item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
+    if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
     console.log(`   accept: ${item.accept_command}`);
     console.log(`   revise: ${item.revise_command}`);
   });
@@ -1105,7 +3249,10 @@ function cmdAdd(args) {
   const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
   const metadata = {};
   if (goalId && goalId !== true) metadata.goal_id = String(goalId);
-  if (goalObjective && goalObjective !== true) metadata.goal_objective = String(goalObjective);
+  if (goalObjective && goalObjective !== true) {
+    metadata.task_goal = String(goalObjective);
+    metadata.goal_objective = String(goalObjective);
+  }
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
@@ -1400,28 +3547,37 @@ function cmdNext(args) {
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
     const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
-      || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work');
+      || reviewTasks.find(task => task.review.handoff.next_action === 'continue_work')
+      || reviewTasks.find(task => task.review.handoff.next_action === 'human_accept_waiting');
     if (reviewTask) {
       const handoff = reviewTask.review.handoff;
+      const continueWorkCommand = handoff.next_action === 'continue_work'
+        ? continueWorkCommandForTask(reviewTask, { owner })
+        : null;
       if (wantsJson(args)) {
         printJson({
           ok: true,
           action: handoff.next_action,
-          task_id: handoff.next_action === 'agent_review_again' ? reviewTask.id : null,
+          task_id: handoff.next_action === 'continue_work' ? null : reviewTask.id,
           owner: String(owner),
           projection_path: outPath,
           handoff,
+          continue_work_command: continueWorkCommand,
+          continue_work_api: continueWorkCommand ? { method: 'POST', path: `/api/tasks/${encodeURIComponent(reviewTask.id)}/continue-work` } : null,
           review_task: reviewTask,
         });
         return;
       }
       console.log('No open tasks.');
-      console.log(handoff.next_action === 'continue_work'
-        ? `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`
-        : `${taskRef(reviewTask)} needs one more agent review before continuation.`);
+      console.log(handoff.next_action === 'agent_review_again'
+        ? `${taskRef(reviewTask)} needs one more agent review before continuation.`
+        : `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`);
       console.log(handoff.next_action === 'continue_work'
         ? 'Continue work elsewhere; AgentXP waits for human accept.'
+        : handoff.next_action === 'human_accept_waiting'
+        ? 'No concrete next agent task is attached; AgentXP waits for human accept.'
         : 'Review this task again before continuing.');
+      if (continueWorkCommand) console.log(`Command: ${continueWorkCommand}`);
       return;
     }
     if (wantsJson(args)) {
@@ -1459,6 +3615,84 @@ function cmdNext(args) {
   console.log(open[0].title);
 }
 
+function continueWorkForReviewTask(taskDb, db, taskId, { owner = DEFAULT_OWNER } = {}) {
+  const task = taskDetail(taskDb, db, taskId);
+  if (!task) {
+    const error = new Error(`task not found: ${taskId}`);
+    error.reason = 'not_found';
+    error.status = 404;
+    throw error;
+  }
+  const handoff = reviewHandoffForTask(task);
+  if (handoff && handoff.next_action === 'human_accept_waiting') {
+    const error = new Error('agent-certified Review row has no specific next_task suggestion');
+    error.reason = 'no_next_task';
+    error.status = 409;
+    throw error;
+  }
+  if (!handoff || handoff.next_action !== 'continue_work') {
+    const error = new Error('task is not an agent-certified Review row ready for continuation');
+    error.reason = 'not_continue_work_ready';
+    error.status = 409;
+    throw error;
+  }
+  const nextTitle = reviewNextTaskTitle(task);
+  if (!nextTitle) {
+    const error = new Error('agent-certified Review row has no specific next_task suggestion');
+    error.reason = 'no_next_task';
+    error.status = 409;
+    throw error;
+  }
+  const nextCreated = createReviewNextTask(taskDb, db, task, nextTitle);
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const parent = compactTaskFromProjection(projection, taskId) || compactTaskForStatus(taskDetail(taskDb, db, taskId));
+  const nextTask = nextCreated
+    ? compactTaskFromProjection(projection, nextCreated.id) || compactTaskForStatus(taskDetail(taskDb, db, nextCreated.id))
+    : null;
+  return {
+    ok: true,
+    action: 'continue_work',
+    task_id: taskId,
+    parent_task_id: taskId,
+    next_task_id: nextCreated ? nextCreated.id : null,
+    created: Boolean(nextCreated && nextCreated.inserted !== false),
+    owner: String(owner || DEFAULT_OWNER),
+    projection_path: outPath,
+    parent,
+    next_task: nextTask,
+    safety: {
+      accepts_parent: false,
+      human_accept: false,
+      xp_after_human_accept: true,
+    },
+  };
+}
+
+function cmdContinueWork(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task continue-work', 'missing_id', 'id required');
+  }
+  const owner = flag(args, '--as') || DEFAULT_OWNER;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task continue-work');
+  let result;
+  try {
+    result = continueWorkForReviewTask(taskDb, db, taskId, { owner });
+  } catch (error) {
+    failTask('atris task continue-work', error.reason || 'continue_work_failed', error.message, error.status === 404 ? 1 : 2);
+  }
+  if (wantsJson(args)) {
+    printJson(result);
+    return;
+  }
+  console.log(`continue-work ${taskRef(result.parent)} -> ${taskRef(result.next_task)}`);
+  console.log(result.created ? 'created follow-up task' : 'reused follow-up task');
+  console.log('Human accept and XP remain pending on the parent.');
+}
+
 function cmdNote(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -1488,6 +3722,223 @@ function cmdNote(args) {
     return;
   }
   console.log(`noted ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+}
+
+function cmdChat(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  const content = pos.slice(1).join(' ').trim();
+  const goal = textFlag(args, ['--goal', '--objective']);
+  const summary = textFlag(args, ['--summary']);
+  if (!id) failTask('atris task chat', 'missing_id', 'id required');
+  if (!content && !goal && !summary) {
+    failTask('atris task chat', 'content_required', 'atris task chat: message, --goal, or --summary required');
+  }
+  const actor = flag(args, '--as') || DEFAULT_OWNER;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task chat');
+  const result = taskDb.chatTask(db, {
+    id: taskId,
+    actor: String(actor),
+    content,
+    goal,
+    summary,
+  });
+  if (!result.chatted) {
+    failTask('atris task chat', result.reason || 'chat_failed', stageErrorDetail('atris task chat', result.reason, result), 1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'chatted',
+      task_id: taskId,
+      version: result.event.version,
+      goal_changed: result.goal_changed,
+      chat_packet: result.chat_packet,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`chat ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+}
+
+function stageErrorDetail(command, reason, extra = {}) {
+  if (reason === 'goal_required') return `${command}: --goal required`;
+  if (reason === 'content_required') return `${command}: message, --goal, or --summary required`;
+  if (reason === 'plan_required') return `${command}: run atris task plan first`;
+  if (reason === 'exit_required') return `${command}: --exit required`;
+  if (reason === 'proof_needed_required') return `${command}: --proof-needed required`;
+  if (reason === 'plan_goal_mismatch') return `${command}: Do must use the recorded Plan goal`;
+  if (reason === 'plan_proof_mismatch') return `${command}: Do must use the recorded Plan proof requirement`;
+  if (reason === 'plan_exit_mismatch') return `${command}: Do must use the recorded Plan exit condition`;
+  if (reason === 'not_planned') return `${command}: task is already in Backlog`;
+  if (reason === 'confirm_required') return `${command}: --yes required`;
+  if (reason === 'claimed_by_other') return `${command}: task is claimed by ${extra.claimed_by || 'another owner'}`;
+  if (reason === 'not_reviewable_use_revise') return `${command}: task is in review; use atris task revise first`;
+  if (reason === 'stale_task_state') return `${command}: task changed while staging; reload and try again`;
+  if (reason && reason.startsWith('already_')) return `${command}: task is ${reason.slice('already_'.length)}`;
+  return `${command}: ${reason || 'stage_failed'}`;
+}
+
+function cmdPlan(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task plan', 'missing_id', 'id required');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const goal = textFlag(args, ['--goal', '--objective']);
+  const exit = textFlag(args, ['--exit', '--exit-condition']);
+  const proofNeeded = textFlag(args, ['--proof-needed', '--proof', '--verify']);
+  const summary = textFlag(args, ['--summary', '--plan']);
+  const owner = textFlag(args, ['--owner', '--assignee']);
+  const firstMove = textFlag(args, ['--first-move', '--first']);
+  const nextButton = textFlag(args, ['--next-button']);
+  const confidence = numericFlag(args, '--confidence');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task plan');
+  const result = taskDb.stageTask(db, {
+    id: taskId,
+    actor,
+    stage: 'plan',
+    goal,
+    summary,
+    owner,
+    exit,
+    proofNeeded,
+    firstMove,
+    nextButton,
+    confidence,
+  });
+  if (!result.staged) {
+    failTask('atris task plan', result.reason || 'stage_failed', stageErrorDetail('atris task plan', result.reason, result), 1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'planned',
+      task_id: taskId,
+      version: result.event.version,
+      stage_packet: result.stage_packet,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`planned ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+}
+
+function cmdDo(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task do', 'missing_id', 'id required');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const goal = textFlag(args, ['--goal', '--objective']);
+  const proofNeeded = textFlag(args, ['--proof-needed', '--proof', '--verify']);
+  const exit = textFlag(args, ['--exit', '--exit-condition']);
+  const summary = textFlag(args, ['--summary']);
+  const firstMove = textFlag(args, ['--first-move', '--first']) || pos.slice(1).join(' ').trim();
+  if (!firstMove) failTask('atris task do', 'first_move_required', 'atris task do: --first-move required');
+  const nextButton = textFlag(args, ['--next-button']);
+  const confidence = numericFlag(args, '--confidence');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task do');
+  const result = taskDb.stageTask(db, {
+    id: taskId,
+    actor,
+    stage: 'do',
+    goal,
+    summary,
+    owner: actor,
+    exit,
+    proofNeeded,
+    firstMove,
+    nextButton,
+    confidence,
+  });
+  if (!result.staged) {
+    failTask('atris task do', result.reason || 'stage_failed', stageErrorDetail('atris task do', result.reason, result), 1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'doing',
+      task_id: taskId,
+      version: result.event.version,
+      stage_packet: result.stage_packet,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`doing ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} @${actor}`);
+}
+
+function cmdBacklog(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task backlog', 'missing_id', 'id required');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const reason = textFlag(args, ['--reason', '--note']);
+  const tag = textFlag(args, ['--tag']) || 'capture';
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task backlog');
+  const result = taskDb.backlogTask(db, { id: taskId, actor, reason, tag });
+  if (!result.backlogged) {
+    failTask('atris task backlog', result.reason || 'backlog_failed', stageErrorDetail('atris task backlog', result.reason, result), 1);
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'backlogged',
+      task_id: taskId,
+      version: result.event.version,
+      cleared_keys: result.cleared_keys,
+      projection_path: outPath,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(`backlog ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+}
+
+function cmdClearPlan(args) {
+  const confirmed = hasFlag(args, '--yes') || hasFlag(args, '--confirm');
+  if (!confirmed) failTask('atris task clear-plan', 'confirm_required', stageErrorDetail('atris task clear-plan', 'confirm_required'), 2);
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const reason = textFlag(args, ['--reason', '--note']) || 'clear_plan';
+  const tag = textFlag(args, ['--tag']) || 'capture';
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const result = taskDb.clearPlanTasks(db, {
+    workspaceRoot: taskDb.workspaceRoot(),
+    actor,
+    reason,
+    tag,
+  });
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const taskById = new Map((projection.tasks || []).map(task => [task.id, task]));
+  const tasks = result.cleared.map(task => compactTaskForStatus(taskById.get(task.id) || task)).filter(Boolean);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'clear_plan',
+      cleared_count: result.cleared.length,
+      skipped_count: result.skipped.length,
+      skipped: result.skipped,
+      projection_path: outPath,
+      tasks,
+    });
+    return;
+  }
+  console.log(`clear-plan moved ${result.cleared.length} task${result.cleared.length === 1 ? '' : 's'} to Backlog`);
 }
 
 function cmdShow(args) {
@@ -1520,6 +3971,7 @@ function cmdShow(args) {
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
     if (task.review.next_task) console.log(`Next: ${task.review.next_task}`);
     if (task.review.approval_status) console.log(`Approval: ${task.review.approval_status}`);
+    if (task.review.verification_chat) console.log(`Review chat: ${task.review.verification_chat.command}`);
     if (task.review.agent_certified) console.log(`Agent certified: yes (${task.review.agent_review_pass_count || AGENT_CERTIFICATION_REVIEW_PASSES} reviews)`);
   }
   if (task.messages.length) {
@@ -1532,6 +3984,874 @@ function cmdShow(args) {
   }
 }
 
+function cmdPage(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task page', 'missing_id', 'id required');
+  }
+  const reviewer = reviewActor(flag(args, '--as') || 'codex-review');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task page');
+  const task = taskDetail(taskDb, db, taskId);
+  if (!task) {
+    console.error(`task not found: ${id}`);
+    process.exit(1);
+  }
+  const { outPath } = writeDefaultProjection(taskDb, db);
+  const page = taskPageContract(task, { reviewer });
+  if (hasFlag(args, '--json')) {
+    printJson({
+      ok: true,
+      action: 'page',
+      task_id: taskId,
+      projection_path: outPath,
+      page,
+    });
+    return;
+  }
+  console.log(`TASK PAGE ${taskRef(task)}`);
+  console.log(`Goal: ${page.goal.text || '(none)'}`);
+  console.log(`Stage: ${page.stage.current}`);
+  console.log(`Next: ${page.stage.next_action.command || page.stage.next_action.label}`);
+  console.log(`Chat: ${page.chat.command}`);
+  if (page.review.verification_chat) console.log(`Review chat: ${page.review.verification_chat.command}`);
+  if (page.review.human_accept.enabled) console.log(`Human accept: ${page.review.human_accept.command}`);
+}
+
+function cmdReviewChat(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task review-chat', 'missing_id', 'id required');
+  }
+  const reviewer = reviewActor(flag(args, '--as') || 'codex-review');
+  const dryRun = hasFlag(args, '--dry-run') || hasFlag(args, '--no-note');
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task review-chat');
+  let result;
+  try {
+    result = appendTaskReviewChat(taskDb, db, taskId, { reviewer, dryRun });
+  } catch (error) {
+    failTask('atris task review-chat', error.reason || 'review_chat_failed', error.message, error.exitCode || 2);
+  }
+  const { task, contract, event, compactProjection, outPath } = result;
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'review_chat',
+      task_id: taskId,
+      appended: !dryRun,
+      version: event ? event.version : null,
+      projection_path: outPath,
+      contract,
+      task,
+      compact_task: compactTaskFromProjection(compactProjection, taskId),
+    });
+    return;
+  }
+  console.log(`REVIEW CHAT ${taskRef(task)}`);
+  console.log(contract.codex_prompt);
+  console.log(`show: atris task show ${taskRef(task)} --json`);
+  console.log(`pass: ${contract.pass_command}`);
+  console.log(`revise: ${contract.revise_command}`);
+  if (!dryRun && event) console.log(`thread: appended v${event.version}`);
+}
+
+function taskDetail(taskDb, db, taskId) {
+  const detailedProjection = taskDb.taskProjection(db, { taskId });
+  const detailedTask = detailedProjection.tasks[0] || null;
+  if (!detailedTask) return null;
+  const workspaceRoot = detailedTask.workspace_root || taskDb.workspaceRoot();
+  const contextProjection = enrichTaskProjection(taskDb.taskProjection(db, {
+    workspaceRoot,
+    limit: 5000,
+  }));
+  const enrichedTask = contextProjection.tasks.find(task => task.id === detailedTask.id) || null;
+  if (!enrichedTask) return enrichTaskProjection(detailedProjection).tasks[0] || null;
+  return {
+    ...enrichedTask,
+    current_version: detailedTask.current_version,
+    latest_event_type: detailedTask.latest_event_type,
+    messages: detailedTask.messages,
+    events: detailedTask.events,
+    history: detailedTask.history,
+  };
+}
+
+function taskCommandQuote(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').replace(/"/g, '\\"').trim();
+  return `"${text || '...'}"`;
+}
+
+function taskPageGoal(task) {
+  const metadata = task && task.metadata || {};
+  const candidates = [
+    ['task_goal', metadata.task_goal],
+    ['goal_objective', metadata.goal_objective],
+    ['objective', task && task.objective],
+    ['metadata_objective', metadata.objective],
+    ['title', task && task.title],
+  ];
+  const picked = candidates.find(([, value]) => String(value || '').trim());
+  return {
+    text: picked ? String(picked[1]).trim() : null,
+    source: picked ? picked[0] : null,
+  };
+}
+
+function taskPageCurrentStage(task) {
+  if (!task) return 'missing';
+  if (task.status === 'done' && !taskHasReview(task)) return 'review';
+  if (task.status === 'done' || (task.status === 'failed' && taskHasReview(task))) return 'done';
+  if (task.status === 'failed') return 'blocked';
+  if (task.status === 'review') return 'review';
+  const metadata = task.metadata || {};
+  const explicitStage = normalizedStatusPart(metadata.stage);
+  if (explicitStage === 'plan') return 'plan';
+  if (explicitStage === 'do') return 'do';
+  const column = taskColumn(task);
+  if (column === 'open') return 'plan';
+  if (column === 'doing') return 'do';
+  return column;
+}
+
+function taskPageStageRail(current) {
+  const order = ['backlog', 'plan', 'do', 'review', 'done'];
+  const effectiveCurrent = current === 'blocked' ? 'do' : current;
+  const currentIndex = order.indexOf(effectiveCurrent);
+  return order.map((key, index) => {
+    let state = 'upcoming';
+    if (current === 'blocked' && key === 'do') state = 'blocked';
+    else if (index < currentIndex) state = 'complete';
+    else if (index === currentIndex) state = 'current';
+    return {
+      key,
+      label: key === 'do' ? 'Do' : key.charAt(0).toUpperCase() + key.slice(1),
+      state,
+    };
+  });
+}
+
+function taskPageActions(task, { reviewer = 'codex-review' } = {}) {
+  const ref = taskRef(task);
+  const owner = task && (task.claimed_by || taskAssignee(task)) || DEFAULT_OWNER;
+  const goal = taskPageGoal(task).text || '<goal>';
+  const actor = reviewActor(reviewer);
+  const canReviewChat = taskAllowsReviewChat(task, { allowCertified: true });
+  const actions = {
+    show_command: `atris task show ${ref} --json`,
+    page_command: `atris task page ${ref} --json`,
+    step_command: `atris task step ${ref} --json`,
+    chat_command: `atris task chat ${ref} "<message>" --goal ${taskCommandQuote(goal)}`,
+    note_command: `atris task note ${ref} "<context>" --as ${owner}`,
+    plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
+    do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
+    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>"`,
+    review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>"`,
+  };
+  if (task && task.status === 'review') {
+    actions.revise_command = `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`;
+    actions.human_accept_command = `atris task accept ${ref}`;
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const continueWorkCommand = handoff?.next_action === 'continue_work'
+      ? continueWorkCommandForTask(task, { owner })
+      : null;
+    if (continueWorkCommand) actions.continue_work_command = continueWorkCommand;
+    if (canReviewChat) {
+      actions.review_chat_command = `atris task review-chat ${ref} --as ${actor}`;
+    }
+  }
+  return actions;
+}
+
+function taskPageNextAction(task, current, actions) {
+  const ref = taskRef(task);
+  const apiBase = `/api/tasks/${encodeURIComponent(task && task.id || ref)}`;
+  if (current === 'backlog') {
+    return { key: 'plan', label: 'Plan task', command: actions.plan_command, api: { method: 'POST', path: `${apiBase}/plan` } };
+  }
+  if (current === 'plan') {
+    return { key: 'do', label: 'Start Do', command: actions.do_command, api: { method: 'POST', path: `${apiBase}/do` } };
+  }
+  if (current === 'do') {
+    return { key: 'ready', label: 'Move to Review', command: actions.ready_command, api: { method: 'POST', path: `${apiBase}/ready` } };
+  }
+  if (current === 'review') {
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    if (handoff && handoff.next_action === 'continue_work') {
+      return {
+        key: 'continue_work',
+        label: 'Agent certified; continue work',
+        command: actions.continue_work_command || null,
+        api: actions.continue_work_command ? { method: 'POST', path: `${apiBase}/continue-work` } : null,
+        human_accept_command: actions.human_accept_command || null,
+      };
+    }
+    if (handoff && handoff.next_action === 'human_accept_waiting') {
+      return {
+        key: 'human_accept_waiting',
+        label: 'Waiting for human accept',
+        command: null,
+        api: null,
+        human_accept_command: actions.human_accept_command || null,
+      };
+    }
+    if (!actions.review_chat_command) {
+      return { key: 'review', label: 'Record review proof', command: actions.review_command, api: { method: 'POST', path: `${apiBase}/review` } };
+    }
+    return { key: 'review_chat', label: 'Start verification chat', command: actions.review_chat_command, api: { method: 'POST', path: `${apiBase}/review-chat` } };
+  }
+  if (current === 'blocked') {
+    return { key: 'blocked', label: 'Blocked', command: null, blocked_reason: 'Task is failed without accepted review proof.' };
+  }
+  return { key: 'none', label: 'No next agent action', command: null };
+}
+
+function taskPageContract(task, { reviewer = 'codex-review' } = {}) {
+  const metadata = task && task.metadata || {};
+  const current = taskPageCurrentStage(task);
+  const actions = taskPageActions(task, { reviewer });
+  const recentMessages = (task && Array.isArray(task.messages) ? task.messages : []).slice(-10).map(message => ({
+    version: message.version || null,
+    actor: message.actor || null,
+    content: message.content || '',
+    created_at: message.created_at || null,
+  }));
+  const reviewChat = task && task.status === 'review'
+    && taskAllowsReviewChat(task, { allowCertified: true })
+    ? taskReviewChatHandoff(task, { reviewer, allowCertified: true })
+    : null;
+  return {
+    schema: 'atris.task_page.v1',
+    task: {
+      id: task.id,
+      ref: taskRef(task),
+      display_id: task.display_id || null,
+      legacy_ref: task.legacy_ref || null,
+      title: task.title,
+      status: task.status,
+      tag: task.tag || null,
+      claimed_by: task.claimed_by || null,
+      assigned_to: taskAssignee(task),
+      objective: task.objective || metadata.task_goal || metadata.goal_objective || null,
+      current_version: task.current_version || null,
+      latest_event_type: task.latest_event_type || null,
+      updated_at: task.updated_at || null,
+    },
+    goal: taskPageGoal(task),
+    chat: {
+      command: actions.chat_command,
+      api: { method: 'POST', path: `/api/tasks/${encodeURIComponent(task.id)}/chat` },
+      recent_messages: recentMessages,
+      can_chat: !['done', 'failed'].includes(task.status),
+    },
+    stage: {
+      current,
+      rail: taskPageStageRail(current),
+      next_action: taskPageNextAction(task, current, actions),
+    },
+    actions,
+    review: {
+      approval_status: task.review && task.review.approval_status || metadata.approval_status || null,
+      agent_review_pass_count: task.review && task.review.agent_review_pass_count || metadata.agent_review_pass_count || null,
+      agent_certified: Boolean(task.review && task.review.agent_certified || metadata.agent_certified),
+      verification_chat: reviewChat,
+      handoff: reviewHandoffForTask(task, { suppressExistingFollowUp: true }),
+      human_accept: {
+        enabled: task.status === 'review',
+        command: task.status === 'review' ? actions.human_accept_command : null,
+        human_only: true,
+        xp_after_accept: true,
+      },
+    },
+    api: {
+      detail: `/api/tasks/${encodeURIComponent(task.id)}`,
+      page: `/api/tasks/${encodeURIComponent(task.id)}/page`,
+      step: `/api/tasks/${encodeURIComponent(task.id)}/step`,
+      events: `/api/tasks/${encodeURIComponent(task.id)}/events`,
+    },
+  };
+}
+
+function taskReviewChatError(reason, detail, { status = 400, exitCode = 2 } = {}) {
+  const error = new Error(detail || reason);
+  error.reason = reason;
+  error.status = status;
+  error.exitCode = exitCode;
+  return error;
+}
+
+function taskAllowsReviewChat(task, { allowCertified = false } = {}) {
+  if (!task || task.status !== 'review') return false;
+  const review = task.review || {};
+  const metadata = task.metadata || {};
+  const approvalStatus = review.approval_status || metadata.approval_status || null;
+  if (approvalStatus && approvalStatus !== 'pending') return false;
+  if (allowCertified) return true;
+  if (review.agent_certified === true || metadata.agent_certified === true) return false;
+  const reviewPassCount = Number(review.agent_review_pass_count || metadata.agent_review_pass_count || 0);
+  if (reviewPassCount >= AGENT_CERTIFICATION_REVIEW_PASSES) return false;
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+  return !(handoff && (handoff.next_action === 'continue_work' || handoff.next_action === 'human_accept_waiting'));
+}
+
+function appendTaskReviewChat(taskDb, db, taskId, { reviewer = 'codex-review', dryRun = false } = {}) {
+  const actor = reviewActor(reviewer);
+  let task = taskDetail(taskDb, db, taskId);
+  if (!task) {
+    throw taskReviewChatError('not_found', `task not found: ${taskId}`, { status: 404, exitCode: 1 });
+  }
+  if (task.status !== 'review') {
+    throw taskReviewChatError(`not_reviewable_${task.status}`, `review chat requires a task in Review; current status is ${task.status}`, { status: 409, exitCode: 1 });
+  }
+  if (!taskAllowsReviewChat(task, { allowCertified: true })) {
+    throw taskReviewChatError('agent_certified_continue_work', 'review chat is closed after agent certification; continue other work or wait for human accept', { status: 409, exitCode: 1 });
+  }
+  const contract = taskReviewChatContract(task, { reviewer: actor, allowCertified: true });
+  let event = null;
+  if (!dryRun) {
+    const noted = taskDb.noteTask(db, {
+      id: taskId,
+      actor,
+      content: taskReviewChatNote(contract),
+    });
+    if (!noted.noted) {
+      throw taskReviewChatError(noted.reason || 'note_failed', `review chat failed: ${noted.reason || 'note_failed'}`, { status: 409, exitCode: 1 });
+    }
+    event = noted.event;
+    task = taskDetail(taskDb, db, taskId) || task;
+  }
+  const { projection: compactProjection, outPath } = writeDefaultProjection(taskDb, db);
+  return {
+    ok: true,
+    action: 'review_chat',
+    task_id: taskId,
+    appended: !dryRun,
+    version: event ? event.version : null,
+    projection_path: outPath,
+    contract,
+    task,
+    compact_task: compactTaskFromProjection(compactProjection, taskId),
+    event,
+    compactProjection,
+    outPath,
+  };
+}
+
+function taskStepError(reason, detail, { status = 409, exitCode = 1, page = null } = {}) {
+  const error = new Error(detail || reason);
+  error.reason = reason;
+  error.status = status;
+  error.exitCode = exitCode;
+  error.page = page;
+  return error;
+}
+
+function taskStepStatusForReason(reason) {
+  if (['goal_required', 'exit_required', 'proof_needed_required', 'first_move_required', 'proof_required', 'weak_proof', 'invalid_reward'].includes(reason)) {
+    return 400;
+  }
+  if (reason === 'not_found') return 404;
+  return 409;
+}
+
+function taskStepOptionsFromArgs(args) {
+  const pos = positional(args);
+  const messageFlag = textFlag(args, ['--message', '--content', '--text']);
+  return {
+    id: pos[0],
+    options: {
+      actor: String(flag(args, '--as') || DEFAULT_OWNER),
+      reviewer: reviewActor(flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review'),
+      message: messageFlag || pos.slice(1).join(' ').trim(),
+      goal: textFlag(args, ['--goal', '--objective']),
+      summary: textFlag(args, ['--summary']),
+      exit: textFlag(args, ['--exit', '--exit-condition']),
+      proofNeeded: textFlag(args, ['--proof-needed', '--verify']) || proofFlagValue(args),
+      firstMove: textFlag(args, ['--first-move', '--first']),
+      proof: proofFlagValue(args),
+      lesson: textFlag(args, ['--lesson']),
+      nextTask: textFlag(args, ['--next']),
+      reward: flag(args, '--reward'),
+      dryRun: hasFlag(args, '--dry-run') || hasFlag(args, '--no-note'),
+    },
+  };
+}
+
+function taskCurrentStepOptionsFromArgs(args) {
+  const pos = positional(args);
+  const messageFlag = textFlag(args, ['--message', '--content', '--text']);
+  const owner = String(flag(args, '--owner') || flag(args, '--as') || DEFAULT_OWNER);
+  return {
+    owner,
+    scope: taskQueueScopeFromArgs(args),
+    stepOptions: {
+      actor: String(flag(args, '--as') || owner),
+      reviewer: reviewActor(flag(args, '--reviewer') || flag(args, '--as-reviewer') || 'codex-review'),
+      message: messageFlag || pos.join(' ').trim(),
+      goal: textFlag(args, ['--goal', '--objective']),
+      summary: textFlag(args, ['--summary']),
+      exit: textFlag(args, ['--exit', '--exit-condition']),
+      proofNeeded: textFlag(args, ['--proof-needed', '--verify']) || proofFlagValue(args),
+      firstMove: textFlag(args, ['--first-move', '--first']),
+      proof: proofFlagValue(args),
+      lesson: textFlag(args, ['--lesson']),
+      nextTask: textFlag(args, ['--next']),
+      reward: flag(args, '--reward'),
+      dryRun: hasFlag(args, '--dry-run') || hasFlag(args, '--no-note'),
+    },
+  };
+}
+
+function taskStepOptionsFromBody(body = {}) {
+  return {
+    actor: String(body.actor || DEFAULT_OWNER),
+    reviewer: reviewActor(body.reviewer || body.review_actor || body.reviewActor || 'codex-review'),
+    message: String(body.message || body.content || body.text || '').trim(),
+    goal: String(body.goal || body.objective || '').trim(),
+    summary: String(body.summary || '').trim(),
+    exit: String(body.exit || body.exit_condition || body.exitCondition || '').trim(),
+    proofNeeded: String(body.proof_needed || body.proofNeeded || body.verify || body.proof || '').trim(),
+    firstMove: String(body.first_move || body.firstMove || body.first || '').trim(),
+    proof: String(body.proof || '').trim(),
+    lesson: String(body.lesson || '').trim(),
+    nextTask: String(body.next || body.next_task || body.nextTask || '').trim(),
+    reward: body.reward,
+    dryRun: Boolean(body.dryRun || body.noNote || body.dry_run),
+  };
+}
+
+function taskCurrentStepOptionsFromBody(body = {}, searchParams = new URLSearchParams()) {
+  const stepOptions = taskStepOptionsFromBody(body);
+  const queryScope = taskQueueScopeFromSearchParams(searchParams);
+  const bodyScope = taskQueueScopeFromBody(body);
+  const queryOwner = searchParams.get('owner') || searchParams.get('as') || searchParams.get('actor');
+  const queryReviewer = searchParams.get('reviewer') || searchParams.get('as_reviewer') || searchParams.get('as-reviewer');
+  const bodyOwner = body.owner || body.as;
+  const owner = String(queryOwner || bodyOwner || body.actor || DEFAULT_OWNER);
+  stepOptions.actor = String(body.actor || body.as || body.owner || queryOwner || owner);
+  stepOptions.reviewer = reviewActor(body.reviewer || body.review_actor || body.reviewActor || queryReviewer || stepOptions.reviewer);
+  return {
+    owner,
+    scope: mergeTaskQueueScopes(queryScope, bodyScope),
+    stepOptions,
+  };
+}
+
+function parseStepReviewReward(value) {
+  if (value === undefined || value === null || value === true || value === '') return { ok: true, value: 0 };
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return { ok: false, reason: 'invalid_reward' };
+  return { ok: true, value: numeric };
+}
+
+function taskStepFailure(command, result, page) {
+  const reason = result && result.reason || 'step_failed';
+  throw taskStepError(reason, stageErrorDetail(command, reason, result || {}), {
+    status: taskStepStatusForReason(reason),
+    exitCode: reason === 'not_found' ? 1 : 2,
+    page,
+  });
+}
+
+function readyHandoffForStep(task, proof, lesson, nextTask, agentCertified) {
+  const verifierTask = taskWithReviewEvidence(taskWithAgentCertification(task, agentCertified), { proof, lesson, nextTask });
+  const reviewChat = taskReviewChatHandoff(verifierTask, { reviewer: 'codex-review' });
+  const handoff = {
+    native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
+    career_xp_status: 'pending_human_accept',
+    next_action: agentCertified ? certifiedReviewNextAction(nextTask) : 'agent_review_again',
+    rule: agentCertified
+      ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
+      : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
+  };
+  if (reviewChat) {
+    handoff.review_chat_command = reviewChat.command;
+    handoff.codex_prompt = reviewChat.codex_prompt;
+    handoff.verification_focus = reviewChat.verification_focus;
+  }
+  return handoff;
+}
+
+function runTaskStep(taskDb, db, taskId, options = {}) {
+  const actor = String(options.actor || DEFAULT_OWNER);
+  const reviewer = reviewActor(options.reviewer || 'codex-review');
+  let task = taskDetail(taskDb, db, taskId);
+  if (!task) throw taskStepError('not_found', `task not found: ${taskId}`, { status: 404, exitCode: 1 });
+  const initialPage = taskPageContract(task, { reviewer });
+  const initialHandoffState = task.status === 'review' ? reviewHandoffForTask(task, { suppressExistingFollowUp: true }) : null;
+  if (initialHandoffState && (initialHandoffState.next_action === 'continue_work' || initialHandoffState.next_action === 'human_accept_waiting')) {
+    const reason = initialHandoffState.next_action === 'continue_work'
+      ? 'agent_certified_continue_work'
+      : 'agent_certified_waiting_human';
+    throw taskStepError(reason, 'atris task step: agent-certified Review rows have no safe agent step; continue other work or wait for human accept', { status: 409, exitCode: 1, page: initialPage });
+  }
+  let chat = null;
+  const message = String(options.message || '').trim();
+  const goal = String(options.goal || '').trim();
+  const summary = String(options.summary || '').trim();
+  if (message || goal || summary) {
+    const chatted = taskDb.chatTask(db, { id: taskId, actor, content: message, goal, summary });
+    if (!chatted.chatted) taskStepFailure('atris task step', chatted, initialPage);
+    chat = {
+      action: 'chatted',
+      version: chatted.event.version,
+      goal_changed: chatted.goal_changed,
+      chat_packet: chatted.chat_packet,
+    };
+    task = taskDetail(taskDb, db, taskId) || task;
+  }
+  const actionPage = taskPageContract(task, { reviewer });
+  const current = actionPage.stage.current;
+  let stepAction = null;
+  let version = null;
+  let stagePacket = null;
+  let handoff = null;
+  let contract = null;
+  let episode = null;
+  let xpProjection = null;
+  if (current === 'backlog') {
+    const planned = taskDb.stageTask(db, {
+      id: taskId,
+      actor,
+      stage: 'plan',
+      goal,
+      summary,
+      owner: actor,
+      exit: String(options.exit || ''),
+      proofNeeded: String(options.proofNeeded || ''),
+      firstMove: String(options.firstMove || ''),
+    });
+    if (!planned.staged) taskStepFailure('atris task step', planned, actionPage);
+    stepAction = 'planned';
+    version = planned.event.version;
+    stagePacket = planned.stage_packet;
+  } else if (current === 'plan') {
+    const firstMove = String(options.firstMove || '').trim();
+    if (!firstMove) {
+      throw taskStepError('first_move_required', 'atris task step: --first-move required', { status: 400, exitCode: 2, page: actionPage });
+    }
+    const doing = taskDb.stageTask(db, {
+      id: taskId,
+      actor,
+      stage: 'do',
+      goal,
+      summary,
+      owner: actor,
+      exit: String(options.exit || ''),
+      proofNeeded: String(options.proofNeeded || ''),
+      firstMove,
+    });
+    if (!doing.staged) taskStepFailure('atris task step', doing, actionPage);
+    stepAction = 'doing';
+    version = doing.event.version;
+    stagePacket = doing.stage_packet;
+  } else if (current === 'do') {
+    const proof = String(options.proof || '').trim();
+    const proofIssue = meaningfulTaskProofIssue(proof);
+    if (proofIssue) {
+      throw taskStepError(proof ? 'weak_proof' : 'proof_required', `meaningful proof required: ${proofIssue}`, { status: 400, exitCode: 2, page: actionPage });
+    }
+    const lesson = String(options.lesson || '');
+    const nextTask = String(options.nextTask || '');
+    const ready = taskDb.readyTask(db, { id: taskId, actor, proof, lesson, nextTask });
+    if (!ready.ready) taskStepFailure('atris task step', ready, actionPage);
+    task = taskDetail(taskDb, db, taskId) || task;
+    stepAction = 'ready';
+    version = ready.event.version;
+    handoff = readyHandoffForStep(task, proof, lesson, nextTask, ready.event.payload.agent_certified === true);
+  } else if (current === 'review' && task.status === 'review') {
+    const handoffState = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    if (handoffState && (handoffState.next_action === 'continue_work' || handoffState.next_action === 'human_accept_waiting')) {
+      const reason = handoffState.next_action === 'continue_work'
+        ? 'agent_certified_continue_work'
+        : 'agent_certified_waiting_human';
+      throw taskStepError(reason, 'atris task step: agent-certified Review rows have no safe agent step; continue other work or wait for human accept', { status: 409, exitCode: 1, page: actionPage });
+    }
+    const reviewed = appendTaskReviewChat(taskDb, db, taskId, { reviewer, dryRun: Boolean(options.dryRun) });
+    stepAction = 'review_chat';
+    version = reviewed.version;
+    contract = reviewed.contract;
+  } else if (current === 'review') {
+    const proof = String(options.proof || '').trim();
+    const proofIssue = meaningfulTaskProofIssue(proof);
+    if (proofIssue) {
+      throw taskStepError(proof ? 'weak_proof' : 'proof_required', `meaningful proof required: ${proofIssue}`, { status: 400, exitCode: 2, page: actionPage });
+    }
+    const parsedReward = parseStepReviewReward(options.reward);
+    if (!parsedReward.ok) {
+      throw taskStepError('invalid_reward', 'atris task step: --reward must be zero or a positive number', { status: 400, exitCode: 2, page: actionPage });
+    }
+    const reviewed = taskDb.reviewTask(db, {
+      id: taskId,
+      actor: reviewer,
+      reward: parsedReward.value,
+      lesson: String(options.lesson || ''),
+      nextTask: String(options.nextTask || ''),
+      proof,
+      careerXpEligible: false,
+    });
+    if (!reviewed.reviewed) taskStepFailure('atris task step', reviewed, actionPage);
+    stepAction = 'reviewed';
+    version = reviewed.event.version;
+    episode = reviewed.episode;
+    xpProjection = refreshCareerXpAfterReview(reviewed);
+  } else {
+    throw taskStepError('no_next_action', `atris task step: no safe agent action for ${current}`, { status: 409, exitCode: 1, page: actionPage });
+  }
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const finalTask = taskDetail(taskDb, db, taskId) || task;
+  return {
+    ok: true,
+    action: 'stepped',
+    task_id: taskId,
+    step_action: stepAction,
+    version,
+    chat,
+    stage_packet: stagePacket,
+    handoff,
+    contract,
+    episode,
+    xp_projection: xpProjection,
+    projection_path: outPath,
+    previous_page: initialPage,
+    page: taskPageContract(finalTask, { reviewer }),
+    task: compactTaskFromProjection(projection, taskId),
+  };
+}
+
+function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'codex-review', scope = {}, stepOptions = {} } = {}) {
+  const before = buildTaskCurrent(taskDb, db, [], { owner, reviewer, scope });
+  const current = before.current;
+  if (!current.selected_task_id) {
+    const error = taskStepError('no_current_task', 'atris task current-step: no scoped current task selected', {
+      status: 409,
+      exitCode: 1,
+      page: null,
+    });
+    error.current = current;
+    throw error;
+  }
+  const actor = String(stepOptions.actor || owner || DEFAULT_OWNER);
+  const selectedTask = taskDetail(taskDb, db, current.selected_task_id);
+  if (selectedTask && selectedTask.claimed_by && selectedTask.claimed_by !== actor) {
+    const error = taskStepError('claimed_by_other', `atris task current-step: scoped current task is claimed by ${selectedTask.claimed_by}; rerun as that owner or narrow the scope`, {
+      status: 409,
+      exitCode: 1,
+      page: current.page,
+    });
+    error.current = current;
+    throw error;
+  }
+  const safeReasons = new Set(['claimed_by_owner', 'review_needs_agent_verification', 'plan_ready', 'backlog_idea', 'review_certified_waiting_human']);
+  if (!safeReasons.has(current.selected_reason)) {
+    const error = taskStepError(
+      'unsafe_current_selection',
+      `atris task current-step: ${current.selected_reason} is read-only; select a task owned by ${current.owner} or use atris task step <id> intentionally`,
+      {
+        status: 409,
+        exitCode: 1,
+        page: current.page,
+      },
+    );
+    error.current = current;
+    throw error;
+  }
+  if (current.selected_reason === 'claimed_by_owner' && current.selected?.claimed_by && current.selected.claimed_by !== actor) {
+    const error = taskStepError(
+      'current_step_owner_mismatch',
+      `atris task current-step: selected task is claimed by ${current.selected.claimed_by}, but step actor is ${actor}`,
+      {
+        status: 409,
+        exitCode: 1,
+        page: current.page,
+      },
+    );
+    error.current = current;
+    throw error;
+  }
+  const nextActionKey = current.page && current.page.stage && current.page.stage.next_action
+    ? current.page.stage.next_action.key
+    : null;
+  if (nextActionKey === 'human_accept_waiting') {
+    const error = taskStepError(
+      'agent_certified_waiting_human',
+      'atris task current-step: selected Review row is agent-certified and waiting for human accept; no agent mutation is safe',
+      {
+        status: 409,
+        exitCode: 1,
+        page: current.page,
+      },
+    );
+    error.current = current;
+    throw error;
+  }
+  if (nextActionKey === 'continue_work') {
+    const continued = continueWorkForReviewTask(taskDb, db, current.selected_task_id, { owner: actor });
+    const after = buildTaskCurrent(taskDb, db, [], { owner, reviewer, scope });
+    const nextTask = continued.next_task_id ? taskDetail(taskDb, db, continued.next_task_id) : null;
+    const nextPage = nextTask ? taskPageContract(nextTask, { reviewer }) : current.page;
+    const step = {
+      ok: true,
+      action: 'stepped',
+      task_id: current.selected_task_id,
+      step_action: 'continue_work',
+      version: null,
+      chat: null,
+      stage_packet: null,
+      handoff: current.page && current.page.review ? current.page.review.handoff : null,
+      contract: null,
+      episode: null,
+      xp_projection: null,
+      projection_path: continued.projection_path,
+      previous_page: current.page,
+      page: nextPage,
+      task: continued.next_task,
+      parent: continued.parent,
+      next_task: continued.next_task,
+      continue_work: continued,
+    };
+    return {
+      ok: true,
+      action: 'current_step',
+      projection_path: after.outPath,
+      selected_task_id: current.selected_task_id,
+      selected_reason: current.selected_reason,
+      scope: current.scope,
+      before: current,
+      before_current: current,
+      step,
+      after: {
+        current: after.current,
+        page: step.page,
+        task: step.task,
+      },
+      after_current: after.current,
+      current: after.current,
+      page: step.page,
+      task: step.task,
+      safety: {
+        read_only: false,
+        claims_work: false,
+        human_accept: false,
+        xp_after_human_accept: true,
+      },
+    };
+  }
+  let step;
+  try {
+    step = runTaskStep(taskDb, db, current.selected_task_id, { ...stepOptions, actor });
+  } catch (error) {
+    error.current = current;
+    throw error;
+  }
+  const after = buildTaskCurrent(taskDb, db, [], { owner, reviewer, scope });
+  return {
+    ok: true,
+    action: 'current_step',
+    projection_path: after.outPath,
+    selected_task_id: current.selected_task_id,
+    selected_reason: current.selected_reason,
+    scope: current.scope,
+    before: current,
+    before_current: current,
+    step,
+    after: {
+      current: after.current,
+      page: step.page,
+      task: step.task,
+    },
+    after_current: after.current,
+    current: after.current,
+    page: step.page,
+    task: step.task,
+    safety: {
+      read_only: false,
+      claims_work: step.step_action === 'doing',
+      human_accept: false,
+      xp_after_human_accept: true,
+    },
+  };
+}
+
+function cmdCurrentStep(args) {
+  const { owner, scope, stepOptions } = taskCurrentStepOptionsFromArgs(args);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  let result;
+  try {
+    result = runCurrentTaskStep(taskDb, db, {
+      owner,
+      reviewer: stepOptions.reviewer,
+      scope,
+      stepOptions,
+    });
+  } catch (error) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        action: 'current_step',
+        reason: error.reason || 'step_failed',
+        detail: error.message,
+        current: error.current || null,
+        page: error.page || null,
+      });
+    } else {
+      console.error(error.message || 'atris task current-step failed');
+    }
+    process.exit(error.exitCode || 1);
+  }
+  if (wantsJson(args)) {
+    printJson(result);
+    return;
+  }
+  console.log(`current-step ${taskRef(result.task)} -> ${result.step.step_action}`);
+  console.log(`Stage: ${result.page.stage.current}`);
+  if (result.page.stage.next_action && result.page.stage.next_action.command) {
+    console.log(`Next: ${result.page.stage.next_action.command}`);
+  }
+}
+
+function cmdStep(args) {
+  const { id, options } = taskStepOptionsFromArgs(args);
+  if (!id) {
+    failTask('atris task step', 'missing_id', 'id required');
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task step');
+  let result;
+  try {
+    result = runTaskStep(taskDb, db, taskId, options);
+  } catch (error) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: false,
+        action: 'step',
+        task_id: taskId,
+        reason: error.reason || 'step_failed',
+        detail: error.message,
+        page: error.page || null,
+      });
+    } else {
+      console.error(error.message || 'atris task step failed');
+    }
+    process.exit(error.exitCode || 1);
+  }
+  if (wantsJson(args)) {
+    printJson(result);
+    return;
+  }
+  console.log(`step ${taskRef(result.task)} -> ${result.step_action}`);
+  console.log(`Stage: ${result.page.stage.current}`);
+  if (result.page.stage.next_action && result.page.stage.next_action.command) {
+    console.log(`Next: ${result.page.stage.next_action.command}`);
+  }
+}
+
 function cmdDone(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -1539,20 +4859,27 @@ function cmdDone(args) {
     failTask('atris task done', 'missing_id', 'id required');
   }
   const failed = hasFlag(args, '--failed');
+  const proof = proofFlagValue(args);
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task done');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const beforeTask = taskDb.getTask(db, taskId);
+  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  const canComplete = beforeTask && (beforeTask.status === 'open' || beforeTask.status === 'claimed');
+  if (canComplete) {
+    if (!failed || hasReview) requireMeaningfulTaskProof('atris task done', proof);
+    else if (proof) requireMeaningfulTaskProof('atris task done', proof);
+  }
   const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
   if (result.updated) {
-    const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
     const review = hasReview ? taskDb.reviewTask(db, {
       id: taskId,
       actor,
       reward: flag(args, '--reward') || (failed ? 0 : 1),
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
-      proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      proof,
       careerXpEligible: false,
     }) : null;
     const xpProjection = refreshCareerXpAfterReview(review);
@@ -1605,7 +4932,15 @@ function cmdFinish(args) {
   const taskId = requireTaskId(taskDb, db, id, 'atris task finish');
   const currentTask = taskDb.getTask(db, taskId);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
-  const done = taskDb.doneTask(db, { id: taskId, status: hasFlag(args, '--failed') ? 'failed' : 'done', actor });
+  const proof = proofFlagValue(args);
+  const failed = hasFlag(args, '--failed');
+  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  const canComplete = currentTask && (currentTask.status === 'open' || currentTask.status === 'claimed');
+  if (canComplete) {
+    if (!failed || hasReview) requireMeaningfulTaskProof('atris task finish', proof);
+    else if (proof) requireMeaningfulTaskProof('atris task finish', proof);
+  }
+  const done = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
   if (!done.updated) {
     const detail = `finish failed: ${taskId} not in open|claimed`;
     if (wantsJson(args)) {
@@ -1621,7 +4956,6 @@ function cmdFinish(args) {
     console.error(detail);
     process.exit(1);
   }
-  const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
   if (hasReview) {
     const result = taskDb.reviewTask(db, {
       id: taskId,
@@ -1629,7 +4963,7 @@ function cmdFinish(args) {
       reward: flag(args, '--reward') || 1,
       lesson: typeof flag(args, '--lesson') === 'string' ? flag(args, '--lesson') : '',
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
-      proof: typeof flag(args, '--proof') === 'string' ? flag(args, '--proof') : '',
+      proof,
       careerXpEligible: false,
     });
     const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
@@ -1683,8 +5017,9 @@ function cmdReady(args) {
     console.error('atris task ready: --proof required');
     process.exit(2);
   }
+  requireMeaningfulTaskProof('atris task ready', String(proof));
   const lesson = flag(args, '--lesson') || '';
-  const nextTask = flag(args, '--next') || '';
+  const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -1694,7 +5029,7 @@ function cmdReady(args) {
     actor,
     proof: String(proof),
     lesson: typeof lesson === 'string' ? lesson : '',
-    nextTask: typeof nextTask === 'string' ? nextTask : '',
+    nextTask: nextTaskInput.nextTask,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -1702,14 +5037,28 @@ function cmdReady(args) {
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
+  const projectionTask = taskFromProjection(projection, taskId)
+    || compactTaskFromProjection(projection, taskId)
+    || result.row;
+  const verifierTask = taskWithReviewEvidence(taskWithAgentCertification(projectionTask, agentCertified), {
+    proof: String(proof),
+    lesson: typeof lesson === 'string' ? lesson : '',
+    nextTask: nextTaskInput.nextTask,
+  });
+  const reviewChat = taskReviewChatHandoff(verifierTask, { reviewer: 'codex-review' });
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
     career_xp_status: 'pending_human_accept',
-    next_action: agentCertified ? 'continue_work' : 'agent_review_again',
+    next_action: agentCertified ? certifiedReviewNextAction(nextTaskInput.nextTask) : 'agent_review_again',
     rule: agentCertified
       ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
       : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
   };
+  if (reviewChat) {
+    handoff.review_chat_command = reviewChat.command;
+    handoff.codex_prompt = reviewChat.codex_prompt;
+    handoff.verification_focus = reviewChat.verification_focus;
+  }
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -1720,6 +5069,7 @@ function cmdReady(args) {
       review_pass_count: result.event.payload.review_pass_count,
       agent_certified: agentCertified,
       handoff,
+      ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
@@ -1754,6 +5104,7 @@ function cmdAccept(args) {
     console.error('atris task accept: proof required or task must already have fresh proof_ready proof');
     process.exit(2);
   }
+  requireMeaningfulTaskProof('atris task accept', proof);
   const readyReview = beforeTask?.review || {};
   const clearLesson = hasEmptyFlagValue(args, '--lesson');
   const clearNextTask = hasEmptyFlagValue(args, '--next');
@@ -1809,6 +5160,137 @@ function cmdAccept(args) {
   console.log(`accepted ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${reviewed.episode.reward.value}`);
 }
 
+function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.auto_accepted_at = new Date().toISOString();
+  metadata.auto_accepted_by = actor;
+  metadata.auto_accept_policy = policy;
+  db.prepare(`
+    UPDATE tasks
+       SET metadata = ?,
+           updated_at = ?
+     WHERE id = ?
+  `).run(JSON.stringify(metadata), Date.now(), taskId);
+}
+
+function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '' }) {
+  const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor, allowReview: true });
+  if (!done.updated) {
+    return { ok: false, reason: 'not_open_claimed_or_review' };
+  }
+  const reviewed = taskDb.reviewTask(db, {
+    id: taskId,
+    actor,
+    reward,
+    lesson,
+    nextTask,
+    proof,
+    careerXpEligible: true,
+  });
+  return { ok: true, reviewed };
+}
+
+function cmdAutoAcceptCertified(args) {
+  const dryRun = hasFlag(args, '--dry-run');
+  const strictVerify = hasFlag(args, '--strict-verify');
+  const actorFlag = flag(args, '--as');
+  const actor = String(actorFlag || 'auto-accept-certified');
+  const hasHumanActor = validHumanActorFlag(actorFlag);
+  const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
+  const limitRaw = flag(args, '--limit');
+  const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 12) : 12;
+  const parsedReward = parseAcceptReward(flag(args, '--reward'));
+  if (!parsedReward.ok) {
+    console.error('atris task auto-accept-certified: reward must be a positive number');
+    process.exit(2);
+  }
+  if (!dryRun && !confirmedHumanAccept) {
+    failTask(
+      'atris task auto-accept-certified',
+      'human_accept_confirmation_required',
+      'live auto-accept requires --confirm-human-accept --as <human>; use --dry-run to preview',
+    );
+  }
+  if (!dryRun && !hasHumanActor) {
+    failTask(
+      'atris task auto-accept-certified',
+      'human_actor_required',
+      'live auto-accept requires --as <human> so XP has an explicit human acceptance actor',
+    );
+  }
+
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const queue = taskReviewQueue(projection, ['--limit', String(max)]);
+  const results = [];
+
+  for (const item of queue.items) {
+    const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
+    const task = fullProjection.tasks[0] || null;
+    if (!task) {
+      results.push({ ref: item.display_id || item.id, eligible: false, reason: 'task_not_found', action: 'skipped' });
+      continue;
+    }
+    const evaluation = evaluateAutoAccept(task, { strictVerify });
+    if (!evaluation.eligible) {
+      results.push({ ...evaluation, action: 'skipped' });
+      continue;
+    }
+    if (dryRun) {
+      results.push({ ...evaluation, action: 'would_accept', reward: parsedReward.value });
+      continue;
+    }
+    const accepted = acceptReviewTask(taskDb, db, task.id, {
+      actor,
+      proof: evaluation.proof,
+      reward: parsedReward.value,
+      lesson: String(task.review?.lesson || task.metadata?.latest_agent_lesson || ''),
+      nextTask: String(task.review?.next_task || task.metadata?.latest_agent_next_task || ''),
+    });
+    if (!accepted.ok) {
+      results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
+      continue;
+    }
+    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    refreshCareerXpAfterReview(accepted.reviewed);
+    results.push({
+      ...evaluation,
+      action: 'accepted',
+      reward: accepted.reviewed.episode.reward.value,
+      task_id: task.id,
+    });
+  }
+
+  const { projection: finalProjection, outPath: finalPath } = writeDefaultProjection(taskDb, db);
+  const summary = {
+    scanned: queue.items.length,
+    accepted: results.filter(row => row.action === 'accepted').length,
+    would_accept: results.filter(row => row.action === 'would_accept').length,
+    skipped: results.filter(row => row.action === 'skipped').length,
+    failed: results.filter(row => row.action === 'accept_failed').length,
+  };
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: dryRun ? 'auto_accept_certified_dry_run' : 'auto_accept_certified',
+      strict_verify: strictVerify,
+      summary,
+      results,
+      projection_path: finalPath,
+      queue,
+    });
+    return;
+  }
+  console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
+  console.log(`${summary.accepted || summary.would_accept} accepted / ${summary.skipped} skipped / ${summary.failed} failed / ${summary.scanned} scanned`);
+  for (const row of results) {
+    console.log(`${row.action.toUpperCase()} ${row.ref}: ${row.reason}${row.reward ? ` reward=${row.reward}` : ''}`);
+  }
+}
+
 function cmdRevise(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -1855,9 +5337,13 @@ function cmdReview(args) {
   }
   const reward = flag(args, '--reward');
   const lesson = flag(args, '--lesson') || '';
-  const nextTask = flag(args, '--next') || '';
-  const proof = flag(args, '--proof') || '';
+  const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
+  const proof = proofFlagValue(args);
   const actor = flag(args, '--as') || DEFAULT_OWNER;
+  const rewardValue = reward === true || reward === null ? 0 : reward;
+  if (Number(rewardValue) > 0 || proof) {
+    requireMeaningfulTaskProof('atris task review', proof);
+  }
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task review');
@@ -1865,10 +5351,10 @@ function cmdReview(args) {
   const result = taskDb.reviewTask(db, {
     id: taskId,
     actor: String(actor),
-    reward: reward === true || reward === null ? 0 : reward,
+    reward: rewardValue,
     lesson: typeof lesson === 'string' ? lesson : '',
-    nextTask: typeof nextTask === 'string' ? nextTask : '',
-    proof: typeof proof === 'string' ? proof : '',
+    nextTask: nextTaskInput.nextTask,
+    proof,
     careerXpEligible: false,
   });
   if (!result.reviewed) {
@@ -1888,6 +5374,7 @@ function cmdReview(args) {
       episode: result.episode,
       xp_projection: xpProjection,
       next_task_id: nextCreated ? nextCreated.id : null,
+      ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
       next_task: nextCreated ? compactTaskFromProjection(projection, nextCreated.id) : null,
@@ -2178,6 +5665,8 @@ function cmdRender(args) {
   const all = hasFlag(args, '--all');
   const doneLimitRaw = flag(args, '--done-limit');
   const doneLimit = doneLimitRaw && doneLimitRaw !== true ? Number(doneLimitRaw) : undefined;
+  const failedLimitRaw = flag(args, '--failed-limit');
+  const failedLimit = failedLimitRaw && failedLimitRaw !== true ? Number(failedLimitRaw) : undefined;
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const rows = taskDb.listTasks(db, {
@@ -2194,7 +5683,7 @@ function cmdRender(args) {
   if (endgameSection) preservedSections.push(endgameSection);
   const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
   const rowsToRender = [...rows, ...markdownRows];
-  const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, refRows, preservedSections });
+  const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, failedLimit, refRows, preservedSections });
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, markdown, 'utf8');
   if (wantsJson(args)) {
@@ -2627,6 +6116,100 @@ async function handleTaskApi(req, res, taskDb, db) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, projection_path: outPath, projection });
   }
+  if (req.method === 'GET' && url.pathname === '/api/tasks/capabilities') {
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'capabilities',
+      capabilities: taskCapabilitiesContract(),
+      safety: {
+        read_only: true,
+        claims_work: false,
+        human_accept: false,
+        xp_after_human_accept: true,
+      },
+    });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/tasks/capabilities/check') {
+    const owner = url.searchParams.get('owner') || url.searchParams.get('as') || DEFAULT_OWNER;
+    const reviewer = url.searchParams.get('reviewer') || url.searchParams.get('as_reviewer') || 'codex-review';
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? Number(limitParam) : 8;
+    const scope = taskQueueScopeFromSearchParams(url.searchParams);
+    const report = taskCapabilitiesCheckReport(taskDb, db, [], {
+      owner,
+      reviewer,
+      all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
+      scope,
+    });
+    return sendJson(res, report.ok ? 200 : 409, report);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/tasks/review-lane-drain') {
+    const owner = url.searchParams.get('owner') || url.searchParams.get('as') || DEFAULT_OWNER;
+    const reviewer = url.searchParams.get('reviewer') || url.searchParams.get('as_reviewer') || 'codex-review';
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? Number(limitParam) : 8;
+    const scope = taskQueueScopeFromSearchParams(url.searchParams);
+    const report = taskReviewLaneDrainReport(taskDb, db, [], {
+      owner,
+      reviewer,
+      all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
+      scope,
+    });
+    return sendJson(res, report.ok ? 200 : 409, report);
+  }
+  if (req.method === 'POST' && url.pathname === '/api/tasks/review-lane-act') {
+    const body = await readJsonBody(req);
+    const result = taskReviewLaneAct(taskDb, db, taskReviewLaneActOptionsFromBody(body, url.searchParams));
+    return sendJson(res, result.ok ? 200 : result.status || 409, result);
+  }
+  if (req.method === 'POST' && url.pathname === '/api/tasks/review-lane-loop') {
+    const body = await readJsonBody(req);
+    const result = taskReviewLaneLoop(taskDb, db, taskReviewLaneLoopOptionsFromBody(body, url.searchParams));
+    return sendJson(res, result.ok ? 200 : result.status || 409, result);
+  }
+  if (req.method === 'GET' && (url.pathname === '/api/tasks/current' || url.pathname === '/api/tasks/queue')) {
+    const owner = url.searchParams.get('owner') || url.searchParams.get('as') || DEFAULT_OWNER;
+    const reviewer = url.searchParams.get('reviewer') || url.searchParams.get('as_reviewer') || 'codex-review';
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? Number(limitParam) : 8;
+    const scope = taskQueueScopeFromSearchParams(url.searchParams);
+    const { outPath, current } = buildTaskCurrent(taskDb, db, [], {
+      owner,
+      reviewer,
+      all: url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true',
+      limit: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 8,
+      scope,
+    });
+    const action = url.pathname.endsWith('/queue') ? 'queue' : 'current';
+    return sendJson(res, 200, {
+      ok: true,
+      action,
+      projection_path: outPath,
+      current,
+      selected: current.selected,
+      page: current.page,
+      queue: current.queue,
+    });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/tasks/current/step') {
+    const body = await readJsonBody(req);
+    const options = taskCurrentStepOptionsFromBody(body, url.searchParams);
+    try {
+      const result = runCurrentTaskStep(taskDb, db, options);
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, error.status || 409, {
+        ok: false,
+        action: 'current_step',
+        reason: error.reason || 'step_failed',
+        detail: error.message,
+        current: error.current || null,
+        page: error.page || null,
+      });
+    }
+  }
   if (req.method === 'POST' && url.pathname === '/api/tasks') {
     const body = await readJsonBody(req);
     const title = String(body.title || '').trim();
@@ -2639,7 +6222,50 @@ async function handleTaskApi(req, res, taskDb, db) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, action: 'created', task_id: result.id, projection_path: outPath, task: taskFromProjection(projection, result.id) });
   }
-  const match = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(claim|message|ready|accept|revise|finish|review|events)$/);
+  if (req.method === 'POST' && url.pathname === '/api/tasks/clear-plan') {
+    const body = await readJsonBody(req);
+    if (!body.confirm && !body.yes) {
+      return sendJson(res, 400, { ok: false, reason: 'confirm_required', detail: stageErrorDetail('task clear-plan', 'confirm_required') });
+    }
+    const result = taskDb.clearPlanTasks(db, {
+      workspaceRoot: taskDb.workspaceRoot(),
+      actor: String(body.actor || DEFAULT_OWNER),
+      reason: String(body.reason || body.note || 'clear_plan'),
+      tag: String(body.tag || 'capture'),
+    });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const taskById = new Map((projection.tasks || []).map(task => [task.id, task]));
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'clear_plan',
+      cleared_count: result.cleared.length,
+      skipped_count: result.skipped.length,
+      skipped: result.skipped,
+      projection_path: outPath,
+      tasks: result.cleared.map(task => taskFromProjection(projection, task.id) || taskById.get(task.id)).filter(Boolean),
+    });
+  }
+  const detailMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
+  if (detailMatch) {
+    if (req.method !== 'GET') return sendJson(res, 405, { ok: false, reason: 'method_not_allowed' });
+    const resolved = resolveTaskRef(taskDb, db, detailMatch[1]);
+    if (!resolved.ok) return sendJson(res, resolved.reason === 'ambiguous' ? 409 : 404, { ok: false, reason: resolved.reason });
+    const task = taskDetail(taskDb, db, resolved.id);
+    if (!task) return sendJson(res, 404, { ok: false, reason: 'not_found' });
+    const { outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'detail', task_id: resolved.id, projection_path: outPath, task, page: taskPageContract(task) });
+  }
+  const pageMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/page$/);
+  if (pageMatch) {
+    if (req.method !== 'GET') return sendJson(res, 405, { ok: false, reason: 'method_not_allowed' });
+    const resolved = resolveTaskRef(taskDb, db, pageMatch[1]);
+    if (!resolved.ok) return sendJson(res, resolved.reason === 'ambiguous' ? 409 : 404, { ok: false, reason: resolved.reason });
+    const task = taskDetail(taskDb, db, resolved.id);
+    if (!task) return sendJson(res, 404, { ok: false, reason: 'not_found' });
+    const { outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'page', task_id: resolved.id, projection_path: outPath, page: taskPageContract(task) });
+  }
+  const match = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(claim|message|chat|step|plan|do|backlog|ready|accept|revise|finish|review|review-chat|continue-work|events)$/);
   if (!match) return sendJson(res, 404, { ok: false, reason: 'not_found' });
   const resolved = resolveTaskRef(taskDb, db, match[1]);
   if (!resolved.ok) return sendJson(res, resolved.reason === 'ambiguous' ? 409 : 404, { ok: false, reason: resolved.reason });
@@ -2651,6 +6277,35 @@ async function handleTaskApi(req, res, taskDb, db) {
   }
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, reason: 'method_not_allowed' });
   const body = await readJsonBody(req);
+  if (op === 'step') {
+    try {
+      const result = runTaskStep(taskDb, db, taskId, taskStepOptionsFromBody(body));
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, error.status || 409, {
+        ok: false,
+        action: 'step',
+        task_id: taskId,
+        reason: error.reason || 'step_failed',
+        detail: error.message,
+        page: error.page || null,
+      });
+    }
+  }
+  if (op === 'continue-work') {
+    try {
+      const result = continueWorkForReviewTask(taskDb, db, taskId, { owner: body.owner || body.actor || DEFAULT_OWNER });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, error.status || 409, {
+        ok: false,
+        action: 'continue_work',
+        task_id: taskId,
+        reason: error.reason || 'continue_work_failed',
+        detail: error.message,
+      });
+    }
+  }
   if (op === 'claim') {
     const owner = String(body.owner || body.actor || DEFAULT_OWNER);
     const result = taskDb.claimTask(db, { id: taskId, claimedBy: owner });
@@ -2664,11 +6319,112 @@ async function handleTaskApi(req, res, taskDb, db) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, action: 'noted', task_id: taskId, projection_path: outPath, task: taskFromProjection(projection, taskId) });
   }
+  if (op === 'chat') {
+    const result = taskDb.chatTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      content: String(body.content || body.message || body.text || ''),
+      goal: String(body.goal || body.objective || ''),
+      summary: String(body.summary || ''),
+    });
+    if (!result.chatted) {
+      const status = result.reason === 'content_required' ? 400 : result.reason === 'not_found' ? 404 : 409;
+      return sendJson(res, status, { ok: false, reason: result.reason, detail: stageErrorDetail('task chat', result.reason, result) });
+    }
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'chatted',
+      task_id: taskId,
+      version: result.event.version,
+      goal_changed: result.goal_changed,
+      chat_packet: result.chat_packet,
+      projection_path: outPath,
+      task: taskFromProjection(projection, taskId),
+    });
+  }
+  if (op === 'plan') {
+    const result = taskDb.stageTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      stage: 'plan',
+      goal: String(body.goal || body.objective || ''),
+      summary: String(body.summary || body.plan || ''),
+      owner: String(body.owner || body.assignee || ''),
+      exit: String(body.exit || body.exit_condition || ''),
+      proofNeeded: String(body.proof_needed || body.proofNeeded || body.proof || body.verify || ''),
+      firstMove: String(body.first_move || body.firstMove || body.first || ''),
+      nextButton: String(body.next_button || body.nextButton || ''),
+      confidence: body.confidence,
+    });
+    if (!result.staged) return sendJson(res, 409, { ok: false, reason: result.reason, detail: stageErrorDetail('task plan', result.reason, result) });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'planned', task_id: taskId, version: result.event.version, stage_packet: result.stage_packet, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+  }
+  if (op === 'do') {
+    const firstMove = String(body.first_move || body.firstMove || body.first || '').trim();
+    if (!firstMove) return sendJson(res, 400, { ok: false, reason: 'first_move_required', detail: 'task do: first_move required' });
+    const result = taskDb.stageTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      stage: 'do',
+      goal: String(body.goal || body.objective || ''),
+      summary: String(body.summary || ''),
+      owner: String(body.actor || DEFAULT_OWNER),
+      exit: String(body.exit || body.exit_condition || body.exitCondition || ''),
+      proofNeeded: String(body.proof_needed || body.proofNeeded || body.proof || body.verify || ''),
+      firstMove,
+      nextButton: String(body.next_button || body.nextButton || ''),
+      confidence: body.confidence,
+    });
+    if (!result.staged) return sendJson(res, 409, { ok: false, reason: result.reason, detail: stageErrorDetail('task do', result.reason, result) });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, { ok: true, action: 'doing', task_id: taskId, version: result.event.version, stage_packet: result.stage_packet, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+  }
+  if (op === 'backlog') {
+    const result = taskDb.backlogTask(db, {
+      id: taskId,
+      actor: String(body.actor || DEFAULT_OWNER),
+      reason: String(body.reason || body.note || 'clear_plan'),
+      tag: String(body.tag || 'capture'),
+    });
+    if (!result.backlogged) return sendJson(res, 409, { ok: false, reason: result.reason, detail: stageErrorDetail('task backlog', result.reason, result) });
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'backlogged',
+      task_id: taskId,
+      version: result.event.version,
+      cleared_keys: result.cleared_keys,
+      projection_path: outPath,
+      task: taskFromProjection(projection, taskId),
+    });
+  }
+  if (op === 'review-chat') {
+    try {
+      const result = appendTaskReviewChat(taskDb, db, taskId, {
+        reviewer: body.reviewer || body.actor || 'codex-review',
+        dryRun: Boolean(body.dryRun || body.noNote),
+      });
+      const { event, compactProjection, outPath, ...payload } = result;
+      return sendJson(res, 200, payload);
+    } catch (error) {
+      return sendJson(res, error.status || 409, {
+        ok: false,
+        reason: error.reason || 'review_chat_failed',
+        detail: error.message,
+      });
+    }
+  }
   if (op === 'finish') {
     const currentTask = taskDb.getTask(db, taskId);
-    const done = taskDb.doneTask(db, { id: taskId, status: body.failed ? 'failed' : 'done' });
+    const failed = Boolean(body.failed);
+    const proof = String(body.proof || '').trim();
+    const shouldReview = Boolean(body.proof || body.lesson || body.next || body.reward !== undefined);
+    const proofIssue = meaningfulTaskProofIssue(proof, { required: !failed || shouldReview });
+    if (proofIssue) return sendProofIssue(res, proof, proofIssue);
+    const done = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done' });
     if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_or_claimed' });
-    const shouldReview = body.proof || body.lesson || body.next || body.reward !== undefined;
     let episode = null;
     let nextCreated = null;
     let xpProjection = null;
@@ -2701,23 +6457,33 @@ async function handleTaskApi(req, res, taskDb, db) {
   }
   if (op === 'ready') {
     const proof = String(body.proof || '').trim();
-    if (!proof) return sendJson(res, 400, { ok: false, reason: 'proof_required' });
+    const proofIssue = meaningfulTaskProofIssue(proof);
+    if (proofIssue) return sendProofIssue(res, proof, proofIssue);
+    const nextTaskInput = normalizeReviewNextTaskInput(body.next);
     const result = taskDb.readyTask(db, {
       id: taskId,
       actor: String(body.actor || DEFAULT_OWNER),
       proof,
       lesson: String(body.lesson || ''),
-      nextTask: String(body.next || ''),
+      nextTask: nextTaskInput.nextTask,
     });
     if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
-    return sendJson(res, 200, { ok: true, action: 'ready', task_id: taskId, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'ready',
+      task_id: taskId,
+      ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
+      projection_path: outPath,
+      task: taskFromProjection(projection, taskId),
+    });
   }
   if (op === 'accept') {
     const currentTask = enrichTaskProjection(taskDb.taskProjection(db, { taskId })).tasks[0] || null;
     const hasExplicitProof = Object.prototype.hasOwnProperty.call(body, 'proof');
     const proof = String(hasExplicitProof ? body.proof : currentTask?.metadata?.latest_agent_proof || '').trim();
-    if (!proof) return sendJson(res, 400, { ok: false, reason: 'proof_required' });
+    const proofIssue = meaningfulTaskProofIssue(proof);
+    if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const hasExplicitLesson = Object.prototype.hasOwnProperty.call(body, 'lesson');
     const hasExplicitNext = Object.prototype.hasOwnProperty.call(body, 'next');
     const lesson = hasExplicitLesson ? String(body.lesson || '') : String(currentTask?.review?.lesson || currentTask?.metadata?.latest_agent_lesson || '');
@@ -2752,19 +6518,36 @@ async function handleTaskApi(req, res, taskDb, db) {
   }
   if (op === 'review') {
     const currentTask = taskDb.getTask(db, taskId);
+    const rewardValue = body.reward === undefined ? 0 : body.reward;
+    const proof = String(body.proof || '').trim();
+    const nextTaskInput = normalizeReviewNextTaskInput(body.next);
+    const proofIssue = Number(rewardValue) > 0 || proof
+      ? meaningfulTaskProofIssue(proof)
+      : null;
+    if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const reviewed = taskDb.reviewTask(db, {
       id: taskId,
       actor: String(body.actor || DEFAULT_OWNER),
-      reward: body.reward === undefined ? 1 : body.reward,
+      reward: rewardValue,
       lesson: String(body.lesson || ''),
-      nextTask: String(body.next || ''),
-      proof: String(body.proof || ''),
+      nextTask: nextTaskInput.nextTask,
+      proof,
       careerXpEligible: false,
     });
     const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
     const xpProjection = refreshCareerXpAfterReview(reviewed);
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
-    return sendJson(res, 200, { ok: true, action: 'reviewed', task_id: taskId, episode: reviewed.episode, xp_projection: xpProjection, next_task_id: nextCreated ? nextCreated.id : null, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+    return sendJson(res, 200, {
+      ok: true,
+      action: 'reviewed',
+      task_id: taskId,
+      episode: reviewed.episode,
+      xp_projection: xpProjection,
+      next_task_id: nextCreated ? nextCreated.id : null,
+      ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
+      projection_path: outPath,
+      task: taskFromProjection(projection, taskId),
+    });
   }
 }
 
@@ -2811,14 +6594,63 @@ async function run(args) {
     case 'assign': return cmdDelegate(rest);
     case 'list':   return cmdList(rest);
     case 'ls':     return cmdList(rest);
+    case 'plan':   return cmdPlan(rest);
+    case 'do':     return cmdDo(rest);
+    case 'backlog':
+    case 'unplan':
+      return cmdBacklog(rest);
+    case 'clear-plan':
+    case 'clearplan':
+      return cmdClearPlan(rest);
     case 'claim':  return cmdClaim(rest);
     case 'start':  return cmdClaim(rest);
+    case 'current':
+    case 'select':
+      return cmdCurrent(rest);
+    case 'capabilities':
+    case 'capability':
+    case 'caps':
+      return cmdCapabilities(rest);
+    case 'capabilities-check':
+    case 'capability-check':
+    case 'caps-check':
+      return cmdCapabilitiesCheck(rest);
+    case 'review-lane-drain':
+    case 'review-drain':
+    case 'drain-review':
+      return cmdReviewLaneDrain(rest);
+    case 'review-lane-act':
+    case 'review-act':
+    case 'act-review':
+      return cmdReviewLaneAct(rest);
+    case 'review-lane-loop':
+    case 'review-loop':
+    case 'loop-review':
+      return cmdReviewLaneLoop(rest);
+    case 'current-step':
+    case 'step-current':
+    case 'advance-current':
+      return cmdCurrentStep(rest);
+    case 'queue':
+      return cmdQueue(rest);
     case 'next':   return cmdNext(rest);
+    case 'continue-work':
+    case 'continue':
+      return cmdContinueWork(rest);
+    case 'chat':   return cmdChat(rest);
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
     case 'show':   return cmdShow(rest);
+    case 'page':   return cmdPage(rest);
+    case 'step':   return cmdStep(rest);
+    case 'review-chat':
+    case 'chat-review':
+      return cmdReviewChat(rest);
     case 'ready':  return cmdReady(rest);
     case 'accept': return cmdAccept(rest);
+    case 'auto-accept-certified':
+    case 'auto-accept':
+      return cmdAutoAcceptCertified(rest);
     case 'revise': return cmdRevise(rest);
     case 'done':   return cmdDone(rest);
     case 'finish': return cmdFinish(rest);
