@@ -5,9 +5,14 @@
  *   atris gmail inbox       - List recent emails
  *   atris gmail read <id>   - Read specific email
  *   atris calendar today    - Show today's events
+ *   atris calendar yesterday - Show yesterday's events
  *   atris calendar week     - Show this week's events
+ *   atris calendar date YYYY-MM-DD - Show events on a date
+ *   atris calendar search <query> [--days 30] [--limit 20] [--timeout-ms 10000] [--json] - Search upcoming events
  *   atris twitter post      - Post a tweet (interactive)
  *   atris slack channels    - List Slack channels
+ *   atris slack messages <channel> [--limit 20] - Read recent messages
+ *   atris slack search <query> [--limit 20] - Search Slack messages
  */
 
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
@@ -16,6 +21,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+
+const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
 
 async function getAuth() {
   const ensured = await ensureValidCredentials(apiRequestJson);
@@ -137,12 +144,245 @@ async function gmailCommand(subcommand, ...args) {
 // CALENDAR
 // ============================================================================
 
-async function calendarToday() {
+function localDayBounds(offsetDays = 0) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + offsetDays);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function localDateBounds(dateText) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateText || ''))) {
+    console.error('Usage: atris calendar date YYYY-MM-DD');
+    process.exit(1);
+  }
+  const start = new Date(`${dateText}T00:00:00`);
+  if (Number.isNaN(start.getTime())) {
+    console.error('Invalid date. Use YYYY-MM-DD.');
+    process.exit(1);
+  }
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function calendarEventTimeValue(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value.dateTime || value.date || '';
+}
+
+function isDateOnly(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+function formatCalendarTimeRange(event) {
+  const start = calendarEventTimeValue(event.start || event.start_time || event.startTime);
+  const end = calendarEventTimeValue(event.end || event.end_time || event.endTime);
+  if (!start || isDateOnly(start)) return 'All day';
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return 'Time unavailable';
+  const startText = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  if (!end || isDateOnly(end)) return startText;
+  const endDate = new Date(end);
+  if (Number.isNaN(endDate.getTime())) return startText;
+  return `${startText}-${endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatCalendarEvents(label, events) {
+  if (events.length === 0) {
+    console.log(`No events ${label}. 🎉`);
+    return;
+  }
+
+  console.log('─'.repeat(50));
+
+  for (const event of events) {
+    const time = formatCalendarTimeRange(event);
+    const title = event.summary || '(no title)';
+
+    console.log(`${time}  ${title}`);
+    if (event.location) {
+      console.log(`        📍 ${event.location}`);
+    }
+  }
+
+  console.log('─'.repeat(50));
+}
+
+function parseCalendarSearchArgs(args = []) {
+  const values = [];
+  const options = { days: 30, limit: 20, timeoutMs: 10000, json: false };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--days' || arg === '-d') {
+      const parsed = Number.parseInt(args[i + 1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) options.days = Math.min(parsed, 365);
+      i += 1;
+    } else if (arg === '--limit' || arg === '-n') {
+      const parsed = Number.parseInt(args[i + 1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) options.limit = Math.min(parsed, 100);
+      i += 1;
+    } else if (arg === '--timeout-ms' || arg === '--timeout') {
+      const parsed = Number.parseInt(args[i + 1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) options.timeoutMs = Math.min(parsed, 60000);
+      i += 1;
+    } else {
+      values.push(arg);
+    }
+  }
+  return { query: values.join(' ').trim(), ...options };
+}
+
+function calendarAttendeesText(attendees) {
+  if (!Array.isArray(attendees)) return '';
+  return attendees
+    .map((attendee) => {
+      if (typeof attendee === 'string') return attendee;
+      return [
+        attendee.email,
+        attendee.displayName,
+        attendee.name,
+        attendee.responseStatus,
+      ].filter(Boolean).join(' ');
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function calendarSearchText(event = {}) {
+  return [
+    event.summary,
+    event.title,
+    event.location,
+    event.description,
+    calendarAttendeesText(event.attendees),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function filterCalendarEventsForSearch(events = [], query = '', limit = 20) {
+  const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
+  return events
+    .filter((event) => {
+      const haystack = calendarSearchText(event);
+      return terms.every((term) => haystack.includes(term));
+    })
+    .slice(0, limit);
+}
+
+function compactCalendarEvent(event = {}) {
+  return {
+    id: event.id || event.event_id || '',
+    start: calendarEventTimeValue(event.start || event.start_time || event.startTime),
+    end: calendarEventTimeValue(event.end || event.end_time || event.endTime),
+    summary: event.summary || event.title || '(no title)',
+    location: event.location || '',
+    htmlLink: event.htmlLink || event.link || '',
+  };
+}
+
+function calendarCachePacket(events = [], meta = {}) {
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+    source: meta.source || 'live',
+    days: meta.days || null,
+    count: events.length,
+    events: events.map(compactCalendarEvent),
+  };
+}
+
+function writeCalendarEventsCache(events = [], meta = {}) {
+  const rows = Array.isArray(events) ? events : [];
+  try {
+    fs.mkdirSync(path.dirname(CALENDAR_CACHE_PATH), { recursive: true });
+    fs.writeFileSync(CALENDAR_CACHE_PATH, `${JSON.stringify(calendarCachePacket(rows, meta), null, 2)}\n`, 'utf8');
+    return CALENDAR_CACHE_PATH;
+  } catch {
+    return '';
+  }
+}
+
+function readCalendarEventsCache() {
+  try {
+    const packet = JSON.parse(fs.readFileSync(CALENDAR_CACHE_PATH, 'utf8'));
+    const events = Array.isArray(packet.events) ? packet.events : [];
+    return {
+      ok: true,
+      path: CALENDAR_CACHE_PATH,
+      updatedAt: packet.updatedAt || '',
+      events,
+    };
+  } catch {
+    return { ok: false, path: CALENDAR_CACHE_PATH, updatedAt: '', events: [] };
+  }
+}
+
+function formatCalendarSearchResults(query, matches, {
+  json = false,
+  total = matches.length,
+  source = 'live',
+  liveOk = true,
+  cacheUpdatedAt = '',
+  error = '',
+} = {}) {
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      query,
+      source,
+      liveOk,
+      cacheUpdatedAt,
+      error,
+      totalEvents: total,
+      matchCount: matches.length,
+      matches: matches.map(compactCalendarEvent),
+    }, null, 2));
+    return;
+  }
+
+  if (!matches.length) {
+    console.log(`No upcoming events matched "${query}".`);
+    return;
+  }
+
+  console.log(`Found ${matches.length} upcoming event(s) matching "${query}":\n`);
+  formatCalendarEvents('matching your search', matches);
+}
+
+function formatCalendarSearchError(query, message, { json = false, status = 0 } = {}) {
+  if (json) {
+    console.log(JSON.stringify({
+      ok: false,
+      query,
+      status,
+      error: message || 'Failed to fetch events',
+      totalEvents: 0,
+      matchCount: 0,
+      matches: [],
+    }, null, 2));
+    return;
+  }
+  console.error(`Error: ${message || 'Failed to fetch events'}`);
+  process.exit(1);
+}
+
+async function calendarRange(label, { timeMin, timeMax, days } = {}) {
   const { token, email } = await getAuth();
 
-  console.log('📅 Today\'s events:\n');
+  console.log(`📅 ${label}:\n`);
 
-  const result = await apiRequestJson('/integrations/google-calendar/events/today', {
+  const params = new URLSearchParams();
+  if (timeMin) params.set('time_min', timeMin);
+  if (timeMax) params.set('time_max', timeMax);
+  if (days) params.set('days', String(days));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const result = await apiRequestJson(`/integrations/google-calendar/events${suffix}`, {
     method: 'GET',
     token,
   });
@@ -159,26 +399,79 @@ async function calendarToday() {
   }
 
   const events = result.data?.events || result.data || [];
+  writeCalendarEventsCache(events, { source: 'calendarRange', days: days || null });
+  formatCalendarEvents(label.toLowerCase(), events);
+}
 
-  if (events.length === 0) {
-    console.log('No events today. 🎉');
+async function calendarSearch(args = []) {
+  const { query, days, limit, timeoutMs, json } = parseCalendarSearchArgs(args);
+  if (!query) {
+    console.error('Usage: atris calendar search <query> [--days 30] [--limit 20] [--timeout-ms 10000] [--json]');
+    process.exit(1);
+  }
+
+  const credentials = loadCredentials();
+  const token = credentials && credentials.token;
+  const email = credentials && credentials.email || 'unknown';
+  if (!token) {
+    formatCalendarSearchError(query, 'Not logged in. Run: atris login', { json, status: 401 });
+    return;
+  }
+  const result = await apiRequestJson(`/integrations/google-calendar/events?days=${encodeURIComponent(String(days))}`, {
+    method: 'GET',
+    token,
+    timeoutMs,
+    retries: 0,
+  });
+
+  if (!result.ok) {
+    const cache = readCalendarEventsCache();
+    if (json && cache.ok) {
+      const matches = filterCalendarEventsForSearch(cache.events, query, limit);
+      formatCalendarSearchResults(query, matches, {
+        json,
+        total: cache.events.length,
+        source: 'cache',
+        liveOk: false,
+        cacheUpdatedAt: cache.updatedAt,
+        error: result.error || 'Failed to fetch events',
+      });
+      return;
+    }
+    if (result.status === 400 || result.status === 401) {
+      formatCalendarSearchError(
+        query,
+        `Calendar not connected for ${email}. Connect at: https://atris.ai/dashboard/settings`,
+        { json, status: result.status },
+      );
+    } else {
+      formatCalendarSearchError(query, result.error || 'Failed to fetch events', { json, status: result.status || 0 });
+    }
     return;
   }
 
-  console.log('─'.repeat(50));
+  const events = result.data?.events || result.data || [];
+  writeCalendarEventsCache(events, { source: 'calendarSearch', days });
+  const matches = filterCalendarEventsForSearch(events, query, limit);
+  formatCalendarSearchResults(query, matches, { json, total: events.length, source: 'live', liveOk: true });
+}
 
-  for (const event of events) {
-    const start = event.start?.dateTime || event.start?.date || '';
-    const time = start ? new Date(start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'All day';
-    const title = event.summary || '(no title)';
+async function calendarToday() {
+  await calendarRange("Today's events", { days: 1 });
+}
 
-    console.log(`${time}  ${title}`);
-    if (event.location) {
-      console.log(`        📍 ${event.location}`);
-    }
-  }
+async function calendarYesterday() {
+  const { start, end } = localDayBounds(-1);
+  await calendarRange("Yesterday's events", { timeMin: start.toISOString(), timeMax: end.toISOString() });
+}
 
-  console.log('─'.repeat(50));
+async function calendarWeek() {
+  await calendarRange("This week's events", { days: 7 });
+}
+
+async function calendarDate(dateText) {
+  const { start, end } = localDateBounds(dateText);
+  await calendarRange(`Events on ${dateText}`, { timeMin: start.toISOString(), timeMax: end.toISOString() });
 }
 
 async function calendarCommand(subcommand, ...args) {
@@ -186,13 +479,26 @@ async function calendarCommand(subcommand, ...args) {
     case 'today':
       await calendarToday();
       break;
+    case 'yesterday':
+    case 'yday':
+      await calendarYesterday();
+      break;
     case 'week':
-      console.log('Week view coming soon...');
+      await calendarWeek();
+      break;
+    case 'date':
+      await calendarDate(args[0]);
+      break;
+    case 'search':
+      await calendarSearch(args);
       break;
     default:
       console.log('Calendar commands:');
-      console.log('  atris calendar today    - Show today\'s events');
-      console.log('  atris calendar week     - Show this week\'s events');
+      console.log('  atris calendar today          - Show today\'s events');
+      console.log('  atris calendar yesterday      - Show yesterday\'s events');
+      console.log('  atris calendar week           - Show this week\'s events');
+      console.log('  atris calendar date YYYY-MM-DD - Show events on a date');
+      console.log('  atris calendar search <query> [--days 30] [--limit 20] [--timeout-ms 10000] [--json] - Search upcoming events');
   }
 }
 
@@ -270,7 +576,7 @@ async function slackChannels() {
 
   console.log('💬 Fetching Slack channels...\n');
 
-  const result = await apiRequestJson('/integrations/slack/channels', {
+  const result = await apiRequestJson('/integrations/slack/me/channels', {
     method: 'GET',
     token,
   });
@@ -298,8 +604,137 @@ async function slackChannels() {
   for (const ch of channels) {
     const name = ch.name || ch.id;
     const priv = ch.is_private ? '🔒' : '#';
-    console.log(`  ${priv} ${name}`);
+    console.log(`  ${priv} ${name}  ${ch.id || ''}`.trimEnd());
   }
+}
+
+async function slackDms() {
+  const token = await getAuthToken();
+
+  console.log('💬 Fetching Slack DMs...\n');
+
+  const result = await apiRequestJson('/integrations/slack/me/dms', {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch DMs'}`);
+    process.exit(1);
+  }
+
+  const dms = result.data?.dms || result.data?.channels || result.data || [];
+  if (!dms.length) {
+    console.log('No DMs found.');
+    return;
+  }
+  for (const dm of dms) {
+    const name = dm.name || dm.user_name || dm.user || dm.id;
+    console.log(`  ${name}  ${dm.id || ''}`.trimEnd());
+  }
+}
+
+function parseLimit(args, fallback = 20) {
+  const idx = args.findIndex((arg) => arg === '--limit' || arg === '-n');
+  const raw = idx >= 0 ? args[idx + 1] : '';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 100) : fallback;
+}
+
+function argsWithoutLimit(args = []) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '--limit' || args[i] === '-n') {
+      i += 1;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
+}
+
+async function slackPersonalChannels(token) {
+  const result = await apiRequestJson('/integrations/slack/me/channels', {
+    method: 'GET',
+    token,
+  });
+  if (!result.ok) return [];
+  return result.data?.channels || result.data || [];
+}
+
+async function resolveSlackChannel(token, channel) {
+  const text = String(channel || '').trim();
+  if (!text) return '';
+  if (/^[A-Z][A-Z0-9]{5,}$/.test(text)) return text;
+  const wanted = text.replace(/^#/, '').toLowerCase();
+  const channels = await slackPersonalChannels(token);
+  const match = channels.find((ch) => String(ch.name || '').toLowerCase() === wanted || String(ch.id || '').toLowerCase() === wanted);
+  return match?.id || text;
+}
+
+function formatSlackMessages(messages) {
+  if (!messages.length) {
+    console.log('No Slack messages found.');
+    return;
+  }
+  console.log('─'.repeat(60));
+  for (const message of messages) {
+    const author = message.user_name || message.username || message.user || message.sender || 'unknown';
+    const ts = message.datetime || message.time || message.ts || message.created_at || '';
+    const text = String(message.text || message.content || message.message || '').replace(/\s+/g, ' ').trim();
+    console.log(`${ts}  ${author}: ${text || '(no text)'}`);
+  }
+  console.log('─'.repeat(60));
+}
+
+async function slackMessages(channel, args = []) {
+  if (!channel) {
+    console.error('Usage: atris slack messages <channel-or-id> [--limit 20]');
+    process.exit(1);
+  }
+  const token = await getAuthToken();
+  const limit = parseLimit(args);
+  const channelId = await resolveSlackChannel(token, channel);
+
+  console.log(`💬 Reading Slack messages from ${channel}...\n`);
+
+  const result = await apiRequestJson(`/integrations/slack/me/messages/${encodeURIComponent(channelId)}?limit=${limit}`, {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to fetch Slack messages'}`);
+    process.exit(1);
+  }
+
+  const messages = result.data?.messages || result.data || [];
+  formatSlackMessages(messages);
+}
+
+async function slackSearch(query, args = []) {
+  if (!query) {
+    console.error('Usage: atris slack search <query> [--limit 20]');
+    process.exit(1);
+  }
+  const token = await getAuthToken();
+  const limit = parseLimit(args);
+  const q = encodeURIComponent(query);
+
+  console.log(`💬 Searching Slack for "${query}"...\n`);
+
+  const result = await apiRequestJson(`/integrations/slack/me/search?q=${q}&count=${limit}`, {
+    method: 'GET',
+    token,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to search Slack messages'}`);
+    process.exit(1);
+  }
+
+  const messages = result.data?.messages || result.data?.results || result.data || [];
+  formatSlackMessages(messages);
 }
 
 async function slackCommand(subcommand, ...args) {
@@ -308,9 +743,22 @@ async function slackCommand(subcommand, ...args) {
     case 'list':
       await slackChannels();
       break;
+    case 'dms':
+      await slackDms();
+      break;
+    case 'messages':
+    case 'read':
+      await slackMessages(args[0], args.slice(1));
+      break;
+    case 'search':
+      await slackSearch(argsWithoutLimit(args).join(' '), args);
+      break;
     default:
       console.log('Slack commands:');
-      console.log('  atris slack channels    - List Slack channels');
+      console.log('  atris slack channels             - List Slack channels');
+      console.log('  atris slack dms                  - List Slack DMs');
+      console.log('  atris slack messages <channel>   - Read recent messages');
+      console.log('  atris slack search <query>       - Search Slack messages');
   }
 }
 
@@ -1006,4 +1454,11 @@ module.exports = {
   imessageCommand,
   imessageDoctor,
   integrationsStatus,
+  parseCalendarSearchArgs,
+  filterCalendarEventsForSearch,
+  formatCalendarSearchResults,
+  formatCalendarSearchError,
+  writeCalendarEventsCache,
+  readCalendarEventsCache,
+  CALENDAR_CACHE_PATH,
 };

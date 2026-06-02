@@ -79,16 +79,22 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const ticked = JSON.parse(tick.stdout);
     assert.equal(ticked.mission.status, 'ready');
-    assert.match(ticked.mission.next_action, new RegExp(`atris task ready ${mission.xp_task.ref}`));
+    assert.match(ticked.mission.next_action, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    assert.match(ticked.mission.next_action, /--as game-manager/);
     assert.ok(fs.existsSync(path.join(dir, ticked.receipt_path)));
 
     const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
-    assert.match(JSON.parse(goal.stdout).goal.next_command, new RegExp(`atris task ready ${mission.xp_task.ref}`));
+    assert.match(JSON.parse(goal.stdout).goal.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
 
-    const ready = runCli(['task', 'ready', mission.xp_task.ref, '--proof', ticked.receipt_path, '--as', 'game-manager', '--json'], { cwd: dir, env });
+    const ready = runCli(['task', 'current-step', '--goal-id', mission.id, '--proof', ticked.receipt_path, '--as', 'game-manager', '--json'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
-    assert.equal(JSON.parse(ready.stdout).action, 'ready');
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(readyPayload.action, 'current_step');
+    assert.equal(readyPayload.selected_task_id, mission.xp_task.task_id);
+    assert.equal(readyPayload.step.step_action, 'ready');
+    assert.equal(readyPayload.safety.human_accept, false);
+    assert.equal(readyPayload.task.review.approval_status, 'pending');
 
     const accept = runCli(['task', 'accept', mission.xp_task.ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr || accept.stdout);

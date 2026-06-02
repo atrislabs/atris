@@ -192,9 +192,12 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
   assert.match(ax, /path:\s*'\/api\/atris2\/turn'/);
+  assert.match(ax, /path:\s*'\/api\/cursor\/turn'/);
   assert.match(ax, /payload\.workspace_path = options\.cwd \|\| process\.cwd\(\)/);
   assert.match(ax, /function resolveRoute/);
   assert.match(ax, /model:\s*modelForMode\(mode\)/);
+  assert.match(ax, /function buildCodeFastPayload/);
+  assert.match(ax, /function postCodeFastTurn/);
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
@@ -219,8 +222,9 @@ test('ax help stays local and does not start an agent turn', () => {
   });
 
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /ax - Atris 2 local coding agent/);
-  assert.match(res.stdout, /ax \[--pro\|--fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /ax - Atris local\/code agent/);
+  assert.match(res.stdout, /ax \[--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
 });
@@ -243,6 +247,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.match(payload.message, /Recent conversation/);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
+  assert.equal(ax.modelForMode('code-fast'), 'composer-2-5-fast');
   assert.equal(ax.backendUrl(), 'http://127.0.0.1:8000/api/atris2/turn');
   assert.equal(ax.formatPrompt('pro'), '› ');
   assert.equal(ax.formatDuration(6197), '6s');
