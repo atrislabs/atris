@@ -5,6 +5,7 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
+const { runAliveTick } = require('../lib/member-alive');
 
 function todayLogName() {
   const now = new Date();
@@ -597,7 +598,18 @@ function taskCandidateFromSource(task, source, sourcePath = '') {
     };
   }
 
-  if (['open', 'backlog', 'claimed', 'in_progress', 'in-progress', 'working', 'plan', 'do', 'review', 'ready'].includes(status)) {
+  if (['review', 'ready'].includes(status)) {
+    return taskHasReviewProof(task)
+      ? null
+      : {
+          ...base,
+          decision: 'report_proof',
+          ask: null,
+          next_command: `atris task note ${ref} "Report proof for completed loop: ${title}"`,
+        };
+  }
+
+  if (['open', 'backlog', 'claimed', 'in_progress', 'in-progress', 'working', 'plan', 'do'].includes(status)) {
     const alreadyClaimedByMember = lowerCompact(base.claimed_by) === lowerCompact(base.assigned_to);
     return {
       ...base,
@@ -2480,14 +2492,22 @@ function memberWake(name, ...args) {
   );
 }
 
+function memberAlive(name, ...args) {
+  const nextArgs = args.includes('--alive') ? args : [...args, '--alive'];
+  return memberLoop(name, ...nextArgs);
+}
+
 function memberLoop(name, ...args) {
   requireMemberDir(name);
   const asJson = hasFlag(args, '--json');
+  const aliveMode = hasFlag(args, '--alive');
   const execute = hasFlag(args, '--execute');
   const confirmed = hasFlag(args, '--confirm-autonomy-policy');
   const force = hasFlag(args, '--force');
   const stop = hasFlag(args, '--stop');
   const status = hasFlag(args, '--status');
+  const operateMaxWall = Math.max(60, Math.min(1800, Number(readNumberFlag(args, '--operate-max-wall', readNumberFlag(args, '--max-wall', 900)))));
+  const autoAcceptLimit = Math.max(1, Math.floor(Number(readNumberFlag(args, '--auto-accept-limit', 8))));
   const paths = memberLoopPaths(name);
   fs.mkdirSync(paths.stateDir, { recursive: true });
 
@@ -2638,6 +2658,38 @@ function memberLoop(name, ...args) {
       refreshMemberLoopLease(paths, lease.lease, ttlMs);
       const tickStartedAt = stampIso();
       try {
+        if (aliveMode) {
+          const alive = runAliveTick(name, {
+            execute,
+            confirmed,
+            force,
+            maxWallSeconds: operateMaxWall,
+            autoAcceptLimit,
+            noPrime: index > 0,
+          });
+          const key = `${alive.status || 'alive'}:${alive.reason || 'tick'}`;
+          decisions[key] = (decisions[key] || 0) + 1;
+          const tick = {
+            tick: index + 1,
+            started_at: tickStartedAt,
+            finished_at: alive.finished_at || stampIso(),
+            ok: alive.ok !== false,
+            decision: alive.status || 'alive_tick',
+            reason: alive.reason || null,
+            executed: execute,
+            needs_user: alive.needs_user === true,
+            next_command: alive.next_command || null,
+            has_mission: alive.has_mission === true,
+            has_goal: alive.has_goal === true,
+            has_steering: false,
+            operate_ok: alive.operate?.ok,
+            auto_accept_accepted: alive.auto_accept?.json?.summary?.accepted ?? alive.auto_accept?.json?.summary?.would_accept,
+            receipt_path: alive.receipt_path || alive.operate?.receipt_path || null,
+            alive,
+          };
+          tickResults.push(tick);
+          fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+        } else {
         const wake = runMemberWake(name, { execute, confirmed, force });
         const key = `${wake.decision}:${wake.reason}`;
         decisions[key] = (decisions[key] || 0) + 1;
@@ -2659,6 +2711,7 @@ function memberLoop(name, ...args) {
         };
         tickResults.push(tick);
         fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
+        }
       } catch (error) {
         failed = true;
         const tick = {
@@ -2681,9 +2734,10 @@ function memberLoop(name, ...args) {
   const finishedAt = stampIso();
   const summary = {
     ok: !failed,
-    action: 'loop',
-    schema: 'atris.member_loop.v1',
+    action: aliveMode ? 'alive' : 'loop',
+    schema: aliveMode ? 'atris.member_alive.v1' : 'atris.member_loop.v1',
     member: name,
+    alive: aliveMode,
     status: failed ? 'failed' : stopped ? 'stopped' : 'completed',
     mode: execute ? 'execute' : 'dry_run',
     run_id: runId,
@@ -2709,7 +2763,7 @@ function memberLoop(name, ...args) {
   const payload = { ...summary, receipt_path: receiptPath };
   writeJsonFile(paths.latestPath, payload);
   printJsonOrText(payload, [
-    `Loop: ${name}`,
+    `${aliveMode ? 'Alive' : 'Loop'}: ${name}`,
     `Status: ${payload.status}`,
     `Ticks: ${payload.ticks}/${payload.ticks_requested}`,
     `Decisions: ${Object.entries(decisions).map(([key, count]) => `${key} x${count}`).join(', ') || 'none'}`,
@@ -2991,6 +3045,8 @@ function memberCommand(subcommand, ...args) {
       return memberRun(args[0], ...args.slice(1));
     case 'loop':
       return memberLoop(args[0], ...args.slice(1));
+    case 'alive':
+      return memberAlive(args[0], ...args.slice(1));
     case 'review':
       return memberReview(args[0], args[1], ...args.slice(2));
     case 'block':
@@ -3044,6 +3100,7 @@ function memberCommand(subcommand, ...args) {
       console.log('  atris member run growth --max-ticks 1 --max-wall 900 --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member loop growth --minutes 10 --interval 60 --json');
+      console.log('  atris member alive growth --minutes 480 --interval 900 --execute --confirm-autonomy-policy --json');
       console.log('  atris member loop growth --ticks 2 --interval 0 --json');
       console.log('  atris member tick growth --json');
       console.log('  atris member status growth');

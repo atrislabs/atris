@@ -1,0 +1,185 @@
+From b605ad23966ba1050dad2606efb7475ff565ee13 Mon Sep 17 00:00:00 2001
+From: Keshav <keshavrao250@gmail.com>
+Date: Tue, 19 May 2026 04:54:17 -0700
+Subject: [PATCH 2/2] Stabilize ctop test suite around config and logs
+
+---
+ src/_core.js        | 13 +++++++------
+ test/boot.test.js   | 21 +++++++--------------
+ test/config.test.js | 32 +++++++++++---------------------
+ 3 files changed, 25 insertions(+), 41 deletions(-)
+
+diff --git a/src/_core.js b/src/_core.js
+index 570a9b6..d3ebc53 100755
+--- a/src/_core.js
++++ b/src/_core.js
+@@ -155,10 +155,10 @@ const DEFAULT_CONFIG = {
+   bootAnimation: true,
+ };
+ 
+-function loadConfig() {
++function loadConfig(options = {}) {
+   const config = { ...DEFAULT_CONFIG };
+   // Load ~/.ctoprc
+-  const rcPath = path.join(os.homedir(), '.ctoprc');
++  const rcPath = options.rcPath || process.env.CTOP_CONFIG_PATH || path.join(os.homedir(), '.ctoprc');
+   try {
+     if (fs.existsSync(rcPath)) {
+       const rc = JSON.parse(fs.readFileSync(rcPath, 'utf8'));
+@@ -425,9 +425,10 @@ function groupProcesses(procs) {
+ 
+ function shortenCwd(cwd) {
+   if (!cwd) return 'unknown';
+-  const parts = cwd.split('/').filter(Boolean);
+-  if (parts.length >= 2) return parts.slice(-2).join('/');
+-  return parts.join('/') || cwd;
++  const home = os.homedir();
++  if (cwd === home) return '~';
++  if (cwd.startsWith(`${home}${path.sep}`)) return `~${cwd.slice(home.length)}`;
++  return cwd;
+ }
+ 
+ function buildGroupedFlatList(procs) {
+@@ -2689,7 +2690,7 @@ const sessionLogCache = new Map(); // filePath -> { mtimeMs, size, entries }
+ const LOG_TAIL_BYTES = 4 * 1024 * 1024; // 4MB — read enough to capture full session log
+ 
+ function readSessionLog(proc, maxLines) {
+-  if (maxLines === undefined) maxLines = 0; // 0 = no limit
++  if (maxLines === undefined) maxLines = 50;
+   if (proc && proc.agentType === 'opencode') return readOpenCodeSessionLog(proc, maxLines);
+   if (proc && proc.agentType === 'devin') return readDevinSessionLog(proc, maxLines);
+   // Find the session JSONL file for this process (same logic as assignSessionsToProcesses)
+diff --git a/test/boot.test.js b/test/boot.test.js
+index 2a6d2b1..8e7f759 100644
+--- a/test/boot.test.js
++++ b/test/boot.test.js
+@@ -18,36 +18,29 @@ describe('boot animation config', () => {
+   });
+ 
+   describe('config file parsing', () => {
+-    const rcPath = path.join(os.homedir(), '.ctoprc');
+-    let originalRc = null;
+-    let hadRc = false;
++    let tmpDir;
++    let rcPath;
+ 
+     beforeEach(() => {
+-      hadRc = fs.existsSync(rcPath);
+-      if (hadRc) {
+-        originalRc = fs.readFileSync(rcPath, 'utf8');
+-      }
++      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctop-boot-test-'));
++      rcPath = path.join(tmpDir, '.ctoprc');
+     });
+ 
+     afterEach(() => {
+-      if (hadRc) {
+-        fs.writeFileSync(rcPath, originalRc);
+-      } else {
+-        try { fs.unlinkSync(rcPath); } catch (e) {}
+-      }
++      fs.rmSync(tmpDir, { recursive: true, force: true });
+     });
+ 
+     it('reads bootAnimation: false from .ctoprc', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ bootAnimation: false }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.bootAnimation, false);
+     });
+ 
+     it('keeps bootAnimation true when .ctoprc does not set it', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ refreshInterval: 3000 }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.bootAnimation, true);
+     });
+   });
+diff --git a/test/config.test.js b/test/config.test.js
+index 6341a0a..5626a0f 100644
+--- a/test/config.test.js
++++ b/test/config.test.js
+@@ -28,67 +28,57 @@ describe('loadConfig', () => {
+   });
+ 
+   describe('config file parsing', () => {
+-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctop-test-'));
+-    const rcPath = path.join(os.homedir(), '.ctoprc');
+-    let originalRc = null;
+-    let hadRc = false;
++    let tmpDir;
++    let rcPath;
+ 
+     beforeEach(() => {
+-      // Back up existing .ctoprc if present
+-      hadRc = fs.existsSync(rcPath);
+-      if (hadRc) {
+-        originalRc = fs.readFileSync(rcPath, 'utf8');
+-      }
++      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctop-test-'));
++      rcPath = path.join(tmpDir, '.ctoprc');
+     });
+ 
+     afterEach(() => {
+-      // Restore original .ctoprc
+-      if (hadRc) {
+-        fs.writeFileSync(rcPath, originalRc);
+-      } else {
+-        try { fs.unlinkSync(rcPath); } catch (e) {}
+-      }
++      fs.rmSync(tmpDir, { recursive: true, force: true });
+     });
+ 
+     it('reads refreshInterval from .ctoprc', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ refreshInterval: 10000 }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.refreshInterval, 10000);
+     });
+ 
+     it('reads contextLimit from .ctoprc', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ contextLimit: 500000 }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.contextLimit, 500000);
+     });
+ 
+     it('reads defaultView from .ctoprc', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ defaultView: 'pane' }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.defaultView, 'pane');
+     });
+ 
+     it('reads theme from .ctoprc', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ theme: 'minimal' }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.theme, 'minimal');
+     });
+ 
+     it('ignores invalid defaultView values', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ defaultView: 'grid' }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.defaultView, 'list');
+     });
+ 
+     it('ignores invalid theme values', () => {
+       fs.writeFileSync(rcPath, JSON.stringify({ theme: 'dark' }));
+       const { loadConfig } = require('../claude-manager');
+-      const config = loadConfig();
++      const config = loadConfig({ rcPath });
+       assert.equal(config.theme, 'default');
+     });
+   });
+-- 
+2.49.0
+
