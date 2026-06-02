@@ -185,6 +185,111 @@ test('picker does not downgrade recently pre-passed endgame tasks into backlog',
   }
 });
 
+test('picker skips stale MAP verify-failed lesson when repo audit is clean', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-04-29] verify-failed** — fail — Task "Fix 118 broken references in MAP.md" passed review but failed verify command.\n',
+  });
+  try {
+    fs.mkdirSync(path.join(cwd, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'scripts', 'audit_map_refs.py'),
+`#!/usr/bin/env python3
+print("Total broken references: 0")
+`);
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not promote verify-not-falsifiable lessons to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-04-29] verify-not-falsifiable** — fail — Verify `true` passed before work started on "Old shipped task". Either the rubric is trivial or the task is already done. Tick halted.\n',
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not promote no-verify-field lessons to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-05-04] no-verify-field** — fail — Task "Old shipped task" has no explicit **Verify:** field in TODO.md. Tick halted.\n',
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not promote ungrounded legacy fail lessons to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-05-04] codex-cli-hangs-on-substantive-prompts** — fail — codex exec hangs on substantive prompts; cause unknown.\n',
+  });
+  try {
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker does not promote legacy verify-failed receipts to self-heal work', async () => {
+  const cwd = setupPickerFixture({
+    lesson: '# lessons\n\n---\n\n- **[2026-04-29] verify-failed** — fail — Task "Capture rejection path". Touch `backend/rl/etl/action_queue_to_trajectories.py`. Verify command failed.\n',
+  });
+  try {
+    const sourcePath = path.join(cwd, 'backend', 'rl', 'etl', 'action_queue_to_trajectories.py');
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.writeFileSync(sourcePath, '# failed verify wording in an unrelated comment\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker replays passing inline python verify failures before self-heal', async () => {
+  const cwd = setupPickerFixture({
+    lesson: "# lessons\n\n---\n\n- **[2026-04-29] verify-fail-doc-edit-attribution** — fail — Verify command ``python3 -c \"open('proof.txt').read(); assert True\"`` failed: Command failed.\n",
+  });
+  try {
+    fs.writeFileSync(path.join(cwd, 'proof.txt'), 'now present\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('picker replays embedded inline python assertion in compound verify failure', async () => {
+  const cwd = setupPickerFixture({
+    lesson: "# lessons\n\n---\n\n- **[2026-04-29] verify-fail-doc-edit-attribution-compound** — fail — Verify command ``echo preflight && python3 -c \"open('proof.txt').read(); assert True\" && echo done`` failed: Command failed.\n",
+  });
+  try {
+    fs.writeFileSync(path.join(cwd, 'proof.txt'), 'now present\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.strictEqual(suggestion.task, 'Safe generic task');
+    assert.strictEqual(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 // verifyRubric command tests: the new machine-checkable Verify shape.
 test('verifyRubric extracts and runs a passing fenced bash block', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rubric-test-'));

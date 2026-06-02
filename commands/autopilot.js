@@ -25,6 +25,46 @@ const pkg = require('../package.json');
 
 const PHASE_TIMEOUT = 600000; // 10 min per phase
 
+function looksOwnerClaimed(claimed) {
+  const text = String(claimed || '').toLowerCase();
+  return /\bkeshav(?:rao)?\b/.test(text) || /\b(owner|human|operator)\b/.test(text);
+}
+
+function looksOwnerGatedTitle(title) {
+  const text = String(title || '').toLowerCase();
+  return (
+    /\bowner[- ](?:approval|input|gate|gated)\b/.test(text) ||
+    /\bhuman[- ](?:approval|input|gate|gated)\b/.test(text) ||
+    /\bmanual send\b/.test(text) ||
+    /\broute confirmation\b/.test(text) ||
+    /\bconfirm pallet destination\b/.test(text) ||
+    /\bconfirm .+ destination before .+ approval\b/.test(text) ||
+    /\bapprove and manually send\b/.test(text)
+  );
+}
+
+function shouldSkipAutoHumanGate(task) {
+  if (!task) return false;
+  return looksOwnerClaimed(task.claimed) || looksOwnerGatedTitle(task.title || task.task);
+}
+
+function repoMapAuditReportsClean(cwd) {
+  const auditPath = path.join(cwd, 'scripts', 'audit_map_refs.py');
+  if (!fs.existsSync(auditPath)) return false;
+
+  const result = spawnSync('python3', [auditPath], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 120000,
+    maxBuffer: 1024 * 1024
+  });
+  if (result.status !== 0) return false;
+
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  const match = output.match(/Total broken references:\s*(\d+)/i);
+  return Boolean(match && Number(match[1]) === 0);
+}
+
 /**
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
@@ -54,7 +94,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   // --- Resume interrupted work ---
   if (todo.inProgress.length > 0) {
     const t = todo.inProgress[0];
-    if (!(t.tags && t.tags.includes('unverified')) && !skipped.has(t.title)) {
+    if (!(t.tags && t.tags.includes('unverified')) && !skipped.has(t.title) && !(auto && shouldSkipAutoHumanGate(t))) {
       suggestions.push({
         task: t.title,
         why: `This was already started${t.claimed ? ` by ${t.claimed}` : ''} but never finished.`,
@@ -75,6 +115,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
       why: `"${sp.staleSource}" changed on ${sp.sourceDate} but the page was last compiled ${sp.compiledDate}. The content may be wrong.`,
       kind: 'staleness',
       priority: 2,
+      files: [pageName, sp.staleSource],
       skipKey: key
     });
     break;
@@ -95,7 +136,9 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   }
 
   // --- Broken MAP.md references ---
-  const { unhealable } = healBrokenMapRefs(cwd, atrisDir, true); // dry-run
+  const { unhealable } = repoMapAuditReportsClean(cwd)
+    ? { unhealable: [] }
+    : healBrokenMapRefs(cwd, atrisDir, true); // dry-run
   if (unhealable.length > 0 && !skipped.has('fix-map-refs')) {
     const sample = unhealable.slice(0, 3).map(r => `${r.file}:${r.line}`).join(', ');
     suggestions.push({
@@ -127,6 +170,7 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
   for (const t of todo.backlog) {
     if (t.tags && t.tags.includes('unverified')) continue;
     if (shouldSkipEndgameAtPicker(cwd, t)) continue;
+    if (auto && shouldSkipAutoHumanGate(t)) continue;
     if (skipped.has(t.title)) continue;
     const remaining = todo.backlog.filter(b => !(b.tags && b.tags.includes('unverified'))).length;
     suggestions.push({
@@ -422,7 +466,13 @@ function buildPrompt(phase, context, options = {}) {
     contextNote = '',
     runnerName = '',
   } = options;
-  const readFiles = getContextFiles(phase, options);
+  const readFiles = getContextFiles(phase, {
+    ...options,
+    extraReadFiles: [
+      ...(options.extraReadFiles || []),
+      ...(Array.isArray(context.files) ? context.files : []),
+    ],
+  });
   const benchmarkProtocol = benchmarkStrategy === 'stack'
     ? 'coordinated stack run'
     : (benchmarkStrategy === 'single' ? 'pinned single-model baseline run' : '');
@@ -478,12 +528,24 @@ When done, reply: done.`;
     }
 
     if (kind === 'staleness' || kind === 'docs' || kind === 'review') {
+      const fileList = Array.isArray(context.files) && context.files.length
+        ? context.files.map((file) => `- ${file}`).join('\n')
+        : '- target page or MAP entry from the task title\n- source file(s) that changed';
       return `${baseRules}
 
 Maintenance task: ${task}
 
-Figure out what needs to change and why. Create focused tasks in atris/TODO.md.
+Relevant files:
+${fileList}
+
+Figure out what needs to change and why. Create exactly one focused task in atris/TODO.md unless the drift truly requires separate commits.
 For stale pages, read both the page and its sources to understand the drift.
+The task row must include these fields so plan-review can prove it is executable:
+- **Files:** concrete target page plus source file paths
+- **Exit:** the observable post-update state
+- **Verify:** one raw shell command that checks concrete facts and rejects stale phrases; use shell operators like \`&&\`, \`grep -q\`, or \`test\`, not Markdown backticks or English like "returns 1" / "shows today's date"
+- **Rollback:** git checkout -- <changed-files> before commit, or git revert HEAD --no-edit after commit
+Do not write tasks without Verify and Rollback. Do not use \`true\`, \`echo ok\`, or vague "review manually" verification.
 
 When done, reply: done.`;
     }
@@ -802,6 +864,56 @@ function getVerifyCommand(cwd, taskTitle) {
   return { cmd: detectDefaultVerify(cwd), explicit: false };
 }
 
+function collectExplicitVerifyTasks(cwd) {
+  const todoPath = path.join(cwd, 'atris', 'TODO.md');
+  if (!fs.existsSync(todoPath)) return [];
+  const todo = parseTodo(todoPath);
+  return [...todo.inProgress, ...(todo.review || []), ...todo.backlog, ...todo.completed]
+    .filter((task) => task && task.verify)
+    .map((task) => ({
+      title: task.title,
+      verify: task.verify,
+      key: `${task.title}\0${task.verify}`,
+    }));
+}
+
+function findNewExplicitVerifyCommand(cwd, beforeKeys) {
+  const prior = beforeKeys instanceof Set ? beforeKeys : new Set(beforeKeys || []);
+  const added = collectExplicitVerifyTasks(cwd).filter((task) => !prior.has(task.key));
+  if (added.length !== 1) return null;
+  return { cmd: added[0].verify, explicit: true, task: added[0].title };
+}
+
+function shouldAdoptPlannedVerify(kind) {
+  return ['staleness', 'docs', 'review', 'inbox', 'cleanup', 'feature', 'lessons', 'imagined'].includes(kind);
+}
+
+function validateVerifyCommandShape(cmd) {
+  const text = String(cmd || '').trim();
+  if (!text) return { ok: true };
+  if (text.includes('`')) {
+    return { ok: false, reason: 'Verify contains markdown backticks instead of a raw shell command' };
+  }
+  if (/\b(returns?|shows?|equals?|should|must)\b/i.test(text)) {
+    return { ok: false, reason: 'Verify contains prose expectations instead of shell operators/assertions' };
+  }
+  return { ok: true };
+}
+
+function haltInvalidVerify(cwd, context, verifyCmd, reason, startedAt, phaseResults = {}) {
+  writeLesson(cwd, 'verify-not-runnable', 'fail',
+    `Verify \`${verifyCmd}\` for "${context.task}" is not a runnable shell command: ${reason}. Tick halted.`);
+  return {
+    outcome: 'halted',
+    reason: 'verify-not-runnable',
+    phaseResults,
+    elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
+    verifyRan: false,
+    verifyPass: false,
+    verifyCmd,
+  };
+}
+
 /**
  * Infer a default verify command from the repo shape. Order matters:
  * package.json with a non-stub test script → `npm test`; then pytest/python;
@@ -878,7 +990,7 @@ Read from disk:
 - atris/lessons.md (recent failures — last 20 lines)
 
 Decide if the plan is safe to execute. Check:
-1. Verify points at a falsifiable rubric or test (not \`true\`, \`echo ok\`, or similar).
+1. Verify points at a falsifiable raw shell command or rubric (not \`true\`, \`echo ok\`, Markdown backticks, or English like "returns 1" / "shows today's date").
    Prefer \`atris verify <slug> --section <name>\`.
 2. Files are explicitly declared (not empty, not vague).
 3. Rollback is named (commit, checkpoint, or \`git revert\`).
@@ -1170,8 +1282,15 @@ function runTaskOnce(context, options = {}) {
 
   const phaseResults = {};
   const startedAt = Date.now();
-  const verifyResult = getVerifyCommand(cwd, context.task);
-  const verifyCmd = verifyResult.cmd;
+  let verifyResult = getVerifyCommand(cwd, context.task);
+  let verifyCmd = verifyResult.cmd;
+  const explicitVerifyBefore = new Set(
+    collectExplicitVerifyTasks(cwd).map((task) => task.key)
+  );
+  const initialVerifyShape = validateVerifyCommandShape(verifyCmd);
+  if (!initialVerifyShape.ok) {
+    return haltInvalidVerify(cwd, context, verifyCmd, initialVerifyShape.reason, startedAt, phaseResults);
+  }
 
   // Guard: endgame tasks must have an explicit Verify field.
   // Reactive signals (inbox, staleness, imagined) use npm test as default.
@@ -1262,6 +1381,18 @@ function runTaskOnce(context, options = {}) {
         verifyPass: false,
       };
     }
+  }
+
+  if (!verifyResult.explicit && shouldAdoptPlannedVerify(context.kind)) {
+    const plannedVerify = findNewExplicitVerifyCommand(cwd, explicitVerifyBefore);
+    if (plannedVerify) {
+      verifyResult = plannedVerify;
+      verifyCmd = plannedVerify.cmd;
+    }
+  }
+  const plannedVerifyShape = validateVerifyCommandShape(verifyCmd);
+  if (!plannedVerifyShape.ok) {
+    return haltInvalidVerify(cwd, context, verifyCmd, plannedVerifyShape.reason, startedAt, phaseResults);
   }
 
   // Phase: do
@@ -1975,12 +2106,13 @@ function findCodeTodos(cwd) {
   try {
     const out = execFileSync('git', [
       'grep', '-n', '-I', '-E', '(TODO|FIXME)',
-      '--', ':!test/', ':!node_modules/', ':!atris/', ':!**/*.md'
+      '--', ':!test/', ':!node_modules/', ':!atris/', ':!**/_archive/**', ':!**/*.md'
     ], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const results = [];
     for (const raw of out.split('\n').filter(Boolean)) {
       const m = raw.match(/^([^:]+):(\d+):(.*)$/);
       if (!m) continue;
+      if (m[1].split(/[\\/]/).includes('_archive')) continue;
       const line = m[3];
       // A real TODO is a comment marker at the start of the line (allowing
       // leading indent) followed by TODO/FIXME and at least one word. This
@@ -2160,14 +2292,48 @@ function isLessonResolved(lessonLine, cwd, options = {}) {
   if (!slugMatch) return false;
   const slug = slugMatch[1];
 
+  if (isCleanMapBrokenRefFailLesson(lessonLine, cwd)) return true;
+
   // Detector-backed check (typed lesson sidecar)
   const meta = options.meta || loadLessonMetadata(cwd)[slug];
   if (meta && meta.detector) {
     return runLessonDetector(meta.detector, cwd, options.detectorTimeout);
   }
 
+  if (inlinePythonVerifyFailureNowPasses(lessonLine, cwd, options.detectorTimeout)) return true;
+
   // Legacy fallback: keyword grep against referenced files.
   return isLessonResolvedLegacy(lessonLine, cwd);
+}
+
+function isCleanMapBrokenRefFailLesson(lessonLine, cwd) {
+  const text = String(lessonLine || '').toLowerCase();
+  if (!/fix \d+ broken references? in map\.md/.test(text)) return false;
+  return repoMapAuditReportsClean(cwd);
+}
+
+function extractInlinePythonVerifyFailure(lessonLine) {
+  const commandMatch = String(lessonLine || '').match(/Verify command\s+``([\s\S]*?)``\s+failed/i);
+  if (!commandMatch) return null;
+  const matches = [...commandMatch[1].matchAll(/\b(python3?)\s+-c\s+(["'])([\s\S]*?)\2/g)];
+  const match = matches[matches.length - 1];
+  if (!match) return null;
+  return {
+    executable: match[1],
+    code: match[3].replace(/\\"/g, '"').replace(/\\'/g, "'")
+  };
+}
+
+function inlinePythonVerifyFailureNowPasses(lessonLine, cwd, timeout = 10000) {
+  const parsed = extractInlinePythonVerifyFailure(lessonLine);
+  if (!parsed) return false;
+  const result = spawnSync(parsed.executable, ['-c', parsed.code], {
+    cwd,
+    encoding: 'utf8',
+    timeout,
+    stdio: ['ignore', 'ignore', 'ignore']
+  });
+  return result.status === 0;
 }
 
 /**
@@ -2193,11 +2359,11 @@ function isLessonResolvedLegacy(lessonLine, cwd) {
     }
   }
 
-  if (fileRefs.length === 0) return false;
+  if (fileRefs.length === 0) return true;
 
   // Derive keywords from slug (split on dashes, drop short words)
   const keywords = slug.split('-').filter(w => w.length > 2);
-  if (keywords.length === 0) return false;
+  if (keywords.length === 0) return true;
 
   // Grep each named file for any keyword. If at least one file still matches → not resolved.
   for (const ref of fileRefs) {
@@ -2274,6 +2440,9 @@ function pickUnresolvedFailLesson(cwd) {
   const candidates = [];
   for (const lesson of lessons) {
     if (lesson.verdict !== 'fail') continue;
+    if (lesson.id === 'verify-not-falsifiable') continue;
+    if (lesson.id === 'no-verify-field') continue;
+    if (lesson.id === 'verify-failed' && lesson.legacy) continue;
     if (lesson.resolvedTag) continue;
     // Typed lesson with explicit status wins — respect the sidecar.
     // `resolved` = done. `observed` = process rule, not a fixable code state.
@@ -2658,6 +2827,7 @@ async function autopilotAtris(description, options = {}) {
     const context = {
       task: suggestion.task,
       kind: suggestion.kind,
+      ...(suggestion.files ? { files: suggestion.files } : {}),
       ...(suggestion.lessonLine ? { lessonLine: suggestion.lessonLine } : {}),
       ...(suggestion.lessonSlug ? { lessonSlug: suggestion.lessonSlug } : {}),
       ...(suggestion.lessonDate ? { lessonDate: suggestion.lessonDate } : {})
@@ -3052,11 +3222,15 @@ module.exports = {
   proposeCandidateHorizons,
   recordTickCommit,
   regressionCheck,
+  repoMapAuditReportsClean,
+  isCleanMapBrokenRefFailLesson,
+  inlinePythonVerifyFailureNowPasses,
   runPlanReview,
   runTaskOnce,
   buildPlanReviewPrompt,
   parseVerdict,
   scoreEndgameCandidates,
   suggestNextTask,
+  shouldSkipAutoHumanGate,
   writeLesson
 };

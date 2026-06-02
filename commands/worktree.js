@@ -238,6 +238,21 @@ function startWorktree(args) {
   runGit(['config', `branch.${branch}.atris-base`, base], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target, check: false });
   runGit(['config', `branch.${branch}.atris-task`, task], { cwd: target, check: false });
+  fs.mkdirSync(path.join(target, '.atris'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.atris', 'agent-worktree.json'),
+    JSON.stringify({
+      agent: agent || null,
+      member: member || null,
+      owner,
+      task,
+      branch,
+      base,
+      workspace_root: root,
+      created_at: now.toISOString(),
+    }, null, 2) + '\n',
+    'utf8'
+  );
 
   const counts = statusCounts(root);
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
@@ -283,6 +298,12 @@ function createOrFindPr(root, branch, targetRef, title, dryRun) {
     throw new Error((created.stderr || created.stdout || 'gh pr create failed').trim());
   }
   return created.stdout.trim();
+}
+
+function prMergeRef(prOutput) {
+  const text = String(prOutput || '').trim();
+  if (!text || text.startsWith('dry-run:')) return '';
+  return text.split(/\s+/)[0];
 }
 
 function shipWorktree(args) {
@@ -359,8 +380,20 @@ function shipWorktree(args) {
     if (merge) {
       console.log('merge: requested');
       if (!dryRun) {
-        const merged = spawnSync('gh', ['pr', 'merge', '--merge', '--delete-branch'], { cwd: root, encoding: 'utf8' });
+        const mergeRef = prMergeRef(pr);
+        const mergeArgs = ['pr', 'merge'];
+        if (mergeRef) mergeArgs.push(mergeRef);
+        mergeArgs.push('--merge');
+        const merged = spawnSync('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
+        console.log('merge: merged');
+        const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
+        if (deleted.status === 0) {
+          console.log(`merge: remote branch deleted ${branch}`);
+        } else {
+          const deleteOutput = (deleted.stderr || deleted.stdout || 'remote branch delete failed').trim();
+          console.log(`merge: remote branch delete skipped: ${deleteOutput}`);
+        }
       }
     }
   } else {
@@ -461,6 +494,7 @@ module.exports = {
   defaultWorktreePath,
   parseWorktrees,
   normalizeTargetRef,
+  prMergeRef,
   slugify,
   statusCounts,
   swarloClaim,
