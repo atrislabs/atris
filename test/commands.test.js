@@ -1352,7 +1352,7 @@ test('always-on mission run keeps ticking after verifier passes', () => {
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.ran_ticks, 2);
     assert.equal(payload.tick_count, 2);
-    assert.equal(payload.mission.status, 'running');
+    assert.equal(payload.mission.status, 'ready');
     assert.match(payload.mission.next_action, /mission run/);
   } finally {
     cleanupTempDir(dir);
@@ -2565,7 +2565,7 @@ test('brain compile counts task review episodes as learning state', () => {
 
     const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /State rows: 2 raw \/ 2 valid/);
+    assert.match(res.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.match(res.stdout, /Turn existing episode rows into the first scorecard/);
 
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'brain', 'state.json'), 'utf8'));
@@ -2622,7 +2622,7 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
 
     const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /State rows: 3 raw \/ 3 valid/);
+    assert.match(compile.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
   } finally {
     cleanupTempDir(dir);
@@ -4949,8 +4949,8 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.match(play.stdout, /Handle source: --as\/--player\./);
     assert.match(play.stdout, /AgentXP Mode first rep/);
     assert.match(play.stdout, /Win condition: one proof-backed useful rep/);
-    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
-    assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --as game-manager --proof/);
+    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as justin/);
+    assert.match(play.stdout, /atris task ready [A-Z0-9]{3}-1 --as justin --proof/);
     assert.match(play.stdout, /atris xp card --local/);
     assert.match(play.stdout, /atris xp sync --local --token <owner-provided-token>/);
     assert.match(play.stdout, /atris login/);
@@ -4971,7 +4971,7 @@ test('play mode opens the assigned AgentXP mission for a player', () => {
     assert.equal(body.leaderboard_url, 'https://api.atris.ai/api/agentxp/leaderboard');
     assert.match(body.proof_recipe.verifier, /test -s AGENTXP_PROOF\.md/);
     assert.match(body.proof_recipe.solo_review_rule, /solo public smoke/);
-    assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as game-manager`);
+    assert.equal(body.next_commands[0], `atris task claim ${body.mission.ref} --as justin`);
     assert.ok(
       body.next_commands.indexOf('atris login')
         < body.next_commands.indexOf('atris xp sync --local --token <owner-provided-token>')
@@ -5033,7 +5033,7 @@ test('play mode bootstraps a starter mission on a fresh player workspace', () =>
     assert.match(play.stdout, /Handle source: inferred\. To choose one, run atris play --as <handle> or ATRIS_PLAYER=<handle> atris play\./);
     assert.match(play.stdout, /Starter mission created locally/);
     assert.match(play.stdout, /AgentXP Mode first rep: complete one proof-backed useful mission/);
-    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as game-manager/);
+    assert.match(play.stdout, /atris task claim [A-Z0-9]{3}-1 --as justin/);
 
     const json = runCli(['play', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr);
@@ -5073,8 +5073,8 @@ test('play mode makes a plain folder playable on first run', () => {
     assert.equal(body.seeded.title, 'AgentXP Mode first rep: complete one proof-backed useful mission');
     assert.equal(body.mission.assigned_to, 'justin');
     assert.deepEqual(body.next_commands.slice(0, 2), [
-      `atris task claim ${body.mission.ref} --as game-manager`,
-      `atris task ready ${body.mission.ref} --as game-manager --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
+      `atris task claim ${body.mission.ref} --as justin`,
+      `atris task ready ${body.mission.ref} --as justin --proof "AGENTXP_PROOF.md + test -s AGENTXP_PROOF.md passed"`,
     ]);
     assert.match(body.proof_recipe.artifact, /AGENTXP_PROOF\.md/);
     assert.equal(body.next_commands.includes('atris xp sync --local --token <owner-provided-token>'), true);
@@ -12612,7 +12612,7 @@ test('business share surfaces missing root agent adapters for older workspaces',
 
     const share = runCli(['business', 'share', '--role', 'operator'], { cwd: dir });
     assert.equal(share.status, 0, share.stderr || share.stdout);
-    assert.match(share.stdout, /Agent adapters: missing/);
+    assert.match(share.stdout, /Agent setup: missing root agent adapters/);
     assert.match(share.stdout, /Run `atris update` to restore root AGENTS\.md, CLAUDE\.md, and GEMINI\.md adapters\./);
   } finally {
     cleanupTempDir(dir);

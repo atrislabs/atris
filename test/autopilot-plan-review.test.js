@@ -6,8 +6,11 @@ const os = require('node:os');
 
 const {
   runPlanReview,
+  buildPrompt,
   parseVerdict,
   runTaskOnce,
+  suggestNextTask,
+  shouldSkipAutoHumanGate,
 } = require('../commands/autopilot');
 
 function cleanup(cwd) {
@@ -264,6 +267,245 @@ test('REJECT with PROPOSED draft journals the proposed fields', () => {
     assert.match(journal, /atris verify fixture --section preflight/);
     assert.match(journal, /git revert <sha>/);
   } finally {
+    cleanup(cwd);
+  }
+});
+
+test('reactive maintenance task adopts planner-written explicit verify', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-reactive-verify-'));
+  const original = process.cwd();
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+## In Progress
+
+## Completed
+`);
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), '# lessons\n\n');
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const logDir = path.join(atrisDir, 'logs', String(year));
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(path.join(logDir, `${year}-${month}-${day}.md`), `# log\n\n## Completed\n\n## Notes\n`);
+    fs.writeFileSync(path.join(cwd, 'source.md'), 'needle\n');
+    process.chdir(cwd);
+
+    const verify = 'node -e "process.exit(0)"';
+    const result = runTaskOnce(
+      { task: 'Re-read sources and update atris/wiki/briefs/starter.md', kind: 'staleness', files: ['source.md'] },
+      {
+        cwd,
+        verbose: false,
+        phaseExec: (phase) => {
+          if (phase === 'plan') {
+            fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+- **T1:** Refresh starter brief from source [execute]
+  **Files:** source.md
+  **Exit:** starter brief reflects source
+  **Verify:** ${verify}
+  **Rollback:** git checkout -- atris/wiki/briefs/starter.md
+
+## In Progress
+
+## Completed
+`);
+          }
+          return { prompt: `${phase} prompt`, output: `${phase} ok` };
+        },
+        planReviewExec: () => 'SIGNOFF: Files, Exit, Verify, and Rollback are concrete.',
+      }
+    );
+
+    assert.strictEqual(result.verifyCmd, verify);
+    assert.strictEqual(result.verifyPass, true);
+    assert.strictEqual(result.success, true);
+  } finally {
+    process.chdir(original);
+    cleanup(cwd);
+  }
+});
+
+test('reactive maintenance task rejects prose-shaped explicit verify before do', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-reactive-verify-prose-'));
+  const original = process.cwd();
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+## In Progress
+
+## Completed
+`);
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), '# lessons\n\n');
+    process.chdir(cwd);
+
+    const verify = "`rg -c 'needle' source.md` returns 1 AND `rg 'updated:' page.md` shows today's date";
+    const phases = [];
+    const result = runTaskOnce(
+      { task: 'Re-read sources and update page.md', kind: 'staleness', files: ['source.md'] },
+      {
+        cwd,
+        verbose: false,
+        phaseExec: (phase) => {
+          phases.push(phase);
+          if (phase === 'plan') {
+            fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+- **T1:** Refresh page [execute]
+  **Files:** source.md, page.md
+  **Exit:** page reflects source
+  **Verify:** ${verify}
+  **Rollback:** git checkout -- page.md
+
+## In Progress
+
+## Completed
+`);
+          }
+          return { prompt: `${phase} prompt`, output: `${phase} ok` };
+        },
+        planReviewExec: () => 'SIGNOFF: Looks concrete.',
+      }
+    );
+
+    assert.strictEqual(result.outcome, 'halted');
+    assert.strictEqual(result.reason, 'verify-not-runnable');
+    assert.deepStrictEqual(phases, ['plan']);
+    const lessons = fs.readFileSync(path.join(atrisDir, 'lessons.md'), 'utf8');
+    assert.match(lessons, /verify-not-runnable/);
+  } finally {
+    process.chdir(original);
+    cleanup(cwd);
+  }
+});
+
+test('auto picker skips owner-gated in-progress tasks', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-owner-gate-'));
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+- **T2:** Run local code health check
+
+## In Progress
+
+- **BCK-427:** Confirm Pallet destination before AEO owner approval
+  **Claimed by:** keshavrao at 2026-05-22T07:15:00Z
+
+## Completed
+`);
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), '# lessons\n\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.equal(suggestion.task, 'Run local code health check');
+    assert.equal(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('auto picker trusts clean repo MAP audit over healer false positives', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-auto-map-audit-'));
+  try {
+    const atrisDir = path.join(cwd, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'TODO.md'),
+`# TODO.md
+
+## Backlog
+
+- **T2:** Run local code health check
+
+## In Progress
+
+## Completed
+`);
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'),
+`# MAP
+
+\`\`\`
+RL Stack (backend/rl/)
+  core.py:17    TaskType enum
+\`\`\`
+`);
+    fs.writeFileSync(path.join(cwd, 'scripts', 'audit_map_refs.py'),
+`#!/usr/bin/env python3
+print("Total broken references: 0")
+`);
+    fs.writeFileSync(path.join(atrisDir, 'lessons.md'), '# lessons\n\n');
+
+    const suggestion = await suggestNextTask(cwd, new Set(), { auto: true });
+    assert.equal(suggestion.task, 'Run local code health check');
+    assert.equal(suggestion.kind, 'backlog');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('auto human-gate classifier keeps normal agent work runnable', () => {
+  assert.equal(shouldSkipAutoHumanGate({
+    title: 'Confirm Pallet destination before AEO owner approval',
+    claimed: 'keshavrao at 2026-05-22T07:15:00Z',
+  }), true);
+  assert.equal(shouldSkipAutoHumanGate({
+    title: 'Fix mission selector regression',
+    claimed: 'codex at 2026-05-22T07:15:00Z',
+  }), false);
+});
+
+test('staleness planning prompt requires executable verify and rollback fields', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-staleness-prompt-'));
+  const original = process.cwd();
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'atris', 'TODO.md'), '# TODO\n');
+    fs.writeFileSync(path.join(cwd, 'atris', 'PERSONA.md'), '# persona\n');
+    fs.writeFileSync(path.join(cwd, 'atris', 'MAP.md'), '# map\n');
+    fs.writeFileSync(path.join(cwd, 'atris', 'lessons.md'), '# lessons\n');
+    process.chdir(cwd);
+    const prompt = buildPrompt('plan', {
+      task: 'Re-read sources and update atris/wiki/briefs/starter.md',
+      kind: 'staleness',
+      files: [
+        'atris/wiki/briefs/starter.md',
+        'atris/context/_ingest/onboarding/intake.md',
+      ],
+    });
+
+    assert.match(prompt, /atris\/wiki\/briefs\/starter\.md/);
+    assert.match(prompt, /atris\/context\/_ingest\/onboarding\/intake\.md/);
+    assert.match(prompt, /\*\*Files:\*\*/);
+    assert.match(prompt, /\*\*Exit:\*\*/);
+    assert.match(prompt, /\*\*Verify:\*\*/);
+    assert.match(prompt, /\*\*Rollback:\*\*/);
+    assert.match(prompt, /Do not write tasks without Verify and Rollback/);
+    assert.match(prompt, /one raw shell command/);
+    assert.match(prompt, /not Markdown backticks or English/);
+  } finally {
+    process.chdir(original);
     cleanup(cwd);
   }
 });

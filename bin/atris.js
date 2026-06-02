@@ -1046,7 +1046,6 @@ async function interactiveEntry(userInput) {
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
   const { getBacklogTasks, getInProgressTasks } = require('../lib/state-detection');
-  const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
@@ -1060,16 +1059,6 @@ function showWelcomeVisualization() {
   let isInitialized = fs.existsSync(atrisDir);
 
   if (isInitialized) {
-    // Auto-create today's journal if missing
-    try {
-      ensureLogDirectory();
-      const { logFile, dateFormatted } = getLogPath();
-      if (!fs.existsSync(logFile)) {
-        createLogFile(logFile, dateFormatted);
-      }
-    } catch {
-      // Silently fail - don't block welcome display
-    }
     // Check MAP.md
     const mapPath = path.join(atrisDir, 'MAP.md');
     if (fs.existsSync(mapPath)) {
@@ -1568,7 +1557,7 @@ if (command === 'init') {
   searchJournal(keyword);
 } else if (command === 'xp') {
   require('../commands/xp').xpCommand(...process.argv.slice(3))
-    .then(() => process.exit(0))
+    .then(() => { process.exitCode = 0; })
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'play') {
   require('../commands/play').playCommand(...process.argv.slice(3))

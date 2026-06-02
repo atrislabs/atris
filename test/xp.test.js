@@ -65,6 +65,7 @@ function runCli(args, { cwd, env = {} } = {}) {
     cwd,
     encoding: 'utf8',
     timeout: 15000,
+    maxBuffer: 2 * 1024 * 1024,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -256,20 +257,64 @@ test('xp sync dry-run builds a path-private AgentXP packet', () => {
     assert.equal(payload.entry.agent_xp, 7);
     assert.equal(payload.entry.verified_receipts, 1);
     assert.equal(payload.entry.leaderboard_eligible, true);
+    assert.equal(payload.entry.contribution_graph.total_xp, 7);
+    assert.equal(payload.entry.contribution_graph.active_days, 1);
+    assert.equal(payload.entry.contribution_graph.days.some(day => day.xp === 7), true);
     assert.equal(payload.packet.schema, 'atris.agentxp_sync_packet.v1');
+    assert.equal(payload.packet.scope, 'global');
+    assert.equal(payload.packet.org_id, null);
+    assert.equal(payload.packet.computer_id, path.basename(workspace));
+    assert.equal(payload.packet.visibility, 'public');
+    assert.equal(payload.packet.public_agentxp, true);
     assert.equal(payload.packet.gm_projection.schema, 'atris.gm_xp_projection.v1');
+    assert.equal(payload.packet.gm_projection.scope, 'global');
+    assert.equal(payload.packet.gm_projection.visibility, 'public');
+    assert.equal(payload.packet.gm_projection.public_agentxp, true);
     assert.equal(payload.packet.gm_projection.workspace_root_hash, payload.packet.workspace_root_hash);
     assert.equal(payload.packet.gm_projection.operator, 'justin');
     assert.equal(payload.packet.gm_projection.player_score.agent_xp, 7);
     assert.equal(payload.packet.gm_projection.player_score.leaderboard_eligible, true);
     assert.equal(payload.packet.user_leaderboard.schema, 'atris.agentxp_user_leaderboard.v1');
     assert.equal(payload.packet.user_leaderboard.workspace_root_hash, payload.packet.workspace_root_hash);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.total_xp, 7);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.active_days, 1);
     assert.equal(payload.packet.privacy.raw_proofs_included, false);
     assert.equal(payload.packet.privacy.raw_receipts_included, false);
     assert.equal(payload.packet.privacy.contains_absolute_workspace_root, false);
     assert.match(payload.packet.packet_hash, /^[a-f0-9]{64}$/);
     assert.equal(packetText.includes(workspace), false);
     assert.equal(packetText.includes('private accepted proof text'), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync dry-run keeps earned AgentXP uncapped while form stays capped', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-high-xp',
+        task_id: 'SYNC-HIGH',
+        title: 'Sync high XP proof',
+        xp: 1200,
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'keshavrao', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+
+    assert.equal(payload.entry.agent_xp, 1200);
+    assert.equal(payload.entry.career_xp, 1200);
+    assert.equal(payload.entry.current_form, 99);
+    assert.equal(payload.entry.ovr, 99);
+    assert.equal(payload.entry.level, 2);
+    assert.equal(payload.entry.level_progress.uncapped, true);
+    assert.equal(payload.entry.level_progress.current_level_floor, 1000);
+    assert.equal(payload.entry.level_progress.next_level_xp, 2000);
+    assert.equal(payload.entry.level_progress.xp_to_next, 800);
+    assert.equal(payload.packet.user_leaderboard.entries[0].agent_xp, 1200);
   } finally {
     cleanupTempDir(workspace);
   }
@@ -302,17 +347,74 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
     const workspaceSummary = payload.packet.local_evidence.workspaces[0];
 
     assert.equal(payload.packet.attribution_scope, 'business_bound');
+    assert.equal(payload.packet.scope, 'org');
+    assert.equal(payload.packet.org_id, 'biz-atris');
     assert.equal(payload.packet.business_id, 'biz-atris');
     assert.equal(payload.packet.workspace_id, 'ws-atris');
     assert.equal(payload.packet.business_slug, 'atris-labs');
     assert.equal(payload.packet.workspace_template, 'research');
+    assert.equal(payload.packet.computer_id, 'ws-atris');
     assert.equal(payload.packet.computer, 'atris-labs');
+    assert.equal(payload.packet.visibility, 'internal');
+    assert.equal(payload.packet.public_agentxp, false);
+    assert.equal(payload.packet.local_evidence.scope, 'org');
+    assert.equal(payload.packet.local_evidence.org_id, 'biz-atris');
+    assert.equal(payload.packet.local_evidence.computer_id, 'ws-atris');
+    assert.equal(payload.packet.local_evidence.visibility, 'internal');
+    assert.equal(payload.packet.local_evidence.public_agentxp, false);
     assert.equal(payload.packet.local_evidence.business_id, 'biz-atris');
+    assert.equal(payload.packet.gm_projection.scope, 'org');
+    assert.equal(payload.packet.gm_projection.org_id, 'biz-atris');
     assert.equal(payload.packet.gm_projection.business_id, 'biz-atris');
+    assert.equal(payload.packet.gm_projection.computer_id, 'ws-atris');
+    assert.equal(payload.packet.gm_projection.visibility, 'internal');
+    assert.equal(payload.packet.gm_projection.public_agentxp, false);
     assert.equal(workspaceSummary.business_id, 'biz-atris');
     assert.equal(workspaceSummary.workspace_id, 'ws-atris');
     assert.equal(workspaceSummary.business_slug, 'atris-labs');
     assert.equal(workspaceSummary.computer_slug, 'atris-labs');
+    assert.equal(packetText.includes('private@example.com'), false);
+    assert.equal(packetText.includes(workspace), false);
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
+
+test('xp sync dry-run allows public AgentXP opt-in for a business workspace', () => {
+  const workspace = makeTempDir();
+  try {
+    writeJson(path.join(workspace, '.atris', 'business.json'), {
+      business_id: 'biz-atris',
+      workspace_id: 'ws-atris',
+      name: 'Atris Labs',
+      slug: 'atris-labs',
+      agentxp_visibility: 'public',
+      owner_email: 'private@example.com',
+    });
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'sync-public-org',
+        task_id: 'SYNC-PUBLIC-ORG',
+        title: 'Sync public org proof',
+        xp: 195,
+      }),
+    ]);
+
+    const result = runCli(['xp', 'sync', '--local', '--as', 'keshav', '--dry-run', '--json'], { cwd: workspace });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    const packetText = JSON.stringify(payload.packet);
+
+    assert.equal(payload.entry.agent_xp, 195);
+    assert.equal(payload.packet.attribution_scope, 'business_bound');
+    assert.equal(payload.packet.scope, 'global');
+    assert.equal(payload.packet.org_id, 'biz-atris');
+    assert.equal(payload.packet.business_id, 'biz-atris');
+    assert.equal(payload.packet.computer_id, 'ws-atris');
+    assert.equal(payload.packet.visibility, 'public');
+    assert.equal(payload.packet.public_agentxp, true);
+    assert.equal(payload.packet.local_evidence.public_agentxp, true);
+    assert.equal(payload.packet.gm_projection.public_agentxp, true);
     assert.equal(packetText.includes('private@example.com'), false);
     assert.equal(packetText.includes(workspace), false);
   } finally {
@@ -352,10 +454,22 @@ test('xp sync all avoids top-level org attribution across multiple businesses', 
     const payload = JSON.parse(result.stdout);
 
     assert.equal(payload.packet.attribution_scope, 'multi_business');
+    assert.equal(payload.packet.scope, 'org');
+    assert.equal(payload.packet.org_id, null);
     assert.equal(payload.packet.business_id, null);
     assert.equal(payload.packet.workspace_id, null);
+    assert.equal(payload.packet.computer_id, 'multiple-workspaces');
     assert.equal(payload.packet.computer, 'multiple-workspaces');
+    assert.equal(payload.packet.visibility, 'internal');
+    assert.equal(payload.packet.public_agentxp, false);
     assert.equal(payload.packet.local_evidence.attribution_scope, 'multi_business');
+    assert.equal(payload.packet.local_evidence.scope, 'org');
+    assert.equal(payload.packet.local_evidence.visibility, 'internal');
+    assert.equal(payload.packet.gm_projection.scope, 'org');
+    assert.equal(payload.packet.gm_projection.visibility, 'internal');
+    assert.equal(payload.entry.contribution_graph.total_xp, 10);
+    assert.equal(payload.entry.contribution_graph.active_days, 1);
+    assert.equal(payload.packet.user_leaderboard.entries[0].contribution_graph.total_xp, 10);
     assert.deepEqual(
       payload.packet.local_evidence.workspaces.map(workspace => workspace.business_id).sort(),
       ['biz-alpha', 'biz-beta'],
@@ -579,6 +693,11 @@ test('xp sync posts the packet with the AgentXP sync token', async () => {
     assert.equal(captured.url, '/api/agentxp/leaderboard/sync');
     assert.equal(captured.token, 'sync-secret');
     assert.equal(captured.body.operator, 'justin');
+    assert.equal(captured.body.scope, 'global');
+    assert.equal(captured.body.visibility, 'public');
+    assert.equal(captured.body.public_agentxp, true);
+    assert.equal(captured.body.org_id, null);
+    assert.equal(captured.body.computer_id, path.basename(workspace));
     assert.equal(captured.body.gm_projection.schema, 'atris.gm_xp_projection.v1');
     assert.equal(captured.body.gm_projection.workspace_root_hash, captured.body.workspace_root_hash);
     assert.equal(captured.body.gm_projection.player_score.agent_xp, 4);

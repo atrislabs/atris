@@ -544,6 +544,7 @@ function parseComputerOptions(argv) {
   let workspaceId = null;
   let waitForResult = true;
   let message = null;
+  let force = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -600,6 +601,10 @@ function parseComputerOptions(argv) {
       waitForResult = false;
       continue;
     }
+    if (arg === '--force') {
+      force = true;
+      continue;
+    }
     positional.push(arg);
   }
 
@@ -618,6 +623,7 @@ function parseComputerOptions(argv) {
       workspaceId: workspaceId ? String(workspaceId).trim() : null,
       waitForResult,
       message,
+      force,
     },
   };
 }
@@ -1120,13 +1126,33 @@ async function resolveComputerCommandContext(token, options = {}) {
       ? await resolveBusinessContextBySlug(token, options.businessSlug, { preferCache: true })
       : await resolveBusinessContext(token);
     if (!ctx?.businessId) return null;
+    const workspaceId = options.workspaceId
+      ? await resolveWorkspaceSelector(token, ctx, options.workspaceId)
+      : ctx.workspaceId;
     return {
       ...ctx,
-      workspaceId: options.workspaceId || ctx.workspaceId,
+      workspaceId,
     };
   }
 
   return resolveBusinessContext(token);
+}
+
+function looksLikeWorkspaceId(input) {
+  const value = String(input || '').trim();
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    || /^ws-[a-z0-9_-]+$/i.test(value);
+}
+
+async function resolveWorkspaceSelector(token, ctx, input) {
+  const selector = String(input || '').trim();
+  if (!selector) return ctx.workspaceId;
+  if (selector === ctx.workspaceId || looksLikeWorkspaceId(selector)) return selector;
+
+  const workspaces = await listBusinessWorkspaces(token, ctx);
+  const workspace = resolveWorkspaceFromList(workspaces, selector);
+  return workspace?.id || selector;
 }
 
 async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
@@ -1174,7 +1200,8 @@ function printComputerCommandFailure(result, ctx = null) {
   if (result?.status === 409) {
     const mismatch = extractAttachedWorkspaceMismatch(detail, result?.data);
     const targetWorkspace = mismatch?.requestedWorkspaceId || ctx?.workspaceId || '<workspace-id>';
-    console.error(`Run: atris computer activate --business ${businessSelector(ctx)} --workspace ${targetWorkspace}`);
+    const forceFlag = /--force|force to take over|re-run with --force/i.test(detail) ? ' --force' : '';
+    console.error(`Run: atris computer activate --business ${businessSelector(ctx)} --workspace ${targetWorkspace}${forceFlag}`);
   }
 }
 
@@ -1253,6 +1280,29 @@ function formatWorkspaceRef(workspace) {
   return workspace.name ? `${workspace.name} (${workspace.id})` : workspace.id;
 }
 
+function workspaceMatchesInput(workspace, input) {
+  if (!workspace || !input) return false;
+  const wanted = String(input).trim().toLowerCase();
+  if (!wanted) return false;
+  return String(workspace.id || '').toLowerCase() === wanted
+    || String(workspace.name || '').toLowerCase() === wanted;
+}
+
+function resolveWorkspaceFromList(workspaces, input) {
+  return (workspaces || []).find((workspace) => workspaceMatchesInput(workspace, input)) || null;
+}
+
+function formatLeaseAge(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return '-';
+  if (value < 60) return `${Math.floor(value)}s`;
+  const minutes = Math.floor(value / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 async function probeAttachedWorkspace(token, ctx) {
   const result = await apiRequestJson(
     `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/terminal`,
@@ -1272,7 +1322,7 @@ async function probeAttachedWorkspace(token, ctx) {
   return { workspaceId: null, health: 'degraded', result };
 }
 
-async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake') {
+async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer-wake', options = {}) {
   if (!ctx?.businessId || !ctx?.workspaceId) {
     return { ok: false, skipped: true, reason: 'missing_workspace' };
   }
@@ -1288,8 +1338,10 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   });
   const result = await runBusinessTerminalCommand(token, ctx, command, 120);
   if (!result.ok) {
-    console.log('  Runtime: bootstrap could not run.');
-    console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    if (!options.quiet) {
+      console.log('  Runtime: bootstrap could not run.');
+      console.log(`  Recovery: atris computer run "npm install --prefix /workspace/.atris-npm atris@latest && /workspace/.atris-npm/node_modules/.bin/atris update" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
     return { ok: false, result };
   }
 
@@ -1297,13 +1349,15 @@ async function bootstrapBusinessComputerRuntime(token, ctx, boundary = 'computer
   const output = String(data.stdout || data.output || data.result || '').trim();
   const line = output.split('\n').find((entry) => entry.includes('atris_runtime_bootstrap'));
   const recovery = output.split('\n').find((entry) => entry.startsWith('recovery='));
-  if (line) {
-    console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
-  } else {
-    console.log('  Runtime: Atris bootstrap receipt written.');
-  }
-  if (recovery) {
-    console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+  if (!options.quiet) {
+    if (line) {
+      console.log(`  Runtime: ${line.replace(/^atris_runtime_bootstrap\s*/, '')}`);
+    } else {
+      console.log('  Runtime: Atris bootstrap receipt written.');
+    }
+    if (recovery) {
+      console.log(`  Recovery: atris computer run "${recovery.slice('recovery='.length)}" --business ${ctx.slug || ctx.businessId} --workspace ${ctx.workspaceId}`);
+    }
   }
   return { ok: true, output };
 }
@@ -1457,12 +1511,12 @@ async function runBusinessPromptViaRunnerProxy(token, ctx, prompt, options = {})
   return { ok: false, error: 'runner proxy timed out', status: 0 };
 }
 
-async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
+async function ensureBusinessAwake(token, ctx, maxWaitSec = 90, options = {}) {
   const status = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
   if (status.ok && status.data && status.data.status === 'running' && status.data.endpoint) {
     return true;
   }
-  process.stdout.write('  Waking business computer... ');
+  if (!options.quiet) process.stdout.write('  Waking business computer... ');
   await apiRequestJson(`/business/${ctx.businessId}/ai-computer/wake`, { method: 'POST', token, body: {} });
   const start = Date.now();
   while (Date.now() - start < maxWaitSec * 1000) {
@@ -1470,12 +1524,12 @@ async function ensureBusinessAwake(token, ctx, maxWaitSec = 90) {
     const next = await apiRequestJson(`/business/${ctx.businessId}/ai-computer/status`, { method: 'GET', token });
     if (next.ok && next.data && next.data.status === 'running' && next.data.endpoint) {
       const elapsed = Math.floor((Date.now() - start) / 1000);
-      console.log(`awake (${elapsed}s)`);
-      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake');
+      if (!options.quiet) console.log(`awake (${elapsed}s)`);
+      await bootstrapBusinessComputerRuntime(token, ctx, 'computer-auto-wake', options);
       return true;
     }
   }
-  console.log('timeout');
+  if (!options.quiet) console.log('timeout');
   return false;
 }
 
@@ -1497,13 +1551,31 @@ async function computerStatus(token, ctx = null) {
     if (d.endpoint) console.log(`    Endpoint: ${d.endpoint}`);
     const workspaces = await listBusinessWorkspaces(token, ctx);
     const defaultWorkspace = workspaces.find((workspace) => workspace.is_default);
-    const targetWorkspace = workspaces.find((workspace) => workspace.id === ctx.workspaceId) || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
+    const resolvedTargetWorkspace = resolveWorkspaceFromList(workspaces, ctx.workspaceId);
+    const targetWorkspace = resolvedTargetWorkspace || (ctx.workspaceId ? { id: ctx.workspaceId } : null);
+    const probeCtx = resolvedTargetWorkspace?.id
+      ? { ...ctx, workspaceId: resolvedTargetWorkspace.id }
+      : ctx;
     console.log(`    Default workspace:  ${formatWorkspaceRef(defaultWorkspace)}`);
     console.log(`    Target workspace:   ${formatWorkspaceRef(targetWorkspace)}`);
-    if (status === 'running' && d.endpoint && ctx.workspaceId) {
-      const attached = await probeAttachedWorkspace(token, ctx);
-      const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
+    const attachedFromStatus = d.attached_workspace_id
+      ? { workspaceId: d.attached_workspace_id, health: null }
+      : null;
+    if (attachedFromStatus) {
+      const attachedWorkspace = workspaces.find((workspace) => workspace.id === attachedFromStatus.workspaceId)
+        || { id: attachedFromStatus.workspaceId, name: d.attached_workspace_name || null };
       console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      console.log(`    Attached by:        ${d.attached_by || '-'}`);
+      console.log(`    Attached at:        ${d.attached_at || '-'}`);
+      console.log(`    Lease age:          ${formatLeaseAge(d.lease_age_seconds)}`);
+      if (d.takeover_hint) console.log(`    Takeover hint:      ${d.takeover_hint}`);
+    }
+    if (status === 'running' && d.endpoint && probeCtx.workspaceId) {
+      const attached = await probeAttachedWorkspace(token, probeCtx);
+      if (!attachedFromStatus) {
+        const attachedWorkspace = workspaces.find((workspace) => workspace.id === attached.workspaceId) || (attached.workspaceId ? { id: attached.workspaceId } : null);
+        console.log(`    Attached workspace: ${formatWorkspaceRef(attachedWorkspace)}`);
+      }
       if (attached.health === 'workspace_mismatch') {
         printComputerCommandFailure(attached.result, ctx);
       } else if (attached.health !== 'ready') {
@@ -1686,7 +1758,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log(`  atris computer sleep --business ${owner} --workspace ${workspaceId}`);
 }
 
-async function computerActivate(token, ctx = null) {
+async function computerActivate(token, ctx = null, options = {}) {
   if (!ctx?.businessId || !ctx?.workspaceId) {
     console.error('Usage: atris computer activate --business <slug> --workspace <id>');
     process.exitCode = 1;
@@ -1696,7 +1768,7 @@ async function computerActivate(token, ctx = null) {
   const result = await apiRequestJson(`/business/${ctx.businessId}/workspaces/${ctx.workspaceId}/activate`, {
     method: 'POST',
     token,
-    body: {},
+    body: { force: Boolean(options.force) },
   });
   if (!result.ok) {
     printComputerCommandFailure(result, ctx);
@@ -2420,7 +2492,7 @@ async function computerAudit(token, ctx, limit = 10) {
   printBusinessChatAudit(result.data?.rows || []);
 }
 
-async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
+async function streamBusinessChatResult(token, ctx, executionId, rl = null, options = {}) {
   let fromIndex = 0;
   let errors = 0;
   let cancelling = false;
@@ -2458,7 +2530,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
   const sigintTarget = rl || process;
   sigintTarget.on('SIGINT', onSigint);
 
-  console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
+  if (!options.quiet) console.log(ui.dim('Running on cloud. Ctrl-C interrupts this run.'));
 
   try {
     while (true) {
@@ -2478,34 +2550,56 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null) {
 
       errors = 0;
       let done = false;
-      for (const event of (events.data?.events || [])) {
-        fromIndex++;
-        if (event.type === 'assistant_text' && event.content) {
-          sawVisibleOutput = true;
-          process.stdout.write(event.content);
-        } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
-          sawVisibleOutput = true;
-          process.stdout.write(String(event.result));
-        } else if (event.type === 'tool_use' && event.tool) {
-          const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
-          if (arg) {
-            console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
-          } else {
-            console.log(`\n  [${event.tool}]`);
+      const emitEvents = (items, { showTools = true } = {}) => {
+        let batchDone = false;
+        for (const event of (items || [])) {
+          if ((event.type === 'assistant_text' || event.type === 'text') && event.content) {
+            sawVisibleOutput = true;
+            process.stdout.write(event.content);
+          } else if (event.type === 'result' && event.result && !sawVisibleOutput) {
+            sawVisibleOutput = true;
+            process.stdout.write(String(event.result));
+          } else if (showTools && !options.quiet && event.type === 'tool_use' && event.tool) {
+            const arg = event.input?.file_path || event.input?.path || event.input?.pattern || event.input?.command || '';
+            if (arg) {
+              console.log(`\n  [${event.tool}] ${String(arg).slice(0, 120)}`);
+            } else {
+              console.log(`\n  [${event.tool}]`);
+            }
+          } else if (event.type === 'error') {
+            if (event.error) console.error(`\n${event.error}`);
+            terminalStatus = 'error';
+            batchDone = true;
+            break;
+          } else if (event.type === 'complete') {
+            terminalStatus = 'completed';
+            batchDone = true;
+            break;
           }
-        } else if (event.type === 'error') {
-          if (event.error) console.error(`\n${event.error}`);
-          terminalStatus = 'error';
-          done = true;
-          break;
-        } else if (event.type === 'complete') {
-          terminalStatus = 'completed';
-          done = true;
-          break;
         }
+        return batchDone;
+      };
+
+      const batch = events.data?.events || [];
+      done = emitEvents(batch);
+      const nextIndex = events.data?.next_index;
+      if (Number.isInteger(nextIndex) && nextIndex >= fromIndex) {
+        fromIndex = nextIndex;
+      } else {
+        fromIndex += batch.length;
       }
 
       if (done || ['completed', 'error', 'failed', 'cancelled'].includes(events.data?.status)) {
+        if (!sawVisibleOutput && events.data?.status === 'completed') {
+          const fullEvents = await apiRequestJson(
+            `/business/${ctx.businessId}/chat/events?execution_id=${executionId}&workspace_id=${ctx.workspaceId}&from_index=0`,
+            { method: 'GET', token, timeoutMs: 60000 }
+          );
+          if (fullEvents.ok) {
+            emitEvents(fullEvents.data?.events || [], { showTools: false });
+          }
+        }
+
         if (!process.stdout.write('\n')) {
           // no-op: keep line handling stable
         }
@@ -2566,7 +2660,7 @@ async function sendBusinessChat(token, ctx, message, sessionId, resetContext = f
   const nextSessionId = data.session_id || sessionId;
   if (rl) rl.pause();
   try {
-    await streamBusinessChatResult(token, ctx, data.execution_id, rl);
+    await streamBusinessChatResult(token, ctx, data.execution_id, rl, { quiet: Boolean(options.quiet) });
   } finally {
     if (rl) rl.resume();
   }
@@ -2581,31 +2675,36 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const oneShotMessage = initialOptions.message != null;
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
   const scriptedInput = initialOptions.message != null ? String(initialOptions.message) : pipedInput;
-  printCloudWordmark();
-  const selection = await chooseCloudLane(token, ctx, initialOptions);
+  if (!oneShotMessage) printCloudWordmark();
+  const selection = oneShotMessage
+    ? { worker: initialOptions.worker, model: initialOptions.model }
+    : await chooseCloudLane(token, ctx, initialOptions);
   if (selection.cancelled) return;
   let worker = activeWorker(selection.worker);
   let model = selection.model || null;
   let awaitingLoginCode = false;
-  let billingLabel = await describeBillingMode(token, ctx, worker);
-  let authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
+  let billingLabel = oneShotMessage ? null : await describeBillingMode(token, ctx, worker);
+  let authSummary = oneShotMessage || activeWorker(worker) !== 'claude' ? null : await describeClaudeAuth(token, ctx);
 
-  const awake = await ensureBusinessAwake(token, ctx);
+  const awake = await ensureBusinessAwake(token, ctx, 90, { quiet: oneShotMessage });
   if (!awake) {
     console.error('  Computer did not become ready in time.');
     return;
   }
 
-  if (isCodeOps) {
-    printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
-  } else {
-    printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+  if (!oneShotMessage) {
+    if (isCodeOps) {
+      printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+    } else {
+      printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+    }
   }
 
   if (scriptedInput !== null) {
@@ -2640,6 +2739,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
         model,
         systemPrompt: chatSystemPrompt,
         allowedTools: initialOptions.allowedTools,
+        quiet: oneShotMessage,
       });
     }
     return;
@@ -3392,7 +3492,7 @@ async function runComputer() {
     case 'chat': return computerChat(token, ctx, cloudOptions);
     case 'card': return computerCard(args.slice(1));
     case 'proof': return computerProof(token, ctx, cloudOptions);
-    case 'activate': return computerActivate(token, ctx);
+    case 'activate': return computerActivate(token, ctx, cloudOptions);
     case 'status': return computerStatus(token, ctx);
     case 'up':
     case 'wake': return computerWake(token, ctx);
