@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { selectDueMission, selectCodexGoalMission } = require('../commands/mission');
+const {
+  cappedClaudeReceiptText,
+  selectDueMission,
+  selectCodexGoalMission,
+  usefulClaudeReceiptSummary,
+} = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -17,7 +22,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, env = {} } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -25,6 +30,7 @@ function runCli(args, { cwd } = {}) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
@@ -51,6 +57,74 @@ function appendMissionState(dir, mission) {
     ...mission,
   }) + '\n', 'utf8');
 }
+
+test('Claude mission receipt summaries skip generic markdown headings', () => {
+  const text = [
+    '## Receipt',
+    '',
+    '- Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.',
+    '- Next tick: monitor payout surfaces only.',
+  ].join('\n');
+
+  assert.equal(
+    usefulClaudeReceiptSummary(text),
+    'Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.',
+  );
+  assert.match(cappedClaudeReceiptText(text), /Next tick: monitor payout surfaces only/);
+});
+
+test('mission run JSON preserves useful Claude receipt text', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const binDir = path.join(dir, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const fakeClaude = path.join(binDir, 'claude');
+    fs.writeFileSync(fakeClaude, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes('--help')) {
+  console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
+  process.exit(0);
+}
+const sessionFlag = args.includes('--session-id') ? '--session-id' : '--resume';
+const sessionId = args[args.indexOf(sessionFlag) + 1] || 'fake-session';
+console.log(JSON.stringify({ type: 'system', session_id: sessionId }));
+console.log(JSON.stringify({
+  type: 'result',
+  session_id: sessionId,
+  result: '## Receipt\\n- Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.\\n- Next tick: monitor payout surfaces only.',
+  total_cost_usd: 0.01,
+  duration_api_ms: 2,
+  num_turns: 1
+}));
+`, 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+
+    const started = runCli([
+      'mission',
+      'start',
+      'fake claude receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const run = runCli(['mission', 'run', mission.id, '--max-ticks', '1', '--json'], {
+      cwd: dir,
+      env: { PATH: `${binDir}:${process.env.PATH}` },
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ticks[0].claude.summary, 'Edited atris/runs/bounty-lane/targets-2026-05-10.md with a fresh scoped sweep.');
+    assert.match(payload.ticks[0].claude.receipt_text, /## Receipt/);
+    assert.match(payload.ticks[0].claude.receipt_text, /Next tick: monitor payout surfaces only/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
 
 test('mission status filters by status and limits list output', () => {
   const dir = makeTempDir();
@@ -353,6 +427,39 @@ test('mission run --due skips blocked caller-session missions', () => {
   }
 });
 
+test('mission run --due skips human-gated verifier missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'old-agent-due',
+      slug: 'old-agent-due',
+      objective: 'old agent due mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'current-human-gated',
+      slug: 'current-human-gated',
+      objective: 'current human gated mission',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      human_asks: ['Keshav approves publish voice and title'],
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const due = selectDueMission(dir);
+    assert.equal(due.id, 'old-agent-due');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal emits the Codex goal candidate from mission state', () => {
   const dir = makeTempDir();
   try {
@@ -403,6 +510,45 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(state.action, 'codex_goal_candidate');
     assert.equal(state.goal.mission_id, mission.id);
     assert.match(fs.readFileSync(payload.status_path, 'utf8'), /Codex Goal Controller/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal skips human-gated ready missions', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'older-codex-work',
+      slug: 'older-codex-work',
+      objective: 'older executable codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'new-human-review',
+      slug: 'new-human-review',
+      objective: 'new human review mission',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      human_asks: ['Keshav approves publish voice and title'],
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'older-codex-work');
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.mission_id, 'older-codex-work');
   } finally {
     cleanupTempDir(dir);
   }
@@ -657,15 +803,62 @@ test('always-on missions become due again after cadence even after verifier pass
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
 
-    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--complete-on-pass', '--json'], { cwd: dir });
+    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
     const firstPayload = JSON.parse(firstRun.stdout);
-    assert.equal(firstPayload.mission.status, 'running');
+    assert.equal(firstPayload.mission.status, 'ready');
+    assert.equal(firstPayload.ticks[0].tick_index, 1);
+    assert.equal(firstPayload.mission.last_tick_index, 1);
     assert.equal(firstPayload.mission.verifier_result.passed, true);
 
     const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + 2000);
     const dueAgain = selectDueMission(dir, afterCadence);
     assert.equal(dueAgain.id, firstPayload.mission.id);
+
+    const secondRun = runCli(['mission', 'run', firstPayload.mission.id, '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+    const secondPayload = JSON.parse(secondRun.stdout);
+    assert.equal(secondPayload.mission.status, 'ready');
+    assert.equal(secondPayload.ticks[0].tick_index, 2);
+    assert.equal(secondPayload.mission.last_tick_index, 2);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('manual always-on missions do not auto-rerun after verifier passes', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'manual no-op mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+
+    const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
+    const firstPayload = JSON.parse(firstRun.stdout);
+    assert.equal(firstPayload.mission.status, 'ready');
+    assert.equal(firstPayload.mission.verifier_result.passed, true);
+    assert.equal(selectDueMission(dir), null);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    assert.equal(JSON.parse(goal.stdout).action, 'no_goal_candidate');
+
+    const directRun = runCli(['mission', 'run', firstPayload.mission.id, '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(directRun.status, 0, directRun.stderr || directRun.stdout);
+    const directPayload = JSON.parse(directRun.stdout);
+    assert.equal(directPayload.mission.status, 'ready');
+    assert.equal(directPayload.ticks[0].tick_index, 2);
   } finally {
     cleanupTempDir(dir);
   }

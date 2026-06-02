@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const taskDb = require('../lib/task-db');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cli-test-'));
@@ -16,13 +17,14 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd, input } = {}) {
+function runCli(args, { cwd, input, env } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     input,
     encoding: 'utf8',
     env: {
       ...process.env,
+      ...(env || {}),
       ATRIS_SKIP_UPDATE_CHECK: '1',
     },
   });
@@ -109,6 +111,124 @@ test('activate prints core file paths', () => {
     assert.match(res.stdout, /atris[\\/]+TODO\.md/);
     assert.match(res.stdout, /atris[\\/]+wiki[\\/]+STATUS\.md/);
     assert.match(res.stdout, /Wiki:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris.md boot visualization does not create an empty daily journal', () => {
+  const dir = makeTempDir();
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'atris.md'), '# atris.md\n', 'utf8');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), '# MAP.md\n\n- `bin/atris.js`\n', 'utf8');
+    fs.writeFileSync(
+      path.join(atrisDir, 'TODO.md'),
+      ['# TODO.md', '', '## Backlog', '', '## In Progress', '', '## Completed', ''].join('\n'),
+      'utf8'
+    );
+
+    const res = runCli(['atris.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /WORKSPACE DETECTED/);
+    assert.equal(fs.existsSync(path.join(atrisDir, 'logs')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris.md boot visualization does not create a task DB just to count tasks', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, '.atris-test', 'tasks.db');
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'atris.md'), '# atris.md\n', 'utf8');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), '# MAP.md\n\n- `bin/atris.js`\n', 'utf8');
+    fs.writeFileSync(
+      path.join(atrisDir, 'TODO.md'),
+      ['# TODO.md', '', '## Backlog', '', '- markdown fallback task', '', '## In Progress', '', '## Completed', ''].join('\n'),
+      'utf8'
+    );
+
+    const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Tasks:\s+1 backlog, 0 active/);
+    assert.equal(fs.existsSync(dbPath), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris.md boot visualization prefers task DB counts over stale TODO rows', () => {
+  const dir = makeTempDir();
+  const oldDb = process.env.ATRIS_TASKS_DB;
+  const dbPath = path.join(dir, '.atris-test', 'tasks.db');
+  try {
+    const atrisDir = path.join(dir, 'atris');
+    fs.mkdirSync(atrisDir, { recursive: true });
+    fs.writeFileSync(path.join(atrisDir, 'atris.md'), '# atris.md\n', 'utf8');
+    fs.writeFileSync(path.join(atrisDir, 'MAP.md'), '# MAP.md\n\n- `bin/atris.js`\n', 'utf8');
+    fs.writeFileSync(
+      path.join(atrisDir, 'TODO.md'),
+      ['# TODO.md', '', '## Backlog', '', '- stale markdown task', '', '## In Progress', '', '## Completed', ''].join('\n'),
+      'utf8'
+    );
+
+    process.env.ATRIS_TASKS_DB = dbPath;
+    const db = taskDb.open(dbPath);
+    taskDb.addTask(db, {
+      title: 'Authoritative claimed task',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      status: 'claimed',
+      claimedBy: 'codex'
+    });
+    taskDb.close();
+
+    const res = runCli(['atris.md'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Tasks:\s+0 backlog, 1 active/);
+    assert.match(res.stdout, /TODO\.md ←── 0 tasks waiting/);
+  } finally {
+    taskDb.close();
+    if (oldDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = oldDb;
+    cleanupTempDir(dir);
+  }
+});
+
+test('skill list and audit include bundled skills from any workspace', () => {
+  const dir = makeTempDir();
+  try {
+    const localSkillDir = path.join(dir, 'atris', 'skills', 'local-only');
+    fs.mkdirSync(localSkillDir, { recursive: true });
+    fs.writeFileSync(path.join(localSkillDir, 'SKILL.md'), [
+      '---',
+      'name: local-only',
+      'description: Use when testing local project skill discovery from a temporary workspace.',
+      'version: 1.0.0',
+      'tags:',
+      '  - test',
+      '---',
+      '',
+      '# Local Only',
+      '',
+      '1. Check the local workspace.',
+      '2. Keep the proof bounded.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const list = runCli(['skill', 'list'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr);
+    assert.match(list.stdout, /local-only/);
+    assert.match(list.stdout, /x-search/);
+    assert.match(list.stdout, /calendar/);
+
+    const audit = runCli(['skill', 'audit', 'x-search'], { cwd: dir });
+    assert.equal(audit.status, 0, audit.stderr);
+    assert.match(audit.stdout, /Audit: x-search/);
+    assert.match(audit.stdout, /Score: 12\/12/);
   } finally {
     cleanupTempDir(dir);
   }
