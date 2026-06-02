@@ -83,6 +83,52 @@ function renderTrustedPublishHelp() {
   ].join('\n');
 }
 
+function checkVersionAvailability(version, runner = spawnSync) {
+  const result = runner('npm', ['view', `atris@${version}`, 'version', 'gitHead', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (result.status === 0) {
+    let payload = {};
+    try {
+      payload = JSON.parse(result.stdout || '{}');
+    } catch {}
+    return {
+      ok: false,
+      reason: 'version_exists',
+      version: payload.version || version,
+      gitHead: payload.gitHead || null,
+    };
+  }
+  const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+  if (text.includes('E404') || text.includes('No match found')) {
+    return { ok: true, version };
+  }
+  return {
+    ok: false,
+    reason: 'version_check_failed',
+    version,
+    error: result.stderr || result.stdout || 'npm view failed',
+  };
+}
+
+function renderVersionAvailabilityFailure(check) {
+  if (check.reason === 'version_exists') {
+    return [
+      `npm already has atris@${check.version}.`,
+      check.gitHead ? `Published gitHead: ${check.gitHead}` : null,
+      'Bump package.json and package-lock.json before publishing.',
+      '',
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    `Could not verify npm availability for atris@${check.version}.`,
+    String(check.error || '').trim(),
+    'Refusing to publish until the registry preflight is clear.',
+    '',
+  ].filter(Boolean).join('\n');
+}
+
 function verifyPublishedVersion(version, runner = spawnSync) {
   const result = runner('npm', ['view', 'atris', 'version', 'gitHead', '--json'], {
     cwd: repoRoot,
@@ -143,6 +189,14 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, o
     return 0;
   }
 
+  if (!args.includes('--dry-run') && !options.skipVersionPreflight) {
+    const availability = checkVersionAvailability(version, runner);
+    if (!availability.ok) {
+      process.stderr.write(renderVersionAvailabilityFailure(availability));
+      return 1;
+    }
+  }
+
   const result = runner('npm', buildPublishArgs(args), {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -173,6 +227,7 @@ if (require.main === module) {
 
 module.exports = {
   buildPublishArgs,
+  checkVersionAvailability,
   currentGitRef,
   isOtpFailure,
   isTrustedPublishAuthFailure,
@@ -180,6 +235,7 @@ module.exports = {
   renderOtpHelp,
   renderPublishVerification,
   renderTrustedPublishHelp,
+  renderVersionAvailabilityFailure,
   verifyPublishedVersion,
   verifyPublishedVersionWithRetry,
 };

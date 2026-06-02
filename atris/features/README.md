@@ -79,16 +79,19 @@ cp atris/features/_templates/validate.md.template atris/features/your-feature-na
 
 ### Active Features
 
-#### audit-gaps
-Close remaining audit gaps from self-audit
-- **Files:** atris/team/*.md, atris/features/README.md
-- **Status:** complete
-- **Keywords:** audit, persona, cleanup
-- **What:** Add PERSONA.md reference to all 5 agent specs, clean up stale feature statuses
+None.
 
 ---
 
 ### Completed Features
+
+#### audit-gaps
+Close remaining audit gaps from self-audit
+- **Files:** atris/team/*/MEMBER.md, atris/features/README.md, atris/features/audit-gaps/*
+- **Status:** complete
+- **Keywords:** audit, persona, cleanup
+- **What:** Agent member specs reference PERSONA.md for communication style, and stale feature statuses are cleaned up
+- **Completed:** 2026-05-19
 
 #### endstate
 Public benchmark for proving a coordinated stack beats a pinned single-model baseline
@@ -116,7 +119,7 @@ Local-first project wiki with cloud opt-in
 
 #### self-improving-loop
 Make Atris recursive — validate.md lessons feed back into the next idea.md
-- **Files:** atris/lessons.md (new), atris.md, atris/team/navigator.md, atris/team/validator.md, atris/MAP.md
+- **Files:** atris/lessons.md (new), atris.md, atris/team/navigator/MEMBER.md, atris/team/validator/MEMBER.md, atris/MAP.md
 - **Status:** complete
 - **Keywords:** recursion, lessons, feedback-loop, self-improving, lessons.md
 - **What:** lessons.md accumulates validated learnings; navigator reads them before planning; validator harvests them after validating

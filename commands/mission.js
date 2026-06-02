@@ -749,10 +749,16 @@ function missionVerifierPassed(mission) {
 
 function missionDueAt(mission, now = new Date()) {
   const cadenceSeconds = parseCadenceSeconds(mission.cadence);
-  if (!mission.last_tick_at || cadenceSeconds === 0) return true;
+  if (!mission.last_tick_at) return true;
+  if (cadenceSeconds === 0) return !(mission.always_on && missionVerifierPassed(mission));
   const lastTickAt = Date.parse(mission.last_tick_at);
   if (!Number.isFinite(lastTickAt)) return true;
   return now.getTime() - lastTickAt >= cadenceSeconds * 1000;
+}
+
+function missionSelectableForLoop(mission, now = new Date()) {
+  return missionIsRunnable(mission)
+    && !(mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now));
 }
 
 function secondsUntilMissionDue(mission, now = new Date()) {
@@ -764,8 +770,15 @@ function secondsUntilMissionDue(mission, now = new Date()) {
   return Math.max(0, Math.ceil((dueAt - now.getTime()) / 1000));
 }
 
+function missionHasHumanAsks(mission) {
+  return Array.isArray(mission?.human_asks)
+    && mission.human_asks.some((ask) => String(ask || '').trim());
+}
+
 function missionIsRunnable(mission) {
-  return mission && GOAL_LOOP_STATUSES.has(String(mission.status || ''));
+  return mission
+    && GOAL_LOOP_STATUSES.has(String(mission.status || ''))
+    && !missionHasHumanAsks(mission);
 }
 
 function missionSortTime(mission) {
@@ -774,7 +787,7 @@ function missionSortTime(mission) {
 
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter(missionIsRunnable)
+    .filter((mission) => missionSelectableForLoop(mission, now))
     .filter((mission) => mission.verifier)
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
     .filter((mission) => missionDueAt(mission, now));
@@ -793,7 +806,7 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
 
 function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
-    .filter(missionIsRunnable);
+    .filter((mission) => missionSelectableForLoop(mission, now));
 
   candidates.sort((a, b) => {
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
@@ -1177,7 +1190,8 @@ function spawnClaudeTick(mission, opts) {
         exitCode: code,
         sessionIds: Array.from(observedSessionIds),
         result: finalText,
-        summary: (finalText || '').split('\n').filter(Boolean)[0]?.slice(0, 240) || (ok ? 'no-text' : 'error'),
+        summary: usefulClaudeReceiptSummary(finalText, ok ? 'no-text' : 'error'),
+        receipt_text: cappedClaudeReceiptText(finalText),
         api_equivalent_estimate: costEstimate,
         duration_api_ms: durationApiMs,
         duration_total_ms: Date.now() - startedAt,
@@ -1195,6 +1209,33 @@ function spawnClaudeTick(mission, opts) {
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
     });
   });
+}
+
+function stripClaudeReceiptLine(line) {
+  return String(line || '')
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .trim();
+}
+
+function usefulClaudeReceiptSummary(text, fallback = 'no-text') {
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    const clean = stripClaudeReceiptLine(line);
+    if (!clean) continue;
+    if (/^(receipt|summary|final|final answer|result)$/i.test(clean)) continue;
+    return clean.slice(0, 240);
+  }
+  return fallback;
+}
+
+function cappedClaudeReceiptText(text, limit = 4000) {
+  const clean = String(text || '').trim();
+  if (!clean) return '';
+  if (clean.length <= limit) return clean;
+  return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
 }
 
 async function runMission(args) {
@@ -1324,7 +1365,7 @@ async function runMission(args) {
       if (mission.verifier !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
 
-      const tickIdx = ticks.length + 1;
+      const tickIdx = Number(mission.last_tick_index || 0) + 1;
       const tickStart = stampIso();
       const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
@@ -1359,6 +1400,7 @@ async function runMission(args) {
         result.claude = {
           ok: claudeResult.ok,
           summary: claudeResult.summary,
+          receipt_text: claudeResult.receipt_text,
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,
@@ -1425,7 +1467,7 @@ async function runMission(args) {
       });
 
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-      const newStatus = (verifierResult?.passed && mission.always_on) ? 'running' :
+      const newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
                         (verifierResult?.passed && completeOnPass) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
@@ -1449,6 +1491,7 @@ async function runMission(args) {
         last_tick_at: finishedAt,
         last_tick_status: result.status,
         last_tick_reason: result.reason,
+        last_tick_index: tickIdx,
         verifier_result: verifierResult || mission.verifier_result || null,
         receipt_path: receiptPath,
         next_action: nextAction,
@@ -1916,4 +1959,6 @@ module.exports = {
   renderMissionStatus,
   selectDueMission,
   selectCodexGoalMission,
+  usefulClaudeReceiptSummary,
+  cappedClaudeReceiptText,
 };
