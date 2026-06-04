@@ -192,7 +192,7 @@ function printWikiHelp(scope = null) {
     console.log('');
     console.log('Build a local or cloud wiki lint prompt.');
   } else {
-    console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify> [business] [args]');
+    console.log('Usage: atris wiki <ingest|query|lint|search|log|loop|verify|entities|related> [business] [args]');
     console.log('');
     console.log('  ingest <path>                 Local-first ingest into atris/wiki/');
     console.log('  query  "question"             Local-first query against atris/wiki/');
@@ -201,6 +201,8 @@ function printWikiHelp(scope = null) {
     console.log('  log    [business] [N]         Show recent atris/wiki/log.md entries');
     console.log('  loop                          Run local wiki upkeep analysis and refresh STATUS/log');
     console.log('  verify                        Check agent-readable source/verification metadata');
+    console.log('  entities [--type T] [--json]  List extracted graph entities');
+    console.log('  related <entity> [--json]     List graph relationships touching entity');
   }
   console.log('');
   console.log('Flags:');
@@ -211,6 +213,80 @@ function printWikiHelp(scope = null) {
   console.log('');
   console.log('Business is auto-detected from .atris/business.json for cloud mode if omitted.');
   console.log('');
+}
+
+function hasFlag(args, name) {
+  return args.includes(name);
+}
+
+function optionValue(args, name, fallback = null) {
+  const index = args.indexOf(name);
+  if (index === -1 || index + 1 >= args.length) return fallback;
+  return args[index + 1];
+}
+
+function printJsonOrText(payload, lines, asJson) {
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  lines.forEach((line) => console.log(line));
+}
+
+function readWikiGraph(root = process.cwd()) {
+  const graphPath = path.join(root, 'atris', 'wiki', '.graph.json');
+  if (!fs.existsSync(graphPath)) {
+    return { graphPath, graph: { schema: 'atris.wiki_graph.v1', entities: [], relationships: [] } };
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(graphPath, 'utf8'));
+    return {
+      graphPath,
+      graph: {
+        schema: parsed.schema || 'atris.wiki_graph.v1',
+        updated_at: parsed.updated_at || null,
+        entities: Array.isArray(parsed.entities) ? parsed.entities : [],
+        relationships: Array.isArray(parsed.relationships) ? parsed.relationships : [],
+      },
+    };
+  } catch {
+    return { graphPath, graph: { schema: 'atris.wiki_graph.v1', entities: [], relationships: [] } };
+  }
+}
+
+function wikiEntities(args = []) {
+  const asJson = hasFlag(args, '--json');
+  const type = optionValue(args, '--type', null);
+  const { graphPath, graph } = readWikiGraph();
+  const entities = type ? graph.entities.filter((entity) => entity.type === type) : graph.entities;
+  printJsonOrText(
+    { ok: true, action: 'entities', graph_path: graphPath, type: type || null, entities },
+    entities.length
+      ? entities.map((entity) => `${entity.type || 'concept'}\t${entity.name}`)
+      : ['No wiki graph entities found. Run: atris member wake wiki-miner --execute'],
+    asJson,
+  );
+}
+
+function wikiRelated(args = []) {
+  const asJson = hasFlag(args, '--json');
+  const entity = args.filter((arg) => arg !== '--json')[0] || '';
+  if (!entity) {
+    console.error('Usage: atris wiki related <entity>');
+    process.exit(1);
+  }
+  const wanted = entity.toLowerCase();
+  const { graphPath, graph } = readWikiGraph();
+  const related = graph.relationships
+    .filter((relationship) => String(relationship.from || '').toLowerCase() === wanted || String(relationship.to || '').toLowerCase() === wanted)
+    .slice(0, 5);
+  printJsonOrText(
+    { ok: true, action: 'related', graph_path: graphPath, entity, relationships: related },
+    related.length
+      ? related.map((relationship) => `${relationship.from} -[${relationship.type}]-> ${relationship.to}`)
+      : [`No wiki graph relationships found for "${entity}".`],
+    asJson,
+  );
 }
 
 async function wikiIngest(mode, slug, sourceValue) {
@@ -414,6 +490,14 @@ async function wikiCommand(subcommand, ...args) {
   const { mode, args: cleanArgs } = parseModeArgs(args);
 
   switch (subcommand) {
+    case 'entities': {
+      wikiEntities(cleanArgs);
+      break;
+    }
+    case 'related': {
+      wikiRelated(cleanArgs);
+      break;
+    }
     case 'ingest': {
       const [slug, sourceValue] = mode === 'cloud' ? parseCloudArgs(cleanArgs) : [null, cleanArgs.join(' ')];
       await wikiIngest(mode, slug, sourceValue);
@@ -494,4 +578,6 @@ module.exports = {
   wikiSearch,
   wikiLog,
   wikiVerify,
+  wikiEntities,
+  wikiRelated,
 };

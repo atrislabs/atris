@@ -17,6 +17,9 @@ const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
 const AGENT_CERTIFICATION_REVIEW_PASSES = 2;
 const REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS = 3;
 const REVIEW_LANE_LOOP_MAX_STEPS = 10;
+const REVIEW_LANE_RUN_DEFAULT_MAX_RUNS = 3;
+const REVIEW_LANE_RUN_MAX_RUNS = 20;
+const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_review';
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -95,7 +98,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
-  atris task delegate "<title>" --to <id>  Create an assigned task
+  atris task delegate "<title>" --to <id> [--goal-id <id>]  Create an assigned task
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
@@ -110,6 +113,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
   atris task review-lane-act [--json]      Execute next safe Review-lane agent action
   atris task review-lane-loop [--json]     Run bounded safe Review-lane actions
+  atris task review-lane-run [--json]      Run bounded review-lane loops and write receipts
   atris task current [--json] [--goal-id <id>] [--tag <tag>] [--status <s>] [--review-state <lane>]
                                            Read-only best next task page + queue
   atris task queue [--json] [--goal-id <id>] [--tag <tag>] [--status <s>] [--review-state <lane>]
@@ -196,6 +200,18 @@ function validHumanActorFlag(value) {
   if (typeof value !== 'string') return false;
   const actor = value.trim();
   return Boolean(actor) && !actor.startsWith('--') && actor !== 'auto-accept-certified';
+}
+
+function agentProofOnlyMode() {
+  return process.env.ATRIS_AGENT_PROOF_ONLY === '1';
+}
+
+function failAgentProofOnly(label, detail) {
+  failTask(
+    label,
+    'agent_proof_only_human_accept_blocked',
+    detail || 'Agent proof-only mode can write notes, ready proof, and zero-reward reviews, but cannot mark tasks done or accept XP.',
+  );
 }
 
 function printJson(value) {
@@ -398,14 +414,82 @@ function findExistingReviewNextTask(taskDb, db, currentTask, title) {
   const parentId = currentTask && currentTask.id || null;
   const nextTitle = String(title || '').trim();
   if (!parentId || !nextTitle) return null;
-  return taskDb.listTasks(db, {
+  const children = taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
-  }).find(task => {
+  }).filter(task => {
     const metadata = task.metadata || {};
     return metadata.parent_task_id === parentId
-      && metadata.source === 'task_review_next'
-      && String(task.title || '').trim() === nextTitle;
-  }) || null;
+      && metadata.source === 'task_review_next';
+  });
+  return children.find(task => String(task.title || '').trim() === nextTitle)
+    || children[0]
+    || null;
+}
+
+function buildReviewFollowUpChildPredicate(taskDb, db, workspaceRoot) {
+  const rows = taskDb.listTasks(db, {
+    workspaceRoot: workspaceRoot || null,
+  });
+  const childrenByParent = new Map();
+  for (const task of rows) {
+    const metadata = task && task.metadata || {};
+    const parentId = metadata.parent_task_id || null;
+    if (!parentId || metadata.source !== 'task_review_next') continue;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(task);
+  }
+  return task => {
+    const parentId = task && task.id || null;
+    return Boolean(parentId && childrenByParent.has(parentId));
+  };
+}
+
+function taskEventOrderValue(event) {
+  const version = Number(event && event.version);
+  if (Number.isFinite(version) && version > 0) return version;
+  const createdAt = Number(event && event.created_at);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function eventIsTaskReviewChat(event) {
+  const content = event && event.payload && event.payload.content;
+  return event && event.event_type === 'message'
+    && /\bTASK_REVIEW_CHAT\b/.test(String(content || ''));
+}
+
+function eventClearsPendingReviewChat(event) {
+  return Boolean(event && [
+    'proof_ready',
+    'reviewed',
+    'revision_requested',
+    'completed',
+    'blocked',
+  ].includes(event.event_type));
+}
+
+function buildPendingReviewChatPredicate(taskDb, db, workspaceRoot) {
+  const events = taskDb.listTaskEvents(db, {
+    workspaceRoot: workspaceRoot || null,
+  });
+  const latestReviewChatByTask = new Map();
+  const latestClearByTask = new Map();
+  for (const event of events) {
+    const taskId = event && event.task_id;
+    if (!taskId) continue;
+    const order = taskEventOrderValue(event);
+    if (eventIsTaskReviewChat(event)) {
+      latestReviewChatByTask.set(taskId, Math.max(latestReviewChatByTask.get(taskId) || 0, order));
+    } else if (eventClearsPendingReviewChat(event)) {
+      latestClearByTask.set(taskId, Math.max(latestClearByTask.get(taskId) || 0, order));
+    }
+  }
+  return task => {
+    const taskId = task && task.id || null;
+    if (!taskId) return false;
+    const latestReviewChat = latestReviewChatByTask.get(taskId) || 0;
+    if (!latestReviewChat) return false;
+    return latestReviewChat > (latestClearByTask.get(taskId) || 0);
+  };
 }
 
 function createReviewNextTask(taskDb, db, currentTask, title) {
@@ -905,13 +989,13 @@ function latestTaskEvent(task) {
   return events.length ? events[events.length - 1] : null;
 }
 
-function reviewHandoffForTask(task, { suppressExistingFollowUp = false } = {}) {
+function reviewHandoffForTask(task, { suppressExistingFollowUp = false, hasExistingReviewFollowUp = null } = {}) {
   const review = task && task.review || {};
   if (task && task.status !== 'review') return null;
   if (review.approval_status !== 'pending') return null;
   const agentCertified = review.agent_certified === true;
   const nextTask = reviewNextTaskTitle(task);
-  const hasExistingFollowUp = Boolean(suppressExistingFollowUp && taskHasReviewFollowUpChild(task));
+  const hasExistingFollowUp = Boolean(suppressExistingFollowUp && taskHasReviewFollowUpChild(task, { hasExistingReviewFollowUp }));
   const nextAction = agentCertified
     ? certifiedReviewNextAction(hasExistingFollowUp ? '' : nextTask)
     : 'agent_review_again';
@@ -941,6 +1025,10 @@ function taskReviewClip(value, max = 500) {
   return text.length > max ? `${text.slice(0, Math.max(0, max - 3)).trim()}...` : text;
 }
 
+function taskReviewFullEvidence(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 function taskReviewEvidencePaths(text, limit = 8) {
   const source = String(text || '');
   const matches = source.match(/(?:\.{0,2}\/|~\/|\/)?[\w@.+-]+(?:\/[\w@.+-]+)+(?:\.[A-Za-z0-9]+)?|[\w@.+-]+\.(?:js|mjs|cjs|ts|tsx|jsx|json|md|py|sh|yml|yaml|toml|lock|txt)/g) || [];
@@ -965,6 +1053,7 @@ function taskReviewCommandLooksSpecific(command) {
   if (!text) return false;
   if (/^(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)$/i.test(text)) return false;
   if (/^atris\s+task\s+\w+\s*$/i.test(text)) return false;
+  if (/^atris\s+task\s+(?:accept|auto-accept-certified)\b/i.test(text)) return false;
   if (/^atris\s+task\s+\w+\s+json\s*$/i.test(text) && !/--json\b/i.test(text)) return false;
   if (/^atris\s+(?:command|review-chat|smoke|temp)\b/i.test(text)) return false;
   if (/^(?:npm|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg|git)\s+commands?\b/i.test(text)) return false;
@@ -1047,7 +1136,7 @@ function taskReviewVerificationFocus(task) {
   const evidenceText = [proof].filter(Boolean).join('\n');
   return {
     objective: taskReviewClip(objective, 260) || null,
-    proof_claim: taskReviewClip(proof, 900) || null,
+    proof_claim: taskReviewFullEvidence(proof) || null,
     commands_to_verify: taskReviewEvidenceCommands(evidenceText),
     files_to_inspect: taskReviewEvidencePaths(evidenceText),
     recent_thread: taskReviewRecentThread(task),
@@ -1058,7 +1147,7 @@ function taskReviewVerificationFocus(task) {
 function taskReviewSpecificCodexPrompt(task, focus, actor) {
   const ref = taskRef(task);
   const title = taskReviewClip(task && task.title, 180);
-  const proof = focus && focus.proof_claim ? ` Proof: ${focus.proof_claim}` : '';
+  const proof = focus && focus.proof_claim ? ` Proof: ${taskReviewClip(focus.proof_claim, 1800)}` : '';
   const commands = focus && focus.commands_to_verify && focus.commands_to_verify.length
     ? ` Commands: ${focus.commands_to_verify.join(' | ')}.`
     : '';
@@ -1192,7 +1281,7 @@ function taskReviewChatNote(contract) {
     `human_accept_xp: ${contract.human_accept_command}`,
     '',
     `objective: ${contract.verification_focus.objective || 'unknown'}`,
-    `proof_claim: ${taskReviewClip(contract.verification_focus.proof_claim, 280) || 'missing'}`,
+    `proof_claim: ${contract.verification_focus.proof_claim || 'missing'}`,
     '',
     'commands_to_verify:',
     ...(contract.verification_focus.commands_to_verify.length
@@ -1299,9 +1388,9 @@ function clipStatusText(value, max = 180) {
   return `${text.slice(0, max - 1)}…`;
 }
 
-function compactReviewActionRef(task) {
+function compactReviewActionRef(task, { hasExistingReviewFollowUp = null } = {}) {
   if (!task) return null;
-  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true }) || {};
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp }) || {};
   return {
     id: task.id,
     display_id: task.display_id || null,
@@ -1315,7 +1404,7 @@ function compactReviewActionRef(task) {
   };
 }
 
-function taskStatusSummary(projection, { history = false } = {}) {
+function taskStatusSummary(projection, { history = false, hasExistingReviewFollowUp = null } = {}) {
   const tasks = projection.tasks || [];
   const hiddenDoneCount = Math.max(0, Number(projection.surface && projection.surface.hidden_done_count || 0));
   const fullTaskCount = Math.max(tasks.length + hiddenDoneCount, Number(projection.surface && projection.surface.full_task_count || 0));
@@ -1329,15 +1418,15 @@ function taskStatusSummary(projection, { history = false } = {}) {
   };
   const active = [...columns.do, ...columns.review, ...columns.blocked, ...columns.plan];
   const reviewNeedingAgentAction = columns.review.filter(task => {
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     return handoff && handoff.next_action === 'agent_review_again';
   });
   const reviewContinueWork = columns.review.filter(task => {
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     return handoff && handoff.next_action === 'continue_work';
   });
   const reviewHumanAcceptWaiting = columns.review.filter(task => {
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     return handoff && handoff.next_action === 'human_accept_waiting';
   });
   const reviewAgentCertified = reviewContinueWork.length + reviewHumanAcceptWaiting.length;
@@ -1394,11 +1483,11 @@ function taskStatusSummary(projection, { history = false } = {}) {
     review_actions: {
       continue_work: {
         count: reviewContinueWork.length,
-        first: compactReviewActionRef(reviewContinueWork[0] || null),
+        first: compactReviewActionRef(reviewContinueWork[0] || null, { hasExistingReviewFollowUp }),
       },
       human_accept_waiting: {
         count: reviewHumanAcceptWaiting.length,
-        first: compactReviewActionRef(reviewHumanAcceptWaiting[0] || null),
+        first: compactReviewActionRef(reviewHumanAcceptWaiting[0] || null, { hasExistingReviewFollowUp }),
       },
     },
     needs_review: columns.review.slice(0, 5).map(compactTaskForStatus),
@@ -1443,8 +1532,8 @@ function sortTasksNewestFirst(tasks) {
   });
 }
 
-function taskQueueItem(task, { reviewer = 'codex-review' } = {}) {
-  const page = taskPageContract(task, { reviewer });
+function taskQueueItem(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
+  const page = taskPageContract(task, { reviewer, hasExistingReviewFollowUp });
   const item = compactTaskForStatus(task) || {};
   if (item.review && item.review.verification_chat) {
     item.review = { ...item.review };
@@ -1559,10 +1648,10 @@ function taskGoalScopeValues(task) {
   ].filter(Boolean);
 }
 
-function taskReviewStateMatches(task, reviewState) {
+function taskReviewStateMatches(task, reviewState, { hasExistingReviewFollowUp = null } = {}) {
   const wanted = String(reviewState || '').trim().toLowerCase().replace(/_/g, '-');
   if (!wanted || wanted === 'any') return true;
-  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
   if (wanted === 'continue-work' || wanted === 'continue' || wanted === 'agent-actionable' || wanted === 'executable') {
     return handoff?.next_action === 'continue_work';
   }
@@ -1578,7 +1667,7 @@ function taskReviewStateMatches(task, reviewState) {
   return false;
 }
 
-function taskMatchesQueueScope(task, scope = {}) {
+function taskMatchesQueueScope(task, scope = {}, options = {}) {
   const normalized = normalizeTaskQueueScope(scope);
   if (normalized.goal_id && !taskGoalScopeValues(task).some(value => taskScopeEquals(value, normalized.goal_id))) {
     return false;
@@ -1593,16 +1682,16 @@ function taskMatchesQueueScope(task, scope = {}) {
       return false;
     }
   }
-  if (normalized.review_state && !taskReviewStateMatches(task, normalized.review_state)) {
+  if (normalized.review_state && !taskReviewStateMatches(task, normalized.review_state, options)) {
     return false;
   }
   return true;
 }
 
-function filterTasksByScope(tasks = [], scope = {}) {
+function filterTasksByScope(tasks = [], scope = {}, options = {}) {
   const normalized = normalizeTaskQueueScope(scope);
   if (taskQueueScopeIsEmpty(normalized)) return tasks;
-  return tasks.filter(task => taskMatchesQueueScope(task, normalized));
+  return tasks.filter(task => taskMatchesQueueScope(task, normalized, options));
 }
 
 function taskQueueScopeWithoutReviewState(scope = {}) {
@@ -1614,7 +1703,7 @@ function taskQueueScopeWithoutReviewState(scope = {}) {
   });
 }
 
-function taskReviewStateCounts(tasks = []) {
+function taskReviewStateCounts(tasks = [], { hasExistingReviewFollowUp = null } = {}) {
   const counts = {
     total: 0,
     needs_agent: 0,
@@ -1624,7 +1713,7 @@ function taskReviewStateCounts(tasks = []) {
   };
   for (const task of tasks || []) {
     if (!task || taskQueueColumnKey(task) !== 'review') continue;
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     if (!handoff) continue;
     counts.total += 1;
     if (handoff.next_action === 'agent_review_again') counts.needs_agent += 1;
@@ -1635,30 +1724,33 @@ function taskReviewStateCounts(tasks = []) {
   return counts;
 }
 
-function taskHasReviewFollowUpChild(task) {
+function taskHasReviewFollowUpChild(task, { hasExistingReviewFollowUp = null } = {}) {
   const nextTitle = reviewNextTaskTitle(task);
   if (!nextTitle) return false;
+  if (typeof hasExistingReviewFollowUp === 'function' && hasExistingReviewFollowUp(task)) return true;
+  const childIds = task && task.lineage && task.lineage.child_task_ids;
+  if (!Array.isArray(childIds) || !childIds.some(Boolean)) return false;
   const childTitles = task && task.lineage && task.lineage.child_titles;
   if (Array.isArray(childTitles) && childTitles.some(title => String(title || '').trim() === nextTitle)) return true;
-  const childIds = task && task.lineage && task.lineage.child_task_ids;
-  return Array.isArray(childIds) && childIds.some(Boolean) && !Array.isArray(childTitles);
+  // A certified review row should spawn one follow-up; later next_task edits should not reopen the parent.
+  return true;
 }
 
-function taskQueueReviewStateCounts(projection, scope = {}) {
+function taskQueueReviewStateCounts(projection, scope = {}, { hasExistingReviewFollowUp = null } = {}) {
   const normalizedScope = normalizeTaskQueueScope(scope);
   const countScope = taskQueueScopeWithoutReviewState(normalizedScope);
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), countScope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), countScope, { hasExistingReviewFollowUp });
   return {
     schema: 'atris.task_review_state_counts.v1',
     scope: countScope,
     active_filter: normalizedScope.review_state || null,
-    ...taskReviewStateCounts(tasks),
+    ...taskReviewStateCounts(tasks, { hasExistingReviewFollowUp }),
   };
 }
 
-function taskReviewStateActionSample(task, { reviewer = 'codex-review' } = {}) {
+function taskReviewStateActionSample(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   if (!task) return null;
-  const page = taskPageContract(task, { reviewer });
+  const page = taskPageContract(task, { reviewer, hasExistingReviewFollowUp });
   const nextAction = page.stage && page.stage.next_action || {};
   const sample = {
     id: task.id,
@@ -1684,25 +1776,57 @@ function taskReviewStateActionSample(task, { reviewer = 'codex-review' } = {}) {
   return sample;
 }
 
-function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex-review' } = {}) {
+function normalizeTaskIdSet(values) {
+  if (!values) return new Set();
+  const list = values instanceof Set ? Array.from(values) : Array.isArray(values) ? values : [values];
+  return new Set(list.map(value => String(value || '').trim()).filter(Boolean));
+}
+
+function taskHasPendingReviewChat(task, { hasPendingReviewChat = null } = {}) {
+  return Boolean(typeof hasPendingReviewChat === 'function' && hasPendingReviewChat(task));
+}
+
+function pendingReviewChatActionSample(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
+  const sample = taskReviewStateActionSample(task, { reviewer, hasExistingReviewFollowUp });
+  if (!sample) return null;
+  sample.next_action = 'pending_review_chat';
+  sample.label = 'Pending review chat';
+  sample.command = null;
+  sample.api = null;
+  sample.step_command = null;
+  sample.step_api = null;
+  sample.reason = PENDING_REVIEW_CHAT_STOP_REASON;
+  delete sample.review_chat_command;
+  delete sample.continue_work_command;
+  return sample;
+}
+
+function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex-review', hasExistingReviewFollowUp = null, hasPendingReviewChat = null, excludeTaskIds = null } = {}) {
   const normalizedScope = normalizeTaskQueueScope(scope);
   const actionScope = taskQueueScopeWithoutReviewState(normalizedScope);
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), actionScope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), actionScope, { hasExistingReviewFollowUp });
+  const excluded = normalizeTaskIdSet(excludeTaskIds);
   const firstByState = {
     needs_agent: null,
     continue_work: null,
     human_accept_waiting: null,
   };
   const skippedContinueWorkWithFollowUp = [];
+  const pendingReviewChats = [];
   for (const task of tasks || []) {
     if (!task || taskQueueColumnKey(task) !== 'review') continue;
+    if (excluded.has(String(task.id || ''))) continue;
     const rawHandoff = reviewHandoffForTask(task);
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     if (!handoff) continue;
+    if (handoff.next_action === 'agent_review_again' && taskHasPendingReviewChat(task, { hasPendingReviewChat })) {
+      pendingReviewChats.push(task);
+      continue;
+    }
     if (handoff.next_action === 'agent_review_again' && !firstByState.needs_agent) {
       firstByState.needs_agent = task;
     }
-    if (rawHandoff?.next_action === 'continue_work' && taskHasReviewFollowUpChild(task)) {
+    if (rawHandoff?.next_action === 'continue_work' && taskHasReviewFollowUpChild(task, { hasExistingReviewFollowUp })) {
       skippedContinueWorkWithFollowUp.push(task);
     }
     if (handoff.next_action === 'continue_work' && !firstByState.continue_work) {
@@ -1716,13 +1840,17 @@ function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex
     schema: 'atris.task_review_state_actions.v1',
     scope: actionScope,
     active_filter: normalizedScope.review_state || null,
-    needs_agent: taskReviewStateActionSample(firstByState.needs_agent, { reviewer }),
-    continue_work: taskReviewStateActionSample(firstByState.continue_work, { reviewer }),
-    human_accept_waiting: taskReviewStateActionSample(firstByState.human_accept_waiting, { reviewer }),
+    needs_agent: taskReviewStateActionSample(firstByState.needs_agent, { reviewer, hasExistingReviewFollowUp }),
+    continue_work: taskReviewStateActionSample(firstByState.continue_work, { reviewer, hasExistingReviewFollowUp }),
+    human_accept_waiting: taskReviewStateActionSample(firstByState.human_accept_waiting, { reviewer, hasExistingReviewFollowUp }),
     skipped_continue_work_with_follow_up_count: skippedContinueWorkWithFollowUp.length,
     skipped_continue_work_with_follow_up: skippedContinueWorkWithFollowUp
       .slice(0, 5)
-      .map(task => taskReviewStateActionSample(task, { reviewer })),
+      .map(task => taskReviewStateActionSample(task, { reviewer, hasExistingReviewFollowUp })),
+    pending_review_chat_count: pendingReviewChats.length,
+    pending_review_chat: pendingReviewChats
+      .slice(0, 5)
+      .map(task => pendingReviewChatActionSample(task, { reviewer, hasExistingReviewFollowUp })),
   };
 }
 
@@ -1769,7 +1897,7 @@ function taskQueueCapabilities() {
         requires_task_db: true,
         dry_run_flag: '--dry-run',
         allowed_actions: ['review_chat', 'continue_work'],
-        blocked_actions: ['human_accept_waiting', 'capabilities_drift', 'none'],
+        blocked_actions: ['human_accept_waiting', 'pending_review_chat', 'capabilities_drift', 'none'],
       },
       review_lane_loop: {
         command: 'atris task review-lane-loop --json',
@@ -1784,8 +1912,30 @@ function taskQueueCapabilities() {
         max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
         orchestrates: 'review_lane_act',
         allowed_actions: ['review_chat', 'continue_work'],
-        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', 'capabilities_check_failed', 'no_review_lane_action', 'repeat_selection', 'max_steps_reached'],
-        blocked_actions: ['human_accept_waiting'],
+        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_steps_reached'],
+        blocked_actions: ['human_accept_waiting', 'pending_review_chat'],
+      },
+      review_lane_run: {
+        command: 'atris task review-lane-run --json',
+        api: { method: 'POST', path: '/api/tasks/review-lane-run' },
+        read_only: false,
+        mutates_task_db: 'conditional',
+        writes_projection: true,
+        writes_receipt: true,
+        receipt_path: '.atris/state/review-lane-runs.jsonl',
+        latest_receipt_path: '.atris/state/review-lane-run.latest.json',
+        requires_task_db: true,
+        dry_run_flag: '--dry-run',
+        max_runs_flag: '--max-runs <n>',
+        max_steps_flag: '--max-steps <n>',
+        default_max_runs: REVIEW_LANE_RUN_DEFAULT_MAX_RUNS,
+        max_runs_cap: REVIEW_LANE_RUN_MAX_RUNS,
+        default_max_steps: REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS,
+        max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
+        orchestrates: 'review_lane_loop',
+        allowed_actions: ['review_chat', 'continue_work'],
+        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_runs_reached'],
+        blocked_actions: ['human_accept_waiting', 'pending_review_chat'],
       },
       current: {
         command: 'atris task current --review-state <lane> --json',
@@ -1818,6 +1968,7 @@ function taskQueueCapabilities() {
       review_lane_drain: 'atris task review-lane-drain --json',
       review_lane_act: 'atris task review-lane-act --json',
       review_lane_loop: 'atris task review-lane-loop --json',
+      review_lane_run: 'atris task review-lane-run --json',
       current: 'atris task current --review-state <lane> --json',
       queue: 'atris task queue --review-state <lane> --json',
       current_step: 'atris task current-step --review-state <lane> --json',
@@ -1944,6 +2095,11 @@ function reviewLaneDrainBehaviorConformance() {
     review: { next_task: 'Add child follow-up' },
     lineage: { child_task_ids: ['child-task-id'], child_titles: ['Add child follow-up'] },
   });
+  const retitledContinueWork = taskHasReviewFollowUpChild({
+    ...continueWork,
+    review: { next_task: 'Add newer follow-up wording' },
+    lineage: { child_task_ids: ['child-task-id'], child_titles: ['Add child follow-up'] },
+  });
   const freshContinueWork = !taskHasReviewFollowUpChild({
     ...continueWork,
     review: { next_task: 'Add child follow-up' },
@@ -1969,7 +2125,7 @@ function reviewLaneDrainBehaviorConformance() {
       && drift.safe_for_agent === false
       && drift.command === null
       && drift.api === null,
-    skips_continue_work_with_existing_follow_up_child: followedContinueWork && freshContinueWork,
+    skips_continue_work_with_existing_follow_up_child: followedContinueWork && retitledContinueWork && freshContinueWork,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -2047,6 +2203,7 @@ function reviewLaneActBehaviorConformance() {
 function reviewLaneLoopBehaviorConformance() {
   const dryRun = taskReviewLaneLoopStopIsSafe('dry_run_preview');
   const humanOnly = taskReviewLaneLoopStopIsSafe('human_accept_waiting_is_human_only');
+  const pendingReviewChat = taskReviewLaneLoopStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
   const noAction = taskReviewLaneLoopStopIsSafe('no_review_lane_action');
   const repeated = taskReviewLaneLoopStopIsSafe('repeat_selection');
   const drift = taskReviewLaneLoopStopIsSafe('capabilities_check_failed');
@@ -2056,10 +2213,39 @@ function reviewLaneLoopBehaviorConformance() {
   const checks = {
     dry_run_stops_without_mutation: dryRun.ok === true && dryRun.read_only === true,
     human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
+    pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
     no_action_stops_without_execution: noAction.ok === true,
     repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
     capability_drift_blocks_loop: drift.ok === false,
     max_steps_are_bounded: maxSteps,
+  };
+  return {
+    ok: Object.values(checks).every(Boolean),
+    checks,
+  };
+}
+
+function reviewLaneRunBehaviorConformance() {
+  const dryRun = taskReviewLaneRunStopIsSafe('dry_run_preview');
+  const humanOnly = taskReviewLaneRunStopIsSafe('human_accept_waiting_is_human_only');
+  const pendingReviewChat = taskReviewLaneRunStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
+  const noAction = taskReviewLaneRunStopIsSafe('no_review_lane_action');
+  const reusedFollowUp = taskReviewLaneRunStopIsSafe('continue_work_reused_existing_follow_up');
+  const repeated = taskReviewLaneRunStopIsSafe('repeat_selection');
+  const drift = taskReviewLaneRunStopIsSafe('capabilities_check_failed');
+  const maxRuns = taskReviewLaneRunStopIsSafe('max_runs_reached');
+  const boundedRuns = normalizeReviewLaneRunMaxRuns(99) === REVIEW_LANE_RUN_MAX_RUNS
+    && normalizeReviewLaneRunMaxRuns(0) === 1
+    && normalizeReviewLaneRunMaxRuns(undefined) === REVIEW_LANE_RUN_DEFAULT_MAX_RUNS;
+  const checks = {
+    dry_run_stops_without_receipt: dryRun.ok === true && dryRun.write_receipt === false,
+    human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
+    pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
+    no_action_stops_without_execution: noAction.ok === true,
+    reused_follow_up_stops_without_duplicate_action: reusedFollowUp.ok === true,
+    repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
+    capability_drift_blocks_run: drift.ok === false,
+    max_runs_are_bounded: maxRuns.ok === true && boundedRuns,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -2086,6 +2272,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
   const drainBehavior = reviewLaneDrainBehaviorConformance();
   const actBehavior = reviewLaneActBehaviorConformance();
   const loopBehavior = reviewLaneLoopBehaviorConformance();
+  const runBehavior = reviewLaneRunBehaviorConformance();
   const checks = [
     capabilityCheck('current_capabilities_match_standalone', capabilityValuesEqual(current.capabilities, standalone)),
     capabilityCheck('queue_capabilities_match_standalone', capabilityValuesEqual(current.queue.capabilities, standalone)),
@@ -2121,6 +2308,9 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
         && standalone.surfaces.review_lane_act.writes_projection === true
         && standalone.surfaces.review_lane_loop.mutates_task_db === 'conditional'
         && standalone.surfaces.review_lane_loop.writes_projection === true
+        && standalone.surfaces.review_lane_run.mutates_task_db === 'conditional'
+        && standalone.surfaces.review_lane_run.writes_projection === true
+        && standalone.surfaces.review_lane_run.writes_receipt === true
         && standalone.surfaces.current.mutates_task_db === false
         && standalone.surfaces.current.writes_projection === true
         && standalone.surfaces.queue.mutates_task_db === false
@@ -2175,6 +2365,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
         && standalone.surfaces.review_lane_loop.allowed_actions.includes('review_chat')
         && standalone.surfaces.review_lane_loop.allowed_actions.includes('continue_work')
         && standalone.surfaces.review_lane_loop.stopped_by.includes('human_accept_waiting_is_human_only')
+        && standalone.surfaces.review_lane_loop.stopped_by.includes(PENDING_REVIEW_CHAT_STOP_REASON)
         && standalone.surfaces.review_lane_loop.stopped_by.includes('capabilities_check_failed')
         && standalone.surfaces.review_lane_loop.stopped_by.includes('repeat_selection')
     ),
@@ -2182,6 +2373,32 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
       'review_lane_loop_behavior_conforms',
       loopBehavior.ok,
       loopBehavior.checks
+    ),
+    capabilityCheck(
+      'review_lane_run_surface_declared',
+      standalone.commands.review_lane_run === 'atris task review-lane-run --json'
+        && standalone.surfaces.review_lane_run.command === 'atris task review-lane-run --json'
+        && standalone.surfaces.review_lane_run.api.method === 'POST'
+        && standalone.surfaces.review_lane_run.api.path === '/api/tasks/review-lane-run'
+        && standalone.surfaces.review_lane_run.requires_task_db === true
+        && standalone.surfaces.review_lane_run.default_max_runs === REVIEW_LANE_RUN_DEFAULT_MAX_RUNS
+        && standalone.surfaces.review_lane_run.max_runs_cap === REVIEW_LANE_RUN_MAX_RUNS
+        && standalone.surfaces.review_lane_run.default_max_steps === REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS
+        && standalone.surfaces.review_lane_run.max_steps_cap === REVIEW_LANE_LOOP_MAX_STEPS
+        && standalone.surfaces.review_lane_run.orchestrates === 'review_lane_loop'
+        && standalone.surfaces.review_lane_run.writes_receipt === true
+        && standalone.surfaces.review_lane_run.receipt_path === '.atris/state/review-lane-runs.jsonl'
+        && standalone.surfaces.review_lane_run.latest_receipt_path === '.atris/state/review-lane-run.latest.json'
+        && standalone.surfaces.review_lane_run.stopped_by.includes('human_accept_waiting_is_human_only')
+        && standalone.surfaces.review_lane_run.stopped_by.includes(PENDING_REVIEW_CHAT_STOP_REASON)
+        && standalone.surfaces.review_lane_run.stopped_by.includes('capabilities_check_failed')
+        && standalone.surfaces.review_lane_run.stopped_by.includes('continue_work_reused_existing_follow_up')
+        && standalone.surfaces.review_lane_run.stopped_by.includes('max_runs_reached')
+    ),
+    capabilityCheck(
+      'review_lane_run_behavior_conforms',
+      runBehavior.ok,
+      runBehavior.checks
     ),
   ];
   const failed = checks.filter(check => !check.ok);
@@ -2218,11 +2435,11 @@ function formatTaskQueueScope(scope = {}) {
     .join(' ');
 }
 
-function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, scope = {} } = {}) {
+function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, scope = {}, hasExistingReviewFollowUp = null, hasPendingReviewChat = null, excludeTaskIds = null } = {}) {
   const normalizedScope = normalizeTaskQueueScope(scope);
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope);
-  const reviewStateCounts = taskQueueReviewStateCounts(projection, normalizedScope);
-  const reviewStateActions = taskQueueReviewStateActions(projection, normalizedScope, { reviewer });
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope, { hasExistingReviewFollowUp });
+  const reviewStateCounts = taskQueueReviewStateCounts(projection, normalizedScope, { hasExistingReviewFollowUp });
+  const reviewStateActions = taskQueueReviewStateActions(projection, normalizedScope, { reviewer, hasExistingReviewFollowUp, hasPendingReviewChat, excludeTaskIds });
   const grouped = new Map(TASK_QUEUE_COLUMN_ORDER.map(key => [key, []]));
   for (const task of tasks) {
     const key = taskQueueColumnKey(task);
@@ -2236,7 +2453,7 @@ function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, s
       key,
       label: TASK_QUEUE_COLUMN_LABELS[key] || key,
       count: columnTasks.length,
-      items: shown.map(task => taskQueueItem(task, { reviewer })),
+      items: shown.map(task => taskQueueItem(task, { reviewer, hasExistingReviewFollowUp })),
     };
   });
   const counts = {};
@@ -2256,8 +2473,8 @@ function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, s
   };
 }
 
-function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {} } = {}) {
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), scope);
+function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, hasExistingReviewFollowUp = null } = {}) {
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), scope, { hasExistingReviewFollowUp });
   const columns = {
     backlog: [],
     plan: [],
@@ -2274,7 +2491,7 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {} } 
   const actor = String(owner || DEFAULT_OWNER);
   const claimedByOwner = columns.do.find(task => task.claimed_by === actor);
   if (claimedByOwner) return { task: claimedByOwner, reason: 'claimed_by_owner' };
-  const reviewNeedsAgent = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true })?.next_action === 'agent_review_again');
+  const reviewNeedsAgent = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === 'agent_review_again');
   if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
   const planReady = columns.plan[0];
   if (planReady) return { task: planReady, reason: 'plan_ready' };
@@ -2285,7 +2502,7 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {} } 
   const blocked = columns.blocked[0];
   if (blocked) return { task: blocked, reason: 'blocked_task' };
   const certifiedReview = columns.review.find(task => {
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     return handoff?.next_action === 'continue_work' || handoff?.next_action === 'human_accept_waiting';
   });
   if (certifiedReview) return { task: certifiedReview, reason: 'review_certified_waiting_human' };
@@ -2294,12 +2511,12 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {} } 
   return { task: null, reason: 'none' };
 }
 
-function taskCurrentContract(projection, { owner = DEFAULT_OWNER, reviewer = 'codex-review', limit = 8, scope = {} } = {}) {
+function taskCurrentContract(projection, { owner = DEFAULT_OWNER, reviewer = 'codex-review', limit = 8, scope = {}, hasExistingReviewFollowUp = null, hasPendingReviewChat = null, excludeTaskIds = null } = {}) {
   const normalizedScope = normalizeTaskQueueScope(scope);
-  const queue = taskQueueContract(projection, { reviewer, limit, scope: normalizedScope });
-  const selection = selectTaskForCurrent(projection, { owner, scope: normalizedScope });
-  const page = selection.task ? taskPageContract(selection.task, { reviewer }) : null;
-  const selected = selection.task ? taskQueueItem(selection.task, { reviewer }) : null;
+  const queue = taskQueueContract(projection, { reviewer, limit, scope: normalizedScope, hasExistingReviewFollowUp, hasPendingReviewChat, excludeTaskIds });
+  const selection = selectTaskForCurrent(projection, { owner, scope: normalizedScope, hasExistingReviewFollowUp });
+  const page = selection.task ? taskPageContract(selection.task, { reviewer, hasExistingReviewFollowUp }) : null;
+  const selected = selection.task ? taskQueueItem(selection.task, { reviewer, hasExistingReviewFollowUp }) : null;
   return {
     schema: 'atris.task_current.v1',
     generated_at: projection.generated_at,
@@ -2340,10 +2557,20 @@ function buildTaskCurrent(taskDb, db, args = [], options = {}) {
   const limit = options.limit !== undefined ? options.limit : taskQueueLimit(args);
   const scope = normalizeTaskQueueScope(options.scope || taskQueueScopeFromArgs(args));
   const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
+  const hasExistingReviewFollowUp = buildReviewFollowUpChildPredicate(
+    taskDb,
+    db,
+    all ? null : taskDb.workspaceRoot(),
+  );
+  const hasPendingReviewChat = buildPendingReviewChatPredicate(
+    taskDb,
+    db,
+    all ? null : taskDb.workspaceRoot(),
+  );
   return {
     projection,
     outPath,
-    current: taskCurrentContract(projection, { owner, reviewer, limit, scope }),
+    current: taskCurrentContract(projection, { owner, reviewer, limit, scope, hasExistingReviewFollowUp, hasPendingReviewChat, excludeTaskIds: options.excludeTaskIds }),
   };
 }
 
@@ -2475,6 +2702,17 @@ function humanAcceptWaitingDrain(action) {
   };
 }
 
+function pendingReviewChatDrain(action) {
+  if (!action) return null;
+  return {
+    task: taskReviewLaneDrainTask(action),
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    reason: PENDING_REVIEW_CHAT_STOP_REASON,
+  };
+}
+
 function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
   if (!capabilitiesCheck.ok) {
     return {
@@ -2513,6 +2751,23 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       task: taskReviewLaneDrainTask(actions.continue_work),
       reason: 'certified_review_has_follow_up',
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  const pendingReviewChat = Array.isArray(actions.pending_review_chat)
+    ? actions.pending_review_chat[0]
+    : actions.pending_review_chat;
+  if (pendingReviewChat) {
+    return {
+      key: 'pending_review_chat',
+      next_action: 'pending_review_chat',
+      review_state: 'pending-review-chat',
+      safe_for_agent: false,
+      command: null,
+      api: null,
+      task: taskReviewLaneDrainTask(pendingReviewChat),
+      reason: PENDING_REVIEW_CHAT_STOP_REASON,
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+      pending_review_chat: pendingReviewChatDrain(pendingReviewChat),
     };
   }
   if (actions.human_accept_waiting) {
@@ -2560,6 +2815,7 @@ function taskReviewLaneDrainReport(taskDb, db, args = [], options = {}) {
     all,
     limit,
     scope,
+    excludeTaskIds: options.excludeTaskIds,
   });
   const reviewStateActions = current.review_state_actions || {};
   const drain = taskReviewLaneDrainSelection(reviewStateActions, capabilitiesCheck);
@@ -2651,6 +2907,7 @@ function taskReviewLaneAct(taskDb, db, options = {}) {
     all: Boolean(options.all),
     limit: options.limit !== undefined ? options.limit : 8,
     scope,
+    excludeTaskIds: options.excludeTaskIds,
   });
   const drain = drainReport.drain || null;
   const decision = taskReviewLaneActDecision(drain || {});
@@ -2717,11 +2974,13 @@ function taskReviewLaneAct(taskDb, db, options = {}) {
     }
     if (decision.step_action === 'continue_work') {
       const result = continueWorkForReviewTask(taskDb, db, decision.task_id, { owner });
+      const created = Boolean(result && result.created);
       return {
         ...base,
         ok: true,
-        acted: true,
+        acted: created,
         selected_action: 'continue_work',
+        reason: created ? null : 'continue_work_reused_existing_follow_up',
         projection_path: result.projection_path,
         result,
       };
@@ -2774,7 +3033,9 @@ function taskReviewLaneLoopStopIsSafe(reason) {
   const expected = new Set([
     'dry_run_preview',
     'human_accept_waiting_is_human_only',
+    PENDING_REVIEW_CHAT_STOP_REASON,
     'no_review_lane_action',
+    'continue_work_reused_existing_follow_up',
     'repeat_selection',
     'max_steps_reached',
   ]);
@@ -2852,6 +3113,7 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
   const maxSteps = normalizeReviewLaneLoopMaxSteps(options.maxSteps);
   const steps = [];
   const seenActions = new Set();
+  const excludeTaskIds = normalizeTaskIdSet(options.excludeTaskIds);
   let stoppedReason = 'max_steps_reached';
   let status = 200;
   let finalDrain = null;
@@ -2859,14 +3121,15 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
   let projectionPath = null;
 
   for (let index = 1; index <= maxSteps; index += 1) {
-    const preview = taskReviewLaneAct(taskDb, db, {
-      owner,
-      reviewer,
-      all: Boolean(options.all),
-      limit: options.limit !== undefined ? options.limit : 8,
-      scope,
-      dryRun: true,
-    });
+	    const preview = taskReviewLaneAct(taskDb, db, {
+	      owner,
+	      reviewer,
+	      all: Boolean(options.all),
+	      limit: options.limit !== undefined ? options.limit : 8,
+	      scope,
+	      excludeTaskIds,
+	      dryRun: true,
+	    });
     finalDrain = preview.drain || null;
     finalDecision = preview.decision || null;
     projectionPath = preview.projection_path || projectionPath;
@@ -2906,20 +3169,22 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
       break;
     }
 
-    const act = taskReviewLaneAct(taskDb, db, {
-      owner,
-      reviewer,
-      all: Boolean(options.all),
-      limit: options.limit !== undefined ? options.limit : 8,
-      scope,
-      dryRun: false,
-    });
+	    const act = taskReviewLaneAct(taskDb, db, {
+	      owner,
+	      reviewer,
+	      all: Boolean(options.all),
+	      limit: options.limit !== undefined ? options.limit : 8,
+	      scope,
+	      excludeTaskIds,
+	      dryRun: false,
+	    });
     finalDrain = act.drain || finalDrain;
     finalDecision = act.decision || finalDecision;
     projectionPath = act.projection_path || act.result && act.result.projection_path || projectionPath;
-    const liveKey = taskReviewLaneActSelectionKey(act);
-    if (liveKey) seenActions.add(liveKey);
-    steps.push(compactReviewLaneLoopStep(index, act, { phase: 'act' }));
+	    const liveKey = taskReviewLaneActSelectionKey(act);
+	    if (liveKey) seenActions.add(liveKey);
+	    if (act.acted && act.decision && act.decision.task_id) excludeTaskIds.add(String(act.decision.task_id));
+	    steps.push(compactReviewLaneLoopStep(index, act, { phase: 'act' }));
 
     if (!act.ok) {
       stoppedReason = act.reason || 'review_lane_act_failed';
@@ -2977,6 +3242,211 @@ function cmdReviewLaneLoop(args) {
   console.log(`acted: ${result.acted_count}`);
   console.log(`stopped: ${result.stopped_reason}`);
   console.log(`dry_run: ${result.dry_run ? 'true' : 'false'}`);
+  if (!result.ok) process.exit(1);
+}
+
+function normalizeReviewLaneRunMaxRuns(value) {
+  const parsed = Number(value === undefined || value === null || value === true ? REVIEW_LANE_RUN_DEFAULT_MAX_RUNS : value);
+  if (!Number.isFinite(parsed)) return REVIEW_LANE_RUN_DEFAULT_MAX_RUNS;
+  return Math.max(1, Math.min(REVIEW_LANE_RUN_MAX_RUNS, Math.floor(parsed)));
+}
+
+function taskReviewLaneRunOptionsFromArgs(args = []) {
+  return {
+    ...taskReviewLaneLoopOptionsFromArgs(args),
+    maxRuns: normalizeReviewLaneRunMaxRuns(flag(args, '--max-runs') || flag(args, '--runs')),
+  };
+}
+
+function taskReviewLaneRunOptionsFromBody(body = {}, searchParams = new URLSearchParams()) {
+  const options = taskReviewLaneLoopOptionsFromBody(body, searchParams);
+  const maxRuns = searchParams.get('max_runs')
+    || searchParams.get('max-runs')
+    || searchParams.get('runs')
+    || body.max_runs
+    || body.maxRuns
+    || body.runs;
+  return {
+    ...options,
+    maxRuns: normalizeReviewLaneRunMaxRuns(maxRuns),
+  };
+}
+
+function taskReviewLaneRunStopIsSafe(reason) {
+  const expected = new Set([
+    'dry_run_preview',
+    'human_accept_waiting_is_human_only',
+    PENDING_REVIEW_CHAT_STOP_REASON,
+    'no_review_lane_action',
+    'continue_work_reused_existing_follow_up',
+    'repeat_selection',
+    'max_runs_reached',
+  ]);
+  return {
+    ok: expected.has(reason),
+    write_receipt: reason !== 'dry_run_preview',
+    human_accept: false,
+  };
+}
+
+function reviewLaneRunReceiptPaths() {
+  const stateDir = path.resolve(path.join('.atris', 'state'));
+  return {
+    stateDir,
+    receiptPath: path.join(stateDir, 'review-lane-runs.jsonl'),
+    latestPath: path.join(stateDir, 'review-lane-run.latest.json'),
+  };
+}
+
+function compactReviewLaneRunLoop(index, loop) {
+  return {
+    index,
+    ok: Boolean(loop && loop.ok),
+    dry_run: Boolean(loop && loop.dry_run),
+    max_steps: loop && loop.max_steps || null,
+    acted_count: loop && loop.acted_count || 0,
+    stopped_reason: loop && loop.stopped_reason || null,
+    stopped_on: loop && loop.stopped_on || null,
+    status: loop && loop.status || null,
+    projection_path: loop && loop.projection_path || null,
+    final_decision: loop && loop.final_decision || null,
+    final_drain: loop && loop.final_drain ? {
+      next_action: loop.final_drain.next_action,
+      review_state: loop.final_drain.review_state,
+      safe_for_agent: loop.final_drain.safe_for_agent,
+      task: loop.final_drain.task || null,
+      reason: loop.final_drain.reason || null,
+      command: loop.final_drain.command || null,
+      api: loop.final_drain.api || null,
+    } : null,
+    steps: Array.isArray(loop && loop.steps) ? loop.steps : [],
+  };
+}
+
+function writeReviewLaneRunReceipt(receipt) {
+  const { stateDir, receiptPath, latestPath } = reviewLaneRunReceiptPaths();
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.appendFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, 'utf8');
+  fs.writeFileSync(latestPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  return { receiptPath, latestPath };
+}
+
+function taskReviewLaneRun(taskDb, db, options = {}) {
+  const owner = String(options.owner || DEFAULT_OWNER);
+  const reviewer = reviewActor(options.reviewer || 'codex-review');
+  const scope = normalizeTaskQueueScope(options.scope || {});
+  const dryRun = Boolean(options.dryRun);
+  const maxRuns = normalizeReviewLaneRunMaxRuns(options.maxRuns);
+  const maxSteps = normalizeReviewLaneLoopMaxSteps(options.maxSteps);
+  const runs = [];
+  const excludeTaskIds = normalizeTaskIdSet(options.excludeTaskIds);
+  let stoppedReason = 'max_runs_reached';
+  let stoppedOn = null;
+  let status = 200;
+  let projectionPath = null;
+
+  for (let index = 1; index <= maxRuns; index += 1) {
+	    const loop = taskReviewLaneLoop(taskDb, db, {
+	      owner,
+	      reviewer,
+	      all: Boolean(options.all),
+	      limit: options.limit !== undefined ? options.limit : 8,
+	      scope,
+	      excludeTaskIds,
+	      dryRun,
+	      maxSteps,
+	    });
+	    runs.push(compactReviewLaneRunLoop(index, loop));
+	    for (const step of loop.steps || []) {
+	      if (step && step.acted && step.decision && step.decision.task_id) {
+	        excludeTaskIds.add(String(step.decision.task_id));
+	      }
+	    }
+    projectionPath = loop.projection_path || projectionPath;
+    stoppedOn = loop.stopped_on || stoppedOn;
+
+    if (dryRun) {
+      stoppedReason = loop.stopped_reason || 'dry_run_preview';
+      status = loop.status || 200;
+      break;
+    }
+
+    if (!loop.ok) {
+      stoppedReason = loop.stopped_reason || 'review_lane_loop_failed';
+      status = loop.status || 409;
+      break;
+    }
+
+    if (loop.stopped_reason !== 'max_steps_reached') {
+      stoppedReason = loop.stopped_reason || 'no_review_lane_action';
+      status = loop.status || 200;
+      break;
+    }
+  }
+
+  const totalActedCount = runs.reduce((sum, run) => sum + (Number(run.acted_count) || 0), 0);
+  const stopSafety = taskReviewLaneRunStopIsSafe(stoppedReason);
+  const { receiptPath, latestPath } = reviewLaneRunReceiptPaths();
+  const receipt = {
+    schema: 'atris.task_review_lane_run.v1',
+    generated_at: new Date().toISOString(),
+    ok: status < 400 || stopSafety.ok,
+    action: 'review_lane_run',
+    owner,
+    reviewer,
+    scope,
+    dry_run: dryRun,
+    max_runs: maxRuns,
+    max_steps: maxSteps,
+    run_count: runs.length,
+    total_acted_count: totalActedCount,
+    stopped_reason: stoppedReason,
+    stopped_on: stoppedOn,
+    runs,
+    status,
+    projection_path: projectionPath,
+    receipt_path: dryRun ? null : receiptPath,
+    latest_receipt_path: dryRun ? null : latestPath,
+    would_write_receipt_path: dryRun ? receiptPath : null,
+    receipt_written: false,
+    safety: {
+      read_only: dryRun,
+      mutates_task_db: dryRun ? false : 'conditional',
+      writes_projection: true,
+      writes_receipt: !dryRun,
+      human_accept: false,
+      xp_after_human_accept: true,
+      max_runs_cap: REVIEW_LANE_RUN_MAX_RUNS,
+      max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
+      orchestrates: 'review_lane_loop',
+    },
+  };
+
+  if (!dryRun) {
+    receipt.receipt_written = true;
+    const written = writeReviewLaneRunReceipt(receipt);
+    receipt.receipt_path = written.receiptPath;
+    receipt.latest_receipt_path = written.latestPath;
+  }
+
+  return receipt;
+}
+
+function cmdReviewLaneRun(args) {
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const result = taskReviewLaneRun(taskDb, db, taskReviewLaneRunOptionsFromArgs(args));
+  if (wantsJson(args)) {
+    printJson(result);
+    if (!result.ok) process.exit(1);
+    return;
+  }
+  console.log(`TASK REVIEW LANE RUN ${result.ok ? 'ok' : 'blocked'}`);
+  console.log(`runs: ${result.run_count}`);
+  console.log(`acted: ${result.total_acted_count}`);
+  console.log(`stopped: ${result.stopped_reason}`);
+  console.log(`dry_run: ${result.dry_run ? 'true' : 'false'}`);
+  if (result.receipt_written) console.log(`receipt: ${result.receipt_path}`);
   if (!result.ok) process.exit(1);
 }
 
@@ -3154,7 +3624,8 @@ function cmdStatus(args) {
     }))
     : compact.projection;
   const outPath = compact.outPath;
-  const status = taskStatusSummary(projection, { history });
+  const hasExistingReviewFollowUp = buildReviewFollowUpChildPredicate(taskDb, db, all ? null : taskDb.workspaceRoot());
+  const status = taskStatusSummary(projection, { history, hasExistingReviewFollowUp });
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -3308,6 +3779,8 @@ function cmdDelegate(args) {
   const via = viaFlag === 'swarlo' ? 'swarlo' : 'local';
   const tag = flag(args, '--tag');
   const note = flag(args, '--note');
+  const goalId = flag(args, '--goal-id');
+  const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
   const claimNow = hasFlag(args, '--claim');
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -3318,6 +3791,11 @@ function cmdDelegate(args) {
     swarlo_channel: via === 'swarlo' ? String(tag || 'tasks') : null,
     created_for_day: new Date().toISOString().slice(0, 10),
   };
+  if (goalId && goalId !== true) metadata.goal_id = String(goalId);
+  if (goalObjective && goalObjective !== true) {
+    metadata.task_goal = String(goalObjective);
+    metadata.goal_objective = String(goalObjective);
+  }
   const result = taskDb.addTask(db, {
     title,
     tag: typeof tag === 'string' ? tag : null,
@@ -4135,7 +4613,7 @@ function taskPageStageRail(current) {
   });
 }
 
-function taskPageActions(task, { reviewer = 'codex-review' } = {}) {
+function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const ref = taskRef(task);
   const owner = task && (task.claimed_by || taskAssignee(task)) || DEFAULT_OWNER;
   const goal = taskPageGoal(task).text || '<goal>';
@@ -4155,7 +4633,7 @@ function taskPageActions(task, { reviewer = 'codex-review' } = {}) {
   if (task && task.status === 'review') {
     actions.revise_command = `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`;
     actions.human_accept_command = `atris task accept ${ref}`;
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     const continueWorkCommand = handoff?.next_action === 'continue_work'
       ? continueWorkCommandForTask(task, { owner })
       : null;
@@ -4167,7 +4645,7 @@ function taskPageActions(task, { reviewer = 'codex-review' } = {}) {
   return actions;
 }
 
-function taskPageNextAction(task, current, actions) {
+function taskPageNextAction(task, current, actions, { hasExistingReviewFollowUp = null } = {}) {
   const ref = taskRef(task);
   const apiBase = `/api/tasks/${encodeURIComponent(task && task.id || ref)}`;
   if (current === 'backlog') {
@@ -4180,7 +4658,7 @@ function taskPageNextAction(task, current, actions) {
     return { key: 'ready', label: 'Move to Review', command: actions.ready_command, api: { method: 'POST', path: `${apiBase}/ready` } };
   }
   if (current === 'review') {
-    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     if (handoff && handoff.next_action === 'continue_work') {
       return {
         key: 'continue_work',
@@ -4210,10 +4688,10 @@ function taskPageNextAction(task, current, actions) {
   return { key: 'none', label: 'No next agent action', command: null };
 }
 
-function taskPageContract(task, { reviewer = 'codex-review' } = {}) {
+function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const metadata = task && task.metadata || {};
   const current = taskPageCurrentStage(task);
-  const actions = taskPageActions(task, { reviewer });
+  const actions = taskPageActions(task, { reviewer, hasExistingReviewFollowUp });
   const recentMessages = (task && Array.isArray(task.messages) ? task.messages : []).slice(-10).map(message => ({
     version: message.version || null,
     actor: message.actor || null,
@@ -4251,7 +4729,7 @@ function taskPageContract(task, { reviewer = 'codex-review' } = {}) {
     stage: {
       current,
       rail: taskPageStageRail(current),
-      next_action: taskPageNextAction(task, current, actions),
+      next_action: taskPageNextAction(task, current, actions, { hasExistingReviewFollowUp }),
     },
     actions,
     review: {
@@ -4259,7 +4737,7 @@ function taskPageContract(task, { reviewer = 'codex-review' } = {}) {
       agent_review_pass_count: task.review && task.review.agent_review_pass_count || metadata.agent_review_pass_count || null,
       agent_certified: Boolean(task.review && task.review.agent_certified || metadata.agent_certified),
       verification_chat: reviewChat,
-      handoff: reviewHandoffForTask(task, { suppressExistingFollowUp: true }),
+      handoff: reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp }),
       human_accept: {
         enabled: task.status === 'review',
         command: task.status === 'review' ? actions.human_accept_command : null,
@@ -4866,6 +5344,12 @@ function cmdDone(args) {
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const beforeTask = taskDb.getTask(db, taskId);
   const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  if (agentProofOnlyMode() && !failed) {
+    failAgentProofOnly(
+      'atris task done',
+      'Agent proof-only mode cannot mark tasks done. Use `atris task ready <id> --proof "..."` or `atris task review <id> --reward 0 --proof "..."`.',
+    );
+  }
   const canComplete = beforeTask && (beforeTask.status === 'open' || beforeTask.status === 'claimed');
   if (canComplete) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task done', proof);
@@ -4935,6 +5419,12 @@ function cmdFinish(args) {
   const proof = proofFlagValue(args);
   const failed = hasFlag(args, '--failed');
   const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
+  if (agentProofOnlyMode() && !failed) {
+    failAgentProofOnly(
+      'atris task finish',
+      'Agent proof-only mode cannot finish tasks. Use `atris task ready <id> --proof "..."` or `atris task review <id> --reward 0 --proof "..."`.',
+    );
+  }
   const canComplete = currentTask && (currentTask.status === 'open' || currentTask.status === 'claimed');
   if (canComplete) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task finish', proof);
@@ -5093,6 +5583,12 @@ function cmdAccept(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task accept');
+  if (agentProofOnlyMode()) {
+    failAgentProofOnly(
+      'atris task accept',
+      'Agent proof-only mode cannot accept tasks or award XP. Leave proof in Review for human accept/revise.',
+    );
+  }
   const beforeProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
   const beforeTask = beforeProjection.tasks[0] || null;
   const proofFlag = flag(args, '--proof');
@@ -5220,6 +5716,12 @@ function cmdAutoAcceptCertified(args) {
       'live auto-accept requires --as <human> so XP has an explicit human acceptance actor',
     );
   }
+  if (agentProofOnlyMode() && !dryRun) {
+    failAgentProofOnly(
+      'atris task auto-accept-certified',
+      'Agent proof-only mode can preview certified rows with --dry-run, but cannot live-accept them.',
+    );
+  }
 
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -5336,11 +5838,34 @@ function cmdReview(args) {
     failTask('atris task review', 'missing_id', 'id required');
   }
   const reward = flag(args, '--reward');
-  const lesson = flag(args, '--lesson') || '';
-  const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
+  const lessonFlag = flag(args, '--lesson');
+  const nextTaskFlag = flag(args, '--next');
+  const clearLesson = hasEmptyFlagValue(args, '--lesson');
+  const clearNextTask = hasEmptyFlagValue(args, '--next');
+  const lesson = clearLesson
+    ? ''
+    : typeof lessonFlag === 'string'
+    ? lessonFlag
+    : '';
+  const nextTaskInput = normalizeReviewNextTaskInput(
+    clearNextTask
+      ? ''
+      : typeof nextTaskFlag === 'string'
+      ? nextTaskFlag
+      : ''
+  );
+  const clearedFields = [];
+  if (clearLesson || (typeof lessonFlag === 'string' && !String(lessonFlag).trim())) clearedFields.push('lesson');
+  if (clearNextTask || (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim())) clearedFields.push('next_task');
   const proof = proofFlagValue(args);
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const rewardValue = reward === true || reward === null ? 0 : reward;
+  if (agentProofOnlyMode() && Number(rewardValue) > 0) {
+    failAgentProofOnly(
+      'atris task review',
+      'Agent proof-only mode allows verifier notes with `--reward 0` only. Positive reward and acceptance stay human-gated.',
+    );
+  }
   if (Number(rewardValue) > 0 || proof) {
     requireMeaningfulTaskProof('atris task review', proof);
   }
@@ -5356,6 +5881,7 @@ function cmdReview(args) {
     nextTask: nextTaskInput.nextTask,
     proof,
     careerXpEligible: false,
+    clearedFields,
   });
   if (!result.reviewed) {
     console.error(`review failed: ${result.reason}`);
@@ -6169,6 +6695,11 @@ async function handleTaskApi(req, res, taskDb, db) {
     const result = taskReviewLaneLoop(taskDb, db, taskReviewLaneLoopOptionsFromBody(body, url.searchParams));
     return sendJson(res, result.ok ? 200 : result.status || 409, result);
   }
+  if (req.method === 'POST' && url.pathname === '/api/tasks/review-lane-run') {
+    const body = await readJsonBody(req);
+    const result = taskReviewLaneRun(taskDb, db, taskReviewLaneRunOptionsFromBody(body, url.searchParams));
+    return sendJson(res, result.ok ? 200 : result.status || 409, result);
+  }
   if (req.method === 'GET' && (url.pathname === '/api/tasks/current' || url.pathname === '/api/tasks/queue')) {
     const owner = url.searchParams.get('owner') || url.searchParams.get('as') || DEFAULT_OWNER;
     const reviewer = url.searchParams.get('reviewer') || url.searchParams.get('as_reviewer') || 'codex-review';
@@ -6520,7 +7051,20 @@ async function handleTaskApi(req, res, taskDb, db) {
     const currentTask = taskDb.getTask(db, taskId);
     const rewardValue = body.reward === undefined ? 0 : body.reward;
     const proof = String(body.proof || '').trim();
-    const nextTaskInput = normalizeReviewNextTaskInput(body.next);
+    const hasExplicitLesson = Object.prototype.hasOwnProperty.call(body, 'lesson');
+    const hasExplicitNext = Object.prototype.hasOwnProperty.call(body, 'next')
+      || Object.prototype.hasOwnProperty.call(body, 'next_task')
+      || Object.prototype.hasOwnProperty.call(body, 'nextTask');
+    const lessonText = hasExplicitLesson ? String(body.lesson || '') : '';
+    const rawNext = Object.prototype.hasOwnProperty.call(body, 'next')
+      ? body.next
+      : Object.prototype.hasOwnProperty.call(body, 'next_task')
+      ? body.next_task
+      : body.nextTask;
+    const nextTaskInput = normalizeReviewNextTaskInput(hasExplicitNext ? rawNext : '');
+    const clearedFields = [];
+    if (hasExplicitLesson && !lessonText.trim()) clearedFields.push('lesson');
+    if (hasExplicitNext && !String(rawNext || '').trim()) clearedFields.push('next_task');
     const proofIssue = Number(rewardValue) > 0 || proof
       ? meaningfulTaskProofIssue(proof)
       : null;
@@ -6529,10 +7073,11 @@ async function handleTaskApi(req, res, taskDb, db) {
       id: taskId,
       actor: String(body.actor || DEFAULT_OWNER),
       reward: rewardValue,
-      lesson: String(body.lesson || ''),
+      lesson: lessonText,
       nextTask: nextTaskInput.nextTask,
       proof,
       careerXpEligible: false,
+      clearedFields,
     });
     const nextCreated = body.createNext ? createNextTaskIfRequested(taskDb, db, ['--create-next'], currentTask, reviewed.episode.next_task_suggestion) : null;
     const xpProjection = refreshCareerXpAfterReview(reviewed);
@@ -6627,6 +7172,10 @@ async function run(args) {
     case 'review-loop':
     case 'loop-review':
       return cmdReviewLaneLoop(rest);
+    case 'review-lane-run':
+    case 'review-run':
+    case 'run-review':
+      return cmdReviewLaneRun(rest);
     case 'current-step':
     case 'step-current':
     case 'advance-current':
