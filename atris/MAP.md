@@ -75,7 +75,7 @@ rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
 rg "gmailCommand|integrationsStatus|showIntegrationsHelp|integrations --help" bin/atris.js commands/integrations.js test/commands.test.js # Integration commands + non-mutating status help
-rg "memberCommand|memberGoal|memberTick|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, goal loop, status/block/review, and cloud sync
+rg "memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep business brain fresh by doctor/pull/watch/push
 rg "wikiCommand|printWikiHelp|wiki help paths" commands/wiki.js test/commands.test.js  # Wiki ingest/query/lint/local memory + non-mutating help
@@ -1199,6 +1199,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris/skills/calendar/SKILL.md` — Google Calendar integration v1.0.0 (events/today, OAuth)
 - `atris/skills/drive/SKILL.md` — Google Drive + Sheets integration v1.0.0 (files, sheets CRUD)
 - `atris/skills/README.md` — Skills pattern + Claude symlink instructions
+- `atris/skills/copy-editor/SKILL.md` — Repo-owned anti-slop copy editor skill, including memo-specific slop gate
 - `commands/skill.js:591-640` — `atris skill create <customer>/<skill>` scaffolds customer skills under `atris/customers/<customer>/skills/`
 - `commands/plugin.js:176` — `buildPlugin` packages universal `atris/skills` into `atris-workspace.plugin`
 - `commands/plugin.js:336` — `publishPlugin` syncs universal skills to a marketplace repo; no customer-specific publish path yet

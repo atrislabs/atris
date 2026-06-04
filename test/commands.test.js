@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
+const taskStore = require('../lib/task-db');
 const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
@@ -496,6 +497,21 @@ test('member archive preserves files under _archived', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'old-coach'], { cwd: dir }).status, 0);
+    const loopStateDir = path.join(dir, '.atris', 'state', 'member-loops');
+    fs.mkdirSync(loopStateDir, { recursive: true });
+    fs.writeFileSync(path.join(loopStateDir, 'old-coach.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'old-coach',
+      run_id: 'stale-run',
+      pid: 999999999,
+      started_at: '2026-06-01T00:00:00.000Z',
+      heartbeat_at: '2026-06-01T00:00:00.000Z',
+      expires_at_ms: Date.now() - 1000,
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(loopStateDir, 'old-coach.stop.json'), JSON.stringify({
+      schema: 'atris.member_loop_stop.v1',
+      member: 'old-coach',
+    }, null, 2), 'utf8');
     const archive = runCli(['member', 'archive', 'old-coach'], { cwd: dir });
     assert.equal(archive.status, 0, archive.stderr || archive.stdout);
     const activePath = path.join(dir, 'atris', 'team', 'old-coach');
@@ -506,6 +522,12 @@ test('member archive preserves files under _archived', () => {
     assert.ok(fs.existsSync(path.join(archiveRoot, archived, 'MEMBER.md')));
     const logs = fs.readdirSync(path.join(archiveRoot, archived, 'logs'));
     assert.ok(logs.some((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name)));
+    assert.equal(fs.existsSync(path.join(loopStateDir, 'old-coach.lock.json')), false);
+    assert.equal(fs.existsSync(path.join(loopStateDir, 'old-coach.stop.json')), false);
+    const latest = JSON.parse(fs.readFileSync(path.join(loopStateDir, 'old-coach.latest.json'), 'utf8'));
+    assert.equal(latest.status, 'archived');
+    assert.equal(latest.stale_lease_removed, true);
+    assert.equal(latest.previous_lease.run_id, 'stale-run');
   } finally {
     cleanupTempDir(dir);
   }
@@ -604,6 +626,31 @@ test('member goal tick review compounds structured goals and logs', () => {
     assert.equal(state.goals[0].experiments[0].status, 'accepted');
     assert.equal(state.goals[0].experiments[0].value, 5);
     assert.equal(state.goals[0].experiments[1].title, 'Prepare the next recovery experiment');
+
+    const duplicateReview = runCli([
+      'member', 'review', 'growth', tickPayload.experiment.id,
+      '--accept',
+      '--proof', 'second review should not mutate closed experiment',
+      '--next', 'Duplicate next experiment',
+      '--json',
+    ], { cwd: dir });
+    assert.notEqual(duplicateReview.status, 0);
+    assert.match(duplicateReview.stderr, /already accepted/);
+
+    const blockAccepted = runCli([
+      'member', 'block', 'growth', tickPayload.experiment.id,
+      '--reason', 'late blocker',
+      '--ask', 'Should not apply',
+      '--json',
+    ], { cwd: dir });
+    assert.notEqual(blockAccepted.status, 0);
+    assert.match(blockAccepted.stderr, /already accepted/);
+
+    const afterRefused = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    assert.equal(afterRefused.goals[0].experiments.length, 2);
+    assert.equal(afterRefused.goals[0].experiments[0].status, 'accepted');
+    assert.equal(afterRefused.goals[0].experiments[0].proof, 'dry run produced a verified recovery action');
+    assert.equal(afterRefused.goals[0].experiments[1].title, 'Prepare the next recovery experiment');
     const doneStatus = runCli(['member', 'status', 'growth', '--json'], { cwd: dir });
     assert.equal(doneStatus.status, 0, doneStatus.stderr || doneStatus.stdout);
     const doneStatusPayload = JSON.parse(doneStatus.stdout);
@@ -1172,6 +1219,351 @@ test('member wake creates a missing task from member-room evidence', () => {
   }
 });
 
+test('member wake discovers autonomous objective from scorecard signal with no active goal', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), `${JSON.stringify({
+      schema: 'atris.brain.scorecard.v1',
+      type: 'scorecard',
+      reward: 0.4,
+      next_task_suggestion: 'Build autonomous problem scanner from telemetry receipts',
+      lesson: 'The loop had no member goal even though telemetry exposed a high-value AGI gap.',
+      created_at: '2026-06-02T10:00:00.000Z',
+    })}\n`, 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'set_objective');
+    assert.equal(payload.reason, 'autonomous_problem_discovery:scorecards');
+    assert.equal(payload.checks.has_goal, false);
+    assert.equal(payload.checks.has_autonomous_problem_candidate, true);
+    assert.equal(payload.checks.autonomous_problem_source, 'scorecards');
+    assert.match(payload.autonomous_problem.objective_title, /autonomous problem scanner/i);
+    assert.match(payload.next_command, /member wake command-leader --execute --confirm-autonomy-policy/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake execute seeds autonomous objective from Pulse AGI receipt', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'pulse_agi_loop_receipts.jsonl'), `${JSON.stringify({
+      schema: 'atris.pulse_agi_loop_receipt.v1',
+      phase: 'DECIDE',
+      task: 'verify Pulse AGI-loop runtime work',
+      why: 'Pulse discovered autonomous coordination lacks a durable objective seed.',
+      recommended_next_action: 'Seed an autonomous objective from Pulse AGI receipts and prove the next bounded member tick',
+      created_at: '2026-06-02T11:00:00.000Z',
+    })}\n`, 'utf8');
+
+    const refused = runCli(['member', 'wake', 'command-leader', '--execute', '--json'], { cwd: dir });
+    assert.equal(refused.status, 0, refused.stderr || refused.stdout);
+    const refusedPayload = JSON.parse(refused.stdout);
+    assert.equal(refusedPayload.decision, 'stop');
+    assert.equal(refusedPayload.reason, 'execute_requires_confirm_autonomy_policy');
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json')), false);
+
+    const executed = runCli(['member', 'wake', 'command-leader', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir });
+    assert.equal(executed.status, 0, executed.stderr || executed.stdout);
+    const payload = JSON.parse(executed.stdout);
+    assert.equal(payload.executed, true);
+    assert.equal(payload.decision, 'tick');
+    assert.equal(payload.reason, 'autonomous_objective_seeded');
+    assert.equal(payload.active_goal.source, 'autonomous_problem_discovery');
+    assert.match(payload.active_goal.title, /Pulse AGI receipts/i);
+    assert.match(payload.next_command, /member tick command-leader --goal/);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'command-leader', 'goals.json'), 'utf8'));
+    assert.equal(state.goals.length, 1);
+    assert.equal(state.goals[0].source, 'autonomous_problem_discovery');
+    assert.equal(state.goals[0].source_signal.source, 'pulse_agi_loop_receipts');
+    assert.match(state.goals[0].acceptance.join('\n'), /do not claim the full AGI bar is complete/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake discovers autonomous objective from env-declared external signal root', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    const externalRoot = path.join(dir, 'external-signals');
+    fs.mkdirSync(path.join(externalRoot, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(externalRoot, '.atris', 'state', 'scorecards.jsonl'), `${JSON.stringify({
+      schema: 'atris.external.scorecard.v1',
+      type: 'scorecard',
+      reward: 0.2,
+      next_task_suggestion: 'Scan customer behavior metrics for autonomous objective gaps',
+      lesson: 'External metrics show repeated user dropoff before member objective creation.',
+      created_at: '2026-06-03T09:00:00.000Z',
+    })}\n`, 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], {
+      cwd: dir,
+      env: { ATRIS_MEMBER_SIGNAL_ROOTS: externalRoot },
+    });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'set_objective');
+    assert.equal(payload.reason, 'autonomous_problem_discovery:external_signals_scorecards');
+    assert.equal(payload.checks.autonomous_problem_source, 'external_signals_scorecards');
+    assert.match(payload.autonomous_problem.objective_title, /customer behavior metrics/i);
+    assert.ok(payload.evidence.problem_discovery.sources_with_rows.find((source) => source.source === 'external_signals_scorecards'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake discovers autonomous objective from configured metrics signal file', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'signals'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'member-signal-sources.json'), JSON.stringify({
+      sources: [
+        { source: 'api_metrics', path: 'signals/api-metrics.jsonl', kind: 'jsonl' },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, 'signals', 'api-metrics.jsonl'), `${JSON.stringify({
+      schema: 'atris.metrics.problem_signal.v1',
+      current_blocker: 'API metrics show onboarding users stall before any member objective exists.',
+      recommended_next_action: 'Patch onboarding API conversion drop from user behavior metrics',
+      created_at: '2026-06-03T09:15:00.000Z',
+    })}\n`, 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'set_objective');
+    assert.equal(payload.reason, 'autonomous_problem_discovery:api_metrics');
+    assert.equal(payload.checks.autonomous_problem_source, 'api_metrics');
+    assert.match(payload.autonomous_problem.problem, /API metrics/);
+    assert.match(payload.autonomous_problem.suggested_action, /conversion drop/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('signal-scout wake creates auto-discovery task from recurring log errors', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'signal-scout', '--description="Turn repeated errors into bounded tasks"'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'signal-scout', '--json'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR renderer crashed while opening Team Hub queue';
+    fs.writeFileSync(path.join(logsDir, '2026-06-04.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '- unrelated warning',
+      '',
+    ].join('\n'), 'utf8');
+
+    const scriptPath = path.join(dir, 'scripts', 'scan-errors.mjs');
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+    fs.writeFileSync(scriptPath, `
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+const rootIndex = process.argv.indexOf('--root');
+const root = rootIndex >= 0 ? process.argv[rootIndex + 1] : process.cwd();
+const filePath = path.join(root, 'atris', 'logs', '2026', '2026-06-04.md');
+const lines = readFileSync(filePath, 'utf8').split(/\\r?\\n/);
+const matches = lines.map((line, index) => ({ line, index })).filter((row) => /error|failed|crashed/i.test(row.line));
+const counts = new Map();
+for (const row of matches) {
+  const pattern = row.line.replace(/^\\s*[-*]\\s+/, '').trim();
+  const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
+  existing.count += 1;
+  existing.evidence.push({ path: 'atris/logs/2026/2026-06-04.md', line: row.index + 1, text: row.line });
+  counts.set(pattern, existing);
+}
+const selected = [...counts.values()].sort((a, b) => b.count - a.count)[0] || null;
+console.log(JSON.stringify({ ok: true, schema: 'atris.error_scan.v1', threshold: 3, since_hours: 24, pattern: selected?.pattern || null, count: selected?.count || 0, selected, scanned: { files: 1, lines: lines.length, matching_lines: matches.length }, matches: [...counts.values()] }));
+`, 'utf8');
+
+    const dryRun = runCli(['member', 'wake', 'signal-scout', '--execute', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+    const dryPayload = JSON.parse(dryRun.stdout);
+    assert.equal(dryPayload.mode, 'dry_run');
+    assert.equal(dryPayload.executed, false);
+    assert.equal(dryPayload.decision, 'create_task');
+    assert.equal(dryPayload.reason, 'autonomous_error_discovery:log_error_scan');
+    assert.match(dryPayload.next_command, /atris task new 'Fix recurring error:/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'tasks.projection.json')), false);
+
+    const executed = runCli(['member', 'wake', 'signal-scout', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(executed.status, 0, executed.stderr || executed.stdout);
+    const payload = JSON.parse(executed.stdout);
+    assert.equal(payload.executed, true);
+    assert.equal(payload.decision, 'create_task');
+    assert.equal(payload.reason, 'autonomous_error_task_created');
+    assert.equal(payload.created_task.tag, 'auto-discovery');
+    assert.match(payload.created_task.title, /Fix recurring error: ERROR renderer crashed/);
+    assert.equal(payload.autonomous_discovery_receipt.error_count, 3);
+    assert.ok(fs.existsSync(payload.receipt_path));
+
+    const projection = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    assert.ok(projection.tasks.some((task) => task.tag === 'auto-discovery' && /Fix recurring error: ERROR renderer crashed/.test(task.title)));
+    const projectLog = fs.readFileSync(payload.autonomous_discovery_project_log_path, 'utf8');
+    assert.match(projectLog, /Signal Scout autonomous problem discovery/);
+    assert.match(projectLog, /ERROR renderer crashed while opening Team Hub queue/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member tick reads goal file evidence and consumes LLM proposal output', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'context'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'atris', 'context', 'agi.md'),
+      [
+        '# AGI bar',
+        'Build a causal model from action to outcome before setting the next objective.',
+      ].join('\n'),
+      'utf8',
+    );
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    const goal = runCli([
+      'member', 'goal', 'command-leader',
+      'Build AGI objective setting from atris/context/agi.md',
+      '--acceptance', 'Use atris/context/agi.md and return one receipt-backed causal proof step.',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const wakePayload = JSON.parse(wake.stdout);
+    assert.equal(wakePayload.evidence.goal_files.files_read, 1);
+    assert.equal(wakePayload.evidence.goal_files.files[0].path, 'atris/context/agi.md');
+    assert.match(wakePayload.evidence.goal_files.files[0].excerpt, /causal model/);
+
+    const tick = runCli(['member', 'tick', 'command-leader', '--goal', goalPayload.goal.id, '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_MEMBER_PROPOSAL_LLM_JSON: JSON.stringify({
+          title: 'Model causal loop from AGI context',
+          proof_target: 'Causal action-to-outcome proof from atris/context/agi.md',
+          next_step: 'Read atris/context/agi.md, write one action-to-outcome causal claim, and attach the verifier command as proof.',
+          verifier: 'node --check commands/member.js',
+          stop_rule: 'Stop before architecture mutation or external side effects.',
+        }),
+      },
+    });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.experiment.generation.mode, 'llm');
+    assert.equal(tickPayload.experiment.generation.source, 'env_json');
+    assert.equal(tickPayload.experiment.title, 'Model causal loop from AGI context');
+    assert.match(tickPayload.experiment.next_step, /action-to-outcome causal claim/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'wiki-miner'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'wiki-miner', 'MEMBER.md'), [
+      '---',
+      'name: wiki-miner',
+      'role: Knowledge Graph Builder',
+      'description: Extracts entities and relationships from wiki using LLM',
+      'skills: []',
+      'permissions:',
+      '  can-read: true',
+      '  can-execute: true',
+      '  can-approve: false',
+      '---',
+      '',
+      '# Wiki Miner',
+      '',
+      'Extract entities and relationships from wiki pages.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'wiki-miner', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Maintain cross-domain knowledge graph for AGI reasoning.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki', 'systems'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'systems', 'signals.md'), [
+      '# Signal Loop',
+      '',
+      'signal-scout owns inbound feedback and uses the wiki graph to route AGI work.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'wiki-miner', '--execute', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_WIKI_MINER_LLM_JSON: JSON.stringify({
+          entities: [
+            { type: 'system', name: 'signal-scout' },
+            { type: 'concept', name: 'wiki graph' },
+          ],
+          relationships: [
+            { from: 'signal-scout', to: 'wiki graph', type: 'uses' },
+          ],
+        }),
+      },
+    });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'wiki_mine');
+    assert.equal(payload.executed, true);
+    assert.equal(payload.wiki_miner.llm_successful_pages, 1);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'wiki', '.graph.json')));
+    assert.ok(fs.existsSync(payload.receipt_path));
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.schema, 'atris.wiki_miner_tick.v1');
+    assert.equal(receipt.pages_succeeded, 1);
+    assert.equal(receipt.pages[0].llm_source, 'env_json');
+
+    const graph = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), 'utf8'));
+    assert.ok(graph.entities.some((entity) => entity.name === 'signal-scout' && entity.type === 'system'));
+    assert.ok(graph.relationships.some((relationship) => relationship.from === 'signal-scout' && relationship.to === 'wiki graph'));
+
+    const related = runCli(['wiki', 'related', 'signal-scout', '--json'], { cwd: dir });
+    assert.equal(related.status, 0, related.stderr || related.stdout);
+    const relatedPayload = JSON.parse(related.stdout);
+    assert.equal(relatedPayload.relationships.length, 1);
+    assert.equal(relatedPayload.relationships[0].to, 'wiki graph');
+
+    const entities = runCli(['wiki', 'entities', '--type', 'system', '--json'], { cwd: dir });
+    assert.equal(entities.status, 0, entities.stderr || entities.stdout);
+    const entitiesPayload = JSON.parse(entities.stdout);
+    assert.deepEqual(entitiesPayload.entities.map((entity) => entity.name), ['signal-scout']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member wake picks nearest open loop from task projection evidence', () => {
   const dir = makeTempDir();
   try {
@@ -1204,6 +1596,50 @@ test('member wake picks nearest open loop from task projection evidence', () => 
     assert.equal(payload.checks.open_loop_source, 'task_projection');
     assert.equal(payload.evidence.nearest_open_loop.task_ref, 'OBL-999');
     assert.match(payload.next_command, /atris task note OBL-999/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member wake scores strategic objective above low-value nearby loop', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'context'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'context', 'agi.md'), 'Cross-domain world model and transfer learning target.\n', 'utf8');
+    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Coordinate autonomous AGI foundation loops"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'member', 'goal', 'command-leader',
+      'Build AGI cross-domain world model from atris/context/agi.md',
+      '--acceptance', 'Use atris/context/agi.md to set the next autonomous objective.',
+      '--json',
+    ], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-05-06T00:00:00.000Z',
+      tasks: [
+        {
+          id: 'tiny-loop',
+          display_id: 'OBL-301',
+          title: 'Rename a small helper',
+          status: 'claimed',
+          claimed_by: 'command-leader',
+          metadata: { assigned_to: 'command-leader' },
+          updated_at: 1778057000000,
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'command-leader', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'tick');
+    assert.equal(payload.reason, 'safe_next_bounded_step');
+    assert.equal(payload.evidence.nearest_open_loop.task_ref, 'OBL-301');
+    assert.equal(payload.evidence.selected_wake_candidate.decision, 'tick');
+    assert.equal(payload.evidence.wake_candidate_scores[0].decision, 'tick');
+    assert.ok(payload.evidence.wake_candidate_scores.find((candidate) => candidate.task_ref === 'OBL-301'));
   } finally {
     cleanupTempDir(dir);
   }
@@ -1257,7 +1693,7 @@ test('member loop repeats wake quickly and skips an active lease', () => {
       schema: 'atris.member_loop_lease.v1',
       member: 'mission-lead',
       run_id: 'active-run',
-      pid: 12345,
+      pid: process.pid,
       started_at: new Date().toISOString(),
       heartbeat_at: new Date().toISOString(),
       expires_at_ms: Date.now() + 60000,
@@ -1270,6 +1706,23 @@ test('member loop repeats wake quickly and skips an active lease', () => {
     assert.equal(skippedPayload.reason, 'loop_already_active');
     assert.equal(skippedPayload.ticks, 0);
     assert.ok(fs.existsSync(skippedPayload.receipt_path));
+
+    fs.rmSync(path.join(loopStateDir, 'mission-lead.lock.json'), { force: true });
+    fs.writeFileSync(path.join(loopStateDir, 'mission-lead.lock.json'), JSON.stringify({
+      schema: 'atris.member_loop_lease.v1',
+      member: 'mission-lead',
+      run_id: 'dead-run',
+      pid: 99999999,
+      started_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      expires_at_ms: Date.now() + 60000,
+    }, null, 2));
+
+    const recovered = runCli(['member', 'loop', 'mission-lead', '--ticks', '1', '--interval', '0', '--json'], { cwd: dir });
+    assert.equal(recovered.status, 0, recovered.stderr || recovered.stdout);
+    const recoveredPayload = JSON.parse(recovered.stdout);
+    assert.notEqual(recoveredPayload.status, 'skipped');
+    assert.notEqual(recoveredPayload.reason, 'loop_already_active');
   } finally {
     cleanupTempDir(dir);
   }
@@ -1314,6 +1767,42 @@ test('member status exposes blocked asks before more loop work', () => {
     assert.equal(pausedPayload.experiment.id, experimentId);
     const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'ops', 'goals.json'), 'utf8'));
     assert.equal(state.goals[0].experiments.length, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member block refuses discarded experiments', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'ops'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'goal', 'ops', 'Keep discarded work closed'], { cwd: dir }).status, 0);
+    const tick = runCli(['member', 'tick', 'ops', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const experimentId = JSON.parse(tick.stdout).experiment.id;
+
+    const discarded = runCli([
+      'member', 'review', 'ops', experimentId,
+      '--discard',
+      '--proof', 'discarded because the experiment was not useful',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(discarded.status, 0, discarded.stderr || discarded.stdout);
+
+    const blocked = runCli([
+      'member', 'block', 'ops', experimentId,
+      '--reason', 'late blocker',
+      '--ask', 'Should not reopen discarded work',
+      '--json',
+    ], { cwd: dir });
+    assert.notEqual(blocked.status, 0);
+    assert.match(blocked.stderr, /already discarded/);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'ops', 'goals.json'), 'utf8'));
+    assert.equal(state.goals[0].experiments.length, 1);
+    assert.equal(state.goals[0].experiments[0].status, 'discarded');
+    assert.equal(state.goals[0].experiments[0].proof, 'discarded because the experiment was not useful');
   } finally {
     cleanupTempDir(dir);
   }
@@ -3963,6 +4452,7 @@ test('task help flags never render the live desk', () => {
     assert.match(rootHelp.stdout, /atris task review-lane-drain \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-act \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-loop \[--json\]/);
+    assert.match(rootHelp.stdout, /atris task review-lane-run \[--json\]/);
     assert.match(rootHelp.stdout, /atris task current .*--review-state <lane>/);
     assert.match(rootHelp.stdout, /atris task queue .*--review-state <lane>/);
     assert.match(rootHelp.stdout, /atris task current-step .*--review-state <lane>/);
@@ -4032,8 +4522,31 @@ test('task capabilities returns the standalone read-only task capability contrac
     assert.deepEqual(payload.capabilities.surfaces.review_lane_loop.api, { method: 'POST', path: '/api/tasks/review-lane-loop' });
     assert.deepEqual(payload.capabilities.surfaces.review_lane_loop.allowed_actions, ['review_chat', 'continue_work']);
     assert.ok(payload.capabilities.surfaces.review_lane_loop.stopped_by.includes('human_accept_waiting_is_human_only'));
+    assert.ok(payload.capabilities.surfaces.review_lane_loop.stopped_by.includes('pending_review_chat_waiting_for_agent_review'));
     assert.ok(payload.capabilities.surfaces.review_lane_loop.stopped_by.includes('capabilities_check_failed'));
     assert.ok(payload.capabilities.surfaces.review_lane_loop.stopped_by.includes('repeat_selection'));
+    assert.equal(payload.capabilities.surfaces.review_lane_run.read_only, false);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.mutates_task_db, 'conditional');
+    assert.equal(payload.capabilities.surfaces.review_lane_run.writes_projection, true);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.writes_receipt, true);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.requires_task_db, true);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.dry_run_flag, '--dry-run');
+    assert.equal(payload.capabilities.surfaces.review_lane_run.max_runs_flag, '--max-runs <n>');
+    assert.equal(payload.capabilities.surfaces.review_lane_run.max_steps_flag, '--max-steps <n>');
+    assert.equal(payload.capabilities.surfaces.review_lane_run.default_max_runs, 3);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.max_runs_cap, 20);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.default_max_steps, 3);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.max_steps_cap, 10);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.orchestrates, 'review_lane_loop');
+    assert.deepEqual(payload.capabilities.surfaces.review_lane_run.api, { method: 'POST', path: '/api/tasks/review-lane-run' });
+    assert.deepEqual(payload.capabilities.surfaces.review_lane_run.allowed_actions, ['review_chat', 'continue_work']);
+    assert.equal(payload.capabilities.surfaces.review_lane_run.receipt_path, '.atris/state/review-lane-runs.jsonl');
+    assert.equal(payload.capabilities.surfaces.review_lane_run.latest_receipt_path, '.atris/state/review-lane-run.latest.json');
+    assert.ok(payload.capabilities.surfaces.review_lane_run.stopped_by.includes('continue_work_reused_existing_follow_up'));
+    assert.ok(payload.capabilities.surfaces.review_lane_run.stopped_by.includes('human_accept_waiting_is_human_only'));
+    assert.ok(payload.capabilities.surfaces.review_lane_run.stopped_by.includes('pending_review_chat_waiting_for_agent_review'));
+    assert.ok(payload.capabilities.surfaces.review_lane_run.stopped_by.includes('capabilities_check_failed'));
+    assert.ok(payload.capabilities.surfaces.review_lane_run.stopped_by.includes('max_runs_reached'));
     assert.equal(payload.capabilities.surfaces.current.read_only, true);
     assert.equal(payload.capabilities.surfaces.current.mutates_task_db, false);
     assert.equal(payload.capabilities.surfaces.current.writes_projection, true);
@@ -4048,6 +4561,7 @@ test('task capabilities returns the standalone read-only task capability contrac
     assert.equal(payload.capabilities.commands.review_lane_drain, 'atris task review-lane-drain --json');
     assert.equal(payload.capabilities.commands.review_lane_act, 'atris task review-lane-act --json');
     assert.equal(payload.capabilities.commands.review_lane_loop, 'atris task review-lane-loop --json');
+    assert.equal(payload.capabilities.commands.review_lane_run, 'atris task review-lane-run --json');
     assert.equal(payload.capabilities.commands.current, 'atris task current --review-state <lane> --json');
     assert.equal(payload.capabilities.commands.queue, 'atris task queue --review-state <lane> --json');
     assert.equal(payload.capabilities.commands.current_step, 'atris task current-step --review-state <lane> --json');
@@ -4134,10 +4648,21 @@ test('task capabilities-check reports contract drift without mutating task truth
     assert.equal(loopBehaviorCheck.ok, true);
     assert.equal(loopBehaviorCheck.detail.dry_run_stops_without_mutation, true);
     assert.equal(loopBehaviorCheck.detail.human_accept_waiting_stops_without_execution, true);
+    assert.equal(loopBehaviorCheck.detail.pending_review_chat_stops_without_execution, true);
     assert.equal(loopBehaviorCheck.detail.no_action_stops_without_execution, true);
     assert.equal(loopBehaviorCheck.detail.repeat_selection_stops_before_duplicate_execution, true);
     assert.equal(loopBehaviorCheck.detail.capability_drift_blocks_loop, true);
     assert.equal(loopBehaviorCheck.detail.max_steps_are_bounded, true);
+    assert.ok(payload.checks.some(check => check.name === 'review_lane_run_surface_declared' && check.ok));
+    const runBehaviorCheck = payload.checks.find(check => check.name === 'review_lane_run_behavior_conforms');
+    assert.equal(runBehaviorCheck.ok, true);
+    assert.equal(runBehaviorCheck.detail.dry_run_stops_without_receipt, true);
+    assert.equal(runBehaviorCheck.detail.human_accept_waiting_stops_without_execution, true);
+    assert.equal(runBehaviorCheck.detail.pending_review_chat_stops_without_execution, true);
+    assert.equal(runBehaviorCheck.detail.no_action_stops_without_execution, true);
+    assert.equal(runBehaviorCheck.detail.repeat_selection_stops_before_duplicate_execution, true);
+    assert.equal(runBehaviorCheck.detail.capability_drift_blocks_run, true);
+    assert.equal(runBehaviorCheck.detail.max_runs_are_bounded, true);
     assert.equal(payload.safety.mutates_task_db, false);
     assert.equal(payload.safety.writes_projection, true);
     assert.equal(payload.safety.human_accept, false);
@@ -4598,7 +5123,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(liveReviewPayload.acted_count, 1);
     assert.equal(liveReviewPayload.steps[0].selected_action, 'review_chat');
     assert.equal(liveReviewPayload.steps[0].result.appended, true);
-    assert.equal(liveReviewPayload.stopped_reason, 'repeat_selection');
+    assert.equal(liveReviewPayload.stopped_reason, 'no_review_lane_action');
     assert.equal(liveReviewPayload.safety.repeat_selection_guard, true);
     const afterReview = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterReview.current_version, beforeReview.current_version + 1);
@@ -4694,6 +5219,211 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
   }
 });
 
+test('task review-lane-run writes bounded receipts and stops before human accept', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const continueCreated = runCli([
+      'task', 'new', 'Run should continue one certified task and write a receipt',
+      '--tag', 'task',
+      '--goal-id', 'OBL-953',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(continueCreated.status, 0, continueCreated.stderr);
+    const continueRef = JSON.parse(continueCreated.stdout).task.display_id;
+    assert.equal(runCli([
+      'task', 'ready', continueRef,
+      '--as', 'codex',
+      '--proof', 'node --test test/commands.test.js passed before review-lane-run continuation',
+    ], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', continueRef,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during review-lane-run continuation',
+      '--next', 'Add a follow-up created by review lane run',
+    ], { cwd: dir, env }).status, 0);
+
+    const waitingCreated = runCli([
+      'task', 'new', 'Run should leave human accept waiting alone',
+      '--tag', 'task',
+      '--goal-id', 'OBL-953',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
+    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    assert.equal(runCli([
+      'task', 'ready', waitingRef,
+      '--as', 'codex',
+      '--proof', 'node --test test/commands.test.js passed before review-lane-run human gate',
+    ], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', waitingRef,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during review-lane-run human gate',
+    ], { cwd: dir, env }).status, 0);
+
+    const realDir = fs.realpathSync(dir);
+    const receiptPath = path.join(realDir, '.atris', 'state', 'review-lane-runs.jsonl');
+    const latestPath = path.join(realDir, '.atris', 'state', 'review-lane-run.latest.json');
+    const dryRun = runCli([
+      'task', 'review-lane-run',
+      '--goal-id', 'OBL-953',
+      '--max-runs', '2',
+      '--max-steps', '1',
+      '--dry-run',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    const dryPayload = JSON.parse(dryRun.stdout);
+    assert.equal(dryPayload.ok, true);
+    assert.equal(dryPayload.action, 'review_lane_run');
+    assert.equal(dryPayload.dry_run, true);
+    assert.equal(dryPayload.run_count, 1);
+    assert.equal(dryPayload.total_acted_count, 0);
+    assert.equal(dryPayload.stopped_reason, 'dry_run_preview');
+    assert.equal(dryPayload.receipt_written, false);
+    assert.equal(dryPayload.receipt_path, null);
+    assert.equal(dryPayload.would_write_receipt_path, receiptPath);
+    assert.equal(dryPayload.safety.human_accept, false);
+    assert.equal(dryPayload.safety.writes_receipt, false);
+    assert.equal(fs.existsSync(receiptPath), false);
+    assert.equal(fs.existsSync(latestPath), false);
+
+    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const liveRun = runCli([
+      'task', 'review-lane-run',
+      '--goal-id', 'OBL-953',
+      '--max-runs', '2',
+      '--max-steps', '1',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(liveRun.status, 0, liveRun.stderr);
+    const livePayload = JSON.parse(liveRun.stdout);
+    assert.equal(livePayload.ok, true);
+    assert.equal(livePayload.dry_run, false);
+    assert.equal(livePayload.run_count, 2);
+    assert.equal(livePayload.total_acted_count, 1);
+    assert.equal(livePayload.runs[0].stopped_reason, 'max_steps_reached');
+    assert.equal(livePayload.runs[0].steps[0].selected_action, 'continue_work');
+    assert.ok(livePayload.runs[0].steps[0].result.next_task_id);
+    assert.equal(livePayload.stopped_reason, 'human_accept_waiting_is_human_only');
+    assert.equal(livePayload.stopped_on, 'human_accept_waiting');
+    assert.equal(livePayload.receipt_written, true);
+    assert.equal(livePayload.receipt_path, receiptPath);
+    assert.equal(livePayload.latest_receipt_path, latestPath);
+    assert.equal(livePayload.safety.human_accept, false);
+    assert.equal(livePayload.safety.writes_receipt, true);
+    assert.equal(fs.existsSync(receiptPath), true);
+    assert.equal(fs.existsSync(latestPath), true);
+
+    const receiptLines = fs.readFileSync(receiptPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(receiptLines.length, 1);
+    assert.equal(receiptLines[0].schema, 'atris.task_review_lane_run.v1');
+    assert.equal(receiptLines[0].receipt_written, true);
+    assert.equal(receiptLines[0].total_acted_count, 1);
+    const latestReceipt = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
+    assert.equal(latestReceipt.stopped_reason, 'human_accept_waiting_is_human_only');
+    assert.equal(latestReceipt.safety.human_accept, false);
+
+    const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review-lane-run does not repeat the same review_chat task across inner loops', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli([
+      'task', 'new', 'Run should not duplicate review chat packets',
+      '--tag', 'task',
+      '--goal-id', 'OBL-954',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli([
+      'task', 'ready', ref,
+      '--as', 'codex',
+      '--proof', 'node --test test/commands.test.js passed before review-lane-run duplicate guard',
+    ], { cwd: dir, env }).status, 0);
+
+    const before = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    const beforeReviewChats = (before.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
+    const liveRun = runCli([
+      'task', 'review-lane-run',
+      '--goal-id', 'OBL-954',
+      '--max-runs', '3',
+      '--max-steps', '1',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(liveRun.status, 0, liveRun.stderr);
+    const payload = JSON.parse(liveRun.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.run_count, 2);
+    assert.equal(payload.total_acted_count, 1);
+    assert.equal(payload.runs[0].stopped_reason, 'max_steps_reached');
+    assert.equal(payload.runs[0].steps[0].selected_action, 'review_chat');
+    assert.equal(payload.runs[1].stopped_reason, 'no_review_lane_action');
+    assert.equal(payload.stopped_reason, 'no_review_lane_action');
+
+    const actedTaskIds = payload.runs
+      .flatMap(run => run.steps || [])
+      .filter(step => step.acted)
+      .map(step => step.decision && step.decision.task_id)
+      .filter(Boolean);
+    assert.deepEqual(actedTaskIds, [before.id]);
+
+    const after = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    const afterReviewChats = (after.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
+    assert.equal(after.current_version, before.current_version + 1);
+    assert.equal(afterReviewChats, beforeReviewChats + 1);
+
+    const drainAfterChat = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-954', '--json'], { cwd: dir, env });
+    assert.equal(drainAfterChat.status, 0, drainAfterChat.stderr);
+    const drainAfterPayload = JSON.parse(drainAfterChat.stdout);
+    assert.equal(drainAfterPayload.drain.next_action, 'pending_review_chat');
+    assert.equal(drainAfterPayload.drain.safe_for_agent, false);
+    assert.equal(drainAfterPayload.drain.command, null);
+    assert.equal(drainAfterPayload.drain.reason, 'pending_review_chat_waiting_for_agent_review');
+    assert.equal(drainAfterPayload.review_state_actions.pending_review_chat_count, 1);
+    assert.equal(drainAfterPayload.review_state_actions.pending_review_chat[0].ref, ref);
+
+    const secondRun = runCli([
+      'task', 'review-lane-run',
+      '--goal-id', 'OBL-954',
+      '--max-runs', '2',
+      '--max-steps', '1',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(secondRun.status, 0, secondRun.stderr);
+    const secondPayload = JSON.parse(secondRun.stdout);
+    assert.equal(secondPayload.ok, true);
+    assert.equal(secondPayload.run_count, 1);
+    assert.equal(secondPayload.total_acted_count, 0);
+    assert.equal(secondPayload.stopped_reason, 'pending_review_chat_waiting_for_agent_review');
+    assert.equal(secondPayload.runs[0].final_drain.next_action, 'pending_review_chat');
+    const afterSecondRun = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    const afterSecondRunReviewChats = (afterSecondRun.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
+    assert.equal(afterSecondRun.current_version, after.current_version);
+    assert.equal(afterSecondRunReviewChats, afterReviewChats);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review-lane-drain skips continue-work rows with existing follow-up children', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -4745,7 +5475,37 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     ], { cwd: dir, env }).status, 0);
     const followedContinue = runCli(['task', 'continue-work', followedRef, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(followedContinue.status, 0, followedContinue.stderr);
-    assert.equal(JSON.parse(followedContinue.stdout).created, true);
+    const followedContinuePayload = JSON.parse(followedContinue.stdout);
+    assert.equal(followedContinuePayload.created, true);
+
+    assert.equal(runCli([
+      'task', 'review', followedRef,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during retitled followed drain continuation',
+      '--next', 'Add a newer child title after the first follow-up already exists',
+    ], { cwd: dir, env }).status, 0);
+    const followedRetitledContinue = runCli(['task', 'continue-work', followedRef, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(followedRetitledContinue.status, 0, followedRetitledContinue.stderr);
+    const followedRetitledPayload = JSON.parse(followedRetitledContinue.stdout);
+    assert.equal(followedRetitledPayload.created, false);
+    assert.equal(followedRetitledPayload.next_task_id, followedContinuePayload.next_task_id);
+
+    const db = taskStore.open(dbPath);
+    assert.equal(taskStore.doneTask(db, {
+      id: followedContinuePayload.next_task_id,
+      actor: 'codex',
+    }).updated, true);
+    const workspaceRoot = fs.realpathSync(dir);
+    for (let i = 0; i < 9; i += 1) {
+      const filler = taskStore.addTask(db, {
+        title: `Projection filler done child ${i}`,
+        workspaceRoot,
+        status: 'done',
+      });
+      assert.equal(filler.inserted, true);
+    }
+    taskStore.close();
 
     const drain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-953', '--json'], { cwd: dir, env });
     assert.equal(drain.status, 0, drain.stderr);
@@ -4762,6 +5522,18 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(payload.review_state_actions.skipped_continue_work_with_follow_up[0].command, null);
     assert.equal(payload.review_state_actions.skipped_continue_work_with_follow_up[0].continue_work_command, undefined);
 
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.status.counts.review_continue_work, 1);
+    assert.equal(statusPayload.status.counts.review_human_accept_waiting, 1);
+    assert.equal(statusPayload.status.review_actions.continue_work.count, 1);
+    assert.equal(statusPayload.status.review_actions.continue_work.first.ref, freshRef);
+    assert.match(statusPayload.status.review_actions.continue_work.first.command, new RegExp(`continue-work ${freshRef}`));
+    assert.equal(statusPayload.status.review_actions.human_accept_waiting.count, 1);
+    assert.equal(statusPayload.status.review_actions.human_accept_waiting.first.ref, followedRef);
+    assert.equal(statusPayload.status.review_actions.human_accept_waiting.first.command, null);
+
     const followedCurrent = runCli([
       'task', 'current',
       '--goal-id', 'OBL-953',
@@ -4774,6 +5546,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(followedCurrentPayload.current.review_state_actions.human_accept_waiting.command, null);
     assert.equal(followedCurrentPayload.current.review_state_actions.human_accept_waiting.continue_work_command, undefined);
   } finally {
+    taskStore.close();
     cleanupTempDir(dir);
   }
 });
@@ -6922,7 +7695,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     const proofContext = `${'context '.repeat(180)}Long proofs can carry setup notes before the verification commands.`;
     const proof = [
       proofContext,
-      'Rechecked node --check commands/task.js lib/task-db.js passed, node --test test/commands.test.js passed, git diff --check -- commands/task.js lib/task-db.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task reviews --limit 3 --json from project-obelisk showed rows',
+      'Rechecked node --check commands/task.js lib/task-db.js passed, node --test test/commands.test.js passed, git diff --check -- commands/task.js lib/task-db.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task reviews --limit 3 --json from project-obelisk showed rows. tail-marker-full-proof-must-survive',
     ].join(' ');
     const ready = runCli([
       'task', 'ready', ref,
@@ -6945,7 +7718,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     assert.equal(payload.action, 'review_chat');
     assert.equal(payload.contract.task.ref, ref);
     assert.equal(payload.contract.verification_focus.objective, 'Make Review chat tell Codex exactly what to verify');
-    assert.match(payload.contract.verification_focus.proof_claim, /context context/);
+    assert.equal(payload.contract.verification_focus.proof_claim, proof);
     assert.deepEqual(payload.contract.verification_focus.commands_to_verify.slice(0, 4), [
       'node --check commands/task.js lib/task-db.js',
       'node --test test/commands.test.js',
@@ -6967,6 +7740,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     assert.match(payload.contract.required_checks.join('\n'), /Inspect these named files\/artifacts/);
     assert.match(payload.task.messages.at(-1).content, /TASK_REVIEW_CHAT/);
     assert.match(payload.task.messages.at(-1).content, /proof_claim: context context/);
+    assert.match(payload.task.messages.at(-1).content, /tail-marker-full-proof-must-survive/);
     assert.match(payload.task.messages.at(-1).content, /commands_to_verify:\n- node --check commands\/task\.js/);
     assert.match(payload.task.messages.at(-1).content, /files_to_inspect:\n- commands\/task\.js/);
     assert.ok(Array.isArray(payload.contract.verification_focus.recent_thread));
@@ -7385,6 +8159,23 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --test test/commands.test.js',
     ]);
 
+    const humanAcceptTask = runCli(['task', 'new', 'Reject human accept proof prose', '--json'], { cwd: dir, env });
+    assert.equal(humanAcceptTask.status, 0, humanAcceptTask.stderr);
+    const humanAcceptRef = JSON.parse(humanAcceptTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', humanAcceptRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const humanAcceptReady = runCli([
+      'task', 'ready', humanAcceptRef,
+      '--as', 'codex',
+      '--proof', 'node --check commands/task.js passed. Do not run atris task accept OBL-1; no human accept or XP.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(humanAcceptReady.status, 0, humanAcceptReady.stderr);
+    const humanAcceptChat = runCli(['task', 'review-chat', humanAcceptRef, '--json'], { cwd: dir, env });
+    assert.equal(humanAcceptChat.status, 0, humanAcceptChat.stderr);
+    assert.deepEqual(JSON.parse(humanAcceptChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node --check commands/task.js',
+    ]);
+
     const longFiles = Array.from({ length: 10 }, (_, index) => `test/long-${index}.test.js`).join(' ');
     const longCommand = `node --test ${longFiles}`;
     assert.ok(longCommand.length > 180);
@@ -7609,6 +8400,82 @@ test('task accept rejects non-positive rewards before marking done', () => {
     const accept = runCli(['task', 'accept', ref, '--reward', '0', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 2);
     assert.match(accept.stderr, /reward must be a positive number/);
+
+    const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    const task = JSON.parse(show.stdout);
+    assert.equal(task.status, 'review');
+    assert.equal(task.metadata.approval_status, 'pending');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task proof-only agent env blocks acceptance verbs', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = {
+    ATRIS_TASKS_DB: dbPath,
+    NODE_NO_WARNINGS: '1',
+    ATRIS_AGENT_ID: 'codex',
+    ATRIS_AGENT_PROOF_ONLY: '1',
+  };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli(['task', 'add', 'Proof-only guard task', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const done = runCli(['task', 'done', ref, '--as', 'codex', '--proof', 'proof-only guard checked done command', '--json'], { cwd: dir, env });
+    assert.equal(done.status, 2);
+    assert.equal(JSON.parse(done.stdout).reason, 'agent_proof_only_human_accept_blocked');
+
+    const finish = runCli(['task', 'finish', ref, '--as', 'codex', '--proof', 'proof-only guard checked finish command', '--json'], { cwd: dir, env });
+    assert.equal(finish.status, 2);
+    assert.equal(JSON.parse(finish.stdout).reason, 'agent_proof_only_human_accept_blocked');
+
+    const positiveReview = runCli([
+      'task', 'review', ref,
+      '--reward', '1',
+      '--as', 'codex-review',
+      '--proof', 'proof-only guard checked positive review command',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(positiveReview.status, 2);
+    assert.equal(JSON.parse(positiveReview.stdout).reason, 'agent_proof_only_human_accept_blocked');
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--as', 'codex',
+      '--proof', 'node --check commands/task.js passed and git diff --check passed for proof-only guard',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const zeroReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js proof-only guard passed and diff inspected',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(zeroReview.status, 0, zeroReview.stderr);
+
+    const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(accept.status, 2);
+    assert.equal(JSON.parse(accept.stdout).reason, 'agent_proof_only_human_accept_blocked');
+
+    const autoAccept = runCli([
+      'task', 'auto-accept-certified',
+      '--confirm-human-accept',
+      '--as', 'keshavrao',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(autoAccept.status, 2);
+    assert.equal(JSON.parse(autoAccept.stdout).reason, 'agent_proof_only_human_accept_blocked');
 
     const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
@@ -8906,6 +9773,29 @@ test('task current exposes continue-work for certified review suggestions', () =
     assert.equal(reviewItem.id, parent.id);
     assert.equal(reviewItem.continue_work_command, command);
     assert.deepEqual(reviewItem.continue_work_api, { method: 'POST', path: `/api/tasks/${parent.id}/continue-work` });
+
+    const clearedReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed while clearing stale next_task',
+      '--next', '',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(clearedReview.status, 0, clearedReview.stderr);
+    const clearedPayload = JSON.parse(clearedReview.stdout);
+    assert.equal(clearedPayload.episode.next_task_suggestion, null);
+    assert.equal(clearedPayload.episode.action.event_type, 'reviewed');
+    assert.equal(clearedPayload.episode.rl.has_next_task, false);
+    assert.equal(clearedPayload.task.review.next_task, undefined);
+    assert.equal(Object.prototype.hasOwnProperty.call(clearedPayload.task.metadata, 'latest_agent_next_task'), false);
+
+    const waitingCurrent = runCli(['task', 'current', '--goal-id', 'OBL-928', '--review-state', 'human-accept-waiting', '--json'], { cwd: dir, env });
+    assert.equal(waitingCurrent.status, 0, waitingCurrent.stderr);
+    const waitingCurrentPayload = JSON.parse(waitingCurrent.stdout);
+    assert.equal(waitingCurrentPayload.current.review_state_actions.human_accept_waiting.ref, ref);
+    assert.equal(waitingCurrentPayload.current.review_state_actions.human_accept_waiting.command, null);
+    assert.equal(waitingCurrentPayload.current.review_state_actions.continue_work, null);
   } finally {
     cleanupTempDir(dir);
   }
@@ -9286,6 +10176,47 @@ test('task serve exposes review-lane-drain API', async () => {
       '--proof', 'node --test test/commands.test.js passed during API review-lane-act human block',
     ], { cwd: dir, env }).status, 0);
 
+    const runContinueCreated = runCli([
+      'task', 'new', 'API run should continue one certified task',
+      '--tag', 'task',
+      '--goal-id', 'OBL-932',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(runContinueCreated.status, 0, runContinueCreated.stderr);
+    const runContinueRef = JSON.parse(runContinueCreated.stdout).task.display_id;
+    assert.equal(runCli([
+      'task', 'ready', runContinueRef,
+      '--as', 'codex',
+      '--proof', 'node --test test/commands.test.js passed before API review-lane-run continuation',
+    ], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', runContinueRef,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during API review-lane-run continuation',
+      '--next', 'Add a follow-up created by API review lane run',
+    ], { cwd: dir, env }).status, 0);
+
+    const runWaitingCreated = runCli([
+      'task', 'new', 'API run should stop on human accept wait',
+      '--tag', 'task',
+      '--goal-id', 'OBL-932',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(runWaitingCreated.status, 0, runWaitingCreated.stderr);
+    const runWaitingRef = JSON.parse(runWaitingCreated.stdout).task.display_id;
+    assert.equal(runCli([
+      'task', 'ready', runWaitingRef,
+      '--as', 'codex',
+      '--proof', 'node --test test/commands.test.js passed before API review-lane-run human gate',
+    ], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', runWaitingRef,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during API review-lane-run human gate',
+    ], { cwd: dir, env }).status, 0);
+
     child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
       cwd: dir,
       env: { ...process.env, ...env },
@@ -9299,9 +10230,11 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(capabilities.capabilities.commands.review_lane_drain, 'atris task review-lane-drain --json');
     assert.equal(capabilities.capabilities.commands.review_lane_act, 'atris task review-lane-act --json');
     assert.equal(capabilities.capabilities.commands.review_lane_loop, 'atris task review-lane-loop --json');
+    assert.equal(capabilities.capabilities.commands.review_lane_run, 'atris task review-lane-run --json');
     assert.deepEqual(capabilities.capabilities.surfaces.review_lane_drain.api, { method: 'GET', path: '/api/tasks/review-lane-drain' });
     assert.deepEqual(capabilities.capabilities.surfaces.review_lane_act.api, { method: 'POST', path: '/api/tasks/review-lane-act' });
     assert.deepEqual(capabilities.capabilities.surfaces.review_lane_loop.api, { method: 'POST', path: '/api/tasks/review-lane-loop' });
+    assert.deepEqual(capabilities.capabilities.surfaces.review_lane_run.api, { method: 'POST', path: '/api/tasks/review-lane-run' });
 
     const response = await fetch(`${base}/api/tasks/review-lane-drain?goal_id=OBL-930`);
     assert.equal(response.status, 200);
@@ -9362,6 +10295,47 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(loopPayload.final_drain.command, null);
     assert.equal(loopPayload.final_drain.api, null);
     assert.equal(loopPayload.safety.human_accept, false);
+
+    const apiRealDir = fs.realpathSync(dir);
+    const apiRunReceiptPath = path.join(apiRealDir, '.atris', 'state', 'review-lane-runs.jsonl');
+    const apiRunLatestPath = path.join(apiRealDir, '.atris', 'state', 'review-lane-run.latest.json');
+    const runDryRun = await fetch(`${base}/api/tasks/review-lane-run?goal_id=OBL-932`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'codex', dry_run: true, max_runs: 2, max_steps: 1 }),
+    }).then(r => r.json());
+    assert.equal(runDryRun.ok, true);
+    assert.equal(runDryRun.action, 'review_lane_run');
+    assert.equal(runDryRun.dry_run, true);
+    assert.equal(runDryRun.run_count, 1);
+    assert.equal(runDryRun.total_acted_count, 0);
+    assert.equal(runDryRun.stopped_reason, 'dry_run_preview');
+    assert.equal(runDryRun.receipt_written, false);
+    assert.equal(runDryRun.would_write_receipt_path, apiRunReceiptPath);
+    assert.equal(fs.existsSync(apiRunReceiptPath), false);
+
+    const beforeRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
+    const runResponse = await fetch(`${base}/api/tasks/review-lane-run?goal_id=OBL-932`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actor: 'codex', max_runs: 2, max_steps: 1 }),
+    });
+    assert.equal(runResponse.status, 200);
+    const runPayload = await runResponse.json();
+    assert.equal(runPayload.ok, true);
+    assert.equal(runPayload.run_count, 2);
+    assert.equal(runPayload.total_acted_count, 1);
+    assert.equal(runPayload.runs[0].stopped_reason, 'max_steps_reached');
+    assert.equal(runPayload.runs[0].steps[0].selected_action, 'continue_work');
+    assert.equal(runPayload.stopped_reason, 'human_accept_waiting_is_human_only');
+    assert.equal(runPayload.receipt_written, true);
+    assert.equal(runPayload.receipt_path, apiRunReceiptPath);
+    assert.equal(runPayload.latest_receipt_path, apiRunLatestPath);
+    assert.equal(runPayload.safety.human_accept, false);
+    assert.equal(fs.existsSync(apiRunReceiptPath), true);
+    assert.equal(fs.existsSync(apiRunLatestPath), true);
+    const afterRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(afterRunWaiting.current_version, beforeRunWaiting.current_version);
 
     const actResponse = await fetch(`${base}/api/tasks/review-lane-act?goal_id=OBL-930`, {
       method: 'POST',
@@ -9711,12 +10685,14 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiStatusCurrent.current.review_state_actions.active_filter, 'needs-agent');
 		    assert.equal(apiStatusCurrent.current.review_state_actions.scope.status, 'review');
 		    assert.equal(apiStatusCurrent.current.review_state_actions.scope.review_state, null);
-		    assert.equal(apiStatusCurrent.current.review_state_actions.needs_agent.id, apiStepTask.task_id);
-		    assert.equal(apiStatusCurrent.current.review_state_actions.needs_agent.next_action, 'review_chat');
-		    assert.deepEqual(apiStatusCurrent.current.review_state_actions.needs_agent.api, { method: 'POST', path: `/api/tasks/${apiStepTask.task_id}/review-chat` });
-		    assert.equal(apiStatusCurrent.current.review_state_actions.needs_agent.continue_work_command, undefined);
-		    assert.equal(apiStatusCurrent.current.review_state_actions.continue_work, null);
-		    assert.equal(apiStatusCurrent.current.review_state_actions.human_accept_waiting, null);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.needs_agent, null);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.pending_review_chat_count, 1);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.pending_review_chat[0].id, apiStepTask.task_id);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.pending_review_chat[0].next_action, 'pending_review_chat');
+			    assert.equal(apiStatusCurrent.current.review_state_actions.pending_review_chat[0].command, null);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.pending_review_chat[0].api, null);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.continue_work, null);
+			    assert.equal(apiStatusCurrent.current.review_state_actions.human_accept_waiting, null);
 
 		    const apiNeedsAgentQueue = await fetch(`${base}/api/tasks/queue?status=review&review_state=needs-agent`).then(r => r.json());
 		    assert.equal(apiNeedsAgentQueue.ok, true);
@@ -9734,8 +10710,11 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiNeedsAgentQueue.queue.review_state_counts.needs_agent, 1);
 		    assert.deepEqual(apiNeedsAgentQueue.current.review_state_actions, apiNeedsAgentQueue.queue.review_state_actions);
 		    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.active_filter, 'needs-agent');
-		    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.needs_agent.id, apiStepTask.task_id);
-		    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.needs_agent.next_action, 'review_chat');
+			    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.needs_agent, null);
+			    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.pending_review_chat_count, 1);
+			    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.pending_review_chat[0].id, apiStepTask.task_id);
+			    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.pending_review_chat[0].next_action, 'pending_review_chat');
+			    assert.equal(apiNeedsAgentQueue.queue.review_state_actions.pending_review_chat[0].command, null);
 		    const apiNeedsAgentItem = apiNeedsAgentQueue.queue.columns.find(column => column.key === 'review').items[0];
 		    assert.equal(apiNeedsAgentItem.id, apiStepTask.task_id);
 		    assert.equal(apiNeedsAgentItem.continue_work_command, undefined);
