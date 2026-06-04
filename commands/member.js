@@ -143,6 +143,18 @@ function makeGoalId(title) {
   return `goal-${todayLogName().replace(/\.md$/, '')}-${slugHash(title)}`;
 }
 
+function uniqueGoalId(state, baseId) {
+  const existingIds = new Set((state.goals || []).map((goal) => goal.id).filter(Boolean));
+  if (!existingIds.has(baseId)) return baseId;
+  let index = 2;
+  let id = `${baseId}-${index}`;
+  while (existingIds.has(id)) {
+    index += 1;
+    id = `${baseId}-${index}`;
+  }
+  return id;
+}
+
 function makeExperimentId(goalId, title) {
   return `exp-${slugHash(`${goalId}:${title}:${Date.now()}`)}`;
 }
@@ -1860,8 +1872,9 @@ function memberGoalFromMission(name, ...args) {
     'The move has verifier/proof target, stop rule, and human-ask condition.',
     'A receipt or log entry records what changed and what remains uncertain.',
   ];
+  const goalId = makeGoalId(title);
   const goal = existing || {
-    id: makeGoalId(title),
+    id: uniqueGoalId(state, goalId),
     title,
     status: 'active',
     cadence,
@@ -1892,10 +1905,8 @@ function memberGoalFromMission(name, ...args) {
     mission_id: runtime.id || null,
     mission_status: runtime.status || null,
   });
-  state.goals = [
-    goal,
-    ...state.goals.filter((item) => item.id !== goal.id),
-  ];
+  if (!existing) state.goals.push(goal);
+  state.goals = [goal, ...state.goals.filter((item) => item !== goal)];
   writeMemberGoals(paths, state);
   const logPath = appendMemberGoalLog(paths.memberDir, name, existing ? 'Member goal reused from Mission' : 'Member goal created from Mission', {
     goal: goal.title,
