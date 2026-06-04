@@ -673,6 +673,54 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   }
 });
 
+test('member goal-from-mission preserves completed same-day proof history', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions preserve completed proof history"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions preserve completed proof history',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const createdPayload = JSON.parse(created.stdout);
+    const completedId = createdPayload.goal.id;
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    state.goals[0].status = 'completed';
+    state.goals[0].completed_at = '2026-06-04T00:00:00.000Z';
+    state.goals[0].completed_reason = 'accepted_experiment_proof';
+    state.goals[0].experiments = [
+      {
+        id: 'exp-proof',
+        title: 'Accepted proof',
+        status: 'accepted',
+        proof: 'receipt-backed proof',
+        reviewed_at: '2026-06-04T00:00:00.000Z',
+        value: 4,
+      },
+    ];
+    fs.writeFileSync(goalsPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+
+    const next = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = JSON.parse(next.stdout);
+    const nextState = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+    const completed = nextState.goals.find((goal) => goal.id === completedId);
+    assert.equal(nextPayload.action, 'goal_from_mission_created');
+    assert.notEqual(nextPayload.goal.id, completedId);
+    assert.match(nextPayload.goal.id, new RegExp(`^${completedId}-2$`));
+    assert.equal(nextState.goals[0].id, nextPayload.goal.id);
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.experiments[0].id, 'exp-proof');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member goal-from-mission promotes the mission goal before older active goals', () => {
   const dir = makeTempDir();
   try {
