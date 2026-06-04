@@ -560,6 +560,10 @@ function lowerCompact(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function shellQuote(value) {
+  return `'${String(value || '').replace(/'/g, "'\\''")}'`;
+}
+
 function taskCandidateOwnerValues(task) {
   return [
     task?.claimed_by,
@@ -643,6 +647,116 @@ function taskCandidateFromSource(task, source, sourcePath = '') {
   }
 
   return null;
+}
+
+function goalEvidenceStrings(goal) {
+  const seen = new Set();
+  const out = [];
+  function push(value) {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  function walk(value, depth = 0) {
+    if (depth > 4 || value == null) return;
+    if (typeof value === 'string') {
+      push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.slice(0, 30).forEach((item) => walk(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const [key, item] of Object.entries(value).slice(0, 60)) {
+        if (/^(history|experiments)$/i.test(key)) continue;
+        walk(item, depth + 1);
+      }
+    }
+  }
+  walk(goal);
+  return out;
+}
+
+function normalizeEvidencePath(raw, root = process.cwd()) {
+  let value = String(raw || '').trim().replace(/^["'`(<[]+|["'`)>.,;\]]+$/g, '');
+  value = value.replace(/:\d+(?::\d+)?$/, '');
+  if (!value || value.includes('\0')) return null;
+  if (/^[a-z]+:\/\//i.test(value)) return null;
+  if (value.startsWith('~/')) value = path.join(os.homedir(), value.slice(2));
+  const resolved = path.isAbsolute(value) ? path.resolve(value) : path.resolve(root, value);
+  const workspace = path.resolve(root);
+  if (resolved !== workspace && !resolved.startsWith(`${workspace}${path.sep}`)) return null;
+  const rel = path.relative(workspace, resolved);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (rel.split(path.sep).some((part) => ['.git', 'node_modules', 'dist', 'build'].includes(part))) return null;
+  return { input: raw, path: resolved, relative_path: rel };
+}
+
+function filePathsFromGoal(goal, root = process.cwd()) {
+  const explicit = [
+    goal?.mission_file,
+    goal?.missionFile,
+    goal?.source_file,
+    goal?.sourceFile,
+    goal?.verifier,
+  ].filter(Boolean);
+  const text = [...explicit, ...goalEvidenceStrings(goal)].join('\n');
+  const matches = [];
+  const pathPattern = /(?:^|[\s"'(])((?:~\/|\.{1,2}\/|\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9_-]{1,12})(?::\d+(?::\d+)?)?/g;
+  const rootFilePattern = /(?:^|[\s"'(])([A-Za-z0-9._-]+\.(?:md|json|js|cjs|mjs|ts|tsx|py|yml|yaml|toml|txt|csv))(?::\d+(?::\d+)?)?/g;
+  for (const pattern of [pathPattern, rootFilePattern]) {
+    let match = pattern.exec(text);
+    while (match) {
+      matches.push(match[1]);
+      match = pattern.exec(text);
+    }
+  }
+  return [...new Map(
+    matches
+      .map((item) => normalizeEvidencePath(item, root))
+      .filter(Boolean)
+      .map((item) => [item.relative_path, item]),
+  ).values()].slice(0, 12);
+}
+
+function readGoalFileEvidence(goal, root = process.cwd()) {
+  const paths = filePathsFromGoal(goal, root);
+  const files = [];
+  for (const item of paths) {
+    const row = {
+      input: item.input,
+      path: item.relative_path,
+      exists: false,
+      bytes: 0,
+      excerpt: '',
+      truncated: false,
+    };
+    try {
+      const stat = fs.statSync(item.path);
+      if (!stat.isFile()) {
+        row.error = 'not_file';
+        files.push(row);
+        continue;
+      }
+      row.exists = true;
+      row.bytes = stat.size;
+      const maxBytes = 8000;
+      const raw = fs.readFileSync(item.path, 'utf8');
+      row.excerpt = raw.slice(0, maxBytes);
+      row.truncated = raw.length > maxBytes;
+    } catch (error) {
+      row.error = error && error.code ? error.code : 'read_failed';
+    }
+    files.push(row);
+  }
+  return {
+    path_count: paths.length,
+    files_read: files.filter((file) => file.exists && file.excerpt).length,
+    files,
+  };
 }
 
 function taskIsClosed(task) {
@@ -766,6 +880,7 @@ function readTaskProjectionEvidence(name) {
     exists: Boolean(projection),
     task_count: tasks.length,
     candidate_count: candidates.length,
+    candidates: candidates.slice(0, 20),
     nearest: candidates[0] || null,
   };
 }
@@ -867,6 +982,7 @@ function readMemberRoomEvidence(name) {
   return {
     files_checked,
     candidate_count: sorted.length,
+    candidates: sorted.slice(0, 20),
     nearest: sorted[0] || null,
   };
 }
@@ -886,16 +1002,631 @@ function readRecentWakeReceiptEvidence(name) {
   };
 }
 
-function collectWakeEvidence(name) {
+function readJsonlRowsIfExists(filePath, maxRows = 80) {
+  let text = '';
+  try {
+    text = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return [];
+  }
+  const rows = [];
+  const lines = text.split(/\r?\n/).filter((line) => line.trim()).slice(-Math.max(1, maxRows));
+  for (const line of lines) {
+    try {
+      rows.push(JSON.parse(line));
+    } catch {
+      // Bad rows should not block discovery from valid rows in the same stream.
+    }
+  }
+  return rows;
+}
+
+function stringFromSignalValue(value) {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value.map(stringFromSignalValue).filter(Boolean).slice(0, 4).join('; ');
+  if (value && typeof value === 'object') {
+    return [
+      value.title,
+      value.summary,
+      value.reason,
+      value.next_action,
+      value.recommended_next_action,
+      value.next_task_suggestion,
+    ].map(stringFromSignalValue).find(Boolean) || '';
+  }
+  return '';
+}
+
+function valueAtPath(row, dottedPath) {
+  return String(dottedPath || '').split('.').reduce((value, part) => {
+    if (value == null || typeof value !== 'object') return null;
+    return value[part];
+  }, row);
+}
+
+function firstSignalText(row, paths) {
+  for (const fieldPath of paths) {
+    const text = stringFromSignalValue(valueAtPath(row, fieldPath));
+    if (text) return text;
+  }
+  return '';
+}
+
+function signalTimestamp(row) {
+  return row?.created_at
+    || row?.createdAt
+    || row?.generated_at
+    || row?.finished_at
+    || row?.timestamp
+    || row?.ts
+    || row?.at
+    || row?.episode_created_at
+    || null;
+}
+
+function actionableProblemText(text) {
+  const value = compactSentence(text, 220);
+  if (value.length < 12) return '';
+  if (/^(none|null|false|n\/a|unknown)$/i.test(value)) return '';
+  if (/\b(wait for|waiting for|manual send|owner approval only|human only)\b/i.test(value)) return '';
+  const actionish = /\b(add|audit|build|capture|close|compile|connect|create|debug|discover|extract|fix|implement|ingest|model|patch|prove|rank|read|repair|review|scan|seed|ship|summarize|sync|test|triage|update|validate|verify|write)\b/i;
+  const strategic = /\b(agi|autonomous|objective|world model|causal|transfer|architecture|emergent|scorecard|receipt|proof|telemetry|loop|customer|revenue|security|release)\b/i;
+  return actionish.test(value) || strategic.test(value) ? value : '';
+}
+
+function titleFromProblemSignal(text) {
+  const clean = compactSentence(text, 110)
+    .replace(/^next\s+(task|move|action)\s*[:\-]\s*/i, '')
+    .replace(/^recommended\s+next\s+(task|move|action)\s*[:\-]\s*/i, '')
+    .replace(/^run\s+`([^`]+)`.*$/i, 'Run $1')
+    .trim();
+  if (!clean) return 'Investigate discovered problem';
+  return `${clean[0].toUpperCase()}${clean.slice(1)}`;
+}
+
+function problemSignalSources(root = process.cwd()) {
+  const sources = [];
+  const seen = new Set();
+  function push(source) {
+    if (!source) return;
+    const key = `${source.source}:${source.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push(source);
+  }
+  for (const source of problemSignalFilesForStateDir(path.join(root, '.atris', 'state'))) push(source);
+  const siblingBackend = path.resolve(root, '..', 'atrisos-backend');
+  if (fs.existsSync(siblingBackend)) {
+    for (const source of problemSignalFilesForStateDir(path.join(siblingBackend, '.atris', 'state'), 'backend')) push(source);
+  }
+  for (const source of configuredProblemSignalSources(root)) push(source);
+  return sources;
+}
+
+function rowsFromProblemSignalSource(source) {
+  if (source.kind === 'jsonl') return readJsonlRowsIfExists(source.path, 80);
+  const row = readJsonIfExists(source.path);
+  return row ? [row] : [];
+}
+
+function logErrorScanScriptPath(root = process.cwd()) {
+  const envPath = process.env.ATRIS_SCAN_ERRORS_SCRIPT;
+  const candidates = [
+    envPath ? path.resolve(root, envPath) : null,
+    path.join(root, 'scripts', 'scan-errors.mjs'),
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function runLogErrorScan(root = process.cwd()) {
+  const scriptPath = logErrorScanScriptPath(root);
+  if (!scriptPath) {
+    return {
+      ok: false,
+      skipped: 'missing_scan_errors_script',
+      script_path: path.join(root, 'scripts', 'scan-errors.mjs'),
+    };
+  }
+  try {
+    const stdout = execFileSync(process.execPath, [scriptPath, '--root', root, '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000,
+      env: process.env,
+    });
+    return {
+      ok: true,
+      script_path: scriptPath,
+      scan: JSON.parse(stdout || '{}'),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      script_path: scriptPath,
+      error: error instanceof Error ? error.message : String(error),
+      stderr: error?.stderr ? compactSentence(String(error.stderr), 500) : null,
+    };
+  }
+}
+
+function recurringErrorTaskTitle(pattern) {
+  return `Fix recurring error: ${compactSentence(pattern, 90)}`;
+}
+
+function existingOpenTaskByTitle(title) {
+  const wanted = lowerCompact(title);
+  return taskProjectionRows().find((task) => lowerCompact(task.title) === wanted && !taskIsClosed(task)) || null;
+}
+
+function signalSourceKind(filePath, override = '') {
+  const kind = lowerCompact(override || '');
+  if (kind === 'jsonl' || kind === 'json') return kind;
+  return String(filePath || '').endsWith('.jsonl') ? 'jsonl' : 'json';
+}
+
+function signalSourceLabel(value, fallback = 'external') {
+  const clean = lowerCompact(value || fallback).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return clean || fallback;
+}
+
+function problemSignalFilesForStateDir(stateDir, prefix = '') {
+  const label = (name) => prefix ? `${prefix}_${name}` : name;
+  return [
+    { source: label('scorecards'), path: path.join(stateDir, 'scorecards.jsonl'), kind: 'jsonl' },
+    { source: label('episodes'), path: path.join(stateDir, 'episodes.jsonl'), kind: 'jsonl' },
+    { source: label('task_episodes'), path: path.join(stateDir, 'task_episodes.jsonl'), kind: 'jsonl' },
+    { source: label('events'), path: path.join(stateDir, 'events.jsonl'), kind: 'jsonl' },
+    { source: label('master_loop_events'), path: path.join(stateDir, 'master_loop_events.jsonl'), kind: 'jsonl' },
+    { source: label('pulse_agi_loop_receipts'), path: path.join(stateDir, 'pulse_agi_loop_receipts.jsonl'), kind: 'jsonl' },
+    { source: label('company_yc_wow_latest'), path: path.join(stateDir, 'company_yc_wow_latest.json'), kind: 'json' },
+  ];
+}
+
+function normalizeSignalRoot(raw, baseDir = process.cwd()) {
+  const text = typeof raw === 'string'
+    ? raw
+    : raw?.path || raw?.root || raw?.workspace || '';
+  if (!text || String(text).includes('\0')) return null;
+  const expanded = String(text).trim().startsWith('~/')
+    ? path.join(os.homedir(), String(text).trim().slice(2))
+    : String(text).trim();
+  if (!expanded) return null;
+  const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(baseDir, expanded);
+  try {
+    if (!fs.statSync(resolved).isDirectory()) return null;
+  } catch {
+    return null;
+  }
+  const label = signalSourceLabel(raw?.label || raw?.source || path.basename(resolved), 'external');
+  return { root: resolved, label };
+}
+
+function configuredSignalFile(raw, baseDir = process.cwd()) {
+  if (!raw) return null;
+  const filePath = typeof raw === 'string' ? raw : raw.path || raw.file || '';
+  if (!filePath || String(filePath).includes('\0')) return null;
+  const expanded = String(filePath).trim().startsWith('~/')
+    ? path.join(os.homedir(), String(filePath).trim().slice(2))
+    : String(filePath).trim();
+  if (!expanded) return null;
+  const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(baseDir, expanded);
+  if (!/\.(jsonl|json)$/i.test(resolved)) return null;
+  const label = signalSourceLabel(raw?.source || raw?.label || path.basename(resolved).replace(/\.(jsonl|json)$/i, ''), 'external_file');
+  return {
+    source: label,
+    path: resolved,
+    kind: signalSourceKind(resolved, raw?.kind || ''),
+  };
+}
+
+function readMemberSignalSourceConfig(root = process.cwd()) {
+  const candidates = [
+    path.join(root, '.atris', 'state', 'member-signal-sources.json'),
+    path.join(root, '.atris', 'member-signal-sources.json'),
+  ];
+  for (const configPath of candidates) {
+    const config = readJsonIfExists(configPath);
+    if (config && typeof config === 'object') return { config, configPath };
+  }
+  return { config: null, configPath: null };
+}
+
+function configuredProblemSignalSources(root = process.cwd()) {
+  const sources = [];
+  const seen = new Set();
+  function push(source) {
+    if (!source) return;
+    const key = `${source.source}:${source.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push(source);
+  }
+
+  const envRoots = String(process.env.ATRIS_MEMBER_SIGNAL_ROOTS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  for (const item of envRoots) {
+    const normalized = normalizeSignalRoot(item, root);
+    if (!normalized) continue;
+    for (const source of problemSignalFilesForStateDir(path.join(normalized.root, '.atris', 'state'), normalized.label)) {
+      push(source);
+    }
+  }
+
+  const { config } = readMemberSignalSourceConfig(root);
+  if (config) {
+    const rootEntries = [
+      ...(Array.isArray(config.roots) ? config.roots : []),
+      ...(Array.isArray(config.external_roots) ? config.external_roots : []),
+    ];
+    for (const entry of rootEntries) {
+      const normalized = normalizeSignalRoot(entry, root);
+      if (!normalized) continue;
+      for (const source of problemSignalFilesForStateDir(path.join(normalized.root, '.atris', 'state'), normalized.label)) {
+        push(source);
+      }
+    }
+    const fileEntries = [
+      ...(Array.isArray(config.sources) ? config.sources : []),
+      ...(Array.isArray(config.files) ? config.files : []),
+    ];
+    for (const entry of fileEntries) push(configuredSignalFile(entry, root));
+  }
+
+  return sources;
+}
+
+const PROBLEM_ACTION_FIELDS = [
+  'next_task_suggestion',
+  'recommended_next_action',
+  'recommended_next_move',
+  'next_owner_action',
+  'next_operator_action',
+  'next_action',
+  'next_move',
+  'next_task',
+  'useful_work',
+  'task',
+  'summary.recommended_next_action',
+  'summary.next_action',
+  'summary.next_owner_action',
+  'owner_gate.recommended_next_action',
+  'owner_gate.next_owner_action',
+  'action_packet.recommended_next_action',
+  'task_seed.next_task',
+  'decision.recommended_next_action',
+];
+
+const PROBLEM_CONTEXT_FIELDS = [
+  'current_blocker',
+  'first_external_blocker',
+  'next_priority_gap',
+  'lesson',
+  'failure',
+  'blocker',
+  'why',
+  'goal',
+  'problem',
+  'summary.current_blocker',
+  'summary.next_priority_gap',
+  'summary.pending_requirements',
+  'owner_gate.pending_requirements',
+  'pending_requirements',
+  'blockers',
+];
+
+function problemCandidateFromSignal(row, source, rowIndex, name, purpose) {
+  const actionText = actionableProblemText(firstSignalText(row, PROBLEM_ACTION_FIELDS));
+  const contextText = actionableProblemText(firstSignalText(row, PROBLEM_CONTEXT_FIELDS));
+  const seedText = actionText || contextText;
+  if (!seedText) return null;
+  const problem = contextText || seedText;
+  const title = titleFromProblemSignal(seedText);
+  const candidate = {
+    source: source.source,
+    source_path: source.path,
+    signal_index: rowIndex,
+    title,
+    objective_title: title,
+    problem: compactSentence(problem, 180),
+    suggested_action: compactSentence(actionText || seedText, 180),
+    next_command: `atris member wake ${name} --execute --confirm-autonomy-policy`,
+    updated_at: signalTimestamp(row),
+  };
+  return scoreProblemCandidate(candidate, purpose);
+}
+
+function problemCandidateFromLogErrorScan(scanResult, name, purpose) {
+  const scan = scanResult?.scan || {};
+  const selected = scan.selected || (scan.pattern ? { pattern: scan.pattern, count: scan.count, evidence: [] } : null);
+  const pattern = compactSentence(selected?.pattern || '', 180);
+  const count = Number(selected?.count || scan.count || 0);
+  const threshold = Number(scan.threshold || 3);
+  if (!pattern || !Number.isFinite(count) || count < threshold) return null;
+  const title = recurringErrorTaskTitle(pattern);
+  const existingTask = existingOpenTaskByTitle(title);
+  const duplicateRef = existingTask ? taskRef(existingTask) : null;
+  const evidencePaths = Array.isArray(selected.evidence)
+    ? [...new Set(selected.evidence.map((item) => item?.path).filter(Boolean))]
+    : [];
+  const candidate = {
+    source: 'log_error_scan',
+    source_path: scanResult.script_path,
+    signal_index: null,
+    title,
+    objective_title: title,
+    task_title: title,
+    problem: `${count} occurrences in ${scan.since_hours || 24}h: ${pattern}`,
+    suggested_action: title,
+    autonomous_action: duplicateRef ? 'note_existing_task' : 'create_task',
+    duplicate_task_ref: duplicateRef,
+    error_pattern: pattern,
+    error_count: count,
+    evidence_paths: evidencePaths,
+    next_command: duplicateRef
+      ? `atris task show ${duplicateRef} --json`
+      : `atris task new ${shellQuote(title)} --tag auto-discovery`,
+    updated_at: new Date().toISOString(),
+  };
+  return scoreProblemCandidate(candidate, purpose);
+}
+
+function scoreProblemCandidate(candidate, purpose) {
+  const text = `${candidate.title || ''} ${candidate.problem || ''} ${candidate.suggested_action || ''} ${purpose?.northStar || ''}`;
+  const components = {
+    urgency: Math.max(1, Math.min(5, 1 + scoreKeywords(text, ['blocked', 'missing', 'failed', 'failing', 'stalled', 'required', 'gap']))),
+    strategic_value: strategicScore(text, { title: purpose?.northStar || '', why: purpose?.goalGuidance || '', acceptance: [] }, null),
+    novelty: Math.max(1, Math.min(5, 2 + scoreKeywords(text, ['new', 'novel', 'discover', 'scan', 'unknown', 'emergent', 'explore']))),
+    signal_quality: candidate.suggested_action && candidate.problem ? 5 : 3,
+    recency: recencyScore(candidate.updated_at),
+  };
+  const sourceBoost = {
+    pulse_agi_loop_receipts: 18,
+    backend_pulse_agi_loop_receipts: 18,
+    scorecards: 15,
+    episodes: 10,
+    task_episodes: 10,
+    master_loop_events: 8,
+    backend_master_loop_events: 8,
+    log_error_scan: 22,
+  }[candidate.source] || 4;
+  const score = sourceBoost
+    + (components.urgency * 22)
+    + (components.strategic_value * 25)
+    + (components.novelty * 16)
+    + (components.signal_quality * 8)
+    + (components.recency * 5);
+  return { ...candidate, score, components };
+}
+
+function collectProblemDiscoveryEvidence(name, purpose) {
+  const candidates = [];
+  const sources = problemSignalSources();
+  const sourcesWithRows = [];
+  const logErrorScan = lowerCompact(name) === 'signal-scout' ? runLogErrorScan() : null;
+  const logErrorCandidate = logErrorScan ? problemCandidateFromLogErrorScan(logErrorScan, name, purpose) : null;
+  if (logErrorCandidate) candidates.push(logErrorCandidate);
+  for (const source of sources) {
+    const rows = rowsFromProblemSignalSource(source);
+    if (!rows.length) continue;
+    sourcesWithRows.push({
+      source: source.source,
+      path: source.path,
+      row_count: rows.length,
+    });
+    rows.forEach((row, index) => {
+      const candidate = problemCandidateFromSignal(row, source, index, name, purpose);
+      if (candidate) candidates.push(candidate);
+    });
+  }
+  const deduped = [];
+  const seen = new Set();
+  for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
+    const key = lowerCompact(candidate.objective_title || candidate.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(candidate);
+  }
+  return {
+    sources_checked: sources.length,
+    sources_with_rows: sourcesWithRows,
+    candidate_count: deduped.length,
+    selected: deduped[0] ? {
+      source: deduped[0].source,
+      source_path: deduped[0].source_path,
+      signal_index: deduped[0].signal_index,
+      title: deduped[0].title,
+      objective_title: deduped[0].objective_title,
+      problem: deduped[0].problem,
+      suggested_action: deduped[0].suggested_action,
+      score: deduped[0].score,
+      components: deduped[0].components,
+      next_command: deduped[0].next_command,
+      autonomous_action: deduped[0].autonomous_action || null,
+      task_title: deduped[0].task_title || null,
+      duplicate_task_ref: deduped[0].duplicate_task_ref || null,
+      error_pattern: deduped[0].error_pattern || null,
+      error_count: deduped[0].error_count || null,
+      evidence_paths: deduped[0].evidence_paths || [],
+    } : null,
+    candidates: deduped.map((candidate) => ({
+      source: candidate.source,
+      title: candidate.title,
+      objective_title: candidate.objective_title,
+      problem: candidate.problem,
+      suggested_action: candidate.suggested_action,
+      score: candidate.score,
+      components: candidate.components,
+      next_command: candidate.next_command,
+      autonomous_action: candidate.autonomous_action || null,
+      task_title: candidate.task_title || null,
+      duplicate_task_ref: candidate.duplicate_task_ref || null,
+      error_pattern: candidate.error_pattern || null,
+      error_count: candidate.error_count || null,
+      evidence_paths: candidate.evidence_paths || [],
+    })).slice(0, 12),
+    log_error_scan: logErrorScan ? {
+      ok: logErrorScan.ok === true,
+      skipped: logErrorScan.skipped || null,
+      script_path: displaySignalPath(logErrorScan.script_path),
+      error: logErrorScan.error || null,
+      threshold: logErrorScan.scan?.threshold || null,
+      selected: logErrorScan.scan?.selected || null,
+      scanned: logErrorScan.scan?.scanned || null,
+    } : null,
+  };
+}
+
+function collectWakeEvidence(name, goal = null, purpose = null) {
   const taskProjection = readTaskProjectionEvidence(name);
   const memberRoom = readMemberRoomEvidence(name);
   const receipt = readRecentWakeReceiptEvidence(name);
-  const nearest = sortEvidenceCandidates([taskProjection.nearest, memberRoom.nearest])[0] || null;
+  const openLoopCandidates = sortEvidenceCandidates([
+    ...(taskProjection.candidates || []),
+    ...(memberRoom.candidates || []),
+  ]);
+  const nearest = openLoopCandidates[0] || null;
   return {
     task_projection: taskProjection,
     member_room: memberRoom,
     receipt,
+    goal_files: goal ? readGoalFileEvidence(goal) : { path_count: 0, files_read: 0, files: [] },
+    problem_discovery: goal && lowerCompact(name) !== 'signal-scout'
+      ? { sources_checked: 0, sources_with_rows: [], candidate_count: 0, selected: null, candidates: [], log_error_scan: null }
+      : collectProblemDiscoveryEvidence(name, purpose || {}),
+    open_loop_candidates: openLoopCandidates.slice(0, 30),
     nearest_open_loop: nearest,
+  };
+}
+
+function scoreKeywords(text, keywords) {
+  const haystack = lowerCompact(text);
+  return keywords.reduce((score, keyword) => score + (haystack.includes(keyword) ? 1 : 0), 0);
+}
+
+function strategicScore(text, goal = null, evidence = null) {
+  const strategicKeywords = [
+    'agi', 'autonomous', 'objective', 'world model', 'knowledge graph', 'meta',
+    'causal', 'transfer', 'architecture', 'emergent', 'customer', 'revenue',
+    'security', 'release', 'production', 'feedback', 'proof', 'strategy',
+  ];
+  const score = scoreKeywords(text, strategicKeywords);
+  const goalText = compactSentence(`${goal?.title || ''} ${goal?.why || ''} ${(goal?.acceptance || []).join(' ')}`, 500).toLowerCase();
+  const candidateWords = new Set(lowerCompact(text).split(/[^a-z0-9]+/).filter((word) => word.length >= 5));
+  let overlap = 0;
+  for (const word of candidateWords) {
+    if (goalText.includes(word)) overlap += 1;
+  }
+  const fileBoost = evidence?.goal_files?.files_read ? 1 : 0;
+  return Math.max(1, Math.min(5, score + Math.min(2, overlap) + fileBoost));
+}
+
+function noveltyScore(candidate, evidence = null) {
+  const text = `${candidate?.title || ''} ${candidate?.reason || ''}`;
+  let score = 2 + Math.min(3, scoreKeywords(text, ['new', 'novel', 'unknown', 'explore', 'experiment', 'discover', 'scan']));
+  const recentDecision = evidence?.receipt?.latest_wake_decision || '';
+  const recentReason = evidence?.receipt?.latest_wake_reason || '';
+  if (candidate?.task_ref && recentReason.includes(candidate.task_ref)) score -= 1;
+  if (candidate?.decision && candidate.decision === recentDecision) score -= 1;
+  return Math.max(1, Math.min(5, score));
+}
+
+function recencyScore(value) {
+  if (!value) return 1;
+  const ms = typeof value === 'number' ? value : Date.parse(value);
+  if (!Number.isFinite(ms)) return 1;
+  const ageHours = Math.max(0, (Date.now() - ms) / (60 * 60 * 1000));
+  if (ageHours <= 6) return 5;
+  if (ageHours <= 24) return 4;
+  if (ageHours <= 72) return 3;
+  if (ageHours <= 168) return 2;
+  return 1;
+}
+
+function scoreWakeCandidate(candidate, goal, evidence) {
+  const urgencyByDecision = {
+    ask: 5,
+    report_proof: 4,
+    close_loop: 3,
+    create_missing_task: 3,
+    tick: 1,
+  };
+  const proximityBySource = {
+    steering: 5,
+    task_projection: 5,
+    member_room: 4,
+    member_room_unlinked_request: 3,
+    goal: 1,
+  };
+  const text = `${candidate.title || ''} ${candidate.ask || ''} ${candidate.reason || ''}`;
+  const components = {
+    urgency: urgencyByDecision[candidate.decision] || 1,
+    strategic_value: strategicScore(text, goal, evidence),
+    novelty: noveltyScore(candidate, evidence),
+    loop_proximity: proximityBySource[candidate.source] || 1,
+    recency: recencyScore(candidate.updated_at),
+  };
+  const score = (components.urgency * 30)
+    + (components.strategic_value * 25)
+    + (components.novelty * 15)
+    + (components.loop_proximity * 10)
+    + (components.recency * 5);
+  return { ...candidate, score, components };
+}
+
+function scoredWakeCandidates(name, goal, evidence, directive = null) {
+  const candidates = [];
+  if (directive) {
+    candidates.push({
+      source: 'steering',
+      decision: directive.decision,
+      title: directive.note || `Steering directive for ${name}`,
+      reason: `steering_directive:${directive.steering_id || 'unknown'}`,
+      task_ref: Array.isArray(directive.task_refs) && directive.task_refs.length ? directive.task_refs[0] : null,
+      ask: directive.decision === 'ask' ? directive.note || 'Needs operator direction.' : null,
+      next_command: directive.next_command,
+      updated_at: directive.created_at || null,
+    });
+  }
+  for (const openLoop of evidence.open_loop_candidates || []) {
+    const evidenceRef = openLoop.task_ref || 'missing_task';
+    candidates.push({
+      ...openLoop,
+      reason: `nearest_open_loop:${openLoop.source}:${evidenceRef}`,
+    });
+  }
+  if (goal) {
+    candidates.push({
+      source: 'goal',
+      decision: 'tick',
+      title: goal.title || `Next bounded step for ${name}`,
+      reason: 'safe_next_bounded_step',
+      task_ref: null,
+      ask: null,
+      next_command: `atris member tick ${name} --goal ${goal.id}`,
+      updated_at: goal.updated_at || goal.created_at || null,
+    });
+  }
+  const scored = candidates
+    .map((candidate) => scoreWakeCandidate(candidate, goal, evidence))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return candidatePriority(b) - candidatePriority(a);
+    });
+  return {
+    selected: scored[0] || null,
+    candidates: scored.map((candidate) => ({
+      source: candidate.source,
+      decision: candidate.decision,
+      reason: candidate.reason,
+      task_ref: candidate.task_ref || null,
+      title: candidate.title,
+      score: candidate.score,
+      components: candidate.components,
+      next_command: candidate.next_command,
+    })).slice(0, 12),
   };
 }
 
@@ -917,6 +1648,10 @@ function memberOpenExperiment(state) {
   return latestByTime(allExperiments(state)
     .map(({ goal, experiment }) => ({ ...experiment, goal_id: goal.id, goal_title: goal.title }))
     .filter((experiment) => ['blocked', 'proposed', 'running'].includes(experiment.status)));
+}
+
+function experimentIsClosed(experiment) {
+  return ['accepted', 'discarded', 'superseded'].includes(String(experiment?.status || '').toLowerCase());
 }
 
 function supersedeOtherOpenExperiments(state, activeGoal, proof) {
@@ -990,6 +1725,142 @@ function writeMemberGoals(paths, state) {
   fs.writeFileSync(paths.goalsMd, renderMemberGoalsMarkdown(state), 'utf8');
 }
 
+function displaySignalPath(filePath) {
+  if (!filePath) return '';
+  const rel = path.relative(process.cwd(), filePath);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return rel;
+  return filePath;
+}
+
+function seedAutonomousProblemGoal(name, paths, state, candidate, purpose) {
+  const title = candidate.objective_title || candidate.title || 'Investigate discovered problem';
+  const id = makeGoalId(title);
+  const existing = state.goals.find((goal) => goal.id === id || lowerCompact(goal.title) === lowerCompact(title));
+  const sourcePath = displaySignalPath(candidate.source_path);
+  const goal = existing || {
+    id,
+    title,
+    status: 'active',
+    cadence: 'manual',
+    why: `Autonomous problem discovery selected ${candidate.source}: ${candidate.problem || candidate.suggested_action || title}`,
+    acceptance: [
+      `Use discovery evidence from ${sourcePath || candidate.source} before proposing work.`,
+      `Prove one bounded improvement toward: ${candidate.suggested_action || title}.`,
+      'Leave a receipt or task note; do not claim the full AGI bar is complete from this slice.',
+    ],
+    source: 'autonomous_problem_discovery',
+    source_signal: {
+      source: candidate.source,
+      source_path: sourcePath || candidate.source_path || null,
+      signal_index: candidate.signal_index ?? null,
+      problem: candidate.problem || null,
+      suggested_action: candidate.suggested_action || null,
+      score: candidate.score || null,
+      components: candidate.components || null,
+    },
+    mission_snapshot: {
+      north_star: purpose?.northStar || null,
+      runtime_id: purpose?.runtimeMission?.id || null,
+    },
+    created_at: stampIso(),
+    experiments: [],
+    history: [],
+  };
+  goal.status = 'active';
+  goal.cadence = goal.cadence || 'manual';
+  goal.history = Array.isArray(goal.history) ? goal.history : [];
+  goal.history.push({
+    at: stampIso(),
+    event: existing ? 'autonomous_problem_goal_reused' : 'autonomous_problem_goal_created',
+    source: candidate.source,
+    source_path: sourcePath || candidate.source_path || null,
+    score: candidate.score || null,
+  });
+  if (!existing) state.goals.push(goal);
+  writeMemberGoals(paths, state);
+  return { goal, state, existing: Boolean(existing) };
+}
+
+function createAutonomousDiscoveryTask(candidate) {
+  const title = candidate.task_title || candidate.objective_title || candidate.title || 'Fix recurring error';
+  if (candidate.duplicate_task_ref) {
+    return {
+      ok: true,
+      existing: true,
+      task_ref: candidate.duplicate_task_ref,
+      command: `atris task show ${candidate.duplicate_task_ref} --json`,
+      task: findProjectionTaskByRef(candidate.duplicate_task_ref) || null,
+    };
+  }
+  const commandArgs = ['task', 'new', title, '--tag', 'auto-discovery', '--json'];
+  const command = `atris task new ${shellQuote(title)} --tag auto-discovery`;
+  try {
+    const stdout = execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...commandArgs], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000,
+      env: process.env,
+    });
+    const parsed = JSON.parse(stdout || '{}');
+    const task = parsed.task || null;
+    return {
+      ok: parsed.ok !== false,
+      existing: false,
+      command,
+      task,
+      task_id: parsed.task_id || task?.id || null,
+      task_ref: taskRef(task) || parsed.task_id || null,
+      raw: parsed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      existing: false,
+      command,
+      error: error instanceof Error ? error.message : String(error),
+      stderr: error?.stderr ? compactSentence(String(error.stderr), 500) : null,
+    };
+  }
+}
+
+function writeAutonomousDiscoveryReceipt(name, candidate, taskResult) {
+  const runsDir = path.join(process.cwd(), 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const payload = {
+    schema: 'atris.signal_scout_autonomous_discovery.v1',
+    created_at: stampIso(),
+    member: name,
+    source: candidate.source,
+    action: taskResult.existing ? 'existing_task_found' : 'task_created',
+    task_ref: taskResult.task_ref || null,
+    task_id: taskResult.task_id || taskResult.task?.id || null,
+    task_title: candidate.task_title || candidate.objective_title || candidate.title || null,
+    error_pattern: candidate.error_pattern || null,
+    error_count: candidate.error_count || null,
+    evidence_paths: candidate.evidence_paths || [],
+    command: taskResult.command || candidate.next_command || null,
+    ok: taskResult.ok === true,
+    error: taskResult.error || null,
+  };
+  const receiptPath = path.join(runsDir, `signal-scout-autonomous-discovery-${fileSafeStamp()}.json`);
+  fs.writeFileSync(receiptPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  const fields = {
+    team: name,
+    decision: 'auto-discovery',
+    pattern: payload.error_pattern,
+    count: payload.error_count,
+    task: payload.task_ref,
+    receipt: path.relative(process.cwd(), receiptPath),
+  };
+  const projectLogPath = appendProjectLog('Signal Scout autonomous problem discovery', fields);
+  return {
+    receipt_path: receiptPath,
+    project_log_path: projectLogPath,
+    payload,
+  };
+}
+
 function writeWakeReceipt(name, payload) {
   const runsDir = path.join(process.cwd(), 'atris', 'runs');
   fs.mkdirSync(runsDir, { recursive: true });
@@ -1021,6 +1892,17 @@ function readJsonIfExists(filePath) {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
     return null;
+  }
+}
+
+function isPidAlive(pid) {
+  const numeric = Number(pid);
+  if (!Number.isFinite(numeric) || numeric <= 0) return false;
+  try {
+    process.kill(numeric, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
   }
 }
 
@@ -1056,10 +1938,17 @@ function acquireMemberLoopLease(name, { runId, ttlMs }) {
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const active = readJsonIfExists(paths.lockPath);
-    if (active && Number(active.expires_at_ms || 0) <= nowMs) {
+    const expired = active && Number(active.expires_at_ms || 0) <= nowMs;
+    const deadPid = active && !isPidAlive(active.pid);
+    if (active && (expired || deadPid)) {
       fs.rmSync(paths.lockPath, { force: true });
       const result = writeLease();
-      return { ...result, recovered_stale: true, stale_lease: active };
+      return {
+        ...result,
+        recovered_stale: true,
+        stale_lease: active,
+        stale_reason: expired ? 'expired' : 'dead_pid',
+      };
     }
     return { acquired: false, lease: active, paths, recovered_stale: false };
   }
@@ -1079,6 +1968,49 @@ function releaseMemberLoopLease(paths, lease) {
   fs.rmSync(paths.lockPath, { force: true });
 }
 
+function activeMemberLoopLease(lease) {
+  if (!lease) return false;
+  const expiresAt = Number(lease.expires_at_ms || 0);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  return isPidAlive(lease.pid);
+}
+
+function archiveMemberLoopState(name) {
+  const paths = memberLoopPaths(name);
+  const archivedAt = stampIso();
+  const previousLease = readJsonIfExists(paths.lockPath);
+  const activeLease = activeMemberLoopLease(previousLease);
+  fs.mkdirSync(paths.stateDir, { recursive: true });
+  if (activeLease) {
+    writeJsonFile(paths.stopPath, {
+      schema: 'atris.member_loop_stop.v1',
+      member: name,
+      requested_at: archivedAt,
+      pid: process.pid,
+      reason: 'member_archived',
+    });
+  } else {
+    fs.rmSync(paths.lockPath, { force: true });
+    fs.rmSync(paths.stopPath, { force: true });
+  }
+  const payload = {
+    schema: 'atris.member_loop_archived.v1',
+    action: 'loop_archived',
+    member: name,
+    status: 'archived',
+    reason: 'member_archived',
+    archived_at: archivedAt,
+    active_lease_requested_stop: Boolean(activeLease),
+    stale_lease_removed: Boolean(previousLease && !activeLease),
+    previous_lease: previousLease || null,
+    lock_path: paths.lockPath,
+    stop_path: paths.stopPath,
+    latest_path: paths.latestPath,
+  };
+  writeJsonFile(paths.latestPath, payload);
+  return payload;
+}
+
 function appendMemberGoalLog(memberDir, name, title, fields = {}) {
   const logsDir = path.join(memberDir, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -1087,6 +2019,24 @@ function appendMemberGoalLog(memberDir, name, title, fields = {}) {
   const rows = [
     `## ${stamp} · ${title}`,
     `- team: ${name}`,
+    ...Object.entries(fields)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
+    '',
+  ];
+  fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
+  return logPath;
+}
+
+function appendProjectLog(title, fields = {}) {
+  const today = todayLogName();
+  const year = today.slice(0, 4);
+  const logsDir = path.join(process.cwd(), 'atris', 'logs', year);
+  fs.mkdirSync(logsDir, { recursive: true });
+  const logPath = path.join(logsDir, today);
+  const stamp = new Date().toTimeString().slice(0, 5);
+  const rows = [
+    `## ${stamp} · ${title}`,
     ...Object.entries(fields)
       .filter(([, value]) => value !== undefined && value !== null && value !== '')
       .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
@@ -1733,10 +2683,12 @@ function memberArchive(name) {
   }
   const archiveRoot = path.join(teamDir, '_archived');
   const archiveDir = uniqueArchiveDir(archiveRoot, name);
+  const loopState = archiveMemberLoopState(name);
   appendMemberLifecycleLog(memberDir, name, 'archived', 'Archived by atris member archive');
   fs.mkdirSync(archiveRoot, { recursive: true });
   fs.renameSync(memberDir, archiveDir);
   console.log(`Archived atris/team/${name} -> ${path.relative(process.cwd(), archiveDir)}`);
+  console.log(`Loop state: ${path.relative(process.cwd(), loopState.latest_path)}`);
 }
 
 function memberPurgeArchived(...flags) {
@@ -2063,20 +3015,29 @@ function memberGoalFromScore(name, ...args) {
   );
 }
 
-function proposalForGoal(goal) {
+function fallbackProposalForGoal(goal, context = {}) {
   const criteria = Array.isArray(goal.acceptance) && goal.acceptance.length
     ? goal.acceptance[0]
     : 'Return proof, risk, and next move.';
   const scoreEvidence = goal.team_score || null;
   const target = scoreEvidence?.target_member || null;
   const drill = scoreEvidence?.drill || null;
+  const fileEvidence = context?.evidence?.goal_files || context?.goal_files || null;
+  const primaryFile = (fileEvidence?.files || []).find((file) => file.exists && file.excerpt) || null;
+  const fileInstruction = primaryFile
+    ? `Use ${primaryFile.path} evidence to produce one receipt-backed bounded proof step for: ${goal.title}`
+    : '';
   const title = drill && target
     ? `Run ${target.label || target.slug} drill: ${compactSentence(drill, 96)}`
     : drill
       ? `Run score drill: ${compactSentence(drill, 108)}`
-      : `Run next proof step for ${goal.title}`;
+      : primaryFile
+        ? `Use ${primaryFile.path}: ${compactSentence(goal.title, 88)}`
+        : `Run next proof step for ${goal.title}`;
   const nextStep = drill
     ? drill
+    : fileInstruction
+      ? fileInstruction
     : goal.source === 'mission'
       ? `Use ${goal.mission_file || 'MISSION.md'} to produce one receipt-backed bounded proof step for: ${goal.title}`
       : criteria;
@@ -2090,6 +3051,407 @@ function proposalForGoal(goal) {
     verifier: scoreEvidence?.verifier || null,
     stop_rule: 'Stop if proof is missing, risk is unclear, or the next move would require new authority.',
     created_at: stampIso(),
+    generation: {
+      mode: 'fallback',
+      source: primaryFile ? 'goal_file_evidence' : 'goal_rules',
+    },
+  };
+}
+
+function proposalPromptForGoal(goal, context = {}) {
+  const files = (context?.evidence?.goal_files?.files || [])
+    .filter((file) => file.exists && file.excerpt)
+    .slice(0, 4)
+    .map((file) => ({
+      path: file.path,
+      excerpt: compactSentence(file.excerpt, 1200),
+    }));
+  const payload = {
+    goal: {
+      id: goal.id || null,
+      title: goal.title || null,
+      source: goal.source || null,
+      why: goal.why || null,
+      acceptance: Array.isArray(goal.acceptance) ? goal.acceptance.slice(0, 8) : [],
+      mission_file: goal.mission_file || null,
+      mission_north_star: goal.mission_north_star || null,
+      team_score: goal.team_score || null,
+    },
+    wake_decision: context?.decision || null,
+    evidence: {
+      latest_receipt: context?.evidence?.receipt || null,
+      selected_wake_candidate: context?.evidence?.selected_wake_candidate || null,
+      wake_candidate_scores: context?.evidence?.wake_candidate_scores || [],
+      files,
+    },
+  };
+  return [
+    'You generate the next bounded Atris member experiment.',
+    'Read the JSON context and return only JSON with keys: title, proof_target, next_step, verifier, stop_rule.',
+    'The next_step must be adaptive to the goal/evidence, concrete, receipt-backed, and safe for one bounded tick.',
+    'Do not ask for human input unless authority is missing. Do not copy generic templates.',
+    '',
+    JSON.stringify(payload, null, 2),
+  ].join('\n');
+}
+
+function parseJsonObjectFromText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeLlmProposal(raw, fallback, goal = null) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = compactSentence(raw.title || '', 140);
+  const proofTarget = compactSentence(raw.proof_target || raw.proofTarget || '', 220);
+  const nextStep = compactSentence(raw.next_step || raw.nextStep || '', 360);
+  if (!title || !proofTarget || !nextStep) return null;
+  return {
+    ...fallback,
+    id: makeExperimentId(goal?.id || fallback.id || '', title),
+    title,
+    proof_target: proofTarget,
+    next_step: nextStep,
+    verifier: compactSentence(raw.verifier || fallback.verifier || '', 180) || null,
+    stop_rule: compactSentence(raw.stop_rule || raw.stopRule || fallback.stop_rule, 220),
+  };
+}
+
+function injectedLlmProposal() {
+  if (!process.env.ATRIS_MEMBER_PROPOSAL_LLM_JSON) return null;
+  const parsed = parseJsonObjectFromText(process.env.ATRIS_MEMBER_PROPOSAL_LLM_JSON);
+  return parsed ? { source: 'env_json', proposal: parsed } : { source: 'env_json', error: 'invalid_json' };
+}
+
+async function callAtris2ProposalLlm(goal, context = {}) {
+  const injected = injectedLlmProposal();
+  if (injected) return injected;
+  if (process.env.ATRIS_MEMBER_PROPOSAL_LLM !== '1') return null;
+  try {
+    const { postTurn } = require('../ax');
+    const output = { isTTY: false, write() { return true; } };
+    const result = await postTurn(proposalPromptForGoal(goal, context), {
+      mode: process.env.ATRIS_MEMBER_PROPOSAL_LLM_MODE || 'fast',
+      route: 'local',
+      cwd: process.cwd(),
+      output,
+      color: false,
+    });
+    const parsed = parseJsonObjectFromText(result?.output || '');
+    return parsed
+      ? { source: 'atris2_backend', proposal: parsed }
+      : { source: 'atris2_backend', error: 'missing_json_response' };
+  } catch (error) {
+    return {
+      source: 'atris2_backend',
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+async function proposalForGoal(goal, context = {}) {
+  const fallback = fallbackProposalForGoal(goal, context);
+  const llm = await callAtris2ProposalLlm(goal, context);
+  const normalized = normalizeLlmProposal(llm?.proposal, fallback, goal);
+  if (!normalized) {
+    return {
+      ...fallback,
+      generation: {
+        ...fallback.generation,
+        llm_source: llm?.source || null,
+        llm_error: llm?.error || null,
+      },
+    };
+  }
+  return {
+    ...normalized,
+    generation: {
+      mode: 'llm',
+      source: llm.source,
+      fallback_title: fallback.title,
+    },
+  };
+}
+
+function wikiMinerGraphPath(root = process.cwd()) {
+  return path.join(root, 'atris', 'wiki', '.graph.json');
+}
+
+function emptyWikiGraph() {
+  return {
+    schema: 'atris.wiki_graph.v1',
+    updated_at: null,
+    entities: [],
+    relationships: [],
+  };
+}
+
+function readWikiGraph(root = process.cwd()) {
+  const graphPath = wikiMinerGraphPath(root);
+  if (!fs.existsSync(graphPath)) return emptyWikiGraph();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(graphPath, 'utf8'));
+    return {
+      ...emptyWikiGraph(),
+      ...parsed,
+      entities: Array.isArray(parsed.entities) ? parsed.entities : [],
+      relationships: Array.isArray(parsed.relationships) ? parsed.relationships : [],
+    };
+  } catch {
+    return emptyWikiGraph();
+  }
+}
+
+function listWikiMarkdownPages(root = process.cwd(), limit = 10) {
+  const wikiDir = path.join(root, 'atris', 'wiki');
+  const out = [];
+  function walk(dir) {
+    if (!fs.existsSync(dir) || out.length >= limit) return;
+    for (const entry of fs.readdirSync(dir).sort()) {
+      if (out.length >= limit) break;
+      const full = path.join(dir, entry);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (!entry.startsWith('.')) walk(full);
+      } else if (stat.isFile() && entry.endsWith('.md')) {
+        out.push(full);
+      }
+    }
+  }
+  walk(wikiDir);
+  return out;
+}
+
+function wikiMinerPrompt(pageContent) {
+  return `Extract entities and relationships from this wiki page. Return JSON:
+{
+  "entities": [{"type": "person|system|concept", "name": "..."}],
+  "relationships": [{"from": "...", "to": "...", "type": "uses|depends-on|owns"}]
+}
+
+Wiki content:
+${pageContent}`;
+}
+
+function normalizeWikiMinerExtraction(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const allowedEntityTypes = new Set(['person', 'system', 'concept']);
+  const allowedRelationTypes = new Set(['uses', 'depends-on', 'owns']);
+  const entities = (Array.isArray(raw.entities) ? raw.entities : [])
+    .map((entity) => ({
+      type: allowedEntityTypes.has(String(entity?.type || '').toLowerCase()) ? String(entity.type).toLowerCase() : 'concept',
+      name: compactSentence(entity?.name || '', 120),
+    }))
+    .filter((entity) => entity.name);
+  const relationships = (Array.isArray(raw.relationships) ? raw.relationships : [])
+    .map((relationship) => ({
+      from: compactSentence(relationship?.from || '', 120),
+      to: compactSentence(relationship?.to || '', 120),
+      type: allowedRelationTypes.has(String(relationship?.type || '').toLowerCase()) ? String(relationship.type).toLowerCase() : 'uses',
+    }))
+    .filter((relationship) => relationship.from && relationship.to);
+  return { entities, relationships };
+}
+
+function heuristicWikiMinerExtraction(pagePath, pageContent) {
+  const title = compactSentence((String(pageContent).match(/^#\s+(.+)$/m) || [])[1] || path.basename(pagePath, '.md'), 120);
+  const candidates = new Set();
+  const patterns = [
+    /\b[A-Z][A-Za-z0-9]+(?:\s+[A-Z][A-Za-z0-9]+){0,3}\b/g,
+    /\b[a-z][a-z0-9]+(?:-[a-z0-9]+)+\b/g,
+    /`([^`\n]{2,80})`/g,
+  ];
+  for (const pattern of patterns) {
+    let match = pattern.exec(pageContent);
+    while (match) {
+      const value = compactSentence(match[1] || match[0], 80);
+      if (value && !/^the|this|that|wiki|mission$/i.test(value)) candidates.add(value);
+      match = pattern.exec(pageContent);
+    }
+  }
+  const entities = [{ type: 'concept', name: title }];
+  for (const name of [...candidates].slice(0, 12)) entities.push({ type: /agent|api|sdk|cli|hub|system/i.test(name) ? 'system' : 'concept', name });
+  const relationships = [...candidates].slice(0, 12).map((name) => ({ from: title, to: name, type: 'uses' }));
+  return { entities, relationships };
+}
+
+function injectedWikiMinerExtraction(pageIndex) {
+  if (!process.env.ATRIS_WIKI_MINER_LLM_JSON) return null;
+  const parsed = parseJsonObjectFromText(process.env.ATRIS_WIKI_MINER_LLM_JSON);
+  if (!parsed) return { source: 'env_json', error: 'invalid_json' };
+  const payload = Array.isArray(parsed.pages) ? parsed.pages[pageIndex] : parsed;
+  return payload ? { source: 'env_json', extraction: payload } : { source: 'env_json', error: 'missing_page_payload' };
+}
+
+async function callWikiMinerLlm(pagePath, pageContent, pageIndex) {
+  const injected = injectedWikiMinerExtraction(pageIndex);
+  if (injected) return injected;
+  if (process.env.ATRIS_WIKI_MINER_LLM !== '1') return null;
+  try {
+    const { postTurn } = require('../ax');
+    const output = { isTTY: false, write() { return true; } };
+    const result = await postTurn(wikiMinerPrompt(pageContent), {
+      mode: process.env.ATRIS_WIKI_MINER_LLM_MODE || 'fast',
+      route: 'local',
+      cwd: process.cwd(),
+      output,
+      color: false,
+    });
+    const parsed = parseJsonObjectFromText(result?.output || '');
+    return parsed
+      ? { source: 'atris2_backend', extraction: parsed }
+      : { source: 'atris2_backend', error: 'missing_json_response' };
+  } catch (error) {
+    return {
+      source: 'atris2_backend',
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+function mergeWikiGraph(graph, extraction, sourcePath) {
+  const entityMap = new Map();
+  for (const entity of graph.entities || []) {
+    const key = `${String(entity.type || 'concept').toLowerCase()}:${lowerCompact(entity.name)}`;
+    entityMap.set(key, { ...entity, sources: Array.isArray(entity.sources) ? entity.sources : [] });
+  }
+  for (const entity of extraction.entities || []) {
+    const key = `${entity.type}:${lowerCompact(entity.name)}`;
+    const existing = entityMap.get(key) || { type: entity.type, name: entity.name, sources: [] };
+    if (sourcePath && !existing.sources.includes(sourcePath)) existing.sources.push(sourcePath);
+    entityMap.set(key, existing);
+  }
+
+  const relationshipMap = new Map();
+  for (const relationship of graph.relationships || []) {
+    const key = `${lowerCompact(relationship.from)}|${String(relationship.type || 'uses').toLowerCase()}|${lowerCompact(relationship.to)}`;
+    relationshipMap.set(key, { ...relationship, sources: Array.isArray(relationship.sources) ? relationship.sources : [] });
+  }
+  for (const relationship of extraction.relationships || []) {
+    const key = `${lowerCompact(relationship.from)}|${relationship.type}|${lowerCompact(relationship.to)}`;
+    const existing = relationshipMap.get(key) || { from: relationship.from, to: relationship.to, type: relationship.type, sources: [] };
+    if (sourcePath && !existing.sources.includes(sourcePath)) existing.sources.push(sourcePath);
+    relationshipMap.set(key, existing);
+  }
+
+  return {
+    schema: 'atris.wiki_graph.v1',
+    updated_at: stampIso(),
+    entities: [...entityMap.values()].sort((a, b) => `${a.type}:${a.name}`.localeCompare(`${b.type}:${b.name}`)),
+    relationships: [...relationshipMap.values()].sort((a, b) => `${a.from}|${a.type}|${a.to}`.localeCompare(`${b.from}|${b.type}|${b.to}`)),
+  };
+}
+
+async function runWikiMinerWake(name, paths, { execute = false } = {}) {
+  const mode = execute ? 'execute' : 'dry_run';
+  const root = process.cwd();
+  const pages = listWikiMarkdownPages(root, 10);
+  let graph = readWikiGraph(root);
+  const pageReceipts = [];
+  let llmSuccessfulPages = 0;
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const pagePath = pages[index];
+    const relativePath = path.relative(root, pagePath);
+    let pageContent = '';
+    try {
+      pageContent = fs.readFileSync(pagePath, 'utf8').slice(0, 12000);
+    } catch (error) {
+      pageReceipts.push({ path: relativePath, ok: false, error: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
+    const llm = await callWikiMinerLlm(pagePath, pageContent, index);
+    let extraction = normalizeWikiMinerExtraction(llm?.extraction);
+    let modeUsed = llm?.source || null;
+    let error = llm?.error || null;
+    if (!extraction && !llm?.error) {
+      extraction = heuristicWikiMinerExtraction(pagePath, pageContent);
+      modeUsed = 'heuristic';
+    }
+    if (!extraction) {
+      pageReceipts.push({ path: relativePath, ok: false, llm_source: llm?.source || null, error: error || 'invalid_json' });
+      continue;
+    }
+    if (llm?.source) llmSuccessfulPages += 1;
+    pageReceipts.push({
+      path: relativePath,
+      ok: true,
+      mode: modeUsed,
+      llm_source: llm?.source || null,
+      entity_count: extraction.entities.length,
+      relationship_count: extraction.relationships.length,
+      error,
+    });
+    if (execute) graph = mergeWikiGraph(graph, extraction, relativePath);
+  }
+
+  const graphPath = wikiMinerGraphPath(root);
+  if (execute) {
+    fs.mkdirSync(path.dirname(graphPath), { recursive: true });
+    fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2) + '\n', 'utf8');
+  }
+
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const receiptPath = path.join(runsDir, `wiki-miner-tick-${fileSafeStamp()}.json`);
+  const receipt = {
+    schema: 'atris.wiki_miner_tick.v1',
+    created_at: stampIso(),
+    member: name,
+    mode,
+    executed: execute,
+    ok: true,
+    pages_scanned: pages.length,
+    pages_succeeded: pageReceipts.filter((page) => page.ok).length,
+    pages_failed: pageReceipts.filter((page) => !page.ok).length,
+    llm_successful_pages: llmSuccessfulPages,
+    graph_path: path.relative(root, graphPath),
+    entity_count: graph.entities.length,
+    relationship_count: graph.relationships.length,
+    pages: pageReceipts,
+  };
+  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  const logPath = appendMemberGoalLog(paths.memberDir, name, 'Wiki miner tick', {
+    mode,
+    pages: pages.length,
+    succeeded: receipt.pages_succeeded,
+    failed: receipt.pages_failed,
+    graph: receipt.graph_path,
+    receipt: path.relative(root, receiptPath),
+  });
+
+  return {
+    ok: true,
+    action: 'wake',
+    member: name,
+    mode,
+    decision: 'wiki_mine',
+    reason: execute ? 'wiki_graph_extracted' : 'wiki_graph_dry_run',
+    executed: execute,
+    needs_user: false,
+    ask: null,
+    next_command: `atris wiki related <entity>`,
+    receipt_path: receiptPath,
+    log_path: logPath,
+    graph_path: graphPath,
+    wiki_miner: receipt,
   };
 }
 
@@ -2180,7 +3542,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
   const rawDirective = steeringWakeDirective(steering, name, goal);
   const directiveClosure = rawDirective ? steeringDirectiveClosure(rawDirective) : null;
   const directive = directiveClosure?.all_closed ? null : rawDirective;
-  const evidence = collectWakeEvidence(name);
+  const evidence = collectWakeEvidence(name, goal, purpose);
   evidence.steering_directive_closure = directiveClosure;
   const blocked = allExperiments(state)
     .map(({ goal: experimentGoal, experiment }) => ({ ...experiment, goal_id: experimentGoal.id, goal_title: experimentGoal.title }))
@@ -2200,10 +3562,24 @@ function wakeDecision(name, paths, { force = false } = {}) {
     has_open_loop_evidence: Boolean(evidence.nearest_open_loop),
     open_loop_source: evidence.nearest_open_loop?.source || null,
     has_member_room_evidence: Number(evidence.member_room?.candidate_count || 0) > 0,
+    has_autonomous_problem_candidate: Boolean(evidence.problem_discovery?.selected),
+    autonomous_problem_source: evidence.problem_discovery?.selected?.source || null,
     has_recent_receipt: Boolean(evidence.receipt?.latest_wake_receipt_path),
     workspace_clean: workspace.clean,
     workspace_clean_for_member: workspace.clean_for_member,
   };
+  const wakeScores = scoredWakeCandidates(name, goal, evidence, directive);
+  evidence.wake_candidate_scores = wakeScores.candidates;
+  evidence.selected_wake_candidate = wakeScores.selected ? {
+    source: wakeScores.selected.source,
+    decision: wakeScores.selected.decision,
+    reason: wakeScores.selected.reason,
+    task_ref: wakeScores.selected.task_ref || null,
+    title: wakeScores.selected.title,
+    score: wakeScores.selected.score,
+    components: wakeScores.selected.components,
+    next_command: wakeScores.selected.next_command,
+  } : null;
 
   if (!purpose.meaningful) {
     const ask = `Define atris/team/${name}/MISSION.md with a concrete North Star before this member wakes itself.`;
@@ -2229,7 +3605,56 @@ function wakeDecision(name, paths, { force = false } = {}) {
     };
   }
 
+  const discoveredTask = evidence.problem_discovery?.selected || null;
+  if (discoveredTask?.source === 'log_error_scan' && discoveredTask.autonomous_action === 'create_task') {
+    return {
+      decision: 'create_task',
+      reason: 'autonomous_error_discovery:log_error_scan',
+      needs_user: false,
+      ask: null,
+      next_command: discoveredTask.next_command,
+      state,
+      goal: goal || null,
+      current_experiment: current || null,
+      autonomous_problem: discoveredTask,
+      checks,
+      mission: {
+        north_star: purpose.northStar,
+        runtime_id: purpose.runtimeMission.id || null,
+        runtime_status: purpose.runtimeMission.status || null,
+        runtime_next: purpose.runtimeMission.next || null,
+      },
+      steering,
+      evidence,
+      workspace,
+    };
+  }
+
   if (!goal) {
+    const discoveredProblem = evidence.problem_discovery?.selected || null;
+    if (discoveredProblem) {
+      return {
+        decision: 'set_objective',
+        reason: `autonomous_problem_discovery:${discoveredProblem.source}`,
+        needs_user: false,
+        ask: null,
+        next_command: discoveredProblem.next_command || `atris member wake ${name} --execute --confirm-autonomy-policy`,
+        state,
+        goal: null,
+        current_experiment: null,
+        autonomous_problem: discoveredProblem,
+        checks,
+        mission: {
+          north_star: purpose.northStar,
+          runtime_id: purpose.runtimeMission.id || null,
+          runtime_status: purpose.runtimeMission.status || null,
+          runtime_next: purpose.runtimeMission.next || null,
+        },
+        steering,
+        evidence,
+        workspace,
+      };
+    }
     return {
       decision: 'stop',
       reason: 'no_active_goal',
@@ -2239,6 +3664,7 @@ function wakeDecision(name, paths, { force = false } = {}) {
       state,
       goal: null,
       current_experiment: null,
+      autonomous_problem: null,
       checks,
       mission: {
         north_star: purpose.northStar,
@@ -2298,40 +3724,15 @@ function wakeDecision(name, paths, { force = false } = {}) {
     };
   }
 
-  if (evidence.nearest_open_loop) {
-    const openLoop = evidence.nearest_open_loop;
-    const needsUser = openLoop.decision === 'ask';
-    const evidenceRef = openLoop.task_ref || 'missing_task';
+  if (wakeScores.selected && wakeScores.selected.decision !== 'tick') {
+    const selected = wakeScores.selected;
+    const needsUser = selected.decision === 'ask';
     return {
-      decision: openLoop.decision,
-      reason: `nearest_open_loop:${openLoop.source}:${evidenceRef}`,
+      decision: selected.decision,
+      reason: selected.reason,
       needs_user: needsUser,
-      ask: needsUser ? (openLoop.ask || `Need operator input for ${openLoop.title}.`) : null,
-      next_command: openLoop.next_command,
-      state,
-      goal,
-      current_experiment: null,
-      checks,
-      mission: {
-        north_star: purpose.northStar,
-        runtime_id: purpose.runtimeMission.id || null,
-        runtime_status: purpose.runtimeMission.status || null,
-        runtime_next: purpose.runtimeMission.next || null,
-      },
-      steering,
-      evidence,
-      workspace,
-    };
-  }
-
-  if (directive) {
-    const needsUser = directive.decision === 'ask';
-    return {
-      decision: directive.decision,
-      reason: `steering_directive:${directive.steering_id || 'unknown'}`,
-      needs_user: needsUser,
-      ask: needsUser ? (directive.note || 'Needs operator direction.') : null,
-      next_command: directive.next_command,
+      ask: needsUser ? (selected.ask || `Need operator input for ${selected.title}.`) : null,
+      next_command: selected.next_command,
       state,
       goal,
       current_experiment: null,
@@ -2393,8 +3794,11 @@ function wakeDecision(name, paths, { force = false } = {}) {
   };
 }
 
-function runMemberWake(name, { execute = false, confirmed = false, force = false } = {}) {
+async function runMemberWake(name, { execute = false, confirmed = false, force = false } = {}) {
   const paths = requireMemberDir(name);
+  if (lowerCompact(name) === 'wiki-miner') {
+    return runWikiMinerWake(name, paths, { execute });
+  }
   const planned = wakeDecision(name, paths, { force });
   const mode = execute ? 'execute' : 'dry_run';
   let decision = planned.decision;
@@ -2404,15 +3808,44 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
   let state = planned.state;
   let goal = planned.goal;
   let nextCommand = planned.next_command;
+  let autonomousProblem = planned.autonomous_problem || null;
+  let seededGoal = null;
+  let createdTask = null;
+  let autonomousDiscoveryReceipt = null;
   const now = stampIso();
 
   if (execute && !confirmed) {
     decision = 'stop';
     reason = 'execute_requires_confirm_autonomy_policy';
     nextCommand = `atris member wake ${name} --execute --confirm-autonomy-policy`;
+  } else if (execute && planned.decision === 'create_task' && autonomousProblem) {
+    const taskResult = createAutonomousDiscoveryTask(autonomousProblem);
+    createdTask = taskResult.task || null;
+    autonomousDiscoveryReceipt = writeAutonomousDiscoveryReceipt(name, autonomousProblem, taskResult);
+    executed = taskResult.ok === true;
+    decision = taskResult.ok ? 'create_task' : 'stop';
+    reason = taskResult.ok
+      ? taskResult.existing ? 'autonomous_error_task_exists' : 'autonomous_error_task_created'
+      : 'autonomous_error_task_create_failed';
+    nextCommand = taskResult.task_ref
+      ? `atris task show ${taskResult.task_ref} --json`
+      : (autonomousProblem.next_command || nextCommand);
+  } else if (execute && planned.decision === 'set_objective' && autonomousProblem) {
+    const seeded = seedAutonomousProblemGoal(name, paths, state, autonomousProblem, planned.mission);
+    state = seeded.state;
+    goal = seeded.goal;
+    seededGoal = seeded.goal;
+    executed = true;
+    decision = 'tick';
+    reason = seeded.existing ? 'autonomous_objective_reused' : 'autonomous_objective_seeded';
+    nextCommand = `atris member tick ${name} --goal ${goal.id}`;
   } else if (execute && planned.decision === 'tick' && goal) {
     goal.experiments = Array.isArray(goal.experiments) ? goal.experiments : [];
-    experiment = proposalForGoal(goal);
+    experiment = await proposalForGoal(goal, {
+      decision: planned,
+      evidence: planned.evidence,
+      mission: planned.mission,
+    });
     goal.experiments.push(experiment);
     goal.history = Array.isArray(goal.history) ? goal.history : [];
     goal.history.push({ at: now, event: 'wake_tick_proposed_experiment', experiment_id: experiment.id });
@@ -2439,6 +3872,18 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
     evidence: planned.evidence,
     checks: planned.checks,
     workspace: planned.workspace,
+    autonomous_problem: autonomousProblem,
+    created_task: createdTask ? {
+      id: createdTask.id || null,
+      display_id: createdTask.display_id || null,
+      legacy_ref: createdTask.legacy_ref || null,
+      title: createdTask.title || null,
+      tag: createdTask.tag || null,
+      status: createdTask.status || null,
+    } : null,
+    autonomous_discovery_receipt: autonomousDiscoveryReceipt?.payload || null,
+    autonomous_discovery_receipt_path: autonomousDiscoveryReceipt?.receipt_path || null,
+    autonomous_discovery_project_log_path: autonomousDiscoveryReceipt?.project_log_path || null,
     active_goal: goal ? {
       id: goal.id,
       title: goal.title,
@@ -2448,12 +3893,20 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
     current_experiment: experiment || planned.current_experiment || null,
   };
   const receiptPath = writeWakeReceipt(name, receiptPayload);
-  const logPath = appendMemberGoalLog(paths.memberDir, name, executed ? 'Member wake executed tick' : 'Member wake decision', {
+  const logTitle = experiment
+    ? 'Member wake executed tick'
+    : seededGoal
+      ? 'Member wake seeded objective'
+      : 'Member wake decision';
+  const logPath = appendMemberGoalLog(paths.memberDir, name, logTitle, {
     decision,
     reason,
     mode,
     goal: goal?.title || '',
     experiment: (experiment || planned.current_experiment)?.title || '',
+    problem: autonomousProblem?.problem || '',
+    task: createdTask ? taskRef(createdTask) : '',
+    discovery_receipt: autonomousDiscoveryReceipt?.receipt_path ? path.relative(process.cwd(), autonomousDiscoveryReceipt.receipt_path) : '',
     ask: planned.ask || '',
     receipt: path.relative(process.cwd(), receiptPath),
     next: nextCommand,
@@ -2475,6 +3928,11 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
     evidence: planned.evidence,
     checks: planned.checks,
     workspace: planned.workspace,
+    autonomous_problem: autonomousProblem,
+    created_task: receiptPayload.created_task,
+    autonomous_discovery_receipt: autonomousDiscoveryReceipt?.payload || null,
+    autonomous_discovery_receipt_path: autonomousDiscoveryReceipt?.receipt_path || null,
+    autonomous_discovery_project_log_path: autonomousDiscoveryReceipt?.project_log_path || null,
     active_goal: receiptPayload.active_goal,
     current_experiment: receiptPayload.current_experiment,
     receipt_path: receiptPath,
@@ -2482,12 +3940,12 @@ function runMemberWake(name, { execute = false, confirmed = false, force = false
   };
 }
 
-function memberWake(name, ...args) {
+async function memberWake(name, ...args) {
   const asJson = hasFlag(args, '--json');
-  const execute = hasFlag(args, '--execute');
+  const execute = hasFlag(args, '--execute') && !hasFlag(args, '--dry-run');
   const confirmed = hasFlag(args, '--confirm-autonomy-policy');
   const force = hasFlag(args, '--force');
-  const result = runMemberWake(name, { execute, confirmed, force });
+  const result = await runMemberWake(name, { execute, confirmed, force });
   printJsonOrText(
     result,
     [
@@ -2508,7 +3966,7 @@ function memberAlive(name, ...args) {
   return memberLoop(name, ...nextArgs);
 }
 
-function memberLoop(name, ...args) {
+async function memberLoop(name, ...args) {
   requireMemberDir(name);
   const asJson = hasFlag(args, '--json');
   const aliveMode = hasFlag(args, '--alive');
@@ -2529,7 +3987,7 @@ function memberLoop(name, ...args) {
       ok: true,
       action: 'loop_status',
       member: name,
-      active: Boolean(active && Number(active.expires_at_ms || 0) > Date.now()),
+      active: Boolean(active && Number(active.expires_at_ms || 0) > Date.now() && isPidAlive(active.pid)),
       lease: active || null,
       latest: latest || null,
       lock_path: paths.lockPath,
@@ -2701,7 +4159,7 @@ function memberLoop(name, ...args) {
           tickResults.push(tick);
           fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
         } else {
-        const wake = runMemberWake(name, { execute, confirmed, force });
+        const wake = await runMemberWake(name, { execute, confirmed, force });
         const key = `${wake.decision}:${wake.reason}`;
         decisions[key] = (decisions[key] || 0) + 1;
         const tick = {
@@ -2782,13 +4240,14 @@ function memberLoop(name, ...args) {
   ], asJson);
 }
 
-function memberTick(name, ...args) {
+async function memberTick(name, ...args) {
   const paths = requireMemberDir(name);
   const asJson = hasFlag(args, '--json');
   const force = hasFlag(args, '--force');
   const goalId = readFlag(args, '--goal', '');
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state, goalId);
+  const evidence = collectWakeEvidence(name, goal);
   if (!goal) {
     console.error(`No active goal for ${name}. Run: atris member goal ${name} "..."`);
     process.exit(1);
@@ -2819,7 +4278,7 @@ function memberTick(name, ...args) {
   let experiment = goal.experiments.find((item) => item.status === 'proposed' || item.status === 'running') || null;
   const reused = Boolean(experiment && !force);
   if (!experiment || force) {
-    experiment = proposalForGoal(goal);
+    experiment = await proposalForGoal(goal, { evidence });
     goal.experiments.push(experiment);
   }
   goal.history = Array.isArray(goal.history) ? goal.history : [];
@@ -2868,6 +4327,10 @@ function memberReview(name, experimentId, ...args) {
   const { goal: foundGoal, experiment } = findExperiment(state, experimentId);
   if (!foundGoal || !experiment) {
     console.error(`Experiment "${experimentId}" not found for ${name}.`);
+    process.exit(1);
+  }
+  if (experimentIsClosed(experiment)) {
+    console.error(`Experiment "${experimentId}" is already ${experiment.status}; closed member experiments cannot be reviewed again.`);
     process.exit(1);
   }
   experiment.status = accepted ? 'accepted' : 'discarded';
@@ -2931,6 +4394,10 @@ function memberBlock(name, experimentId, ...args) {
   const { goal, experiment } = findExperiment(state, experimentId);
   if (!goal || !experiment) {
     console.error(`Experiment "${experimentId}" not found for ${name}.`);
+    process.exit(1);
+  }
+  if (experimentIsClosed(experiment)) {
+    console.error(`Experiment "${experimentId}" is already ${experiment.status}; closed member experiments cannot be blocked.`);
     process.exit(1);
   }
   experiment.status = 'blocked';
@@ -3017,7 +4484,7 @@ function memberStatus(name, ...args) {
 
 // --- Command Dispatcher ---
 
-function memberCommand(subcommand, ...args) {
+async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
   // help themselves (with subcommand-specific usage) — leave those alone.
