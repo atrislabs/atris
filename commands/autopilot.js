@@ -2336,6 +2336,19 @@ function inlinePythonVerifyFailureNowPasses(lessonLine, cwd, timeout = 10000) {
   return result.status === 0;
 }
 
+function legacyLessonFileRefs(lessonLine) {
+  const fileRefs = [];
+  const filePattern = /`([a-zA-Z0-9_/./-]+\.[a-zA-Z]+(?::\d+(?:-\d+)?)?)`/g;
+  let m;
+  while ((m = filePattern.exec(lessonLine)) !== null) {
+    const ref = m[1].replace(/:\d+(-\d+)?$/, '');
+    if (ref.includes('/') || ref.endsWith('.js') || ref.endsWith('.md') || ref.endsWith('.ts')) {
+      fileRefs.push(ref);
+    }
+  }
+  return fileRefs;
+}
+
 /**
  * The pre-v3.8 resolver — kept as an internal fallback for prose-only lessons
  * that don't have detector metadata yet. Never auto-promotes a prose lesson to
@@ -2348,22 +2361,13 @@ function isLessonResolvedLegacy(lessonLine, cwd) {
   if (!slugMatch) return false;
   const slug = slugMatch[1];
 
-  // Extract file paths: patterns like `commands/autopilot.js:116` or `commands/run.js:157`
-  const fileRefs = [];
-  const filePattern = /`([a-zA-Z0-9_/./-]+\.[a-zA-Z]+(?::\d+(?:-\d+)?)?)`/g;
-  let m;
-  while ((m = filePattern.exec(lessonLine)) !== null) {
-    const ref = m[1].replace(/:\d+(-\d+)?$/, ''); // strip line numbers
-    if (ref.includes('/') || ref.endsWith('.js') || ref.endsWith('.md') || ref.endsWith('.ts')) {
-      fileRefs.push(ref);
-    }
-  }
+  const fileRefs = legacyLessonFileRefs(lessonLine);
 
-  if (fileRefs.length === 0) return true;
+  if (fileRefs.length === 0) return false;
 
   // Derive keywords from slug (split on dashes, drop short words)
   const keywords = slug.split('-').filter(w => w.length > 2);
-  if (keywords.length === 0) return true;
+  if (keywords.length === 0) return false;
 
   // Grep each named file for any keyword. If at least one file still matches → not resolved.
   for (const ref of fileRefs) {
@@ -2453,6 +2457,7 @@ function pickUnresolvedFailLesson(cwd) {
       if (s === 'resolved' || s === 'observed') continue;
       if (s === 'attempted' && (lesson.meta.attempts || 0) >= MAX_ATTEMPTS) continue;
     }
+    if (lesson.legacy && legacyLessonFileRefs(lesson.line).length === 0) continue;
     // Detector-backed or legacy grep check.
     if (isLessonResolved(lesson.line, cwd, { meta: lesson.meta })) continue;
 

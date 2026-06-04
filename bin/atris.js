@@ -1627,7 +1627,9 @@ if (command === 'init') {
 } else if (command === 'member') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
-  require('../commands/member').memberCommand(subcommand, ...args);
+  Promise.resolve(require('../commands/member').memberCommand(subcommand, ...args))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'app') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);

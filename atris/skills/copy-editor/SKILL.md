@@ -1,7 +1,7 @@
 ---
 name: copy-editor
-description: Detects AI writing patterns and fixes them. Use when reviewing any written output, including docs, READMEs, messages, PRDs. Based on Wikipedia's AI Cleanup patterns. Triggers on "copy edit", "review writing", "humanize", "deslopper", "ai patterns", "make it sound human".
-version: 1.0.0
+description: Detects AI slop and fixes it, especially in memos, docs, READMEs, messages, PRDs, and other written output. Based on Wikipedia's AI Cleanup patterns plus memo-specific anti-slop rules. Triggers on "copy edit", "review writing", "humanize", "deslopper", "ai patterns", "make it sound human", "AI slop", "anti-slop", "memo".
+version: 1.1.0
 tags:
   - copy-editor
   - writing
@@ -149,7 +149,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ### 7. Overused "AI Vocabulary" Words
 
-**High-frequency AI words:** Additionally, align with, crucial, delve, emphasizing, enduring, enhance, fostering, garner, highlight (verb), interplay, intricate/intricacies, key (adjective), landscape (abstract noun), pivotal, showcase, tapestry (abstract noun), testament, underscore (verb), valuable, vibrant
+**High-frequency AI words:** Additionally, align with, crucial, delve, unpack, emphasizing, enduring, enhance, fostering, garner, highlight (verb), interplay, intricate/intricacies, key (adjective), landscape (abstract noun), pivotal, showcase, tapestry (abstract noun), testament, signal/signals/signaling (as fake analysis), underscore/underscores (verb), valuable, vibrant
 
 **Problem:** These words appear far more frequently in post-2023 text. They often co-occur.
 
@@ -158,6 +158,27 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 **After:**
 > Somali cuisine also includes camel meat, which is considered a delicacy. Pasta dishes, introduced during Italian colonization, remain common, especially in the south.
+
+---
+
+#### Memo Slop Gate (Mandatory)
+
+Business memos fail faster because vague language pretends to be judgment. When editing a memo, block these patterns and replace them with the writer's actual claim:
+
+- "Delve into" / "unpack" -> "look at", "break down", or the actual action.
+- "This signals that" / "this underscores" -> state the evidence and decision: "Customers are doing X, so we need to change Y."
+- "Navigate the complexities of" / "in an ever-changing landscape" -> name the specific constraint, market change, or delete the sentence.
+- "Synergies" / "leverage our learnings" / "holistic approach" -> "what worked, what didn't, what changes."
+- Transition crutches at paragraph starts: Moreover, Furthermore, That said, Additionally, Importantly.
+- Label-colon bullets: "Clarity: Ensure..." / "Alignment: Make..." / "Execution: Focus..." unless the labels are real categories the reader needs.
+- Corporate therapist voice: "powerful opportunity", "lean into our strengths", "foster a culture of accountability."
+- Generic bow endings: "Ultimately, the goal is to build a more resilient and agile organization."
+- Says-everything-means-nothing paragraphs: if you cannot summarize the sentence as a concrete decision, fact, risk, or ask, rewrite or cut it.
+- Forced negation: "not this, but that" / "not just X, but Y" when a direct sentence would work.
+- Staccato repetition used as a fake humanizer. Short. Short. Short. Then another short fragment.
+- Excessive adverbs, especially prestige fog like "quietly underscores", "deeply reinforces", "meaningfully highlights."
+
+Start from voice dictation, raw bullets, and facts; they are usually more valuable than a polished AI memo. Do not paste in a topic and ask AI to write the memo; use AI to find missing pieces, clarify weak language, test flow, and tighten without replacing the writer's thinking.
 
 ---
 
@@ -448,7 +469,12 @@ Run this check before approving ANY writing. LLMs will violate these rules even 
 [ ] No em dashes anywhere
 [ ] No rule of three (exactly 3 items in a list or 3 parallel phrases)
 [ ] No negative parallelisms ("didn't X, needed Y" or "not just X, it's Y")
-[ ] No AI vocabulary (crucial, delve, landscape, pivotal, testament, vibrant, etc.)
+[ ] No AI vocabulary (crucial, delve, unpack, landscape, pivotal, testament, vibrant, etc.)
+[ ] No memo slop phrases (signals/underscores, ever-changing landscape, synergies, leverage learnings, holistic approach)
+[ ] No transition-crutch paragraph starts (Moreover, Furthermore, That said, Additionally, Importantly)
+[ ] No label-colon bullet filler (Clarity: ..., Alignment: ..., Execution: ...)
+[ ] No corporate therapist voice or generic bow conclusion
+[ ] No excessive adverb fog ("quietly underscores", "meaningfully highlights")
 [ ] No -ing tacked-on phrases (ensuring, highlighting, showcasing)
 [ ] No "serves as" / "stands as" (use "is")
 [ ] No vague attributions (experts say, studies show)
