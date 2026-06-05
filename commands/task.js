@@ -1955,6 +1955,9 @@ function taskQueueCapabilities() {
         dry_run_flag: '--dry-run',
         allowed_actions: ['review_chat', 'continue_work'],
         blocked_actions: [PROOF_BOUNDARY_BLOCKED_ACTION, 'human_accept_waiting', 'pending_review_chat', 'capabilities_drift', 'none'],
+        output_fields: {
+          identity: ['selected_task_id', 'selected_ref', 'selected_next_key'],
+        },
       },
       review_lane_loop: {
         command: 'atris task review-lane-loop --json',
@@ -2381,6 +2384,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
   const currentIdentityFields = standalone.surfaces.current.output_fields?.identity || [];
   const queueIdentityFields = standalone.surfaces.queue.output_fields?.identity || [];
   const reviewLaneDrainIdentityFields = standalone.surfaces.review_lane_drain.output_fields?.identity || [];
+  const reviewLaneActIdentityFields = standalone.surfaces.review_lane_act.output_fields?.identity || [];
   const drainBehavior = reviewLaneDrainBehaviorConformance();
   const actBehavior = reviewLaneActBehaviorConformance();
   const loopBehavior = reviewLaneLoopBehaviorConformance();
@@ -2422,6 +2426,11 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
       'review_lane_drain_declares_identity_output_fields',
       ['selected_task_id', 'selected_ref', 'selected_next_key'].every(field => reviewLaneDrainIdentityFields.includes(field)),
       { identity: reviewLaneDrainIdentityFields }
+    ),
+    capabilityCheck(
+      'review_lane_act_declares_identity_output_fields',
+      ['selected_task_id', 'selected_ref', 'selected_next_key'].every(field => reviewLaneActIdentityFields.includes(field)),
+      { identity: reviewLaneActIdentityFields }
     ),
     capabilityCheck(
       'read_only_projection_semantics_declared',
