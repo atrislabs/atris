@@ -8,7 +8,7 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 const { taskProofState } = require('../lib/task-proof');
-const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -128,7 +128,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task done <id> --proof "..."       Mark complete with proof
   atris task done <id> --failed [--proof "..."]  Mark failed, optionally reviewed
   atris task finish <id> --proof "..."     Legacy alias for done with proof
-  atris task review <id> --reward <n>      Write review event + RSI episode
+  atris task review <id> --reward <n> [--verify "<cmd>"]
+                                           Write review event + RSI episode
   atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
   atris task status [--json] [--history]   Compact live status for web/Swarlo
   atris task setup [--import-todo]         Create/refresh task projection
@@ -1154,7 +1155,7 @@ function taskReviewSpecificCodexPrompt(task, focus, actor) {
   const files = focus && focus.files_to_inspect && focus.files_to_inspect.length
     ? ` Files/artifacts: ${focus.files_to_inspect.join(', ')}.`
     : '';
-  return `/codex review ${ref}: verify "${title}".${proof}${commands}${files} Inspect the task thread, then run ${`atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>"`} or revise with the exact missing proof. Do not accept XP.`;
+  return `/codex review ${ref}: verify "${title}".${proof}${commands}${files} Inspect the task thread, then run ${`atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>" --verify "<safe verifier command>"`} or revise with the exact missing proof. Do not accept XP.`;
 }
 
 function taskReviewChatHandoff(task, { reviewer = 'codex-review', allowCertified = false } = {}) {
@@ -1167,7 +1168,7 @@ function taskReviewChatHandoff(task, { reviewer = 'codex-review', allowCertified
     schema: 'atris.task_review_chat.v1',
     command: `atris task review-chat ${ref} --as ${actor}`,
     codex_prompt: taskReviewSpecificCodexPrompt(task, verificationFocus, actor),
-    pass_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>"`,
+    pass_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>" --verify "<safe verifier command>"`,
     revise_command: `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`,
     human_accept_command: `atris task accept ${ref}`,
     verification_focus: {
@@ -4628,7 +4629,7 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
     plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
     do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
     ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>"`,
-    review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>"`,
+    review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>" --verify "<safe verifier command>"`,
   };
   if (task && task.status === 'review') {
     actions.revise_command = `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`;
@@ -5860,6 +5861,7 @@ function cmdReview(args) {
   if (clearLesson || (typeof lessonFlag === 'string' && !String(lessonFlag).trim())) clearedFields.push('lesson');
   if (clearNextTask || (typeof nextTaskFlag === 'string' && !String(nextTaskFlag).trim())) clearedFields.push('next_task');
   const proof = proofFlagValue(args);
+  const verify = textFlag(args, ['--verify']);
   const actor = flag(args, '--as') || DEFAULT_OWNER;
   const rewardValue = reward === true || reward === null ? 0 : reward;
   if (agentProofOnlyMode() && Number(rewardValue) > 0) {
@@ -5870,6 +5872,16 @@ function cmdReview(args) {
   }
   if (Number(rewardValue) > 0 || proof) {
     requireMeaningfulTaskProof('atris task review', proof);
+  }
+  if (verify) {
+    const parsedVerify = parseVerifyCommand(verify);
+    if (!parsedVerify.ok) {
+      failTask(
+        'atris task review',
+        parsedVerify.reason || 'invalid_verify_command',
+        'Verify command must be a safe simple command accepted by strict auto-accept.',
+      );
+    }
   }
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -5882,6 +5894,7 @@ function cmdReview(args) {
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: nextTaskInput.nextTask,
     proof,
+    verify,
     careerXpEligible: false,
     clearedFields,
   });
