@@ -7172,6 +7172,7 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(scopedPayload.current.scope.goal_id, 'OBL-928');
     assert.equal(scopedPayload.current.selected_reason, 'plan_ready');
     assert.equal(scopedPayload.current.selected_task_id, scopedPlanTask.id);
+    assert.equal(scopedPayload.current.selected_ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.page.task.ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.queue.scope.goal_id, 'OBL-928');
     assert.equal(scopedPayload.queue.counts.total, 1);
@@ -7197,6 +7198,7 @@ test('task current returns read-only selected page and queue lanes', () => {
     const statusPayload = JSON.parse(statusCurrent.stdout);
     assert.equal(statusPayload.current.scope.status, 'review');
     assert.equal(statusPayload.current.selected_task_id, reviewTask.id);
+    assert.equal(statusPayload.current.selected_ref, reviewTask.display_id);
     assert.equal(statusPayload.queue.counts.total, 1);
 
     const planShow = runCli(['task', 'show', planTask.display_id, '--json'], { cwd: dir, env });
@@ -7215,6 +7217,7 @@ test('task current returns read-only selected page and queue lanes', () => {
     const claimedPayload = JSON.parse(claimedCurrent.stdout);
     assert.equal(claimedPayload.current.selected_reason, 'claimed_by_owner');
     assert.equal(claimedPayload.current.selected_task_id, planTask.id);
+    assert.equal(claimedPayload.current.selected_ref, planTask.display_id);
     assert.equal(claimedPayload.page.stage.current, 'do');
     assert.match(claimedPayload.current.next.command, new RegExp(`atris task ready ${planTask.display_id}`));
 
@@ -10138,7 +10141,9 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
       '--json',
     ], { cwd: dir, env });
     assert.equal(waiting.status, 0, waiting.stderr);
-    assert.equal(JSON.parse(waiting.stdout).current.selected_task_id, null);
+    const waitingPayload = JSON.parse(waiting.stdout);
+    assert.equal(waitingPayload.current.selected_task_id, null);
+    assert.equal(waitingPayload.current.selected_ref, null);
 
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);

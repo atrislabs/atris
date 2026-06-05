@@ -2626,6 +2626,7 @@ function taskCurrentContract(projection, { owner = DEFAULT_OWNER, reviewer = 'co
     scope: normalizedScope,
     selected_reason: selection.reason,
     selected_task_id: selection.task ? selection.task.id : null,
+    selected_ref: selection.task ? taskRef(selection.task) : null,
     selected,
     page,
     next: page ? {
