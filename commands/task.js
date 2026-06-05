@@ -5959,6 +5959,7 @@ function cmdAutoAcceptCertified(args) {
       action: dryRun ? 'auto_accept_certified_dry_run' : 'auto_accept_certified',
       strict_verify: strictVerify,
       summary,
+      ...summary,
       results,
       projection_path: finalPath,
       queue,
