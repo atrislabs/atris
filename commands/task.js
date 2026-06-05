@@ -5318,9 +5318,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     error.current = current;
     throw error;
   }
-  const nextActionKey = current.page && current.page.stage && current.page.stage.next_action
-    ? current.page.stage.next_action.key
-    : null;
+  const nextActionKey = selectedNextKeyFromCurrent(current);
   if (nextActionKey === 'human_accept_waiting') {
     const error = taskStepError(
       'agent_certified_waiting_human',
@@ -5378,6 +5376,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
       projection_path: after.outPath,
       selected_task_id: current.selected_task_id,
       selected_ref: current.selected_ref || null,
+      selected_next_key: nextActionKey,
       selected_reason: current.selected_reason,
       scope: current.scope,
       before: current,
@@ -5414,6 +5413,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     projection_path: after.outPath,
     selected_task_id: current.selected_task_id,
     selected_ref: current.selected_ref || null,
+    selected_next_key: nextActionKey,
     selected_reason: current.selected_reason,
     scope: current.scope,
     before: current,
@@ -5459,6 +5459,7 @@ function cmdCurrentStep(args) {
         detail: error.message,
         selected_task_id: errorCurrent ? errorCurrent.selected_task_id : null,
         selected_ref: errorCurrent ? errorCurrent.selected_ref : null,
+        selected_next_key: selectedNextKeyFromCurrent(errorCurrent),
         current: errorCurrent,
         page: error.page || null,
       });
@@ -5476,6 +5477,15 @@ function cmdCurrentStep(args) {
   if (result.page.stage.next_action && result.page.stage.next_action.command) {
     console.log(`Next: ${result.page.stage.next_action.command}`);
   }
+}
+
+function selectedNextKeyFromCurrent(current) {
+  if (!current) return null;
+  if (current.next && current.next.key) return current.next.key;
+  if (current.page && current.page.stage && current.page.stage.next_action) {
+    return current.page.stage.next_action.key || null;
+  }
+  return null;
 }
 
 function cmdStep(args) {
@@ -6931,12 +6941,16 @@ async function handleTaskApi(req, res, taskDb, db) {
       const result = runCurrentTaskStep(taskDb, db, options);
       return sendJson(res, 200, result);
     } catch (error) {
+      const errorCurrent = error.current || null;
       return sendJson(res, error.status || 409, {
         ok: false,
         action: 'current_step',
         reason: error.reason || 'step_failed',
         detail: error.message,
-        current: error.current || null,
+        selected_task_id: errorCurrent ? errorCurrent.selected_task_id : null,
+        selected_ref: errorCurrent ? errorCurrent.selected_ref : null,
+        selected_next_key: selectedNextKeyFromCurrent(errorCurrent),
+        current: errorCurrent,
         page: error.page || null,
       });
     }
