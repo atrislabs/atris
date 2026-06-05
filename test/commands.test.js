@@ -8586,6 +8586,11 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     const previewPayload = JSON.parse(preview.stdout);
     assert.equal(previewPayload.action, 'auto_accept_certified_dry_run');
     assert.equal(previewPayload.summary.would_accept, 1);
+    assert.equal(previewPayload.scanned, previewPayload.summary.scanned);
+    assert.equal(previewPayload.accepted, previewPayload.summary.accepted);
+    assert.equal(previewPayload.would_accept, previewPayload.summary.would_accept);
+    assert.equal(previewPayload.skipped, previewPayload.summary.skipped);
+    assert.equal(previewPayload.failed, previewPayload.summary.failed);
     assert.equal(previewPayload.results[0].action, 'would_accept');
     assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
 
@@ -8594,6 +8599,8 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     const strictPayload = JSON.parse(strictPreview.stdout);
     assert.equal(strictPayload.summary.would_accept, 0);
     assert.equal(strictPayload.summary.skipped, 1);
+    assert.equal(strictPayload.would_accept, 0);
+    assert.equal(strictPayload.skipped, 1);
     assert.equal(strictPayload.results[0].reason, 'strict_verify_missing');
     assert.match(strictPayload.results[0].next_action, /metadata\.verify/);
     assert.equal(strictPayload.results[0].review_chat_command, `atris task review-chat ${ref} --as codex-review`);
@@ -8633,6 +8640,8 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.equal(confirmed.status, 0, confirmed.stderr);
     const confirmedPayload = JSON.parse(confirmed.stdout);
     assert.equal(confirmedPayload.summary.accepted, 1);
+    assert.equal(confirmedPayload.accepted, 1);
+    assert.equal(confirmedPayload.failed, 0);
     assert.equal(confirmedPayload.results[0].action, 'accepted');
     const acceptedTask = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
     assert.equal(acceptedTask.status, 'done');
