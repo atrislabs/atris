@@ -7104,6 +7104,11 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(payload.current.safety.human_accept, false);
 	    assert.equal(payload.current.selected_reason, 'review_needs_agent_verification');
 	    assert.equal(payload.current.selected_task_id, reviewTask.id);
+	    assert.equal(payload.current.selected_ref, reviewTask.display_id);
+	    assert.equal(payload.current.selected_next_key, 'review_chat');
+	    assert.equal(payload.selected_task_id, reviewTask.id);
+	    assert.equal(payload.selected_ref, reviewTask.display_id);
+	    assert.equal(payload.selected_next_key, 'review_chat');
 	    assert.equal(payload.page.stage.current, 'review');
 	    assert.equal(payload.current.next.key, 'review_chat');
 	    assert.match(payload.current.next.command, new RegExp(`atris task review-chat ${reviewTask.display_id}`));
@@ -7243,6 +7248,10 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(queue.status, 0, queue.stderr);
     const queuePayload = JSON.parse(queue.stdout);
     assert.equal(queuePayload.action, 'queue');
+    assert.equal(queuePayload.selected_task_id, planTask.id);
+    assert.equal(queuePayload.selected_ref, planTask.display_id);
+    assert.equal(queuePayload.selected_next_key, 'ready');
+    assert.equal(queuePayload.current.selected_next_key, 'ready');
     assert.equal(queuePayload.queue.columns.find(column => column.key === 'do').items.length, 1);
     assert.equal(queuePayload.queue.columns.find(column => column.key === 'backlog').items[0].id, backlogTask.id);
   } finally {
