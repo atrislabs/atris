@@ -6832,6 +6832,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     const doingPayload = JSON.parse(doing.stdout);
     assert.equal(doingPayload.action, 'current_step');
     assert.equal(doingPayload.selected_ref, scopedTask.display_id);
+    assert.equal(doingPayload.selected_next_key, doingPayload.before_current.next.key);
     assert.equal(doingPayload.before_current.scope.goal_id, 'OBL-928');
     assert.equal(doingPayload.before_current.selected_task_id, scopedTask.id);
     assert.equal(doingPayload.before_current.selected_ref, scopedTask.display_id);
@@ -6862,6 +6863,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.selected_task_id, scopedTask.id);
     assert.equal(readyPayload.selected_ref, scopedTask.display_id);
+    assert.equal(readyPayload.selected_next_key, readyPayload.before_current.next.key);
     assert.equal(readyPayload.step.step_action, 'ready');
     assert.equal(readyPayload.current.selected_task_id, scopedTask.id);
     assert.equal(readyPayload.current.selected_ref, scopedTask.display_id);
@@ -6947,6 +6949,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(continueStepPayload.before_current.scope.review_state, 'continue-work');
     assert.equal(continueStepPayload.before_current.selected_task_id, continueTask.id);
     assert.equal(continueStepPayload.selected_ref, continueTask.display_id);
+    assert.equal(continueStepPayload.selected_next_key, 'continue_work');
     assert.equal(continueStepPayload.before_current.selected_ref, continueTask.display_id);
     assert.equal(continueStepPayload.before_current.next.key, 'continue_work');
     assert.equal(continueStepPayload.step.step_action, 'continue_work');
@@ -6974,6 +6977,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     const waitingStepPayload = JSON.parse(waitingStep.stdout);
     assert.equal(waitingStepPayload.reason, 'agent_certified_waiting_human');
     assert.equal(waitingStepPayload.selected_ref, waitingTask.display_id);
+    assert.equal(waitingStepPayload.selected_next_key, 'human_accept_waiting');
     assert.equal(waitingStepPayload.current.selected_task_id, waitingTask.id);
     assert.equal(waitingStepPayload.current.selected_ref, waitingTask.display_id);
     assert.equal(waitingStepPayload.current.next.key, 'human_accept_waiting');
@@ -7005,6 +7009,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     const otherPayload = JSON.parse(otherStep.stdout);
     assert.equal(otherPayload.reason, 'claimed_by_other');
     assert.equal(otherPayload.selected_ref, otherTask.display_id);
+    assert.equal(otherPayload.selected_next_key, otherPayload.current.next.key);
     assert.equal(otherPayload.current.selected_task_id, otherTask.id);
     assert.equal(otherPayload.current.selected_ref, otherTask.display_id);
     assert.equal(otherPayload.current.selected_reason, 'active_do_elsewhere');
@@ -11168,6 +11173,7 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiCurrentStepContinue.action, 'current_step');
 		    assert.equal(apiCurrentStepContinue.before_current.scope.review_state, 'continue-work');
 		    assert.equal(apiCurrentStepContinue.before_current.selected_task_id, apiContinueTask.id);
+		    assert.equal(apiCurrentStepContinue.selected_next_key, 'continue_work');
 		    assert.equal(apiCurrentStepContinue.step.step_action, 'continue_work');
 		    assert.equal(apiCurrentStepContinue.step.continue_work.action, 'continue_work');
 		    assert.equal(apiCurrentStepContinue.step.continue_work.parent_task_id, apiContinueTask.id);
@@ -11188,6 +11194,8 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiCurrentStepWaitingResponse.status, 409);
 		    const apiCurrentStepWaiting = await apiCurrentStepWaitingResponse.json();
 		    assert.equal(apiCurrentStepWaiting.reason, 'agent_certified_waiting_human');
+		    assert.equal(apiCurrentStepWaiting.selected_task_id, apiWaitingTask.id);
+		    assert.equal(apiCurrentStepWaiting.selected_next_key, 'human_accept_waiting');
 		    assert.equal(apiCurrentStepWaiting.current.selected_task_id, apiWaitingTask.id);
 		    assert.equal(apiCurrentStepWaiting.current.next.key, 'human_accept_waiting');
 		    assert.equal(apiCurrentStepWaiting.page.stage.next_action.command, null);
@@ -11219,6 +11227,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiCurrentStepReady.before_current.scope.goal_id, 'OBL-928');
 	    assert.equal(apiCurrentStepReady.before_current.selected_task_id, apiScopedTask.id);
 	    assert.equal(apiCurrentStepReady.before_current.selected_reason, 'claimed_by_owner');
+	    assert.equal(apiCurrentStepReady.selected_next_key, apiCurrentStepReady.before_current.next.key);
 	    assert.equal(apiCurrentStepReady.step.step_action, 'ready');
 	    assert.equal(apiCurrentStepReady.current.selected_task_id, apiScopedTask.id);
 	    assert.equal(apiCurrentStepReady.current.next.key, 'review_chat');
