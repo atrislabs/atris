@@ -4551,10 +4551,12 @@ test('task capabilities returns the standalone read-only task capability contrac
     assert.equal(payload.capabilities.surfaces.current.mutates_task_db, false);
     assert.equal(payload.capabilities.surfaces.current.writes_projection, true);
     assert.equal(payload.capabilities.surfaces.current.requires_task_db, true);
+    assert.deepEqual(payload.capabilities.surfaces.current.output_fields.identity, ['selected_task_id', 'selected_ref', 'selected_next_key']);
     assert.equal(payload.capabilities.surfaces.queue.read_only, true);
     assert.equal(payload.capabilities.surfaces.queue.mutates_task_db, false);
     assert.equal(payload.capabilities.surfaces.queue.writes_projection, true);
     assert.equal(payload.capabilities.surfaces.queue.requires_task_db, true);
+    assert.deepEqual(payload.capabilities.surfaces.queue.output_fields.identity, ['selected_task_id', 'selected_ref', 'selected_next_key']);
     assert.deepEqual(payload.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
     assert.equal(payload.capabilities.commands.capabilities, 'atris task capabilities --json');
     assert.equal(payload.capabilities.commands.capabilities_check, 'atris task capabilities-check --json');
@@ -4629,6 +4631,7 @@ test('task capabilities-check reports contract drift without mutating task truth
     assert.ok(payload.checks.some(check => check.name === 'queue_capabilities_match_standalone' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'current_step_never_human_accepts' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'current_step_declares_identity_output_fields' && check.ok));
+    assert.ok(payload.checks.some(check => check.name === 'current_and_queue_declare_identity_output_fields' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'capabilities_check_surface_declared' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'review_lane_drain_surface_declared' && check.ok));
     const drainBehaviorCheck = payload.checks.find(check => check.name === 'review_lane_drain_behavior_conforms');
