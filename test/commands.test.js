@@ -9800,6 +9800,7 @@ test('task current exposes continue-work for certified review suggestions', () =
     assert.equal(currentPayload.current.next.key, 'continue_work');
     assert.equal(currentPayload.current.next.command, command);
     assert.equal(currentPayload.current.next.human_accept_command, `atris task accept ${ref}`);
+    assert.equal(currentPayload.page.review.verification_chat.human_accept_command, `atris task accept ${ref}`);
     assert.deepEqual(currentPayload.current.next.api, { method: 'POST', path: `/api/tasks/${parent.id}/continue-work` });
     assert.equal(currentPayload.page.stage.next_action.command, command);
     assert.equal(currentPayload.selected.continue_work_command, command);
@@ -10063,6 +10064,8 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
     assert.equal(currentPayload.current.review_state_actions.proof_boundary_blocked.human_accept.enabled, false);
     assert.equal(currentPayload.current.review_state_actions.proof_boundary_blocked.human_accept.command, null);
     assert.equal(currentPayload.selected.commands.human_accept, undefined);
+    assert.equal(currentPayload.page.review.verification_chat.human_accept_command, null);
+    assert.doesNotMatch(JSON.stringify(currentPayload.page.review.verification_chat), new RegExp(`atris task accept ${ref}`));
 
     const waiting = runCli([
       'task', 'current',
