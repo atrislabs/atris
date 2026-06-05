@@ -95,6 +95,21 @@ test('rejects proof that names a closed unmerged PR boundary', () => {
   assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
 });
 
+test('allows merged proof that explains the rejected PR boundary terms', () => {
+  const proof = [
+    'Merged PR #78 at origin/master commit 7944f271.',
+    'Changed evaluator tests to reject proof text that names open draft, draft=true, isDraft=true, mergedAt=null, or closed-unmerged PR boundaries.',
+    'git diff --check passed.',
+  ].join(' ');
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: proof, agent_review_pass_count: 3 },
+    review: { proof, agent_review_pass_count: 3 },
+    events: [{ event_type: 'proof_ready', actor: 'codex' }],
+  }));
+  assert.equal(result.eligible, true);
+  assert.equal(result.policy, '3_passes');
+});
+
 test('rejects single actor with only two passes', () => {
   const result = evaluateAutoAccept(reviewTask({
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
