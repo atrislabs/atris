@@ -43,6 +43,16 @@ test('accepts certified review with two actors and meaningful proof', () => {
   assert.equal(result.policy, '2_actors_2_passes');
 });
 
+test('strict verify missing points agents back to review chat', () => {
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { verify: '' },
+  }), { strictVerify: true });
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'strict_verify_missing');
+  assert.match(result.next_action, /metadata\.verify/);
+  assert.equal(result.review_chat_command, 'atris task review-chat OBL-TEST --as codex-review');
+});
+
 test('accepts third pass even with one actor', () => {
   const base = reviewTask();
   const result = evaluateAutoAccept({

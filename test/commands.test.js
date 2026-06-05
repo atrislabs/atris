@@ -8531,6 +8531,21 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.equal(previewPayload.results[0].action, 'would_accept');
     assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
 
+    const strictPreview = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify', '--json'], { cwd: dir, env });
+    assert.equal(strictPreview.status, 0, strictPreview.stderr);
+    const strictPayload = JSON.parse(strictPreview.stdout);
+    assert.equal(strictPayload.summary.would_accept, 0);
+    assert.equal(strictPayload.summary.skipped, 1);
+    assert.equal(strictPayload.results[0].reason, 'strict_verify_missing');
+    assert.match(strictPayload.results[0].next_action, /metadata\.verify/);
+    assert.equal(strictPayload.results[0].review_chat_command, `atris task review-chat ${ref} --as codex-review`);
+
+    const strictText = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify'], { cwd: dir, env });
+    assert.equal(strictText.status, 0, strictText.stderr);
+    assert.match(strictText.stdout, /SKIPPED .*strict_verify_missing/);
+    assert.match(strictText.stdout, /next_action=.*metadata\.verify/);
+    assert.match(strictText.stdout, new RegExp(`review_chat=atris task review-chat ${ref} --as codex-review`));
+
     const confirmed = runCli([
       'task', 'auto-accept-certified',
       '--confirm-human-accept',
