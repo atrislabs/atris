@@ -4748,6 +4748,9 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(payload.ok, true);
     assert.equal(payload.action, 'review_lane_drain');
     assert.equal(payload.schema, 'atris.task_review_lane_drain.v1');
+    assert.equal(payload.selected_task_id, continueTask.id);
+    assert.equal(payload.selected_ref, continueRef);
+    assert.equal(payload.selected_next_key, 'continue_work');
     assert.equal(payload.capabilities_check.ok, true);
     assert.equal(payload.capabilities_check.summary.failed, 0);
     assert.ok(payload.capabilities_check.checks.some(check => check.name === 'review_lane_drain_surface_declared' && check.ok));
