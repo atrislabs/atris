@@ -20,6 +20,8 @@ const REVIEW_LANE_LOOP_MAX_STEPS = 10;
 const REVIEW_LANE_RUN_DEFAULT_MAX_RUNS = 3;
 const REVIEW_LANE_RUN_MAX_RUNS = 20;
 const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_review';
+const PROOF_BOUNDARY_BLOCKED_ACTION = 'proof_boundary_blocked';
+const PROOF_BOUNDARY_BLOCKED_REASON = 'proof_boundary_blocked_requires_revision';
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -50,10 +52,11 @@ const TASK_QUEUE_COLUMN_LABELS = {
   blocked: 'Blocked',
   done: 'Done',
 };
-const TASK_REVIEW_STATE_LANES = ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified'];
+const TASK_REVIEW_STATE_LANES = ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified'];
 const TASK_REVIEW_STATE_ALIASES = {
   'needs-agent': ['needs-review', 'agent-review'],
   'continue-work': ['continue', 'agent-actionable', 'executable'],
+  'proof-boundary-blocked': ['proof-boundary', 'boundary-blocked', 'stale-pr-proof', 'unmerged-pr-proof'],
   'human-accept-waiting': ['human-accept', 'accept-waiting', 'waiting-accept', 'no-next-task'],
   certified: ['waiting-human', 'human-waiting'],
 };
@@ -542,6 +545,21 @@ function certifiedReviewNextAction(nextTaskTitle) {
   return String(nextTaskTitle || '').trim() ? 'continue_work' : 'human_accept_waiting';
 }
 
+function proofBoundaryBlockedEvaluation(task) {
+  const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
+  return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
+    ? evaluation
+    : null;
+}
+
+function handoffAllowsHumanAccept(handoff) {
+  return handoff && !handoffIsProofBoundaryBlocked(handoff);
+}
+
+function handoffIsProofBoundaryBlocked(handoff) {
+  return handoff && handoff.next_action === PROOF_BOUNDARY_BLOCKED_ACTION;
+}
+
 function readLocalBusinessBinding(root = process.cwd()) {
   const file = path.join(root, '.atris', 'business.json');
   if (!fs.existsSync(file)) return null;
@@ -997,15 +1015,20 @@ function reviewHandoffForTask(task, { suppressExistingFollowUp = false, hasExist
   const agentCertified = review.agent_certified === true;
   const nextTask = reviewNextTaskTitle(task);
   const hasExistingFollowUp = Boolean(suppressExistingFollowUp && taskHasReviewFollowUpChild(task, { hasExistingReviewFollowUp }));
+  const proofBoundary = agentCertified ? proofBoundaryBlockedEvaluation(task) : null;
   const nextAction = agentCertified
-    ? certifiedReviewNextAction(hasExistingFollowUp ? '' : nextTask)
+    ? (proofBoundary ? PROOF_BOUNDARY_BLOCKED_ACTION : certifiedReviewNextAction(hasExistingFollowUp ? '' : nextTask))
     : 'agent_review_again';
   const handoff = {
     native_goal_status: agentCertified ? 'agent_certified' : 'needs_second_agent_review',
-    career_xp_status: 'pending_human_accept',
+    career_xp_status: proofBoundary ? 'blocked_proof_boundary' : 'pending_human_accept',
     next_action: nextAction,
   };
-  if (agentCertified && nextTask && !hasExistingFollowUp) {
+  if (proofBoundary) {
+    handoff.reason = proofBoundary.reason;
+    handoff.next_action_detail = proofBoundary.next_action || null;
+    handoff.revise_command = `atris task revise ${taskRef(task)} --note "<replace stale PR proof with merged proof or move back to Do>"`;
+  } else if (agentCertified && nextTask && !hasExistingFollowUp) {
     handoff.next_task = nextTask;
     handoff.continue_work_command = continueWorkCommandForTask(task);
   } else if (agentCertified && nextTask && hasExistingFollowUp) {
@@ -1401,7 +1424,9 @@ function compactReviewActionRef(task, { hasExistingReviewFollowUp = null } = {})
     assigned_to: taskAssignee(task),
     next_action: handoff.next_action || null,
     next_task: handoff.next_task || null,
-    command: handoff.continue_work_command || null,
+    command: handoff.continue_work_command || handoff.revise_command || null,
+    reason: handoff.reason || null,
+    next_action_detail: handoff.next_action_detail || null,
   };
 }
 
@@ -1430,7 +1455,11 @@ function taskStatusSummary(projection, { history = false, hasExistingReviewFollo
     const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
     return handoff && handoff.next_action === 'human_accept_waiting';
   });
-  const reviewAgentCertified = reviewContinueWork.length + reviewHumanAcceptWaiting.length;
+  const reviewProofBoundaryBlocked = columns.review.filter(task => {
+    const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
+    return handoffIsProofBoundaryBlocked(handoff);
+  });
+  const reviewAgentCertified = reviewContinueWork.length + reviewHumanAcceptWaiting.length + reviewProofBoundaryBlocked.length;
   const blocked = columns.blocked.length;
   const lastUpdated = tasks.reduce((max, task) => Math.max(max, Number(task.updated_at || 0)), 0);
   const swarloFeed = history ? tasks
@@ -1467,7 +1496,7 @@ function taskStatusSummary(projection, { history = false, hasExistingReviewFollo
     goals: projection.goals || { source_path: null, items: [] },
     counts: {
       total: fullTaskCount,
-      active: columns.plan.length + columns.do.length + reviewNeedingAgentAction.length,
+      active: columns.plan.length + columns.do.length + reviewNeedingAgentAction.length + reviewProofBoundaryBlocked.length,
       backlog: columns.backlog.length,
       plan: columns.plan.length,
       do: columns.do.length,
@@ -1475,16 +1504,21 @@ function taskStatusSummary(projection, { history = false, hasExistingReviewFollo
       review_blocking: reviewNeedingAgentAction.length,
       review_certified: reviewAgentCertified,
       review_continue_work: reviewContinueWork.length,
+      review_proof_boundary_blocked: reviewProofBoundaryBlocked.length,
       review_human_accept_waiting: reviewHumanAcceptWaiting.length,
       blocked,
       done: tasks.filter(task => task.status === 'done' || (task.status === 'failed' && taskHasReview(task))).length + hiddenDoneCount,
     },
-    current: compactTaskForStatus(columns.do[0] || reviewNeedingAgentAction[0] || null),
+    current: compactTaskForStatus(columns.do[0] || reviewNeedingAgentAction[0] || reviewProofBoundaryBlocked[0] || null),
     next: compactTaskForStatus(columns.plan[0] || null),
     review_actions: {
       continue_work: {
         count: reviewContinueWork.length,
         first: compactReviewActionRef(reviewContinueWork[0] || null, { hasExistingReviewFollowUp }),
+      },
+      proof_boundary_blocked: {
+        count: reviewProofBoundaryBlocked.length,
+        first: compactReviewActionRef(reviewProofBoundaryBlocked[0] || null, { hasExistingReviewFollowUp }),
       },
       human_accept_waiting: {
         count: reviewHumanAcceptWaiting.length,
@@ -1656,6 +1690,9 @@ function taskReviewStateMatches(task, reviewState, { hasExistingReviewFollowUp =
   if (wanted === 'continue-work' || wanted === 'continue' || wanted === 'agent-actionable' || wanted === 'executable') {
     return handoff?.next_action === 'continue_work';
   }
+  if (wanted === 'proof-boundary-blocked' || wanted === 'proof-boundary' || wanted === 'boundary-blocked' || wanted === 'stale-pr-proof' || wanted === 'unmerged-pr-proof') {
+    return handoff?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION;
+  }
   if (wanted === 'human-accept-waiting' || wanted === 'human-accept' || wanted === 'accept-waiting' || wanted === 'waiting-accept' || wanted === 'no-next-task') {
     return handoff?.next_action === 'human_accept_waiting';
   }
@@ -1663,7 +1700,9 @@ function taskReviewStateMatches(task, reviewState, { hasExistingReviewFollowUp =
     return handoff?.next_action === 'agent_review_again';
   }
   if (wanted === 'certified' || wanted === 'waiting-human' || wanted === 'human-waiting') {
-    return handoff?.next_action === 'continue_work' || handoff?.next_action === 'human_accept_waiting';
+    return handoff?.next_action === 'continue_work'
+      || handoff?.next_action === 'human_accept_waiting'
+      || handoff?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION;
   }
   return false;
 }
@@ -1709,6 +1748,7 @@ function taskReviewStateCounts(tasks = [], { hasExistingReviewFollowUp = null } 
     total: 0,
     needs_agent: 0,
     continue_work: 0,
+    proof_boundary_blocked: 0,
     human_accept_waiting: 0,
     certified: 0,
   };
@@ -1719,9 +1759,10 @@ function taskReviewStateCounts(tasks = [], { hasExistingReviewFollowUp = null } 
     counts.total += 1;
     if (handoff.next_action === 'agent_review_again') counts.needs_agent += 1;
     if (handoff.next_action === 'continue_work') counts.continue_work += 1;
+    if (handoff.next_action === PROOF_BOUNDARY_BLOCKED_ACTION) counts.proof_boundary_blocked += 1;
     if (handoff.next_action === 'human_accept_waiting') counts.human_accept_waiting += 1;
   }
-  counts.certified = counts.continue_work + counts.human_accept_waiting;
+  counts.certified = counts.continue_work + counts.proof_boundary_blocked + counts.human_accept_waiting;
   return counts;
 }
 
@@ -1774,6 +1815,9 @@ function taskReviewStateActionSample(task, { reviewer = 'codex-review', hasExist
   };
   if (page.actions.review_chat_command) sample.review_chat_command = page.actions.review_chat_command;
   if (page.actions.continue_work_command) sample.continue_work_command = page.actions.continue_work_command;
+  if (page.actions.revise_command) sample.revise_command = page.actions.revise_command;
+  if (nextAction.reason) sample.reason = nextAction.reason;
+  if (nextAction.next_action_detail) sample.next_action_detail = nextAction.next_action_detail;
   return sample;
 }
 
@@ -1810,6 +1854,7 @@ function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex
   const firstByState = {
     needs_agent: null,
     continue_work: null,
+    proof_boundary_blocked: null,
     human_accept_waiting: null,
   };
   const skippedContinueWorkWithFollowUp = [];
@@ -1833,6 +1878,9 @@ function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex
     if (handoff.next_action === 'continue_work' && !firstByState.continue_work) {
       firstByState.continue_work = task;
     }
+    if (handoff.next_action === PROOF_BOUNDARY_BLOCKED_ACTION && !firstByState.proof_boundary_blocked) {
+      firstByState.proof_boundary_blocked = task;
+    }
     if (handoff.next_action === 'human_accept_waiting' && !firstByState.human_accept_waiting) {
       firstByState.human_accept_waiting = task;
     }
@@ -1843,6 +1891,7 @@ function taskQueueReviewStateActions(projection, scope = {}, { reviewer = 'codex
     active_filter: normalizedScope.review_state || null,
     needs_agent: taskReviewStateActionSample(firstByState.needs_agent, { reviewer, hasExistingReviewFollowUp }),
     continue_work: taskReviewStateActionSample(firstByState.continue_work, { reviewer, hasExistingReviewFollowUp }),
+    proof_boundary_blocked: taskReviewStateActionSample(firstByState.proof_boundary_blocked, { reviewer, hasExistingReviewFollowUp }),
     human_accept_waiting: taskReviewStateActionSample(firstByState.human_accept_waiting, { reviewer, hasExistingReviewFollowUp }),
     skipped_continue_work_with_follow_up_count: skippedContinueWorkWithFollowUp.length,
     skipped_continue_work_with_follow_up: skippedContinueWorkWithFollowUp
@@ -1898,7 +1947,7 @@ function taskQueueCapabilities() {
         requires_task_db: true,
         dry_run_flag: '--dry-run',
         allowed_actions: ['review_chat', 'continue_work'],
-        blocked_actions: ['human_accept_waiting', 'pending_review_chat', 'capabilities_drift', 'none'],
+        blocked_actions: [PROOF_BOUNDARY_BLOCKED_ACTION, 'human_accept_waiting', 'pending_review_chat', 'capabilities_drift', 'none'],
       },
       review_lane_loop: {
         command: 'atris task review-lane-loop --json',
@@ -1913,8 +1962,8 @@ function taskQueueCapabilities() {
         max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
         orchestrates: 'review_lane_act',
         allowed_actions: ['review_chat', 'continue_work'],
-        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_steps_reached'],
-        blocked_actions: ['human_accept_waiting', 'pending_review_chat'],
+        stopped_by: ['dry_run_preview', PROOF_BOUNDARY_BLOCKED_REASON, 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_steps_reached'],
+        blocked_actions: [PROOF_BOUNDARY_BLOCKED_ACTION, 'human_accept_waiting', 'pending_review_chat'],
       },
       review_lane_run: {
         command: 'atris task review-lane-run --json',
@@ -1935,8 +1984,8 @@ function taskQueueCapabilities() {
         max_steps_cap: REVIEW_LANE_LOOP_MAX_STEPS,
         orchestrates: 'review_lane_loop',
         allowed_actions: ['review_chat', 'continue_work'],
-        stopped_by: ['dry_run_preview', 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_runs_reached'],
-        blocked_actions: ['human_accept_waiting', 'pending_review_chat'],
+        stopped_by: ['dry_run_preview', PROOF_BOUNDARY_BLOCKED_REASON, 'human_accept_waiting_is_human_only', PENDING_REVIEW_CHAT_STOP_REASON, 'capabilities_check_failed', 'no_review_lane_action', 'continue_work_reused_existing_follow_up', 'repeat_selection', 'max_runs_reached'],
+        blocked_actions: [PROOF_BOUNDARY_BLOCKED_ACTION, 'human_accept_waiting', 'pending_review_chat'],
       },
       current: {
         command: 'atris task current --review-state <lane> --json',
@@ -2003,6 +2052,13 @@ function taskQueueCapabilities() {
           safe_for_agent: true,
           creates_or_reuses_follow_up: true,
         },
+        'proof-boundary-blocked': {
+          selected_next_action: PROOF_BOUNDARY_BLOCKED_ACTION,
+          step_action: null,
+          claims_work: false,
+          safe_for_agent: false,
+          reason: PROOF_BOUNDARY_BLOCKED_REASON,
+        },
         'human-accept-waiting': {
           selected_next_action: 'human_accept_waiting',
           step_action: null,
@@ -2011,7 +2067,7 @@ function taskQueueCapabilities() {
           reason: 'agent_certified_waiting_human',
         },
         certified: {
-          selected_next_action: ['continue_work', 'human_accept_waiting'],
+          selected_next_action: ['continue_work', PROOF_BOUNDARY_BLOCKED_ACTION, 'human_accept_waiting'],
           step_action: 'depends_on_selected_next_action',
           claims_work: false,
           safe_for_agent: 'depends_on_selected_next_action',
@@ -2064,6 +2120,16 @@ function reviewLaneDrainBehaviorConformance() {
     command: 'atris task continue-work OBL-CONTINUE --as codex --json',
     api: { method: 'POST', path: '/api/tasks/continue-work-id/continue-work' },
   };
+  const proofBoundaryBlocked = {
+    id: 'proof-boundary-id',
+    ref: 'OBL-BOUNDARY',
+    title: 'Stale PR proof boundary',
+    status: 'review',
+    next_action: PROOF_BOUNDARY_BLOCKED_ACTION,
+    command: 'atris task revise OBL-BOUNDARY --note "<replace stale PR proof>"',
+    revise_command: 'atris task revise OBL-BOUNDARY --note "<replace stale PR proof>"',
+    api: null,
+  };
   const humanAcceptWaiting = {
     id: 'human-accept-id',
     ref: 'OBL-HUMAN',
@@ -2086,9 +2152,14 @@ function reviewLaneDrainBehaviorConformance() {
   const humanOnly = taskReviewLaneDrainSelection({
     human_accept_waiting: humanAcceptWaiting,
   }, capabilityOk);
+  const proofBoundaryOnly = taskReviewLaneDrainSelection({
+    proof_boundary_blocked: proofBoundaryBlocked,
+    human_accept_waiting: humanAcceptWaiting,
+  }, capabilityOk);
   const drift = taskReviewLaneDrainSelection({
     needs_agent: needsAgent,
     continue_work: continueWork,
+    proof_boundary_blocked: proofBoundaryBlocked,
     human_accept_waiting: humanAcceptWaiting,
   }, { ok: false });
   const followedContinueWork = taskHasReviewFollowUpChild({
@@ -2122,6 +2193,13 @@ function reviewLaneDrainBehaviorConformance() {
       && humanOnly.human_accept_waiting
       && humanOnly.human_accept_waiting.command === null
       && humanOnly.human_accept_waiting.api === null,
+    selected_proof_boundary_is_non_executable: proofBoundaryOnly.next_action === PROOF_BOUNDARY_BLOCKED_ACTION
+      && proofBoundaryOnly.review_state === 'proof-boundary-blocked'
+      && proofBoundaryOnly.safe_for_agent === false
+      && proofBoundaryOnly.command === null
+      && proofBoundaryOnly.api === null
+      && proofBoundaryOnly.proof_boundary_blocked
+      && proofBoundaryOnly.proof_boundary_blocked.revise_command === proofBoundaryBlocked.revise_command,
     capability_drift_blocks_execution: drift.next_action === 'capabilities_drift'
       && drift.safe_for_agent === false
       && drift.command === null
@@ -2189,10 +2267,19 @@ function reviewLaneActBehaviorConformance() {
     task: null,
     reason: 'capability_conformance_failed',
   });
+  const proofBoundary = taskReviewLaneActDecision({
+    next_action: PROOF_BOUNDARY_BLOCKED_ACTION,
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    task: { id: 'proof-boundary-id' },
+    reason: PROOF_BOUNDARY_BLOCKED_REASON,
+  });
   const checks = {
     allows_review_chat: reviewChat.ok === true && reviewChat.step_action === 'review_chat',
     allows_continue_work: continueWork.ok === true && continueWork.step_action === 'continue_work',
     blocks_human_accept_waiting_even_if_marked_safe: humanAccept.ok === false && humanAccept.reason !== null,
+    blocks_proof_boundary_blocked: proofBoundary.ok === false && proofBoundary.reason === PROOF_BOUNDARY_BLOCKED_REASON,
     blocks_capability_drift: drift.ok === false && drift.reason === 'capability_conformance_failed',
   };
   return {
@@ -2204,6 +2291,7 @@ function reviewLaneActBehaviorConformance() {
 function reviewLaneLoopBehaviorConformance() {
   const dryRun = taskReviewLaneLoopStopIsSafe('dry_run_preview');
   const humanOnly = taskReviewLaneLoopStopIsSafe('human_accept_waiting_is_human_only');
+  const proofBoundary = taskReviewLaneLoopStopIsSafe(PROOF_BOUNDARY_BLOCKED_REASON);
   const pendingReviewChat = taskReviewLaneLoopStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
   const noAction = taskReviewLaneLoopStopIsSafe('no_review_lane_action');
   const repeated = taskReviewLaneLoopStopIsSafe('repeat_selection');
@@ -2214,6 +2302,7 @@ function reviewLaneLoopBehaviorConformance() {
   const checks = {
     dry_run_stops_without_mutation: dryRun.ok === true && dryRun.read_only === true,
     human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
+    proof_boundary_blocked_stops_without_execution: proofBoundary.ok === true && proofBoundary.human_accept === false,
     pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
     no_action_stops_without_execution: noAction.ok === true,
     repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
@@ -2229,6 +2318,7 @@ function reviewLaneLoopBehaviorConformance() {
 function reviewLaneRunBehaviorConformance() {
   const dryRun = taskReviewLaneRunStopIsSafe('dry_run_preview');
   const humanOnly = taskReviewLaneRunStopIsSafe('human_accept_waiting_is_human_only');
+  const proofBoundary = taskReviewLaneRunStopIsSafe(PROOF_BOUNDARY_BLOCKED_REASON);
   const pendingReviewChat = taskReviewLaneRunStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
   const noAction = taskReviewLaneRunStopIsSafe('no_review_lane_action');
   const reusedFollowUp = taskReviewLaneRunStopIsSafe('continue_work_reused_existing_follow_up');
@@ -2241,6 +2331,7 @@ function reviewLaneRunBehaviorConformance() {
   const checks = {
     dry_run_stops_without_receipt: dryRun.ok === true && dryRun.write_receipt === false,
     human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
+    proof_boundary_blocked_stops_without_execution: proofBoundary.ok === true && proofBoundary.human_accept === false,
     pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
     no_action_stops_without_execution: noAction.ok === true,
     reused_follow_up_stops_without_duplicate_action: reusedFollowUp.ok === true,
@@ -2365,6 +2456,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
         && standalone.surfaces.review_lane_loop.orchestrates === 'review_lane_act'
         && standalone.surfaces.review_lane_loop.allowed_actions.includes('review_chat')
         && standalone.surfaces.review_lane_loop.allowed_actions.includes('continue_work')
+        && standalone.surfaces.review_lane_loop.stopped_by.includes(PROOF_BOUNDARY_BLOCKED_REASON)
         && standalone.surfaces.review_lane_loop.stopped_by.includes('human_accept_waiting_is_human_only')
         && standalone.surfaces.review_lane_loop.stopped_by.includes(PENDING_REVIEW_CHAT_STOP_REASON)
         && standalone.surfaces.review_lane_loop.stopped_by.includes('capabilities_check_failed')
@@ -2390,6 +2482,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
         && standalone.surfaces.review_lane_run.writes_receipt === true
         && standalone.surfaces.review_lane_run.receipt_path === '.atris/state/review-lane-runs.jsonl'
         && standalone.surfaces.review_lane_run.latest_receipt_path === '.atris/state/review-lane-run.latest.json'
+        && standalone.surfaces.review_lane_run.stopped_by.includes(PROOF_BOUNDARY_BLOCKED_REASON)
         && standalone.surfaces.review_lane_run.stopped_by.includes('human_accept_waiting_is_human_only')
         && standalone.surfaces.review_lane_run.stopped_by.includes(PENDING_REVIEW_CHAT_STOP_REASON)
         && standalone.surfaces.review_lane_run.stopped_by.includes('capabilities_check_failed')
@@ -2494,6 +2587,8 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, h
   if (claimedByOwner) return { task: claimedByOwner, reason: 'claimed_by_owner' };
   const reviewNeedsAgent = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === 'agent_review_again');
   if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
+  const reviewProofBoundaryBlocked = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION);
+  if (reviewProofBoundaryBlocked) return { task: reviewProofBoundaryBlocked, reason: 'review_proof_boundary_blocked' };
   const planReady = columns.plan[0];
   if (planReady) return { task: planReady, reason: 'plan_ready' };
   const backlogIdea = columns.backlog[0];
@@ -2534,6 +2629,8 @@ function taskCurrentContract(projection, { owner = DEFAULT_OWNER, reviewer = 'co
       label: page.stage.next_action.label,
       command: page.stage.next_action.command || null,
       api: page.stage.next_action.api || null,
+      reason: page.stage.next_action.reason || null,
+      revise_command: page.stage.next_action.revise_command || null,
       human_accept_command: page.stage.next_action.human_accept_command || null,
       step_command: page.actions.step_command,
       step_api: page.api.step,
@@ -2703,6 +2800,18 @@ function humanAcceptWaitingDrain(action) {
   };
 }
 
+function proofBoundaryBlockedDrain(action) {
+  if (!action) return null;
+  return {
+    task: taskReviewLaneDrainTask(action),
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    reason: PROOF_BOUNDARY_BLOCKED_REASON,
+    revise_command: action.revise_command || action.command || null,
+  };
+}
+
 function pendingReviewChatDrain(action) {
   if (!action) return null;
   return {
@@ -2725,6 +2834,7 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       api: null,
       task: null,
       reason: 'capability_conformance_failed',
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
     };
   }
@@ -2738,6 +2848,7 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       api: actions.needs_agent.api || null,
       task: taskReviewLaneDrainTask(actions.needs_agent),
       reason: 'needs_agent_review',
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
     };
   }
@@ -2751,6 +2862,21 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       api: actions.continue_work.api || null,
       task: taskReviewLaneDrainTask(actions.continue_work),
       reason: 'certified_review_has_follow_up',
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
+      human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
+    };
+  }
+  if (actions.proof_boundary_blocked) {
+    return {
+      key: PROOF_BOUNDARY_BLOCKED_ACTION,
+      next_action: PROOF_BOUNDARY_BLOCKED_ACTION,
+      review_state: 'proof-boundary-blocked',
+      safe_for_agent: false,
+      command: null,
+      api: null,
+      task: taskReviewLaneDrainTask(actions.proof_boundary_blocked),
+      reason: PROOF_BOUNDARY_BLOCKED_REASON,
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
     };
   }
@@ -2767,6 +2893,7 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       api: null,
       task: taskReviewLaneDrainTask(pendingReviewChat),
       reason: PENDING_REVIEW_CHAT_STOP_REASON,
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
       pending_review_chat: pendingReviewChatDrain(pendingReviewChat),
     };
@@ -2781,6 +2908,7 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
       api: null,
       task: taskReviewLaneDrainTask(actions.human_accept_waiting),
       reason: 'human_accept_waiting_is_human_only',
+      proof_boundary_blocked: proofBoundaryBlockedDrain(actions.proof_boundary_blocked),
       human_accept_waiting: humanAcceptWaitingDrain(actions.human_accept_waiting),
     };
   }
@@ -2793,6 +2921,7 @@ function taskReviewLaneDrainSelection(actions = {}, capabilitiesCheck = {}) {
     api: null,
     task: null,
     reason: 'no_review_lane_action',
+    proof_boundary_blocked: null,
     human_accept_waiting: null,
   };
 }
@@ -3033,6 +3162,7 @@ function normalizeReviewLaneLoopMaxSteps(value) {
 function taskReviewLaneLoopStopIsSafe(reason) {
   const expected = new Set([
     'dry_run_preview',
+    PROOF_BOUNDARY_BLOCKED_REASON,
     'human_accept_waiting_is_human_only',
     PENDING_REVIEW_CHAT_STOP_REASON,
     'no_review_lane_action',
@@ -3276,6 +3406,7 @@ function taskReviewLaneRunOptionsFromBody(body = {}, searchParams = new URLSearc
 function taskReviewLaneRunStopIsSafe(reason) {
   const expected = new Set([
     'dry_run_preview',
+    PROOF_BOUNDARY_BLOCKED_REASON,
     'human_accept_waiting_is_human_only',
     PENDING_REVIEW_CHAT_STOP_REASON,
     'no_review_lane_action',
@@ -3460,9 +3591,11 @@ function reviewQueueLimit(args, total) {
 
 function reviewQueueItem(task) {
   const ref = taskRef(task);
+  const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
   const reviewChat = taskReviewChatHandoff(task, { reviewer: 'codex-review', allowCertified: true });
   const continueWorkCommand = continueWorkCommandForTask(task);
   const genericIssues = genericContinuationIssues(task);
+  const acceptCommand = handoffAllowsHumanAccept(handoff) ? `atris task accept ${ref}` : null;
   const item = {
     id: task.id,
     display_id: task.display_id || null,
@@ -3471,10 +3604,15 @@ function reviewQueueItem(task) {
     updated_at: task.updated_at || null,
     review_pass_count: task.review?.agent_review_pass_count || null,
     proof: taskReviewClip(task.review?.proof, 500) || null,
-    accept_command: `atris task accept ${ref}`,
+    next_action: handoff?.next_action || null,
+    accept_command: acceptCommand,
     revise_command: `atris task revise ${ref} --note "<what must change>"`,
   };
-  if (continueWorkCommand && reviewHandoffForTask(task, { suppressExistingFollowUp: true })?.next_action === 'continue_work') {
+  if (!acceptCommand && handoff?.reason) {
+    item.blocked_accept_reason = handoff.reason;
+    item.next_action_detail = handoff.next_action_detail || null;
+  }
+  if (continueWorkCommand && handoff?.next_action === 'continue_work') {
     item.continue_work_command = continueWorkCommand;
     item.continue_work_api = { method: 'POST', path: `/api/tasks/${encodeURIComponent(task.id)}/continue-work` };
   }
@@ -3514,9 +3652,11 @@ function taskReviewQueue(projection, args = []) {
     .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
   const reviewHandoff = (task) => task.review?.handoff || reviewHandoffForTask(task, { suppressExistingFollowUp: true });
   const blocking = reviewTasks.filter(task => reviewHandoff(task)?.next_action === 'agent_review_again');
+  const proofBoundaryBlocked = reviewTasks.filter(task => reviewHandoff(task)?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION);
   const certified = reviewTasks.filter(task => {
     const handoff = reviewHandoff(task);
     return handoff?.next_action === 'continue_work'
+      || handoff?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION
       || handoff?.next_action === 'human_accept_waiting'
       || task.review?.agent_certified === true;
   });
@@ -3530,6 +3670,7 @@ function taskReviewQueue(projection, args = []) {
       review: reviewTasks.length,
       certified: certified.length,
       blocking: blocking.length,
+      proof_boundary_blocked: proofBoundaryBlocked.length,
       shown: items.length,
     },
     hygiene: reviewQueueHygiene(reviewTasks),
@@ -3565,7 +3706,8 @@ function cmdReviews(args) {
     if (item.proof) console.log(`   proof: ${item.proof}`);
     if (item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
     if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
-    console.log(`   accept: ${item.accept_command}`);
+    if (item.accept_command) console.log(`   accept: ${item.accept_command}`);
+    else if (item.blocked_accept_reason) console.log(`   accept: blocked (${item.blocked_accept_reason})`);
     console.log(`   revise: ${item.revise_command}`);
   });
   if (queue.counts.shown < queue.counts.certified) {
@@ -4633,8 +4775,10 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
   };
   if (task && task.status === 'review') {
     actions.revise_command = `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`;
-    actions.human_accept_command = `atris task accept ${ref}`;
     const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
+    if (handoffAllowsHumanAccept(handoff)) {
+      actions.human_accept_command = `atris task accept ${ref}`;
+    }
     const continueWorkCommand = handoff?.next_action === 'continue_work'
       ? continueWorkCommandForTask(task, { owner })
       : null;
@@ -4667,6 +4811,18 @@ function taskPageNextAction(task, current, actions, { hasExistingReviewFollowUp 
         command: actions.continue_work_command || null,
         api: actions.continue_work_command ? { method: 'POST', path: `${apiBase}/continue-work` } : null,
         human_accept_command: actions.human_accept_command || null,
+      };
+    }
+    if (handoffIsProofBoundaryBlocked(handoff)) {
+      return {
+        key: PROOF_BOUNDARY_BLOCKED_ACTION,
+        label: 'Proof boundary blocked',
+        command: actions.revise_command || null,
+        api: null,
+        reason: PROOF_BOUNDARY_BLOCKED_REASON,
+        next_action_detail: handoff.next_action_detail || null,
+        revise_command: actions.revise_command || null,
+        human_accept_command: null,
       };
     }
     if (handoff && handoff.next_action === 'human_accept_waiting') {
@@ -4703,6 +4859,8 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
     && taskAllowsReviewChat(task, { allowCertified: true })
     ? taskReviewChatHandoff(task, { reviewer, allowCertified: true })
     : null;
+  const reviewHandoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp });
+  const humanAcceptEnabled = task.status === 'review' && handoffAllowsHumanAccept(reviewHandoff);
   return {
     schema: 'atris.task_page.v1',
     task: {
@@ -4738,10 +4896,10 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
       agent_review_pass_count: task.review && task.review.agent_review_pass_count || metadata.agent_review_pass_count || null,
       agent_certified: Boolean(task.review && task.review.agent_certified || metadata.agent_certified),
       verification_chat: reviewChat,
-      handoff: reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp }),
+      handoff: reviewHandoff,
       human_accept: {
-        enabled: task.status === 'review',
-        command: task.status === 'review' ? actions.human_accept_command : null,
+        enabled: humanAcceptEnabled,
+        command: humanAcceptEnabled ? actions.human_accept_command : null,
         human_only: true,
         xp_after_accept: true,
       },
@@ -5044,6 +5202,9 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     handoff = readyHandoffForStep(task, proof, lesson, nextTask, ready.event.payload.agent_certified === true);
   } else if (current === 'review' && task.status === 'review') {
     const handoffState = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+    if (handoffState && handoffState.next_action === PROOF_BOUNDARY_BLOCKED_ACTION) {
+      throw taskStepError(PROOF_BOUNDARY_BLOCKED_REASON, 'atris task step: Review proof cites an open/draft/unmerged PR boundary; revise the row before further stepping', { status: 409, exitCode: 1, page: actionPage });
+    }
     if (handoffState && (handoffState.next_action === 'continue_work' || handoffState.next_action === 'human_accept_waiting')) {
       const reason = handoffState.next_action === 'continue_work'
         ? 'agent_certified_continue_work'
@@ -5125,7 +5286,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     error.current = current;
     throw error;
   }
-  const safeReasons = new Set(['claimed_by_owner', 'review_needs_agent_verification', 'plan_ready', 'backlog_idea', 'review_certified_waiting_human']);
+  const safeReasons = new Set(['claimed_by_owner', 'review_needs_agent_verification', 'review_proof_boundary_blocked', 'plan_ready', 'backlog_idea', 'review_certified_waiting_human']);
   if (!safeReasons.has(current.selected_reason)) {
     const error = taskStepError(
       'unsafe_current_selection',
@@ -5159,6 +5320,19 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     const error = taskStepError(
       'agent_certified_waiting_human',
       'atris task current-step: selected Review row is agent-certified and waiting for human accept; no agent mutation is safe',
+      {
+        status: 409,
+        exitCode: 1,
+        page: current.page,
+      },
+    );
+    error.current = current;
+    throw error;
+  }
+  if (nextActionKey === PROOF_BOUNDARY_BLOCKED_ACTION) {
+    const error = taskStepError(
+      PROOF_BOUNDARY_BLOCKED_REASON,
+      'atris task current-step: selected Review row has stale/open/draft/unmerged PR proof; revise it instead of accepting or auto-stepping',
       {
         status: 409,
         exitCode: 1,
