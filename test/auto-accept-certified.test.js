@@ -73,6 +73,28 @@ test('rejects denied tags and weak proof', () => {
   })).eligible, false);
 });
 
+test('rejects proof that names an open draft PR boundary', () => {
+  const proof = 'PR #1611 is still OPEN and draft=true, mergedAt=null. git diff --check passed.';
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: proof },
+    review: { proof },
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
+  assert.match(result.next_action, /revise/);
+});
+
+test('rejects proof that names a closed unmerged PR boundary', () => {
+  const proof = 'PR #1585 is CLOSED with mergedAt=null after json.tool passed and git diff --check passed.';
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: proof, agent_review_pass_count: 3 },
+    review: { proof, agent_review_pass_count: 3 },
+    events: [{ event_type: 'proof_ready', actor: 'codex' }],
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
+});
+
 test('rejects single actor with only two passes', () => {
   const result = evaluateAutoAccept(reviewTask({
     events: [{ event_type: 'proof_ready', actor: 'codex' }],
