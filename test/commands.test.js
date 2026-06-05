@@ -6337,6 +6337,61 @@ test('task do rolls back the claim when plan ownership changes during claim', ()
   }
 });
 
+test('task do lets current claimant override stale plan owner metadata', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const taskDb = require('../lib/task-db');
+  taskDb.close();
+  try {
+    fs.mkdirSync(path.join(dir, 'project-obelisk', 'atris'), { recursive: true });
+    const db = taskDb.open(dbPath);
+    const workspaceRoot = fs.realpathSync(path.join(dir, 'project-obelisk'));
+    const created = taskDb.addTask(db, {
+      title: 'Do should trust the current claimant',
+      tag: 'capture',
+      workspaceRoot,
+      status: 'claimed',
+      claimedBy: 'agi-research',
+      metadata: {
+        stage: 'plan',
+        planned_at: 'old-plan',
+        stage_plan_recorded_at: 'old-plan',
+        stage_owner: 'keshavrao',
+        assigned_to: 'keshavrao',
+        goal_objective: 'Ship the claimed task',
+        stage_goal: 'Ship the claimed task',
+        exit_condition: 'Do starts under the actual claimant',
+        verify: 'node --test task do ownership coverage',
+        proof_needed: 'node --test task do ownership coverage',
+        next_button: 'Start do',
+      },
+    });
+
+    const doing = taskDb.stageTask(db, {
+      id: created.id,
+      actor: 'agi-research',
+      stage: 'do',
+      firstMove: 'continue from the claimed row',
+    });
+    assert.equal(doing.staged, true);
+    assert.match(doing.stage_packet, /owner: agi-research/);
+
+    const updated = taskDb.getTask(db, created.id);
+    assert.equal(updated.status, 'claimed');
+    assert.equal(updated.claimed_by, 'agi-research');
+    assert.equal(updated.metadata.stage, 'do');
+    assert.equal(updated.metadata.stage_owner, 'agi-research');
+    assert.equal(updated.metadata.assigned_to, 'agi-research');
+    assert.equal(updated.metadata.goal_objective, 'Ship the claimed task');
+    const eventTypes = taskDb.listTaskEvents(db, { taskId: created.id }).map(event => event.event_type);
+    assert.deepEqual(eventTypes, ['claimed', 'work_started']);
+  } finally {
+    taskDb.close();
+    cleanupTempDir(dir);
+  }
+});
+
 test('task do assigns legacy claimed rows that have no claimant', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
