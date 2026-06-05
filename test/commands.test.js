@@ -4566,6 +4566,7 @@ test('task capabilities returns the standalone read-only task capability contrac
     assert.equal(payload.capabilities.commands.queue, 'atris task queue --review-state <lane> --json');
     assert.equal(payload.capabilities.commands.current_step, 'atris task current-step --review-state <lane> --json');
     assert.equal(payload.capabilities.current_step.api.path, '/api/tasks/current/step?review_state=<lane>');
+    assert.deepEqual(payload.capabilities.current_step.output_fields.identity, ['selected_task_id', 'selected_ref', 'selected_next_key']);
     assert.equal(payload.capabilities.current_step.safety.claims_work, 'conditional');
     assert.equal(payload.capabilities.current_step.lanes['continue-work'].creates_or_reuses_follow_up, true);
     assert.equal(payload.capabilities.current_step.lanes['human-accept-waiting'].safe_for_agent, false);
@@ -4627,6 +4628,7 @@ test('task capabilities-check reports contract drift without mutating task truth
     assert.ok(payload.checks.some(check => check.name === 'current_capabilities_match_standalone' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'queue_capabilities_match_standalone' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'current_step_never_human_accepts' && check.ok));
+    assert.ok(payload.checks.some(check => check.name === 'current_step_declares_identity_output_fields' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'capabilities_check_surface_declared' && check.ok));
     assert.ok(payload.checks.some(check => check.name === 'review_lane_drain_surface_declared' && check.ok));
     const drainBehaviorCheck = payload.checks.find(check => check.name === 'review_lane_drain_behavior_conforms');
