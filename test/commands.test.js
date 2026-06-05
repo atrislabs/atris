@@ -4555,7 +4555,7 @@ test('task capabilities returns the standalone read-only task capability contrac
     assert.equal(payload.capabilities.surfaces.queue.mutates_task_db, false);
     assert.equal(payload.capabilities.surfaces.queue.writes_projection, true);
     assert.equal(payload.capabilities.surfaces.queue.requires_task_db, true);
-    assert.deepEqual(payload.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified']);
+    assert.deepEqual(payload.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
     assert.equal(payload.capabilities.commands.capabilities, 'atris task capabilities --json');
     assert.equal(payload.capabilities.commands.capabilities_check, 'atris task capabilities-check --json');
     assert.equal(payload.capabilities.commands.review_lane_drain, 'atris task review-lane-drain --json');
@@ -4593,7 +4593,7 @@ test('task capabilities returns the standalone read-only task capability contrac
     const textCaps = runCli(['task', 'caps'], { cwd: dir });
     assert.equal(textCaps.status, 0, textCaps.stderr);
     assert.match(textCaps.stdout, /atris.task_capabilities.v1/);
-    assert.match(textCaps.stdout, /review-state lanes: needs-agent, continue-work, human-accept-waiting, certified/);
+    assert.match(textCaps.stdout, /review-state lanes: needs-agent, continue-work, proof-boundary-blocked, human-accept-waiting, certified/);
     assert.doesNotMatch(textCaps.stdout, /TASK QUEUE|TASK CURRENT/);
   } finally {
     cleanupTempDir(dir);
@@ -7044,7 +7044,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(payload.queue.capabilities.commands.capabilities, 'atris task capabilities --json');
 	    assert.equal(payload.queue.capabilities.surfaces.current.read_only, true);
 	    assert.equal(payload.queue.capabilities.surfaces.queue.read_only, true);
-	    assert.deepEqual(payload.queue.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified']);
+	    assert.deepEqual(payload.queue.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
 	    assert.deepEqual(payload.queue.capabilities.filters.review_state.aliases['human-accept-waiting'], ['human-accept', 'accept-waiting', 'waiting-accept', 'no-next-task']);
 	    assert.equal(payload.queue.capabilities.current_step.safety.read_only, false);
 	    assert.equal(payload.queue.capabilities.current_step.safety.claims_work, 'conditional');
@@ -7108,7 +7108,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(needsAgentPayload.current.review_state_actions.needs_agent.next_action, 'review_chat');
 	    assert.equal(needsAgentPayload.current.review_state_actions.continue_work, null);
 	    assert.equal(needsAgentPayload.current.review_state_actions.human_accept_waiting, null);
-	    assert.deepEqual(needsAgentPayload.current.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified']);
+	    assert.deepEqual(needsAgentPayload.current.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
 	    assert.equal(needsAgentPayload.current.capabilities.current_step.lanes['needs-agent'].safe_for_agent, true);
 
     const scopedCurrent = runCli(['task', 'current', '--as', 'codex', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
@@ -9995,6 +9995,117 @@ test('task queue filters certified review rows by continue-work and human-accept
   }
 });
 
+test('task review lanes route stale PR proof out of human accept waiting', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const created = runCli([
+      'task', 'new', 'Certified stale PR proof boundary',
+      '--tag', 'task',
+      '--goal-id', 'OBL-928',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const ref = task.display_id;
+    const stalePrProof = 'Verified #1600 remains OPEN/draft/CLEAN at head be8797f. git diff --check passed.';
+
+    assert.equal(runCli([
+      'task', 'ready', ref,
+      '--as', 'codex',
+      '--proof', stalePrProof,
+    ], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', stalePrProof,
+    ], { cwd: dir, env }).status, 0);
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const statusPayload = JSON.parse(status.stdout).status;
+    assert.equal(statusPayload.counts.review, 1);
+    assert.equal(statusPayload.counts.review_certified, 1);
+    assert.equal(statusPayload.counts.review_proof_boundary_blocked, 1);
+    assert.equal(statusPayload.counts.review_human_accept_waiting, 0);
+    assert.equal(statusPayload.counts.active, 1);
+    assert.equal(statusPayload.review_actions.proof_boundary_blocked.count, 1);
+    assert.equal(statusPayload.review_actions.proof_boundary_blocked.first.ref, ref);
+    assert.equal(statusPayload.review_actions.proof_boundary_blocked.first.next_action, 'proof_boundary_blocked');
+    assert.equal(statusPayload.review_actions.proof_boundary_blocked.first.reason, 'proof_unmerged_or_draft_pr_boundary');
+    assert.match(statusPayload.review_actions.proof_boundary_blocked.first.command, new RegExp(`atris task revise ${ref}`));
+    assert.equal(statusPayload.review_actions.human_accept_waiting.count, 0);
+    assert.equal(statusPayload.review_actions.human_accept_waiting.first, null);
+
+    const current = runCli([
+      'task', 'current',
+      '--goal-id', 'OBL-928',
+      '--review-state', 'proof-boundary-blocked',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(current.status, 0, current.stderr);
+    const currentPayload = JSON.parse(current.stdout);
+    assert.equal(currentPayload.current.selected_task_id, task.id);
+    assert.equal(currentPayload.current.selected_reason, 'review_proof_boundary_blocked');
+    assert.equal(currentPayload.current.next.key, 'proof_boundary_blocked');
+    assert.equal(currentPayload.current.next.reason, 'proof_boundary_blocked_requires_revision');
+    assert.match(currentPayload.current.next.command, new RegExp(`atris task revise ${ref}`));
+    assert.equal(currentPayload.current.next.human_accept_command, null);
+    assert.equal(currentPayload.current.review_state_counts.proof_boundary_blocked, 1);
+    assert.equal(currentPayload.current.review_state_counts.human_accept_waiting, 0);
+    assert.equal(currentPayload.current.review_state_counts.certified, 1);
+    assert.equal(currentPayload.current.review_state_actions.proof_boundary_blocked.id, task.id);
+    assert.equal(currentPayload.current.review_state_actions.proof_boundary_blocked.human_accept.enabled, false);
+    assert.equal(currentPayload.current.review_state_actions.proof_boundary_blocked.human_accept.command, null);
+    assert.equal(currentPayload.selected.commands.human_accept, undefined);
+
+    const waiting = runCli([
+      'task', 'current',
+      '--goal-id', 'OBL-928',
+      '--review-state', 'human-accept-waiting',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(waiting.status, 0, waiting.stderr);
+    assert.equal(JSON.parse(waiting.stdout).current.selected_task_id, null);
+
+    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(reviews.status, 0, reviews.stderr);
+    const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
+    assert.equal(reviewItem.id, task.id);
+    assert.equal(reviewItem.next_action, 'proof_boundary_blocked');
+    assert.equal(reviewItem.accept_command, null);
+    assert.equal(reviewItem.blocked_accept_reason, 'proof_unmerged_or_draft_pr_boundary');
+    assert.match(reviewItem.revise_command, new RegExp(`atris task revise ${ref}`));
+
+    const reviewText = runCli(['task', 'reviews'], { cwd: dir, env });
+    assert.equal(reviewText.status, 0, reviewText.stderr);
+    assert.match(reviewText.stdout, /accept: blocked \(proof_unmerged_or_draft_pr_boundary\)/);
+    assert.doesNotMatch(reviewText.stdout, new RegExp(`accept: atris task accept ${ref}`));
+
+    const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    const dryRunResult = JSON.parse(dryRun.stdout).results[0];
+    assert.equal(dryRunResult.action, 'skipped');
+    assert.equal(dryRunResult.reason, 'proof_unmerged_or_draft_pr_boundary');
+
+    const currentStep = runCli([
+      'task', 'current-step',
+      '--goal-id', 'OBL-928',
+      '--review-state', 'proof-boundary-blocked',
+      '--json',
+    ], { cwd: dir, env });
+    assert.notEqual(currentStep.status, 0);
+    assert.equal(JSON.parse(currentStep.stdout).reason, 'proof_boundary_blocked_requires_revision');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task serve continue-work creates scoped follow-up', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -10710,7 +10821,7 @@ test('task serve exposes a local task factory API', async () => {
 			    assert.equal(apiStatusCurrent.selected.commands.continue_work, undefined);
 			    assert.deepEqual(apiStatusCurrent.current.capabilities, apiStatusCurrent.queue.capabilities);
 			    assert.equal(apiStatusCurrent.current.capabilities.schema, 'atris.task_capabilities.v1');
-			    assert.deepEqual(apiStatusCurrent.current.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'human-accept-waiting', 'certified']);
+			    assert.deepEqual(apiStatusCurrent.current.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
 			    assert.equal(apiStatusCurrent.current.capabilities.current_step.lanes['needs-agent'].step_action, 'review_chat');
 			    assert.equal(apiStatusCurrent.current.capabilities.current_step.safety.claims_work, 'conditional');
 			    assert.equal(apiStatusCurrent.current.capabilities.current_step.stage_safety.plan.claims_work, true);
