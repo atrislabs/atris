@@ -5377,6 +5377,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
       action: 'current_step',
       projection_path: after.outPath,
       selected_task_id: current.selected_task_id,
+      selected_ref: current.selected_ref || null,
       selected_reason: current.selected_reason,
       scope: current.scope,
       before: current,
@@ -5412,6 +5413,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     action: 'current_step',
     projection_path: after.outPath,
     selected_task_id: current.selected_task_id,
+    selected_ref: current.selected_ref || null,
     selected_reason: current.selected_reason,
     scope: current.scope,
     before: current,
@@ -5448,13 +5450,16 @@ function cmdCurrentStep(args) {
       stepOptions,
     });
   } catch (error) {
+    const errorCurrent = error.current || null;
     if (wantsJson(args)) {
       printJson({
         ok: false,
         action: 'current_step',
         reason: error.reason || 'step_failed',
         detail: error.message,
-        current: error.current || null,
+        selected_task_id: errorCurrent ? errorCurrent.selected_task_id : null,
+        selected_ref: errorCurrent ? errorCurrent.selected_ref : null,
+        current: errorCurrent,
         page: error.page || null,
       });
     } else {
