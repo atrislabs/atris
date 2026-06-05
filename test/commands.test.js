@@ -6831,13 +6831,16 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(doing.status, 0, doing.stderr);
     const doingPayload = JSON.parse(doing.stdout);
     assert.equal(doingPayload.action, 'current_step');
+    assert.equal(doingPayload.selected_ref, scopedTask.display_id);
     assert.equal(doingPayload.before_current.scope.goal_id, 'OBL-928');
     assert.equal(doingPayload.before_current.selected_task_id, scopedTask.id);
+    assert.equal(doingPayload.before_current.selected_ref, scopedTask.display_id);
     assert.equal(doingPayload.before_current.selected_reason, 'plan_ready');
     assert.equal(doingPayload.step.step_action, 'doing');
     assert.equal(doingPayload.step.task.id, scopedTask.id);
     assert.equal(doingPayload.page.stage.current, 'do');
     assert.equal(doingPayload.after_current.selected_task_id, scopedTask.id);
+    assert.equal(doingPayload.after_current.selected_ref, scopedTask.display_id);
     assert.equal(doingPayload.after_current.selected_reason, 'claimed_by_owner');
     assert.equal(doingPayload.after.current.selected_task_id, scopedTask.id);
     assert.equal(doingPayload.after.page.stage.current, 'do');
@@ -6858,8 +6861,10 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(readyPayload.selected_task_id, scopedTask.id);
+    assert.equal(readyPayload.selected_ref, scopedTask.display_id);
     assert.equal(readyPayload.step.step_action, 'ready');
     assert.equal(readyPayload.current.selected_task_id, scopedTask.id);
+    assert.equal(readyPayload.current.selected_ref, scopedTask.display_id);
     assert.equal(readyPayload.current.next.key, 'review_chat');
     assert.equal(readyPayload.after_current.selected_task_id, scopedTask.id);
     assert.equal(readyPayload.after_current.next.key, 'review_chat');
@@ -6941,6 +6946,8 @@ test('task current-step advances the scoped current task one safe action', () =>
     const continueStepPayload = JSON.parse(continueStep.stdout);
     assert.equal(continueStepPayload.before_current.scope.review_state, 'continue-work');
     assert.equal(continueStepPayload.before_current.selected_task_id, continueTask.id);
+    assert.equal(continueStepPayload.selected_ref, continueTask.display_id);
+    assert.equal(continueStepPayload.before_current.selected_ref, continueTask.display_id);
     assert.equal(continueStepPayload.before_current.next.key, 'continue_work');
     assert.equal(continueStepPayload.step.step_action, 'continue_work');
     assert.equal(continueStepPayload.step.continue_work.action, 'continue_work');
@@ -6966,7 +6973,9 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.notEqual(waitingStep.status, 0);
     const waitingStepPayload = JSON.parse(waitingStep.stdout);
     assert.equal(waitingStepPayload.reason, 'agent_certified_waiting_human');
+    assert.equal(waitingStepPayload.selected_ref, waitingTask.display_id);
     assert.equal(waitingStepPayload.current.selected_task_id, waitingTask.id);
+    assert.equal(waitingStepPayload.current.selected_ref, waitingTask.display_id);
     assert.equal(waitingStepPayload.current.next.key, 'human_accept_waiting');
     assert.equal(waitingStepPayload.page.stage.next_action.command, null);
     assert.equal(waitingStepPayload.page.stage.next_action.api, null);
@@ -6995,7 +7004,9 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.notEqual(otherStep.status, 0);
     const otherPayload = JSON.parse(otherStep.stdout);
     assert.equal(otherPayload.reason, 'claimed_by_other');
+    assert.equal(otherPayload.selected_ref, otherTask.display_id);
     assert.equal(otherPayload.current.selected_task_id, otherTask.id);
+    assert.equal(otherPayload.current.selected_ref, otherTask.display_id);
     assert.equal(otherPayload.current.selected_reason, 'active_do_elsewhere');
     const otherShow = runCli(['task', 'show', otherTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(otherShow.status, 0, otherShow.stderr);
