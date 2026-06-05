@@ -1998,6 +1998,9 @@ function taskQueueCapabilities() {
         mutates_task_db: false,
         writes_projection: true,
         requires_task_db: true,
+        output_fields: {
+          identity: ['selected_task_id', 'selected_ref', 'selected_next_key'],
+        },
       },
       queue: {
         command: 'atris task queue --review-state <lane> --json',
@@ -2006,6 +2009,9 @@ function taskQueueCapabilities() {
         mutates_task_db: false,
         writes_projection: true,
         requires_task_db: true,
+        output_fields: {
+          identity: ['selected_task_id', 'selected_ref', 'selected_next_key'],
+        },
       },
     },
     filters: {
@@ -2369,6 +2375,8 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
   const acceptedLanes = standalone.filters.review_state.accepted || [];
   const currentStepLanes = standalone.current_step.lanes || {};
   const currentStepIdentityFields = standalone.current_step.output_fields?.identity || [];
+  const currentIdentityFields = standalone.surfaces.current.output_fields?.identity || [];
+  const queueIdentityFields = standalone.surfaces.queue.output_fields?.identity || [];
   const drainBehavior = reviewLaneDrainBehaviorConformance();
   const actBehavior = reviewLaneActBehaviorConformance();
   const loopBehavior = reviewLaneLoopBehaviorConformance();
@@ -2400,6 +2408,11 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
       'current_step_declares_identity_output_fields',
       ['selected_task_id', 'selected_ref', 'selected_next_key'].every(field => currentStepIdentityFields.includes(field)),
       { identity: currentStepIdentityFields }
+    ),
+    capabilityCheck(
+      'current_and_queue_declare_identity_output_fields',
+      ['selected_task_id', 'selected_ref', 'selected_next_key'].every(field => currentIdentityFields.includes(field) && queueIdentityFields.includes(field)),
+      { current: currentIdentityFields, queue: queueIdentityFields }
     ),
     capabilityCheck(
       'read_only_projection_semantics_declared',
