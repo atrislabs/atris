@@ -106,3 +106,34 @@ test('strict verify parser rejects path and npm config escapes', () => {
   assert.equal(parseVerifyCommand('node --check --require=/tmp/pwn.js').ok, false);
   assert.equal(parseVerifyCommand('node --check file:///tmp/pwn.js').ok, false);
 });
+
+test('strict verify parser allows bounded git worktree diff checks', () => {
+  const sibling = path.join(os.tmpdir(), 'sibling-worktree');
+  const parsed = parseVerifyCommand(`git -C ${sibling} diff --check origin/master^ origin/master`);
+  assert.deepEqual(parsed, {
+    ok: true,
+    argv: ['git', '-C', sibling, 'diff', '--check', 'origin/master^', 'origin/master'],
+  });
+  assert.deepEqual(parseVerifyCommand('git diff --check HEAD~1 HEAD'), {
+    ok: true,
+    argv: ['git', 'diff', '--check', 'HEAD~1', 'HEAD'],
+  });
+  assert.equal(parseVerifyCommand('git -C ../../outside diff --check').ok, false);
+  assert.equal(parseVerifyCommand('git -C /tmp/evil diff --check --output=/tmp/x').ok, false);
+});
+
+test('strict verify runtime blocks git -C outside the workspace parent', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-parent-'));
+  const workspace = path.join(parent, 'workspace');
+  const sibling = path.join(parent, 'sibling');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-outside-'));
+  fs.mkdirSync(workspace);
+  fs.mkdirSync(sibling);
+
+  const allowed = runVerifyCommand(`git -C ${sibling} diff --check`, workspace);
+  assert.notEqual(allowed.reason, 'verify_command_not_allowed');
+
+  const denied = runVerifyCommand(`git -C ${outside} diff --check`, workspace);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.reason, 'verify_command_not_allowed');
+});
