@@ -1187,13 +1187,17 @@ function taskReviewChatHandoff(task, { reviewer = 'codex-review', allowCertified
   const ref = taskRef(task);
   const actor = reviewActor(reviewer);
   const verificationFocus = taskReviewVerificationFocus(task);
+  const reviewHandoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+  const humanAcceptCommand = reviewHandoff && reviewHandoff.next_action === PROOF_BOUNDARY_BLOCKED_ACTION
+    ? null
+    : `atris task accept ${ref}`;
   return {
     schema: 'atris.task_review_chat.v1',
     command: `atris task review-chat ${ref} --as ${actor}`,
     codex_prompt: taskReviewSpecificCodexPrompt(task, verificationFocus, actor),
     pass_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific verifier commands passed and diff/proof inspected>" --verify "<safe verifier command>"`,
     revise_command: `atris task revise ${ref} --as ${actor} --note "<specific missing proof or required change>"`,
-    human_accept_command: `atris task accept ${ref}`,
+    human_accept_command: humanAcceptCommand,
     verification_focus: {
       objective: verificationFocus.objective,
       proof_claim: verificationFocus.proof_claim,
