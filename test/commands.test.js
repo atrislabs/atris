@@ -6538,7 +6538,7 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     const customReviewerContract = JSON.parse(customReviewerPage.stdout).page;
     assert.equal(customReviewerContract.stage.next_action.command, `atris task review-chat ${ref} --as alice-review`);
     assert.equal(customReviewerContract.review.verification_chat.command, `atris task review-chat ${ref} --as alice-review`);
-    assert.equal(customReviewerContract.review.verification_chat.pass_command, `atris task review ${ref} --reward 0 --as alice-review --proof "<specific verifier commands passed and diff/proof inspected>"`);
+    assert.equal(customReviewerContract.review.verification_chat.pass_command, `atris task review ${ref} --reward 0 --as alice-review --proof "<specific verifier commands passed and diff/proof inspected>" --verify "<safe verifier command>"`);
 
     const certify = runCli([
       'task', 'review', ref,
@@ -7481,7 +7481,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(reviewChatPayload.contract.verification_focus.proof_claim, 'typecheck passed and diff reviewed');
     assert.match(reviewChatPayload.contract.required_checks.join('\n'), /Find the concrete verifier command/);
     assert.match(reviewChatPayload.contract.required_checks.join('\n'), /Do not run task accept/);
-    assert.equal(reviewChatPayload.contract.pass_command, `atris task review ${ref} --reward 0 --as codex-review --proof "<specific verifier commands passed and diff/proof inspected>"`);
+    assert.equal(reviewChatPayload.contract.pass_command, `atris task review ${ref} --reward 0 --as codex-review --proof "<specific verifier commands passed and diff/proof inspected>" --verify "<safe verifier command>"`);
     assert.equal(reviewChatPayload.contract.revise_command, `atris task revise ${ref} --as codex-review --note "<specific missing proof or required change>"`);
     assert.match(reviewChatPayload.task.messages.at(-1).content, /TASK_REVIEW_CHAT/);
     assert.match(reviewChatPayload.task.messages.at(-1).content, /proof_claim: typecheck passed and diff reviewed/);
@@ -7489,10 +7489,12 @@ test('task ready holds work in review until human accept', () => {
     assert.match(reviewChatPayload.task.messages.at(-1).content, /files_to_inspect:/);
     assert.match(reviewChatPayload.task.messages.at(-1).content, /human_accept_xp: atris task accept/);
 
+    fs.writeFileSync(path.join(dir, 'review-verify.js'), 'const ok = true;\n', 'utf8');
     const prooflessReview = runCli([
       'task', 'review', ref,
       '--reward', '0',
       '--as', 'validator',
+      '--verify', 'node --check review-verify.js',
       '--json',
     ], { cwd: dir, env });
     assert.equal(prooflessReview.status, 0, prooflessReview.stderr);
@@ -7500,6 +7502,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_review_pass_count, 2);
     assert.equal(JSON.parse(prooflessReview.stdout).task.review.agent_certified, true);
     assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.agent_certified, true);
+    assert.equal(JSON.parse(prooflessReview.stdout).task.metadata.verify, 'node --check review-verify.js');
 
     const nextAfterReviewCertification = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(nextAfterReviewCertification.status, 0, nextAfterReviewCertification.stderr);
@@ -8545,6 +8548,26 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.match(strictText.stdout, /SKIPPED .*strict_verify_missing/);
     assert.match(strictText.stdout, /next_action=.*metadata\.verify/);
     assert.match(strictText.stdout, new RegExp(`review_chat=atris task review-chat ${ref} --as codex-review`));
+
+    fs.writeFileSync(path.join(dir, 'verify.js'), 'const ok = true;\n', 'utf8');
+    const verifyReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --check verify.js passed and diff inspected',
+      '--verify', 'node --check verify.js',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(verifyReview.status, 0, verifyReview.stderr);
+    assert.equal(JSON.parse(verifyReview.stdout).task.metadata.verify, 'node --check verify.js');
+
+    const strictVerifiedPreview = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify', '--json'], { cwd: dir, env });
+    assert.equal(strictVerifiedPreview.status, 0, strictVerifiedPreview.stderr);
+    const strictVerifiedPayload = JSON.parse(strictVerifiedPreview.stdout);
+    assert.equal(strictVerifiedPayload.summary.would_accept, 1);
+    assert.equal(strictVerifiedPayload.summary.skipped, 0);
+    assert.equal(strictVerifiedPayload.results[0].action, 'would_accept');
+    assert.equal(strictVerifiedPayload.results[0].reason, 'certified_strict_verify');
 
     const confirmed = runCli([
       'task', 'auto-accept-certified',
