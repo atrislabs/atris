@@ -5789,7 +5789,9 @@ function cmdAutoAcceptCertified(args) {
   console.log(`AUTO-ACCEPT CERTIFIED (${dryRun ? 'dry-run' : 'execute'})`);
   console.log(`${summary.accepted || summary.would_accept} accepted / ${summary.skipped} skipped / ${summary.failed} failed / ${summary.scanned} scanned`);
   for (const row of results) {
-    console.log(`${row.action.toUpperCase()} ${row.ref}: ${row.reason}${row.reward ? ` reward=${row.reward}` : ''}`);
+    const nextAction = row.next_action ? ` next_action=${row.next_action}` : '';
+    const reviewChat = row.review_chat_command ? ` review_chat=${row.review_chat_command}` : '';
+    console.log(`${row.action.toUpperCase()} ${row.ref}: ${row.reason}${row.reward ? ` reward=${row.reward}` : ''}${nextAction}${reviewChat}`);
   }
 }
 
