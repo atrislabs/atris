@@ -2029,6 +2029,9 @@ function taskQueueCapabilities() {
     },
     current_step: {
       api: { method: 'POST', path: '/api/tasks/current/step?review_state=<lane>' },
+      output_fields: {
+        identity: ['selected_task_id', 'selected_ref', 'selected_next_key'],
+      },
       safety: {
         read_only: false,
         claims_work: 'conditional',
@@ -2365,6 +2368,7 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
   });
   const acceptedLanes = standalone.filters.review_state.accepted || [];
   const currentStepLanes = standalone.current_step.lanes || {};
+  const currentStepIdentityFields = standalone.current_step.output_fields?.identity || [];
   const drainBehavior = reviewLaneDrainBehaviorConformance();
   const actBehavior = reviewLaneActBehaviorConformance();
   const loopBehavior = reviewLaneLoopBehaviorConformance();
@@ -2391,6 +2395,11 @@ function taskCapabilitiesCheckReport(taskDb, db, args = [], options = {}) {
         && standalone.current_step.safety.xp_after_human_accept === true
         && standalone.current_step.lanes['human-accept-waiting']
         && standalone.current_step.lanes['human-accept-waiting'].safe_for_agent === false
+    ),
+    capabilityCheck(
+      'current_step_declares_identity_output_fields',
+      ['selected_task_id', 'selected_ref', 'selected_next_key'].every(field => currentStepIdentityFields.includes(field)),
+      { identity: currentStepIdentityFields }
     ),
     capabilityCheck(
       'read_only_projection_semantics_declared',
