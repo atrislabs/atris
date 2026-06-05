@@ -95,6 +95,26 @@ test('rejects proof that names a closed unmerged PR boundary', () => {
   assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
 });
 
+test('rejects stale proof that uses a bare PR number reference', () => {
+  const proof = 'Verified #1600 remains OPEN/draft/CLEAN at head be8797f. git diff --check passed.';
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: proof },
+    review: { proof },
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
+});
+
+test('reports PR boundary before generic weak proof', () => {
+  const proof = 'Verified #1595 remains OPEN draft CLEAN for the canonical replacement.';
+  const result = evaluateAutoAccept(reviewTask({
+    metadata: { latest_agent_proof: proof },
+    review: { proof },
+  }));
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'proof_unmerged_or_draft_pr_boundary');
+});
+
 test('allows merged proof that explains the rejected PR boundary terms', () => {
   const proof = [
     'Merged PR #78 at origin/master commit 7944f271.',
