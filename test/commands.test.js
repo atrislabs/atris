@@ -4885,6 +4885,9 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(dryPayload.ok, true);
     assert.equal(dryPayload.dry_run, true);
     assert.equal(dryPayload.acted, false);
+    assert.equal(dryPayload.selected_task_id, continueTask.id);
+    assert.equal(dryPayload.selected_ref, continueRef);
+    assert.equal(dryPayload.selected_next_key, 'continue_work');
     assert.equal(dryPayload.decision.step_action, 'continue_work');
     assert.equal(dryPayload.safety.mutates_task_db, false);
     const afterDryRun = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
@@ -4928,6 +4931,8 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(blockedPayload.ok, false);
     assert.equal(blockedPayload.acted, false);
     assert.equal(blockedPayload.reason, 'human_accept_waiting_is_human_only');
+    assert.equal(blockedPayload.selected_ref, humanOnlyRef);
+    assert.equal(blockedPayload.selected_next_key, 'human_accept_waiting');
     assert.equal(blockedPayload.drain.next_action, 'human_accept_waiting');
     assert.equal(blockedPayload.drain.command, null);
     assert.equal(blockedPayload.drain.api, null);
