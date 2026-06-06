@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
@@ -243,6 +244,56 @@ function readJsonlRows(filePath) {
   return rows;
 }
 
+function parseGitWorktrees(text) {
+  const out = [];
+  let current = {};
+  for (const raw of `${text || ''}\n`.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      if (current.worktree) out.push(path.resolve(current.worktree));
+      current = {};
+      continue;
+    }
+    const idx = line.indexOf(' ');
+    if (idx === -1) {
+      current[line] = true;
+    } else {
+      current[line.slice(0, idx)] = line.slice(idx + 1);
+    }
+  }
+  return out;
+}
+
+function primaryWorktreeRoot(root) {
+  const result = spawnSync('git', ['worktree', 'list', '--porcelain'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return null;
+  const [primary] = parseGitWorktrees(result.stdout);
+  return primary || null;
+}
+
+function stateRowCount(stateDir) {
+  return collectStateFileStats(stateDir)
+    .reduce((sum, item) => sum + item.rows, 0);
+}
+
+function resolveStateRoots(root) {
+  const primary = primaryWorktreeRoot(root);
+  if (!primary || path.resolve(primary) === path.resolve(root)) return [root];
+
+  const primaryStateDir = path.join(primary, '.atris', 'state');
+  if (!fs.existsSync(primaryStateDir)) return [root];
+
+  return stateRowCount(primaryStateDir) > 0 ? [root, primary] : [root];
+}
+
+function resolveStateRoot(root) {
+  const roots = resolveStateRoots(root);
+  return roots[roots.length - 1] || root;
+}
+
 function countTodoItems(todoText) {
   const text = String(todoText || '');
   const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\s*$/m.test(text);
@@ -384,7 +435,9 @@ function isNextMoveScorecard(row) {
 
 function collectState(root) {
   const atrisDir = path.join(root, 'atris');
-  const stateDir = path.join(root, '.atris', 'state');
+  const stateRoot = resolveStateRoot(root);
+  const stateRoots = resolveStateRoots(root);
+  const stateDirs = stateRoots.map(item => path.join(item, '.atris', 'state'));
   const business = readJson(path.join(root, '.atris', 'business.json')) || {};
   const todoText = readText(path.join(atrisDir, 'TODO.md'));
   const mapText = readText(path.join(atrisDir, 'MAP.md'));
@@ -392,11 +445,11 @@ function collectState(root) {
   const wikiStatus = readText(path.join(atrisDir, 'wiki', 'STATUS.md'));
   const status = readText(path.join(atrisDir, 'STATUS.md'));
 
-  const stateFiles = collectStateFileStats(stateDir);
+  const stateFiles = stateDirs.flatMap(stateDir => collectStateFileStats(stateDir));
 
   const totalRows = stateFiles.reduce((sum, item) => sum + item.rows, 0);
   const validRows = stateFiles.reduce((sum, item) => sum + item.validRows, 0);
-  const latestScorecard = readJsonlRows(path.join(stateDir, 'scorecards.jsonl'))
+  const latestScorecard = stateDirs.flatMap(stateDir => readJsonlRows(path.join(stateDir, 'scorecards.jsonl')))
     .filter(isNextMoveScorecard)
     .sort((a, b) => scorecardTs(a).localeCompare(scorecardTs(b)))
     .pop() || null;
@@ -421,6 +474,8 @@ function collectState(root) {
     mapLineCount: mapText ? mapText.split('\n').length : 0,
     wikiPages: listMarkdown(root, 'atris/wiki', 20),
     stateFiles,
+    stateRoot,
+    stateRoots,
     loopHealth: buildLoopHealth(stateFiles),
     totalRows,
     validRows,
@@ -1027,14 +1082,18 @@ function latestTaskEpisodes(taskEpisodes) {
 
 function recordTaskEpisodeScorecards(options) {
   const root = options.root;
-  const stateDir = path.join(root, '.atris', 'state');
-  const taskEpisodesPath = path.join(stateDir, 'task_episodes.jsonl');
+  const stateRoot = resolveStateRoot(root);
+  const stateDir = path.join(stateRoot, '.atris', 'state');
+  const stateDirs = resolveStateRoots(root).map(item => path.join(item, '.atris', 'state'));
   const scorecardsPath = path.join(stateDir, 'scorecards.jsonl');
-  const workspace = readJson(path.join(root, '.atris', 'business.json')) || {};
-  const taskEpisodes = readJsonlRows(taskEpisodesPath)
+  const workspace =
+    readJson(path.join(stateRoot, '.atris', 'business.json')) ||
+    readJson(path.join(root, '.atris', 'business.json')) ||
+    {};
+  const taskEpisodes = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'task_episodes.jsonl')))
     .filter(row => row && row.schema === 'atris.task_episode.v1');
   const scoreableEpisodes = latestTaskEpisodes(taskEpisodes);
-  const existing = readJsonlRows(scorecardsPath);
+  const existing = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'scorecards.jsonl')));
   const seenEpisodeIds = new Set(existing
     .map(row => row.source_episode_id)
     .filter(Boolean));
@@ -1050,6 +1109,7 @@ function recordTaskEpisodeScorecards(options) {
   }
 
   return {
+    stateRoot,
     taskEpisodes: taskEpisodes.length,
     written: written.length,
     scorecards: written,
@@ -1057,11 +1117,11 @@ function recordTaskEpisodeScorecards(options) {
 }
 
 function verifyTaskEpisodeScorecards(root) {
-  const stateDir = path.join(root, '.atris', 'state');
-  const taskEpisodes = readJsonlRows(path.join(stateDir, 'task_episodes.jsonl'))
+  const stateDirs = resolveStateRoots(root).map(item => path.join(item, '.atris', 'state'));
+  const taskEpisodes = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'task_episodes.jsonl')))
     .filter(row => row && row.schema === 'atris.task_episode.v1');
   const scoreableEpisodes = latestTaskEpisodes(taskEpisodes);
-  const scorecards = readJsonlRows(path.join(stateDir, 'scorecards.jsonl'));
+  const scorecards = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'scorecards.jsonl')));
   const scorecardEpisodeIds = new Set(scorecards
     .map(row => row.source_episode_id)
     .filter(Boolean));
@@ -1121,13 +1181,17 @@ ${rows}`;
 }
 
 function renderStatus(state) {
+  const stateRootLine = state.stateRoot && path.resolve(state.stateRoot) !== path.resolve(state.root)
+    ? `- State root: ${state.stateRoot} (primary checkout)\n`
+    : '';
+
   return `# Atris Brain Status
 
 - Generated: ${state.generatedAt}
 - Workspace: ${state.name}
 - Slug: ${state.slug}
 - Root: ${state.root}
-- Now loaded: ${state.hasNow ? `yes (${state.nowHeading || 'no heading'})` : 'no'}
+${stateRootLine}- Now loaded: ${state.hasNow ? `yes (${state.nowHeading || 'no heading'})` : 'no'}
 - MAP loaded: ${state.hasMap ? `yes (${state.mapLineCount} lines)` : 'no'}
 - Wiki status loaded: ${state.hasWikiStatus ? 'yes' : 'no'}
 - TODO open estimate: ${state.todo.open}
@@ -1168,7 +1232,7 @@ Definitions: operator = current person or agent; move = one concrete high-levera
 
 function renderLedger(state) {
   const rows = state.stateFiles.map(item => {
-    const rel = path.relative(state.root, item.path).replace(/\\/g, '/');
+    const rel = path.relative(state.stateRoot || state.root, item.path).replace(/\\/g, '/');
     return `| \`${rel}\` | ${item.exists ? 'yes' : 'no'} | ${item.rows} | ${item.validRows} | ${item.latestTs || ''} |`;
   }).join('\n');
 
