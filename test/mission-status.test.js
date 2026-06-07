@@ -197,6 +197,49 @@ test('mission status rejects invalid filters before listing history', () => {
   }
 });
 
+test('always-on mission next action does not suggest completion flag', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'watchdog mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--always-on',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    assert.match(mission.next_action, new RegExp(`atris mission run ${mission.id}`));
+    assert.doesNotMatch(mission.next_action, /--complete-on-pass/);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.goal.mission_id, mission.id);
+    assert.equal(goalPayload.goal.next_command, 'atris mission run --due --max-ticks 1');
+
+    const heartbeat = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir });
+    assert.equal(heartbeat.status, 0, heartbeat.stderr || heartbeat.stdout);
+    const heartbeatPayload = JSON.parse(heartbeat.stdout);
+    assert.equal(heartbeatPayload.goal.mission_id, mission.id);
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, 'atris mission run --due --max-ticks 1');
+
+    const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.mission.status, 'ready');
+    assert.match(tickPayload.mission.next_action, new RegExp(`atris mission run ${mission.id}`));
+    assert.doesNotMatch(tickPayload.mission.next_action, /--complete-on-pass/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission status normalizes stale terminal next actions', () => {
   const dir = makeTempDir();
   try {
@@ -798,7 +841,7 @@ test('always-on missions become due again after cadence even after verifier pass
       'node -e "process.exit(0)"',
       '--always-on',
       '--cadence',
-      '1s',
+      '1h',
       '--json',
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
@@ -811,7 +854,15 @@ test('always-on missions become due again after cadence even after verifier pass
     assert.equal(firstPayload.mission.last_tick_index, 1);
     assert.equal(firstPayload.mission.verifier_result.passed, true);
 
-    const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + 2000);
+    const heartbeat = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir });
+    assert.equal(heartbeat.status, 0, heartbeat.stderr || heartbeat.stdout);
+    const heartbeatPayload = JSON.parse(heartbeat.stdout);
+    assert.equal(heartbeatPayload.goal.mission_id, firstPayload.mission.id);
+    assert.equal(heartbeatPayload.goal.reason, 'active');
+    assert.equal(heartbeatPayload.heartbeat.due, false);
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission tick ${firstPayload.mission.id} --verify --summary "<what changed>"`);
+
+    const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + (60 * 60 * 1000) + 1000);
     const dueAgain = selectDueMission(dir, afterCadence);
     assert.equal(dueAgain.id, firstPayload.mission.id);
 
