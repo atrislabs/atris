@@ -3212,6 +3212,113 @@ test('brain scorecard uses latest review episode per task', () => {
   }
 });
 
+test('brain scorecard uses primary checkout state from thin worktrees', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    seedBrainWorkspace(dir);
+    assert.equal(runGit(['init', '-q'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.email', 'test@example.com'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.name', 'Test User'], dir).status, 0);
+    assert.equal(runGit(['add', '.'], dir).status, 0);
+    assert.equal(runGit(['commit', '-qm', 'init'], dir).status, 0);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-brain-worktree`);
+    assert.equal(runGit(['worktree', 'add', '-q', '--detach', worktreePath, 'HEAD'], dir).status, 0);
+
+    const taskEpisodes = [
+      {
+        schema: 'atris.task_episode.v1',
+        episode_id: 'episode-done',
+        task_id: 'task-primary-state',
+        created_at: '2026-06-01T00:00:00.000Z',
+        state: { title: 'Score worktree brain state', tag: 'brain' },
+        action: { actor: 'researcher', type: 'done' },
+        reward: { value: 0, source: 'task_done' },
+        proof: 'initial proof',
+      },
+      {
+        schema: 'atris.task_episode.v1',
+        episode_id: 'episode-review',
+        task_id: 'task-primary-state',
+        created_at: '2026-06-01T00:01:00.000Z',
+        state: { title: 'Score worktree brain state', tag: 'brain' },
+        action: { actor: 'validator', type: 'review' },
+        reward: { value: 4, source: 'task_review' },
+        lesson: 'Thin worktrees should read the primary state ledger.',
+        proof: 'review proof',
+        next_task_suggestion: 'Use the primary state root for brain reward signals',
+      },
+    ];
+    fs.writeFileSync(
+      path.join(dir, '.atris', 'state', 'task_episodes.jsonl'),
+      taskEpisodes.map(row => JSON.stringify(row)).join('\n') + '\n',
+      'utf8'
+    );
+    const localStateDir = path.join(worktreePath, '.atris', 'state');
+    fs.mkdirSync(localStateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(localStateDir, 'task_episodes.jsonl'),
+      [
+        {
+          schema: 'atris.task_episode.v1',
+          episode_id: 'episode-local-duplicate',
+          task_id: 'task-primary-state',
+          created_at: '2026-06-01T00:02:00.000Z',
+          state: { title: 'Score worktree brain state', tag: 'brain' },
+          action: { actor: 'local', type: 'review' },
+          reward: { value: 1, source: 'local_duplicate' },
+          proof: 'stale local duplicate',
+        },
+        {
+          schema: 'atris.task_episode.v1',
+          episode_id: 'episode-local-review',
+          task_id: 'task-local-state',
+          created_at: '2026-06-01T00:03:00.000Z',
+          state: { title: 'Score local worktree-only state', tag: 'brain' },
+          action: { actor: 'local', type: 'review' },
+          reward: { value: 3, source: 'task_review' },
+          proof: 'local worktree proof',
+        },
+      ].map(row => JSON.stringify(row)).join('\n') + '\n',
+      'utf8'
+    );
+
+    const scorecard = runCli(['brain', 'scorecard', '--root', worktreePath, '--verify', '--json'], { cwd: worktreePath });
+    assert.equal(scorecard.status, 0, scorecard.stderr);
+    const payload = JSON.parse(scorecard.stdout);
+    assert.equal(fs.realpathSync(payload.stateRoot), fs.realpathSync(dir));
+    assert.equal(payload.taskEpisodes, 4);
+    assert.equal(payload.written, 2);
+    assert.equal(payload.scorecards[0].source_episode_id, 'episode-review');
+    assert.equal(payload.scorecards[0].reward, 4);
+    assert.equal(payload.scorecards[1].source_episode_id, 'episode-local-review');
+    assert.equal(payload.scorecards[1].reward, 3);
+    assert.equal(payload.scorecards[0].workspace, 'demo-lab');
+
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl')), true);
+    assert.equal(fs.existsSync(path.join(worktreePath, '.atris', 'state', 'scorecards.jsonl')), false);
+
+    const compile = runCli(['brain', 'compile', '--root', worktreePath, '--verify'], { cwd: worktreePath });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.match(compile.stdout, /State rows: 8 raw \/ 8 valid/);
+    assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
+
+    const status = fs.readFileSync(path.join(worktreePath, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, new RegExp(`State root: ${payload.stateRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(primary checkout\\)`));
+    const state = collectState(worktreePath);
+    assert.equal(fs.realpathSync(state.stateRoot), fs.realpathSync(dir));
+    assert.deepEqual(
+      state.stateRoots.map(item => fs.realpathSync(item)),
+      [fs.realpathSync(worktreePath), fs.realpathSync(dir)]
+    );
+    assert.equal(state.totalRows, 8);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile rejects meta scorecard next suggestions', () => {
   const dir = makeTempDir();
   try {
