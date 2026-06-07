@@ -30,7 +30,11 @@ const EARNING_MODEL = {
   schema: 'atris.agentxp_earning_model.v1',
   score_name: AGENT_XP_LABEL,
   primary_public_source: 'accepted_task_receipt',
-  public_rule: 'No accepted proof-backed task episodes means no AgentXP leaderboard movement.',
+  public_rule: 'No human-accepted proof-backed task episodes means no AgentXP leaderboard movement.',
+  policies: {
+    task_done_with_proof: 'Records proof for review and RL context; emits no Career XP receipt until human accept.',
+    task_accept: 'Human accept with proof and positive reward is the Career XP receipt boundary.',
+  },
   weights: [
     {
       id: 'accepted_task_receipt',
@@ -674,6 +678,7 @@ function buildAtrisActionSignalFromRows(rows = []) {
     included_in_total_agent_xp: false,
     public_leaderboard: false,
     role: 'rl_routing_only',
+    note: 'Task done/finish proof can count here as non-public action context; Career XP still requires human accept.',
   };
 }
 
