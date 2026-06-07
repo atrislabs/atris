@@ -133,8 +133,9 @@ The manager path:
 atris gm --player justin
 ```
 
-No proof, no AgentXP. Human accept/revise is the gate before XP can count on
-the local card or hosted leaderboard.
+No proof, no AgentXP. `atris task done --proof` records review/RL context, but
+only human `atris task accept` mints Career XP for the local card or hosted
+leaderboard.
 
 ## Business Owners
 
