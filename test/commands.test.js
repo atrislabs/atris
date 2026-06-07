@@ -6045,6 +6045,60 @@ test('task done with proof writes a reviewed proof event', () => {
   }
 });
 
+test('task review keeps verifier notes visible but gates training lessons on positive reward', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const zeroAdd = runCli(['task', 'add', 'Revise weak lesson capture', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(zeroAdd.status, 0, zeroAdd.stderr);
+    const zeroRef = JSON.parse(zeroAdd.stdout).task.display_id;
+
+    const zeroReview = runCli([
+      'task', 'review', zeroRef,
+      '--reward', '0',
+      '--lesson', 'Keep this verifier note visible',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(zeroReview.status, 0, zeroReview.stderr);
+    const zeroPayload = JSON.parse(zeroReview.stdout);
+    assert.equal(zeroPayload.task.review.lesson, 'Keep this verifier note visible');
+    assert.equal(zeroPayload.episode.reward.value, 0);
+    assert.equal(zeroPayload.episode.lesson, '');
+    assert.equal(zeroPayload.episode.rl.label, 'revised');
+    assert.equal(zeroPayload.episode.rl.has_lesson, false);
+
+    const negativeAdd = runCli(['task', 'add', 'Reject weak lesson capture', '--tag', 'rsi', '--json'], { cwd: dir, env });
+    assert.equal(negativeAdd.status, 0, negativeAdd.stderr);
+    const negativeRef = JSON.parse(negativeAdd.stdout).task.display_id;
+
+    const negativeReview = runCli([
+      'task', 'review', negativeRef,
+      '--reward', '-1',
+      '--lesson', 'Keep rejected-task rationale visible',
+      '--as', 'validator',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(negativeReview.status, 0, negativeReview.stderr);
+    const negativePayload = JSON.parse(negativeReview.stdout);
+    assert.equal(negativePayload.task.review.lesson, 'Keep rejected-task rationale visible');
+    assert.equal(negativePayload.episode.reward.value, -1);
+    assert.equal(negativePayload.episode.lesson, '');
+    assert.equal(negativePayload.episode.rl.label, 'rejected');
+    assert.equal(negativePayload.episode.rl.has_lesson, false);
+
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episodes = fs.readFileSync(episodePath, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(episodes.map((episode) => episode.lesson), ['', '']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task plan and do record an explicit headless stage contract', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
