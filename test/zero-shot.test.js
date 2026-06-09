@@ -74,8 +74,12 @@ test('zero-shot --json selects review-lane work without mutating projection file
     const packet = JSON.parse(res.stdout);
     assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(packet.decision.lane, 'review_lane');
+    assert.equal(packet.decision.horizon, 'immediate_review');
+    assert.equal(packet.decision.model_tier, 'validator');
+    assert.match(packet.decision.agent_directive, /Verify REV-1/);
     assert.equal(packet.decision.selected_ref, 'REV-1');
     assert.equal(packet.commands.next_command, 'atris task review-chat REV-1 --as codex-review');
+    assert.equal(packet.commands.first_command, packet.commands.next_command);
     assert.equal(packet.boundaries.no_task_mutation, true);
     assert.equal(fs.readFileSync(projectionPath, 'utf8'), before);
   } finally {
@@ -140,6 +144,45 @@ test('zero-shot does not treat product owner wording as an owner gate', () => {
   }
 });
 
+test('zero-shot routes long-horizon work to pro planning context', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'ARC-1', title: 'Plan architecture migration roadmap', status: 'claimed', tag: 'architecture' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'long_horizon');
+    assert.equal(packet.decision.horizon, 'long_term');
+    assert.equal(packet.decision.work_size, 'long');
+    assert.equal(packet.decision.model_tier, 'pro');
+    assert.match(packet.decision.agent_directive, /stronger model/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot routes owner-gated work to the human lane', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'OWN-2', title: 'Publish release after human approval', status: 'claimed', tag: 'release' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'owner_gate');
+    assert.equal(packet.decision.horizon, 'blocked');
+    assert.equal(packet.decision.model_tier, 'human');
+    assert.match(packet.decision.agent_directive, /Do not mutate or accept/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
@@ -177,6 +220,23 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('atris.md boot visualization points initialized workspaces at zero-shot', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['atris.md'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /WORKSPACE DETECTED/);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json/);
+    assert.match(res.stdout, /Ready\. Run 'atris zero-shot' to choose the next move\./);
   } finally {
     cleanupTempDir(dir);
   }

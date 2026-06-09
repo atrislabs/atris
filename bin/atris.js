@@ -1145,7 +1145,15 @@ function showWelcomeVisualization() {
     console.log('    └──────────────────────────────────────────┘');
   }
   console.log('');
-  console.log(`    Ready. Run 'atris plan' to start.`);
+  if (isInitialized) {
+    try {
+      const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('../commands/zero-shot');
+      console.log(`    ${renderZeroShotHint(buildZeroShotPacket({ cwd }))}`);
+    } catch {}
+    console.log(`    Ready. Run 'atris zero-shot' to choose the next move.`);
+  } else {
+    console.log(`    Ready. Run 'atris init' to create the workspace.`);
+  }
   console.log('');
 }
 

@@ -128,18 +128,67 @@ function nextCommand(task, lane) {
   return 'atris radar --json';
 }
 
+function laneDetails(task, lane, command) {
+  const ref = task && task.ref ? task.ref : 'the current workspace';
+  const details = {
+    review_lane: {
+      horizon: 'immediate_review',
+      work_size: 'quick',
+      model_tier: 'validator',
+      agent_directive: `Verify ${ref}; do not accept on behalf of the human.`,
+    },
+    fast_model_task: {
+      horizon: 'now',
+      work_size: 'quick',
+      model_tier: 'fast',
+      agent_directive: `Use a fast model for one bounded step on ${ref}, then hand off proof.`,
+    },
+    quick_task: {
+      horizon: 'now',
+      work_size: 'quick',
+      model_tier: 'fast',
+      agent_directive: `Do one scoped step on ${ref}, run the verifier, and leave proof.`,
+    },
+    long_horizon: {
+      horizon: 'long_term',
+      work_size: 'long',
+      model_tier: 'pro',
+      agent_directive: `Use a stronger model to plan ${ref} before execution; keep the next command as the first context step.`,
+    },
+    owner_gate: {
+      horizon: 'blocked',
+      work_size: 'owner_gate',
+      model_tier: 'human',
+      agent_directive: `Do not mutate or accept ${ref}; gather context and wait for the owner gate to clear.`,
+    },
+    no_current_task: {
+      horizon: 'orient',
+      work_size: 'context',
+      model_tier: 'fast',
+      agent_directive: 'Run the context check, then create or claim one bounded task from evidence.',
+    },
+  };
+  return {
+    ...(details[lane] || details.quick_task),
+    first_command: command,
+  };
+}
+
 function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
   const brain = collectBrain(root);
   const taskState = collectTasks(root);
   const selected = selectTask(taskState.tasks);
   const decision = classify(selected);
+  const command = nextCommand(selected, decision.lane);
+  const details = laneDetails(selected, decision.lane, command);
   return {
     schema: SCHEMA,
     generated_at: new Date().toISOString(),
     workspace_root: root,
     decision: {
       ...decision,
+      ...details,
       confidence: selected || brain.status_present ? 'medium' : 'low',
       selected_ref: selected ? selected.ref : null,
       selected_title: selected ? selected.title : null,
@@ -148,7 +197,8 @@ function buildPacket(options = {}) {
     brain,
     commands: {
       zero_shot_json: 'atris zero-shot --json',
-      next_command: nextCommand(selected, decision.lane),
+      next_command: command,
+      first_command: command,
       context_check: 'atris radar --json',
       task_current_step: 'atris task current-step --json',
       review_lane_drain: 'atris task review-lane-drain --json',

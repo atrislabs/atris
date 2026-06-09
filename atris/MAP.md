@@ -52,7 +52,7 @@ rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js comman
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
 rg "brainCommand|collectState|countStateRows|certifiedReviewTasks|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard, certified review checkpoint routing, and workspace-free help
-rg "zeroShotCommand|buildPacket|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: read-only brain/task packet for vague prompts and activation/brain hints
+rg "zeroShotCommand|buildPacket|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'|showWelcomeVisualization" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: read-only brain/task packet for vague prompts, boot visualization, and activation/brain hints
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport|showLoopHelp|loop --help" bin/atris.js commands/loop.js test/commands.test.js # Wiki upkeep loop + non-mutating help
@@ -123,6 +123,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 **Purpose:** Gives any agent or operator a read-only next-move packet when the prompt is vague or empty.
 
 - **Entry point:** `bin/atris.js` routes `zero-shot` and prints a 0-shot hint on bare `atris`
+- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris zero-shot`
 - **Implementation:** `commands/zero-shot.js`
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route
 - **Brain activation:** `commands/brain.js` includes the 0-shot line and JSON packet in `atris brain activate`
