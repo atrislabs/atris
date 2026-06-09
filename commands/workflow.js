@@ -63,32 +63,101 @@ function confidenceGatePrompt(stage) {
   ].join('\n');
 }
 
-function printAtris2Result(response) {
-  if (!response || !Array.isArray(response.result)) {
-    console.log(JSON.stringify(response, null, 2));
-    return;
-  }
-
-  let wroteText = false;
-  for (const event of response.result) {
-    if (event && event.type === 'text' && event.content) {
-      process.stdout.write(event.content);
-      wroteText = true;
-    } else if (event && event.type === 'assistant' && Array.isArray(event.content)) {
-      for (const block of event.content) {
-        if (block && block.type === 'text' && block.text) {
-          process.stdout.write(block.text);
-          wroteText = true;
-        }
+function atris2TurnRequest(payload) {
+  const http = require('http');
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(payload);
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: '/api/atris2/turn',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        // Local-desktop auth: the backend treats localhost requests with a
+        // localhost Origin as the free local-desktop user.
+        Origin: 'http://localhost:8000'
       }
-    }
-  }
+    }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          let detail = data;
+          try { detail = JSON.parse(data).detail || data; } catch (e) { /* raw body */ }
+          const err = new Error(`HTTP ${res.statusCode}: ${detail}`.slice(0, 400));
+          err.statusCode = res.statusCode;
+          reject(err);
+        });
+        return;
+      }
 
-  if (wroteText) {
-    console.log('');
-  } else {
-    console.log(JSON.stringify(response.result, null, 2));
-  }
+      // SSE stream: print text deltas live, surface tool calls, capture result.
+      let buffer = '';
+      let finalResult = null;
+      let streamError = null;
+      let wroteText = false;
+      let idleTimer = null;
+      const IDLE_MS = 120000;
+      const resetIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          req.destroy();
+          reject(new Error(`Stream stalled: no events for ${IDLE_MS / 1000}s`));
+        }, IDLE_MS);
+      };
+      resetIdle();
+
+      const handleEvent = (event) => {
+        if (!event || typeof event !== 'object') return;
+        if (event.type === 'text_delta' && event.content) {
+          process.stdout.write(event.content);
+          wroteText = true;
+        } else if (event.type === 'tool_call') {
+          const name = event.tool || (event.input && event.input.tool) || 'tool';
+          console.log(`\n⚙ ${name}...`);
+        } else if (event.type === 'error') {
+          streamError = event.error || 'Atris 2 returned an error.';
+        } else if (event.type === 'result' && typeof event.result === 'string') {
+          finalResult = event.result;
+        }
+      };
+
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        resetIdle();
+        buffer += chunk;
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              handleEvent(JSON.parse(line.slice(6)));
+            } catch (e) { /* ignore malformed frame */ }
+          }
+        }
+      });
+      res.on('end', () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        if (streamError) {
+          reject(new Error(streamError));
+          return;
+        }
+        resolve({ finalResult, wroteText });
+      });
+      res.on('error', (err) => {
+        if (idleTimer) clearTimeout(idleTimer);
+        reject(err);
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
 }
 
 async function runAtris2Local(userInput, atris2Mode) {
@@ -105,59 +174,31 @@ async function runAtris2Local(userInput, atris2Mode) {
   console.log(`Running: ${actualCommand}`);
   console.log('');
 
+  const payload = {
+    message: actualCommand,
+    workspace_path: process.cwd(),
+    model: `atris:${atris2Mode}`
+  };
+
   try {
-    const http = require('http');
-    const response = await new Promise((resolve, reject) => {
-      const postData = JSON.stringify({
-        message: actualCommand,
-        workspace_path: process.cwd(),
-        model: `atris-2-${atris2Mode}`
-      });
-
-      const options = {
-        hostname: '127.0.0.1',
-        port: 8000,
-        path: '/api/agent-sdk/fast',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData)
-        }
-      };
-
-      const req = http.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (res.statusCode < 200 || res.statusCode >= 300) {
-              reject(new Error(parsed.detail || parsed.error || `HTTP ${res.statusCode}`));
-              return;
-            }
-            resolve(parsed);
-          } catch (e) {
-            reject(new Error(`Failed to parse response: ${data}`));
-          }
-        });
-      });
-
-      req.on('error', reject);
-      const timeoutMs = atris2Mode === 'pro' ? 30000 : 10000;
-      req.setTimeout(timeoutMs, () => {
-        req.destroy();
-        reject(new Error(`Request timeout after ${timeoutMs / 1000}s`));
-      });
-      req.write(postData);
-      req.end();
-    });
-
-    if (response.error) {
-      throw new Error(response.error);
+    let outcome;
+    try {
+      outcome = await atris2TurnRequest(payload);
+    } catch (error) {
+      // Backends without local workspace access (prod config) reject the path;
+      // retry the same prompt as plain cloud chat.
+      if (error.statusCode === 403 && /workspace/i.test(error.message)) {
+        outcome = await atris2TurnRequest({ ...payload, workspace_path: null });
+      } else {
+        throw error;
+      }
     }
 
+    if (!outcome.wroteText && outcome.finalResult) {
+      process.stdout.write(outcome.finalResult);
+    }
+    console.log('');
     console.log(`✅ Atris 2 ${atris2Mode} completed`);
-    printAtris2Result(response);
   } catch (error) {
     console.error(`✗ Error: ${error.message}`);
     console.error(`Atris 2 ${atris2Mode} failed before completion.`);
