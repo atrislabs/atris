@@ -289,9 +289,10 @@ function showHelp() {
   console.log('');
   console.log('Quick Start:');
   console.log('');
-  console.log('  1. atris                  Open a persistent AI computer for this workspace');
-  console.log('  2. Describe what you want run, built, researched, or validated');
-  console.log('  3. Atris acts with context, memory, tools, and a review loop');
+  console.log('  1. atris zero-shot       Pick the next safe move when you do not know what to prompt');
+  console.log('  2. atris                 Open a persistent AI computer for this workspace');
+  console.log('  3. Describe what you want run, built, researched, or validated');
+  console.log('  4. Atris acts with context, memory, tools, and a review loop');
   console.log('');
   console.log('Common invocations:');
   console.log('  atris init');
@@ -447,7 +448,7 @@ function showHelp() {
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
   console.log('');
-  console.log('💡 Tip: Just run "atris" to get started');
+  console.log('💡 Tip: If you are unsure, run "atris zero-shot"');
   console.log('');
 }
 

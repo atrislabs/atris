@@ -237,8 +237,11 @@ function renderHelp() {
   return [
     'Usage: atris zero-shot [--json]',
     '',
-    'Print the next safe move when the operator gives no prompt.',
-    'Reads atris/brain/STATUS.md and .atris/state/tasks.projection.json without writing state.',
+    'Use when you do not know what to prompt next.',
+    'Selects one read-only lane: quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
+    'Human output shows the first command to run.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, and safety boundaries.',
+    'Reads atris/brain/STATUS.md and .atris/state/tasks.projection.json without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }
 

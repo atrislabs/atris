@@ -189,7 +189,24 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     const res = runCli(['zero-shot', '--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Usage: atris zero-shot/);
+    assert.match(res.stdout, /do not know what to prompt/);
+    assert.match(res.stdout, /first_command/);
+    assert.match(res.stdout, /owner_gate/);
+    assert.match(res.stdout, /without writing state/);
     assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('top-level help advertises zero-shot for uncertain starts', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /atris zero-shot\s+Pick the next safe move/);
+    assert.match(res.stdout, /do not know what to prompt/);
+    assert.match(res.stdout, /If you are unsure, run "atris zero-shot"/);
   } finally {
     cleanupTempDir(dir);
   }
