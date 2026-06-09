@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo, getTeamActivity } = require('../lib/todo');
+const { buildPacket } = require('./zero-shot');
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -76,8 +77,41 @@ function readEndgameMeta(todoFile) {
   return { slug, horizon };
 }
 
+function zeroShotStatus(root = process.cwd()) {
+  try {
+    const packet = buildPacket({ cwd: root });
+    const decision = packet.decision || {};
+    const commands = packet.commands || {};
+    return {
+      lane: decision.lane || 'unknown',
+      selected_ref: decision.selected_ref || null,
+      selected_title: decision.selected_title || null,
+      model_tier: decision.model_tier || null,
+      first_command: commands.first_command || decision.first_command || 'atris zero-shot --prompt',
+      prompt_command: commands.zero_shot_prompt || 'atris zero-shot --prompt',
+      json_command: commands.zero_shot_json || 'atris zero-shot --json',
+    };
+  } catch {
+    return {
+      lane: 'unavailable',
+      selected_ref: null,
+      selected_title: null,
+      model_tier: null,
+      first_command: 'atris zero-shot --prompt',
+      prompt_command: 'atris zero-shot --prompt',
+      json_command: 'atris zero-shot --json',
+    };
+  }
+}
+
+function zeroShotStatusText(zeroShot) {
+  const focus = zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : '';
+  return `${zeroShot.lane}${focus} -> ${zeroShot.first_command}`;
+}
+
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
-  const targetDir = path.join(process.cwd(), 'atris');
+  const root = process.cwd();
+  const targetDir = path.join(root, 'atris');
 
   if (!fs.existsSync(targetDir)) {
     if (jsonMode) {
@@ -155,6 +189,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Get team activity
   const teamActivity = getTeamActivity(targetDir);
+  const zeroShot = zeroShotStatus(root);
 
   // JSON mode — structured output for scripting
   if (jsonMode) {
@@ -167,6 +202,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
       completions,
       lessons: lessonsCount,
       team: teamActivity,
+      zero_shot: zeroShot,
     };
     console.log(JSON.stringify(output, null, 2));
     return;
@@ -174,7 +210,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''}`);
     return;
   }
 
@@ -197,6 +233,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     where.push(`There ${verb} ${ipCount} ${ipWord} in progress, ${bkCount} queued, and ${cpCount} completed items still sitting in TODO.`);
 
     const queueParts = [];
+    queueParts.push(`0-shot: ${zeroShotStatusText(zeroShot)}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
     } else {
@@ -335,6 +372,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   o(`└─${'─'.repeat(W)}─┘`);
   o('');
   o('  plan → do → review    (or: atris log to add ideas)');
+  o(`  0-shot → ${zeroShotStatusText(zeroShot)}`);
   o('');
 }
 
@@ -350,5 +388,6 @@ function formatDateShort(dateStr) {
 }
 
 module.exports = {
+  zeroShotStatus,
   statusAtris
 };

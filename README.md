@@ -99,6 +99,7 @@ Use `atris zero-shot --check` when an ambient agent needs to know whether the la
 Task commands that refresh `.atris/state/tasks.projection.json` also refresh the latest 0-shot state, so the route follows task queue changes.
 Mission and Codex goal commands refresh it too, so long-running work can take over the next move when it becomes due.
 `atris radar` also shows the current computed 0-shot route and durable prompt freshness status beside the live task, mission, worktree, and agent summary.
+`atris status`, `atris status --quick`, and `atris status --json` include the current 0-shot route and first command beside the ordinary workspace health summary.
 Generated `atris/now.md` includes the current 0-shot route and first command, so the first context file an agent reads has the same next move.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
@@ -208,7 +209,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris run` | Auto-chain `plan -> do -> review` |
 | `atris autopilot` | Guided loop with approvals |
 | `atris log` | Add inbox items to today's journal |
-| `atris status` | Show active work and completions |
+| `atris status` | Show active work, completions, and current 0-shot route |
 | `atris task` | Durable local task state with claims, dialogue, review episodes, JSON export, TODO import, TODO render, board, and sync dry-run |
 | `atris play` | Enter the AgentXP player loop for one proof-backed mission |
 | `atris gm` | Enter AgentXP General Manager mode for player missions and review queues |

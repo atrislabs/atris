@@ -35,7 +35,7 @@ rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)
 rg "function reviewAtris" commands/workflow.js  # Review command: default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
-rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
+rg "statusAtris|zeroShotStatus|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/status.test.js test/commands.test.js # Status command, current 0-shot route, and workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
 rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|buildAgentXpSyncPacket|syncAgentXp|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # AgentXP command: remote graph, local status/collect, all-workspace profile, session capsule, and hosted leaderboard sync packet/upload
 rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js test/gm.test.js  # AgentXP GM mode: manager/player identity, starter mission seeding, review queue, and global sync handoff
@@ -135,6 +135,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
 - **Freshness check:** `atris zero-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route plus durable prompt freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
+- **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route and first command so ordinary health checks show the next safe move
 - **Now front door:** generated `atris/now.md` includes the current 0-shot route and first command so agents loading the first context file can start from the selected lane
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
@@ -500,26 +501,29 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 ### Feature: System Status (`atris status`)
 
-**Purpose:** Quick visibility into system state - supports parallel work
+**Purpose:** Quick visibility into system state and the current 0-shot next move.
 
-- **Entry point:** `commands/status.js:79-334` (statusAtris function)
+- **Entry point:** `commands/status.js` (`statusAtris` function)
 - **Help:** `bin/atris.js:497-510` (`showStatusHelp`) and `bin/atris.js:1455-1460` short-circuit `status --help` before workspace or business-status reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
+- **0-shot regression:** `test/status.test.js` covers `status`, `status --quick`, and `status --json` exposing the computed route
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
+- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only and falls back to `atris zero-shot --prompt` if route collection is unavailable
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
 - Today's journal Inbox (pending ideas, first 3)
 - Today's journal Completed (recent completions, last 3)
+- `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json` through the 0-shot packet builder
 - **Output:**
-- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`)
-- `--verbose` / `-v`: Legacy visual task board
-- `--quick` / `-q`: One-line emoji summary
-- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
+- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`) with `0-shot: <lane> <ref> -> <first_command>`
+- `--verbose` / `-v`: Legacy visual task board with 0-shot footer
+- `--quick` / `-q`: One-line emoji summary with 0-shot lane/ref
+- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team, zero_shot)
 - **Routing:** `bin/atris.js:1484-1488` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
-- **Value:** Parallel work visibility + machine-readable output for scripting
+- **Value:** Parallel work visibility + machine-readable output for scripting + next safe move for uncertain agents
 
-**Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
+**Search:** `rg "statusAtris|zeroShotStatus|showStatusHelp|status surfaces the current zero-shot route|status and analytics --help" bin/atris.js commands/status.js test/status.test.js test/commands.test.js`
 
 ### Feature: Workspace Cleanup (`atris clean`)
 
