@@ -31,26 +31,24 @@ The inference is Claude Code (or whatever model the backend uses). The environme
 
 ## On invoke
 
-1. Read `~/.atris/credentials.json` for auth token
-2. Read `.atris/business.json` for the API base URL (or default to `http://localhost:8000`)
-3. Call `POST /api/improve` with:
-   ```json
-   {
-     "workspace": "<current working directory>",
-     "mode": "full",
-     "model": "sonnet"
-   }
-   ```
-4. Wait for response (may take 1-5 minutes)
-5. On success:
-   - Show what shipped (task name, files changed, verify result)
-   - Show the reward score
-   - Write scorecard to `.atris/presidio/scorecards.md`
-   - Append tick to today's journal
-6. On failure:
-   - Show the error
-   - Write a lesson to `atris/lessons.md`
-   - Do not write a scorecard
+Run the CLI command — it does the whole tick (auth, the credit-metered call, scorecard, fallback):
+
+```bash
+atris improve            # one full tick: plan → build → verify → score (deducts credits)
+atris improve plan       # show the plan only, change nothing
+atris improve --json     # machine-readable result (this is what the member loop consumes)
+atris improve --no-fallback   # fail loudly instead of running a local tick when the backend is down
+```
+
+Under the hood `atris improve` (`commands/improve.js`):
+
+1. Loads the auth token via `utils/auth.loadCredentials`
+2. `POST /api/improve { workspace, mode, model }` via `utils/api.apiRequestJson`
+3. The backend plans, builds, runs the verify command, scores it, and **deducts Atris credits per successful tick** (`bill_tick`)
+4. Writes a per-tick scorecard row to `.atris/state/scorecards.jsonl` (the receipt the brain ledger counts)
+5. Falls back to a local autopilot tick **only** when you are not logged in or the backend is unreachable — a real error (insufficient credits, server error) is reported, never silently retried
+
+The full-mode response does not echo `credits_deducted` (credits are still billed server-side), so the CLI shows "billed server-side" when the count is absent. To call the endpoint directly instead of the command, `POST /api/improve` with `{ workspace, mode, model }`.
 
 ## Modes
 

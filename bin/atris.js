@@ -118,15 +118,6 @@ const isBusinessSyncSafetyCommand = command === 'sync'
     || firstCommandArg === 'resolve'
   );
 
-// Keep APP.md app-pack operations independent from the heavier workspace boot
-// path so `atris apps --json` stays machine-readable for agents.
-if (command === 'apps') {
-  const subcommand = process.argv[3];
-  const args = process.argv.slice(4);
-  require('../commands/apps').appsCommand(subcommand, ...args);
-  process.exit(0);
-}
-
 // Auto-sync skills only for commands that modify workspace state
 if (['init', 'update', 'upgrade'].includes(command) || (command === 'sync' && !isBusinessSyncSafetyCommand)) {
   try {
@@ -356,6 +347,7 @@ function showHelp() {
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
+  console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('');
@@ -492,14 +484,18 @@ function showDoHelp() {
 
 function showReviewHelp() {
   console.log('');
-  console.log('Usage: atris review [--execute] [--full]');
+  console.log('Usage: atris review [--limit N|--all|--json] [--full|--execute]');
   console.log('');
   console.log('Description:');
-  console.log('  Activate the Validator agent to verify recent changes.');
-  console.log('  Reads TODO.md, MAP.md, and today\'s journal, then prints a validation');
-  console.log('  checklist (and, in agent mode, runs tests and updates docs).');
+  console.log('  Show the certified Review queue: proof-ready work waiting for');
+  console.log('  human accept or revise. Human accept is the AgentXP gate.');
+  console.log('  Use --full/--verbose for the legacy Validator prompt.');
   console.log('');
   console.log('Options:');
+  console.log('  --limit N   Show at most N certified review rows.');
+  console.log('  --all       Show all certified review rows.');
+  console.log('  --json      Emit the task-backed review queue as JSON.');
+  console.log('  --group-by  Group certified rows by tag, owner, or source.');
   console.log('  --execute   Run in agent mode via Atris cloud (requires login + agent).');
   console.log('  --full      Print full spec/context dumps (verbose copy/paste).');
   console.log('  --verbose   Alias for --full.');
@@ -770,7 +766,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'xp', 'play', 'gm', 'x',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
 
@@ -1186,6 +1182,11 @@ if (command === 'init') {
   // AEO: AI Engine Optimization — credit-metered citation drafting against the customer workspace.
   Promise.resolve(require('../commands/aeo').run(process.argv.slice(3)))
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'improve') {
+  // Improve: one paid RL tick via POST /api/improve (deducts credits), local autopilot fallback.
+  Promise.resolve(require('../commands/improve').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
   Promise.resolve()
@@ -1610,6 +1611,14 @@ if (command === 'init') {
   }
   const { integrationsStatus } = require('../commands/integrations');
   integrationsStatus()
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'apps') {
+  // Keep APP.md app-pack operations independent from the heavier workspace boot
+  // path so `atris apps --json` stays machine-readable for agents.
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  Promise.resolve(require('../commands/apps').appsCommand(subcommand, ...args))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'learn') {

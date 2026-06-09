@@ -2,7 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 const NOW_PATH = path.join('atris', 'now.md');
+const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
+const CAREER_XP_RECEIPTS_PATH = path.join('.atris', 'state', 'career_xp_receipts.jsonl');
 const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
+const TASK_RECEIPT_EVENTS = new Set(['proof_ready', 'reviewed', 'completed']);
 
 function formatLocalDate(date = new Date()) {
   const year = String(date.getFullYear());
@@ -115,6 +118,87 @@ function countJournalCompletedReceipts(filePath) {
   return countMatches(filePath, /^-\s+\*\*C\d+:/gm);
 }
 
+function readJsonlRows(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, 'utf8')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function localDateKey(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatLocalDate(date);
+}
+
+function normalizeRoot(value) {
+  if (!value) return null;
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return path.resolve(String(value));
+  }
+}
+
+function rowMatchesWorkspace(rowRoot, root) {
+  if (!rowRoot) return true;
+  return normalizeRoot(rowRoot) === normalizeRoot(root);
+}
+
+function taskReceiptProof(row) {
+  return String(
+    row?.proof
+    || row?.proof_ref
+    || row?.review?.proof
+    || row?.state?.metadata?.latest_agent_proof
+    || '',
+  ).trim();
+}
+
+function taskReceiptKey(row, fallback) {
+  const episodeId = row?.episode_id || row?.source_episode_id;
+  if (episodeId) return `episode:${episodeId}`;
+  if (row?.receipt_id) return `receipt:${row.receipt_id}`;
+  if (row?.task_id || row?.source_task_id) return `task:${row.task_id || row.source_task_id}:${fallback}`;
+  return `row:${fallback}`;
+}
+
+function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
+  const targetDay = formatLocalDate(date);
+  const stateDir = path.join(root, '.atris', 'state');
+  const seen = new Set();
+
+  for (const row of readJsonlRows(path.join(stateDir, 'task_episodes.jsonl'))) {
+    if (localDateKey(row?.created_at) !== targetDay) continue;
+    if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
+    if (!taskReceiptProof(row)) continue;
+    const eventType = String(row?.action?.event_type || '').toLowerCase();
+    if (eventType && !TASK_RECEIPT_EVENTS.has(eventType)) continue;
+    seen.add(taskReceiptKey(row, seen.size));
+  }
+
+  for (const row of readJsonlRows(path.join(stateDir, 'career_xp_receipts.jsonl'))) {
+    if (localDateKey(row?.accepted_at || row?.created_at || row?.ts) !== targetDay) continue;
+    if (!rowMatchesWorkspace(row?.workspace_root, root)) continue;
+    if (!taskReceiptProof(row)) continue;
+    const source = String(row?.source_type || row?.receipt_id || row?.source || '').toLowerCase();
+    if (!source.includes('task')) continue;
+    seen.add(taskReceiptKey(row, seen.size));
+  }
+
+  return seen.size;
+}
+
 function currentJournalPath(root = process.cwd()) {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -129,7 +213,8 @@ function renderDefaultNow(root = process.cwd()) {
   const journalPath = currentJournalPath(root);
   const openTodoCount = countOpenWorkItems(root, todoPath);
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
-  const completedCount = countJournalCompletedReceipts(journalPath);
+  const taskReceiptCount = countTaskReceiptsToday(root);
+  const completedCount = taskReceiptCount || countJournalCompletedReceipts(journalPath);
   const generated = todayIso();
 
   return `# now
@@ -330,11 +415,14 @@ function nowAtris(args = process.argv.slice(3), root = process.cwd()) {
 
 module.exports = {
   NOW_PATH,
+  TASK_EPISODES_PATH,
+  CAREER_XP_RECEIPTS_PATH,
   ensureNowFile,
   formatLocalDate,
   countJournalCompletedReceipts,
   countOpenWorkItems,
   countOpenTodoItems,
+  countTaskReceiptsToday,
   findChildWorkspaces,
   isGeneratedNowFile,
   nowAtris,
