@@ -74,7 +74,7 @@ function normalizeTask(task) {
 function collectTasks(root) {
   const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json')) || {};
   const tasks = Array.isArray(projection.tasks) ? projection.tasks.map(normalizeTask).filter(Boolean) : [];
-  const counts = { total: tasks.length, open: 0, claimed: 0, review: 0, blocked: 0, done: 0 };
+  const counts = { total: tasks.length, open: 0, claimed: 0, review: 0, blocked: 0, failed: 0, done: 0 };
   for (const task of tasks) {
     if (Object.prototype.hasOwnProperty.call(counts, task.status)) counts[task.status] += 1;
   }
@@ -144,6 +144,7 @@ function selectTask(tasks) {
   const active = tasks.filter(task => !['done', 'accepted', 'complete', 'completed'].includes(task.status));
   return active.find(task => task.status === 'review')
     || active.find(task => task.status === 'blocked')
+    || active.find(task => task.status === 'failed')
     || active.find(task => task.status === 'claimed')
     || active.find(task => task.status === 'open')
     || null;
@@ -183,6 +184,9 @@ function classify(task) {
   if (task.status === 'blocked' || /human accept|human approval|owner approval|owner gate|approval|credential|secret|billing|customer approval|external send|accept gate|merge approval|publish approval|notar/i.test(text)) {
     return { lane: 'owner_gate', urgency: 'blocked', model: 'human', reason: `${task.ref} appears owner-gated or blocked.` };
   }
+  if (task.status === 'failed') {
+    return { lane: 'recovery_lane', urgency: 'recover', model: 'pro', reason: `${task.ref} failed and needs recovery context before retrying.` };
+  }
   if (/mission|horizon|architecture|multi[- ]project|strategy|migration|release|launch|roadmap|endgame|company/i.test(text)) {
     return { lane: 'long_horizon', urgency: 'plan', model: 'pro', reason: `${task.ref} needs broader planning context before execution.` };
   }
@@ -204,6 +208,7 @@ function nextCommand(task, lane) {
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
   if (lane === 'long_horizon' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
   if (lane === 'owner_gate' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
+  if (lane === 'recovery_lane' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
   if (lane === 'fast_model_task' || lane === 'quick_task') {
     return task && task.tag
       ? `atris task current-step --tag ${shellToken(task.tag)} --json`
@@ -256,6 +261,12 @@ function laneDetails(task, lane, command) {
       work_size: 'owner_gate',
       model_tier: 'human',
       agent_directive: `Do not mutate or accept ${ref}; gather context and wait for the owner gate to clear.`,
+    },
+    recovery_lane: {
+      horizon: 'now',
+      work_size: 'recovery',
+      model_tier: 'pro',
+      agent_directive: `Inspect failed task ${ref}; identify the recovery path before retrying or revising.`,
     },
     no_current_task: {
       horizon: 'orient',
@@ -346,7 +357,7 @@ function renderPacket(packet) {
     `focus: ${selected}`,
     `why: ${packet.decision.reason}`,
     `run: ${packet.commands.next_command}`,
-    `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked`,
+    `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
@@ -364,7 +375,7 @@ function renderHelp() {
     'Usage: atris zero-shot [--json]',
     '',
     'Use when you do not know what to prompt next.',
-    'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
+    'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, and safety boundaries.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',

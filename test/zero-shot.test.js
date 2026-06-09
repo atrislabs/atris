@@ -355,6 +355,28 @@ test('zero-shot surfaces blocked work before ordinary claimed work', () => {
   }
 });
 
+test('zero-shot surfaces failed work for recovery', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'FAST-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      { display_id: 'FAIL-1', title: 'Fix failing release gate', status: 'failed', tag: 'release' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'recovery_lane');
+    assert.equal(packet.decision.selected_ref, 'FAIL-1');
+    assert.equal(packet.decision.work_size, 'recovery');
+    assert.equal(packet.queue.failed, 1);
+    assert.equal(packet.commands.first_command, 'atris task page FAIL-1 --json');
+    assert.match(packet.decision.agent_directive, /Inspect failed task FAIL-1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
@@ -365,6 +387,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
+    assert.match(res.stdout, /recovery_lane/);
     assert.match(res.stdout, /owner_gate/);
     assert.match(res.stdout, /without writing state/);
     assert.deepEqual(fs.readdirSync(dir), []);
