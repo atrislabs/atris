@@ -4,6 +4,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { collectFreshness } = require('./zero-shot');
+
+const ZERO_SHOT_LATEST_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
+const ZERO_SHOT_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
 
 function safeJson(text, fallback = null) {
   try { return JSON.parse(text); } catch { return fallback; }
@@ -405,6 +409,40 @@ function loadLoop(missions, root, deps) {
   };
 }
 
+function loadZeroShot(root, deps) {
+  const latest = readJsonFile(path.join(root, ZERO_SHOT_LATEST_RELATIVE_PATH), deps, null);
+  const promptExists = deps.exists(path.join(root, ZERO_SHOT_PROMPT_RELATIVE_PATH));
+  const currentFreshness = collectFreshness(root, {
+    existsSync: deps.exists,
+    readFileSync: deps.readFile,
+  });
+  const latestFingerprint = latest?.freshness?.source_fingerprint || latest?.durable?.source_fingerprint || null;
+  const currentFingerprint = currentFreshness.source_fingerprint;
+  const latestExists = Boolean(latest);
+  const fresh = Boolean(latestExists && promptExists && latestFingerprint && latestFingerprint === currentFingerprint);
+  const decision = latest?.decision || {};
+  const commands = latest?.commands || {};
+  return {
+    schema: 'atris.radar_zero_shot.v1',
+    status: fresh ? 'fresh' : (latestExists ? 'stale' : 'missing'),
+    ok: fresh,
+    latest_exists: latestExists,
+    prompt_exists: promptExists,
+    lane: decision.lane || null,
+    selected_ref: decision.selected_ref || null,
+    selected_title: decision.selected_title || null,
+    model_tier: decision.model_tier || null,
+    first_command: commands.first_command || decision.first_command || null,
+    latest_json: ZERO_SHOT_LATEST_RELATIVE_PATH,
+    prompt_txt: ZERO_SHOT_PROMPT_RELATIVE_PATH,
+    check_command: 'atris zero-shot --check',
+    refresh_command: 'atris zero-shot --write',
+    prompt_command: 'atris zero-shot --prompt',
+    latest_source_fingerprint: latestFingerprint,
+    current_source_fingerprint: currentFingerprint,
+  };
+}
+
 function taskRef(task) {
   return task ? (task.display_id || task.legacy_ref || task.id || '-') : '-';
 }
@@ -581,6 +619,7 @@ function collectRadar(options = {}) {
     swarlo: loadSwarlo(tasks),
     loop: loadLoop(missions, root, deps),
   };
+  osState.zero_shot = loadZeroShot(root, deps);
   osState.business = loadBusinessCollaboration(root, deps, osState.team);
   return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
 }
@@ -595,6 +634,11 @@ function renderRadar(data) {
   lines.push(`Missions: ${s.missions.running} running, ${s.missions.stale} stale/no-verifier`);
   lines.push(`Worktrees: ${s.worktrees.total} registered, ${s.worktrees.dirty} dirty`);
   lines.push(`Next: ${data.next_action}`);
+  if (data.os?.zero_shot) {
+    const zs = data.os.zero_shot;
+    const focus = [zs.lane, zs.selected_ref].filter(Boolean).join(' ') || 'none';
+    lines.push(`0-shot: ${zs.status} ${focus} -> ${zs.first_command || zs.refresh_command}`);
+  }
   if (data.os) {
     const xp = data.os.xp || {};
     const team = data.os.team || {};
@@ -933,7 +977,7 @@ function radarCommand(args = [], options = {}) {
     console.log('Usage: atris radar agents');
     console.log('Usage: atris ctop');
     console.log('');
-    console.log('Shows live agent processes joined with Atris tasks, missions, and worktrees.');
+    console.log('Shows live agent processes joined with Atris tasks, missions, worktrees, and the current 0-shot route.');
     console.log('Use --agents or ctop for a process-first CPU/memory view.');
     return 0;
   }

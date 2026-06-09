@@ -31,6 +31,17 @@ function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
 }
 
+function readTextWithDeps(file, deps = {}) {
+  const exists = deps.existsSync || fs.existsSync;
+  const readFile = deps.readFileSync || fs.readFileSync;
+  try {
+    if (exists && !exists(file)) return '';
+    return String(readFile(file, 'utf8'));
+  } catch {
+    return '';
+  }
+}
+
 function readJson(file) {
   try { return JSON.parse(readText(file)); } catch { return null; }
 }
@@ -81,18 +92,25 @@ function collectBrain(root) {
   };
 }
 
-function collectFreshness(root) {
+function collectFreshness(root, deps = {}) {
   const sources = FRESHNESS_SOURCES.map(([key, relative_path]) => {
     const filePath = path.join(root, relative_path);
-    const text = readText(filePath);
-    let stat = null;
-    try { stat = fs.statSync(filePath); } catch {}
+    const exists = deps.existsSync || fs.existsSync;
+    const statFn = deps.statSync || fs.statSync;
+    const text = readTextWithDeps(filePath, deps);
+    const present = exists(filePath);
+    let size = 0;
+    try {
+      size = present ? statFn(filePath).size : 0;
+    } catch {
+      size = present ? Buffer.byteLength(text, 'utf8') : 0;
+    }
     return {
       key,
       path: relative_path,
-      exists: Boolean(stat),
-      size: stat ? stat.size : 0,
-      sha1: stat ? sha1(text) : null,
+      exists: present,
+      size,
+      sha1: present ? sha1(text) : null,
     };
   });
   return {

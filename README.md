@@ -98,6 +98,7 @@ Use `atris zero-shot --check` when an ambient agent needs to know whether the la
 `atris`, `atris atris.md`, `atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
 Task commands that refresh `.atris/state/tasks.projection.json` also refresh the latest 0-shot state, so the route follows task queue changes.
 Mission and Codex goal commands refresh it too, so long-running work can take over the next move when it becomes due.
+`atris radar` also shows the current 0-shot route and freshness status beside the live task, mission, worktree, and agent summary.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 

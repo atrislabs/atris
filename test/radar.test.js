@@ -10,6 +10,7 @@ const {
   renderAgentTop,
   renderRadar,
 } = require('../commands/radar');
+const { collectFreshness } = require('../commands/zero-shot');
 
 test('agentTypeForCommand detects supported coding agents', () => {
   assert.equal(agentTypeForCommand('/opt/codex/codex exec'), 'codex');
@@ -52,6 +53,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   const scorecardsFile = path.join(root, '.atris', 'state', 'scorecards.jsonl');
   const missionEventsFile = path.join(root, '.atris', 'state', 'mission_events.jsonl');
   const codexGoalFile = path.join(root, '.atris', 'state', 'codex_goal.json');
+  const zeroShotLatestFile = path.join(root, '.atris', 'state', 'zero-shot.latest.json');
+  const zeroShotPromptFile = path.join(root, '.atris', 'state', 'zero-shot.prompt.txt');
   const businessFile = path.join(root, '.atris', 'business.json');
   const runtimeFile = path.join(root, '.atris', 'state', 'runtime.json');
   const syncFile = path.join(root, '.atris', 'state', '_sync.json');
@@ -113,6 +116,26 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     path.join(teamDir, 'mission-lead'),
     path.join(root, '.atris', 'state', 'operator-scorecards'),
   ]);
+  const existsSync = file => files.has(file) || dirs.has(file) || ['MAP.md', 'TODO.md', 'PERSONA.md'].some(name => file === path.join(root, 'atris', name));
+  const zeroShotFreshness = collectFreshness(root, {
+    existsSync,
+    readFileSync: file => files.get(file),
+  });
+  files.set(zeroShotLatestFile, JSON.stringify({
+    schema: 'atris.zero_shot_next_move.v1',
+    decision: {
+      lane: 'review_lane',
+      selected_ref: 'CLI-95',
+      selected_title: 'Add live operator radar command',
+      model_tier: 'validator',
+      first_command: 'atris task review-chat CLI-95 --as codex-review',
+    },
+    commands: {
+      first_command: 'atris task review-chat CLI-95 --as codex-review',
+    },
+    freshness: zeroShotFreshness,
+  }));
+  files.set(zeroShotPromptFile, 'Atris 0-shot selected the next move.\n');
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
     + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n'
@@ -146,7 +169,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     platform: 'darwin',
     nowMs: Date.parse('2026-05-18T12:00:00.000Z'),
     execFileSync,
-    existsSync: file => files.has(file) || dirs.has(file) || ['MAP.md', 'TODO.md', 'PERSONA.md'].some(name => file === path.join(root, 'atris', name)),
+    existsSync,
     readFileSync: file => files.get(file),
     readdirSync: dir => {
       if (dir === teamDir) return ['mission-lead'];
@@ -173,6 +196,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.swarlo.swarlo_leases, 1);
   assert.equal(data.os.loop.ticks, 1);
   assert.equal(data.os.loop.codex_goal, 'Advance the mission loop');
+  assert.equal(data.os.zero_shot.status, 'fresh');
+  assert.equal(data.os.zero_shot.lane, 'review_lane');
+  assert.equal(data.os.zero_shot.selected_ref, 'CLI-95');
+  assert.equal(data.os.zero_shot.first_command, 'atris task review-chat CLI-95 --as codex-review');
   assert.equal(data.os.business.slug, 'cashmere-ai');
   assert.equal(data.os.business.share_ready, true);
   assert.equal(data.os.business.onboarding.packs, 1);
@@ -193,6 +220,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(untaskedAgent.task_action, 'inspect /tmp/no-proj for missing Atris task plane or close pid 333 only with operator approval if idle');
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
+  assert.match(renderRadar(data), /0-shot: fresh review_lane CLI-95 -> atris task review-chat CLI-95 --as codex-review/);
   assert.match(renderRadar(data), /CLI-95/);
   assert.match(renderRadar(data), /Stale mission candidates/);
   assert.match(renderRadar(data), /Review queue/);
