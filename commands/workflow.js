@@ -63,7 +63,104 @@ function confidenceGatePrompt(stage) {
   ].join('\n');
 }
 
-function atris2TurnRequest(payload) {
+// Translate one relayed local_file_op call into a single bash command that runs
+// on the business cloud workspace, mirroring the backend handler's result shapes.
+// Content for write/edit travels base64 so shell quoting can't corrupt it.
+function cloudFileOpCommand(args) {
+  const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+  const b64 = (s) => Buffer.from(String(s), 'utf8').toString('base64');
+  const op = String(args.type || '').toLowerCase();
+  const rawPath = String(args.path || '.');
+  if (rawPath.split('/').includes('..')) return null;
+  const p = q(rawPath);
+
+  if (op === 'bash') return `cd /workspace && ( ${args.command || 'true'} )`;
+  if (op === 'list') return `cd /workspace && find ${p} -maxdepth 3 -not -path '*/node_modules/*' -not -path '*/.git/*' | head -200`;
+  if (op === 'search') {
+    const query = q(String(args.query || args.pattern || ''));
+    return `cd /workspace && grep -rn -m 50 ${query} ${p} 2>/dev/null | head -50`;
+  }
+  if (op === 'read') return `cd /workspace && { [ -d ${p} ] && ls -p ${p} | head -200 || head -c 12000 ${p}; }`;
+  if (op === 'write') {
+    return `cd /workspace && mkdir -p "$(dirname ${p})" && echo ${q(b64(args.content || ''))} | base64 -d > ${p} && echo WROTE ${p}`;
+  }
+  if (op === 'edit') {
+    const py = [
+      'import base64,sys',
+      `p=base64.b64decode('${b64(rawPath)}').decode()`,
+      `f=base64.b64decode('${b64(args.find || '')}').decode()`,
+      `r=base64.b64decode('${b64(args.replace || '')}').decode()`,
+      's=open(p).read()',
+      "sys.exit('find text not found') if f not in s else open(p,'w').write(s.replace(f,r,1))",
+    ].join('; ');
+    return `cd /workspace && python3 -c ${q(py)} && echo EDITED ${p}`;
+  }
+  return null;
+}
+
+function cloudFileOpResult(args, term) {
+  const op = String(args.type || '').toLowerCase();
+  const body = (term && term.data) || {};
+  const stdout = body.stdout || '';
+  const stderr = body.stderr || '';
+  const exitCode = body.exit_code !== undefined ? body.exit_code : null;
+  if (!term.ok) {
+    return { status: 'error', error: term.errorMessage || term.error || `terminal HTTP ${term.status}` };
+  }
+  if (exitCode !== 0 && exitCode !== null) {
+    return { status: 'error', error: (stderr || stdout || 'command failed').slice(0, 2000), exit_code: exitCode };
+  }
+  if (op === 'bash') return { status: 'ok', stdout, stderr, exit_code: exitCode };
+  if (op === 'read') return { status: 'ok', path: args.path || '.', content: stdout.slice(0, 12000) };
+  if (op === 'write' || op === 'edit') return { status: 'ok', path: args.path };
+  return { status: 'ok', stdout: stdout.slice(0, 12000) };
+}
+
+function makeCloudExecutor({ token, businessId, workspaceId, slug }) {
+  const { runTerminalCommand } = require('./terminal');
+  return async function executeToolCall(name, args) {
+    if (name !== 'local_file_op') {
+      return { status: 'error', error: `unsupported relayed tool: ${name}` };
+    }
+    const command = cloudFileOpCommand(args || {});
+    if (!command) {
+      return { status: 'error', error: `unsupported op or unsafe path on cloud workspace ${slug}` };
+    }
+    try {
+      const term = await runTerminalCommand(token, businessId, workspaceId, command, 60);
+      return cloudFileOpResult(args || {}, term);
+    } catch (err) {
+      return { status: 'error', error: String(err.message || err).slice(0, 500) };
+    }
+  };
+}
+
+function postToolResult(callId, result) {
+  const http = require('http');
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ call_id: callId, result });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: '/api/atris2/turn/tool-result',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        Origin: 'http://localhost:8000'
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => res.statusCode === 200 ? resolve() : reject(new Error(`tool-result HTTP ${res.statusCode}: ${data.slice(0, 200)}`)));
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+function atris2TurnRequest(payload, executeToolCall = null) {
   const http = require('http');
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify(payload);
@@ -109,11 +206,24 @@ function atris2TurnRequest(payload) {
       };
       resetIdle();
 
+      // Relayed tool calls run sequentially: the backend awaits each result
+      // before continuing the loop, so a promise chain preserves order.
+      let toolChain = Promise.resolve();
       const handleEvent = (event) => {
         if (!event || typeof event !== 'object') return;
         if (event.type === 'text_delta' && event.content) {
           process.stdout.write(event.content);
           wroteText = true;
+        } else if (event.type === 'tool_call_request' && executeToolCall) {
+          const { call_id: callId, name, args } = event;
+          const label = (args && args.type) || name || 'tool';
+          console.log(`\n⚙ cloud:${label}${args && args.command ? ` $ ${String(args.command).slice(0, 80)}` : ''}${args && args.path ? ` ${args.path}` : ''}`);
+          toolChain = toolChain
+            .then(() => executeToolCall(name, args))
+            .catch((err) => ({ status: 'error', error: String(err.message || err).slice(0, 500) }))
+            .then((result) => postToolResult(callId, result))
+            .then(() => resetIdle())
+            .catch((err) => console.error(`✗ tool relay failed: ${err.message}`));
         } else if (event.type === 'tool_call') {
           const name = event.tool || (event.input && event.input.tool) || 'tool';
           console.log(`\n⚙ ${name}...`);
@@ -161,33 +271,74 @@ function atris2TurnRequest(payload) {
 }
 
 async function runAtris2Local(userInput, atris2Mode) {
-  console.log(`🚀 EXECUTING VIA ATRIS 2 ${atris2Mode.toUpperCase()}`);
+  let actualCommand = String(userInput || '').trim().replace(/^2\s+(fast|pro)\b/i, '').trim();
+
+  // --business <slug>: run the turn against that business's cloud workspace.
+  // The model loop stays on the backend; every file/bash tool call is relayed
+  // here and executed on the business EC2 via the /terminal endpoint.
+  let businessSlug = null;
+  const bizMatch = actualCommand.match(/(?:^|\s)--business[= ]([a-z0-9-]+)/i);
+  if (bizMatch) {
+    businessSlug = bizMatch[1].toLowerCase();
+    actualCommand = actualCommand.replace(bizMatch[0], ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  console.log(`🚀 EXECUTING VIA ATRIS 2 ${atris2Mode.toUpperCase()}${businessSlug ? ` → cloud workspace ${businessSlug}` : ''}`);
   console.log('');
 
-  const actualCommand = String(userInput || '').trim().replace(/^2\s+(fast|pro)\b/i, '').trim();
   if (!actualCommand) {
     console.log(`⚠ No command provided after "2 ${atris2Mode}"`);
-    console.log(`Usage: atris 2 ${atris2Mode} <your command>`);
+    console.log(`Usage: atris 2 ${atris2Mode} [--business <slug>] <your command>`);
     process.exit(1);
   }
 
   console.log(`Running: ${actualCommand}`);
   console.log('');
 
+  let executeToolCall = null;
   const payload = {
     message: actualCommand,
     workspace_path: process.cwd(),
     model: `atris:${atris2Mode}`
   };
 
+  if (businessSlug) {
+    const { loadCredentials } = require('../utils/auth');
+    const { resolveBusiness, ensureAwake } = require('./terminal');
+    const creds = loadCredentials();
+    if (!creds || !creds.token) {
+      console.error('Not logged in. Run: atris login');
+      process.exit(1);
+    }
+    const biz = await resolveBusiness(creds.token, businessSlug);
+    if (!biz || !biz.workspaceId) {
+      console.error(`Business "${businessSlug}" not found or has no workspace.`);
+      process.exit(1);
+    }
+    const awake = await ensureAwake(creds.token, biz.businessId);
+    if (!awake) {
+      console.error('Cloud computer did not become ready in time.');
+      process.exit(1);
+    }
+    executeToolCall = makeCloudExecutor({
+      token: creds.token,
+      businessId: biz.businessId,
+      workspaceId: biz.workspaceId,
+      slug: businessSlug,
+    });
+    payload.local_executor = true;
+    payload.workspace_path = `/workspace/${businessSlug}`;
+  }
+
   try {
     let outcome;
     try {
-      outcome = await atris2TurnRequest(payload);
+      outcome = await atris2TurnRequest(payload, executeToolCall);
     } catch (error) {
       // Backends without local workspace access (prod config) reject the path;
-      // retry the same prompt as plain cloud chat.
-      if (error.statusCode === 403 && /workspace/i.test(error.message)) {
+      // retry the same prompt as plain cloud chat. Never silently downgrade a
+      // cloud-workspace run.
+      if (!businessSlug && error.statusCode === 403 && /workspace/i.test(error.message)) {
         outcome = await atris2TurnRequest({ ...payload, workspace_path: null });
       } else {
         throw error;
