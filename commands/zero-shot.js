@@ -4,6 +4,19 @@ const fs = require('fs');
 const path = require('path');
 
 const SCHEMA = 'atris.zero_shot_next_move.v1';
+const ROUTE_LIMIT = 8;
+const TERMINAL_TASK_STATUSES = new Set(['done', 'accepted', 'complete', 'completed']);
+const LANE_PRIORITY = {
+  mission_tick: 0,
+  review_lane: 1,
+  owner_gate: 2,
+  recovery_lane: 3,
+  fast_model_task: 4,
+  quick_task: 5,
+  long_horizon: 6,
+  goal_context: 7,
+  no_current_task: 8,
+};
 
 function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
@@ -132,22 +145,8 @@ function collectCodexGoal(root) {
   };
 }
 
-function selectMission(missions) {
-  return missions.needs_tick[0] || null;
-}
-
 function selectCodexGoal(goal) {
   return goal && goal.objective ? goal : null;
-}
-
-function selectTask(tasks) {
-  const active = tasks.filter(task => !['done', 'accepted', 'complete', 'completed'].includes(task.status));
-  return active.find(task => task.status === 'review')
-    || active.find(task => task.status === 'blocked')
-    || active.find(task => task.status === 'failed')
-    || active.find(task => task.status === 'claimed')
-    || active.find(task => task.status === 'open')
-    || null;
 }
 
 function textFor(task) {
@@ -281,27 +280,131 @@ function laneDetails(task, lane, command) {
   };
 }
 
+function activeTasks(tasks) {
+  return tasks.filter(task => !TERMINAL_TASK_STATUSES.has(task.status));
+}
+
+function lanePriority(lane) {
+  return Object.prototype.hasOwnProperty.call(LANE_PRIORITY, lane) ? LANE_PRIORITY[lane] : 99;
+}
+
+function compactRoute(kind, item, decision, details, extra = {}) {
+  return {
+    kind,
+    ref: item && item.ref ? item.ref : null,
+    title: item && item.title ? item.title : null,
+    status: extra.status || (item && item.status) || null,
+    tag: item && item.tag ? item.tag : null,
+    lane: decision.lane,
+    urgency: decision.urgency,
+    model: decision.model,
+    horizon: details.horizon,
+    work_size: details.work_size,
+    model_tier: details.model_tier,
+    first_command: details.first_command,
+    agent_directive: details.agent_directive,
+    reason: decision.reason,
+    source: extra.source || null,
+  };
+}
+
+function routeForTask(task) {
+  const decision = classify(task);
+  const command = nextCommand(task, decision.lane);
+  const details = laneDetails(task, decision.lane, command);
+  return compactRoute('task', task, decision, details, { source: task });
+}
+
+function routeForMission(mission) {
+  const item = { ref: mission.id, title: mission.objective || 'Mission tick' };
+  const decision = {
+    lane: 'mission_tick',
+    urgency: 'high',
+    model: 'pro',
+    reason: `${mission.id} has an unverified mission verifier.`,
+  };
+  const command = nextCommand(item, decision.lane);
+  const details = laneDetails(item, decision.lane, command);
+  return compactRoute('mission', item, decision, details, { status: mission.status });
+}
+
+function routeForGoal(goal) {
+  const item = {
+    ref: goal.mission_id || 'codex_goal',
+    title: goal.objective,
+    next_command: goal.next_command,
+  };
+  const decision = {
+    lane: 'goal_context',
+    urgency: 'plan',
+    model: 'pro',
+    reason: `The visible Codex goal is ${goal.mission_id || 'active'} and has no active task selected.`,
+  };
+  const command = nextCommand(item, decision.lane);
+  const details = laneDetails(item, decision.lane, command);
+  return compactRoute('codex_goal', item, decision, details, { status: goal.mission_status });
+}
+
+function stripRouteSource(route) {
+  const { source, ...rest } = route;
+  return rest;
+}
+
+function summarizeRouteLanes(routes) {
+  return routes.reduce((summary, route) => {
+    summary[route.lane] = (summary[route.lane] || 0) + 1;
+    return summary;
+  }, {});
+}
+
+function buildRouteIndex({ missionState, goalState, taskState }) {
+  const missionRoutes = (missionState.needs_tick || []).map(routeForMission);
+  const taskRoutes = activeTasks(taskState.tasks || [])
+    .map((task, index) => ({ route: routeForTask(task), index }))
+    .sort((a, b) => lanePriority(a.route.lane) - lanePriority(b.route.lane) || a.index - b.index)
+    .map(entry => entry.route);
+  const goal = selectCodexGoal(goalState);
+  const goalRoutes = goal ? [routeForGoal(goal)] : [];
+  const routes = [...missionRoutes, ...taskRoutes, ...goalRoutes];
+  return {
+    total: routes.length,
+    shown: Math.min(routes.length, ROUTE_LIMIT),
+    lanes: summarizeRouteLanes(routes),
+    options: routes.slice(0, ROUTE_LIMIT),
+  };
+}
+
 function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
   const brain = collectBrain(root);
   const missionState = collectMissions(root);
   const goalState = collectCodexGoal(root);
   const taskState = collectTasks(root);
-  const selectedMission = selectMission(missionState);
-  const selectedTask = selectedMission ? null : selectTask(taskState.tasks);
-  const selectedGoal = selectedMission || selectedTask ? null : selectCodexGoal(goalState);
-  const selected = selectedMission
-    ? { ref: selectedMission.id, title: selectedMission.objective || 'Mission tick', kind: 'mission' }
-    : selectedGoal
-      ? { ref: selectedGoal.mission_id || 'codex_goal', title: selectedGoal.objective, kind: 'codex_goal', next_command: selectedGoal.next_command }
-    : selectedTask;
-  const decision = selectedMission
-    ? { lane: 'mission_tick', urgency: 'high', model: 'pro', reason: `${selectedMission.id} has an unverified mission verifier.` }
-    : selectedGoal
-      ? { lane: 'goal_context', urgency: 'plan', model: 'pro', reason: `The visible Codex goal is ${selectedGoal.mission_id || 'active'} and has no active task selected.` }
-    : classify(selectedTask);
-  const command = nextCommand(selected, decision.lane);
-  const details = laneDetails(selected, decision.lane, command);
+  const routeIndex = buildRouteIndex({ missionState, goalState, taskState });
+  const selectedRoute = routeIndex.options[0] || null;
+  const decision = selectedRoute
+    ? {
+      lane: selectedRoute.lane,
+      urgency: selectedRoute.urgency,
+      model: selectedRoute.model,
+      reason: selectedRoute.reason,
+    }
+    : classify(null);
+  const command = selectedRoute ? selectedRoute.first_command : nextCommand(null, decision.lane);
+  const details = selectedRoute
+    ? {
+      horizon: selectedRoute.horizon,
+      work_size: selectedRoute.work_size,
+      model_tier: selectedRoute.model_tier,
+      agent_directive: selectedRoute.agent_directive,
+      first_command: selectedRoute.first_command,
+    }
+    : laneDetails(null, decision.lane, command);
+  const selectedTaskRoute = selectedRoute && selectedRoute.kind === 'task' ? selectedRoute : null;
+  const publicRoutes = {
+    ...routeIndex,
+    options: routeIndex.options.map(stripRouteSource),
+  };
   return {
     schema: SCHEMA,
     generated_at: new Date().toISOString(),
@@ -309,12 +412,13 @@ function buildPacket(options = {}) {
     decision: {
       ...decision,
       ...details,
-      confidence: selected || brain.status_present ? 'medium' : 'low',
-      selected_ref: selected ? selected.ref : null,
-      selected_title: selected ? selected.title : null,
-      selected_kind: selectedMission ? 'mission' : (selectedGoal ? 'codex_goal' : (selectedTask ? 'task' : null)),
+      confidence: selectedRoute || brain.status_present ? 'medium' : 'low',
+      selected_ref: selectedRoute ? selectedRoute.ref : null,
+      selected_title: selectedRoute ? selectedRoute.title : null,
+      selected_kind: selectedRoute ? selectedRoute.kind : null,
     },
     queue: taskState.counts,
+    routes: publicRoutes,
     missions: {
       active: missionState.active_count,
       needs_tick: missionState.needs_tick_count,
@@ -334,7 +438,7 @@ function buildPacket(options = {}) {
       context_check: 'atris radar --json',
       mission_status: 'atris mission status --status active --json',
       codex_goal: 'atris mission goal --json',
-      task_page: selectedTask && selectedTask.ref ? `atris task page ${shellToken(selectedTask.ref)} --json` : null,
+      task_page: selectedTaskRoute && selectedTaskRoute.ref ? `atris task page ${shellToken(selectedTaskRoute.ref)} --json` : null,
       task_current_step: 'atris task current-step --json',
       review_lane_drain: 'atris task review-lane-drain --json',
     },
@@ -345,6 +449,17 @@ function buildPacket(options = {}) {
       no_file_writes: true,
     },
   };
+}
+
+function renderRouteSummary(routes) {
+  const options = routes && Array.isArray(routes.options) ? routes.options : [];
+  if (!options.length) return 'routes: none';
+  const summary = options
+    .slice(0, 3)
+    .map(route => `${route.ref}:${route.lane}/${route.model_tier}`)
+    .join(', ');
+  const suffix = routes.total > options.length ? ` (+${routes.total - options.length} more)` : '';
+  return `routes: ${summary}${suffix}`;
 }
 
 function renderPacket(packet) {
@@ -358,6 +473,7 @@ function renderPacket(packet) {
     `why: ${packet.decision.reason}`,
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
+    renderRouteSummary(packet.routes),
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
@@ -377,7 +493,7 @@ function renderHelp() {
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, and safety boundaries.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }

@@ -45,7 +45,7 @@ atris zero-shot --json
 atris next --json
 ```
 
-It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, owner-gated work, or context gathering.
+It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, recovery work, owner-gated work, or context gathering. The JSON form also includes typed `routes.options[]` for the active queue.
 
 If you already know what you want, tell atris what to build:
 

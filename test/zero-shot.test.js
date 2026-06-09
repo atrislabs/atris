@@ -377,6 +377,39 @@ test('zero-shot surfaces failed work for recovery', () => {
   }
 });
 
+test('zero-shot --json includes a typed route index for mixed work', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'FAST-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      { display_id: 'ARC-1', title: 'Plan architecture migration roadmap', status: 'claimed', tag: 'architecture' },
+      { display_id: 'OWN-2', title: 'Publish release after human approval', status: 'claimed', tag: 'release' },
+      { display_id: 'FAIL-1', title: 'Fix failing release gate', status: 'failed', tag: 'release' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'owner_gate');
+    assert.equal(packet.decision.selected_ref, 'OWN-2');
+    assert.equal(packet.routes.total, 4);
+    assert.equal(packet.routes.shown, 4);
+    assert.equal(packet.routes.lanes.owner_gate, 1);
+    assert.equal(packet.routes.lanes.recovery_lane, 1);
+    assert.equal(packet.routes.lanes.fast_model_task, 1);
+    assert.equal(packet.routes.lanes.long_horizon, 1);
+    assert.deepEqual(packet.routes.options.map(route => [route.ref, route.lane, route.model_tier, route.first_command]), [
+      ['OWN-2', 'owner_gate', 'human', 'atris task page OWN-2 --json'],
+      ['FAIL-1', 'recovery_lane', 'pro', 'atris task page FAIL-1 --json'],
+      ['FAST-1', 'fast_model_task', 'fast', 'atris task current-step --tag cli --json'],
+      ['ARC-1', 'long_horizon', 'pro', 'atris task page ARC-1 --json'],
+    ]);
+    assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
@@ -385,6 +418,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /Usage: atris zero-shot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
+    assert.match(res.stdout, /routes\.options/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);
