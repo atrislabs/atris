@@ -8,6 +8,16 @@ const SCHEMA = 'atris.zero_shot_next_move.v1';
 const ROUTE_LIMIT = 8;
 const LATEST_PACKET_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const LATEST_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
+const ZERO_SHOT_COMMAND = 'atris 0-shot';
+const LEGACY_ZERO_SHOT_COMMAND = 'atris zero-shot';
+const ZERO_SHOT_JSON_COMMAND = `${ZERO_SHOT_COMMAND} --json`;
+const ZERO_SHOT_PROMPT_COMMAND = `${ZERO_SHOT_COMMAND} --prompt`;
+const ZERO_SHOT_WRITE_COMMAND = `${ZERO_SHOT_COMMAND} --write`;
+const ZERO_SHOT_CHECK_COMMAND = `${ZERO_SHOT_COMMAND} --check`;
+const LEGACY_ZERO_SHOT_JSON_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --json`;
+const LEGACY_ZERO_SHOT_PROMPT_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --prompt`;
+const LEGACY_ZERO_SHOT_WRITE_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --write`;
+const LEGACY_ZERO_SHOT_CHECK_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --check`;
 const FRESHNESS_SOURCES = [
   ['brain_status', 'atris/brain/STATUS.md'],
   ['task_projection', '.atris/state/tasks.projection.json'],
@@ -123,8 +133,10 @@ function collectFreshness(root, deps = {}) {
       source.sha1,
     ]))),
     sources,
-    check_command: 'atris zero-shot --check',
-    refresh_command: 'atris zero-shot --write',
+    check_command: ZERO_SHOT_CHECK_COMMAND,
+    refresh_command: ZERO_SHOT_WRITE_COMMAND,
+    legacy_check_command: LEGACY_ZERO_SHOT_CHECK_COMMAND,
+    legacy_refresh_command: LEGACY_ZERO_SHOT_WRITE_COMMAND,
   };
 }
 
@@ -458,9 +470,12 @@ function buildHandoff(route, root) {
     model_tier: route.model_tier,
     lane: route.lane,
     route_options_field: 'routes.options',
-    json_command: 'atris zero-shot --json',
-    prompt_command: 'atris zero-shot --prompt',
-    write_command: 'atris zero-shot --write',
+    json_command: ZERO_SHOT_JSON_COMMAND,
+    prompt_command: ZERO_SHOT_PROMPT_COMMAND,
+    write_command: ZERO_SHOT_WRITE_COMMAND,
+    legacy_json_command: LEGACY_ZERO_SHOT_JSON_COMMAND,
+    legacy_prompt_command: LEGACY_ZERO_SHOT_PROMPT_COMMAND,
+    legacy_write_command: LEGACY_ZERO_SHOT_WRITE_COMMAND,
   };
 }
 
@@ -538,7 +553,7 @@ function buildPacket(options = {}) {
     handoff: buildHandoff(handoffRoute, root),
     freshness,
     durable: {
-      write_command: 'atris zero-shot --write',
+      write_command: ZERO_SHOT_WRITE_COMMAND,
       latest_json: LATEST_PACKET_RELATIVE_PATH,
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
     },
@@ -555,9 +570,12 @@ function buildPacket(options = {}) {
     },
     brain,
     commands: {
-      zero_shot_json: 'atris zero-shot --json',
-      zero_shot_prompt: 'atris zero-shot --prompt',
-      zero_shot_write: 'atris zero-shot --write',
+      zero_shot_json: ZERO_SHOT_JSON_COMMAND,
+      zero_shot_prompt: ZERO_SHOT_PROMPT_COMMAND,
+      zero_shot_write: ZERO_SHOT_WRITE_COMMAND,
+      legacy_zero_shot_json: LEGACY_ZERO_SHOT_JSON_COMMAND,
+      legacy_zero_shot_prompt: LEGACY_ZERO_SHOT_PROMPT_COMMAND,
+      legacy_zero_shot_write: LEGACY_ZERO_SHOT_WRITE_COMMAND,
       next_command: command,
       first_command: command,
       context_check: 'atris radar --json',
@@ -627,8 +645,10 @@ function buildLatestCheck(options = {}) {
     current_selected_ref: current.decision.selected_ref || null,
     latest_source_fingerprint: latestFingerprint,
     current_source_fingerprint: currentFingerprint,
-    refresh_command: 'atris zero-shot --write',
-    check_command: 'atris zero-shot --check',
+    refresh_command: ZERO_SHOT_WRITE_COMMAND,
+    check_command: ZERO_SHOT_CHECK_COMMAND,
+    legacy_refresh_command: LEGACY_ZERO_SHOT_WRITE_COMMAND,
+    legacy_check_command: LEGACY_ZERO_SHOT_CHECK_COMMAND,
   };
 }
 
@@ -677,14 +697,14 @@ function renderPacket(packet) {
 }
 
 function renderHint(packet) {
-  if (!packet || !packet.decision || !packet.commands) return '0-shot: atris zero-shot --prompt';
-  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command} | prompt: ${packet.commands.zero_shot_prompt || 'atris zero-shot --prompt'}`;
+  if (!packet || !packet.decision || !packet.commands) return `0-shot: ${ZERO_SHOT_PROMPT_COMMAND}`;
+  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command} | prompt: ${packet.commands.zero_shot_prompt || ZERO_SHOT_PROMPT_COMMAND}`;
 }
 
 function renderHelp() {
   return [
-    'Usage: atris zero-shot [--json|--prompt|--write|--check]',
-    'Alias: atris 0-shot [--json|--prompt|--write|--check]',
+    'Usage: atris 0-shot [--json|--prompt|--write|--check]',
+    'Alias: atris zero-shot [--json|--prompt|--write|--check]',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',

@@ -123,35 +123,35 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 **Purpose:** Gives any agent or operator a next-move packet when the prompt is vague or empty.
 
 - **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files
-- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris zero-shot` and refreshes the ambient latest files
+- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot` and refreshes the ambient latest files
 - **Implementation:** `commands/zero-shot.js`
-- **Activation surface:** `commands/activate.js` prints the current 0-shot route plus `atris zero-shot --prompt`, and refreshes the ambient latest files
+- **Activation surface:** `commands/activate.js` prints the current 0-shot route plus `atris 0-shot --prompt`, and refreshes the ambient latest files
 - **Member activation:** `commands/member.js` prints the current 0-shot route and refreshes the ambient latest files when waking a named member
 - **Brain activation:** `commands/brain.js` includes the 0-shot route/direct prompt command in `atris brain activate`, and refreshes the ambient latest files
-- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt` and tell ambient agents to trust `.atris/state/zero-shot.prompt.txt` only after `atris zero-shot --check` reports fresh
+- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris 0-shot --prompt` and tell ambient agents to trust `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports fresh
 - **Regression:** `test/zero-shot.test.js`
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
-- **Default safety:** normal `atris zero-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
-- **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
-- **Freshness check:** `atris zero-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
+- **Default safety:** normal `atris 0-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
+- **Ambient latest files:** `atris 0-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
+- **Freshness check:** `atris 0-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route plus durable prompt freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
 - **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route and first command so ordinary health checks show the next safe move
 - **Now front door:** generated `atris/now.md` includes the current 0-shot route and first command so agents loading the first context file can start from the selected lane
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
-- **Any-model handoff:** JSON includes `handoff.prompt`, and `atris zero-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
+- **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
 - **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
 - **Recovery route:** `failed` task rows use `recovery_lane` and open the selected read-only task page before retry/revise work
 - **Visible goal fallback:** if no task or mission tick is active, `.atris/state/codex_goal.json` can route `goal_context` to the stored goal command
 - **Examples:**
 - `atris 0-shot` -> human next-move card
-- `atris zero-shot` -> human next-move card
-- `atris zero-shot --json` -> machine-readable packet
-- `atris zero-shot --prompt` -> copy-pasteable prompt for any model
-- `atris zero-shot --write` -> refresh durable latest packet and prompt files
-- `atris zero-shot --check` -> verify whether durable latest files are fresh
+- `atris zero-shot` -> compatible human next-move card
+- `atris 0-shot --json` -> machine-readable packet
+- `atris 0-shot --prompt` -> copy-pasteable prompt for any model
+- `atris 0-shot --write` -> refresh durable latest packet and prompt files
+- `atris 0-shot --check` -> verify whether durable latest files are fresh
 
 **Search:** `rg "zeroShotCommand|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
 
@@ -509,7 +509,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
 - **0-shot regression:** `test/status.test.js` covers `status`, `status --quick`, and `status --json` exposing the computed route
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
-- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only and falls back to `atris zero-shot --prompt` if route collection is unavailable
+- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only and falls back to `atris 0-shot --prompt` if route collection is unavailable
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
@@ -1001,7 +1001,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Help:** `bin/atris.js:536-546` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
 - **Regression:** `test/zero-shot.test.js` covers `atris next` and `atris next --json`; `test/commands.test.js` covers help without context panels or temp state creation
 - **Logic:** `atris next` without a request delegates to `commands/zero-shot.js`; `atris next "request"` still routes the request through the natural-language Atris entry
-- **Value:** The shortest "what now?" command returns the same safe next-move packet as `atris zero-shot`
+- **Value:** The shortest "what now?" command returns the same safe next-move packet as `atris 0-shot`
 
 **Search:** `rg "command === 'next'|showNextHelp|next without a request is a zero-shot shortcut" bin/atris.js test/zero-shot.test.js test/commands.test.js`
 

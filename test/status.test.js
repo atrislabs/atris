@@ -76,7 +76,7 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(payload.zero_shot.lane, 'owner_gate');
     assert.equal(payload.zero_shot.selected_ref, 'WAIT-1');
     assert.equal(payload.zero_shot.first_command, 'atris task page WAIT-1 --json');
-    assert.equal(payload.zero_shot.prompt_command, 'atris zero-shot --prompt');
+    assert.equal(payload.zero_shot.prompt_command, 'atris 0-shot --prompt');
 
     const quick = runCli(['status', '--quick'], { cwd: dir });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);

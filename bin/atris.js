@@ -449,7 +449,7 @@ function showHelp() {
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
   console.log('');
-  console.log('💡 Tip: If you are unsure, run "atris zero-shot"');
+  console.log('💡 Tip: If you are unsure, run "atris 0-shot"');
   console.log('');
 }
 
@@ -1165,7 +1165,7 @@ function showWelcomeVisualization() {
       } = require('../commands/zero-shot');
       console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris zero-shot --prompt' to choose the next move.`);
+    console.log(`    Ready. Run 'atris 0-shot --prompt' to choose the next move.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }

@@ -204,20 +204,20 @@ function zeroShotNowSummary(root = process.cwd()) {
   try {
     const packet = buildPacket({ cwd: root });
     const decision = packet.decision || {};
-    const command = packet.commands?.first_command || decision.first_command || 'atris zero-shot --prompt';
+    const command = packet.commands?.first_command || decision.first_command || 'atris 0-shot --prompt';
     const focus = decision.selected_ref ? ` ${decision.selected_ref}` : '';
     return {
       route: `${decision.lane || 'unknown'}${focus}`,
       command,
-      prompt: packet.commands?.zero_shot_prompt || 'atris zero-shot --prompt',
-      json: packet.commands?.zero_shot_json || 'atris zero-shot --json',
+      prompt: packet.commands?.zero_shot_prompt || 'atris 0-shot --prompt',
+      json: packet.commands?.zero_shot_json || 'atris 0-shot --json',
     };
   } catch {
     return {
       route: 'unavailable',
-      command: 'atris zero-shot --prompt',
-      prompt: 'atris zero-shot --prompt',
-      json: 'atris zero-shot --json',
+      command: 'atris 0-shot --prompt',
+      prompt: 'atris 0-shot --prompt',
+      json: 'atris 0-shot --json',
     };
   }
 }

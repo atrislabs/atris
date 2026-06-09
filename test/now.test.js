@@ -174,7 +174,7 @@ test('renderDefaultNow includes the current zero-shot route', () => {
 
     assert.match(content, /0-shot route: fast_model_task CZS-1 -> `atris task current-step --tag cli --json`/);
     assert.match(content, /Run `atris task current-step --tag cli --json` for the current 0-shot lane/);
-    assert.match(content, /`atris zero-shot --prompt` for a copy-paste handoff/);
+    assert.match(content, /`atris 0-shot --prompt` for a copy-paste handoff/);
   } finally {
     cleanup(dir);
   }

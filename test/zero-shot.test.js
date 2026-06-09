@@ -125,7 +125,7 @@ test('zero-shot falls back to radar when no current task exists', () => {
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /route: no_current_task/);
     assert.match(res.stdout, /run: atris radar --json/);
-    assert.match(res.stdout, /prompt: atris zero-shot --prompt/);
+    assert.match(res.stdout, /prompt: atris 0-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -240,8 +240,10 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(packet.durable.latest_json, '.atris/state/zero-shot.latest.json');
     assert.equal(packet.durable.prompt_txt, '.atris/state/zero-shot.prompt.txt');
     assert.equal(packet.boundaries.no_file_writes, false);
-    assert.equal(packet.commands.zero_shot_write, 'atris zero-shot --write');
-    assert.equal(packet.handoff.write_command, 'atris zero-shot --write');
+    assert.equal(packet.commands.zero_shot_write, 'atris 0-shot --write');
+    assert.equal(packet.commands.legacy_zero_shot_write, 'atris zero-shot --write');
+    assert.equal(packet.handoff.write_command, 'atris 0-shot --write');
+    assert.equal(packet.handoff.legacy_write_command, 'atris zero-shot --write');
     assert.equal(packet.freshness.schema, 'atris.zero_shot_freshness.v1');
     assert.equal(typeof packet.freshness.source_fingerprint, 'string');
     assert.equal(packet.durable.source_fingerprint, packet.freshness.source_fingerprint);
@@ -293,7 +295,8 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(stale.latest_selected_ref, 'CZS-1');
     assert.equal(stale.current_selected_ref, 'REV-1');
     assert.notEqual(stale.latest_source_fingerprint, stale.current_source_fingerprint);
-    assert.equal(stale.refresh_command, 'atris zero-shot --write');
+    assert.equal(stale.refresh_command, 'atris 0-shot --write');
+    assert.equal(stale.legacy_refresh_command, 'atris zero-shot --write');
 
     const text = runCli(['zero-shot', '--check'], { cwd: dir });
     assert.equal(text.status, 0, text.stderr || text.stdout);
@@ -320,7 +323,7 @@ test('zero-shot --check reports missing durable latest files', () => {
     assert.equal(check.latest_exists, false);
     assert.equal(check.prompt_exists, false);
     assert.equal(check.current_selected_ref, 'CZS-1');
-    assert.equal(check.refresh_command, 'atris zero-shot --write');
+    assert.equal(check.refresh_command, 'atris 0-shot --write');
   } finally {
     cleanupTempDir(dir);
   }
@@ -599,8 +602,8 @@ test('zero-shot help is workspace-free and non-mutating', () => {
   try {
     const res = runCli(['zero-shot', '--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /Usage: atris zero-shot/);
-    assert.match(res.stdout, /Alias: atris 0-shot/);
+    assert.match(res.stdout, /Usage: atris 0-shot/);
+    assert.match(res.stdout, /Alias: atris zero-shot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
@@ -630,7 +633,7 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);
-    assert.match(res.stdout, /If you are unsure, run "atris zero-shot"/);
+    assert.match(res.stdout, /If you are unsure, run "atris 0-shot"/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -645,8 +648,8 @@ test('activate surfaces the zero-shot next route', () => {
 
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
-    assert.match(res.stdout, /Next: atris zero-shot --prompt/);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /Next: atris 0-shot --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
@@ -665,7 +668,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     const res = runCli([], { cwd: dir, input: '\n' });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
-    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
   } finally {
@@ -683,8 +686,8 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
-    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
-    assert.match(res.stdout, /Ready\. Run 'atris zero-shot --prompt' to choose the next move\./);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --prompt' to choose the next move\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));

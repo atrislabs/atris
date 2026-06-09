@@ -11,8 +11,8 @@ atris atris.md
 ```
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
-If the user did not provide a concrete task, run `atris zero-shot --prompt` and follow the handoff before choosing work. Use `atris zero-shot --json` when you need structured route metadata.
-Ambient agents may read `.atris/state/zero-shot.prompt.txt` only after `atris zero-shot --check` reports `fresh`; if it is stale or missing, run `atris zero-shot --write` or `atris zero-shot --prompt`.
+If the user did not provide a concrete task, run `atris 0-shot --prompt` and follow the handoff before choosing work. Use `atris 0-shot --json` when you need structured route metadata.
+Ambient agents may read `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.
 
 ## MAPFIRST (Enforced)
 

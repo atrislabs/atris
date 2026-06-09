@@ -87,9 +87,9 @@ function zeroShotStatus(root = process.cwd()) {
       selected_ref: decision.selected_ref || null,
       selected_title: decision.selected_title || null,
       model_tier: decision.model_tier || null,
-      first_command: commands.first_command || decision.first_command || 'atris zero-shot --prompt',
-      prompt_command: commands.zero_shot_prompt || 'atris zero-shot --prompt',
-      json_command: commands.zero_shot_json || 'atris zero-shot --json',
+      first_command: commands.first_command || decision.first_command || 'atris 0-shot --prompt',
+      prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
+      json_command: commands.zero_shot_json || 'atris 0-shot --json',
     };
   } catch {
     return {
@@ -97,9 +97,9 @@ function zeroShotStatus(root = process.cwd()) {
       selected_ref: null,
       selected_title: null,
       model_tier: null,
-      first_command: 'atris zero-shot --prompt',
-      prompt_command: 'atris zero-shot --prompt',
-      json_command: 'atris zero-shot --json',
+      first_command: 'atris 0-shot --prompt',
+      prompt_command: 'atris 0-shot --prompt',
+      json_command: 'atris 0-shot --json',
     };
   }
 }

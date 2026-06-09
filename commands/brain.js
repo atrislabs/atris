@@ -873,7 +873,7 @@ function activationZeroShotPacket(state) {
 
 function activationZeroShotLine(state) {
   const packet = activationZeroShotPacket(state);
-  if (!packet) return 'ZERO SHOT: atris zero-shot --prompt (or atris zero-shot --json)';
+  if (!packet) return 'ZERO SHOT: atris 0-shot --prompt (or atris 0-shot --json)';
   return renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:');
 }
 
