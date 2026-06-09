@@ -43,16 +43,23 @@ start, run:
 atris zero-shot
 ```
 
-Headless agents should prefer:
+Any model that needs a direct handoff should prefer:
+
+```bash
+atris zero-shot --prompt
+```
+
+Headless agents that need structured route metadata can use:
 
 ```bash
 atris zero-shot --json
 ```
 
 This reads the compiled brain and task projection, then returns one route:
-`quick_task`, `fast_model_task`, `review_lane`, `long_horizon`, `owner_gate`, or
-`no_current_task`. The packet is read-only; it must not accept human-gated work,
-mutate tasks, write files, or send anything externally.
+`quick_task`, `fast_model_task`, `review_lane`, `recovery_lane`,
+`long_horizon`, `owner_gate`, or `no_current_task`. The packet is read-only; it
+must not accept human-gated work, mutate tasks, write files, or send anything
+externally.
 
 ## operating rules
 

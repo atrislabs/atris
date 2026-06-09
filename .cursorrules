@@ -10,7 +10,7 @@ atris task list --status open
 atris task claim <id> --as <agent>
 ```
 
-Run `atris` first. If no task exists, create one with `atris task new "<small concrete title>" --tag <area>` before editing.
+Run `atris` first. If the prompt is vague or empty, run `atris zero-shot --prompt` and follow the handoff before choosing work. Use `atris zero-shot --json` when you need structured route metadata. If no task exists, create one with `atris task new "<small concrete title>" --tag <area>` before editing.
 
 ## Core Files
 

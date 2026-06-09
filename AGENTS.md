@@ -11,7 +11,7 @@ atris task claim <id> --as <agent>
 ```
 
 Run `atris` first. It prints repo state, the files to read, and the next command.
-If the prompt is vague or empty, run `atris zero-shot --json` and follow its returned route before choosing work.
+If the prompt is vague or empty, run `atris zero-shot --prompt` and follow the handoff before choosing work. Use `atris zero-shot --json` when you need structured route metadata.
 
 If there is no existing task, create one before editing:
 

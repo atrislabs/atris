@@ -4208,7 +4208,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: unknown/);
-    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json/);
+    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
     assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
@@ -4219,7 +4219,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     const body = JSON.parse(json.stdout);
     assert.equal(body.zero_shot.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(body.zero_shot.decision.lane, 'no_current_task');
-    assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json/);
+    assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4234,7 +4234,7 @@ test('brain activate can target a member and print their next work block', () =>
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
-    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json/);
+    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
     const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));
@@ -13068,11 +13068,12 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
     assert.match(agents, /`atris task ready <id> --proof/);
     assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
+    assert.match(agents, /atris zero-shot --prompt/);
     assert.match(agents, /atris zero-shot --json/);
     assert.doesNotMatch(agents, /task finish <id> --proof/);
     const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
     assert.match(claudeCommand, /atris\/atris\.md/);
-    assert.match(claudeCommand, /atris zero-shot/);
+    assert.match(claudeCommand, /atris zero-shot --prompt/);
     assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
   } finally {
     cleanupTempDir(dir);
@@ -13943,7 +13944,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     const rootAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
     assert.match(rootAgents, /atris business start/);
-    assert.match(rootAgents, /atris zero-shot/);
+    assert.match(rootAgents, /atris zero-shot --prompt/);
     assert.match(rootAgents, /atris radar/);
     assert.match(rootAgents, /atris task next/);
     assert.match(rootAgents, /atris member activate operator/);
@@ -14011,6 +14012,7 @@ test('business workspace scaffold preserves existing root agent adapter files', 
     assert.deepEqual(result.agentAdapters, ['CLAUDE.md', 'GEMINI.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), '# Custom Agent Rules\n');
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Preserve Co Atris Workspace/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris zero-shot --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris task next/);
   } finally {
     cleanupTempDir(dir);
@@ -14037,6 +14039,7 @@ test('business sync repairs missing root agent adapters without overwriting cust
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), beforeCustom);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Repair Co Atris Workspace/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris zero-shot --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris mission status --status active --json/);
     assert.match(res.stdout, /Root agent adapters:/);
     assert.match(res.stdout, /\+ CLAUDE\.md/);

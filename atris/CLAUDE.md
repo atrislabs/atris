@@ -11,7 +11,7 @@ atris atris.md
 ```
 
 This displays the Atris welcome visualization. Show it to the user, then respond to their message.
-If the user did not provide a concrete task, run `atris zero-shot --json` and follow the returned route before choosing work.
+If the user did not provide a concrete task, run `atris zero-shot --prompt` and follow the handoff before choosing work. Use `atris zero-shot --json` when you need structured route metadata.
 
 ## MAPFIRST (Enforced)
 

@@ -127,7 +127,8 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Implementation:** `commands/zero-shot.js`
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route
 - **Member activation:** `commands/member.js` prints the current 0-shot route when waking a named member
-- **Brain activation:** `commands/brain.js` includes the 0-shot line and JSON packet in `atris brain activate`
+- **Brain activation:** `commands/brain.js` includes the 0-shot route and direct prompt command in `atris brain activate`
+- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt`
 - **Regression:** `test/zero-shot.test.js`
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **Does not mutate:** task state, files, human accept gates, or external systems
