@@ -3,7 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
-const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('./zero-shot');
+const {
+  buildPacket: buildZeroShotPacket,
+  renderHint: renderZeroShotHint,
+  writeLatestPacket: writeLatestZeroShotPacket,
+} = require('./zero-shot');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
@@ -864,7 +868,7 @@ FEEDBACK: yes / edit / no`;
 }
 
 function activationZeroShotPacket(state) {
-  try { return buildZeroShotPacket({ cwd: state.root }); } catch { return null; }
+  try { return writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: state.root })); } catch { return null; }
 }
 
 function activationZeroShotLine(state) {

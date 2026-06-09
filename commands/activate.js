@@ -3,7 +3,11 @@ const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
-const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('./zero-shot');
+const {
+  buildPacket: buildZeroShotPacket,
+  renderHint: renderZeroShotHint,
+  writeLatestPacket: writeLatestZeroShotPacket,
+} = require('./zero-shot');
 
 function activateAtris() {
   const workspaceDir = process.cwd();
@@ -159,7 +163,7 @@ function activateAtris() {
     wikiStatus.bullets.forEach((line) => console.log(`- ${line.replace(/^- /, '')}`));
   }
   try {
-    const zeroShot = buildZeroShotPacket({ cwd: workspaceDir });
+    const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: workspaceDir }));
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);

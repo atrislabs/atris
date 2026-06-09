@@ -518,6 +518,8 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /Next route JSON: atris zero-shot --json/);
     assert.match(res.stdout, /Next route prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4219,6 +4221,9 @@ test('brain activate prints a mission card from the compiled brain', () => {
     const body = JSON.parse(json.stdout);
     assert.equal(body.zero_shot.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(body.zero_shot.decision.lane, 'no_current_task');
+    assert.equal(body.zero_shot.durable.wrote, true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
   } finally {
     cleanupTempDir(dir);

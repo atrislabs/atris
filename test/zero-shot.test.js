@@ -139,6 +139,7 @@ test('next without a request is a zero-shot shortcut', () => {
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /run: atris radar --json/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), false);
     assert.deepEqual(fs.readdirSync(dir), []);
   } finally {
     cleanupTempDir(dir);
@@ -551,6 +552,11 @@ test('activate surfaces the zero-shot next route', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /Next: atris zero-shot --prompt/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
+    assert.equal(latest.durable.wrote, true);
+    assert.equal(latest.decision.selected_ref, 'CZS-1');
   } finally {
     cleanupTempDir(dir);
   }

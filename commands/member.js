@@ -3123,8 +3123,12 @@ function memberActivate(name) {
   console.log('');
   console.log(`Member "${fm.name || name}" activated.`);
   try {
-    const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('./zero-shot');
-    const zeroShot = buildZeroShotPacket({ cwd: process.cwd() });
+    const {
+      buildPacket: buildZeroShotPacket,
+      renderHint: renderZeroShotHint,
+      writeLatestPacket: writeLatestZeroShotPacket,
+    } = require('./zero-shot');
+    const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: process.cwd() }));
     console.log(renderZeroShotHint(zeroShot));
     console.log(`Next route JSON: atris zero-shot --json`);
     console.log(`Next route prompt: atris zero-shot --prompt`);
