@@ -134,6 +134,9 @@ atris task - durable local task state (SQLite, gitignored)
   atris task review <id> --reward <n> [--verify "<cmd>"]
                                            Write review event + RSI episode
   atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
+  atris task reviews --group-by <tag|owner|source>   Cluster the certified wall for fast triage
+  atris task accept-group <key>=<value> --spot-check K --confirm-human-accept --as <you> --verified <ids>
+                                           Accept a whole cluster; career XP only on the K you verified
   atris task status [--json] [--history]   Compact live status for web/Swarlo
   atris task setup [--import-todo]         Create/refresh task projection
   atris task serve [--port <n>]            Open local task factory board
@@ -1078,6 +1081,7 @@ function taskReviewCommandLooksSpecific(command) {
   if (/^(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)$/i.test(text)) return false;
   if (/^atris\s+task\s+\w+\s*$/i.test(text)) return false;
   if (/^atris\s+task\s+(?:accept|auto-accept-certified)\b/i.test(text)) return false;
+  if (/^atris[/.]/i.test(text)) return false;
   if (/^atris\s+task\s+\w+\s+json\s*$/i.test(text) && !/--json\b/i.test(text)) return false;
   if (/^atris\s+(?:command|review-chat|smoke|temp)\b/i.test(text)) return false;
   if (/^(?:npm|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg|git)\s+commands?\b/i.test(text)) return false;
@@ -1094,7 +1098,7 @@ function taskReviewEvidenceCommands(text, limit = 8) {
   if (!source) return [];
   const commandWord = '(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)';
   const envPrefix = '(?:(?:[A-Z_][A-Z0-9_]*=[^\\s,;|]+)\\s+)*';
-  const prosePrefix = '(?:(?:rechecked|reran|re-run|run|verified|validated|validation(?:\\s+passed)?|verification(?:\\s+passed)?|focused|live|scoped|installed|direct|full|current|fresh|then|and|commands?|checks?)[:\\s]+)*';
+  const prosePrefix = '(?:(?:rechecked|reran|re-run|run|verified|validated|passed|validation(?:\\s+passed)?|verification(?:\\s+passed)?|focused|live|scoped|installed|direct|full|current|fresh|then|and|commands?|checks?)[:\\s]+)*';
   const commandStart = `${prosePrefix}${envPrefix}${commandWord}\\b`;
   const commandStartPattern = new RegExp(`(^|[^\\w./-])(${commandStart})`, 'i');
   const commandStartInnerPattern = new RegExp(`${envPrefix}${commandWord}\\b`, 'i');
@@ -1118,8 +1122,8 @@ function taskReviewEvidenceCommands(text, limit = 8) {
     const commandOffset = prefix && prefix.index != null ? prefix.index : 0;
     const command = raw.slice(Math.max(0, commandOffset));
     const clean = command
-      .replace(/\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns)\b.*$/i, '')
-      .replace(/\s+(?:showed|shows|showing|returned|returns)\b.*$/i, '')
+      .replace(/\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i, '')
+      .replace(/\s+(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i, '')
       .replace(/\.\s+(?:Reward remains|No human|Human accept|AgentXP|XP)\b.*$/i, '')
       .replace(/\s+\((?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)$/i, '')
       .replace(/\s+\(?(?:exit|status|code)\s+\d+\)?$/i, '')
@@ -1127,6 +1131,7 @@ function taskReviewEvidenceCommands(text, limit = 8) {
       .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
       .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)(?:[.:]\s+.*|\s+after\b.*)$/i, '')
       .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)?$/i, '')
+      .replace(/\s+\(?\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?\)?$/i, '')
       .replace(/\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
       .replace(/[\]),.;:]+$/g, '')
       .replace(/\s+/g, ' ')
@@ -3736,10 +3741,77 @@ function taskReviewQueue(projection, args = []) {
   };
 }
 
+// ── Fast unblock: cluster the certified-pending wall so a human reviews ~15 groups, not 473 rows ──
+function certifiedPendingReviewTasks(projection) {
+  return (projection.tasks || [])
+    .filter(task => task && task.status === 'review' && task.review && task.review.approval_status === 'pending')
+    .filter(task => {
+      const handoff = task.review?.handoff || reviewHandoffForTask(task, { suppressExistingFollowUp: true });
+      return handoff?.next_action === 'continue_work'
+        || handoff?.next_action === 'human_accept_waiting'
+        || task.review?.agent_certified === true;
+    });
+}
+
+function reviewGroupKey(value) {
+  const v = String(value || 'tag').toLowerCase();
+  return ['tag', 'owner', 'source'].includes(v) ? v : 'tag';
+}
+
+function reviewGroupValue(task, key) {
+  if (key === 'owner') return String(task.claimed_by || '(unclaimed)');
+  if (key === 'source') return String(task.source_key || (task.metadata && task.metadata.source) || '(no source)');
+  return String(task.tag || '(untagged)');
+}
+
+function taskReviewGroups(projection, key) {
+  const certified = certifiedPendingReviewTasks(projection);
+  const groups = new Map();
+  for (const task of certified) {
+    const value = reviewGroupValue(task, key);
+    if (!groups.has(value)) groups.set(value, []);
+    groups.get(value).push(task);
+  }
+  const list = [...groups.entries()].map(([value, tasks]) => ({
+    value,
+    count: tasks.length,
+    sample_titles: tasks.slice(0, 3).map(t => t.title).filter(Boolean),
+    oldest_updated_at: tasks.reduce((min, t) => Math.min(min, Number(t.updated_at || 0) || 0), Infinity),
+    accept_group_command: `atris task accept-group ${key}=${JSON.stringify(value)} --spot-check 3`,
+  })).sort((a, b) => b.count - a.count || String(a.value).localeCompare(String(b.value)));
+  return {
+    schema: 'atris.task_review_groups.v1',
+    generated_at: projection.generated_at,
+    workspace_root: projection.workspace_root,
+    group_by: key,
+    total_certified: certified.length,
+    group_count: list.length,
+    groups: list,
+  };
+}
+
 function cmdReviews(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const groupByRaw = flag(args, '--group-by');
+  if (groupByRaw) {
+    const key = reviewGroupKey(groupByRaw);
+    const groups = taskReviewGroups(projection, key);
+    if (wantsJson(args)) {
+      printJson({ ok: true, action: 'review_groups', projection_path: outPath, groups });
+      return;
+    }
+    console.log(`CERTIFIED REVIEW — grouped by ${key}`);
+    console.log(`${groups.total_certified} certified across ${groups.group_count} ${key} group(s)`);
+    groups.groups.forEach((g, index) => {
+      console.log('');
+      console.log(`${index + 1}. ${g.value} — ${g.count} task${g.count === 1 ? '' : 's'}`);
+      g.sample_titles.forEach(title => console.log(`   • ${title}`));
+      console.log(`   review then accept the cluster: ${g.accept_group_command} --confirm-human-accept --as <you>`);
+    });
+    return;
+  }
   const queue = taskReviewQueue(projection, args);
   if (wantsJson(args)) {
     printJson({
@@ -3772,6 +3844,136 @@ function cmdReviews(args) {
     console.log('');
     console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all or --limit ${queue.counts.certified}.`);
   }
+}
+
+function stampAcceptGroupMetadata(taskDb, db, taskId, { actor, group, verified, sampleVerifiedIds }) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.accept_group = group;
+  metadata.accept_group_by = actor;
+  metadata.accept_group_at = new Date().toISOString();
+  metadata.accepted_by_sampling = !verified;
+  if (!verified) metadata.sample_verified_ids = sampleVerifiedIds;
+  db.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(metadata), Date.now(), taskId);
+}
+
+// Accept a whole certified cluster honestly: the human spot-checks K rows (real career XP), the rest
+// are accepted-by-sampling (cleared from the backlog, provenance recorded, NO career XP — never fake XP).
+function cmdAcceptGroup(args) {
+  const pos = positional(args);
+  const spec = pos[0];
+  if (!spec || !spec.includes('=')) {
+    console.error('atris task accept-group: <key>=<value> required (key = tag|owner|source, e.g. tag=self-improve)');
+    process.exit(2);
+  }
+  const eq = spec.indexOf('=');
+  const key = reviewGroupKey(spec.slice(0, eq));
+  const value = spec.slice(eq + 1);
+  const spotCheck = Math.max(1, Math.floor(Number(flag(args, '--spot-check')) || 3));
+  const confirm = hasFlag(args, '--confirm-human-accept');
+  const actor = String(flag(args, '--as') || '');
+  const verifiedRaw = flag(args, '--verified');
+
+  if (confirm && agentProofOnlyMode()) {
+    failAgentProofOnly('atris task accept-group', 'Only a human can accept tasks / award XP. Leave proof in Review.');
+  }
+
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection } = writeDefaultProjection(taskDb, db);
+  const group = certifiedPendingReviewTasks(projection).filter(task => reviewGroupValue(task, key) === value);
+  if (!group.length) {
+    console.error(`accept-group: no certified-pending tasks in ${key}=${value}`);
+    process.exit(1);
+  }
+  // Deterministic sample (stable by id) so the same command always surfaces the same rows to verify.
+  const need = Math.min(spotCheck, group.length);
+  const sample = [...group].sort((a, b) => String(a.id).localeCompare(String(b.id))).slice(0, need);
+
+  if (!confirm) {
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'accept_group_preview',
+        group: `${key}=${value}`,
+        count: group.length,
+        spot_check: sample.map(task => ({ ref: taskRef(task), id: task.id, title: task.title, proof: taskReviewClip(task.review?.proof, 240) || null })),
+        verified_ids_to_paste: sample.map(task => task.id),
+      });
+      return;
+    }
+    console.log(`accept-group DRY RUN — ${key}=${value}: ${group.length} certified task(s)`);
+    console.log(`Spot-check these ${need} (open + verify), then accept the whole cluster:`);
+    sample.forEach((task) => {
+      console.log(`  ${taskRef(task)}  ${task.title}`);
+      const proof = taskReviewClip(task.review?.proof, 200);
+      if (proof) console.log(`     proof: ${proof}`);
+    });
+    console.log('');
+    console.log(`If they hold up — accept all ${group.length} (career XP only on the ${need} you verified):`);
+    console.log(`  atris task accept-group ${key}=${JSON.stringify(value)} --spot-check ${spotCheck} --confirm-human-accept --as <you> --verified ${sample.map(task => task.id).join(',')}`);
+    return;
+  }
+
+  if (!actor) {
+    console.error('accept-group: --as <human> required to accept');
+    process.exit(2);
+  }
+  const verifiedInput = typeof verifiedRaw === 'string' ? verifiedRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const groupIds = new Set(group.map(task => task.id));
+  const verifiedIds = new Set();
+  for (const ref of verifiedInput) {
+    let resolved = groupIds.has(ref) ? ref : null;
+    if (!resolved) { try { resolved = requireTaskId(taskDb, db, ref, 'atris task accept-group'); } catch { resolved = null; } }
+    if (resolved && groupIds.has(resolved)) verifiedIds.add(resolved);
+  }
+  if (verifiedIds.size < need) {
+    console.error(`accept-group: spot-check requires you to verify ${need} task(s) IN this group via --verified <ids>. Got ${verifiedIds.size}.`);
+    console.error('Run the same command without --confirm-human-accept to see which rows to verify.');
+    process.exit(2);
+  }
+
+  const groupLabel = `${key}=${value}`;
+  const accepted = [];
+  for (const task of group) {
+    const isVerified = verifiedIds.has(task.id);
+    const proof = String(task.review?.proof || task.metadata?.latest_agent_proof || '').trim()
+      || `Accepted via group spot-check (${groupLabel}); human ${actor} verified ${verifiedIds.size}/${group.length}.`;
+    const done = taskDb.doneTask(db, { id: task.id, status: 'done', actor, allowReview: true });
+    if (!done.updated) { accepted.push({ id: task.id, ok: false, reason: 'not_review' }); continue; }
+    taskDb.reviewTask(db, {
+      id: task.id,
+      actor,
+      reward: 1,
+      lesson: String(task.review?.lesson || ''),
+      nextTask: String(task.review?.next_task || ''),
+      proof,
+      careerXpEligible: isVerified, // honest: career XP ONLY for rows the human actually verified
+    });
+    stampAcceptGroupMetadata(taskDb, db, task.id, { actor, group: groupLabel, verified: isVerified, sampleVerifiedIds: [...verifiedIds] });
+    accepted.push({ id: task.id, ok: true, verified: isVerified, career_xp: isVerified });
+  }
+  const { outPath: afterPath } = writeDefaultProjection(taskDb, db);
+  const okCount = accepted.filter(a => a.ok).length;
+  const verifiedCount = accepted.filter(a => a.ok && a.verified).length;
+  const sampledCount = accepted.filter(a => a.ok && !a.verified).length;
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'accept_group',
+      group: groupLabel,
+      accepted: okCount,
+      verified_career_xp: verifiedCount,
+      sampled_no_career_xp: sampledCount,
+      projection_path: afterPath,
+      results: accepted,
+    });
+    return;
+  }
+  console.log(`accept-group ${groupLabel}: accepted ${okCount}/${group.length}`);
+  console.log(`  ${verifiedCount} verified (career XP) + ${sampledCount} accepted-by-sampling (no career XP, provenance recorded)`);
 }
 
 function humanEventType(type) {
@@ -3928,6 +4130,17 @@ function cmdAdd(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  // Generation throttle — the named root cause is generation > human-review rate. An AGENT cannot keep
+  // minting tasks while a wall of certified-but-unaccepted work waits; that treadmill is what accept-group
+  // only drains. Humans and --force bypass. Closes the tap instead of just enlarging the bucket.
+  if (agentProofOnlyMode() && !hasFlag(args, '--force')) {
+    const { projection: backlogProjection } = writeDefaultProjection(taskDb, db);
+    const pending = certifiedPendingReviewTasks(backlogProjection).length;
+    const cap = Math.max(1, Number(process.env.ATRIS_TASK_BACKLOG_CAP || 200) || 200);
+    if (pending >= cap) {
+      failTask('atris task add', 'backlog_throttle', `refusing agent add: ${pending} certified task(s) await human review (cap ${cap}). Drain with 'atris task accept-group' or pass --force.`);
+    }
+  }
   const result = taskDb.addTask(db, {
     title,
     tag: typeof tag === 'string' ? tag : null,
@@ -7467,6 +7680,8 @@ async function run(args) {
     case 'auto-accept-certified':
     case 'auto-accept':
       return cmdAutoAcceptCertified(rest);
+    case 'accept-group':
+      return cmdAcceptGroup(rest);
     case 'revise': return cmdRevise(rest);
     case 'done':   return cmdDone(rest);
     case 'finish': return cmdFinish(rest);

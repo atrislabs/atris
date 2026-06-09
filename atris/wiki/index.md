@@ -16,6 +16,7 @@
 - [[atris/wiki/concepts/atris-labs-goals.md]] — atris-labs north star, 2026 Q2 targets, standing constraints
 - [[atris/wiki/concepts/horizon-types.md]] — horizon slug prefix convention; type categories and inference rules
 - [[atris/wiki/concepts/verifiable-reward-loop.md]] — reward, scorecards, and why the repo now acts like an RL-style environment
+- [[atris/wiki/concepts/recursive-self-improvement-position.md]] — honest capability assessment: the loop is the RSI skeleton on the leverage axis, intelligence axis fixed by the model
 - [[atris/wiki/concepts/owner-computer-model.md]] — Owner = User | Business; constrained entity modes, typed computers, and groups as the social/access layer
 - [[atris/wiki/concepts/agent-activation-contract.md]] — editor-facing boot contract: first message, MAP-first, setup, and durable-memory routing
 - [[atris/wiki/concepts/workspace-initialization-contract.md]] — `atris init` bootstrap contract: guards, scaffolds, team context, generated agent files, and hooks
