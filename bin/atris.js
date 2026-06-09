@@ -429,7 +429,7 @@ function showHelp() {
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
   console.log('  member list          - Show all team members');
-  console.log('  member activate <n>  - Activate a member (link skills, show context)');
+  console.log('  member activate <n>  - Activate a member and show the zero-shot route');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
   console.log('');
   console.log('Plugin:');

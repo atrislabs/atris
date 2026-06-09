@@ -205,6 +205,7 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
     const res = runCli(['--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /atris zero-shot\s+Pick the next safe move/);
+    assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /If you are unsure, run "atris zero-shot"/);
   } finally {
