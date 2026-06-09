@@ -13798,6 +13798,10 @@ test('activate and next --help print usage without loading workflow context', ()
       const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
       assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
+      if (command === 'next') {
+        assert.match(res.stdout, /zero-shot next move/);
+        assert.match(res.stdout, /--json/);
+      }
       assert.doesNotMatch(res.stdout, /CONTEXT LOADED|Context Loaded|Atris Activate|Atris Plan|Completed \(preview\)/);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${command} created atris/`);
       assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${command} created ~/.atris`);

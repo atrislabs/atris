@@ -972,17 +972,17 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Search:** `rg "workspace-free help smoke" test/commands.test.js`
 
-### Feature: Auto-Advance (`atris next`)
+### Feature: Zero-Shot Shortcut (`atris next`)
 
-**Purpose:** Auto-advance to next workflow step based on journal state
+**Purpose:** Give operators and agents the next safe zero-shot move from the shortest command.
 
 - **Entry point:** `bin/atris.js:840` (interactiveEntry function)
 - **Help:** `bin/atris.js:536-546` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
-- **Regression:** `test/commands.test.js:4310-4324` covers next help without context panels or temp state creation
-- **Logic:** Same as natural language entry - loads context, detects state, advances
-- **Value:** Single-command workflow progression without typing a description
+- **Regression:** `test/zero-shot.test.js` covers `atris next` and `atris next --json`; `test/commands.test.js` covers help without context panels or temp state creation
+- **Logic:** `atris next` without a request delegates to `commands/zero-shot.js`; `atris next "request"` still routes the request through the natural-language Atris entry
+- **Value:** The shortest "what now?" command returns the same safe next-move packet as `atris zero-shot`
 
-**Search:** `rg "command === 'next'|showNextHelp|activate and next --help" bin/atris.js test/commands.test.js`
+**Search:** `rg "command === 'next'|showNextHelp|next without a request is a zero-shot shortcut" bin/atris.js test/zero-shot.test.js test/commands.test.js`
 
 ### Feature: Integrations (`atris gmail/calendar/twitter/slack/integrations`)
 

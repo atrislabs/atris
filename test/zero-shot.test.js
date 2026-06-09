@@ -100,6 +100,38 @@ test('zero-shot falls back to radar when no current task exists', () => {
   }
 });
 
+test('next without a request is a zero-shot shortcut', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['next'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot next move/);
+    assert.match(res.stdout, /run: atris radar --json/);
+    assert.doesNotMatch(res.stdout, /What do you want to build/);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('next --json returns the zero-shot packet for agents', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['next', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
+    assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
+    assert.equal(packet.decision.lane, 'fast_model_task');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot does not let generic brain status override the active task lane', () => {
   const dir = makeTempDir();
   try {
@@ -206,6 +238,7 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /atris zero-shot\s+Pick the next safe move/);
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
+    assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /If you are unsure, run "atris zero-shot"/);
   } finally {

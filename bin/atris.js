@@ -361,7 +361,7 @@ function showHelp() {
   console.log('');
   console.log('Quick commands:');
   console.log('  atris      - Load context and start (natural language)');
-  console.log('  next       - Auto-advance to next step');
+  console.log('  next       - Alias for zero-shot when no request is provided');
   console.log('');
   console.log('Sync:');
   console.log('  pull       - Pull journals + member data from cloud');
@@ -545,12 +545,14 @@ function showActivateHelp() {
 
 function showNextHelp(commandName = 'next') {
   console.log('');
-  console.log(`Usage: atris ${commandName} [request]`);
+  console.log(`Usage: atris ${commandName} [request] [--json]`);
   console.log('');
   console.log('Description:');
-  console.log('  Auto-advance to the next workflow step, or route a request through the Atris entry.');
+  console.log('  With no request, print the zero-shot next move from brain + task state.');
+  console.log('  With a request, route it through the Atris entry.');
   console.log('');
   console.log('Options:');
+  console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
   console.log('  --help, -h   Show this help.');
   console.log('');
 }
@@ -1484,12 +1486,21 @@ if (command === 'init') {
     process.exit(0);
   }
   const userInput = rawArgs.filter((arg) => !arg.startsWith('-')).join(' ').trim();
-  interactiveEntry(userInput || null)
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(`✗ Error: ${error.message || error}`);
-      process.exit(1);
-    });
+  if (command === 'next' && !userInput) {
+    Promise.resolve(require('../commands/zero-shot').zeroShotCommand(rawArgs))
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`✗ Error: ${error.message || error}`);
+        process.exit(1);
+      });
+  } else {
+    interactiveEntry(userInput || null)
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`✗ Error: ${error.message || error}`);
+        process.exit(1);
+      });
+  }
 } else if (command === 'plan') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h')) {
