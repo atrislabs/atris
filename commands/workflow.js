@@ -135,14 +135,15 @@ function makeCloudExecutor({ token, businessId, workspaceId, slug }) {
   };
 }
 
-function postToolResult(callId, result) {
-  const http = require('http');
+function postToolResult(callId, result, base = 'http://127.0.0.1:8000') {
+  const url = new URL('/api/atris2/turn/tool-result', base);
+  const transport = url.protocol === 'https:' ? require('https') : require('http');
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify({ call_id: callId, result });
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port: 8000,
-      path: '/api/atris2/turn/tool-result',
+    const req = transport.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1635,5 +1636,7 @@ module.exports = {
   planAtris,
   doAtris,
   reviewAtris,
-  executeAgentSDKFast
+  executeAgentSDKFast,
+  makeCloudExecutor,
+  postToolResult
 };

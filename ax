@@ -63,6 +63,7 @@ const ANSI = {
 
 function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
+  if (mode === 'max') return 'atris:max';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
 }
 
@@ -80,12 +81,18 @@ function formatSeconds(totalSeconds) {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+function tierLabel(mode) {
+  if (mode === 'code-fast') return 'Atris Code Fast';
+  if (mode === 'max') return 'Atris 2 Max';
+  if (mode === 'fast') return 'Atris 2 Fast';
+  return 'Atris 2 Pro';
+}
+
 function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) {
-  const label = mode === 'code-fast' ? 'Atris Code Fast' : mode === 'fast' ? 'Atris 2 Fast' : 'Atris 2 Pro';
   return [
-    `${label}${chat ? ' chat' : ''} (${modelForMode(mode)})`,
+    `${tierLabel(mode)}${chat ? ' chat' : ''}`,
     cwd,
-    chat ? 'exit with exit, quit, or :q' : '',
+    chat ? 'swap tiers with /fast /pro /max · exit with exit, quit, or :q' : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -94,21 +101,25 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--pro|--fast|--code-fast] [--local|--cloud] <message>',
-    '  ax [--pro|--fast|--code-fast] [--local|--cloud] --chat',
-    '  ax [--pro|--fast|--code-fast] --doctor',
-    '  ax [--fast] --benchmark',
+    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
+    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
+    '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
+    '  ax [--max|--pro|--fast|--code-fast] --doctor',
+    '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
+    '  --max   local workspace agent, highest reasoning, slowest turns',
     '  --pro   local workspace agent, deeper tool loop',
     '  --fast  local workspace agent, faster low-latency turns',
-    '  --code-fast  Atris Code Fast public lane (composer-2-5-fast)',
+    '  --code-fast  Atris Code Fast public lane',
     '  --local force local workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
+    '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '',
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
+    '  ax --max refactor this module and verify the tests',
     '  ax --code-fast explain this error',
     '  ax --fast what is on my calendar today',
     '  ax --pro --chat',
@@ -231,15 +242,17 @@ function buildRunProfile(options = {}) {
     max_turns: payload.max_turns,
     streaming: true,
     runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
-    reasoning: mode === 'pro'
-      ? 'backend reports run row; Pro workspace tool loop uses API default medium'
-      : 'backend reports run row; Fast workspace tool loop uses provider default'
+    reasoning: mode === 'max'
+      ? 'backend reports run row; Max workspace tool loop uses high reasoning effort'
+      : mode === 'pro'
+        ? 'backend reports run row; Pro workspace tool loop uses API default medium'
+        : 'backend reports run row; Fast workspace tool loop uses provider default'
   };
 }
 
 function formatRunProfile(profile, options = {}) {
   const rows = [
-    ['mode', `${profile.mode} (${profile.model})`],
+    ['mode', profile.mode],
     ['endpoint', profile.endpoint],
     ['route', profile.route || 'auto'],
     ['workspace', formatPathSubject(profile.workspace_path, options)],
@@ -477,11 +490,22 @@ function resolveRoute(message, options = {}) {
 
 function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
+  if (mode === 'max') return 'max';
   return mode === 'fast' ? 'fast' : 'pro';
 }
 
-function formatPrompt() {
-  return '› ';
+function formatPrompt(mode) {
+  return mode ? `${normalizeMode(mode)} › ` : '› ';
+}
+
+const TIER_COMMANDS = new Map([
+  ['/fast', 'fast'],
+  ['/pro', 'pro'],
+  ['/max', 'max'],
+]);
+
+function chatTierCommand(line) {
+  return TIER_COMMANDS.get(String(line || '').trim().toLowerCase()) || null;
 }
 
 function formatWorkingLine(ms) {
@@ -750,10 +774,9 @@ function formatStatusMessage(message) {
 
 function formatSystemInit(event, options = {}) {
   const runtime = event.tool_runtime || {};
-  const model = runtime.tool_model || runtime.chat_model || event.model || '';
   const mode = runtime.mode ? String(runtime.mode).replace(/_/g, ' ') : '';
   const thinking = runtime.reasoning_effort ? `thinking ${runtime.reasoning_effort}` : '';
-  const parts = [mode || 'runtime', model, thinking].filter(Boolean);
+  const parts = [mode || 'runtime', thinking].filter(Boolean);
   return parts.length ? parts.join('  ') : null;
 }
 
@@ -837,15 +860,21 @@ function buildMessage(message, history = []) {
 
 function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
-  const route = resolveRoute(message, options);
+  const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
-    max_turns: local ? (mode === 'pro' ? 14 : 8) : 1,
+    max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
     verify_command: 'true'
   };
-  if (local) {
+  if (options.business) {
+    // Business cloud workspace: the model loop stays on the backend and every
+    // file/bash tool call relays here, executing on the business EC2 via the
+    // /terminal endpoint. The workspace_path is a label, not a local path.
+    payload.workspace_path = `/workspace/${options.business.slug}`;
+    payload.local_executor = true;
+  } else if (local) {
     payload.workspace_path = options.cwd || process.cwd();
   }
   if (options.connectionContext) {
@@ -857,7 +886,7 @@ function buildPayload(message, options = {}) {
   if (!local && connectorWriteIntent(message)) {
     payload.allow_external_actions = true;
     payload.cleanup_external_actions = true;
-    payload.max_turns = mode === 'pro' ? 4 : 2;
+    payload.max_turns = mode === 'fast' ? 2 : 4;
   }
   return payload;
 }
@@ -920,6 +949,23 @@ function handleEvent(event, state, output) {
     return;
   }
 
+  if (event.type === 'tool_call_request') {
+    flushPendingText(state, output);
+    const args = event.args || {};
+    const label = `cloud:${args.type || event.name || 'tool'}${args.command ? ` $ ${String(args.command).slice(0, 80)}` : ''}${args.path ? ` ${args.path}` : ''}`;
+    writeAuxLine(state, output, formatAuxRow('tool', label, output));
+    if (state.relay) {
+      // Relayed calls run sequentially: the backend awaits each tool-result
+      // before continuing its loop, so a promise chain preserves order.
+      state.relay.chain = state.relay.chain
+        .then(() => state.relay.execute(event.name, args))
+        .catch((err) => ({ status: 'error', error: String(err.message || err).slice(0, 500) }))
+        .then((result) => state.relay.post(event.call_id, result))
+        .catch((err) => state.errors.push(`tool relay failed: ${err.message}`));
+    }
+    return;
+  }
+
   if (event.type === 'status' && event.message && event.message !== 'complete') {
     if (event.message === 'retrying_with_required_local_tool') {
       clearRetriedText(state);
@@ -944,7 +990,7 @@ function handleEvent(event, state, output) {
 }
 
 async function postTurn(message, options = {}) {
-  const route = resolveRoute(message, options);
+  const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
   const token = authToken();
   const shouldSendConnectionContext = options.connectionContext
@@ -958,7 +1004,10 @@ async function postTurn(message, options = {}) {
   const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
-  const timeoutMs = payload.model === 'atris:pro' ? 180000 : 60000;
+  // Relayed business turns wait on EC2 terminal calls (up to 60s each) with no
+  // SSE traffic in between, so the socket-idle timeout needs more headroom.
+  const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
+  const timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
   const turnUrl = new URL(backendUrl());
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
@@ -974,7 +1023,12 @@ async function postTurn(message, options = {}) {
     inAuxBlock: false,
     markdownMode: 'normal',
     markdownBuffer: '',
-    markdownCarry: ''
+    markdownCarry: '',
+    relay: options.business ? {
+      chain: Promise.resolve(),
+      execute: options.business.executor,
+      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl())
+    } : null
   };
 
   return new Promise((resolve, reject) => {
@@ -1180,7 +1234,7 @@ function turnFunctionForMode(mode) {
 }
 
 async function chat(options = {}) {
-  const mode = normalizeMode(options.mode);
+  let mode = normalizeMode(options.mode);
   const cwd = options.cwd || process.cwd();
   const input = options.input || process.stdin;
   const baseOutput = options.output || process.stdout;
@@ -1196,9 +1250,17 @@ async function chat(options = {}) {
     if (!trimmed) return false;
     if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
 
+    const tier = chatTierCommand(trimmed);
+    if (tier) {
+      mode = tier;
+      if (logger) logger.write(`${trimmed}\n`);
+      output.write(`${paint(`· ${tierLabel(mode)}`, [ANSI.muted], output)}\n\n`);
+      return false;
+    }
+
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
-    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route });
+    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route, business: options.business });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     output.write(`${formatDoneLine(result.durationMs)}\n\n`);
     history.push({ role: 'user', content: trimmed });
@@ -1282,13 +1344,14 @@ async function runBenchmarkCase(label, fn, results, output) {
 }
 
 async function runBenchmark(options = {}) {
-  const mode = normalizeMode(options.mode) === 'pro' ? 'pro' : 'fast';
+  const normalized = normalizeMode(options.mode);
+  const mode = normalized === 'code-fast' ? 'fast' : normalized;
   const output = options.output || process.stdout;
   const results = [];
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-atris2-benchmark-'));
   const localOut = () => bufferedOutput();
 
-  output.write(`Atris 2 ${mode === 'fast' ? 'Fast' : 'Pro'} benchmark\n`);
+  output.write(`Atris 2 ${mode === 'fast' ? 'Fast' : mode === 'max' ? 'Max' : 'Pro'} benchmark\n`);
   output.write(`${backendUrl()}\n\n`);
 
   try {
@@ -1407,16 +1470,60 @@ async function main() {
     return;
   }
 
-  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--fast') ? 'fast' : 'pro';
+  // --business <slug>: chat against that business's cloud workspace. The flag
+  // takes a value, so splice the pair out before building the prompt.
+  let businessSlug = null;
+  const bizIdx = args.indexOf('--business');
+  if (bizIdx !== -1) {
+    businessSlug = String(args[bizIdx + 1] || '').toLowerCase();
+    if (!/^[a-z0-9-]+$/.test(businessSlug)) {
+      console.error('Usage: ax --business <slug> [prompt]');
+      process.exit(1);
+    }
+    args.splice(bizIdx, 2);
+  }
+
+  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--max') ? 'max' : args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
   const benchmark = args.includes('--benchmark');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
+
+  let business = null;
+  if (businessSlug) {
+    if (normalizeMode(mode) === 'code-fast') {
+      console.error('--business is not supported with --code-fast');
+      process.exit(1);
+    }
+    const creds = loadCredentials();
+    if (!creds || !creds.token) {
+      console.error('Not logged in. Run: atris login');
+      process.exit(1);
+    }
+    const { resolveBusiness, ensureAwake } = require('./commands/terminal');
+    const { makeCloudExecutor, postToolResult } = require('./commands/workflow');
+    const biz = await resolveBusiness(creds.token, businessSlug);
+    if (!biz || !biz.workspaceId) {
+      console.error(`Business "${businessSlug}" not found or has no workspace.`);
+      process.exit(1);
+    }
+    const awake = await ensureAwake(creds.token, biz.businessId);
+    if (!awake) {
+      console.error('Business computer did not become ready in time.');
+      process.exit(1);
+    }
+    business = {
+      slug: businessSlug,
+      executor: makeCloudExecutor({ token: creds.token, businessId: biz.businessId, workspaceId: biz.workspaceId, slug: businessSlug }),
+      postToolResult
+    };
+    console.log(`cloud workspace: ${biz.businessName || businessSlug}`);
+  }
 
   try {
     if (benchmark) {
@@ -1432,13 +1539,13 @@ async function main() {
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
+      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business });
       return;
     }
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
     console.log('');
-    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route });
+    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business });
     console.log('');
     console.log(formatDoneLine(result.durationMs));
   } catch (error) {
@@ -1463,6 +1570,7 @@ module.exports = {
   buildConnectionContext,
   buildRunProfile,
   chat,
+  chatTierCommand,
   codeFastWorkspaceNotice,
   codeFastBaseUrl,
   codeFastUrl,
@@ -1488,5 +1596,6 @@ module.exports = {
   resolveRoute,
   runBenchmark,
   summarizeToolInput,
-  summarizeToolResult
+  summarizeToolResult,
+  tierLabel
 };
