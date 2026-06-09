@@ -43,9 +43,13 @@ For agents and scripts:
 ```bash
 atris zero-shot --json
 atris next --json
+atris zero-shot --prompt
+atris next --prompt
+atris zero-shot --write
+atris next --write
 ```
 
-It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, owner-gated work, or context gathering.
+It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, recovery work, owner-gated work, or context gathering. Use `--prompt` for a copy-pasteable handoff prompt, and `--write` to refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` for ambient agents.
 
 If you already know what you want, tell atris what to build:
 

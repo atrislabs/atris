@@ -5,6 +5,8 @@ const path = require('path');
 
 const SCHEMA = 'atris.zero_shot_next_move.v1';
 const ROUTE_LIMIT = 8;
+const LATEST_PACKET_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
+const LATEST_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
 const TERMINAL_TASK_STATUSES = new Set(['done', 'accepted', 'complete', 'completed']);
 const LANE_PRIORITY = {
   mission_tick: 0,
@@ -400,6 +402,7 @@ function buildHandoff(route, root) {
     route_options_field: 'routes.options',
     json_command: 'atris zero-shot --json',
     prompt_command: 'atris zero-shot --prompt',
+    write_command: 'atris zero-shot --write',
   };
 }
 
@@ -474,6 +477,11 @@ function buildPacket(options = {}) {
     queue: taskState.counts,
     routes: publicRoutes,
     handoff: buildHandoff(handoffRoute, root),
+    durable: {
+      write_command: 'atris zero-shot --write',
+      latest_json: LATEST_PACKET_RELATIVE_PATH,
+      prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+    },
     missions: {
       active: missionState.active_count,
       needs_tick: missionState.needs_tick_count,
@@ -489,6 +497,7 @@ function buildPacket(options = {}) {
     commands: {
       zero_shot_json: 'atris zero-shot --json',
       zero_shot_prompt: 'atris zero-shot --prompt',
+      zero_shot_write: 'atris zero-shot --write',
       next_command: command,
       first_command: command,
       context_check: 'atris radar --json',
@@ -505,6 +514,31 @@ function buildPacket(options = {}) {
       no_file_writes: true,
     },
   };
+}
+
+function writeLatestPacket(packet) {
+  const root = packet.workspace_root || findWorkspaceRoot(process.cwd());
+  const latestJsonPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
+  const promptTxtPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
+  const packetToWrite = {
+    ...packet,
+    boundaries: {
+      ...packet.boundaries,
+      no_file_writes: false,
+    },
+    durable: {
+      ...(packet.durable || {}),
+      wrote: true,
+      latest_json: LATEST_PACKET_RELATIVE_PATH,
+      prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+      latest_json_abs: latestJsonPath,
+      prompt_txt_abs: promptTxtPath,
+    },
+  };
+  fs.mkdirSync(path.dirname(latestJsonPath), { recursive: true });
+  fs.writeFileSync(latestJsonPath, `${JSON.stringify(packetToWrite, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(promptTxtPath, `${packetToWrite.handoff.prompt}\n`, 'utf8');
+  return packetToWrite;
 }
 
 function renderRouteSummary(routes) {
@@ -531,9 +565,10 @@ function renderPacket(packet) {
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
     renderRouteSummary(packet.routes),
     `prompt: ${packet.commands.zero_shot_prompt}`,
+    `write: ${packet.commands.zero_shot_write} -> ${packet.durable.latest_json}`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
-    'boundaries: no external sends, no human accept, no task mutation, no file writes',
+    `boundaries: no external sends, no human accept, no task mutation${packet.boundaries.no_file_writes ? ', no file writes' : ''}`,
     `json: ${packet.commands.zero_shot_json}`,
   ].join('\n');
 }
@@ -545,14 +580,15 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris zero-shot [--json|--prompt]',
+    'Usage: atris zero-shot [--json|--prompt|--write]',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
-    'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',
+    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH} and ${LATEST_PROMPT_RELATIVE_PATH} for ambient agents; it does not mutate tasks or call external systems.`,
+    'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
 
@@ -561,7 +597,10 @@ function zeroShotCommand(args = []) {
     console.log(renderHelp());
     return 0;
   }
-  const packet = buildPacket();
+  let packet = buildPacket();
+  if (args.includes('--write')) {
+    packet = writeLatestPacket(packet);
+  }
   if (args.includes('--json')) {
     console.log(JSON.stringify(packet, null, 2));
   } else if (args.includes('--prompt')) {
@@ -582,5 +621,6 @@ module.exports = {
   collectTasks,
   renderHint,
   renderPacket,
+  writeLatestPacket,
   zeroShotCommand,
 };

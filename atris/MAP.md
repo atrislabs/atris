@@ -52,7 +52,7 @@ rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js comman
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
 rg "brainCommand|collectState|countStateRows|certifiedReviewTasks|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard, certified review checkpoint routing, and workspace-free help
-rg "zeroShotCommand|buildPacket|collectMissions|collectCodexGoal|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'|showWelcomeVisualization|memberActivate" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js commands/member.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: read-only brain/task/mission/goal packet for vague prompts, boot visualization, member activation, and brain hints
+rg "zeroShotCommand|buildPacket|writeLatestPacket|collectMissions|collectCodexGoal|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'|showWelcomeVisualization|memberActivate" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js commands/member.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: brain/task/mission/goal packet for vague prompts, optional ambient latest files, boot visualization, member activation, and brain hints
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport|showLoopHelp|loop --help" bin/atris.js commands/loop.js test/commands.test.js # Wiki upkeep loop + non-mutating help
@@ -120,7 +120,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 ### Feature: 0-shot Next Move (`atris zero-shot`)
 
-**Purpose:** Gives any agent or operator a read-only next-move packet when the prompt is vague or empty.
+**Purpose:** Gives any agent or operator a next-move packet when the prompt is vague or empty.
 
 - **Entry point:** `bin/atris.js` routes `zero-shot` and prints a 0-shot hint on bare `atris`
 - **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris zero-shot`
@@ -131,7 +131,8 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt`
 - **Regression:** `test/zero-shot.test.js`
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
-- **Does not mutate:** task state, files, human accept gates, or external systems
+- **Default safety:** normal `atris zero-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
+- **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
 - **Any-model handoff:** JSON includes `handoff.prompt`, and `atris zero-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
@@ -142,8 +143,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris zero-shot` -> human next-move card
 - `atris zero-shot --json` -> machine-readable packet
 - `atris zero-shot --prompt` -> copy-pasteable prompt for any model
+- `atris zero-shot --write` -> refresh durable latest packet and prompt files
 
-**Search:** `rg "zeroShotCommand|buildPacket|collectMissions|collectCodexGoal|mission_tick|goal_context" commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "zeroShotCommand|buildPacket|writeLatestPacket|collectMissions|collectCodexGoal|mission_tick|goal_context" commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

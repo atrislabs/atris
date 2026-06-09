@@ -204,6 +204,53 @@ test('next --prompt returns the zero-shot prompt when no request is provided', (
   }
 });
 
+test('zero-shot --write refreshes durable latest packet and prompt files', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['zero-shot', '--write', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    const latestJsonPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
+    const promptTxtPath = path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt');
+    assert.equal(packet.durable.wrote, true);
+    assert.equal(packet.durable.latest_json, '.atris/state/zero-shot.latest.json');
+    assert.equal(packet.durable.prompt_txt, '.atris/state/zero-shot.prompt.txt');
+    assert.equal(packet.boundaries.no_file_writes, false);
+    assert.equal(packet.commands.zero_shot_write, 'atris zero-shot --write');
+    assert.equal(packet.handoff.write_command, 'atris zero-shot --write');
+    assert.equal(fs.existsSync(latestJsonPath), true);
+    assert.equal(fs.existsSync(promptTxtPath), true);
+    const latest = JSON.parse(fs.readFileSync(latestJsonPath, 'utf8'));
+    assert.equal(latest.schema, 'atris.zero_shot_next_move.v1');
+    assert.equal(latest.generated_at, packet.generated_at);
+    assert.equal(latest.handoff.prompt, packet.handoff.prompt);
+    assert.equal(fs.readFileSync(promptTxtPath, 'utf8'), `${packet.handoff.prompt}\n`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('next --write refreshes the same durable zero-shot files', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['next', '--write', '--prompt'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /^Atris 0-shot selected the next move/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot routes active missions needing verification before task work', () => {
   const dir = makeTempDir();
   try {
@@ -466,11 +513,12 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /routes\.options/);
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
+    assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);
     assert.match(res.stdout, /owner_gate/);
-    assert.match(res.stdout, /without writing state/);
+    assert.match(res.stdout, /without accepting tasks or calling external systems/);
     assert.deepEqual(fs.readdirSync(dir), []);
   } finally {
     cleanupTempDir(dir);
@@ -482,7 +530,7 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
   try {
     const res = runCli(['--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /atris zero-shot\s+Pick the next safe move/);
+    assert.match(res.stdout, /atris zero-shot\s+Pick or write the next safe move/);
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);

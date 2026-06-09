@@ -289,7 +289,7 @@ function showHelp() {
   console.log('');
   console.log('Quick Start:');
   console.log('');
-  console.log('  1. atris zero-shot       Pick the next safe move when you do not know what to prompt');
+  console.log('  1. atris zero-shot       Pick or write the next safe move when you do not know what to prompt');
   console.log('  2. atris                 Open a persistent AI computer for this workspace');
   console.log('  3. Describe what you want run, built, researched, or validated');
   console.log('  4. Atris acts with context, memory, tools, and a review loop');
@@ -325,7 +325,7 @@ function showHelp() {
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  zero-shot  - Pick the next safe move from brain + task state');
+  console.log('  zero-shot  - Pick or write the next safe move from brain + task state');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -545,7 +545,7 @@ function showActivateHelp() {
 
 function showNextHelp(commandName = 'next') {
   console.log('');
-  console.log(`Usage: atris ${commandName} [request] [--json|--prompt]`);
+  console.log(`Usage: atris ${commandName} [request] [--json|--prompt|--write]`);
   console.log('');
   console.log('Description:');
   console.log('  With no request, print the zero-shot next move from brain + task state.');
@@ -554,6 +554,7 @@ function showNextHelp(commandName = 'next') {
   console.log('Options:');
   console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
   console.log('  --prompt     Print the copy-pasteable zero-shot prompt when no request is provided.');
+  console.log('  --write      Refresh .atris/state/zero-shot.latest.json and zero-shot.prompt.txt.');
   console.log('  --help, -h   Show this help.');
   console.log('');
 }
