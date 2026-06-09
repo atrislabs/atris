@@ -4177,10 +4177,18 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: unknown/);
+    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json/);
     assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
     assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
     assert.match(res.stdout, /VERIFY: brain artifacts present/);
+
+    const json = runCli(['brain', 'activate', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr);
+    const body = JSON.parse(json.stdout);
+    assert.equal(body.zero_shot.schema, 'atris.zero_shot_next_move.v1');
+    assert.equal(body.zero_shot.decision.lane, 'no_current_task');
+    assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4195,6 +4203,7 @@ test('brain activate can target a member and print their next work block', () =>
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
+    assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json/);
     assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
     const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));

@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
+const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('./zero-shot');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
@@ -831,6 +832,7 @@ function renderMissingMemberCard(state, memberSlug) {
   const available = members.length > 0 ? members.join(', ') : 'none';
   return `CONTEXT: ${state.name} Brain
 OPERATOR: ${slug} (missing)
+${activationZeroShotLine(state)}
 NEXT MOVE: Create atris/team/${slug}/MEMBER.md or rerun with an existing member.
 WHY: Activation can only route by operator after the member profile exists locally.
 PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
@@ -842,6 +844,7 @@ function renderPlaceholderMemberCard(state, member, issues) {
   const slug = member.slug || '<name>';
   return `CONTEXT: ${state.name} Brain
 OPERATOR: ${member.name || slug} (not ready)
+${activationZeroShotLine(state)}
 NEXT MOVE: Replace placeholder sections in atris/team/${slug}/MEMBER.md with the member's real workflow, rules, and proof standard.
 WHY: Activation should not turn template text into fake operator work.
 PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
@@ -853,10 +856,21 @@ function renderMissingStartHereCard(state, member) {
   const slug = member.slug || '<name>';
   return `CONTEXT: ${state.name} Brain
 OPERATOR: ${member.name || slug} (not ready)
+${activationZeroShotLine(state)}
 NEXT MOVE: Create atris/team/${slug}/START_HERE.md with the member's first concrete work block, verifier, and proof target.
 WHY: Activation should not tell an operator to use START_HERE until that local contract exists.
 PROOF: Re-run atris brain activate --member ${slug} --root ${state.root} --verify and get an operator-specific work block.
 FEEDBACK: yes / edit / no`;
+}
+
+function activationZeroShotPacket(state) {
+  try { return buildZeroShotPacket({ cwd: state.root }); } catch { return null; }
+}
+
+function activationZeroShotLine(state) {
+  const packet = activationZeroShotPacket(state);
+  if (!packet) return 'ZERO SHOT: atris zero-shot --json';
+  return renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:');
 }
 
 function renderActivationCard(state, options = {}) {
@@ -868,6 +882,7 @@ function renderActivationCard(state, options = {}) {
   if (!member && !options.member) {
     return `CONTEXT: ${state.name} Brain
 OPERATOR: unknown
+${activationZeroShotLine(state)}
 NEXT MOVE: Tell Atris who is operating: atris brain activate --member <name> --root ${state.root}
 WHY: The brain should route work by operator, customer, and proof path before it assigns the next move.
 PROOF: Activation re-runs with a known operator and produces a specific work block.
@@ -889,6 +904,7 @@ FEEDBACK: yes / edit / no`;
     ? `${scoreContext.score ? `\nSCORE: ${scoreContext.score}` : ''}${scoreContext.nextRep ? `\nNEXT REP: ${scoreContext.nextRep}` : ''}`
     : '';
   return `CONTEXT: ${state.name} Brain${member ? `\nOPERATOR: ${member.name}` : ''}${modeMove ? `\nMODE: ${modeMove.label}` : ''}
+${activationZeroShotLine(state)}
 NEXT MOVE: ${next}
 WHY: This is the next business workflow to improve from atris/now.md, the compiled brain, MAP, TODO, wiki, state rows, and reward history.
 PROOF: ${proof}${scoreLines}
@@ -1460,6 +1476,7 @@ function brainCommand(args = process.argv.slice(3)) {
     writeBrain(state);
     if (options.verify) verifyBrain(options.root);
     const card = renderActivationCard(state, options);
+    const zeroShot = activationZeroShotPacket(state);
     if (options.json) {
       if (options.verify) {
         try {
@@ -1470,11 +1487,12 @@ function brainCommand(args = process.argv.slice(3)) {
             error: error && error.message ? error.message : String(error),
             state,
             card,
+            zero_shot: zeroShot,
           }, null, 2));
           process.exit(1);
         }
       }
-      console.log(JSON.stringify({ ok: true, state, card }, null, 2));
+      console.log(JSON.stringify({ ok: true, state, card, zero_shot: zeroShot }, null, 2));
       return;
     }
     console.log('');
