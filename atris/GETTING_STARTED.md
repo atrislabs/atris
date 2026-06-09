@@ -36,13 +36,16 @@ If you do not know what to prompt, ask for the next move:
 atris zero-shot
 ```
 
+`atris next` is the same shortcut when you have no request typed.
+
 For agents and scripts:
 
 ```bash
 atris zero-shot --json
+atris next --json
 ```
 
-It routes quick work, fast-model work, review work, long-term planning, owner-gated work, or context gathering.
+It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, owner-gated work, or context gathering.
 
 If you already know what you want, tell atris what to build:
 
@@ -94,6 +97,7 @@ The loop runs until the goal is done, then picks the next one from scorecards + 
 ```
 atris init                 set up a new workspace
 atris zero-shot            choose the next safe move when you do not know what to prompt
+atris next                 same as zero-shot when no request is provided
 atris activate             load context (MAP, TODO, journal)
 atris log                  add to today's journal
 atris autopilot            run one tick (plan, build, review, verify)

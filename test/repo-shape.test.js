@@ -32,6 +32,9 @@ test('public docs advertise zero-shot for uncertain starts', () => {
   for (const rel of ['README.md', 'GETTING_STARTED.md', path.join('atris', 'GETTING_STARTED.md')]) {
     const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
     assert.match(text, /atris zero-shot/);
+    assert.match(text, /atris next/);
+    assert.match(text, /mission verifier ticks/);
+    assert.match(text, /visible goal context/);
     assert.match(text, /what to prompt|do not know what to prompt|don't know what to prompt/i);
   }
 });
