@@ -33,7 +33,7 @@ rg "modelForMode|buildPayload|formatUsage|async function chat|postTurn" ax test/
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)
-rg "function reviewAtris" commands/workflow.js  # Review command (line 747)
+rg "function reviewAtris" commands/workflow.js  # Review command: default certified queue, --verbose legacy validator prompt
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
@@ -50,6 +50,7 @@ rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp" bin/atris.js c
 rg "agentDoctor|inspectAgentCliWiring|agent doctor" bin/atris.js test/commands.test.js commands/init.js # Local AI CLI wiring doctor + Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
+rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
 rg "brainCommand|collectState|countStateRows|certifiedReviewTasks|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard, certified review checkpoint routing, and workspace-free help
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris" commands/clean.js           # Clean command
@@ -199,17 +200,18 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 ### Feature: App Pack Wrapper (`atris apps`)
 
-**Purpose:** Keep local APP.md app-pack operations machine-readable without booting the heavier natural-language workspace path.
+**Purpose:** Keep local APP.md app-pack operations machine-readable and load owned cloud apps without booting the heavier natural-language workspace path.
 
-- **Early route:** `bin/atris.js:106-113` routes `apps` directly into `commands/apps.js`
-- **Handler:** `commands/apps.js:159` (`appsCommand`)
+- **Dispatch:** `bin/atris.js` routes `apps` directly into `commands/apps.js` before natural-language planning
+- **Handler:** `commands/apps.js` (`appsCommand`)
+- **Cloud load:** `commands/apps.js` handles `apps load|cloud|mine [--filter kind] [--json]` through `/api/apps` with `atris login` credentials and no local app-pack requirement
 - **JSON helpers:** `commands/apps.js:48-72` normalize `apps --json` to `list --json` and route JSON errors through `exitAppsError`
 - **Missing pack:** `commands/apps.js:169-179` returns `{ ok:false }` when the pack is missing under JSON mode
 - **Usage errors:** `commands/apps.js:215-236` keeps `run|owner --json` missing slug and unknown subcommands machine-readable
 - **Manifest reader:** `commands/apps.js:85-127` parses app `APP.md` frontmatter into agent-readable JSON
-- **Regression:** `test/apps.test.js:84-156` covers `apps --json` shorthand, missing-pack JSON errors, JSON usage errors, and unknown-command JSON usage
+- **Regression:** `test/apps.test.js` covers `apps --json` shorthand, missing-pack JSON errors, cloud load JSON/auth behavior, JSON usage errors, and unknown-command JSON usage
 
-**Search:** `rg "appsCommand|exitAppsError|findAppsPackRoot|listAppManifests|apps --json|apps unknown" commands/apps.js test/apps.test.js bin/atris.js`
+**Search:** `rg "appsCommand|loadCloudApps|exitAppsError|findAppsPackRoot|listAppManifests|apps load|apps --json|apps unknown" commands/apps.js test/apps.test.js bin/atris.js`
 
 ### Feature: Spec Update (`atris update`, `atris update --all`)
 

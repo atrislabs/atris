@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { ensureValidCredentials } = require('../utils/auth');
+const { apiRequestJson } = require('../utils/api');
+
+const CLOUD_LOAD_COMMANDS = new Set(['load', 'cloud', 'mine']);
 
 function findAppsPackRoot(startDir = process.cwd()) {
   const explicit = process.env.ATRIS_APPS_PACK;
@@ -25,6 +29,7 @@ function appsUsageLines() {
     '',
     'Commands:',
     '  list [--json]                List available local apps',
+    '  load [--filter kind] [--json] Load owned cloud apps from Atris',
     '  run <slug> [--lines N]       Run an app and print data/latest.md or --json status',
     '  owner <slug> [--json]        Show owner view: launch, usage, learning, next actions',
     '  status [--json]              Show local app health',
@@ -156,7 +161,99 @@ function runPackScript(packRoot, script, args) {
   process.exit(result.status ?? 0);
 }
 
-function appsCommand(subcommand, ...rawArgs) {
+function normalizeCloudAppsPayload(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.apps)) return data.apps;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
+function compactCloudApp(app) {
+  const slug = app?.slug || app?.id || app?.name || 'unknown';
+  return {
+    id: app?.id || null,
+    name: app?.name || slug,
+    slug,
+    description: app?.description || null,
+    template: app?.template || app?.template_slug || null,
+    status: app?.status || app?.health || null,
+    last_run: app?.last_run || app?.lastRun || app?.last_run_at || null,
+    next_run: app?.next_run || app?.nextRun || app?.next_run_at || null,
+  };
+}
+
+function printCloudApps(apps, filter) {
+  const suffix = filter ? ` (${filter})` : '';
+  if (apps.length === 0) {
+    console.log(`No cloud apps found${suffix}.`);
+    return;
+  }
+  console.log(`Cloud apps${suffix}:`);
+  for (const app of apps) {
+    const name = String(app.name || app.slug || 'Untitled app');
+    const slug = String(app.slug || app.id || 'unknown');
+    const status = app.status ? ` status=${app.status}` : '';
+    const template = app.template ? ` template=${app.template}` : '';
+    console.log(`  ${slug.padEnd(24)} ${name}${status}${template}`);
+  }
+}
+
+function printAppsLoadHelp() {
+  console.log('');
+  console.log('Usage: atris apps load [--filter <template|paid|free>] [--json]');
+  console.log('');
+  console.log('Load owned cloud apps from Atris. Requires `atris login`.');
+  console.log('');
+}
+
+async function loadCloudApps(rawArgs) {
+  const args = [...rawArgs];
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    printAppsLoadHelp();
+    return;
+  }
+  const json = args.includes('--json');
+  if (json) args.splice(args.indexOf('--json'), 1);
+  let filter = popOption(args, '--filter', null);
+  if (!filter && args[0] && !args[0].startsWith('-')) filter = args.shift();
+  if (args.length > 0) {
+    exitAppsError(`Unknown apps load option: ${args[0]}`, json, { usage: true, code: 2 });
+  }
+
+  const ensured = await ensureValidCredentials(apiRequestJson);
+  if (ensured.error || !ensured.credentials?.token) {
+    exitAppsError('Not logged in. Run: atris login', json, {
+      extra: { login: 'atris login' },
+    });
+  }
+
+  const query = filter ? `?filter=${encodeURIComponent(filter)}` : '';
+  const result = await apiRequestJson(`/apps${query}`, {
+    method: 'GET',
+    token: ensured.credentials.token,
+  });
+  if (!result.ok) {
+    exitAppsError(`Failed to load cloud apps: ${result.error || result.status || 'request failed'}`, json, {
+      extra: { status: result.status || null },
+    });
+  }
+
+  const apps = normalizeCloudAppsPayload(result.data).map(compactCloudApp);
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      source: 'cloud',
+      filter: filter || null,
+      count: apps.length,
+      apps,
+    }, null, 2));
+    return;
+  }
+  printCloudApps(apps, filter || null);
+}
+
+async function appsCommand(subcommand, ...rawArgs) {
   const jsonRequested = wantsJson(subcommand, rawArgs);
   const normalized = normalizeInvocation(subcommand, rawArgs);
   subcommand = normalized.subcommand;
@@ -164,6 +261,10 @@ function appsCommand(subcommand, ...rawArgs) {
 
   if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     printAppsHelp();
+    return;
+  }
+  if (CLOUD_LOAD_COMMANDS.has(subcommand)) {
+    await loadCloudApps(rawArgs);
     return;
   }
   const packRoot = findAppsPackRoot();

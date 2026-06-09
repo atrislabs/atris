@@ -9,6 +9,7 @@ const {
   countJournalCompletedReceipts,
   countOpenTodoItems,
   countOpenWorkItems,
+  countTaskReceiptsToday,
   ensureNowFile,
   formatLocalDate,
   nowAtris,
@@ -187,6 +188,79 @@ test('countJournalCompletedReceipts supports legacy completed markers', () => {
     fs.writeFileSync(journalPath, '- **C1:** Done\n- **C2:** Also done\n', 'utf8');
 
     assert.equal(countJournalCompletedReceipts(journalPath), 2);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('renderDefaultNow counts today task receipts from task state', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'task_episodes.jsonl'), [
+      JSON.stringify({
+        episode_id: 'ep-today',
+        task_id: 'task-1',
+        workspace_root: dir,
+        created_at: today.toISOString(),
+        proof: 'node --test test/now.test.js passed',
+        action: { event_type: 'reviewed' },
+      }),
+      JSON.stringify({
+        episode_id: 'ep-old',
+        task_id: 'task-2',
+        workspace_root: dir,
+        created_at: yesterday.toISOString(),
+        proof: 'node --test old passed',
+        action: { event_type: 'reviewed' },
+      }),
+      JSON.stringify({
+        episode_id: 'ep-no-proof',
+        task_id: 'task-3',
+        workspace_root: dir,
+        created_at: today.toISOString(),
+        action: { event_type: 'reviewed' },
+      }),
+      JSON.stringify({
+        episode_id: 'ep-other-workspace',
+        task_id: 'task-4',
+        workspace_root: path.join(dir, 'other'),
+        created_at: today.toISOString(),
+        proof: 'node --test other passed',
+        action: { event_type: 'reviewed' },
+      }),
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'career_xp_receipts.jsonl'), [
+      JSON.stringify({
+        receipt_id: 'task_review:ep-today',
+        source_type: 'task_review',
+        source_episode_id: 'ep-today',
+        workspace_root: dir,
+        accepted_at: today.toISOString(),
+        proof: 'node --test duplicate accepted receipt passed',
+      }),
+      JSON.stringify({
+        receipt_id: 'task_review:ep-accepted',
+        source_type: 'task_review',
+        source_episode_id: 'ep-accepted',
+        workspace_root: dir,
+        accepted_at: today.toISOString(),
+        proof: 'node --test accepted receipt passed',
+      }),
+      '',
+    ].join('\n'), 'utf8');
+
+    assert.equal(countTaskReceiptsToday(dir, today), 2);
+    assert.match(renderDefaultNow(dir), /Completed receipts today: 2/);
   } finally {
     cleanup(dir);
   }
