@@ -545,7 +545,7 @@ function showActivateHelp() {
 
 function showNextHelp(commandName = 'next') {
   console.log('');
-  console.log(`Usage: atris ${commandName} [request] [--json]`);
+  console.log(`Usage: atris ${commandName} [request] [--json|--prompt]`);
   console.log('');
   console.log('Description:');
   console.log('  With no request, print the zero-shot next move from brain + task state.');
@@ -553,6 +553,7 @@ function showNextHelp(commandName = 'next') {
   console.log('');
   console.log('Options:');
   console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
+  console.log('  --prompt     Print the copy-pasteable zero-shot prompt when no request is provided.');
   console.log('  --help, -h   Show this help.');
   console.log('');
 }

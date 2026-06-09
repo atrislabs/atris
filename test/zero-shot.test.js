@@ -125,7 +125,7 @@ test('zero-shot falls back to radar when no current task exists', () => {
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /route: no_current_task/);
     assert.match(res.stdout, /run: atris radar --json/);
-    assert.match(res.stdout, /handoff: copy handoff\.prompt from JSON into any model/);
+    assert.match(res.stdout, /prompt: atris zero-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -162,6 +162,43 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.match(packet.handoff.prompt, /Run first: atris task current-step --tag cli --json/);
     assert.match(packet.handoff.prompt, /model_tier=fast/);
     assert.match(packet.handoff.prompt, /Do not human-accept/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot --prompt prints only the any-model handoff prompt', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['zero-shot', '--prompt'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /^Atris 0-shot selected the next move/);
+    assert.match(res.stdout, /Route: fast_model_task/);
+    assert.match(res.stdout, /Run first: atris task current-step --tag cli --json/);
+    assert.doesNotMatch(res.stdout, /"schema"/);
+    assert.doesNotMatch(res.stdout, /0-shot next move/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('next --prompt returns the zero-shot prompt when no request is provided', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['next', '--prompt'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /^Atris 0-shot selected the next move/);
+    assert.match(res.stdout, /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(res.stdout, /Do not human-accept/);
+    assert.doesNotMatch(res.stdout, /What do you want to build/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -428,6 +465,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
     assert.match(res.stdout, /handoff\.prompt/);
+    assert.match(res.stdout, /--prompt prints only/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);

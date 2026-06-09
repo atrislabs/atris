@@ -132,7 +132,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **Does not mutate:** task state, files, human accept gates, or external systems
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
-- **Any-model handoff:** JSON includes `handoff.prompt`, a copy-pasteable prompt derived from the selected route and safe boundaries
+- **Any-model handoff:** JSON includes `handoff.prompt`, and `atris zero-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
 - **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
 - **Recovery route:** `failed` task rows use `recovery_lane` and open the selected read-only task page before retry/revise work
@@ -140,6 +140,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Examples:**
 - `atris zero-shot` -> human next-move card
 - `atris zero-shot --json` -> machine-readable packet
+- `atris zero-shot --prompt` -> copy-pasteable prompt for any model
 
 **Search:** `rg "zeroShotCommand|buildPacket|collectMissions|collectCodexGoal|mission_tick|goal_context" commands/zero-shot.js test/zero-shot.test.js`
 

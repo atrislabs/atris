@@ -399,6 +399,7 @@ function buildHandoff(route, root) {
     lane: route.lane,
     route_options_field: 'routes.options',
     json_command: 'atris zero-shot --json',
+    prompt_command: 'atris zero-shot --prompt',
   };
 }
 
@@ -487,6 +488,7 @@ function buildPacket(options = {}) {
     brain,
     commands: {
       zero_shot_json: 'atris zero-shot --json',
+      zero_shot_prompt: 'atris zero-shot --prompt',
       next_command: command,
       first_command: command,
       context_check: 'atris radar --json',
@@ -528,7 +530,7 @@ function renderPacket(packet) {
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
     renderRouteSummary(packet.routes),
-    'handoff: copy handoff.prompt from JSON into any model',
+    `prompt: ${packet.commands.zero_shot_prompt}`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
@@ -543,12 +545,13 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris zero-shot [--json]',
+    'Usage: atris zero-shot [--json|--prompt]',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, handoff.prompt, and safety boundaries.',
+    '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }
@@ -561,6 +564,8 @@ function zeroShotCommand(args = []) {
   const packet = buildPacket();
   if (args.includes('--json')) {
     console.log(JSON.stringify(packet, null, 2));
+  } else if (args.includes('--prompt')) {
+    console.log(packet.handoff.prompt);
   } else {
     console.log(renderPacket(packet));
   }
