@@ -150,6 +150,7 @@ function writeMissionTaskProjection(taskDb, db, workspaceRoot) {
   const outPath = path.join(workspaceRoot, '.atris', 'state', 'tasks.projection.json');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
+  refreshZeroShotState(workspaceRoot);
   return { projection, outPath };
 }
 
@@ -278,6 +279,16 @@ function appendJsonLine(file, payload) {
   fs.appendFileSync(file, JSON.stringify(payload) + '\n', 'utf8');
 }
 
+function refreshZeroShotState(root = process.cwd()) {
+  try {
+    const {
+      buildPacket: buildZeroShotPacket,
+      writeLatestPacket: writeLatestZeroShotPacket,
+    } = require('./zero-shot');
+    writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: root }));
+  } catch {}
+}
+
 function appendEvent(type, mission, payload = {}, root = process.cwd()) {
   const paths = statePaths(root);
   const event = {
@@ -303,6 +314,7 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
   const event = appendEvent(eventType, next, payload, root);
   renderMissionStatus(root);
   renderMemberMissionState(next.owner, root);
+  refreshZeroShotState(root);
   return { mission: next, event };
 }
 
@@ -911,6 +923,7 @@ function writeCodexGoalState(payload, root = process.cwd()) {
   lines.push('');
   fs.mkdirSync(path.dirname(paths.codexGoalStatus), { recursive: true });
   fs.writeFileSync(paths.codexGoalStatus, lines.join('\n'), 'utf8');
+  refreshZeroShotState(root);
   return {
     state_path: paths.codexGoalJson,
     status_path: paths.codexGoalStatus,

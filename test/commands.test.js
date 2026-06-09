@@ -2528,6 +2528,11 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.equal(startPayload.mission.runner, 'codex_goal');
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    const startZeroShot = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
+    assert.equal(startZeroShot.decision.lane, 'mission_tick');
+    assert.equal(startZeroShot.decision.selected_ref, startPayload.mission.id);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MISSION.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md')));
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.md')), false);
@@ -2541,6 +2546,9 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.equal(tickPayload.mission.status, 'ready');
     assert.equal(tickPayload.verifier_result.passed, true);
     assert.ok(fs.existsSync(path.join(dir, tickPayload.receipt_path)));
+    const tickZeroShot = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
+    assert.equal(tickZeroShot.decision.lane, 'goal_context');
+    assert.equal(tickZeroShot.decision.selected_ref, startPayload.mission.id);
 
     const complete = runCli(['mission', 'complete', startPayload.mission.id, '--proof', tickPayload.receipt_path, '--json'], { cwd: dir });
     assert.equal(complete.status, 0, complete.stderr || complete.stdout);

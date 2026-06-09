@@ -96,6 +96,7 @@ Use `atris zero-shot --prompt` when you want a plain prompt to paste into anothe
 Use `atris zero-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
 `atris`, `atris atris.md`, `atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
 Task commands that refresh `.atris/state/tasks.projection.json` also refresh the latest 0-shot state, so the route follows task queue changes.
+Mission and Codex goal commands refresh it too, so long-running work can take over the next move when it becomes due.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 
