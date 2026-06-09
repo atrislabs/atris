@@ -13824,6 +13824,7 @@ test('activate and next --help print usage without loading workflow context', ()
         assert.match(res.stdout, /zero-shot next move/);
         assert.match(res.stdout, /--json/);
         assert.match(res.stdout, /--prompt/);
+        assert.match(res.stdout, /--check/);
       }
       assert.doesNotMatch(res.stdout, /CONTEXT LOADED|Context Loaded|Atris Activate|Atris Plan|Completed \(preview\)/);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${command} created atris/`);

@@ -29,7 +29,7 @@ atris zero-shot
 ```
 
 `atris next` is the same shortcut when you have no request typed.
-For headless agents, use `atris zero-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris zero-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris zero-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json` and `.atris/state/zero-shot.prompt.txt` for ambient agent runtimes.
+For headless agents, use `atris zero-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris zero-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris zero-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json` and `.atris/state/zero-shot.prompt.txt` for ambient agent runtimes, then `atris zero-shot --check` or `atris next --check` to confirm those files are fresh.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
@@ -94,6 +94,7 @@ atris next
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
 Use `atris zero-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris zero-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
+Use `atris zero-shot --check` when an ambient agent needs to know whether the latest packet is fresh, stale, or missing.
 `atris`, `atris atris.md`, `atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
 Task commands that refresh `.atris/state/tasks.projection.json` also refresh the latest 0-shot state, so the route follows task queue changes.
 Mission and Codex goal commands refresh it too, so long-running work can take over the next move when it becomes due.

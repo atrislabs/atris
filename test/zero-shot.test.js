@@ -223,13 +223,85 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(packet.boundaries.no_file_writes, false);
     assert.equal(packet.commands.zero_shot_write, 'atris zero-shot --write');
     assert.equal(packet.handoff.write_command, 'atris zero-shot --write');
+    assert.equal(packet.freshness.schema, 'atris.zero_shot_freshness.v1');
+    assert.equal(typeof packet.freshness.source_fingerprint, 'string');
+    assert.equal(packet.durable.source_fingerprint, packet.freshness.source_fingerprint);
     assert.equal(fs.existsSync(latestJsonPath), true);
     assert.equal(fs.existsSync(promptTxtPath), true);
     const latest = JSON.parse(fs.readFileSync(latestJsonPath, 'utf8'));
     assert.equal(latest.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(latest.generated_at, packet.generated_at);
     assert.equal(latest.handoff.prompt, packet.handoff.prompt);
+    assert.equal(latest.durable.source_fingerprint, packet.freshness.source_fingerprint);
     assert.equal(fs.readFileSync(promptTxtPath, 'utf8'), `${packet.handoff.prompt}\n`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot --check reports fresh and stale durable latest files', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const write = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(write.status, 0, write.stderr || write.stdout);
+
+    const freshRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(freshRes.status, 0, freshRes.stderr || freshRes.stdout);
+    const fresh = JSON.parse(freshRes.stdout);
+    assert.equal(fresh.schema, 'atris.zero_shot_latest_check.v1');
+    assert.equal(fresh.status, 'fresh');
+    assert.equal(fresh.ok, true);
+    assert.equal(fresh.latest_selected_ref, 'CZS-1');
+    assert.equal(fresh.current_selected_ref, 'CZS-1');
+    assert.equal(fresh.latest_source_fingerprint, fresh.current_source_fingerprint);
+
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        { display_id: 'REV-1', title: 'Review the new proof', status: 'review', tag: 'cli' },
+      ],
+    }, null, 2));
+
+    const staleRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(staleRes.status, 0, staleRes.stderr || staleRes.stdout);
+    const stale = JSON.parse(staleRes.stdout);
+    assert.equal(stale.status, 'stale');
+    assert.equal(stale.ok, false);
+    assert.equal(stale.latest_selected_ref, 'CZS-1');
+    assert.equal(stale.current_selected_ref, 'REV-1');
+    assert.notEqual(stale.latest_source_fingerprint, stale.current_source_fingerprint);
+    assert.equal(stale.refresh_command, 'atris zero-shot --write');
+
+    const text = runCli(['zero-shot', '--check'], { cwd: dir });
+    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.match(text.stdout, /0-shot latest check/);
+    assert.match(text.stdout, /status: stale/);
+    assert.match(text.stdout, /selected: CZS-1 -> current REV-1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot --check reports missing durable latest files', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const check = JSON.parse(res.stdout);
+    assert.equal(check.status, 'missing');
+    assert.equal(check.ok, false);
+    assert.equal(check.latest_exists, false);
+    assert.equal(check.prompt_exists, false);
+    assert.equal(check.current_selected_ref, 'CZS-1');
+    assert.equal(check.refresh_command, 'atris zero-shot --write');
   } finally {
     cleanupTempDir(dir);
   }
@@ -515,6 +587,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
+    assert.match(res.stdout, /--check compares the durable latest packet/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);

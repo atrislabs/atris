@@ -2,11 +2,18 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const SCHEMA = 'atris.zero_shot_next_move.v1';
 const ROUTE_LIMIT = 8;
 const LATEST_PACKET_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const LATEST_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
+const FRESHNESS_SOURCES = [
+  ['brain_status', 'atris/brain/STATUS.md'],
+  ['task_projection', '.atris/state/tasks.projection.json'],
+  ['missions', '.atris/state/missions.jsonl'],
+  ['codex_goal', '.atris/state/codex_goal.json'],
+];
 const TERMINAL_TASK_STATUSES = new Set(['done', 'accepted', 'complete', 'completed']);
 const LANE_PRIORITY = {
   mission_tick: 0,
@@ -26,6 +33,10 @@ function readText(file) {
 
 function readJson(file) {
   try { return JSON.parse(readText(file)); } catch { return null; }
+}
+
+function sha1(value) {
+  return crypto.createHash('sha1').update(String(value || '')).digest('hex');
 }
 
 function readJsonLines(file) {
@@ -67,6 +78,35 @@ function collectBrain(root) {
     status_present: Boolean(status),
     strongest_signal: section(status, 'Strongest Signal') || section(status, 'Current Signal'),
     next_move: section(status, 'Next Move') || section(status, 'Move'),
+  };
+}
+
+function collectFreshness(root) {
+  const sources = FRESHNESS_SOURCES.map(([key, relative_path]) => {
+    const filePath = path.join(root, relative_path);
+    const text = readText(filePath);
+    let stat = null;
+    try { stat = fs.statSync(filePath); } catch {}
+    return {
+      key,
+      path: relative_path,
+      exists: Boolean(stat),
+      size: stat ? stat.size : 0,
+      sha1: stat ? sha1(text) : null,
+    };
+  });
+  return {
+    schema: 'atris.zero_shot_freshness.v1',
+    source_fingerprint: sha1(JSON.stringify(sources.map(source => [
+      source.key,
+      source.path,
+      source.exists,
+      source.size,
+      source.sha1,
+    ]))),
+    sources,
+    check_command: 'atris zero-shot --check',
+    refresh_command: 'atris zero-shot --write',
   };
 }
 
@@ -436,6 +476,7 @@ function buildPacket(options = {}) {
   const missionState = collectMissions(root);
   const goalState = collectCodexGoal(root);
   const taskState = collectTasks(root);
+  const freshness = collectFreshness(root);
   const routeIndex = buildRouteIndex({ missionState, goalState, taskState });
   const selectedRoute = routeIndex.options[0] || null;
   const decision = selectedRoute
@@ -477,6 +518,7 @@ function buildPacket(options = {}) {
     queue: taskState.counts,
     routes: publicRoutes,
     handoff: buildHandoff(handoffRoute, root),
+    freshness,
     durable: {
       write_command: 'atris zero-shot --write',
       latest_json: LATEST_PACKET_RELATIVE_PATH,
@@ -533,12 +575,54 @@ function writeLatestPacket(packet) {
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
       latest_json_abs: latestJsonPath,
       prompt_txt_abs: promptTxtPath,
+      source_fingerprint: packet.freshness ? packet.freshness.source_fingerprint : null,
     },
   };
   fs.mkdirSync(path.dirname(latestJsonPath), { recursive: true });
   fs.writeFileSync(latestJsonPath, `${JSON.stringify(packetToWrite, null, 2)}\n`, 'utf8');
   fs.writeFileSync(promptTxtPath, `${packetToWrite.handoff.prompt}\n`, 'utf8');
   return packetToWrite;
+}
+
+function buildLatestCheck(options = {}) {
+  const current = buildPacket(options);
+  const root = current.workspace_root;
+  const latestPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
+  const promptPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
+  const latest = readJson(latestPath);
+  const currentFingerprint = current.freshness.source_fingerprint;
+  const latestFingerprint = latest && latest.freshness ? latest.freshness.source_fingerprint : null;
+  const promptExists = fs.existsSync(promptPath);
+  const exists = Boolean(latest);
+  const fresh = Boolean(exists && promptExists && latestFingerprint && latestFingerprint === currentFingerprint);
+  return {
+    schema: 'atris.zero_shot_latest_check.v1',
+    ok: fresh,
+    status: fresh ? 'fresh' : (exists ? 'stale' : 'missing'),
+    workspace_root: root,
+    latest_json: LATEST_PACKET_RELATIVE_PATH,
+    prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+    latest_exists: exists,
+    prompt_exists: promptExists,
+    latest_generated_at: latest ? latest.generated_at || null : null,
+    latest_selected_ref: latest ? latest.decision && latest.decision.selected_ref || null : null,
+    current_selected_ref: current.decision.selected_ref || null,
+    latest_source_fingerprint: latestFingerprint,
+    current_source_fingerprint: currentFingerprint,
+    refresh_command: 'atris zero-shot --write',
+    check_command: 'atris zero-shot --check',
+  };
+}
+
+function renderLatestCheck(check) {
+  return [
+    '0-shot latest check',
+    `status: ${check.status}`,
+    `latest: ${check.latest_json}`,
+    `prompt: ${check.prompt_txt}`,
+    `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
+    `refresh: ${check.refresh_command}`,
+  ].join('\n');
 }
 
 function renderRouteSummary(routes) {
@@ -566,6 +650,7 @@ function renderPacket(packet) {
     renderRouteSummary(packet.routes),
     `prompt: ${packet.commands.zero_shot_prompt}`,
     `write: ${packet.commands.zero_shot_write} -> ${packet.durable.latest_json}`,
+    `check: ${packet.freshness.check_command}`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     `boundaries: no external sends, no human accept, no task mutation${packet.boundaries.no_file_writes ? ', no file writes' : ''}`,
@@ -580,7 +665,7 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris zero-shot [--json|--prompt|--write]',
+    'Usage: atris zero-shot [--json|--prompt|--write|--check]',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
@@ -588,6 +673,7 @@ function renderHelp() {
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH} and ${LATEST_PROMPT_RELATIVE_PATH} for ambient agents; it does not mutate tasks or call external systems.`,
+    '--check compares the durable latest packet with current source fingerprints and reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
@@ -595,6 +681,15 @@ function renderHelp() {
 function zeroShotCommand(args = []) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log(renderHelp());
+    return 0;
+  }
+  if (args.includes('--check')) {
+    const check = buildLatestCheck();
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(check, null, 2));
+    } else {
+      console.log(renderLatestCheck(check));
+    }
     return 0;
   }
   let packet = buildPacket();
@@ -617,9 +712,12 @@ module.exports = {
   classify,
   collectBrain,
   collectCodexGoal,
+  collectFreshness,
   collectMissions,
   collectTasks,
+  buildLatestCheck,
   renderHint,
+  renderLatestCheck,
   renderPacket,
   writeLatestPacket,
   zeroShotCommand,

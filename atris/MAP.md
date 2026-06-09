@@ -52,7 +52,7 @@ rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js comman
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
 rg "brainCommand|collectState|countStateRows|certifiedReviewTasks|latestTaskEpisodes|latestScorecard|isActionableScorecardNextMove|operatorActivationNextMove|normalizeMemberSlug|memberProfileIssues|renderMissingMemberCard|renderPlaceholderMemberCard|recordTaskEpisodeScorecards|renderActivationCard|modeNextMove|renderActivationGallery|readMemberContext|rememberOperator|recordFeedback|recordApproval|brain --help" commands/brain.js test/commands.test.js  # Brain compile/activate/gallery/feedback/approval/scorecard, certified review checkpoint routing, and workspace-free help
-rg "zeroShotCommand|buildPacket|writeLatestPacket|collectMissions|collectCodexGoal|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'|showWelcomeVisualization|memberActivate" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js commands/member.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: brain/task/mission/goal packet for vague prompts, ambient latest files, boot visualization, member activation, and brain hints
+rg "zeroShotCommand|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|renderHint|activationZeroShotLine|0-shot next move|command === 'zero-shot'|showWelcomeVisualization|memberActivate" commands/zero-shot.js bin/atris.js commands/activate.js commands/brain.js commands/member.js test/zero-shot.test.js test/commands.test.js  # 0-shot cold-start router: brain/task/mission/goal packet for vague prompts, ambient latest files, freshness checks, boot visualization, member activation, and brain hints
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport|showLoopHelp|loop --help" bin/atris.js commands/loop.js test/commands.test.js # Wiki upkeep loop + non-mutating help
@@ -133,6 +133,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **Default safety:** normal `atris zero-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
 - **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
+- **Freshness check:** `atris zero-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
@@ -146,8 +147,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris zero-shot --json` -> machine-readable packet
 - `atris zero-shot --prompt` -> copy-pasteable prompt for any model
 - `atris zero-shot --write` -> refresh durable latest packet and prompt files
+- `atris zero-shot --check` -> verify whether durable latest files are fresh
 
-**Search:** `rg "zeroShotCommand|buildPacket|writeLatestPacket|collectMissions|collectCodexGoal|mission_tick|goal_context" commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "zeroShotCommand|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 
