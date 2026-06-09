@@ -22,6 +22,14 @@ If you're an agent, run:
 atris
 ```
 
+If the prompt is vague or you do not know what to do next, run:
+
+```bash
+atris zero-shot
+```
+
+For headless agents, use `atris zero-shot --json`. It returns the lane, horizon, model tier, first command, and safe boundaries for the next move.
+
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
 ---
@@ -76,9 +84,12 @@ If you want Atris cloud workspaces, businesses, or integrations, run `atris setu
 cd your-project
 atris init
 atris
+atris zero-shot
 ```
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
+`atris zero-shot` is the default when you do not know what to prompt next.
+It routes quick tasks, fast-model tasks, review work, long-horizon planning, owner-gated work, or no-current-task context checks.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 

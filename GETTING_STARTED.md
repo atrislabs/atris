@@ -30,7 +30,21 @@ atris/
 
 ## Your first goal
 
-Tell atris what you want to build:
+If you do not know what to prompt, ask for the next move:
+
+```bash
+atris zero-shot
+```
+
+For agents and scripts:
+
+```bash
+atris zero-shot --json
+```
+
+It routes quick work, fast-model work, review work, long-term planning, owner-gated work, or context gathering.
+
+If you already know what you want, tell atris what to build:
 
 ```bash
 atris log "add dark mode to the settings page"
@@ -79,6 +93,7 @@ The loop runs until the goal is done, then picks the next one from scorecards + 
 
 ```
 atris init                 set up a new workspace
+atris zero-shot            choose the next safe move when you do not know what to prompt
 atris activate             load context (MAP, TODO, journal)
 atris log                  add to today's journal
 atris autopilot            run one tick (plan, build, review, verify)

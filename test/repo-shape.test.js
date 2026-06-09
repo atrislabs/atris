@@ -28,6 +28,14 @@ test('npm package includes runtime workspace templates', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
 });
 
+test('public docs advertise zero-shot for uncertain starts', () => {
+  for (const rel of ['README.md', 'GETTING_STARTED.md', path.join('atris', 'GETTING_STARTED.md')]) {
+    const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    assert.match(text, /atris zero-shot/);
+    assert.match(text, /what to prompt|do not know what to prompt|don't know what to prompt/i);
+  }
+});
+
 test('detectDefaultVerify returns npm test for Node package with real test script', () => {
   const dir = makeTempRepo();
   try {
