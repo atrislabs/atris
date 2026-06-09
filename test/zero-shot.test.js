@@ -87,6 +87,36 @@ test('zero-shot --json selects review-lane work without mutating projection file
   }
 });
 
+test('zero-shot routes certified review rows to the human accept gate', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      {
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'owner_gate');
+    assert.equal(packet.decision.model_tier, 'human');
+    assert.match(packet.decision.reason, /waiting for human accept/);
+    assert.equal(packet.commands.first_command, 'atris task page CZS-1 --json');
+    assert.match(packet.decision.agent_directive, /Do not mutate or accept/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot falls back to radar when no current task exists', () => {
   const dir = makeTempDir();
   try {
@@ -299,6 +329,7 @@ test('zero-shot routes owner-gated work to the human lane', () => {
     assert.equal(packet.decision.lane, 'owner_gate');
     assert.equal(packet.decision.horizon, 'blocked');
     assert.equal(packet.decision.model_tier, 'human');
+    assert.equal(packet.commands.first_command, 'atris task page OWN-2 --json');
     assert.match(packet.decision.agent_directive, /Do not mutate or accept/);
   } finally {
     cleanupTempDir(dir);

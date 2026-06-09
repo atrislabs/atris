@@ -155,6 +155,14 @@ function textFor(task) {
     .join(' ');
 }
 
+function isHumanAcceptWaiting(task) {
+  if (!task || !task.review) return false;
+  const review = task.review;
+  const reviewText = JSON.stringify(review);
+  return review.agent_certified === true
+    || /human_accept_waiting|human accept|pending_human_accept/i.test(reviewText);
+}
+
 function classify(task) {
   if (!task) {
     return {
@@ -166,6 +174,9 @@ function classify(task) {
   }
   const text = textFor(task);
   const reviewStatus = task.review && /pending|review|certified/i.test(JSON.stringify(task.review));
+  if (isHumanAcceptWaiting(task)) {
+    return { lane: 'owner_gate', urgency: 'blocked', model: 'human', reason: `${task.ref} is agent-certified and waiting for human accept.` };
+  }
   if (task.status === 'review' || reviewStatus) {
     return { lane: 'review_lane', urgency: 'high', model: 'validator', reason: `${task.ref} is waiting on review or verification.` };
   }
@@ -192,12 +203,12 @@ function nextCommand(task, lane) {
   if (lane === 'goal_context' && task && task.next_command) return task.next_command;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
   if (lane === 'long_horizon' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
+  if (lane === 'owner_gate' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
   if (lane === 'fast_model_task' || lane === 'quick_task') {
     return task && task.tag
       ? `atris task current-step --tag ${shellToken(task.tag)} --json`
       : 'atris task current-step --json';
   }
-  if (lane === 'owner_gate') return 'atris radar --json';
   return 'atris radar --json';
 }
 
