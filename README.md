@@ -30,6 +30,7 @@ atris 0-shot
 
 `atris zero-shot` and `atris next` are compatible shortcuts when you have no request typed.
 For headless agents, use `atris 0-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris 0-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris 0-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json` and `.atris/state/zero-shot.prompt.txt` for ambient agent runtimes, then `atris 0-shot --check` or `atris next --check` to confirm those files are fresh.
+The JSON also includes `routes.horizons` and `routes.models`, grouping work by horizon and by fast/pro/validator/human count plus the first suitable route for each model tier.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
@@ -104,6 +105,7 @@ Mission and Codex goal commands refresh it too, so long-running work can take ov
 `atris radar` also shows the current computed 0-shot route and durable prompt freshness status beside the live task, mission, worktree, and agent summary.
 `atris status`, `atris status --quick`, and `atris status --json` include the current 0-shot route and first command beside the ordinary workspace health summary.
 Generated `atris/now.md` includes the current 0-shot route and first command, so the first context file an agent reads has the same next move.
+JSON packets include `routes.horizons` and `routes.models`, grouping work by horizon and by fast/pro/validator/human count plus the first suitable route for each model tier.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 

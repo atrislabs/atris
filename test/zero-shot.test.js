@@ -632,6 +632,18 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(packet.routes.lanes.recovery_lane, 1);
     assert.equal(packet.routes.lanes.fast_model_task, 1);
     assert.equal(packet.routes.lanes.long_horizon, 1);
+    assert.equal(packet.routes.horizons.blocked, 1);
+    assert.equal(packet.routes.horizons.now, 2);
+    assert.equal(packet.routes.horizons.long_term, 1);
+    assert.equal(packet.routes.models.human.count, 1);
+    assert.equal(packet.routes.models.human.first.ref, 'OWN-2');
+    assert.equal(packet.routes.models.human.first.first_command, 'atris task page OWN-2 --json');
+    assert.equal(packet.routes.models.pro.count, 2);
+    assert.equal(packet.routes.models.pro.first.ref, 'FAIL-1');
+    assert.equal(packet.routes.models.fast.count, 1);
+    assert.equal(packet.routes.models.fast.first.ref, 'FAST-1');
+    assert.equal(packet.routes.models.validator.count, 0);
+    assert.equal(packet.routes.models.validator.first, null);
     assert.deepEqual(packet.routes.options.map(route => [route.ref, route.lane, route.model_tier, route.first_command]), [
       ['OWN-2', 'owner_gate', 'human', 'atris task page OWN-2 --json'],
       ['FAIL-1', 'recovery_lane', 'pro', 'atris task page FAIL-1 --json'],
@@ -642,6 +654,7 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
     assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.models.human.first, 'source'), false);
   } finally {
     cleanupTempDir(dir);
   }

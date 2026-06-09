@@ -37,6 +37,7 @@ const LANE_PRIORITY = {
   goal_context: 7,
   no_current_task: 8,
 };
+const MODEL_TIERS = ['fast', 'pro', 'validator', 'human'];
 
 function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
@@ -535,6 +536,42 @@ function summarizeRouteLanes(routes) {
   }, {});
 }
 
+function compactRouteChoice(route) {
+  if (!route) return null;
+  return {
+    kind: route.kind || null,
+    ref: route.ref || null,
+    title: route.title || null,
+    lane: route.lane || null,
+    horizon: route.horizon || null,
+    work_size: route.work_size || null,
+    model_tier: route.model_tier || null,
+    first_command: route.first_command || null,
+    agent_directive: route.agent_directive || null,
+    reason: route.reason || null,
+  };
+}
+
+function summarizeRouteModels(routes) {
+  const summary = {};
+  for (const tier of MODEL_TIERS) summary[tier] = { count: 0, first: null };
+  for (const route of routes) {
+    const tier = route.model_tier || 'unknown';
+    if (!summary[tier]) summary[tier] = { count: 0, first: null };
+    summary[tier].count += 1;
+    if (!summary[tier].first) summary[tier].first = compactRouteChoice(route);
+  }
+  return summary;
+}
+
+function summarizeRouteHorizons(routes) {
+  return routes.reduce((summary, route) => {
+    const horizon = route.horizon || 'unknown';
+    summary[horizon] = (summary[horizon] || 0) + 1;
+    return summary;
+  }, {});
+}
+
 function buildRouteIndex({ missionState, goalState, taskState }) {
   const missionRoutes = (missionState.needs_tick || []).map(routeForMission);
   const taskRoutes = activeTasks(taskState.tasks || [])
@@ -548,6 +585,8 @@ function buildRouteIndex({ missionState, goalState, taskState }) {
     total: routes.length,
     shown: Math.min(routes.length, ROUTE_LIMIT),
     lanes: summarizeRouteLanes(routes),
+    horizons: summarizeRouteHorizons(routes),
+    models: summarizeRouteModels(routes),
     options: routes.slice(0, ROUTE_LIMIT),
   };
 }
