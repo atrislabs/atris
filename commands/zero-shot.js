@@ -539,8 +539,8 @@ function renderPacket(packet) {
 }
 
 function renderHint(packet) {
-  if (!packet || !packet.decision || !packet.commands) return '0-shot: atris zero-shot';
-  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command}`;
+  if (!packet || !packet.decision || !packet.commands) return '0-shot: atris zero-shot --prompt';
+  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command} | prompt: ${packet.commands.zero_shot_prompt || 'atris zero-shot --prompt'}`;
 }
 
 function renderHelp() {

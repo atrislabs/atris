@@ -165,7 +165,7 @@ function activateAtris() {
     console.log(`   ${zeroShot.decision.reason}`);
   } catch {}
   console.log('');
-  console.log('Next: atris zero-shot (or atris plan -> do -> review)');
+  console.log('Next: atris zero-shot --prompt (or atris plan -> do -> review)');
   console.log('');
 }
 

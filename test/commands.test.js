@@ -514,7 +514,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Member "Navigator" activated\./);
-    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json/);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /Next route JSON: atris zero-shot --json/);
     assert.match(res.stdout, /Next route prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);

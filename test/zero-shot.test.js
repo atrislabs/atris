@@ -501,8 +501,8 @@ test('activate surfaces the zero-shot next route', () => {
 
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json/);
-    assert.match(res.stdout, /Next: atris zero-shot/);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
+    assert.match(res.stdout, /Next: atris zero-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -516,7 +516,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     const res = runCli([], { cwd: dir, input: '\n' });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
-    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json/);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -532,8 +532,8 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     const res = runCli(['atris.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
-    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json/);
-    assert.match(res.stdout, /Ready\. Run 'atris zero-shot' to choose the next move\./);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
+    assert.match(res.stdout, /Ready\. Run 'atris zero-shot --prompt' to choose the next move\./);
   } finally {
     cleanupTempDir(dir);
   }

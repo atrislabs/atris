@@ -125,7 +125,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Entry point:** `bin/atris.js` routes `zero-shot` and prints a 0-shot hint on bare `atris`
 - **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris zero-shot`
 - **Implementation:** `commands/zero-shot.js`
-- **Activation surface:** `commands/activate.js` prints the current 0-shot route
+- **Activation surface:** `commands/activate.js` and boot visualization print the current 0-shot route plus `atris zero-shot --prompt`
 - **Member activation:** `commands/member.js` prints the current 0-shot route when waking a named member
 - **Brain activation:** `commands/brain.js` includes the 0-shot route and direct prompt command in `atris brain activate`
 - **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt`

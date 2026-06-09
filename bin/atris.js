@@ -1154,7 +1154,7 @@ function showWelcomeVisualization() {
       const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('../commands/zero-shot');
       console.log(`    ${renderZeroShotHint(buildZeroShotPacket({ cwd }))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris zero-shot' to choose the next move.`);
+    console.log(`    Ready. Run 'atris zero-shot --prompt' to choose the next move.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }
