@@ -960,6 +960,14 @@ async function interactiveEntry(userInput) {
     return;
   }
 
+  try {
+    const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('../commands/zero-shot');
+    const zeroShot = buildZeroShotPacket({ cwd: workspaceDir });
+    console.log('');
+    console.log(renderZeroShotHint(zeroShot));
+    console.log(`   ${zeroShot.decision.reason}`);
+  } catch {}
+
   // Surface live missions so the operator sees durable goals alongside dev WIP.
   if (liveMissionsCount > 0) {
     console.log('\nLive missions:');

@@ -16,9 +16,10 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd } = {}) {
+function runCli(args, { cwd, input } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
+    input,
     encoding: 'utf8',
     timeout: 15000,
     env: {
@@ -31,7 +32,15 @@ function runCli(args, { cwd } = {}) {
   return result;
 }
 
+function seedMinimalAtrisWorkspace(dir) {
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n- bin/atris.js:1\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO.md\n\n## Backlog\n\n## In Progress\n\n## Completed\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'atris', 'PERSONA.md'), '# Persona\n', 'utf8');
+}
+
 function seedWorkspace(dir, tasks) {
+  seedMinimalAtrisWorkspace(dir);
   fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), [
@@ -138,6 +147,36 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Usage: atris zero-shot/);
     assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('activate surfaces the zero-shot next route', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['activate'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json/);
+    assert.match(res.stdout, /Next: atris zero-shot/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare atris cold start surfaces zero-shot before prompting', () => {
+  const dir = makeTempDir();
+  try {
+    seedMinimalAtrisWorkspace(dir);
+
+    const res = runCli([], { cwd: dir, input: '\n' });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /CONTEXT LOADED/);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json/);
   } finally {
     cleanupTempDir(dir);
   }

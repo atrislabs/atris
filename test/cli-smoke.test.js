@@ -65,13 +65,18 @@ test('init creates structured TODO and feature templates', () => {
     assert.match(agents, /atris mission status --status active --json/);
     assert.match(agents, /OpenClaw/);
     assert.match(agents, /Agent Contract/);
+    assert.match(agents, /atris zero-shot --json/);
     assert.match(agents, /atris task note <id>/);
     assert.match(agents, /atris task ready <id> --proof/);
     assert.match(agents, /atris task accept <id>/);
 
     const claude = fs.readFileSync(path.join(dir, 'atris', 'CLAUDE.md'), 'utf8');
     assert.match(claude, /## Mission Autonomy/);
+    assert.match(claude, /atris zero-shot --json/);
     assert.match(claude, /atris mission tick <id> --verify --summary/);
+
+    const rootClaude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(rootClaude, /atris zero-shot --json/);
   } finally {
     cleanupTempDir(dir);
   }

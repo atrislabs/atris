@@ -13028,9 +13028,11 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
     assert.match(agents, /`atris task ready <id> --proof/);
     assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
+    assert.match(agents, /atris zero-shot --json/);
     assert.doesNotMatch(agents, /task finish <id> --proof/);
     const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
     assert.match(claudeCommand, /atris\/atris\.md/);
+    assert.match(claudeCommand, /atris zero-shot/);
     assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
   } finally {
     cleanupTempDir(dir);
@@ -13896,6 +13898,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     const rootAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
     assert.match(rootAgents, /atris business start/);
+    assert.match(rootAgents, /atris zero-shot/);
     assert.match(rootAgents, /atris radar/);
     assert.match(rootAgents, /atris task next/);
     assert.match(rootAgents, /atris member activate operator/);

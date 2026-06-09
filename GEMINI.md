@@ -22,6 +22,8 @@ This workspace has a compiled agent brain.
 On session start, activate it first:
 `atris brain activate --root /Users/keshavrao/arena/atris-cli --verify`
 
+If the prompt is vague or empty, run `atris zero-shot --json` and follow its returned route before choosing work.
+
 Load these first:
 - `atris/now.md`
 - `atris/brain/STATUS.md`

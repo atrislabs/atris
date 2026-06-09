@@ -617,6 +617,7 @@ atris atris.md
 \`\`\`
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
+If the user did not provide a concrete task, run \`atris zero-shot --json\` and follow the returned route before picking work.
 
 ## Core Files
 
@@ -758,6 +759,7 @@ allowed-tools: Read, Bash, Glob, Grep
 ---
 
 Run \`atris\` and read \`atris/atris.md\`; @AGENTS.md is only a tool adapter.
+If the prompt is vague or empty, run \`atris zero-shot\` before choosing work.
 
 Follow the workflow: plan → do → review
 
@@ -955,6 +957,8 @@ Read atris/MAP.md. Begin iteration 1.`;
 You are now running inside Atris, an AI workspace operating system.
 
 **ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
+
+If the user did not provide a concrete task, run \`atris zero-shot --json\` and use that packet to choose the next safe move.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->

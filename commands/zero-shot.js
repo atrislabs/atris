@@ -178,6 +178,11 @@ function renderPacket(packet) {
   ].join('\n');
 }
 
+function renderHint(packet) {
+  if (!packet || !packet.decision || !packet.commands) return '0-shot: atris zero-shot';
+  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command}`;
+}
+
 function renderHelp() {
   return [
     'Usage: atris zero-shot [--json]',
@@ -207,6 +212,7 @@ module.exports = {
   classify,
   collectBrain,
   collectTasks,
+  renderHint,
   renderPacket,
   zeroShotCommand,
 };

@@ -10,9 +10,10 @@ task truth, proof, review, and backend/cloud sync all flow through Atris.
 
 1. Read `atris/PERSONA.md` and follow it (anti-slop, 3–4 sentences, ASCII for planning).
 2. Run `atris activate` to load the current working context.
-3. Use `atris/MAP.md` for navigation (file:line refs) when present.
-4. Track work with `atris task`; use `atris/TODO.md` only as the rendered fallback view.
-5. Preferred loop: `atris plan` → `atris do` → `atris review`.
+3. If the prompt is vague or empty, run `atris zero-shot --json` and follow its returned route before choosing work.
+4. Use `atris/MAP.md` for navigation (file:line refs) when present.
+5. Track work with `atris task`; use `atris/TODO.md` only as the rendered fallback view.
+6. Preferred loop: `atris plan` -> `atris do` -> `atris review`.
 
 ## Mission Autonomy
 

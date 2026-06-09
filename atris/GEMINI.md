@@ -11,6 +11,7 @@ atris atris.md
 ```
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
+If the user did not provide a concrete task, run `atris zero-shot --json` and follow the returned route before choosing work.
 
 ## MAPFIRST (Enforced)
 
