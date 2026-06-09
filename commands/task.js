@@ -209,8 +209,19 @@ function validHumanActorFlag(value) {
   return Boolean(actor) && !actor.startsWith('--') && actor !== 'auto-accept-certified';
 }
 
+const AGENT_ENV_MARKERS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CODEX_SANDBOX',
+  'CURSOR_AGENT',
+  'DEVIN_SESSION_ID',
+];
+
 function agentProofOnlyMode() {
-  return process.env.ATRIS_AGENT_PROOF_ONLY === '1';
+  const explicit = process.env.ATRIS_AGENT_PROOF_ONLY;
+  if (explicit === '1') return true;
+  if (explicit === '0') return false;
+  return AGENT_ENV_MARKERS.some((marker) => String(process.env[marker] || '').trim() !== '');
 }
 
 function failAgentProofOnly(label, detail) {
