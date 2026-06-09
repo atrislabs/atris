@@ -9,7 +9,7 @@
 <!-- ATRIS_BRAIN_COMPILE:START -->
 ## Brain Compile
 
-- Last compile: 2026-06-09T01:18:50.289Z
+- Last compile: 2026-06-09T01:23:18.853Z
 - State rows: 544 raw / 544 valid JSONL
 - Strongest signal: 12 scorecard row(s) and 314 episode row(s) are available for feedback-driven learning. Loop health sees 4 active channel(s): Task plane, Career XP, Missions, Codex goal.
 - Next move: Pick the highest-leverage open TODO item and leave a scorecard when done.
