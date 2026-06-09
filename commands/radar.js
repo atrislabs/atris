@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { collectFreshness } = require('./zero-shot');
+const { buildPacket, collectFreshness } = require('./zero-shot');
 
 const ZERO_SHOT_LATEST_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const ZERO_SHOT_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
@@ -409,7 +409,19 @@ function loadLoop(missions, root, deps) {
   };
 }
 
-function loadZeroShot(root, deps) {
+function zeroShotRouteFromPacket(packet = null) {
+  const decision = packet?.decision || {};
+  const commands = packet?.commands || {};
+  return {
+    lane: decision.lane || null,
+    selected_ref: decision.selected_ref || null,
+    selected_title: decision.selected_title || null,
+    model_tier: decision.model_tier || null,
+    first_command: commands.first_command || decision.first_command || null,
+  };
+}
+
+function loadZeroShot(root, deps, options = {}) {
   const latest = readJsonFile(path.join(root, ZERO_SHOT_LATEST_RELATIVE_PATH), deps, null);
   const promptExists = deps.exists(path.join(root, ZERO_SHOT_PROMPT_RELATIVE_PATH));
   const currentFreshness = collectFreshness(root, {
@@ -420,19 +432,29 @@ function loadZeroShot(root, deps) {
   const currentFingerprint = currentFreshness.source_fingerprint;
   const latestExists = Boolean(latest);
   const fresh = Boolean(latestExists && promptExists && latestFingerprint && latestFingerprint === currentFingerprint);
-  const decision = latest?.decision || {};
-  const commands = latest?.commands || {};
+  let currentPacket = null;
+  try {
+    currentPacket = typeof options.buildZeroShotPacket === 'function'
+      ? options.buildZeroShotPacket(root)
+      : buildPacket({ cwd: root });
+  } catch {}
+  const currentRoute = zeroShotRouteFromPacket(currentPacket);
+  const latestRoute = zeroShotRouteFromPacket(latest);
+  const selectedRoute = currentPacket ? currentRoute : latestRoute;
   return {
     schema: 'atris.radar_zero_shot.v1',
     status: fresh ? 'fresh' : (latestExists ? 'stale' : 'missing'),
     ok: fresh,
     latest_exists: latestExists,
     prompt_exists: promptExists,
-    lane: decision.lane || null,
-    selected_ref: decision.selected_ref || null,
-    selected_title: decision.selected_title || null,
-    model_tier: decision.model_tier || null,
-    first_command: commands.first_command || decision.first_command || null,
+    route_source: currentPacket ? 'current' : 'latest',
+    lane: selectedRoute.lane,
+    selected_ref: selectedRoute.selected_ref,
+    selected_title: selectedRoute.selected_title,
+    model_tier: selectedRoute.model_tier,
+    first_command: selectedRoute.first_command,
+    current: currentPacket ? currentRoute : null,
+    latest: latest ? latestRoute : null,
     latest_json: ZERO_SHOT_LATEST_RELATIVE_PATH,
     prompt_txt: ZERO_SHOT_PROMPT_RELATIVE_PATH,
     check_command: 'atris zero-shot --check',
@@ -619,7 +641,7 @@ function collectRadar(options = {}) {
     swarlo: loadSwarlo(tasks),
     loop: loadLoop(missions, root, deps),
   };
-  osState.zero_shot = loadZeroShot(root, deps);
+  osState.zero_shot = loadZeroShot(root, deps, options);
   osState.business = loadBusinessCollaboration(root, deps, osState.team);
   return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
 }

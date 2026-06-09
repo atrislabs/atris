@@ -134,7 +134,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Default safety:** normal `atris zero-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
 - **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
 - **Freshness check:** `atris zero-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
-- **Radar surface:** `atris radar` / `atris radar --json` includes the durable 0-shot route status so the command-center view shows what any newly activated model should do next
+- **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route plus durable prompt freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work

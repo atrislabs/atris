@@ -181,6 +181,17 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
       if (dir === computersDir) return ['default'];
       return [];
     },
+    buildZeroShotPacket: () => ({
+      decision: {
+        lane: 'review_lane',
+        selected_ref: 'CLI-95',
+        selected_title: 'Add live operator radar command',
+        model_tier: 'validator',
+      },
+      commands: {
+        first_command: 'atris task review-chat CLI-95 --as codex-review',
+      },
+    }),
   });
 
   assert.equal(data.summary.agents.total, 4);
@@ -197,9 +208,12 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.loop.ticks, 1);
   assert.equal(data.os.loop.codex_goal, 'Advance the mission loop');
   assert.equal(data.os.zero_shot.status, 'fresh');
+  assert.equal(data.os.zero_shot.route_source, 'current');
   assert.equal(data.os.zero_shot.lane, 'review_lane');
   assert.equal(data.os.zero_shot.selected_ref, 'CLI-95');
   assert.equal(data.os.zero_shot.first_command, 'atris task review-chat CLI-95 --as codex-review');
+  assert.equal(data.os.zero_shot.current.selected_ref, 'CLI-95');
+  assert.equal(data.os.zero_shot.latest.selected_ref, 'CLI-95');
   assert.equal(data.os.business.slug, 'cashmere-ai');
   assert.equal(data.os.business.share_ready, true);
   assert.equal(data.os.business.onboarding.packs, 1);
@@ -258,6 +272,69 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.deepEqual(payload.task_load[0].task_sources, ['repo_task_projection']);
   assert.deepEqual(payload.task_load[0].task_scopes, ['repo']);
   assert.match(payload.next_action, /inspect 2 sessions on BCK-294 \(4\.0% CPU; repo projection; verify ownership\)/);
+});
+
+test('collectRadar keeps current zero-shot route visible when durable latest is stale', () => {
+  const root = '/tmp/radar-zero-shot-stale';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const latestFile = path.join(root, '.atris', 'state', 'zero-shot.latest.json');
+  const promptFile = path.join(root, '.atris', 'state', 'zero-shot.prompt.txt');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        { display_id: 'NOW-1', title: 'Do current work', status: 'claimed', workspace_root: root, claimed_by: 'codex' },
+      ],
+    })],
+    [latestFile, JSON.stringify({
+      schema: 'atris.zero_shot_next_move.v1',
+      decision: {
+        lane: 'review_lane',
+        selected_ref: 'OLD-1',
+        selected_title: 'Old review task',
+        model_tier: 'validator',
+      },
+      commands: {
+        first_command: 'atris task review-chat OLD-1 --as codex-review',
+      },
+      freshness: { source_fingerprint: 'old-fingerprint' },
+    })],
+    [promptFile, 'old prompt\n'],
+  ]);
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return '';
+    if (cmd === 'git' && args[2] === 'worktree') return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/main', ''].join('\n');
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-18T12:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file),
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+    buildZeroShotPacket: () => ({
+      decision: {
+        lane: 'fast_model_task',
+        selected_ref: 'NOW-1',
+        selected_title: 'Do current work',
+        model_tier: 'fast',
+      },
+      commands: {
+        first_command: 'atris task current-step --json',
+      },
+    }),
+  });
+
+  assert.equal(data.os.zero_shot.status, 'stale');
+  assert.equal(data.os.zero_shot.route_source, 'current');
+  assert.equal(data.os.zero_shot.selected_ref, 'NOW-1');
+  assert.equal(data.os.zero_shot.latest.selected_ref, 'OLD-1');
+  assert.equal(data.os.zero_shot.current.selected_ref, 'NOW-1');
+  assert.notEqual(data.os.zero_shot.latest_source_fingerprint, data.os.zero_shot.current_source_fingerprint);
+  assert.match(renderRadar(data), /0-shot: stale fast_model_task NOW-1 -> atris task current-step --json/);
 });
 
 test('renderAgentTop explains workspaces with no active task', () => {
