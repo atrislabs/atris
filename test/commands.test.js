@@ -9907,6 +9907,13 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(createPayload.action, 'created');
     assert.equal(createPayload.task.title, 'Headless agents need JSON');
     assert.ok(fs.existsSync(createPayload.projection_path));
+    const latestZeroShotPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
+    const promptZeroShotPath = path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt');
+    assert.equal(fs.existsSync(latestZeroShotPath), true);
+    assert.equal(fs.existsSync(promptZeroShotPath), true);
+    const latestZeroShot = JSON.parse(fs.readFileSync(latestZeroShotPath, 'utf8'));
+    assert.equal(latestZeroShot.durable.wrote, true);
+    assert.equal(latestZeroShot.decision.selected_ref, createPayload.task.display_id);
     const id = createPayload.task_id;
     const shortId = id.slice(0, 8);
 

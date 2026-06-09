@@ -340,6 +340,13 @@ function writeDefaultProjection(taskDb, db, { all = false } = {}) {
   const outPath = path.resolve(path.join('.atris', 'state', 'tasks.projection.json'));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(projection, null, 2) + '\n', 'utf8');
+  try {
+    const {
+      buildPacket: buildZeroShotPacket,
+      writeLatestPacket: writeLatestZeroShotPacket,
+    } = require('./zero-shot');
+    writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: taskDb.workspaceRoot() }));
+  } catch {}
   return { projection, outPath };
 }
 
