@@ -81,6 +81,18 @@ async function resolveBusiness(token, slug) {
   return null;
 }
 
+async function runTerminalCommand(token, businessId, workspaceId, command, timeoutSec = 30) {
+  return apiRequestJson(
+    `/business/${businessId}/workspaces/${workspaceId}/terminal`,
+    {
+      method: 'POST',
+      token,
+      body: { command, timeout: timeoutSec },
+      timeoutMs: (timeoutSec + 10) * 1000,
+    }
+  );
+}
+
 async function terminalAtris() {
   // Parse args. Three forms:
   //   atris terminal <business> <command...>
@@ -162,15 +174,7 @@ async function terminalAtris() {
   }
 
   // Execute the command
-  const result = await apiRequestJson(
-    `/business/${biz.businessId}/workspaces/${biz.workspaceId}/terminal`,
-    {
-      method: 'POST',
-      token: creds.token,
-      body: { command, timeout: timeoutSec },
-      timeoutMs: (timeoutSec + 10) * 1000,
-    }
-  );
+  const result = await runTerminalCommand(creds.token, biz.businessId, biz.workspaceId, command, timeoutSec);
 
   if (!result.ok) {
     console.error(`\n✗ Terminal call failed: ${result.errorMessage || result.error || result.status}`);
@@ -198,4 +202,4 @@ async function terminalAtris() {
   process.exit(typeof exitCode === 'number' ? exitCode : 0);
 }
 
-module.exports = { terminalAtris };
+module.exports = { terminalAtris, resolveBusiness, ensureAwake, runTerminalCommand };
