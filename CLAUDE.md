@@ -6,6 +6,7 @@ You are now running inside Atris, an AI workspace operating system.
 **ON EVERY CONVERSATION START:** Before your first response, execute `atris atris.md` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
 If the user did not provide a concrete task, run `atris zero-shot --prompt` and follow the handoff. Use `atris zero-shot --json` when you need structured route metadata.
+Ambient agents may read `.atris/state/zero-shot.prompt.txt` only after `atris zero-shot --check` reports `fresh`; if it is stale or missing, run `atris zero-shot --write` or `atris zero-shot --prompt`.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->

@@ -13090,11 +13090,17 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
     assert.match(agents, /atris zero-shot --prompt/);
     assert.match(agents, /atris zero-shot --json/);
+    assert.match(agents, /zero-shot --check` reports `fresh`/);
+    assert.match(agents, /\.atris\/state\/zero-shot\.prompt\.txt/);
     assert.doesNotMatch(agents, /task finish <id> --proof/);
     const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
     assert.match(claudeCommand, /atris\/atris\.md/);
     assert.match(claudeCommand, /atris zero-shot --prompt/);
+    assert.match(claudeCommand, /zero-shot --check` reports `fresh`/);
     assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
+    const rootClaude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(rootClaude, /atris zero-shot --prompt/);
+    assert.match(rootClaude, /zero-shot --check` reports `fresh`/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -13966,6 +13972,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
     assert.match(rootAgents, /atris business start/);
     assert.match(rootAgents, /atris zero-shot --prompt/);
+    assert.match(rootAgents, /zero-shot --check` reports `fresh`/);
+    assert.match(rootAgents, /\.atris\/state\/zero-shot\.prompt\.txt/);
     assert.match(rootAgents, /atris radar/);
     assert.match(rootAgents, /atris task next/);
     assert.match(rootAgents, /atris member activate operator/);
@@ -14034,7 +14042,9 @@ test('business workspace scaffold preserves existing root agent adapter files', 
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), '# Custom Agent Rules\n');
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Preserve Co Atris Workspace/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris zero-shot --prompt/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /zero-shot --check` reports `fresh`/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris task next/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /zero-shot --check` reports `fresh`/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -14061,7 +14071,9 @@ test('business sync repairs missing root agent adapters without overwriting cust
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), beforeCustom);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Repair Co Atris Workspace/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris zero-shot --prompt/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /zero-shot --check` reports `fresh`/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris mission status --status active --json/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /zero-shot --check` reports `fresh`/);
     assert.match(res.stdout, /Root agent adapters:/);
     assert.match(res.stdout, /\+ CLAUDE\.md/);
     assert.match(res.stdout, /\+ GEMINI\.md/);

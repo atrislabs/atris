@@ -128,7 +128,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route plus `atris zero-shot --prompt`, and refreshes the ambient latest files
 - **Member activation:** `commands/member.js` prints the current 0-shot route and refreshes the ambient latest files when waking a named member
 - **Brain activation:** `commands/brain.js` includes the 0-shot route/direct prompt command in `atris brain activate`, and refreshes the ambient latest files
-- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt`
+- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris zero-shot --prompt` and tell ambient agents to trust `.atris/state/zero-shot.prompt.txt` only after `atris zero-shot --check` reports fresh
 - **Regression:** `test/zero-shot.test.js`
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **Default safety:** normal `atris zero-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
