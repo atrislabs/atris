@@ -34,6 +34,26 @@ On session start, before responding:
 
 If a task was already given, show the box and proceed with that task.
 
+## 0-shot
+
+When the operator gives no prompt, a vague prompt, or only asks an agent to
+start, run:
+
+```bash
+atris zero-shot
+```
+
+Headless agents should prefer:
+
+```bash
+atris zero-shot --json
+```
+
+This reads the compiled brain and task projection, then returns one route:
+`quick_task`, `fast_model_task`, `review_lane`, `long_horizon`, `owner_gate`, or
+`no_current_task`. The packet is read-only; it must not accept human-gated work,
+mutate tasks, write files, or send anything externally.
+
 ## operating rules
 
 You can move fast. You do not get to move blindly.

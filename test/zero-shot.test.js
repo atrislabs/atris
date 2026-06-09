@@ -1,0 +1,144 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+function makeTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-zero-shot-'));
+}
+
+function cleanupTempDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function runCli(args, { cwd } = {}) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: {
+      ...process.env,
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      NODE_NO_WARNINGS: '1',
+    },
+  });
+  if (result.error) throw result.error;
+  return result;
+}
+
+function seedWorkspace(dir, tasks) {
+  fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), [
+    '# Status',
+    '',
+    '## Strongest Signal',
+    '- Review proof should be drained before new work.',
+    '',
+    '## Next Move',
+    '- Verify the waiting CLI proof.',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+    schema: 'atris.task_projection.v1',
+    tasks,
+  }, null, 2));
+}
+
+test('zero-shot --json selects review-lane work without mutating projection files', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Implement small CLI command', status: 'claimed', tag: 'cli' },
+      { display_id: 'REV-1', title: 'Review pending proof', status: 'review', tag: 'cli' },
+    ]);
+    const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const before = fs.readFileSync(projectionPath, 'utf8');
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
+    assert.equal(packet.decision.lane, 'review_lane');
+    assert.equal(packet.decision.selected_ref, 'REV-1');
+    assert.equal(packet.commands.next_command, 'atris task review-chat REV-1 --as codex-review');
+    assert.equal(packet.boundaries.no_task_mutation, true);
+    assert.equal(fs.readFileSync(projectionPath, 'utf8'), before);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot falls back to radar when no current task exists', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['zero-shot'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot next move/);
+    assert.match(res.stdout, /route: no_current_task/);
+    assert.match(res.stdout, /run: atris radar --json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot does not let generic brain status override the active task lane', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), [
+      '# Status',
+      '',
+      '## Strongest Signal',
+      '- Loop health sees active channels: Task plane, Missions, Codex goal.',
+      '',
+      '## Next Move',
+      '- Pick the current task.',
+      '',
+    ].join('\n'));
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.equal(packet.commands.next_command, 'atris task current-step --tag cli --json');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot does not treat product owner wording as an owner gate', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'OWN-1', title: 'Update owner computer command help', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.equal(packet.decision.model, 'fast');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot help is workspace-free and non-mutating', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['zero-shot', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Usage: atris zero-shot/);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

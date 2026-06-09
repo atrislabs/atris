@@ -324,6 +324,7 @@ function showHelp() {
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
   console.log('  now        - Show atris/now.md, the current operating truth');
+  console.log('  zero-shot  - Pick the next safe move from brain + task state');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -763,7 +764,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'zero-shot', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x',
@@ -1192,6 +1193,18 @@ if (command === 'init') {
   Promise.resolve()
     .then(() => require('../commands/brain').brainCommand(process.argv.slice(3)))
     .then(() => process.exit(0))
+    .catch((err) => {
+      const message = err.message || String(err);
+      if (process.argv.slice(3).includes('--json')) {
+        console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+      } else {
+        console.error(`\n✗ Error: ${message}`);
+      }
+      process.exit(1);
+    });
+} else if (command === 'zero-shot') {
+  Promise.resolve(require('../commands/zero-shot').zeroShotCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
     .catch((err) => {
       const message = err.message || String(err);
       if (process.argv.slice(3).includes('--json')) {
