@@ -123,6 +123,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 **Purpose:** Gives any agent or operator a next-move packet when the prompt is vague or empty.
 
 - **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files
+- **Natural aliases:** `bin/atris.js` normalizes `0shot`, `0 shot`, `zeroshot`, and `zero shot` to `0-shot` before dispatch
 - **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot` and refreshes the ambient latest files
 - **Implementation:** `commands/zero-shot.js`
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route plus `atris 0-shot --prompt`, and refreshes the ambient latest files
@@ -147,13 +148,14 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Visible goal fallback:** if no task or mission tick is active, `.atris/state/codex_goal.json` can route `goal_context` to the stored goal command
 - **Examples:**
 - `atris 0-shot` -> human next-move card
+- `atris 0 shot` / `atris 0shot` -> same packet for natural recall
 - `atris zero-shot` -> compatible human next-move card
 - `atris 0-shot --json` -> machine-readable packet
 - `atris 0-shot --prompt` -> copy-pasteable prompt for any model
 - `atris 0-shot --write` -> refresh durable latest packet and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 
-**Search:** `rg "zeroShotCommand|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "normalizeZeroShotAlias|zeroShotCommand|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

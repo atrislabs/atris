@@ -168,20 +168,30 @@ test('next --json returns the zero-shot packet for agents', () => {
   }
 });
 
-test('0-shot is a first-class alias for zero-shot', () => {
+test('0-shot aliases route to the same read-only packet', () => {
   const dir = makeTempDir();
   try {
     seedWorkspace(dir, [
       { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
     ]);
 
-    const res = runCli(['0-shot', '--json'], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr || res.stdout);
-    const packet = JSON.parse(res.stdout);
-    assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
-    assert.equal(packet.decision.lane, 'fast_model_task');
-    assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
-    assert.equal(packet.boundaries.no_task_mutation, true);
+    const aliases = [
+      ['0-shot', '--json'],
+      ['0shot', '--json'],
+      ['0', 'shot', '--json'],
+      ['zeroshot', '--json'],
+      ['zero', 'shot', '--json'],
+    ];
+
+    for (const alias of aliases) {
+      const res = runCli(alias, { cwd: dir });
+      assert.equal(res.status, 0, `${alias.join(' ')}: ${res.stderr || res.stdout}`);
+      const packet = JSON.parse(res.stdout);
+      assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
+      assert.equal(packet.decision.lane, 'fast_model_task');
+      assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
+      assert.equal(packet.boundaries.no_task_mutation, true);
+    }
   } finally {
     cleanupTempDir(dir);
   }
@@ -604,6 +614,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Usage: atris 0-shot/);
     assert.match(res.stdout, /Alias: atris zero-shot/);
+    assert.match(res.stdout, /Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);

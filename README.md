@@ -92,6 +92,7 @@ atris next
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
 `atris 0-shot`, `atris zero-shot`, and no-request `atris next` are the defaults when you do not know what to prompt next.
+The 0-shot command also accepts natural spellings like `atris 0 shot`, `atris 0shot`, `atris zero shot`, and `atris zeroshot`.
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris 0-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.

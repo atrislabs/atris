@@ -770,6 +770,19 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
   return;
 }
 
+function normalizeZeroShotAlias() {
+  const rawCommand = String(command || '').toLowerCase();
+  const rawFirstArg = String(firstCommandArg || '').toLowerCase();
+  const spacedAlias = (rawCommand === '0' || rawCommand === 'zero') && rawFirstArg === 'shot';
+  const compactAlias = rawCommand === '0shot' || rawCommand === 'zeroshot';
+  if (!spacedAlias && !compactAlias) return;
+  if (spacedAlias) process.argv.splice(3, 1);
+  command = '0-shot';
+  process.argv[2] = command;
+}
+
+normalizeZeroShotAlias();
+
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'zero-shot', '0-shot', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',

@@ -705,6 +705,7 @@ function renderHelp() {
   return [
     'Usage: atris 0-shot [--json|--prompt|--write|--check]',
     'Alias: atris zero-shot [--json|--prompt|--write|--check]',
+    'Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
