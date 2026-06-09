@@ -156,6 +156,30 @@ test('countOpenWorkItems prefers task projection over rendered TODO fallbacks', 
   }
 });
 
+test('renderDefaultNow includes the current zero-shot route', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        { display_id: 'CZS-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      ],
+    }), 'utf8');
+
+    const content = renderDefaultNow(dir);
+
+    assert.match(content, /0-shot route: fast_model_task CZS-1 -> `atris task current-step --tag cli --json`/);
+    assert.match(content, /Run `atris task current-step --tag cli --json` for the current 0-shot lane/);
+    assert.match(content, /`atris zero-shot --prompt` for a copy-paste handoff/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('countJournalCompletedReceipts counts proof receipts before legacy completed markers', () => {
   const dir = makeTempDir();
   try {

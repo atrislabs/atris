@@ -59,7 +59,7 @@ rg "loopAtris|buildReport|showLoopHelp|loop --help" bin/atris.js commands/loop.j
 rg "runAtris" commands/run.js               # Run command (autonomous loop)
 rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands.test.js # Verify command, rubric, and non-mutating help
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
-rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, projection-backed open work counts, proof receipts, portfolio signals, non-mutating help
+rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|zeroShotNowSummary|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, 0-shot route, projection-backed open work counts, proof receipts, portfolio signals, non-mutating help
 rg "radarCommand|collectRadar|loadZeroShot|Operator radar|Agent process top|findTaskWorkspaceRoot|task_reason|task_action|task_load|whats going on|loadBusinessCollaboration|ctop" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with nearest workspace task projection, ctop unmapped-session reasons/actions and task-load pileups, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, Codex goal state, and current 0-shot route freshness
 rg "releaseAtris" commands/release.js      # Release command
 rg "showSearchHelp|searchJournal|search help flags" bin/atris.js test/commands.test.js # Search command + workspace-free help flags
@@ -135,6 +135,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Ambient latest files:** `atris zero-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
 - **Freshness check:** `atris zero-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route plus durable prompt freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
+- **Now front door:** generated `atris/now.md` includes the current 0-shot route and first command so agents loading the first context file can start from the selected lane
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { buildPacket } = require('./zero-shot');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -199,6 +200,28 @@ function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
   return seen.size;
 }
 
+function zeroShotNowSummary(root = process.cwd()) {
+  try {
+    const packet = buildPacket({ cwd: root });
+    const decision = packet.decision || {};
+    const command = packet.commands?.first_command || decision.first_command || 'atris zero-shot --prompt';
+    const focus = decision.selected_ref ? ` ${decision.selected_ref}` : '';
+    return {
+      route: `${decision.lane || 'unknown'}${focus}`,
+      command,
+      prompt: packet.commands?.zero_shot_prompt || 'atris zero-shot --prompt',
+      json: packet.commands?.zero_shot_json || 'atris zero-shot --json',
+    };
+  } catch {
+    return {
+      route: 'unavailable',
+      command: 'atris zero-shot --prompt',
+      prompt: 'atris zero-shot --prompt',
+      json: 'atris zero-shot --json',
+    };
+  }
+}
+
 function currentJournalPath(root = process.cwd()) {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -215,6 +238,7 @@ function renderDefaultNow(root = process.cwd()) {
   const inboxCount = countMatches(journalPath, /^-\s+\*\*I\d+:/gm);
   const taskReceiptCount = countTaskReceiptsToday(root);
   const completedCount = taskReceiptCount || countJournalCompletedReceipts(journalPath);
+  const zeroShot = zeroShotNowSummary(root);
   const generated = todayIso();
 
   return `# now
@@ -227,6 +251,7 @@ Last updated: ${generated}
 ## What Matters Now
 
 - Decide the next useful move before opening more context.
+- 0-shot route: ${zeroShot.route} -> \`${zeroShot.command}\`
 
 ## Current Priority
 
@@ -247,6 +272,7 @@ Last updated: ${generated}
 
 ## Next Move
 
+- Run \`${zeroShot.command}\` for the current 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
 - Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
 
 ## Receipts
