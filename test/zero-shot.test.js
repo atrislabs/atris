@@ -132,6 +132,37 @@ test('next --json returns the zero-shot packet for agents', () => {
   }
 });
 
+test('zero-shot routes active missions needing verification before task work', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+    const missionsPath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+    fs.writeFileSync(missionsPath, `${JSON.stringify({
+      id: 'mission-1',
+      owner: 'mission-lead',
+      objective: 'Keep the long horizon launch loop moving',
+      status: 'running',
+      verifier: 'npm test',
+      verifier_result: { passed: false },
+    })}\n`);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'mission_tick');
+    assert.equal(packet.decision.horizon, 'long_term');
+    assert.equal(packet.decision.model_tier, 'pro');
+    assert.equal(packet.decision.selected_kind, 'mission');
+    assert.equal(packet.decision.selected_ref, 'mission-1');
+    assert.equal(packet.commands.first_command, 'atris mission tick mission-1 --verify --complete-on-pass');
+    assert.equal(packet.missions.needs_tick, 1);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot does not let generic brain status override the active task lane', () => {
   const dir = makeTempDir();
   try {
@@ -223,6 +254,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /Usage: atris zero-shot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
+    assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /owner_gate/);
     assert.match(res.stdout, /without writing state/);
     assert.deepEqual(fs.readdirSync(dir), []);

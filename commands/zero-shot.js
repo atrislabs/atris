@@ -13,6 +13,17 @@ function readJson(file) {
   try { return JSON.parse(readText(file)); } catch { return null; }
 }
 
+function readJsonLines(file) {
+  return readText(file)
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .filter(Boolean);
+}
+
 function findWorkspaceRoot(start = process.cwd()) {
   let dir = path.resolve(start);
   while (true) {
@@ -70,6 +81,47 @@ function collectTasks(root) {
   return { projection_present: Boolean(projection.schema || tasks.length), tasks, counts };
 }
 
+function normalizeMission(mission) {
+  if (!mission || typeof mission !== 'object') return null;
+  const id = mission.id || mission.mission_id || null;
+  if (!id) return null;
+  const verifierResult = mission.verifier_result && typeof mission.verifier_result === 'object'
+    ? mission.verifier_result
+    : {};
+  return {
+    id,
+    owner: mission.owner || '?',
+    objective: mission.objective || mission.title || '',
+    status: String(mission.status || '').toLowerCase(),
+    verifier: mission.verifier || null,
+    verifier_passed: mission.verifier_passed === true || verifierResult.passed === true,
+    next_action: mission.next_action || '',
+    lane: mission.lane || null,
+  };
+}
+
+function collectMissions(root) {
+  const latestById = new Map();
+  const lines = readJsonLines(path.join(root, '.atris', 'state', 'missions.jsonl'));
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const mission = normalizeMission(lines[i]);
+    if (mission && !latestById.has(mission.id)) latestById.set(mission.id, mission);
+  }
+  const missions = Array.from(latestById.values());
+  const active = missions.filter(mission => ['ready', 'running', 'planning'].includes(mission.status));
+  const needsTick = active.filter(mission => mission.verifier && !mission.verifier_passed);
+  return {
+    projection_present: lines.length > 0,
+    active_count: active.length,
+    needs_tick_count: needsTick.length,
+    needs_tick: needsTick,
+  };
+}
+
+function selectMission(missions) {
+  return missions.needs_tick[0] || null;
+}
+
 function selectTask(tasks) {
   const active = tasks.filter(task => !['done', 'accepted', 'complete', 'completed'].includes(task.status));
   return active.find(task => task.status === 'review')
@@ -118,6 +170,7 @@ function shellToken(value) {
 }
 
 function nextCommand(task, lane) {
+  if (lane === 'mission_tick' && task && task.ref) return `atris mission tick ${shellToken(task.ref)} --verify --complete-on-pass`;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
   if (lane === 'fast_model_task' || lane === 'quick_task') {
     return task && task.tag
@@ -131,6 +184,12 @@ function nextCommand(task, lane) {
 function laneDetails(task, lane, command) {
   const ref = task && task.ref ? task.ref : 'the current workspace';
   const details = {
+    mission_tick: {
+      horizon: 'long_term',
+      work_size: 'long',
+      model_tier: 'pro',
+      agent_directive: `Advance mission ${ref}; run the verifier tick before starting unrelated work.`,
+    },
     review_lane: {
       horizon: 'immediate_review',
       work_size: 'quick',
@@ -177,9 +236,16 @@ function laneDetails(task, lane, command) {
 function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
   const brain = collectBrain(root);
+  const missionState = collectMissions(root);
   const taskState = collectTasks(root);
-  const selected = selectTask(taskState.tasks);
-  const decision = classify(selected);
+  const selectedMission = selectMission(missionState);
+  const selectedTask = selectedMission ? null : selectTask(taskState.tasks);
+  const selected = selectedMission
+    ? { ref: selectedMission.id, title: selectedMission.objective || 'Mission tick', kind: 'mission' }
+    : selectedTask;
+  const decision = selectedMission
+    ? { lane: 'mission_tick', urgency: 'high', model: 'pro', reason: `${selectedMission.id} has an unverified mission verifier.` }
+    : classify(selectedTask);
   const command = nextCommand(selected, decision.lane);
   const details = laneDetails(selected, decision.lane, command);
   return {
@@ -192,14 +258,20 @@ function buildPacket(options = {}) {
       confidence: selected || brain.status_present ? 'medium' : 'low',
       selected_ref: selected ? selected.ref : null,
       selected_title: selected ? selected.title : null,
+      selected_kind: selectedMission ? 'mission' : (selectedTask ? 'task' : null),
     },
     queue: taskState.counts,
+    missions: {
+      active: missionState.active_count,
+      needs_tick: missionState.needs_tick_count,
+    },
     brain,
     commands: {
       zero_shot_json: 'atris zero-shot --json',
       next_command: command,
       first_command: command,
       context_check: 'atris radar --json',
+      mission_status: 'atris mission status --status active --json',
       task_current_step: 'atris task current-step --json',
       review_lane_drain: 'atris task review-lane-drain --json',
     },
@@ -223,6 +295,7 @@ function renderPacket(packet) {
     `why: ${packet.decision.reason}`,
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked`,
+    `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
     `json: ${packet.commands.zero_shot_json}`,
   ].join('\n');
@@ -238,10 +311,10 @@ function renderHelp() {
     'Usage: atris zero-shot [--json]',
     '',
     'Use when you do not know what to prompt next.',
-    'Selects one read-only lane: quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
+    'Selects one read-only lane: mission_tick, quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, and safety boundaries.',
-    'Reads atris/brain/STATUS.md and .atris/state/tasks.projection.json without writing state, accepting tasks, or calling external systems.',
+    'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, and .atris/state/missions.jsonl without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }
 
@@ -264,6 +337,7 @@ module.exports = {
   buildPacket,
   classify,
   collectBrain,
+  collectMissions,
   collectTasks,
   renderHint,
   renderPacket,
