@@ -143,8 +143,8 @@ function selectCodexGoal(goal) {
 function selectTask(tasks) {
   const active = tasks.filter(task => !['done', 'accepted', 'complete', 'completed'].includes(task.status));
   return active.find(task => task.status === 'review')
-    || active.find(task => task.status === 'claimed')
     || active.find(task => task.status === 'blocked')
+    || active.find(task => task.status === 'claimed')
     || active.find(task => task.status === 'open')
     || null;
 }

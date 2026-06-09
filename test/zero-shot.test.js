@@ -336,6 +336,25 @@ test('zero-shot routes owner-gated work to the human lane', () => {
   }
 });
 
+test('zero-shot surfaces blocked work before ordinary claimed work', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'FAST-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      { display_id: 'BLK-1', title: 'Wait for customer approval before release', status: 'blocked', tag: 'release' },
+    ]);
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'owner_gate');
+    assert.equal(packet.decision.selected_ref, 'BLK-1');
+    assert.equal(packet.commands.first_command, 'atris task page BLK-1 --json');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
