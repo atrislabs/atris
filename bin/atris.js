@@ -289,7 +289,7 @@ function showHelp() {
   console.log('');
   console.log('Quick Start:');
   console.log('');
-  console.log('  1. atris zero-shot       Pick or write the next safe move when you do not know what to prompt');
+  console.log('  1. atris 0-shot          Pick or write the next safe move when you do not know what to prompt');
   console.log('  2. atris                 Open a persistent AI computer for this workspace');
   console.log('  3. Describe what you want run, built, researched, or validated');
   console.log('  4. Atris acts with context, memory, tools, and a review loop');
@@ -325,7 +325,8 @@ function showHelp() {
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  zero-shot  - Pick or write the next safe move from brain + task state');
+  console.log('  0-shot     - Pick or write the next safe move from brain + task state');
+  console.log('  zero-shot  - Same as 0-shot');
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
@@ -770,7 +771,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'zero-shot', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'zero-shot', '0-shot', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x',
@@ -1232,7 +1233,7 @@ if (command === 'init') {
       }
       process.exit(1);
     });
-} else if (command === 'zero-shot') {
+} else if (command === 'zero-shot' || command === '0-shot') {
   Promise.resolve(require('../commands/zero-shot').zeroShotCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => {

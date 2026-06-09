@@ -25,10 +25,10 @@ atris
 If the prompt is vague or you do not know what to do next, run:
 
 ```bash
-atris zero-shot
+atris 0-shot
 ```
 
-`atris next` is the same shortcut when you have no request typed.
+`atris zero-shot` and `atris next` are the same shortcut when you have no request typed.
 For headless agents, use `atris zero-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris zero-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris zero-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json` and `.atris/state/zero-shot.prompt.txt` for ambient agent runtimes, then `atris zero-shot --check` or `atris next --check` to confirm those files are fresh.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
@@ -85,12 +85,13 @@ If you want Atris cloud workspaces, businesses, or integrations, run `atris setu
 cd your-project
 atris init
 atris
+atris 0-shot
 atris zero-shot
 atris next
 ```
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
-`atris zero-shot` and no-request `atris next` are the defaults when you do not know what to prompt next.
+`atris 0-shot`, `atris zero-shot`, and no-request `atris next` are the defaults when you do not know what to prompt next.
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
 Use `atris zero-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris zero-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
@@ -201,6 +202,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | Command | Purpose |
 |---------|---------|
 | `atris` | Load context and start |
+| `atris 0-shot` | Pick the next safe move when you do not know what to prompt |
 | `atris init` | Scaffold an Atris workspace |
 | `atris brainstorm` | Explore before planning |
 | `atris plan` | Create the plan/spec |

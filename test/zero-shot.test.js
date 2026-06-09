@@ -168,6 +168,25 @@ test('next --json returns the zero-shot packet for agents', () => {
   }
 });
 
+test('0-shot is a first-class alias for zero-shot', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+
+    const res = runCli(['0-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
+    assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
+    assert.equal(packet.boundaries.no_task_mutation, true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot --prompt prints only the any-model handoff prompt', () => {
   const dir = makeTempDir();
   try {
@@ -581,6 +600,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     const res = runCli(['zero-shot', '--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Usage: atris zero-shot/);
+    assert.match(res.stdout, /Alias: atris 0-shot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
@@ -604,7 +624,9 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
   try {
     const res = runCli(['--help'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /atris zero-shot\s+Pick or write the next safe move/);
+    assert.match(res.stdout, /atris 0-shot\s+Pick or write the next safe move/);
+    assert.match(res.stdout, /zero-shot\s+- Same as 0-shot/);
+    assert.match(res.stdout, /0-shot\s+- Pick or write the next safe move/);
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);
