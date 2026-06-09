@@ -3122,6 +3122,12 @@ function memberActivate(name) {
 
   console.log('');
   console.log(`Member "${fm.name || name}" activated.`);
+  try {
+    const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('./zero-shot');
+    const zeroShot = buildZeroShotPacket({ cwd: process.cwd() });
+    console.log(renderZeroShotHint(zeroShot));
+    console.log(`Next route JSON: atris zero-shot --json`);
+  } catch {}
   console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
 }
 
@@ -7162,7 +7168,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('Subcommands:');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  list                Show all team members');
-      console.log('  activate <name>     Symlink member skills, show context and permissions');
+      console.log('  activate <name>     Symlink skills, show context, permissions, and zero-shot route');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
       console.log('  push <name>         Push a local team member to the cloud');
       console.log('  pull <name|id>      Pull a cloud agent as a local team member');

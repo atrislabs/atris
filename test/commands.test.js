@@ -492,6 +492,36 @@ test('member create --help prints usage without creating a --help member', () =>
   }
 });
 
+test('member activate surfaces zero-shot route for agent boot', () => {
+  const dir = makeTempDir();
+  try {
+    const memberDir = path.join(dir, 'atris', 'team', 'navigator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), [
+      '---',
+      'name: Navigator',
+      'role: Planning Agent',
+      '---',
+      '',
+      '# Navigator',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['member', 'activate', 'navigator'], {
+      cwd: dir,
+      env: { HOME: path.join(dir, 'home') },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Member "Navigator" activated\./);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json/);
+    assert.match(res.stdout, /Next route JSON: atris zero-shot --json/);
+    assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member archive preserves files under _archived', () => {
   const dir = makeTempDir();
   try {
