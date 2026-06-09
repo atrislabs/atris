@@ -143,6 +143,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
 - **Route summary:** JSON includes `routes.horizons` counts plus `routes.models` grouped by fast/pro/validator/human, with count and first route for each tier
+- **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
 - **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
 - **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
@@ -150,6 +151,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Visible goal fallback:** if no task or mission tick is active, `.atris/state/codex_goal.json` can route `goal_context` to the stored goal command
 - **Examples:**
 - `atris 0-shot` -> human next-move card
+- `atris 0-shot --model fast` -> fast-model next move when one exists, or a safe no-route handoff
 - `atris 0 shot` / `atris 0shot` -> same packet for natural recall
 - `atris zero-shot` -> compatible human next-move card
 - `atris 0-shot --json` -> machine-readable packet
@@ -157,7 +159,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris 0-shot --write` -> refresh durable latest packet and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 
-**Search:** `rg "normalizeZeroShotAlias|collectTodoTasks|todoTask|zeroShotCommand|summarizeRouteModels|summarizeRouteHorizons|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "normalizeZeroShotAlias|parseModelTierArg|selectRoute|collectTodoTasks|todoTask|zeroShotCommand|summarizeRouteModels|summarizeRouteHorizons|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

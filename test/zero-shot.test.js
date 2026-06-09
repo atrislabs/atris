@@ -655,6 +655,42 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.models.human.first, 'source'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(packet.routes, 'all_options'), false);
+
+    const fastRes = runCli(['zero-shot', '--model', 'fast', '--json'], { cwd: dir });
+    assert.equal(fastRes.status, 0, fastRes.stderr || fastRes.stdout);
+    const fastPacket = JSON.parse(fastRes.stdout);
+    assert.equal(fastPacket.decision.requested_model_tier, 'fast');
+    assert.equal(fastPacket.decision.model_tier_match, true);
+    assert.equal(fastPacket.decision.selected_ref, 'FAST-1');
+    assert.equal(fastPacket.decision.lane, 'fast_model_task');
+    assert.equal(fastPacket.commands.first_command, 'atris task current-step --tag cli --json');
+    assert.match(fastPacket.handoff.prompt, /Route: fast_model_task/);
+
+    const fastPromptRes = runCli(['zero-shot', '--fast', '--prompt'], { cwd: dir });
+    assert.equal(fastPromptRes.status, 0, fastPromptRes.stderr || fastPromptRes.stdout);
+    assert.match(fastPromptRes.stdout, /Route: fast_model_task/);
+    assert.match(fastPromptRes.stdout, /Focus: FAST-1 - Fix CLI help copy/);
+
+    const proRes = runCli(['0-shot', '--pro', '--json'], { cwd: dir });
+    assert.equal(proRes.status, 0, proRes.stderr || proRes.stdout);
+    const proPacket = JSON.parse(proRes.stdout);
+    assert.equal(proPacket.decision.requested_model_tier, 'pro');
+    assert.equal(proPacket.decision.model_tier_match, true);
+    assert.equal(proPacket.decision.selected_ref, 'FAIL-1');
+    assert.equal(proPacket.decision.lane, 'recovery_lane');
+    assert.equal(proPacket.commands.first_command, 'atris task page FAIL-1 --json');
+
+    const missingValidatorRes = runCli(['zero-shot', '--model=validator', '--json'], { cwd: dir });
+    assert.equal(missingValidatorRes.status, 0, missingValidatorRes.stderr || missingValidatorRes.stdout);
+    const missingValidatorPacket = JSON.parse(missingValidatorRes.stdout);
+    assert.equal(missingValidatorPacket.decision.requested_model_tier, 'validator');
+    assert.equal(missingValidatorPacket.decision.model_tier_match, false);
+    assert.equal(missingValidatorPacket.decision.selected_ref, null);
+    assert.equal(missingValidatorPacket.decision.model_tier, 'validator');
+    assert.equal(missingValidatorPacket.commands.first_command, 'atris radar --json');
+    assert.equal(missingValidatorPacket.routes.models.validator.count, 0);
+    assert.match(missingValidatorPacket.handoff.prompt, /No validator model route is available/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -669,8 +705,10 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /Alias: atris zero-shot/);
     assert.match(res.stdout, /Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot/);
     assert.match(res.stdout, /do not know what to prompt/);
+    assert.match(res.stdout, /--model fast\|pro\|validator\|human selects/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
+    assert.match(res.stdout, /routes\.models/);
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);

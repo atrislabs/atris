@@ -39,6 +39,37 @@ const LANE_PRIORITY = {
 };
 const MODEL_TIERS = ['fast', 'pro', 'validator', 'human'];
 
+function normalizeModelTier(value) {
+  const tier = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  if (!tier) return null;
+  if (tier === 'quick') return 'fast';
+  if (tier === 'long' || tier === 'long_term') return 'pro';
+  return MODEL_TIERS.includes(tier) ? tier : null;
+}
+
+function parseModelTierArg(args = []) {
+  let requested = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--model' || arg === '--tier') {
+      const value = args[i + 1];
+      const tier = normalizeModelTier(value);
+      return tier ? { tier } : { error: `${arg} requires one of: ${MODEL_TIERS.join(', ')}` };
+    }
+    if (arg.startsWith('--model=')) {
+      const tier = normalizeModelTier(arg.slice('--model='.length));
+      return tier ? { tier } : { error: `--model requires one of: ${MODEL_TIERS.join(', ')}` };
+    }
+    if (arg.startsWith('--tier=')) {
+      const tier = normalizeModelTier(arg.slice('--tier='.length));
+      return tier ? { tier } : { error: `--tier requires one of: ${MODEL_TIERS.join(', ')}` };
+    }
+    const flagTier = normalizeModelTier(arg.replace(/^--/, ''));
+    if (arg.startsWith('--') && flagTier && MODEL_TIERS.includes(flagTier)) requested = flagTier;
+  }
+  return { tier: requested };
+}
+
 function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
 }
@@ -572,6 +603,29 @@ function summarizeRouteHorizons(routes) {
   }, {});
 }
 
+function selectRoute(routes, requestedModelTier = null) {
+  if (!requestedModelTier) return routes[0] || null;
+  return routes.find(route => route.model_tier === requestedModelTier) || null;
+}
+
+function noRouteForModel(requestedModelTier) {
+  const decision = {
+    lane: 'no_current_task',
+    urgency: 'orient',
+    model: requestedModelTier,
+    reason: `No ${requestedModelTier} model route is available in the current queue.`,
+  };
+  const command = 'atris radar --json';
+  const details = {
+    horizon: 'orient',
+    work_size: 'context',
+    model_tier: requestedModelTier,
+    agent_directive: `Do not take work assigned to another model tier from this prompt. Inspect routes.models, then hand off to a tier with available work or wait for new ${requestedModelTier} work.`,
+    first_command: command,
+  };
+  return routeFromDecision(decision, details, command);
+}
+
 function buildRouteIndex({ missionState, goalState, taskState }) {
   const missionRoutes = (missionState.needs_tick || []).map(routeForMission);
   const taskRoutes = activeTasks(taskState.tasks || [])
@@ -588,18 +642,24 @@ function buildRouteIndex({ missionState, goalState, taskState }) {
     horizons: summarizeRouteHorizons(routes),
     models: summarizeRouteModels(routes),
     options: routes.slice(0, ROUTE_LIMIT),
+    all_options: routes,
   };
 }
 
 function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
+  const requestedModelTier = normalizeModelTier(options.model_tier || options.modelTier || options.model);
   const brain = collectBrain(root);
   const missionState = collectMissions(root);
   const goalState = collectCodexGoal(root);
   const taskState = collectTasks(root);
   const freshness = collectFreshness(root);
   const routeIndex = buildRouteIndex({ missionState, goalState, taskState });
-  const selectedRoute = routeIndex.options[0] || null;
+  const { all_options: allRoutes, ...publicRouteIndex } = routeIndex;
+  const selectedRoute = selectRoute(allRoutes, requestedModelTier);
+  const modelTierMatch = requestedModelTier ? Boolean(selectedRoute) : null;
+  const fallbackRoute = requestedModelTier && !selectedRoute ? noRouteForModel(requestedModelTier) : null;
+  const effectiveRoute = selectedRoute || fallbackRoute;
   const decision = selectedRoute
     ? {
       lane: selectedRoute.lane,
@@ -607,8 +667,13 @@ function buildPacket(options = {}) {
       model: selectedRoute.model,
       reason: selectedRoute.reason,
     }
-    : classify(null);
-  const command = selectedRoute ? selectedRoute.first_command : nextCommand(null, decision.lane);
+    : (fallbackRoute ? {
+      lane: fallbackRoute.lane,
+      urgency: fallbackRoute.urgency,
+      model: fallbackRoute.model,
+      reason: fallbackRoute.reason,
+    } : classify(null));
+  const command = effectiveRoute ? effectiveRoute.first_command : nextCommand(null, decision.lane);
   const details = selectedRoute
     ? {
       horizon: selectedRoute.horizon,
@@ -617,13 +682,21 @@ function buildPacket(options = {}) {
       agent_directive: selectedRoute.agent_directive,
       first_command: selectedRoute.first_command,
     }
-    : laneDetails(null, decision.lane, command);
+    : (fallbackRoute ? {
+      horizon: fallbackRoute.horizon,
+      work_size: fallbackRoute.work_size,
+      model_tier: fallbackRoute.model_tier,
+      agent_directive: fallbackRoute.agent_directive,
+      first_command: fallbackRoute.first_command,
+    } : laneDetails(null, decision.lane, command));
   const selectedTaskRoute = selectedRoute && selectedRoute.kind === 'task' ? selectedRoute : null;
   const publicRoutes = {
-    ...routeIndex,
-    options: routeIndex.options.map(route => publicRoute(route, root)),
+    ...publicRouteIndex,
+    requested_model_tier: requestedModelTier,
+    model_tier_match: modelTierMatch,
+    options: publicRouteIndex.options.map(route => publicRoute(route, root)),
   };
-  const handoffRoute = publicRoutes.options[0] || routeFromDecision(decision, details, command);
+  const handoffRoute = effectiveRoute ? publicRoute(effectiveRoute, root) : routeFromDecision(decision, details, command);
   return {
     schema: SCHEMA,
     generated_at: new Date().toISOString(),
@@ -635,6 +708,8 @@ function buildPacket(options = {}) {
       selected_ref: selectedRoute ? selectedRoute.ref : null,
       selected_title: selectedRoute ? selectedRoute.title : null,
       selected_kind: selectedRoute ? selectedRoute.kind : null,
+      requested_model_tier: requestedModelTier,
+      model_tier_match: modelTierMatch,
     },
     queue: taskState.counts,
     routes: publicRoutes,
@@ -766,7 +841,7 @@ function renderPacket(packet) {
   const selected = packet.decision.selected_ref
     ? `${packet.decision.selected_ref} - ${packet.decision.selected_title}`
     : 'none';
-  return [
+  const lines = [
     '0-shot next move',
     `route: ${packet.decision.lane} | ${packet.decision.urgency} | ${packet.decision.model}`,
     `focus: ${selected}`,
@@ -781,7 +856,11 @@ function renderPacket(packet) {
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     `boundaries: no external sends, no human accept, no task mutation${packet.boundaries.no_file_writes ? ', no file writes' : ''}`,
     `json: ${packet.commands.zero_shot_json}`,
-  ].join('\n');
+  ];
+  if (packet.decision.requested_model_tier) {
+    lines.splice(2, 0, `model request: ${packet.decision.requested_model_tier} | match=${packet.decision.model_tier_match}`);
+  }
+  return lines.join('\n');
 }
 
 function renderHint(packet) {
@@ -791,14 +870,15 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris 0-shot [--json|--prompt|--write|--check]',
-    'Alias: atris zero-shot [--json|--prompt|--write|--check]',
+    'Usage: atris 0-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human]',
+    'Alias: atris zero-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human]',
     'Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
+    '--model fast|pro|validator|human selects the first route suited to that model tier; --fast, --pro, --validator, and --human are shortcuts.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, handoff.prompt, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH} and ${LATEST_PROMPT_RELATIVE_PATH} for ambient agents; it does not mutate tasks or call external systems.`,
     '--check compares the durable latest packet with current source fingerprints and reports fresh, stale, or missing.',
@@ -811,6 +891,11 @@ function zeroShotCommand(args = []) {
     console.log(renderHelp());
     return 0;
   }
+  const modelArg = parseModelTierArg(args);
+  if (modelArg.error) {
+    console.error(modelArg.error);
+    return 1;
+  }
   if (args.includes('--check')) {
     const check = buildLatestCheck();
     if (args.includes('--json')) {
@@ -820,7 +905,7 @@ function zeroShotCommand(args = []) {
     }
     return 0;
   }
-  let packet = buildPacket();
+  let packet = buildPacket({ modelTier: modelArg.tier });
   if (args.includes('--write')) {
     packet = writeLatestPacket(packet);
   }

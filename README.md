@@ -31,6 +31,7 @@ atris 0-shot
 `atris zero-shot` and `atris next` are compatible shortcuts when you have no request typed.
 For headless agents, use `atris 0-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris 0-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris 0-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json` and `.atris/state/zero-shot.prompt.txt` for ambient agent runtimes, then `atris 0-shot --check` or `atris next --check` to confirm those files are fresh.
 The JSON also includes `routes.horizons` and `routes.models`, grouping work by horizon and by fast/pro/validator/human count plus the first suitable route for each model tier.
+Use `atris 0-shot --model fast`, `--model pro`, `--model validator`, or `--model human` when a specific agent tier should select its own next move from the queue.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
@@ -87,6 +88,7 @@ cd your-project
 atris init
 atris
 atris 0-shot
+atris 0-shot --model fast
 atris zero-shot
 atris next
 ```
@@ -95,6 +97,7 @@ atris next
 `atris 0-shot`, `atris zero-shot`, and no-request `atris next` are the defaults when you do not know what to prompt next.
 The 0-shot command also accepts natural spellings like `atris 0 shot`, `atris 0shot`, `atris zero shot`, and `atris zeroshot`.
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
+Use `--model fast`, `--model pro`, `--model validator`, or `--model human` to pick the first route suitable for that model tier instead of the global first route.
 If the task projection is missing, 0-shot reads `atris/TODO.md` as a read-only fallback so fresh workspaces still get a lane.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris 0-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
