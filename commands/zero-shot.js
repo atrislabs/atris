@@ -118,8 +118,26 @@ function collectMissions(root) {
   };
 }
 
+function collectCodexGoal(root) {
+  const state = readJson(path.join(root, '.atris', 'state', 'codex_goal.json')) || {};
+  const goal = state.goal && typeof state.goal === 'object' ? state.goal : null;
+  return {
+    present: Boolean(state.schema || state.action || goal),
+    action: state.action || null,
+    objective: goal ? goal.objective || null : null,
+    mission_id: goal ? goal.mission_id || null : null,
+    mission_status: goal ? goal.mission_status || null : null,
+    reason: goal ? goal.reason || null : null,
+    next_command: goal ? goal.next_command || null : null,
+  };
+}
+
 function selectMission(missions) {
   return missions.needs_tick[0] || null;
+}
+
+function selectCodexGoal(goal) {
+  return goal && goal.objective ? goal : null;
 }
 
 function selectTask(tasks) {
@@ -171,6 +189,7 @@ function shellToken(value) {
 
 function nextCommand(task, lane) {
   if (lane === 'mission_tick' && task && task.ref) return `atris mission tick ${shellToken(task.ref)} --verify --complete-on-pass`;
+  if (lane === 'goal_context' && task && task.next_command) return task.next_command;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
   if (lane === 'fast_model_task' || lane === 'quick_task') {
     return task && task.tag
@@ -189,6 +208,12 @@ function laneDetails(task, lane, command) {
       work_size: 'long',
       model_tier: 'pro',
       agent_directive: `Advance mission ${ref}; run the verifier tick before starting unrelated work.`,
+    },
+    goal_context: {
+      horizon: 'long_term',
+      work_size: 'long',
+      model_tier: 'pro',
+      agent_directive: `Use the visible Codex goal ${ref} as the current objective before creating unrelated work.`,
     },
     review_lane: {
       horizon: 'immediate_review',
@@ -237,14 +262,20 @@ function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
   const brain = collectBrain(root);
   const missionState = collectMissions(root);
+  const goalState = collectCodexGoal(root);
   const taskState = collectTasks(root);
   const selectedMission = selectMission(missionState);
   const selectedTask = selectedMission ? null : selectTask(taskState.tasks);
+  const selectedGoal = selectedMission || selectedTask ? null : selectCodexGoal(goalState);
   const selected = selectedMission
     ? { ref: selectedMission.id, title: selectedMission.objective || 'Mission tick', kind: 'mission' }
+    : selectedGoal
+      ? { ref: selectedGoal.mission_id || 'codex_goal', title: selectedGoal.objective, kind: 'codex_goal', next_command: selectedGoal.next_command }
     : selectedTask;
   const decision = selectedMission
     ? { lane: 'mission_tick', urgency: 'high', model: 'pro', reason: `${selectedMission.id} has an unverified mission verifier.` }
+    : selectedGoal
+      ? { lane: 'goal_context', urgency: 'plan', model: 'pro', reason: `The visible Codex goal is ${selectedGoal.mission_id || 'active'} and has no active task selected.` }
     : classify(selectedTask);
   const command = nextCommand(selected, decision.lane);
   const details = laneDetails(selected, decision.lane, command);
@@ -258,12 +289,19 @@ function buildPacket(options = {}) {
       confidence: selected || brain.status_present ? 'medium' : 'low',
       selected_ref: selected ? selected.ref : null,
       selected_title: selected ? selected.title : null,
-      selected_kind: selectedMission ? 'mission' : (selectedTask ? 'task' : null),
+      selected_kind: selectedMission ? 'mission' : (selectedGoal ? 'codex_goal' : (selectedTask ? 'task' : null)),
     },
     queue: taskState.counts,
     missions: {
       active: missionState.active_count,
       needs_tick: missionState.needs_tick_count,
+    },
+    goal: {
+      present: goalState.present,
+      action: goalState.action,
+      objective: goalState.objective,
+      mission_id: goalState.mission_id,
+      next_command: goalState.next_command,
     },
     brain,
     commands: {
@@ -272,6 +310,7 @@ function buildPacket(options = {}) {
       first_command: command,
       context_check: 'atris radar --json',
       mission_status: 'atris mission status --status active --json',
+      codex_goal: 'atris mission goal --json',
       task_current_step: 'atris task current-step --json',
       review_lane_drain: 'atris task review-lane-drain --json',
     },
@@ -296,6 +335,7 @@ function renderPacket(packet) {
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
+    `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
     `json: ${packet.commands.zero_shot_json}`,
   ].join('\n');
@@ -311,10 +351,10 @@ function renderHelp() {
     'Usage: atris zero-shot [--json]',
     '',
     'Use when you do not know what to prompt next.',
-    'Selects one read-only lane: mission_tick, quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
+    'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, and safety boundaries.',
-    'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, and .atris/state/missions.jsonl without writing state, accepting tasks, or calling external systems.',
+    'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }
 
@@ -337,6 +377,7 @@ module.exports = {
   buildPacket,
   classify,
   collectBrain,
+  collectCodexGoal,
   collectMissions,
   collectTasks,
   renderHint,

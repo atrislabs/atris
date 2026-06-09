@@ -163,6 +163,63 @@ test('zero-shot routes active missions needing verification before task work', (
   }
 });
 
+test('zero-shot uses visible Codex goal when no task or mission tick is active', () => {
+  const dir = makeTempDir();
+  try {
+    seedMinimalAtrisWorkspace(dir);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'codex_goal.json'), JSON.stringify({
+      schema: 'atris.codex_goal_controller.v1',
+      action: 'codex_goal_candidate',
+      goal: {
+        objective: 'Advance Atris mission mission-42: ship the current goal loop',
+        mission_id: 'mission-42',
+        mission_status: 'running',
+        reason: 'active',
+        next_command: 'atris mission tick mission-42 --verify --summary "<what changed>"',
+      },
+    }, null, 2));
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'goal_context');
+    assert.equal(packet.decision.selected_kind, 'codex_goal');
+    assert.equal(packet.decision.selected_ref, 'mission-42');
+    assert.equal(packet.commands.first_command, 'atris mission tick mission-42 --verify --summary "<what changed>"');
+    assert.equal(packet.goal.mission_id, 'mission-42');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot does not let visible Codex goal override active task work', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'codex_goal.json'), JSON.stringify({
+      schema: 'atris.codex_goal_controller.v1',
+      action: 'codex_goal_candidate',
+      goal: {
+        objective: 'Advance Atris mission mission-42: ship the current goal loop',
+        mission_id: 'mission-42',
+        next_command: 'atris mission tick mission-42 --verify --summary "<what changed>"',
+      },
+    }, null, 2));
+
+    const res = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.equal(packet.decision.selected_kind, 'task');
+    assert.equal(packet.goal.mission_id, 'mission-42');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot does not let generic brain status override the active task lane', () => {
   const dir = makeTempDir();
   try {
@@ -255,6 +312,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /mission_tick/);
+    assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /owner_gate/);
     assert.match(res.stdout, /without writing state/);
     assert.deepEqual(fs.readdirSync(dir), []);
