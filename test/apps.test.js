@@ -1,8 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const test = require('node:test');
 
 const { findAppsPackRoot, listAppManifests } = require('../commands/apps');
@@ -44,6 +45,49 @@ function writeArgvScript(pack, name) {
     ].join('\n'),
     { mode: 0o755 },
   );
+}
+
+function makeHomeWithCredentials(token = 'test-token') {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+    token,
+    refresh_token: null,
+    email: 'apps@example.com',
+    user_id: 'user-apps',
+    provider: 'test',
+    saved_at: new Date().toISOString(),
+  }), 'utf8');
+  return home;
+}
+
+function startJsonServer(handler) {
+  const server = http.createServer(handler);
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: server.address().port });
+    });
+  });
+}
+
+function sendJson(res, status, payload) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+function spawnCli(args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk.toString(); });
+    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    child.on('close', status => resolve({ status, stdout, stderr }));
+  });
 }
 
 test('findAppsPackRoot discovers atris/apps-pack from nested workspace paths', () => {
@@ -107,6 +151,97 @@ test('atris apps --json missing pack returns JSON error', () => {
     ok: false,
     error: 'No Atris app pack found.',
     expected: 'atris/apps-pack/ in this workspace, or ATRIS_APPS_PACK',
+  });
+});
+
+test('atris apps load --json fetches owned cloud apps without a local pack', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+  const home = makeHomeWithCredentials();
+  const requests = [];
+  const { server, port } = await startJsonServer((req, res) => {
+    requests.push({ url: req.url, method: req.method, authorization: req.headers.authorization });
+    if (req.url === '/api/auth/validate' && req.method === 'POST') {
+      sendJson(res, 200, { valid: true, user: { email: 'apps@example.com', id: 'user-apps' } });
+      return;
+    }
+    if (req.url === '/api/apps?filter=template' && req.method === 'GET') {
+      sendJson(res, 200, {
+        apps: [
+          {
+            id: 'app-1',
+            name: 'Morning Brief',
+            slug: 'morning-brief',
+            description: 'Daily briefing app.',
+            template: 'briefing',
+            status: 'ready',
+          },
+        ],
+      });
+      return;
+    }
+    sendJson(res, 404, { error: 'not found' });
+  });
+  try {
+    const result = await spawnCli([
+      'apps',
+      'load',
+      '--filter',
+      'template',
+      '--json',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APPS_PACK: path.join(root, 'missing-pack'),
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.source, 'cloud');
+    assert.equal(payload.filter, 'template');
+    assert.equal(payload.count, 1);
+    assert.deepEqual(payload.apps[0], {
+      id: 'app-1',
+      name: 'Morning Brief',
+      slug: 'morning-brief',
+      description: 'Daily briefing app.',
+      template: 'briefing',
+      status: 'ready',
+      last_run: null,
+      next_run: null,
+    });
+    assert.deepEqual(requests.map(r => r.url), ['/api/auth/validate', '/api/apps?filter=template']);
+    assert.equal(requests[1].authorization, 'Bearer test-token');
+  } finally {
+    server.close();
+  }
+});
+
+test('atris apps load --json returns login guidance without credentials', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+  const result = spawnSync(process.execPath, [cliPath, 'apps', 'load', '--json'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: home,
+      ATRIS_APPS_PACK: path.join(root, 'missing-pack'),
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    },
+  });
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, '');
+  assert.deepEqual(JSON.parse(result.stdout), {
+    ok: false,
+    error: 'Not logged in. Run: atris login',
+    login: 'atris login',
   });
 });
 

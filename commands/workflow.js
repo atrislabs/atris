@@ -868,6 +868,26 @@ async function reviewAtris() {
   const args = process.argv.slice(3);
   const executeFlag = args.includes('--execute');
   const showFull = args.includes('--full') || args.includes('--verbose');
+  const wantsTaskJson = args.includes('--json');
+
+  if (!executeFlag && !showFull) {
+    const forwarded = ['reviews', ...args.filter(arg => !['--execute', '--full', '--verbose'].includes(arg))];
+    const { run: runTaskCommand } = require('./task');
+    if (!wantsTaskJson) {
+      printWorkflowBrief([
+        'Atris Review is the human checkpoint for proof-ready work.',
+        'Accept only when the proof is real; revise when the claim is vague, stale, or too narrow.',
+        'Agents can add review proof here, but XP waits for human accept.',
+      ]);
+    }
+    await runTaskCommand(forwarded);
+    if (!wantsTaskJson) {
+      printWorkflowBrief([
+        'Need the legacy Validator prompt? Run `atris review --verbose`.',
+      ]);
+    }
+    return;
+  }
 
   const config = loadConfig();
   const executionMode = executeFlag ? 'agent' : (config.execution_mode || 'prompt');

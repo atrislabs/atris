@@ -159,6 +159,55 @@ function makeExperimentId(goalId, title) {
   return `exp-${slugHash(`${goalId}:${title}:${Date.now()}`)}`;
 }
 
+const MEMBER_RUNTIME_ALIASES = Object.freeze({
+  'problem-finder': 'signal-scout',
+  'info-organizer': 'wiki-miner',
+  coordinator: 'supervisor',
+  'task-planner': 'objective-generator',
+  improver: 'architect',
+  'problem-solver': 'generalist',
+});
+
+function memberRuntimeKind(name) {
+  const key = lowerCompact(name);
+  return MEMBER_RUNTIME_ALIASES[key] || key;
+}
+
+function resolveMemberRuntime(name) {
+  const requestedName = String(name || '').trim();
+  const requestedPaths = memberPaths(requestedName);
+  const runtimeKind = memberRuntimeKind(requestedName);
+  const aliasOf = runtimeKind !== lowerCompact(requestedName) ? runtimeKind : null;
+  if (requestedName && fs.existsSync(requestedPaths.memberFile)) {
+    return {
+      requestedName,
+      storageName: requestedName,
+      runtimeKind,
+      aliasOf,
+      paths: requestedPaths,
+    };
+  }
+  if (aliasOf) {
+    const legacyPaths = memberPaths(runtimeKind);
+    if (fs.existsSync(legacyPaths.memberFile)) {
+      return {
+        requestedName,
+        storageName: runtimeKind,
+        runtimeKind,
+        aliasOf,
+        paths: legacyPaths,
+      };
+    }
+  }
+  return {
+    requestedName,
+    storageName: requestedName,
+    runtimeKind,
+    aliasOf,
+    paths: requestedPaths,
+  };
+}
+
 function memberPaths(name) {
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const memberDir = path.join(teamDir, name || '');
@@ -212,12 +261,20 @@ function requireMemberDir(name) {
     console.error('Member name must be a local slug: letters, numbers, dots, underscores, or dashes.');
     process.exit(1);
   }
-  const paths = memberPaths(name);
+  const resolved = resolveMemberRuntime(name);
+  const paths = resolved.paths;
   if (!fs.existsSync(paths.memberFile)) {
-    console.error(`Member "${name}" not found at atris/team/${name}/MEMBER.md`);
+    const aliasHint = resolved.aliasOf ? ` or atris/team/${resolved.aliasOf}/MEMBER.md` : '';
+    console.error(`Member "${name}" not found at atris/team/${name}/MEMBER.md${aliasHint}`);
     process.exit(1);
   }
-  return paths;
+  return {
+    ...paths,
+    requestedName: resolved.requestedName,
+    storageName: resolved.storageName,
+    runtimeKind: resolved.runtimeKind,
+    aliasOf: resolved.aliasOf,
+  };
 }
 
 function emptyMemberGoals(name) {
@@ -1401,11 +1458,11 @@ function scoreProblemCandidate(candidate, purpose) {
   return { ...candidate, score, components };
 }
 
-function collectProblemDiscoveryEvidence(name, purpose) {
+function collectProblemDiscoveryEvidence(name, purpose, runtimeKind = memberRuntimeKind(name)) {
   const candidates = [];
   const sources = problemSignalSources();
   const sourcesWithRows = [];
-  const logErrorScan = lowerCompact(name) === 'signal-scout' ? runLogErrorScan() : null;
+  const logErrorScan = runtimeKind === 'signal-scout' ? runLogErrorScan() : null;
   const logErrorCandidate = logErrorScan ? problemCandidateFromLogErrorScan(logErrorScan, name, purpose) : null;
   if (logErrorCandidate) candidates.push(logErrorCandidate);
   for (const source of sources) {
@@ -1479,7 +1536,7 @@ function collectProblemDiscoveryEvidence(name, purpose) {
   };
 }
 
-function collectWakeEvidence(name, goal = null, purpose = null) {
+function collectWakeEvidence(name, goal = null, purpose = null, runtimeKind = memberRuntimeKind(name)) {
   const taskProjection = readTaskProjectionEvidence(name);
   const memberRoom = readMemberRoomEvidence(name);
   const receipt = readRecentWakeReceiptEvidence(name);
@@ -1493,9 +1550,9 @@ function collectWakeEvidence(name, goal = null, purpose = null) {
     member_room: memberRoom,
     receipt,
     goal_files: goal ? readGoalFileEvidence(goal) : { path_count: 0, files_read: 0, files: [] },
-    problem_discovery: goal && lowerCompact(name) !== 'signal-scout'
+    problem_discovery: goal && runtimeKind !== 'signal-scout'
       ? { sources_checked: 0, sources_with_rows: [], candidate_count: 0, selected: null, candidates: [], log_error_scan: null }
-      : collectProblemDiscoveryEvidence(name, purpose || {}),
+      : collectProblemDiscoveryEvidence(name, purpose || {}, runtimeKind),
     open_loop_candidates: openLoopCandidates.slice(0, 30),
     nearest_open_loop: nearest,
   };
@@ -1909,6 +1966,617 @@ function isPidAlive(pid) {
 function writeJsonFile(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+}
+
+function safeReadText(filePath, maxBytes = 250000) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size > maxBytes) return '';
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function safeReadJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function repoRelative(root, filePath) {
+  return path.relative(root, filePath).replace(/\\/g, '/');
+}
+
+function listFilesBounded(rootDir, { maxFiles = 220, extensions = ['.md', '.txt', '.json', '.jsonl'] } = {}) {
+  const files = [];
+  const stack = [rootDir];
+  const skipDirs = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '__pycache__']);
+  while (stack.length && files.length < maxFiles) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (files.length >= maxFiles) break;
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!skipDirs.has(entry.name) && !entry.name.startsWith('.')) stack.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (extensions.includes(path.extname(entry.name))) files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function normalizeFailurePattern(line) {
+  return compactSentence(String(line || '')
+    .replace(/^\s*[-*]\s*/, '')
+    .replace(/\b\d{4}-\d{2}-\d{2}[T ][^\s]+/g, '<timestamp>')
+    .replace(/[0-9a-f]{10,}/gi, '<hash>')
+    .replace(/\b\d+\b/g, '#')
+    .trim(), 180);
+}
+
+function collectAutoImproverLogSignals(root) {
+  const roots = [
+    path.join(root, 'atris', 'logs'),
+    path.join(root, 'atris', 'team'),
+    path.join(root, 'atris', 'wiki'),
+  ].filter((candidate) => fs.existsSync(candidate));
+  const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
+  const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
+  const counts = new Map();
+  let filesScanned = 0;
+  let linesScanned = 0;
+  let unclearNextActions = 0;
+  for (const scanRoot of roots) {
+    for (const filePath of listFilesBounded(scanRoot)) {
+      const relative = repoRelative(root, filePath);
+      const isRuntimeLog = relative.startsWith('atris/logs/')
+        || /^atris\/team\/[^/]+\/logs\//.test(relative)
+        || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
+        || relative === 'atris/wiki/log.md';
+      if (!isRuntimeLog) continue;
+      const text = safeReadText(filePath);
+      if (!text) continue;
+      filesScanned += 1;
+      const lines = text.split(/\r?\n/).slice(-500);
+      linesScanned += lines.length;
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+        if (unclearRegex.test(line)) unclearNextActions += 1;
+        if (!failureRegex.test(line)) continue;
+        const pattern = normalizeFailurePattern(line);
+        if (!pattern) continue;
+        const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
+        existing.count += 1;
+        if (existing.evidence.length < 5) {
+          existing.evidence.push({
+            path: repoRelative(root, filePath),
+            line: index + 1,
+            text: compactSentence(line, 180),
+          });
+        }
+        counts.set(pattern, existing);
+      }
+    }
+  }
+  const repeated = [...counts.values()]
+    .filter((item) => item.count >= 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  return {
+    files_scanned: filesScanned,
+    lines_scanned: linesScanned,
+    repeated_failures: repeated,
+    repeated_failure_count: repeated.length,
+    unclear_next_action_count: unclearNextActions,
+  };
+}
+
+function collectAutoImproverTaskSignals(root) {
+  const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const projection = safeReadJson(projectionPath);
+  const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+  const openStatuses = new Set(['open', 'todo', 'claimed', 'doing', 'in_progress', 'review', 'blocked']);
+  const staleTasks = [];
+  const blockedTasks = [];
+  const reviewTasks = [];
+  const unclearTasks = [];
+  for (const task of tasks) {
+    const status = lowerCompact(task.status || task.state || '');
+    const title = task.title || task.name || task.objective || '';
+    const sample = {
+      ref: taskRef(task),
+      title: compactSentence(title, 140),
+      status: status || null,
+      owner: task.claimed_by || task.assigned_to || task.owner || task.metadata?.assigned_to || null,
+    };
+    if (status === 'blocked') blockedTasks.push(sample);
+    if (status === 'review') reviewTasks.push(sample);
+    if (openStatuses.has(status)) staleTasks.push(sample);
+    if (/\b(tbd|unclear|unknown|needs proof|needs owner|blocked|stale|no next)\b/i.test(`${title} ${task.notes || ''}`)) {
+      unclearTasks.push(sample);
+    }
+  }
+
+  const todoPath = path.join(root, 'atris', 'TODO.md');
+  const todoText = safeReadText(todoPath, 500000);
+  const todoLines = todoText ? todoText.split(/\r?\n/) : [];
+  const todoSignalLines = todoLines
+    .filter((line) => /\b(TODO|CLAIMED|DOING|IN_PROGRESS|REVIEW|BLOCKED|stale|proof|next)\b/i.test(line))
+    .slice(0, 40)
+    .map((line) => compactSentence(line, 160));
+
+  return {
+    projection_path: fs.existsSync(projectionPath) ? repoRelative(root, projectionPath) : null,
+    todo_path: fs.existsSync(todoPath) ? repoRelative(root, todoPath) : null,
+    task_count: tasks.length,
+    stale_tasks: staleTasks.slice(0, 12),
+    stale_task_count: staleTasks.length || todoSignalLines.length,
+    blocked_tasks: blockedTasks.slice(0, 8),
+    blocked_task_count: blockedTasks.length,
+    review_tasks: reviewTasks.slice(0, 8),
+    review_task_count: reviewTasks.length,
+    unclear_tasks: unclearTasks.slice(0, 8),
+    unclear_task_count: unclearTasks.length,
+    todo_signal_lines: todoSignalLines,
+  };
+}
+
+function collectGitStatusSignals(root) {
+  try {
+    const stdout = execFileSync('git', ['status', '--short'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+    });
+    const lines = stdout.split(/\r?\n/).filter(Boolean);
+    return {
+      is_git_repo: true,
+      dirty_file_count: lines.length,
+      sample: lines.slice(0, 20),
+    };
+  } catch {
+    return { is_git_repo: false, dirty_file_count: 0, sample: [] };
+  }
+}
+
+function extractRsiRouterPaths(routerText) {
+  const paths = [];
+  const regex = /@router\.(?:get|post|put|delete|patch)\(["']([^"']+)["']/g;
+  let match = regex.exec(routerText);
+  while (match) {
+    paths.push(match[1]);
+    match = regex.exec(routerText);
+  }
+  return paths;
+}
+
+function collectRepoContractChecks(root) {
+  const autoImproverMember = path.join(root, 'atris', 'team', 'auto-improver', 'MEMBER.md');
+  const memberJs = path.join(root, 'commands', 'member.js');
+  const memberJsText = fs.existsSync(memberJs) ? safeReadText(memberJs, 900000) : '';
+  const missingAliases = memberJsText
+    ? Object.keys(MEMBER_RUNTIME_ALIASES).filter((alias) => !memberJsText.includes(alias))
+    : [];
+  const rsiRouter = path.join(root, 'backend', 'routers', 'rsi_router.py');
+  const rsiService = path.join(root, 'backend', 'services', 'rsi_service.py');
+  const routerText = safeReadText(rsiRouter, 300000);
+  const serviceText = safeReadText(rsiService, 500000);
+  const rsiChecked = fs.existsSync(rsiRouter) || fs.existsSync(rsiService);
+  return {
+    auto_improver_member: {
+      checked: true,
+      present: fs.existsSync(autoImproverMember),
+      path: repoRelative(root, autoImproverMember),
+    },
+    member_aliases: {
+      checked: fs.existsSync(memberJs),
+      path: fs.existsSync(memberJs) ? repoRelative(root, memberJs) : null,
+      aliases: MEMBER_RUNTIME_ALIASES,
+      missing_aliases: missingAliases,
+      complete: fs.existsSync(memberJs) && missingAliases.length === 0,
+    },
+    auto_improver_runtime: {
+      checked: fs.existsSync(memberJs),
+      present: memberJsText.includes('auto_improver_dogfood'),
+      path: fs.existsSync(memberJs) ? repoRelative(root, memberJs) : null,
+    },
+    rsi_api: {
+      checked: rsiChecked,
+      router_path: fs.existsSync(rsiRouter) ? repoRelative(root, rsiRouter) : null,
+      service_path: fs.existsSync(rsiService) ? repoRelative(root, rsiService) : null,
+      exposed_paths: routerText ? extractRsiRouterPaths(routerText) : [],
+      improve_endpoint_present: /["']\/improve["']/.test(routerText),
+      auth_dependency_present: routerText.includes('authenticate_request'),
+      usage_tracking_signal_present: /\b(usage|billing|credit|meter|track)\b/i.test(`${routerText}\n${serviceText}`),
+    },
+  };
+}
+
+function collectRepoContractGaps(root, checks = collectRepoContractChecks(root)) {
+  const gaps = [];
+  if (!checks.auto_improver_member.present) {
+    gaps.push({
+      id: 'auto_improver_member_missing',
+      severity: 'high',
+      title: 'Auto-improver member is not installed in this repo',
+      evidence: ['atris/team/auto-improver/MEMBER.md missing'],
+      recommendation: 'Install the auto-improver member so scans have an owner and log path.',
+    });
+  }
+
+  if (checks.member_aliases.checked) {
+    if (checks.member_aliases.missing_aliases.length) {
+      gaps.push({
+        id: 'simple_member_aliases_missing',
+        severity: 'medium',
+        title: 'Simple member aliases are not fully wired',
+        evidence: checks.member_aliases.missing_aliases.map((alias) => `${alias} missing from commands/member.js`),
+        recommendation: 'Wire simple aliases to their runtime member behavior before moving users to simple names.',
+      });
+    }
+    if (!checks.auto_improver_runtime.present) {
+      gaps.push({
+        id: 'auto_improver_runtime_missing',
+        severity: 'high',
+        title: 'Auto-improver has docs but no executable dogfood scan',
+        evidence: ['commands/member.js lacks auto_improver_dogfood receipt path'],
+        recommendation: 'Add an executable wake path that writes scan receipts.',
+      });
+    }
+  }
+
+  if (checks.rsi_api.checked) {
+    if (!checks.rsi_api.improve_endpoint_present) {
+      gaps.push({
+        id: 'rsi_improve_endpoint_missing',
+        severity: 'high',
+        title: 'RSI plan names /api/rsi/improve but backend exposes tick/run/status/history',
+        evidence: ['backend/routers/rsi_router.py has no POST /api/rsi/improve'],
+        recommendation: 'Either add /api/rsi/improve or update client/member instructions to call /api/rsi/tick.',
+      });
+    }
+    if (!checks.rsi_api.auth_dependency_present) {
+      gaps.push({
+        id: 'rsi_auth_missing',
+        severity: 'critical',
+        title: 'RSI router is missing request authentication',
+        evidence: ['authenticate_request not found in backend/routers/rsi_router.py'],
+        recommendation: 'Gate RSI endpoints behind the existing API auth dependency.',
+      });
+    }
+    if (!checks.rsi_api.usage_tracking_signal_present) {
+      gaps.push({
+        id: 'rsi_usage_tracking_missing',
+        severity: 'high',
+        title: 'RSI API has no obvious usage/billing meter in router or service',
+        evidence: ['No usage, billing, credit, meter, or tracking term found in RSI router/service'],
+        recommendation: 'Add explicit usage tracking before selling RSI API usage.',
+      });
+    }
+  }
+  return gaps;
+}
+
+function severityWeight(severity) {
+  return { critical: 5, high: 4, medium: 2, low: 1 }[severity] || 1;
+}
+
+function collectAutoImproverScan(root = process.cwd()) {
+  const logSignals = collectAutoImproverLogSignals(root);
+  const taskSignals = collectAutoImproverTaskSignals(root);
+  const gitSignals = collectGitStatusSignals(root);
+  const contractChecks = collectRepoContractChecks(root);
+  const contractGaps = collectRepoContractGaps(root, contractChecks);
+  const findings = [];
+
+  for (const gap of contractGaps) {
+    findings.push({
+      source: 'contract_gap',
+      severity: gap.severity,
+      title: gap.title,
+      problem: gap.title,
+      recommendation: gap.recommendation,
+      evidence: gap.evidence,
+      score: severityWeight(gap.severity) * 10,
+    });
+  }
+  for (const failure of logSignals.repeated_failures) {
+    findings.push({
+      source: 'repeated_failure',
+      severity: failure.count >= 5 ? 'high' : 'medium',
+      title: `Recurring log pattern: ${failure.pattern}`,
+      problem: `The same failure-like line appeared ${failure.count} times.`,
+      recommendation: 'Create a bounded fix task before this pattern turns into a larger support/debug loop.',
+      evidence: failure.evidence,
+      score: Math.min(40, failure.count * 5),
+    });
+  }
+  if (taskSignals.blocked_task_count > 0) {
+    findings.push({
+      source: 'task_truth',
+      severity: 'high',
+      title: `${taskSignals.blocked_task_count} blocked task(s) need an owner or unblocker`,
+      problem: 'Blocked work is accumulating in task truth.',
+      recommendation: 'Assign one unblock action with proof expected.',
+      evidence: taskSignals.blocked_tasks,
+      score: 35,
+    });
+  } else if (taskSignals.stale_task_count > 12) {
+    findings.push({
+      source: 'task_truth',
+      severity: 'medium',
+      title: `${taskSignals.stale_task_count} open task signal(s) need pruning or next actions`,
+      problem: 'Open task signals are high enough to hide the next useful action.',
+      recommendation: 'Close, merge, or re-scope the top stale tasks before adding more work.',
+      evidence: taskSignals.stale_tasks.length ? taskSignals.stale_tasks : taskSignals.todo_signal_lines.slice(0, 8),
+      score: 22,
+    });
+  }
+  if (taskSignals.unclear_task_count + logSignals.unclear_next_action_count > 10) {
+    findings.push({
+      source: 'unclear_next_actions',
+      severity: 'medium',
+      title: 'Unclear next-action language is accumulating',
+      problem: 'Several logs or tasks mention blocked/unclear/proof-needed states without a crisp next move.',
+      recommendation: 'Convert the highest-value unclear item into one task with owner, proof, and stop rule.',
+      evidence: taskSignals.unclear_tasks.length ? taskSignals.unclear_tasks : logSignals.repeated_failures.slice(0, 3),
+      score: 18,
+    });
+  }
+  if (gitSignals.dirty_file_count > 50) {
+    findings.push({
+      source: 'workspace_hygiene',
+      severity: 'medium',
+      title: `${gitSignals.dirty_file_count} dirty git entries make broad autonomous edits risky`,
+      problem: 'Large dirty worktrees increase the chance of overwriting user work or losing attribution.',
+      recommendation: 'Keep auto-improver changes receipt-only until scoped tasks isolate the touched files.',
+      evidence: gitSignals.sample,
+      score: 20,
+    });
+  }
+
+  findings.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const painScoreBefore = Math.min(100,
+    (logSignals.repeated_failure_count * 8)
+    + Math.min(24, taskSignals.stale_task_count)
+    + (taskSignals.blocked_task_count * 5)
+    + Math.min(16, taskSignals.unclear_task_count + logSignals.unclear_next_action_count)
+    + Math.min(16, Math.floor(gitSignals.dirty_file_count / 5))
+    + contractGaps.reduce((sum, gap) => sum + (severityWeight(gap.severity) * 3), 0));
+
+  return {
+    schema: 'atris.auto_improver_scan.v1',
+    scanned_at: stampIso(),
+    repo_root: root,
+    repo_name: path.basename(root),
+    metrics: {
+      findings_count: findings.length,
+      repeated_failure_count: logSignals.repeated_failure_count,
+      stale_task_count: taskSignals.stale_task_count,
+      blocked_task_count: taskSignals.blocked_task_count,
+      unclear_next_action_count: taskSignals.unclear_task_count + logSignals.unclear_next_action_count,
+      dirty_file_count: gitSignals.dirty_file_count,
+      contract_gap_count: contractGaps.length,
+      pain_score_before: painScoreBefore,
+    },
+    log_signals: logSignals,
+    task_signals: taskSignals,
+    git_signals: gitSignals,
+    contract_checks: contractChecks,
+    contract_gaps: contractGaps,
+    findings: findings.slice(0, 12),
+    prevented_fire_candidate: findings[0] || null,
+  };
+}
+
+function findExistingAutoImproverTask(title) {
+  const projection = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json'));
+  const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+  const key = lowerCompact(title);
+  if (!key) return null;
+  return tasks.find((task) => {
+    const taskTitle = lowerCompact(task.title || '');
+    if (!taskTitle) return false;
+    return taskTitle.includes(key) || key.includes(taskTitle);
+  }) || null;
+}
+
+function createAutoImproverTask(candidate, receiptPath) {
+  const title = `Auto-improver: ${compactSentence(candidate?.title || 'Prevent top dogfood failure', 92)}`;
+  const existing = findExistingAutoImproverTask(title);
+  if (existing) {
+    return {
+      ok: true,
+      existing: true,
+      task_ref: taskRef(existing),
+      task: existing,
+      command: `atris task show ${taskRef(existing)} --json`,
+    };
+  }
+  const commandArgs = [
+    'task',
+    'new',
+    title,
+    '--tag',
+    'auto-improver',
+    '--json',
+  ];
+  const command = `atris task new ${shellQuote(title)} --tag auto-improver`;
+  try {
+    const stdout = execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...commandArgs], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000,
+      env: {
+        ...process.env,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        ATRIS_AUTO_IMPROVER_RECEIPT: receiptPath || '',
+      },
+    });
+    const parsed = JSON.parse(stdout || '{}');
+    const task = parsed.task || null;
+    return {
+      ok: parsed.ok !== false,
+      existing: false,
+      task,
+      task_id: parsed.task_id || task?.id || null,
+      task_ref: taskRef(task) || parsed.task_id || null,
+      command,
+      raw: parsed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      existing: false,
+      command,
+      error: error instanceof Error ? error.message : String(error),
+      stderr: error?.stderr ? compactSentence(String(error.stderr), 500) : null,
+    };
+  }
+}
+
+function writeAutoImproverReceipt(name, payload, receiptPath = null) {
+  const finalReceiptPath = receiptPath || path.join(process.cwd(), 'atris', 'runs', `auto-improver-dogfood-${fileSafeStamp()}.json`);
+  writeJsonFile(finalReceiptPath, payload);
+  const latestPath = path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json');
+  writeJsonFile(latestPath, { ...payload, receipt_path: finalReceiptPath });
+  return { receiptPath: finalReceiptPath, latestPath };
+}
+
+async function runAutoImproverWake(name, paths, { execute = false, confirmed = false } = {}) {
+  const scan = collectAutoImproverScan(process.cwd());
+  const mode = execute ? 'execute' : 'dry_run';
+  const candidate = scan.prevented_fire_candidate;
+  let createdTask = null;
+  let decision = candidate ? 'scan_found_problem' : 'scan_clean';
+  let reason = candidate ? `top_candidate:${candidate.source}` : 'no_prevented_fire_candidate';
+  let nextCommand = candidate
+    ? `atris member wake ${name} --execute --confirm-autonomy-policy --json`
+    : `atris member wake ${name} --json`;
+
+  let payload = {
+    schema: 'atris.auto_improver_dogfood.v1',
+    created_at: stampIso(),
+    member: name,
+    runtime_member: paths.storageName || name,
+    mode,
+    executed: execute,
+    task_creation_requested: execute && confirmed,
+    scan,
+    created_task: null,
+    pain: {
+      before: scan.metrics.pain_score_before,
+      after: scan.metrics.pain_score_before,
+      delta: 0,
+    },
+    proof: {
+      found_problems: scan.metrics.findings_count,
+      prevented_suffering: 0,
+      improved_things: 0,
+      ready_for_marko: false,
+      reason: 'Dogfood requires at least one bounded prevented-fire task before promotion.',
+    },
+  };
+  const plannedReceiptPath = path.join(process.cwd(), 'atris', 'runs', `auto-improver-dogfood-${fileSafeStamp()}.json`);
+  if (candidate && execute && confirmed) {
+    createdTask = createAutoImproverTask(candidate, repoRelative(process.cwd(), plannedReceiptPath));
+    if (createdTask.ok) {
+      decision = createdTask.existing ? 'existing_task_found' : 'task_created';
+      reason = createdTask.existing ? 'auto_improver_task_already_exists' : 'auto_improver_task_created';
+      nextCommand = createdTask.task_ref ? `atris task show ${createdTask.task_ref} --json` : 'atris task list';
+    } else {
+      decision = 'task_create_failed';
+      reason = 'auto_improver_task_create_failed';
+      nextCommand = createdTask.command || nextCommand;
+    }
+  }
+
+  const prevented = createdTask?.ok ? 1 : 0;
+  const improvement = prevented ? Math.min(15, Math.max(3, severityWeight(candidate?.severity) * 3)) : 0;
+  payload = {
+    ...payload,
+    decision,
+    reason,
+    next_command: nextCommand,
+    created_task: createdTask ? {
+      ok: createdTask.ok,
+      existing: createdTask.existing,
+      task_ref: createdTask.task_ref || null,
+      task_id: createdTask.task_id || createdTask.task?.id || null,
+      title: createdTask.task?.title || null,
+      command: createdTask.command || null,
+      error: createdTask.error || null,
+    } : null,
+    pain: {
+      before: scan.metrics.pain_score_before,
+      after: Math.max(0, scan.metrics.pain_score_before - improvement),
+      delta: improvement,
+    },
+    proof: {
+      found_problems: scan.metrics.findings_count,
+      prevented_suffering: prevented,
+      improved_things: prevented,
+      ready_for_marko: prevented > 0 && scan.metrics.findings_count > 0,
+      reason: prevented
+        ? 'A top prevented-fire candidate has a bounded task and receipt.'
+        : 'No bounded prevented-fire task was created yet.',
+    },
+  };
+  const finalWrite = writeAutoImproverReceipt(name, payload, plannedReceiptPath);
+  const logPath = appendProjectLog('Auto-improver dogfood scan', {
+    member: name,
+    mode,
+    found: payload.proof.found_problems,
+    prevented: payload.proof.prevented_suffering,
+    pain_before: payload.pain.before,
+    pain_after: payload.pain.after,
+    candidate: candidate?.title || '',
+    task: payload.created_task?.task_ref || '',
+    receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
+  });
+  const memberLogPath = appendMemberGoalLog(paths.memberDir, name, 'Auto-improver dogfood scan', {
+    mode,
+    found: payload.proof.found_problems,
+    prevented: payload.proof.prevented_suffering,
+    pain_before: payload.pain.before,
+    pain_after: payload.pain.after,
+    receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
+    next: nextCommand,
+  });
+
+  return {
+    ok: true,
+    action: 'wake',
+    member: name,
+    runtime_member: paths.storageName || name,
+    mode,
+    decision,
+    reason,
+    executed: execute,
+    needs_user: false,
+    ask: null,
+    next_command: nextCommand,
+    auto_improver: payload,
+    receipt_path: finalWrite.receiptPath,
+    latest_path: finalWrite.latestPath,
+    log_path: logPath,
+    member_log_path: memberLogPath,
+    created_task: payload.created_task,
+  };
 }
 
 function acquireMemberLoopLease(name, { runId, ttlMs }) {
@@ -3195,6 +3863,7 @@ function emptyWikiGraph() {
     updated_at: null,
     entities: [],
     relationships: [],
+    causal_patterns: [],
   };
 }
 
@@ -3208,9 +3877,21 @@ function readWikiGraph(root = process.cwd()) {
       ...parsed,
       entities: Array.isArray(parsed.entities) ? parsed.entities : [],
       relationships: Array.isArray(parsed.relationships) ? parsed.relationships : [],
+      causal_patterns: Array.isArray(parsed.causal_patterns) ? parsed.causal_patterns : [],
     };
   } catch {
     return emptyWikiGraph();
+  }
+}
+
+function readCausalPatterns(root = process.cwd()) {
+  const causalPath = path.join(root, 'atris', 'wiki', '.causal.json');
+  if (!fs.existsSync(causalPath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(causalPath, 'utf8'));
+    return Array.isArray(parsed.patterns) ? parsed.patterns : [];
+  } catch {
+    return [];
   }
 }
 
@@ -3356,6 +4037,7 @@ function mergeWikiGraph(graph, extraction, sourcePath) {
     updated_at: stampIso(),
     entities: [...entityMap.values()].sort((a, b) => `${a.type}:${a.name}`.localeCompare(`${b.type}:${b.name}`)),
     relationships: [...relationshipMap.values()].sort((a, b) => `${a.from}|${a.type}|${a.to}`.localeCompare(`${b.from}|${b.type}|${b.to}`)),
+    causal_patterns: Array.isArray(graph.causal_patterns) ? graph.causal_patterns : [],
   };
 }
 
@@ -3364,6 +4046,8 @@ async function runWikiMinerWake(name, paths, { execute = false } = {}) {
   const root = process.cwd();
   const pages = listWikiMarkdownPages(root, 10);
   let graph = readWikiGraph(root);
+  const causalPatterns = readCausalPatterns(root);
+  graph.causal_patterns = causalPatterns;
   const pageReceipts = [];
   let llmSuccessfulPages = 0;
 
@@ -3404,6 +4088,7 @@ async function runWikiMinerWake(name, paths, { execute = false } = {}) {
 
   const graphPath = wikiMinerGraphPath(root);
   if (execute) {
+    graph.causal_patterns = causalPatterns;
     fs.mkdirSync(path.dirname(graphPath), { recursive: true });
     fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2) + '\n', 'utf8');
   }
@@ -3425,6 +4110,7 @@ async function runWikiMinerWake(name, paths, { execute = false } = {}) {
     graph_path: path.relative(root, graphPath),
     entity_count: graph.entities.length,
     relationship_count: graph.relationships.length,
+    causal_pattern_count: causalPatterns.length,
     pages: pageReceipts,
   };
   fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
@@ -3453,6 +4139,1866 @@ async function runWikiMinerWake(name, paths, { execute = false } = {}) {
     graph_path: graphPath,
     wiki_miner: receipt,
   };
+}
+
+function supervisorRecommendationsPath(root = process.cwd()) {
+  return path.join(root, 'atris', 'team', 'supervisor', 'recommendations.json');
+}
+
+function emptySupervisorRecommendations(extra = {}) {
+  return {
+    schema: 'atris.supervisor_recommendations.v1',
+    updated_at: stampIso(),
+    status: extra.status || 'empty',
+    advisory_only: true,
+    llm_source: extra.llm_source || null,
+    llm_error: extra.llm_error || null,
+    top_performers: [],
+    bottlenecks: [],
+    recommendations: [],
+  };
+}
+
+function listRecentSupervisorReceipts(root = process.cwd(), windowMs = 24 * 60 * 60 * 1000) {
+  const runsDir = path.join(root, 'atris', 'runs');
+  if (!fs.existsSync(runsDir)) return [];
+  const cutoff = Date.now() - windowMs;
+  return fs.readdirSync(runsDir)
+    .filter((entry) => /^member-.*-.*\.json$/.test(entry))
+    .map((entry) => {
+      const fullPath = path.join(runsDir, entry);
+      let stat;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        return null;
+      }
+      return stat.isFile() && stat.mtimeMs >= cutoff ? { fullPath, relativePath: path.relative(root, fullPath), mtimeMs: stat.mtimeMs } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .map((entry) => {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(entry.fullPath, 'utf8'));
+        return {
+          path: entry.relativePath,
+          member: parsed.member || parsed.claimed_by || null,
+          ok: parsed.ok !== false,
+          decision: parsed.decision || null,
+          reason: parsed.reason || parsed.error || null,
+          created_at: parsed.created_at || parsed.finished_at || parsed.started_at || null,
+          duration_ms: parsed.duration_ms || parsed.elapsed_ms || null,
+        };
+      } catch (error) {
+        return {
+          path: entry.relativePath,
+          member: null,
+          ok: false,
+          decision: null,
+          reason: compactSentence(error instanceof Error ? error.message : String(error), 220),
+          created_at: null,
+          duration_ms: null,
+        };
+      }
+    });
+}
+
+function readSupervisorMemberLogs(root = process.cwd(), maxFiles = 40) {
+  const teamDir = path.join(root, 'atris', 'team');
+  if (!fs.existsSync(teamDir)) return '';
+  const files = [];
+  for (const member of fs.readdirSync(teamDir).sort()) {
+    if (member.startsWith('_')) continue;
+    const logsDir = path.join(teamDir, member, 'logs');
+    if (!fs.existsSync(logsDir)) continue;
+    for (const entry of fs.readdirSync(logsDir).sort()) {
+      if (!entry.endsWith('.md')) continue;
+      const fullPath = path.join(logsDir, entry);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile()) files.push({ fullPath, relativePath: path.relative(root, fullPath), mtimeMs: stat.mtimeMs });
+      } catch {
+        // Ignore unreadable log files; the receipt records the aggregate input size.
+      }
+    }
+  }
+  return files
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxFiles)
+    .map((entry) => {
+      try {
+        return `\n--- ${entry.relativePath} ---\n${fs.readFileSync(entry.fullPath, 'utf8').slice(0, 2000)}`;
+      } catch (error) {
+        return `\n--- ${entry.relativePath} ---\n[unreadable: ${compactSentence(error instanceof Error ? error.message : String(error), 180)}]`;
+      }
+    })
+    .join('\n')
+    .slice(0, 20000);
+}
+
+function supervisorPrompt(receipts, logs) {
+  return `Analyze these member receipts and logs. Identify:
+1. Which members are performing best (success rate, speed)?
+2. Any coordination bottlenecks or repeated failures?
+3. Suggest specific adjustments: priority weights, member assignments
+
+Return JSON:
+{
+  "top_performers": [{"member": "...", "reason": "..."}],
+  "bottlenecks": [{"issue": "...", "suggestion": "..."}],
+  "recommendations": [{"type": "priority|assignment", "from": "...", "to": "...", "reason": "..."}]
+}
+
+Receipts: ${JSON.stringify(receipts.slice(0, 20))}
+Logs: ${logs.slice(0, 5000)}`;
+}
+
+function normalizeSupervisorAnalysis(raw, extra = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const recommendationTypes = new Set(['priority', 'assignment']);
+  const topPerformers = (Array.isArray(raw.top_performers) ? raw.top_performers : [])
+    .map((entry) => ({
+      member: compactSentence(entry?.member || '', 100),
+      reason: compactSentence(entry?.reason || '', 260),
+    }))
+    .filter((entry) => entry.member);
+  const bottlenecks = (Array.isArray(raw.bottlenecks) ? raw.bottlenecks : [])
+    .map((entry) => ({
+      issue: compactSentence(entry?.issue || '', 220),
+      suggestion: compactSentence(entry?.suggestion || '', 320),
+    }))
+    .filter((entry) => entry.issue);
+  const recommendations = (Array.isArray(raw.recommendations) ? raw.recommendations : [])
+    .map((entry) => ({
+      type: recommendationTypes.has(String(entry?.type || '').toLowerCase()) ? String(entry.type).toLowerCase() : 'priority',
+      from: compactSentence(entry?.from || '', 100),
+      to: compactSentence(entry?.to || '', 100),
+      reason: compactSentence(entry?.reason || '', 320),
+    }))
+    .filter((entry) => entry.reason || entry.to);
+  return {
+    ...emptySupervisorRecommendations(extra),
+    status: extra.status || 'ok',
+    top_performers: topPerformers,
+    bottlenecks,
+    recommendations,
+  };
+}
+
+function injectedSupervisorAnalysis() {
+  if (!process.env.ATRIS_SUPERVISOR_LLM_JSON) return null;
+  const parsed = parseJsonObjectFromText(process.env.ATRIS_SUPERVISOR_LLM_JSON);
+  return parsed
+    ? { source: 'env_json', analysis: parsed }
+    : { source: 'env_json', error: 'invalid_json' };
+}
+
+async function callSupervisorLlm(receipts, logs) {
+  const injected = injectedSupervisorAnalysis();
+  if (injected) return injected;
+  if (process.env.ATRIS_SUPERVISOR_LLM !== '1') return null;
+  try {
+    const { postTurn } = require('../ax');
+    const output = { isTTY: false, write() { return true; } };
+    const result = await postTurn(supervisorPrompt(receipts, logs), {
+      mode: process.env.ATRIS_SUPERVISOR_LLM_MODE || 'fast',
+      route: 'local',
+      cwd: process.cwd(),
+      output,
+      color: false,
+    });
+    const parsed = parseJsonObjectFromText(result?.output || '');
+    return parsed
+      ? { source: 'atris2_backend', analysis: parsed }
+      : { source: 'atris2_backend', error: 'missing_json_response' };
+  } catch (error) {
+    return {
+      source: 'atris2_backend',
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+function fallbackSupervisorAnalysis(receipts) {
+  const byMember = new Map();
+  for (const receipt of receipts) {
+    const member = compactSentence(receipt.member || 'unknown', 100);
+    const current = byMember.get(member) || { member, total: 0, ok: 0, durations: [], reasons: new Map() };
+    current.total += 1;
+    if (receipt.ok) current.ok += 1;
+    if (Number.isFinite(Number(receipt.duration_ms))) current.durations.push(Number(receipt.duration_ms));
+    if (!receipt.ok || receipt.reason) {
+      const reason = compactSentence(receipt.reason || 'unspecified', 180);
+      current.reasons.set(reason, (current.reasons.get(reason) || 0) + 1);
+    }
+    byMember.set(member, current);
+  }
+  const ranked = [...byMember.values()].sort((a, b) => (b.ok / Math.max(1, b.total)) - (a.ok / Math.max(1, a.total)) || b.ok - a.ok);
+  const top_performers = ranked.slice(0, 3).filter((entry) => entry.ok > 0).map((entry) => ({
+    member: entry.member,
+    reason: `${entry.ok}/${entry.total} recent member receipts succeeded`,
+  }));
+  const bottlenecks = ranked
+    .filter((entry) => entry.ok < entry.total)
+    .slice(0, 3)
+    .map((entry) => {
+      const [reason] = [...entry.reasons.entries()].sort((a, b) => b[1] - a[1])[0] || ['unknown failure'];
+      return {
+        issue: `${entry.member} has ${entry.total - entry.ok} failed recent receipt(s)`,
+        suggestion: `Review repeated reason: ${reason}`,
+      };
+    });
+  const recommendations = top_performers.length
+    ? [{
+        type: 'priority',
+        from: 'supervisor',
+        to: top_performers[0].member,
+        reason: `Favor ${top_performers[0].member} for coordination work until LLM analysis is configured.`,
+      }]
+    : [];
+  return normalizeSupervisorAnalysis(
+    { top_performers, bottlenecks, recommendations },
+    { status: 'heuristic', llm_source: null, llm_error: 'llm_not_configured' },
+  );
+}
+
+async function runSupervisorWake(name, paths, { execute = false } = {}) {
+  const mode = execute ? 'execute' : 'dry_run';
+  const root = process.cwd();
+  const receipts = listRecentSupervisorReceipts(root);
+  const logs = readSupervisorMemberLogs(root);
+  let llm = null;
+  let analysis = null;
+  let reason = execute ? 'supervisor_recommendations_written' : 'supervisor_recommendations_dry_run';
+
+  if (!receipts.length) {
+    reason = 'insufficient_data';
+    analysis = {
+      ...emptySupervisorRecommendations({ status: 'insufficient_data' }),
+      recommendations: [{
+        type: 'priority',
+        from: 'supervisor',
+        to: 'member-receipts',
+        reason: 'Insufficient data: no atris/runs/member-*-*.json receipts from the last 24 hours.',
+      }],
+    };
+  } else {
+    llm = await callSupervisorLlm(receipts, logs);
+    if (llm?.analysis) {
+      analysis = normalizeSupervisorAnalysis(llm.analysis, { status: 'ok', llm_source: llm.source });
+      if (!analysis) {
+        reason = 'llm_json_parse_failed';
+        analysis = emptySupervisorRecommendations({ status: 'parse_error', llm_source: llm.source, llm_error: 'invalid_analysis_shape' });
+      }
+    } else if (llm?.error) {
+      reason = llm.error === 'invalid_json' ? 'llm_json_parse_failed' : 'llm_analysis_failed';
+      analysis = emptySupervisorRecommendations({ status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error', llm_source: llm.source, llm_error: llm.error });
+    } else {
+      reason = 'llm_not_configured';
+      analysis = fallbackSupervisorAnalysis(receipts);
+    }
+  }
+
+  const recommendationsPath = supervisorRecommendationsPath(root);
+  if (execute) {
+    fs.mkdirSync(path.dirname(recommendationsPath), { recursive: true });
+    fs.writeFileSync(recommendationsPath, JSON.stringify(analysis, null, 2) + '\n', 'utf8');
+  }
+
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const receiptPath = path.join(runsDir, `supervisor-tick-${fileSafeStamp()}.json`);
+  const receipt = {
+    schema: 'atris.supervisor_tick.v1',
+    created_at: stampIso(),
+    member: name,
+    mode,
+    executed: execute,
+    ok: true,
+    advisory_only: true,
+    decision: 'supervise',
+    reason,
+    receipts_scanned: receipts.length,
+    logs_bytes: logs.length,
+    llm_source: llm?.source || analysis.llm_source || null,
+    llm_successful: Boolean(llm?.source && llm?.analysis && analysis.status === 'ok'),
+    llm_error: llm?.error || analysis.llm_error || null,
+    recommendations_path: path.relative(root, recommendationsPath),
+    top_performer_count: analysis.top_performers.length,
+    bottleneck_count: analysis.bottlenecks.length,
+    recommendation_count: analysis.recommendations.length,
+    analysis,
+  };
+  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  const logPath = appendMemberGoalLog(paths.memberDir, name, 'Supervisor tick', {
+    mode,
+    reason,
+    receipts: receipts.length,
+    llm_source: receipt.llm_source || '',
+    llm_error: receipt.llm_error || '',
+    recommendations: analysis.recommendations.length,
+    receipt: path.relative(root, receiptPath),
+    output: path.relative(root, recommendationsPath),
+  });
+
+  return {
+    ok: true,
+    action: 'wake',
+    member: name,
+    mode,
+    decision: 'supervise',
+    reason,
+    executed: execute,
+    needs_user: false,
+    ask: null,
+    next_command: 'atris member supervisor recommendations',
+    receipt_path: receiptPath,
+    log_path: logPath,
+    recommendations_path: recommendationsPath,
+    supervisor: receipt,
+  };
+}
+
+function memberSupervisorRecommendations(...args) {
+  const asJson = hasFlag(args, '--json');
+  const recommendationsPath = supervisorRecommendationsPath(process.cwd());
+  let payload;
+  if (fs.existsSync(recommendationsPath)) {
+    try {
+      payload = JSON.parse(fs.readFileSync(recommendationsPath, 'utf8'));
+    } catch (error) {
+      payload = emptySupervisorRecommendations({
+        status: 'parse_error',
+        llm_error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+      });
+    }
+  } else {
+    payload = emptySupervisorRecommendations({ status: 'missing' });
+  }
+  const lines = payload.status === 'missing'
+    ? ['No supervisor recommendations found. Run: atris member wake supervisor --execute']
+    : [
+        `Supervisor recommendations: ${payload.status}`,
+        ...(payload.top_performers || []).slice(0, 5).map((entry) => `Top: ${entry.member} - ${entry.reason}`),
+        ...(payload.bottlenecks || []).slice(0, 5).map((entry) => `Bottleneck: ${entry.issue} - ${entry.suggestion}`),
+        ...(payload.recommendations || []).slice(0, 5).map((entry) => `Recommendation: ${entry.type} ${entry.from || 'supervisor'} -> ${entry.to || 'coordination'} - ${entry.reason}`),
+      ];
+  printJsonOrText({ ok: payload.status !== 'missing', action: 'supervisor_recommendations', recommendations_path: recommendationsPath, recommendations: payload }, lines, asJson);
+}
+
+function memberSupervisorCommand(command, ...args) {
+  if (command === 'recommendations') return memberSupervisorRecommendations(...args);
+  console.log('Usage: atris member supervisor recommendations [--json]');
+}
+
+function objectiveGeneratorProposalsPath(root = process.cwd()) {
+  return path.join(root, 'atris', 'team', 'objective-generator', 'proposals.json');
+}
+
+function emptyObjectiveGeneratorProposal(extra = {}) {
+  return {
+    schema: 'atris.objective_generator_proposals.v1',
+    updated_at: stampIso(),
+    status: extra.status || 'empty',
+    advisory_only: true,
+    world_model_used: false,
+    llm_source: extra.llm_source || null,
+    llm_error: extra.llm_error || null,
+    proposed_objective: null,
+    impact_score: null,
+    urgency_score: null,
+    alignment_score: null,
+    overall_score: null,
+    justification: '',
+    suggested_member: '',
+    suggested_patterns: [],
+    created_task: null,
+  };
+}
+
+function readObjectiveGeneratorWorldModel(root = process.cwd()) {
+  const graph = readWikiGraph(root);
+  return {
+    ...graph,
+    entities: Array.isArray(graph.entities) ? graph.entities : [],
+    relationships: Array.isArray(graph.relationships) ? graph.relationships : [],
+  };
+}
+
+function readSupervisorRecommendations(root = process.cwd()) {
+  const recommendationsPath = supervisorRecommendationsPath(root);
+  if (!fs.existsSync(recommendationsPath)) return emptySupervisorRecommendations({ status: 'missing' });
+  try {
+    const parsed = JSON.parse(fs.readFileSync(recommendationsPath, 'utf8'));
+    return {
+      ...emptySupervisorRecommendations({ status: parsed.status || 'ok', llm_source: parsed.llm_source || null, llm_error: parsed.llm_error || null }),
+      ...parsed,
+      top_performers: Array.isArray(parsed.top_performers) ? parsed.top_performers : [],
+      bottlenecks: Array.isArray(parsed.bottlenecks) ? parsed.bottlenecks : [],
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+    };
+  } catch (error) {
+    return emptySupervisorRecommendations({
+      status: 'parse_error',
+      llm_error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    });
+  }
+}
+
+function readTransferPatterns(root = process.cwd()) {
+  const patternsPath = path.join(root, 'atris', 'wiki', '.patterns.json');
+  if (!fs.existsSync(patternsPath)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(patternsPath, 'utf8'));
+    return Array.isArray(parsed.patterns) ? parsed.patterns : [];
+  } catch {
+    return [];
+  }
+}
+
+function objectivePatternMatches(patterns, objective, limit = 3) {
+  const terms = new Set(String(objective || '').toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length >= 3));
+  return (Array.isArray(patterns) ? patterns : [])
+    .map((pattern) => {
+      const text = [
+        pattern.pattern,
+        pattern.from_domain,
+        ...(pattern.steps || []),
+        ...(pattern.suggested_for || []),
+      ].join(' ').toLowerCase();
+      let overlap = 0;
+      for (const term of terms) if (text.includes(term)) overlap += 1;
+      return {
+        id: pattern.id || null,
+        pattern: compactSentence(pattern.pattern || '', 260),
+        from_domain: compactSentence(pattern.from_domain || '', 100),
+        transfer_score: Number(pattern.transfer_score) || 0,
+        match_score: (Number(pattern.transfer_score) || 0) + overlap * 3,
+        reason: overlap > 0 ? `Matched ${overlap} objective term(s)` : 'Highest available reusable pattern',
+        source_reason: compactSentence(pattern.reason || '', 320),
+        cross_domain_pattern: Boolean(pattern.cross_domain_pattern),
+        success_rate: Number(pattern.success_rate) || 0,
+        domain_count: Number(pattern.domain_count) || 0,
+      };
+    })
+    .filter((pattern) => pattern.pattern)
+    .sort((a, b) => b.match_score - a.match_score || a.pattern.localeCompare(b.pattern))
+    .slice(0, limit);
+}
+
+function fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatterns = []) {
+  const relationships = Array.isArray(graph?.relationships) ? graph.relationships : [];
+  const entities = Array.isArray(graph?.entities) ? graph.entities : [];
+  const supervisorRecommendation = Array.isArray(recommendations?.recommendations)
+    ? recommendations.recommendations.find((entry) => entry?.to)
+    : null;
+  const topPerformer = Array.isArray(recommendations?.top_performers)
+    ? recommendations.top_performers.find((entry) => entry?.member)
+    : null;
+  const member = compactSentence(
+    supervisorRecommendation?.to
+      || topPerformer?.member
+      || entities.find((entity) => entity?.type === 'system')?.name
+      || entities[0]?.name
+      || 'project-owner',
+    100,
+  );
+  const relationship = relationships.find((entry) => entry?.from === member || entry?.to === member) || relationships[0] || null;
+  const relationTarget = compactSentence(
+    relationship?.from === member ? relationship?.to : relationship?.from || relationship?.to || 'world model',
+    100,
+  );
+  const bottleneck = Array.isArray(recommendations?.bottlenecks)
+    ? recommendations.bottlenecks.find((entry) => entry?.issue || entry?.suggestion)
+    : null;
+  const hasProofSignal = [
+    supervisorRecommendation?.reason,
+    bottleneck?.issue,
+    bottleneck?.suggestion,
+    relationTarget,
+  ].join(' ').toLowerCase().includes('proof');
+  const proposedObjective = hasProofSignal && member !== 'project-owner'
+    ? `Repair proof routing gaps around ${member} ${relationTarget} handoffs`
+    : `Apply ${member} world model evidence to the next proof-ready objective`;
+  const proposal = normalizeObjectiveProposal({
+    proposed_objective: proposedObjective,
+    impact_score: 7,
+    urgency_score: 7,
+    alignment_score: 7,
+    justification: compactSentence(
+      supervisorRecommendation?.reason
+        || bottleneck?.suggestion
+        || `World model links ${member} to ${relationTarget}, so the next objective should convert that signal into proof-ready work.`,
+      600,
+    ),
+    suggested_member: member,
+    suggested_patterns: objectivePatternMatches(transferPatterns, proposedObjective),
+  }, { status: 'ok', llm_error: 'llm_not_configured', world_model_used: true });
+  return proposal || emptyObjectiveGeneratorProposal({ status: 'llm_not_configured', llm_error: 'llm_not_configured' });
+}
+
+function objectiveGeneratorPrompt(graph, recommendations, transferPatterns = []) {
+  return `Analyze this world model and identify the highest-value problem to solve next.
+
+Consider:
+1. What entities/systems have the most dependencies?
+2. What relationships are weak or missing?
+3. What would have the biggest cross-domain impact?
+4. What does the supervisor recommend?
+5. Which reusable transfer patterns apply?
+
+Return JSON:
+{
+  "proposed_objective": "Specific problem to solve",
+  "impact_score": 1-10,
+  "urgency_score": 1-10,
+  "alignment_score": 1-10,
+  "justification": "Why this matters",
+  "suggested_member": "which member should handle this",
+  "suggested_patterns": [{"pattern": "...", "reason": "..."}]
+}
+
+World model: ${JSON.stringify(graph)}
+Supervisor recommendations: ${JSON.stringify(recommendations)}
+Transfer patterns: ${JSON.stringify(transferPatterns.slice(0, 20))}`;
+}
+
+function score1to10(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(1, Math.min(10, Math.round(number)));
+}
+
+function normalizeObjectiveProposal(raw, extra = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const impact = score1to10(raw.impact_score);
+  const urgency = score1to10(raw.urgency_score);
+  const alignment = score1to10(raw.alignment_score);
+  const objective = compactSentence(raw.proposed_objective || raw.objective || raw.title || '', 240);
+  if (!objective || impact === null || urgency === null || alignment === null) return null;
+  const overall = Number(((impact + urgency + alignment) / 3).toFixed(2));
+  const suggestedPatterns = (Array.isArray(raw.suggested_patterns) ? raw.suggested_patterns : [])
+    .map((pattern) => ({
+      pattern: compactSentence(pattern?.pattern || pattern?.name || '', 260),
+      reason: compactSentence(pattern?.reason || '', 320),
+    }))
+    .filter((pattern) => pattern.pattern);
+  return {
+    ...emptyObjectiveGeneratorProposal(extra),
+    status: extra.status || 'ok',
+    world_model_used: Boolean(extra.world_model_used),
+    proposed_objective: objective,
+    impact_score: impact,
+    urgency_score: urgency,
+    alignment_score: alignment,
+    overall_score: overall,
+    justification: compactSentence(raw.justification || '', 600),
+    suggested_member: compactSentence(raw.suggested_member || '', 100),
+    suggested_patterns: suggestedPatterns,
+  };
+}
+
+function injectedObjectiveGeneratorProposal() {
+  if (!process.env.ATRIS_OBJECTIVE_GENERATOR_LLM_JSON) return null;
+  const parsed = parseJsonObjectFromText(process.env.ATRIS_OBJECTIVE_GENERATOR_LLM_JSON);
+  return parsed
+    ? { source: 'env_json', proposal: parsed }
+    : { source: 'env_json', error: 'invalid_json' };
+}
+
+async function callObjectiveGeneratorLlm(graph, recommendations, transferPatterns = []) {
+  const injected = injectedObjectiveGeneratorProposal();
+  if (injected) return injected;
+  if (process.env.ATRIS_OBJECTIVE_GENERATOR_LLM !== '1') return null;
+  try {
+    const { postTurn } = require('../ax');
+    const output = { isTTY: false, write() { return true; } };
+    const result = await postTurn(objectiveGeneratorPrompt(graph, recommendations, transferPatterns), {
+      mode: process.env.ATRIS_OBJECTIVE_GENERATOR_LLM_MODE || 'fast',
+      route: 'local',
+      cwd: process.cwd(),
+      output,
+      color: false,
+    });
+    const parsed = parseJsonObjectFromText(result?.output || '');
+    return parsed
+      ? { source: 'atris2_backend', proposal: parsed }
+      : { source: 'atris2_backend', error: 'missing_json_response' };
+  } catch (error) {
+    return {
+      source: 'atris2_backend',
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+function createAutoObjectiveTask(proposal) {
+  const title = proposal.proposed_objective || 'Autonomous objective';
+  const commandArgs = ['task', 'new', title, '--tag', 'auto-objective', '--json'];
+  const command = `atris task new ${shellQuote(title)} --tag auto-objective`;
+  try {
+    const stdout = execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...commandArgs], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000,
+      env: process.env,
+    });
+    const parsed = JSON.parse(stdout || '{}');
+    const task = parsed.task || null;
+    return {
+      ok: parsed.ok !== false,
+      command,
+      task,
+      task_id: parsed.task_id || task?.id || null,
+      task_ref: taskRef(task) || parsed.task_id || null,
+      raw: parsed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      command,
+      error: error instanceof Error ? error.message : String(error),
+      stderr: error?.stderr ? compactSentence(String(error.stderr), 500) : null,
+    };
+  }
+}
+
+async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) {
+  const mode = execute ? 'execute' : 'dry_run';
+  const root = process.cwd();
+  const graph = readObjectiveGeneratorWorldModel(root);
+  const recommendations = readSupervisorRecommendations(root);
+  const transferPatterns = readTransferPatterns(root);
+  const hasWorldModel = graph.entities.length > 0 || graph.relationships.length > 0;
+  let llm = null;
+  let proposal = null;
+  let createdTask = null;
+  let reason = execute ? 'objective_proposal_written' : 'objective_proposal_dry_run';
+
+  if (!hasWorldModel) {
+    reason = 'insufficient_world_model_data';
+    proposal = {
+      ...emptyObjectiveGeneratorProposal({ status: 'insufficient_world_model_data' }),
+      justification: 'Insufficient world model data: atris/wiki/.graph.json has no entities or relationships.',
+    };
+  } else {
+    llm = await callObjectiveGeneratorLlm(graph, recommendations, transferPatterns);
+    if (llm?.proposal) {
+      proposal = normalizeObjectiveProposal(llm.proposal, { status: 'ok', llm_source: llm.source, world_model_used: true });
+      if (!proposal) {
+        reason = 'llm_json_parse_failed';
+        proposal = emptyObjectiveGeneratorProposal({ status: 'parse_error', llm_source: llm.source, llm_error: 'invalid_proposal_shape' });
+        proposal.world_model_used = true;
+      }
+    } else if (llm?.error) {
+      reason = llm.error === 'invalid_json' ? 'llm_json_parse_failed' : 'llm_analysis_failed';
+      proposal = emptyObjectiveGeneratorProposal({ status: llm.error === 'invalid_json' ? 'parse_error' : 'llm_error', llm_source: llm.source, llm_error: llm.error });
+      proposal.world_model_used = true;
+    } else {
+      reason = 'heuristic_objective_proposal_written';
+      proposal = fallbackObjectiveGeneratorProposal(graph, recommendations, transferPatterns);
+    }
+  }
+
+  if (proposal?.status === 'ok' && (!Array.isArray(proposal.suggested_patterns) || !proposal.suggested_patterns.length)) {
+    proposal.suggested_patterns = objectivePatternMatches(transferPatterns, proposal.proposed_objective);
+  }
+
+  if (execute && proposal?.status === 'ok' && Number(proposal.overall_score) > 7) {
+    createdTask = createAutoObjectiveTask(proposal);
+    proposal.created_task = createdTask.ok ? {
+      id: createdTask.task_id || null,
+      ref: createdTask.task_ref || null,
+      title: createdTask.task?.title || proposal.proposed_objective,
+      tag: createdTask.task?.tag || 'auto-objective',
+      command: createdTask.command,
+    } : {
+      ok: false,
+      command: createdTask.command,
+      error: createdTask.error || createdTask.stderr || 'task_create_failed',
+    };
+  }
+
+  const proposalsPath = objectiveGeneratorProposalsPath(root);
+  if (execute) {
+    fs.mkdirSync(path.dirname(proposalsPath), { recursive: true });
+    fs.writeFileSync(proposalsPath, JSON.stringify(proposal, null, 2) + '\n', 'utf8');
+  }
+
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const receiptPath = path.join(runsDir, `objective-generator-tick-${fileSafeStamp()}.json`);
+  const receipt = {
+    schema: 'atris.objective_generator_tick.v1',
+    created_at: stampIso(),
+    member: name,
+    mode,
+    executed: execute,
+    ok: true,
+    advisory_only: true,
+    decision: 'generate_objective',
+    reason,
+    world_model_path: path.relative(root, wikiMinerGraphPath(root)),
+    world_model_used: proposal.world_model_used,
+    world_model_entities: graph.entities.length,
+    world_model_relationships: graph.relationships.length,
+    supervisor_recommendations_path: path.relative(root, supervisorRecommendationsPath(root)),
+    supervisor_recommendation_count: Array.isArray(recommendations.recommendations) ? recommendations.recommendations.length : 0,
+    transfer_patterns_path: path.relative(root, path.join(root, 'atris', 'wiki', '.patterns.json')),
+    transfer_pattern_count: transferPatterns.length,
+    llm_source: llm?.source || proposal.llm_source || null,
+    llm_successful: Boolean(llm?.source && llm?.proposal && proposal.status === 'ok'),
+    llm_error: llm?.error || proposal.llm_error || null,
+    proposals_path: path.relative(root, proposalsPath),
+    task_creation_threshold: 7,
+    task_created: Boolean(createdTask?.ok),
+    created_task: proposal.created_task,
+    proposal,
+  };
+  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  const logPath = appendMemberGoalLog(paths.memberDir, name, 'Objective generator tick', {
+    mode,
+    reason,
+    world_entities: graph.entities.length,
+    world_relationships: graph.relationships.length,
+    llm_source: receipt.llm_source || '',
+    llm_error: receipt.llm_error || '',
+    objective: proposal.proposed_objective || '',
+    score: proposal.overall_score || '',
+    task: proposal.created_task?.ref || '',
+    receipt: path.relative(root, receiptPath),
+    output: path.relative(root, proposalsPath),
+  });
+
+  return {
+    ok: true,
+    action: 'wake',
+    member: name,
+    mode,
+    decision: 'generate_objective',
+    reason,
+    executed: execute,
+    needs_user: false,
+    ask: null,
+    next_command: 'atris member objective-generator proposals',
+    receipt_path: receiptPath,
+    log_path: logPath,
+    proposals_path: proposalsPath,
+    objective_generator: receipt,
+  };
+}
+
+function memberObjectiveGeneratorProposals(...args) {
+  const asJson = hasFlag(args, '--json');
+  const proposalsPath = objectiveGeneratorProposalsPath(process.cwd());
+  let payload;
+  if (fs.existsSync(proposalsPath)) {
+    try {
+      payload = JSON.parse(fs.readFileSync(proposalsPath, 'utf8'));
+    } catch (error) {
+      payload = emptyObjectiveGeneratorProposal({
+        status: 'parse_error',
+        llm_error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+      });
+    }
+  } else {
+    payload = emptyObjectiveGeneratorProposal({ status: 'missing' });
+  }
+  const lines = payload.status === 'missing'
+    ? ['No objective-generator proposals found. Run: atris member wake objective-generator --execute']
+    : [
+        `Objective proposal: ${payload.status}`,
+        payload.proposed_objective ? `Objective: ${payload.proposed_objective}` : '',
+        Number.isFinite(Number(payload.overall_score)) ? `Score: ${payload.overall_score} (impact ${payload.impact_score}, urgency ${payload.urgency_score}, alignment ${payload.alignment_score})` : '',
+        payload.suggested_member ? `Suggested member: ${payload.suggested_member}` : '',
+        Array.isArray(payload.suggested_patterns) && payload.suggested_patterns.length ? `Pattern: ${payload.suggested_patterns[0].pattern}` : '',
+        payload.justification ? `Why: ${payload.justification}` : '',
+        payload.created_task?.ref ? `Task: ${payload.created_task.ref}` : '',
+      ].filter(Boolean);
+  printJsonOrText({ ok: payload.status !== 'missing', action: 'objective_generator_proposals', proposals_path: proposalsPath, proposal: payload }, lines, asJson);
+}
+
+function memberObjectiveGeneratorCommand(command, ...args) {
+  if (command === 'proposals') return memberObjectiveGeneratorProposals(...args);
+  console.log('Usage: atris member objective-generator proposals [--json]');
+}
+
+const GENERALIST_CAPABILITIES = [
+  'autonomous_problem_discovery',
+  'world_model',
+  'meta_cognition',
+  'objective_setting',
+  'causal_reasoning',
+  'transfer_learning',
+  'architecture_self_improvement',
+  'emergent_capability_discovery',
+];
+
+function generalistProofsDir(root = process.cwd()) {
+  return path.join(root, 'atris', 'team', 'generalist', 'proofs');
+}
+
+function generalistLatestProofPath(root = process.cwd()) {
+  return path.join(generalistProofsDir(root), 'latest.json');
+}
+
+function crossDomainPatternsPath(root = process.cwd()) {
+  return path.join(root, 'atris', 'wiki', '.cross_domain_patterns.json');
+}
+
+function generalistDomainSlug(value) {
+  const slug = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return slug || `domain-${slugHash(value)}`;
+}
+
+function crossDomainPatternKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function emptyCrossDomainPatternLibrary(extra = {}) {
+  return {
+    schema: 'atris.cross_domain_patterns.v1',
+    updated_at: stampIso(),
+    status: extra.status || 'empty',
+    domains: [],
+    patterns: [],
+    metrics: {
+      domains_solved_count: 0,
+      pattern_count: 0,
+      cross_domain_pattern_count: 0,
+      total_runs: 0,
+      successful_runs: 0,
+      pattern_observations: 0,
+      reused_pattern_observations: 0,
+      pattern_reuse_rate: 0,
+      cross_domain_applications: 0,
+      cross_domain_successes: 0,
+      cross_domain_success_rate: 0,
+      average_pattern_success_rate: 0,
+    },
+    recent_runs: [],
+  };
+}
+
+function normalizeCrossDomainPatternLibrary(raw) {
+  const library = { ...emptyCrossDomainPatternLibrary(), ...(raw && typeof raw === 'object' ? raw : {}) };
+  library.domains = (Array.isArray(library.domains) ? library.domains : [])
+    .map((domain) => ({
+      name: compactSentence(domain?.name || '', 120),
+      first_seen_at: domain?.first_seen_at || null,
+      last_seen_at: domain?.last_seen_at || null,
+      runs: Number(domain?.runs) || 0,
+      successes: Number(domain?.successes) || 0,
+      proof_paths: Array.isArray(domain?.proof_paths) ? domain.proof_paths.filter(Boolean).slice(-10) : [],
+      receipt_paths: Array.isArray(domain?.receipt_paths) ? domain.receipt_paths.filter(Boolean).slice(-10) : [],
+      last_objective: compactSentence(domain?.last_objective || '', 260),
+    }))
+    .filter((domain) => domain.name);
+  library.patterns = (Array.isArray(library.patterns) ? library.patterns : [])
+    .map((pattern) => {
+      const text = compactSentence(pattern?.pattern || pattern?.source_pattern || '', 260);
+      const key = crossDomainPatternKey(pattern?.key || text);
+      const uses = Math.max(0, Number(pattern?.uses) || 0);
+      const successes = Math.max(0, Number(pattern?.successes) || 0);
+      const domains = [...new Set((Array.isArray(pattern?.domains) ? pattern.domains : []).map((domain) => compactSentence(domain, 120)).filter(Boolean))].sort();
+      const successRate = uses > 0 ? Number((successes / uses).toFixed(4)) : 0;
+      const domainCount = domains.length;
+      return {
+        id: pattern?.id || `cross-domain:${slugHash(key || text)}`,
+        key,
+        pattern: text,
+        first_seen_at: pattern?.first_seen_at || null,
+        last_seen_at: pattern?.last_seen_at || null,
+        last_reused_at: pattern?.last_reused_at || null,
+        domains,
+        domain_count: domainCount,
+        uses,
+        successes,
+        success_rate: successRate,
+        score: Number((successRate * 10 + Math.min(5, domainCount) * 2).toFixed(2)),
+        evidence: Array.isArray(pattern?.evidence) ? pattern.evidence.slice(-20) : [],
+      };
+    })
+    .filter((pattern) => pattern.pattern && pattern.key);
+  library.recent_runs = Array.isArray(library.recent_runs) ? library.recent_runs.slice(-20) : [];
+  library.metrics = { ...emptyCrossDomainPatternLibrary().metrics, ...(library.metrics && typeof library.metrics === 'object' ? library.metrics : {}) };
+  library.status = library.patterns.length ? 'ok' : library.status || 'empty';
+  return library;
+}
+
+function readCrossDomainPatternLibrary(root = process.cwd()) {
+  const libraryPath = crossDomainPatternsPath(root);
+  if (!fs.existsSync(libraryPath)) return emptyCrossDomainPatternLibrary({ status: 'missing' });
+  try {
+    return normalizeCrossDomainPatternLibrary(JSON.parse(fs.readFileSync(libraryPath, 'utf8')));
+  } catch (error) {
+    return {
+      ...emptyCrossDomainPatternLibrary({ status: 'parse_error' }),
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+function crossDomainPatternText(pattern) {
+  return compactSentence(pattern?.source_pattern || pattern?.pattern || pattern?.name || pattern?.application || '', 260);
+}
+
+function crossDomainPatternMatches(library, domainName = '', objectiveOrDescription = '', limit = 3) {
+  const domainKey = lowerCompact(domainName);
+  const terms = new Set(String(`${domainName} ${objectiveOrDescription}`)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((term) => term.length >= 4));
+  return (Array.isArray(library?.patterns) ? library.patterns : [])
+    .map((pattern) => {
+      const text = [pattern.pattern, ...(pattern.domains || [])].join(' ').toLowerCase();
+      let overlap = 0;
+      for (const term of terms) if (text.includes(term)) overlap += 1;
+      const seenInSameDomain = (pattern.domains || []).some((domain) => lowerCompact(domain) === domainKey);
+      const crossDomainBonus = seenInSameDomain ? 0 : 6;
+      const matchScore = (Number(pattern.score) || 0)
+        + (Number(pattern.success_rate) || 0) * 10
+        + (Number(pattern.domain_count) || 0) * 3
+        + overlap * 2
+        + crossDomainBonus;
+      return {
+        ...pattern,
+        match_score: Number(matchScore.toFixed(2)),
+        seen_in_same_domain: seenInSameDomain,
+        reason: seenInSameDomain
+          ? 'Pattern already seen in this domain'
+          : `Reusable pattern from ${Math.max(1, Number(pattern.domain_count) || 0)} prior domain(s)`,
+      };
+    })
+    .filter((pattern) => pattern.pattern)
+    .sort((a, b) => b.match_score - a.match_score || b.success_rate - a.success_rate || a.pattern.localeCompare(b.pattern))
+    .slice(0, limit);
+}
+
+function crossDomainPatternInputs(libraryMatches = [], transferPatterns = []) {
+  const fromLibrary = (Array.isArray(libraryMatches) ? libraryMatches : []).map((pattern) => ({
+    id: pattern.id,
+    pattern: pattern.pattern,
+    from_domain: (pattern.domains || []).join(', '),
+    transfer_score: pattern.match_score || pattern.score || 0,
+    success_rate: pattern.success_rate,
+    domain_count: pattern.domain_count,
+    cross_domain_pattern: true,
+    suggested_for: ['generalist'],
+    reason: pattern.reason,
+  }));
+  return [...fromLibrary, ...(Array.isArray(transferPatterns) ? transferPatterns : [])];
+}
+
+function recomputeCrossDomainPatternMetrics(library, beforeMetrics = {}, delta = {}) {
+  const patterns = Array.isArray(library.patterns) ? library.patterns : [];
+  const domains = Array.isArray(library.domains) ? library.domains : [];
+  const totalRuns = (Number(beforeMetrics.total_runs) || 0) + (Number(delta.runs) || 0);
+  const successfulRuns = (Number(beforeMetrics.successful_runs) || 0) + (Number(delta.successes) || 0);
+  const patternObservations = (Number(beforeMetrics.pattern_observations) || 0) + (Number(delta.pattern_observations) || 0);
+  const reusedPatternObservations = (Number(beforeMetrics.reused_pattern_observations) || 0) + (Number(delta.reused_pattern_observations) || 0);
+  const crossDomainApplications = (Number(beforeMetrics.cross_domain_applications) || 0) + (Number(delta.cross_domain_applications) || 0);
+  const crossDomainSuccesses = (Number(beforeMetrics.cross_domain_successes) || 0) + (Number(delta.cross_domain_successes) || 0);
+  const averagePatternSuccessRate = patterns.length
+    ? Number((patterns.reduce((sum, pattern) => sum + (Number(pattern.success_rate) || 0), 0) / patterns.length).toFixed(4))
+    : 0;
+  return {
+    domains_solved_count: domains.length,
+    pattern_count: patterns.length,
+    cross_domain_pattern_count: patterns.filter((pattern) => Number(pattern.domain_count) > 1).length,
+    total_runs: totalRuns,
+    successful_runs: successfulRuns,
+    pattern_observations: patternObservations,
+    reused_pattern_observations: reusedPatternObservations,
+    pattern_reuse_rate: patternObservations > 0 ? Number((reusedPatternObservations / patternObservations).toFixed(4)) : 0,
+    cross_domain_applications: crossDomainApplications,
+    cross_domain_successes: crossDomainSuccesses,
+    cross_domain_success_rate: crossDomainApplications > 0 ? Number((crossDomainSuccesses / crossDomainApplications).toFixed(4)) : 0,
+    average_pattern_success_rate: averagePatternSuccessRate,
+  };
+}
+
+function learnCrossDomainPatterns(root, proof, { execute = false, record = true, libraryBefore = null, receiptPath = null, proofPath = null } = {}) {
+  const before = normalizeCrossDomainPatternLibrary(libraryBefore || readCrossDomainPatternLibrary(root));
+  if (!record) {
+    return {
+      library_path: crossDomainPatternsPath(root),
+      executed: false,
+      before_metrics: before.metrics,
+      after_metrics: before.metrics,
+      run: {
+        at: stampIso(),
+        domain: compactSentence(proof?.domain?.name || 'external domain', 120),
+        status: proof?.status || 'unknown',
+        skipped: true,
+        reason: 'proof_not_successful',
+      },
+      reused_pattern_count: 0,
+      reused_patterns: [],
+      observed_pattern_count: 0,
+      learning_improved: false,
+    };
+  }
+  const library = normalizeCrossDomainPatternLibrary(JSON.parse(JSON.stringify(before)));
+  const beforeMetrics = { ...before.metrics };
+  const now = stampIso();
+  const domainName = compactSentence(proof?.domain?.name || 'external domain', 120);
+  const objective = proof?.objectives?.[0] || null;
+  const proofPathRel = proofPath ? path.relative(root, proofPath) : null;
+  const receiptPathRel = receiptPath ? path.relative(root, receiptPath) : null;
+  const successful = proof?.status === 'ok';
+  const existingPatternKeys = new Set((before.patterns || []).map((pattern) => pattern.key));
+  const transferPatterns = (Array.isArray(proof?.transfer_patterns) ? proof.transfer_patterns : [])
+    .map((pattern) => ({
+      ...pattern,
+      pattern_text: crossDomainPatternText(pattern),
+    }))
+    .filter((pattern) => pattern.pattern_text);
+  let reusedPatternCount = 0;
+  const reusedPatterns = [];
+
+  let domainEntry = library.domains.find((domain) => lowerCompact(domain.name) === lowerCompact(domainName));
+  if (!domainEntry) {
+    domainEntry = {
+      name: domainName,
+      first_seen_at: now,
+      last_seen_at: now,
+      runs: 0,
+      successes: 0,
+      proof_paths: [],
+      receipt_paths: [],
+      last_objective: '',
+    };
+    library.domains.push(domainEntry);
+  }
+  domainEntry.last_seen_at = now;
+  domainEntry.runs += 1;
+  if (successful) domainEntry.successes += 1;
+  if (proofPathRel && !domainEntry.proof_paths.includes(proofPathRel)) domainEntry.proof_paths.push(proofPathRel);
+  if (receiptPathRel && !domainEntry.receipt_paths.includes(receiptPathRel)) domainEntry.receipt_paths.push(receiptPathRel);
+  domainEntry.proof_paths = domainEntry.proof_paths.slice(-10);
+  domainEntry.receipt_paths = domainEntry.receipt_paths.slice(-10);
+  domainEntry.last_objective = objective?.objective || '';
+
+  for (const transferPattern of transferPatterns) {
+    const key = crossDomainPatternKey(transferPattern.pattern_text);
+    const existedBefore = existingPatternKeys.has(key);
+    let patternEntry = library.patterns.find((pattern) => pattern.key === key);
+    if (!patternEntry) {
+      patternEntry = {
+        id: `cross-domain:${slugHash(key)}`,
+        key,
+        pattern: transferPattern.pattern_text,
+        first_seen_at: now,
+        last_seen_at: now,
+        last_reused_at: null,
+        domains: [],
+        domain_count: 0,
+        uses: 0,
+        successes: 0,
+        success_rate: 0,
+        score: 0,
+        evidence: [],
+      };
+      library.patterns.push(patternEntry);
+    }
+    if (existedBefore) {
+      reusedPatternCount += 1;
+      patternEntry.last_reused_at = now;
+      reusedPatterns.push({
+        id: patternEntry.id,
+        pattern: patternEntry.pattern,
+        domains_before: before.patterns.find((pattern) => pattern.key === key)?.domains || [],
+        success_rate_before: before.patterns.find((pattern) => pattern.key === key)?.success_rate || 0,
+      });
+    }
+    patternEntry.last_seen_at = now;
+    if (!patternEntry.domains.includes(domainName)) patternEntry.domains.push(domainName);
+    patternEntry.domains.sort();
+    patternEntry.domain_count = patternEntry.domains.length;
+    patternEntry.uses += 1;
+    if (successful) patternEntry.successes += 1;
+    patternEntry.success_rate = patternEntry.uses > 0 ? Number((patternEntry.successes / patternEntry.uses).toFixed(4)) : 0;
+    patternEntry.score = Number((patternEntry.success_rate * 10 + Math.min(5, patternEntry.domain_count) * 2).toFixed(2));
+    const evidenceKey = `${domainName}|${receiptPathRel || ''}|${proofPathRel || ''}`;
+    if (!patternEntry.evidence.some((entry) => entry.evidence_key === evidenceKey)) {
+      patternEntry.evidence.push({
+        evidence_key: evidenceKey,
+        domain: domainName,
+        status: proof?.status || 'unknown',
+        proof_path: proofPathRel,
+        receipt_path: receiptPathRel,
+        objective: objective?.objective || '',
+        objective_score: objective?.overall_score || null,
+        application: compactSentence(transferPattern.application || '', 420),
+        reason: compactSentence(transferPattern.reason || '', 320),
+        observed_at: now,
+      });
+    }
+    patternEntry.evidence = patternEntry.evidence.slice(-20);
+  }
+
+  library.domains.sort((a, b) => a.name.localeCompare(b.name));
+  library.patterns.sort((a, b) => b.score - a.score || b.domain_count - a.domain_count || a.pattern.localeCompare(b.pattern));
+  const delta = {
+    runs: 1,
+    successes: successful ? 1 : 0,
+    pattern_observations: transferPatterns.length,
+    reused_pattern_observations: reusedPatternCount,
+    cross_domain_applications: reusedPatternCount,
+    cross_domain_successes: successful ? reusedPatternCount : 0,
+  };
+  library.metrics = recomputeCrossDomainPatternMetrics(library, beforeMetrics, delta);
+  library.updated_at = now;
+  library.status = 'ok';
+  const afterMetrics = library.metrics;
+  const learningImproved = afterMetrics.cross_domain_pattern_count > (Number(beforeMetrics.cross_domain_pattern_count) || 0)
+    || afterMetrics.pattern_reuse_rate > (Number(beforeMetrics.pattern_reuse_rate) || 0)
+    || afterMetrics.cross_domain_success_rate > (Number(beforeMetrics.cross_domain_success_rate) || 0);
+  const runSummary = {
+    at: now,
+    domain: domainName,
+    status: proof?.status || 'unknown',
+    proof_path: proofPathRel,
+    receipt_path: receiptPathRel,
+    pattern_observations: transferPatterns.length,
+    reused_pattern_count: reusedPatternCount,
+    domains_solved_before: Number(beforeMetrics.domains_solved_count) || before.domains.length || 0,
+    domains_solved_after: afterMetrics.domains_solved_count,
+    pattern_count_before: Number(beforeMetrics.pattern_count) || before.patterns.length || 0,
+    pattern_count_after: afterMetrics.pattern_count,
+    pattern_reuse_rate_before: Number(beforeMetrics.pattern_reuse_rate) || 0,
+    pattern_reuse_rate_after: afterMetrics.pattern_reuse_rate,
+    cross_domain_success_rate_before: Number(beforeMetrics.cross_domain_success_rate) || 0,
+    cross_domain_success_rate_after: afterMetrics.cross_domain_success_rate,
+    learning_improved: learningImproved,
+  };
+  library.recent_runs = [...(library.recent_runs || []), runSummary].slice(-20);
+
+  if (execute) {
+    const libraryPath = crossDomainPatternsPath(root);
+    fs.mkdirSync(path.dirname(libraryPath), { recursive: true });
+    fs.writeFileSync(libraryPath, JSON.stringify(library, null, 2) + '\n', 'utf8');
+  }
+
+  return {
+    library_path: crossDomainPatternsPath(root),
+    executed: execute,
+    before_metrics: beforeMetrics,
+    after_metrics: afterMetrics,
+    run: runSummary,
+    reused_pattern_count: reusedPatternCount,
+    reused_patterns: reusedPatterns,
+    observed_pattern_count: transferPatterns.length,
+    learning_improved: learningImproved,
+  };
+}
+
+function resolveGeneralistDomainInput(root, domainInput = {}) {
+  const fileFlag = domainInput.file || process.env.ATRIS_GENERALIST_DOMAIN_FILE || '';
+  const textFlag = domainInput.text || process.env.ATRIS_GENERALIST_DOMAIN || '';
+  const nameFlag = domainInput.name || process.env.ATRIS_GENERALIST_DOMAIN_NAME || '';
+  let description = '';
+  let source = 'missing';
+  let sourcePath = null;
+  let error = null;
+
+  if (fileFlag) {
+    const fullPath = path.isAbsolute(fileFlag) ? fileFlag : path.join(root, fileFlag);
+    sourcePath = fullPath;
+    try {
+      description = fs.readFileSync(fullPath, 'utf8');
+      source = 'file';
+    } catch (readError) {
+      error = compactSentence(readError instanceof Error ? readError.message : String(readError), 220);
+    }
+  }
+
+  if (!description && textFlag) {
+    description = textFlag;
+    source = 'flag_text';
+  }
+
+  const heading = String(description).match(/^#\s+(.+)$/m)?.[1] || '';
+  const domainLine = String(description).match(/^\s*(?:domain|context)\s*:\s*(.+)$/im)?.[1] || '';
+  const firstLine = firstUsefulLine(description);
+  const name = compactSentence(nameFlag || domainLine || heading || firstLine || 'external domain', 120);
+
+  return {
+    ok: Boolean(description.trim()),
+    name,
+    slug: generalistDomainSlug(name),
+    description,
+    description_excerpt: compactSentence(description, 800),
+    source,
+    source_path: sourcePath ? path.relative(root, sourcePath) : null,
+    error: description.trim() ? null : (error || 'missing_domain_input'),
+  };
+}
+
+function generalistDomainsDir(root = process.cwd()) {
+  return path.join(root, 'atris', 'team', 'generalist', 'domains');
+}
+
+function normalizeRelativeProofPath(root, value) {
+  if (!value) return '';
+  const fullPath = path.isAbsolute(value) ? value : path.join(root, value);
+  return path.relative(root, path.normalize(fullPath)).split(path.sep).join('/');
+}
+
+function listGeneralistDomainFiles(root = process.cwd()) {
+  const domainsDir = generalistDomainsDir(root);
+  if (!fs.existsSync(domainsDir)) return [];
+  return fs.readdirSync(domainsDir)
+    .filter((entry) => !entry.startsWith('.') && /\.(md|markdown|txt|json)$/i.test(entry))
+    .map((entry) => {
+      const fullPath = path.join(domainsDir, entry);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (!stat.isFile()) return null;
+        return {
+          full_path: fullPath,
+          path: normalizeRelativeProofPath(root, fullPath),
+          mtime_ms: stat.mtimeMs,
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function readGeneralistProofIndex(root = process.cwd()) {
+  const proofsDir = generalistProofsDir(root);
+  const bySourcePath = new Map();
+  if (!fs.existsSync(proofsDir)) return bySourcePath;
+  for (const entry of fs.readdirSync(proofsDir)) {
+    if (!entry.endsWith('.json')) continue;
+    const proofPath = path.join(proofsDir, entry);
+    try {
+      const stat = fs.statSync(proofPath);
+      if (!stat.isFile()) continue;
+      const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
+      const sourcePath = normalizeRelativeProofPath(root, proof?.domain?.source_path || proof?.source_path || '');
+      if (!sourcePath) continue;
+      const processedAt = Date.parse(proof.updated_at || proof.created_at || proof.generated_at || '') || stat.mtimeMs;
+      const existing = bySourcePath.get(sourcePath);
+      if (!existing || processedAt > existing.processed_at_ms) {
+        bySourcePath.set(sourcePath, {
+          source_path: sourcePath,
+          processed_at_ms: processedAt,
+          processed_at: new Date(processedAt).toISOString(),
+          proof_path: normalizeRelativeProofPath(root, proofPath),
+        });
+      }
+    } catch {
+      // Ignore malformed proof files; the scanner will simply treat the domain as due.
+    }
+  }
+  return bySourcePath;
+}
+
+function findUnprocessedGeneralistDomainFile(root = process.cwd(), { windowMs = 60 * 60 * 1000, nowMs = Date.now() } = {}) {
+  const files = listGeneralistDomainFiles(root);
+  if (!files.length) return null;
+  const proofIndex = readGeneralistProofIndex(root);
+  const cutoff = nowMs - windowMs;
+  return files
+    .map((file) => {
+      const lastProof = proofIndex.get(file.path) || null;
+      return {
+        ...file,
+        status: lastProof ? 'stale' : 'new',
+        last_processed_at: lastProof?.processed_at || null,
+        last_proof_path: lastProof?.proof_path || null,
+        due: !lastProof || lastProof.processed_at_ms < cutoff,
+      };
+    })
+    .filter((file) => file.due)
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'new' ? -1 : 1;
+      return b.mtime_ms - a.mtime_ms || a.path.localeCompare(b.path);
+    })[0] || null;
+}
+
+function emptyGeneralistProof(extra = {}) {
+  return {
+    schema: 'atris.generalist_domain_proof.v1',
+    updated_at: stampIso(),
+    status: extra.status || 'empty',
+    domain: {
+      name: extra.domain_name || 'external domain',
+      source: extra.domain_source || null,
+      source_path: extra.domain_source_path || null,
+      description_excerpt: extra.description_excerpt || '',
+    },
+    domain_agnostic: true,
+    atris_specific_code_required: false,
+    capabilities_used: GENERALIST_CAPABILITIES,
+    llm_source: extra.llm_source || null,
+    llm_error: extra.llm_error || null,
+    world_model: {
+      entities: [],
+      relationships: [],
+    },
+    problems: [],
+    objectives: [],
+    causal_patterns: [],
+    transfer_patterns: [],
+    solution_plan: [],
+    meta_cognition: {
+      assumptions: [],
+      risks: [],
+      missing_data: [],
+    },
+    architecture_improvement: '',
+    emergent_capability: '',
+    proof: '',
+  };
+}
+
+function normalizeGeneralistEntity(entity) {
+  const name = compactSentence(entity?.name || entity?.entity || entity, 120);
+  if (!name) return null;
+  const type = compactSentence(String(entity?.type || 'concept').toLowerCase(), 40).replace(/[^a-z0-9_-]/g, '-') || 'concept';
+  return { type, name };
+}
+
+function normalizeGeneralistRelationship(relationship) {
+  const from = compactSentence(relationship?.from || relationship?.source || '', 120);
+  const to = compactSentence(relationship?.to || relationship?.target || '', 120);
+  if (!from || !to) return null;
+  const type = compactSentence(String(relationship?.type || relationship?.relationship || 'affects').toLowerCase(), 60).replace(/[^a-z0-9_-]/g, '-') || 'affects';
+  return { from, to, type };
+}
+
+function normalizeGeneralistAnalysis(raw, extra = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const proof = emptyGeneralistProof(extra);
+  const worldModel = raw.world_model && typeof raw.world_model === 'object' ? raw.world_model : raw;
+  const domainName = compactSentence(raw.domain?.name || raw.domain_name || extra.domain_name || proof.domain.name, 120);
+  proof.status = extra.status || raw.status || 'ok';
+  proof.domain = {
+    name: domainName,
+    source: extra.domain_source || proof.domain.source,
+    source_path: extra.domain_source_path || proof.domain.source_path,
+    description_excerpt: compactSentence(raw.domain?.summary || raw.domain_summary || extra.description_excerpt || proof.domain.description_excerpt, 800),
+  };
+  proof.llm_source = extra.llm_source || raw.llm_source || null;
+  proof.llm_error = extra.llm_error || raw.llm_error || null;
+
+  const entities = (Array.isArray(worldModel.entities) ? worldModel.entities : [])
+    .map(normalizeGeneralistEntity)
+    .filter(Boolean);
+  const relationships = (Array.isArray(worldModel.relationships) ? worldModel.relationships : [])
+    .map(normalizeGeneralistRelationship)
+    .filter(Boolean);
+  proof.world_model = { entities, relationships };
+
+  proof.problems = (Array.isArray(raw.problems) ? raw.problems : [])
+    .map((problem) => ({
+      problem: compactSentence(problem?.problem || problem?.name || problem?.title || '', 240),
+      evidence: compactSentence(problem?.evidence || problem?.reason || '', 420),
+      impact_score: score1to10(problem?.impact_score || problem?.score) || 7,
+    }))
+    .filter((problem) => problem.problem);
+
+  const rawObjectives = Array.isArray(raw.objectives) ? raw.objectives : [];
+  if (raw.proposed_objective || raw.objective) rawObjectives.unshift(raw);
+  proof.objectives = rawObjectives
+    .map((objective) => {
+      const impact = score1to10(objective?.impact_score) || 7;
+      const urgency = score1to10(objective?.urgency_score) || 7;
+      const alignment = score1to10(objective?.alignment_score) || 7;
+      return {
+        objective: compactSentence(objective?.objective || objective?.proposed_objective || objective?.title || '', 260),
+        impact_score: impact,
+        urgency_score: urgency,
+        alignment_score: alignment,
+        overall_score: Number(((impact + urgency + alignment) / 3).toFixed(2)),
+        justification: compactSentence(objective?.justification || objective?.reason || '', 520),
+        suggested_owner: compactSentence(objective?.suggested_owner || objective?.suggested_member || '', 100),
+      };
+    })
+    .filter((objective) => objective.objective);
+
+  proof.causal_patterns = (Array.isArray(raw.causal_patterns) ? raw.causal_patterns : [])
+    .map((pattern) => ({
+      action: compactSentence(pattern?.action || pattern?.cause || '', 220),
+      outcome: compactSentence(pattern?.outcome || pattern?.effect || '', 260),
+      confidence: score1to10(pattern?.confidence) || 6,
+      counterevidence: compactSentence(pattern?.counterevidence || '', 260),
+    }))
+    .filter((pattern) => pattern.action && pattern.outcome);
+
+  proof.transfer_patterns = (Array.isArray(raw.transfer_patterns) ? raw.transfer_patterns : [])
+    .map((pattern) => ({
+      source_pattern: compactSentence(pattern?.source_pattern || pattern?.pattern || pattern?.name || '', 260),
+      application: compactSentence(pattern?.application || pattern?.target_application || '', 420),
+      reason: compactSentence(pattern?.reason || '', 320),
+    }))
+    .filter((pattern) => pattern.source_pattern || pattern.application);
+
+  proof.solution_plan = (Array.isArray(raw.solution_plan) ? raw.solution_plan : [])
+    .map((step, index) => ({
+      step: compactSentence(step?.step || step?.action || step, 260),
+      owner: compactSentence(step?.owner || step?.role || '', 120),
+      expected_outcome: compactSentence(step?.expected_outcome || step?.outcome || '', 300),
+      order: Number.isFinite(Number(step?.order)) ? Number(step.order) : index + 1,
+    }))
+    .filter((step) => step.step);
+
+  const meta = raw.meta_cognition && typeof raw.meta_cognition === 'object' ? raw.meta_cognition : {};
+  proof.meta_cognition = {
+    assumptions: (Array.isArray(meta.assumptions) ? meta.assumptions : []).map((item) => compactSentence(item, 240)).filter(Boolean),
+    risks: (Array.isArray(meta.risks) ? meta.risks : []).map((item) => compactSentence(item, 240)).filter(Boolean),
+    missing_data: (Array.isArray(meta.missing_data) ? meta.missing_data : []).map((item) => compactSentence(item, 240)).filter(Boolean),
+  };
+  proof.architecture_improvement = compactSentence(raw.architecture_improvement || '', 500);
+  proof.emergent_capability = compactSentence(raw.emergent_capability || raw.emergent_capability_discovery || '', 500);
+  proof.proof = compactSentence(raw.proof || '', 700);
+
+  if (!proof.world_model.entities.length || !proof.world_model.relationships.length || !proof.objectives.length) return null;
+  return proof;
+}
+
+function generalistReusablePatterns(transferPatterns = [], domainName = '', objective = '') {
+  const nonProjectPatterns = (Array.isArray(transferPatterns) ? transferPatterns : [])
+    .filter((pattern) => pattern?.cross_domain_pattern || !/\batris\b|signal-scout|obelisk|wiki-miner|objective-generator/i.test(JSON.stringify(pattern || {})));
+  const matches = objectivePatternMatches(nonProjectPatterns, `${domainName} ${objective}`, 3)
+    .map((pattern) => ({
+      source_pattern: pattern.pattern || pattern.source_pattern,
+      application: `Apply to ${domainName} by turning the bottleneck into a small measured intervention.`,
+      reason: pattern.cross_domain_pattern
+        ? `Reused cross-domain pattern with success rate ${Number(pattern.success_rate || 0).toFixed(2)} across ${pattern.domain_count || 1} domain(s).`
+        : pattern.reason || 'Reusable pattern matched the domain objective.',
+      pattern_id: pattern.id || null,
+    }));
+  if (matches.length) return matches;
+  return [{
+    source_pattern: 'bottleneck signal -> small controlled intervention -> outcome receipt -> next objective',
+    application: `Apply to ${domainName} by measuring one operational bottleneck, changing one lever, and reviewing the outcome before scaling.`,
+    reason: 'Generic transfer pattern applies across operational domains without project-specific assumptions.',
+  }];
+}
+
+function fallbackGeneralistAnalysis(domain, transferPatterns = []) {
+  const text = String(domain.description || '');
+  const isRestaurant = /restaurant|kitchen|dining|reservation|table|menu|server|host|guest|chef/i.test(text);
+  const domainName = domain.name || (isRestaurant ? 'restaurant operations' : 'external domain');
+  const customerName = isRestaurant ? 'guests' : 'customers';
+  const frontRole = isRestaurant ? 'front-of-house staff' : 'operators';
+  const deliveryRole = isRestaurant ? 'kitchen staff' : 'delivery team';
+  const intakeFlow = isRestaurant ? 'reservation and seating flow' : 'intake flow';
+  const throughputFlow = isRestaurant ? 'table turnover and order throughput' : 'service throughput';
+  const capacityResource = isRestaurant ? 'tables, prep capacity, and inventory' : 'available capacity';
+  const qualityMetric = isRestaurant ? 'peak wait time and guest satisfaction' : 'lead time and customer satisfaction';
+  const objective = isRestaurant
+    ? 'Reduce peak-service wait time by aligning reservations, seating, kitchen capacity, and staffing to demand'
+    : `Reduce the main ${domainName} service bottleneck by aligning demand, capacity, and feedback loops`;
+
+  const transferMatches = generalistReusablePatterns(transferPatterns, domainName, objective);
+  return normalizeGeneralistAnalysis({
+    domain: {
+      name: domainName,
+      summary: domain.description_excerpt,
+    },
+    world_model: {
+      entities: [
+        { type: 'system', name: domainName },
+        { type: 'role', name: frontRole },
+        { type: 'role', name: deliveryRole },
+        { type: 'customer', name: customerName },
+        { type: 'process', name: intakeFlow },
+        { type: 'process', name: throughputFlow },
+        { type: 'resource', name: capacityResource },
+        { type: 'metric', name: qualityMetric },
+      ],
+      relationships: [
+        { from: frontRole, to: intakeFlow, type: 'owns' },
+        { from: intakeFlow, to: throughputFlow, type: 'depends-on' },
+        { from: deliveryRole, to: throughputFlow, type: 'owns' },
+        { from: capacityResource, to: throughputFlow, type: 'constrains' },
+        { from: throughputFlow, to: qualityMetric, type: 'causes' },
+        { from: qualityMetric, to: customerName, type: 'affects' },
+      ],
+    },
+    problems: [
+      {
+        problem: isRestaurant ? 'Peak demand creates seating and kitchen bottlenecks that raise wait time' : 'Demand and capacity are not aligned tightly enough to protect service quality',
+        evidence: 'The domain description names operating roles, queues, resources, and service outcomes that can be modeled as a throughput system.',
+        impact_score: 9,
+      },
+      {
+        problem: isRestaurant ? 'Prep and inventory mismatch can create stockouts or waste' : 'Resource planning likely lags real demand signals',
+        evidence: 'Capacity resources directly constrain the throughput process.',
+        impact_score: 8,
+      },
+    ],
+    objectives: [
+      {
+        objective,
+        impact_score: 9,
+        urgency_score: 8,
+        alignment_score: 9,
+        justification: `The world model links ${intakeFlow}, ${throughputFlow}, ${capacityResource}, and ${qualityMetric}; improving that path should improve the domain outcome directly.`,
+        suggested_owner: isRestaurant ? 'general manager' : 'domain operator',
+      },
+    ],
+    causal_patterns: [
+      {
+        action: isRestaurant ? 'Stagger reservations and hold surge capacity during peak windows' : 'Smooth demand arrival and reserve capacity for peak windows',
+        outcome: isRestaurant ? 'Lower host stand queue and fewer kitchen spikes' : 'Lower queue depth and fewer service spikes',
+        confidence: 7,
+        counterevidence: 'Needs baseline wait-time and throughput data before claiming outcome.',
+      },
+      {
+        action: isRestaurant ? 'Set prep par levels from recent covers and menu mix' : 'Set resource levels from recent demand mix',
+        outcome: isRestaurant ? 'Fewer stockouts and less waste' : 'Fewer missed requests and less idle capacity',
+        confidence: 6,
+        counterevidence: 'Demand volatility may require daily adjustment.',
+      },
+    ],
+    transfer_patterns: transferMatches,
+    solution_plan: [
+      { step: 'Instrument the current bottleneck with one week of timestamps, volume, capacity, and outcome metrics', owner: isRestaurant ? 'general manager' : 'domain operator', expected_outcome: 'Baseline identifies the highest-leverage constraint' },
+      { step: isRestaurant ? 'Pilot reservation staggering, table-turn targets, and prep par adjustments in one peak service window' : 'Pilot one demand-smoothing and capacity-alignment change in one operating window', owner: frontRole, expected_outcome: 'Smaller queue spikes with limited operational risk' },
+      { step: 'Review the outcome receipt and either scale, revert, or pick the next bottleneck', owner: deliveryRole, expected_outcome: 'Causal evidence updates the next objective' },
+    ],
+    meta_cognition: {
+      assumptions: ['The domain description is accurate enough to build an initial world model.', 'The highest-value first step is local measurement plus a reversible pilot.'],
+      risks: ['Optimizing one metric could harm quality if the review misses secondary effects.', 'External constraints may change during the pilot.'],
+      missing_data: [isRestaurant ? 'Hourly covers, wait times, table turns, stockouts, labor schedule, and guest complaints' : 'Arrival rate, service time, capacity, quality outcomes, and exception logs'],
+    },
+    architecture_improvement: 'Keep each domain proof in its own world model so the same reasoning loop can be reused without hardcoded project entities.',
+    emergent_capability: 'Domain translation: convert unfamiliar operating text into entities, constraints, objectives, causal tests, and transfer candidates.',
+    proof: 'The proof was generated from the supplied domain description and generic transfer patterns, without reading the project wiki graph or relying on project-specific entities.',
+  }, {
+    status: 'ok',
+    domain_name: domainName,
+    domain_source: domain.source,
+    domain_source_path: domain.source_path,
+    description_excerpt: domain.description_excerpt,
+    llm_error: 'llm_not_configured',
+  });
+}
+
+function generalistPrompt(domain, transferPatterns = []) {
+  return `Analyze this domain description with the same eight AGI capabilities:
+1. autonomous problem discovery
+2. world model
+3. meta-cognition
+4. objective setting
+5. causal reasoning
+6. transfer learning
+7. architecture self-improvement
+8. emergent capability discovery
+
+Build the model from this domain only. Do not assume Atris-specific entities, software workflows, or project wiki knowledge.
+
+Return JSON:
+{
+  "domain": {"name": "...", "summary": "..."},
+  "world_model": {
+    "entities": [{"type": "person|system|concept|role|process|resource|metric", "name": "..."}],
+    "relationships": [{"from": "...", "to": "...", "type": "uses|depends-on|owns|causes|affects|constrains"}]
+  },
+  "problems": [{"problem": "...", "evidence": "...", "impact_score": 1-10}],
+  "objectives": [{"objective": "...", "impact_score": 1-10, "urgency_score": 1-10, "alignment_score": 1-10, "justification": "...", "suggested_owner": "..."}],
+  "causal_patterns": [{"action": "...", "outcome": "...", "confidence": 1-10, "counterevidence": "..."}],
+  "transfer_patterns": [{"source_pattern": "...", "application": "...", "reason": "..."}],
+  "solution_plan": [{"step": "...", "owner": "...", "expected_outcome": "..."}],
+  "meta_cognition": {"assumptions": ["..."], "risks": ["..."], "missing_data": ["..."]},
+  "architecture_improvement": "How this improves the general AGI loop",
+  "emergent_capability": "New reusable capability discovered",
+  "proof": "Why this is cross-domain and not project-specific"
+}
+
+Domain name: ${domain.name}
+Domain source: ${domain.source}
+Domain content:
+${domain.description.slice(0, 12000)}
+
+Reusable non-project transfer patterns:
+${JSON.stringify((transferPatterns || []).slice(0, 20))}`;
+}
+
+function injectedGeneralistAnalysis() {
+  if (!process.env.ATRIS_GENERALIST_LLM_JSON) return null;
+  const parsed = parseJsonObjectFromText(process.env.ATRIS_GENERALIST_LLM_JSON);
+  return parsed
+    ? { source: 'env_json', analysis: parsed }
+    : { source: 'env_json', error: 'invalid_json' };
+}
+
+async function callGeneralistLlm(domain, transferPatterns = []) {
+  const injected = injectedGeneralistAnalysis();
+  if (injected) return injected;
+  if (process.env.ATRIS_GENERALIST_LLM !== '1') return null;
+  try {
+    const { postTurn } = require('../ax');
+    const output = { isTTY: false, write() { return true; } };
+    const result = await postTurn(generalistPrompt(domain, transferPatterns), {
+      mode: process.env.ATRIS_GENERALIST_LLM_MODE || 'fast',
+      route: 'local',
+      cwd: process.cwd(),
+      output,
+      color: false,
+    });
+    const parsed = parseJsonObjectFromText(result?.output || '');
+    return parsed
+      ? { source: 'atris2_backend', analysis: parsed }
+      : { source: 'atris2_backend', error: 'missing_json_response' };
+  } catch (error) {
+    return {
+      source: 'atris2_backend',
+      error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+    };
+  }
+}
+
+async function runGeneralistWake(name, paths, { execute = false, domainInput = {} } = {}) {
+  const mode = execute ? 'execute' : 'dry_run';
+  const root = process.cwd();
+  const domain = resolveGeneralistDomainInput(root, domainInput);
+  const transferPatterns = readTransferPatterns(root);
+  const crossDomainLibraryBefore = readCrossDomainPatternLibrary(root);
+  const crossDomainMatches = crossDomainPatternMatches(crossDomainLibraryBefore, domain.name, domain.description, 5);
+  const reusablePatterns = crossDomainPatternInputs(crossDomainMatches, transferPatterns);
+  let llm = null;
+  let proof = null;
+  let learning = null;
+  let reason = execute ? 'cross_domain_proof_written' : 'cross_domain_proof_dry_run';
+
+  if (!domain.ok) {
+    reason = 'missing_domain_input';
+    proof = emptyGeneralistProof({
+      status: 'missing_domain_input',
+      domain_name: domain.name,
+      domain_source: domain.source,
+      domain_source_path: domain.source_path,
+      description_excerpt: domain.description_excerpt,
+      llm_error: domain.error,
+    });
+    proof.proof = 'No domain description was provided. Pass --domain-file, --domain, or ATRIS_GENERALIST_DOMAIN.';
+  } else {
+    llm = await callGeneralistLlm(domain, reusablePatterns);
+    if (llm?.analysis) {
+      proof = normalizeGeneralistAnalysis(llm.analysis, {
+        status: 'ok',
+        domain_name: domain.name,
+        domain_source: domain.source,
+        domain_source_path: domain.source_path,
+        description_excerpt: domain.description_excerpt,
+        llm_source: llm.source,
+      });
+      if (!proof) {
+        reason = 'llm_json_parse_failed_heuristic_used';
+        proof = fallbackGeneralistAnalysis(domain, reusablePatterns);
+        proof.llm_source = llm.source;
+        proof.llm_error = 'invalid_analysis_shape';
+      }
+    } else if (llm?.error) {
+      reason = llm.error === 'invalid_json' ? 'llm_json_parse_failed_heuristic_used' : 'llm_analysis_failed_heuristic_used';
+      proof = fallbackGeneralistAnalysis(domain, reusablePatterns);
+      proof.llm_source = llm.source || null;
+      proof.llm_error = llm.error;
+    } else {
+      reason = 'heuristic_cross_domain_proof_written';
+      proof = fallbackGeneralistAnalysis(domain, reusablePatterns);
+    }
+  }
+
+  const proofsDir = generalistProofsDir(root);
+  fs.mkdirSync(proofsDir, { recursive: true });
+  const proofPath = path.join(proofsDir, `${domain.slug}-${fileSafeStamp()}.json`);
+  const latestProofPath = generalistLatestProofPath(root);
+  const runsDir = path.join(root, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const receiptPath = path.join(runsDir, `generalist-tick-${fileSafeStamp()}.json`);
+  learning = learnCrossDomainPatterns(root, proof, {
+    execute: execute && domain.ok && proof.status === 'ok',
+    record: domain.ok && proof.status === 'ok',
+    libraryBefore: crossDomainLibraryBefore,
+    receiptPath,
+    proofPath,
+  });
+  proof.learning = {
+    library_path: path.relative(root, learning.library_path),
+    reused_pattern_count: learning.reused_pattern_count,
+    observed_pattern_count: learning.observed_pattern_count,
+    learning_improved: learning.learning_improved,
+    before_metrics: learning.before_metrics,
+    after_metrics: learning.after_metrics,
+    reused_patterns: learning.reused_patterns,
+  };
+  if (execute) {
+    fs.writeFileSync(proofPath, JSON.stringify(proof, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(latestProofPath, JSON.stringify(proof, null, 2) + '\n', 'utf8');
+  }
+
+  const receipt = {
+    schema: 'atris.generalist_tick.v1',
+    created_at: stampIso(),
+    member: name,
+    mode,
+    executed: execute,
+    ok: domain.ok && proof.status === 'ok',
+    advisory_only: true,
+    decision: 'cross_domain_generalize',
+    reason,
+    domain_name: proof.domain.name,
+    domain_source: domain.source,
+    domain_source_path: domain.source_path,
+    domain_agnostic: true,
+    atris_specific_code_required: false,
+    capabilities_used: GENERALIST_CAPABILITIES,
+    world_model_entities: proof.world_model.entities.length,
+    world_model_relationships: proof.world_model.relationships.length,
+    problem_count: proof.problems.length,
+    objective_count: proof.objectives.length,
+    causal_pattern_count: proof.causal_patterns.length,
+    transfer_pattern_count: proof.transfer_patterns.length,
+    transfer_patterns_scanned: transferPatterns.length,
+    cross_domain_patterns_path: path.relative(root, crossDomainPatternsPath(root)),
+    cross_domain_patterns_scanned: Array.isArray(crossDomainLibraryBefore.patterns) ? crossDomainLibraryBefore.patterns.length : 0,
+    cross_domain_pattern_matches: crossDomainMatches.map((pattern) => ({
+      id: pattern.id,
+      pattern: pattern.pattern,
+      domains: pattern.domains,
+      success_rate: pattern.success_rate,
+      domain_count: pattern.domain_count,
+      match_score: pattern.match_score,
+      reason: pattern.reason,
+    })),
+    cross_domain_learning: {
+      library_path: path.relative(root, learning.library_path),
+      reused_pattern_count: learning.reused_pattern_count,
+      observed_pattern_count: learning.observed_pattern_count,
+      learning_improved: learning.learning_improved,
+      before_metrics: learning.before_metrics,
+      after_metrics: learning.after_metrics,
+      reused_patterns: learning.reused_patterns,
+      run: learning.run,
+    },
+    llm_source: llm?.source || proof.llm_source || null,
+    llm_successful: Boolean(llm?.source && llm?.analysis && proof.status === 'ok' && !proof.llm_error),
+    llm_error: llm?.error || proof.llm_error || null,
+    proof_path: execute ? path.relative(root, proofPath) : null,
+    latest_proof_path: execute ? path.relative(root, latestProofPath) : null,
+    top_objective: proof.objectives[0] || null,
+    proof,
+  };
+  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  const logPath = appendMemberGoalLog(paths.memberDir, name, 'Generalist cross-domain tick', {
+    mode,
+    reason,
+    domain: proof.domain.name,
+    capabilities: GENERALIST_CAPABILITIES.length,
+    world_entities: receipt.world_model_entities,
+    world_relationships: receipt.world_model_relationships,
+    objective: proof.objectives[0]?.objective || '',
+    llm_source: receipt.llm_source || '',
+    llm_error: receipt.llm_error || '',
+    pattern_library: receipt.cross_domain_patterns_path,
+    reused_patterns: learning.reused_pattern_count,
+    reuse_rate: learning.after_metrics.pattern_reuse_rate,
+    cross_domain_success_rate: learning.after_metrics.cross_domain_success_rate,
+    receipt: path.relative(root, receiptPath),
+    proof: receipt.proof_path || '',
+  });
+
+  return {
+    ok: true,
+    action: 'wake',
+    member: name,
+    mode,
+    decision: 'cross_domain_generalize',
+    reason,
+    executed: execute,
+    needs_user: !domain.ok,
+    ask: domain.ok ? null : 'Pass --domain-file <path> or --domain "<description>".',
+    next_command: 'atris member generalist proof',
+    receipt_path: receiptPath,
+    log_path: logPath,
+    proof_path: execute ? proofPath : null,
+    latest_proof_path: execute ? latestProofPath : null,
+    generalist: receipt,
+  };
+}
+
+async function processDomainFile(domainPath, { name = 'generalist', paths = null, execute = false } = {}) {
+  const root = process.cwd();
+  const resolvedPaths = paths || memberPaths(name);
+  const fullPath = path.isAbsolute(domainPath) ? domainPath : path.join(root, domainPath);
+  return runGeneralistWake(name, resolvedPaths, {
+    execute,
+    domainInput: {
+      file: normalizeRelativeProofPath(root, fullPath),
+    },
+  });
+}
+
+function memberGeneralistProof(...args) {
+  const asJson = hasFlag(args, '--json');
+  const latestPath = generalistLatestProofPath(process.cwd());
+  let payload;
+  if (fs.existsSync(latestPath)) {
+    try {
+      payload = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
+    } catch (error) {
+      payload = emptyGeneralistProof({
+        status: 'parse_error',
+        llm_error: compactSentence(error instanceof Error ? error.message : String(error), 220),
+      });
+    }
+  } else {
+    payload = emptyGeneralistProof({ status: 'missing' });
+  }
+  const objective = payload.objectives?.[0] || null;
+  const lines = payload.status === 'missing'
+    ? ['No generalist proof found. Run: atris member wake generalist --execute --domain-file <path>']
+    : [
+        `Generalist proof: ${payload.status}`,
+        `Domain: ${payload.domain?.name || 'external domain'}`,
+        objective?.objective ? `Objective: ${objective.objective}` : '',
+        Number.isFinite(Number(objective?.overall_score)) ? `Score: ${objective.overall_score}` : '',
+        `Capabilities: ${Array.isArray(payload.capabilities_used) ? payload.capabilities_used.length : 0}`,
+        payload.proof ? `Proof: ${payload.proof}` : '',
+      ].filter(Boolean);
+  printJsonOrText({ ok: payload.status !== 'missing', action: 'generalist_proof', proof_path: latestPath, proof: payload }, lines, asJson);
+}
+
+function memberGeneralistPatterns(...args) {
+  const asJson = hasFlag(args, '--json');
+  const libraryPath = crossDomainPatternsPath(process.cwd());
+  const library = readCrossDomainPatternLibrary(process.cwd());
+  const lines = library.status === 'missing'
+    ? ['No cross-domain pattern library found. Run: atris member wake generalist --execute --domain-file <path>']
+    : [
+        `Cross-domain patterns: ${library.patterns.length}`,
+        `Domains solved: ${library.metrics.domains_solved_count}`,
+        `Reuse rate: ${library.metrics.pattern_reuse_rate}`,
+        `Cross-domain success rate: ${library.metrics.cross_domain_success_rate}`,
+        ...(library.patterns || []).slice(0, 5).map((pattern) => `Pattern: ${pattern.pattern} (${pattern.domain_count} domains, success ${pattern.success_rate})`),
+      ];
+  printJsonOrText({ ok: library.status !== 'missing', action: 'generalist_patterns', patterns_path: libraryPath, library }, lines, asJson);
+}
+
+function memberGeneralistCommand(command, ...args) {
+  if (command === 'proof') return memberGeneralistProof(...args);
+  if (command === 'patterns') return memberGeneralistPatterns(...args);
+  console.log('Usage: atris member generalist <proof|patterns> [--json]');
 }
 
 function readMemberScope(name, paths) {
@@ -3533,16 +6079,56 @@ function workspaceSnapshot(name = null, paths = null) {
   }
 }
 
-function wakeDecision(name, paths, { force = false } = {}) {
+function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeKind(name) } = {}) {
   const purpose = missionPurpose(paths);
   const steering = readSteeringMemory(paths, name);
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state);
   const current = memberOpenExperiment(state);
+  const isGeneralist = lowerCompact(name) === 'generalist';
+  if (isGeneralist && purpose.meaningful) {
+    const domainFile = findUnprocessedGeneralistDomainFile(process.cwd());
+    if (domainFile) {
+      return {
+        decision: 'process_domain_file',
+        reason: `generalist_domain_scan:${domainFile.status}`,
+        needs_user: false,
+        ask: null,
+        next_command: `atris member wake ${name} --execute --domain-file ${domainFile.path} --json`,
+        state,
+        goal: goal || null,
+        current_experiment: current || null,
+        checks: {
+          has_member: true,
+          has_mission: true,
+          mission_meaningful: true,
+          has_goal: Boolean(goal),
+          has_open_experiment: Boolean(current),
+          has_unprocessed_domain_file: true,
+          domain_scan_window_minutes: 60,
+          checked_existing_tasks: false,
+        },
+        mission: {
+          north_star: purpose.northStar || null,
+          runtime_id: purpose.runtimeMission.id || null,
+          runtime_status: purpose.runtimeMission.status || null,
+          runtime_next: purpose.runtimeMission.next || null,
+        },
+        steering,
+        evidence: {
+          generalist_domain_scan: domainFile,
+          task_projection: null,
+          nearest_open_loop: null,
+        },
+        workspace: null,
+        domain_file: domainFile,
+      };
+    }
+  }
   const rawDirective = steeringWakeDirective(steering, name, goal);
   const directiveClosure = rawDirective ? steeringDirectiveClosure(rawDirective) : null;
   const directive = directiveClosure?.all_closed ? null : rawDirective;
-  const evidence = collectWakeEvidence(name, goal, purpose);
+  const evidence = collectWakeEvidence(name, goal, purpose, runtimeKind);
   evidence.steering_directive_closure = directiveClosure;
   const blocked = allExperiments(state)
     .map(({ goal: experimentGoal, experiment }) => ({ ...experiment, goal_id: experimentGoal.id, goal_title: experimentGoal.title }))
@@ -3794,12 +6380,35 @@ function wakeDecision(name, paths, { force = false } = {}) {
   };
 }
 
-async function runMemberWake(name, { execute = false, confirmed = false, force = false } = {}) {
+async function runMemberWake(name, { execute = false, confirmed = false, force = false, domainInput = {} } = {}) {
   const paths = requireMemberDir(name);
-  if (lowerCompact(name) === 'wiki-miner') {
+  const runtimeKind = paths.runtimeKind || memberRuntimeKind(name);
+  if (runtimeKind === 'auto-improver') {
+    return runAutoImproverWake(name, paths, { execute, confirmed });
+  }
+  const isGeneralist = runtimeKind === 'generalist';
+  const hasGeneralistDomainInput = Boolean(
+    domainInput.file
+    || domainInput.text
+    || process.env.ATRIS_GENERALIST_DOMAIN_FILE
+    || process.env.ATRIS_GENERALIST_DOMAIN,
+  );
+  if (isGeneralist && hasGeneralistDomainInput) {
+    return runGeneralistWake(name, paths, { execute, domainInput });
+  }
+  if (runtimeKind === 'objective-generator') {
+    return runObjectiveGeneratorWake(name, paths, { execute });
+  }
+  if (runtimeKind === 'supervisor') {
+    return runSupervisorWake(name, paths, { execute });
+  }
+  if (runtimeKind === 'wiki-miner') {
     return runWikiMinerWake(name, paths, { execute });
   }
-  const planned = wakeDecision(name, paths, { force });
+  const planned = wakeDecision(name, paths, { force, runtimeKind });
+  if (isGeneralist && planned.decision === 'process_domain_file' && planned.domain_file?.path) {
+    return processDomainFile(planned.domain_file.path, { name, paths, execute });
+  }
   const mode = execute ? 'execute' : 'dry_run';
   let decision = planned.decision;
   let reason = planned.reason;
@@ -3945,7 +6554,12 @@ async function memberWake(name, ...args) {
   const execute = hasFlag(args, '--execute') && !hasFlag(args, '--dry-run');
   const confirmed = hasFlag(args, '--confirm-autonomy-policy');
   const force = hasFlag(args, '--force');
-  const result = await runMemberWake(name, { execute, confirmed, force });
+  const domainInput = {
+    text: readFlag(args, '--domain', ''),
+    file: readFlag(args, '--domain-file', ''),
+    name: readFlag(args, '--domain-name', ''),
+  };
+  const result = await runMemberWake(name, { execute, confirmed, force, domainInput });
   printJsonOrText(
     result,
     [
@@ -4247,7 +6861,7 @@ async function memberTick(name, ...args) {
   const goalId = readFlag(args, '--goal', '');
   const state = loadMemberGoals(name, paths);
   const goal = activeGoal(state, goalId);
-  const evidence = collectWakeEvidence(name, goal);
+  const evidence = collectWakeEvidence(name, goal, null, paths.runtimeKind || memberRuntimeKind(name));
   if (!goal) {
     console.error(`No active goal for ${name}. Run: atris member goal ${name} "..."`);
     process.exit(1);
@@ -4531,6 +7145,12 @@ async function memberCommand(subcommand, ...args) {
       return memberBlock(args[0], args[1], ...args.slice(2));
     case 'status':
       return memberStatus(args[0], ...args.slice(1));
+    case 'supervisor':
+      return memberSupervisorCommand(args[0], ...args.slice(1));
+    case 'objective-generator':
+      return memberObjectiveGeneratorCommand(args[0], ...args.slice(1));
+    case 'generalist':
+      return memberGeneralistCommand(args[0], ...args.slice(1));
     case 'archive':
       return memberArchive(args[0]);
     case 'purge-archived':
@@ -4556,6 +7176,10 @@ async function memberCommand(subcommand, ...args) {
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
       console.log('  block <name> <id>   Mark an experiment blocked with a human/orchestrator ask');
       console.log('  status <name>       Show goal, open experiment, value, ask, and recent log');
+      console.log('  supervisor recommendations  Show advisory supervisor recommendations');
+      console.log('  objective-generator proposals  Show autonomous objective proposal');
+      console.log('  generalist proof    Show latest cross-domain generalist proof');
+      console.log('  generalist patterns Show learned cross-domain pattern library');
       console.log('  archive <name>      Move a member to atris/team/_archived/');
       console.log('  purge-archived      Delete archived members older than --days=60 with confirmation');
       console.log('');
@@ -4577,6 +7201,10 @@ async function memberCommand(subcommand, ...args) {
       console.log('  atris member wake growth --json');
       console.log('  atris member run growth --max-ticks 1 --max-wall 900 --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
+      console.log('  atris member supervisor recommendations --json');
+      console.log('  atris member objective-generator proposals --json');
+      console.log('  atris member generalist proof --json');
+      console.log('  atris member generalist patterns --json');
       console.log('  atris member loop growth --minutes 10 --interval 60 --json');
       console.log('  atris member alive growth --minutes 480 --interval 900 --execute --confirm-autonomy-policy --json');
       console.log('  atris member loop growth --ticks 2 --interval 0 --json');

@@ -1482,6 +1482,89 @@ test('member tick reads goal file evidence and consumes LLM proposal output', ()
   }
 });
 
+test('auto-improver wake writes dogfood receipt and bounded task', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'task_created');
+    assert.equal(payload.auto_improver.schema, 'atris.auto_improver_dogfood.v1');
+    assert.equal(payload.auto_improver.proof.prevented_suffering, 1);
+    assert.equal(payload.auto_improver.proof.found_problems > 0, true);
+    assert.equal(payload.auto_improver.pain.after < payload.auto_improver.pain.before, true);
+    assert.equal(payload.created_task.ok, true);
+    assert.ok(fs.existsSync(payload.receipt_path));
+    assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'auto-improver-dogfood-latest.json')));
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.match(receipt.scan.prevented_fire_candidate.title, /Recurring log pattern/);
+    assert.equal(receipt.created_task.task_ref, payload.created_task.task_ref);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('simple member alias reuses legacy problem-finding runtime', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'signal-scout', '--description="Turn repeated errors into bounded tasks"'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['member', 'goal-from-mission', 'problem-finder', '--json'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR alias path failed before problem-finder could scan logs';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const scriptPath = path.join(dir, 'scripts', 'scan-errors.mjs');
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+    fs.writeFileSync(scriptPath, `
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+const rootIndex = process.argv.indexOf('--root');
+const root = rootIndex >= 0 ? process.argv[rootIndex + 1] : process.cwd();
+const filePath = path.join(root, 'atris', 'logs', '2026', '2026-06-07.md');
+const lines = readFileSync(filePath, 'utf8').split(/\\r?\\n/);
+const matches = lines.map((line, index) => ({ line, index })).filter((row) => /error|failed|crashed/i.test(row.line));
+const selected = { pattern: '${pattern}', count: matches.length, evidence: matches.map((row) => ({ path: 'atris/logs/2026/2026-06-07.md', line: row.index + 1, text: row.line })) };
+console.log(JSON.stringify({ ok: true, schema: 'atris.error_scan.v1', threshold: 3, selected, scanned: { files: 1, lines: lines.length, matching_lines: matches.length } }));
+`, 'utf8');
+
+    const wake = runCli(['member', 'wake', 'problem-finder', '--execute', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.mode, 'dry_run');
+    assert.equal(payload.decision, 'create_task');
+    assert.equal(payload.reason, 'autonomous_error_discovery:log_error_scan');
+    assert.match(payload.next_command, /atris task new 'Fix recurring error:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
   const dir = makeTempDir();
   try {
@@ -1518,6 +1601,12 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
       'signal-scout owns inbound feedback and uses the wiki graph to route AGI work.',
       '',
     ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.causal.json'), JSON.stringify({
+      schema: 'atris.causal_patterns.v1',
+      patterns: [
+        { id: 'causal:signal', action: 'signal-scout proof packet', outcome: 'validator accepted proof', outcome_type: 'success' },
+      ],
+    }, null, 2), 'utf8');
 
     const wake = runCli(['member', 'wake', 'wiki-miner', '--execute', '--json'], {
       cwd: dir,
@@ -1548,6 +1637,8 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
     const graph = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), 'utf8'));
     assert.ok(graph.entities.some((entity) => entity.name === 'signal-scout' && entity.type === 'system'));
     assert.ok(graph.relationships.some((relationship) => relationship.from === 'signal-scout' && relationship.to === 'wiki graph'));
+    assert.equal(graph.causal_patterns.length, 1);
+    assert.equal(payload.wiki_miner.causal_pattern_count, 1);
 
     const related = runCli(['wiki', 'related', 'signal-scout', '--json'], { cwd: dir });
     assert.equal(related.status, 0, related.stderr || related.stdout);
@@ -1559,6 +1650,579 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
     assert.equal(entities.status, 0, entities.stderr || entities.stdout);
     const entitiesPayload = JSON.parse(entities.stdout);
     assert.deepEqual(entitiesPayload.entities.map((entity) => entity.name), ['signal-scout']);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('supervisor wake writes recommendations and query reads them', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'supervisor'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'MEMBER.md'), [
+      '---',
+      'name: supervisor',
+      'role: Meta-cognition Layer',
+      'description: Monitors member performance and adjusts coordination',
+      'skills: []',
+      'permissions:',
+      '  can-read: true',
+      '  can-execute: true',
+      '  can-approve: false',
+      '---',
+      '',
+      '# Supervisor',
+      '',
+      'Monitor all member performance, identify patterns, suggest coordination adjustments.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Optimize member coordination through data-driven meta-cognition.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'signal-scout', 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'signal-scout', 'logs', '2026-06-04.md'), [
+      '## 09:00 - Wake',
+      '- status: shipped two clean receipts',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'member-wake-signal-scout-2026-06-04T09-00-00-000Z.json'), JSON.stringify({
+      schema: 'atris.member_wake.v1',
+      created_at: new Date().toISOString(),
+      member: 'signal-scout',
+      ok: true,
+      decision: 'wait',
+      reason: 'tick_executed_experiment_proposed',
+      duration_ms: 1200,
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'supervisor', '--execute', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_SUPERVISOR_LLM_JSON: JSON.stringify({
+          top_performers: [
+            { member: 'signal-scout', reason: 'Recent receipt succeeded quickly and log shows clean handoff.' },
+          ],
+          bottlenecks: [
+            { issue: 'validator waits on proof packets', suggestion: 'Route proof-ready work through signal-scout first.' },
+          ],
+          recommendations: [
+            { type: 'assignment', from: 'validator', to: 'signal-scout', reason: 'Let signal-scout preflight proof packets before validation.' },
+          ],
+        }),
+      },
+    });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'supervise');
+    assert.equal(payload.executed, true);
+    assert.equal(payload.supervisor.llm_successful, true);
+    assert.equal(payload.supervisor.llm_source, 'env_json');
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json')));
+    assert.ok(fs.existsSync(payload.receipt_path));
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.schema, 'atris.supervisor_tick.v1');
+    assert.equal(receipt.recommendation_count, 1);
+    assert.equal(receipt.analysis.top_performers[0].member, 'signal-scout');
+
+    const recommendations = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json'), 'utf8'));
+    assert.equal(recommendations.status, 'ok');
+    assert.equal(recommendations.recommendations[0].to, 'signal-scout');
+
+    const query = runCli(['member', 'supervisor', 'recommendations', '--json'], { cwd: dir });
+    assert.equal(query.status, 0, query.stderr || query.stdout);
+    const queryPayload = JSON.parse(query.stdout);
+    assert.equal(queryPayload.ok, true);
+    assert.equal(queryPayload.recommendations.recommendations[0].reason, 'Let signal-scout preflight proof packets before validation.');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('objective-generator wake writes scored proposal and query reads it', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'objective-generator'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'MEMBER.md'), [
+      '---',
+      'name: objective-generator',
+      'role: Autonomous Objective Setter',
+      'description: Identifies high-value problems from world model and proposes objectives',
+      'skills: []',
+      'permissions:',
+      '  can-read: true',
+      '  can-execute: true',
+      '  can-approve: false',
+      '---',
+      '',
+      '# Objective Generator',
+      '',
+      'Use world model to identify valuable problems and propose objectives.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Identify and prioritize high-value problems autonomously.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), JSON.stringify({
+      schema: 'atris.wiki_graph.v1',
+      entities: [
+        { type: 'system', name: 'signal-scout' },
+        { type: 'concept', name: 'proof routing' },
+      ],
+      relationships: [
+        { from: 'signal-scout', to: 'proof routing', type: 'uses' },
+      ],
+    }, null, 2), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'supervisor'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json'), JSON.stringify({
+      schema: 'atris.supervisor_recommendations.v1',
+      status: 'ok',
+      recommendations: [
+        { type: 'assignment', from: 'validator', to: 'signal-scout', reason: 'Preflight proof packets before review.' },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.patterns.json'), JSON.stringify({
+      schema: 'atris.transfer_patterns.v1',
+      patterns: [
+        {
+          id: 'transfer:proof-routing',
+          pattern: 'world graph signal -> proof packet preflight -> validator handoff',
+          from_domain: 'coordination',
+          transfer_score: 12,
+          steps: ['world graph signal', 'proof packet preflight', 'validator handoff'],
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'objective-generator', '--execute', '--json'], {
+      cwd: dir,
+      env: {
+        ATRIS_OBJECTIVE_GENERATOR_LLM_JSON: JSON.stringify({
+          proposed_objective: 'Repair proof routing gaps around signal-scout',
+          impact_score: 9,
+          urgency_score: 8,
+          alignment_score: 9,
+          justification: 'signal-scout connects world graph evidence to validator handoff quality.',
+          suggested_member: 'signal-scout',
+          suggested_patterns: [
+            { pattern: 'world graph signal -> proof packet preflight -> validator handoff', reason: 'matches proof routing' },
+          ],
+        }),
+      },
+    });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'generate_objective');
+    assert.equal(payload.executed, true);
+    assert.equal(payload.objective_generator.llm_successful, true);
+    assert.equal(payload.objective_generator.llm_source, 'env_json');
+    assert.equal(payload.objective_generator.world_model_used, true);
+    assert.equal(payload.objective_generator.transfer_pattern_count, 1);
+    assert.equal(payload.objective_generator.task_created, true);
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'objective-generator', 'proposals.json')));
+    assert.ok(fs.existsSync(payload.receipt_path));
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.schema, 'atris.objective_generator_tick.v1');
+    assert.equal(receipt.proposal.proposed_objective, 'Repair proof routing gaps around signal-scout');
+    assert.equal(receipt.proposal.overall_score, 8.67);
+    assert.equal(receipt.proposal.suggested_patterns[0].pattern, 'world graph signal -> proof packet preflight -> validator handoff');
+    assert.equal(receipt.created_task.tag, 'auto-objective');
+
+    const proposals = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'proposals.json'), 'utf8'));
+    assert.equal(proposals.status, 'ok');
+    assert.equal(proposals.suggested_member, 'signal-scout');
+    assert.equal(proposals.suggested_patterns[0].reason, 'matches proof routing');
+    assert.equal(proposals.created_task.tag, 'auto-objective');
+
+    const query = runCli(['member', 'objective-generator', 'proposals', '--json'], { cwd: dir });
+    assert.equal(query.status, 0, query.stderr || query.stdout);
+    const queryPayload = JSON.parse(query.stdout);
+    assert.equal(queryPayload.ok, true);
+    assert.equal(queryPayload.proposal.proposed_objective, 'Repair proof routing gaps around signal-scout');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('objective-generator wake falls back to scored heuristic proposal without llm', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'objective-generator'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'MEMBER.md'), [
+      '---',
+      'name: objective-generator',
+      'role: Autonomous Objective Setter',
+      'description: Identifies high-value problems from world model and proposes objectives',
+      'skills: []',
+      'permissions:',
+      '  can-read: true',
+      '  can-execute: true',
+      '  can-approve: false',
+      '---',
+      '',
+      '# Objective Generator',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.graph.json'), JSON.stringify({
+      schema: 'atris.wiki_graph.v1',
+      entities: [
+        { type: 'concept', name: 'wiki graph' },
+        { type: 'system', name: 'signal-scout' },
+      ],
+      relationships: [
+        { from: 'signal-scout', to: 'wiki graph', type: 'uses' },
+      ],
+    }, null, 2), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'supervisor'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'supervisor', 'recommendations.json'), JSON.stringify({
+      schema: 'atris.supervisor_recommendations.v1',
+      status: 'ok',
+      top_performers: [
+        { member: 'signal-scout', reason: 'Recent member receipts succeeded and logs show clean handoffs.' },
+      ],
+      bottlenecks: [
+        { issue: 'Review-ready work waits on proof packet routing', suggestion: 'Route proof packet preflight through signal-scout before validator review.' },
+      ],
+      recommendations: [
+        { type: 'assignment', from: 'validator', to: 'signal-scout', reason: 'Let signal-scout preflight proof packets before validation.' },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.patterns.json'), JSON.stringify({
+      schema: 'atris.transfer_patterns.v1',
+      patterns: [
+        {
+          id: 'transfer:proof-routing',
+          pattern: 'world graph signal -> proof packet preflight -> validator handoff',
+          from_domain: 'coordination',
+          transfer_score: 12,
+          steps: ['world graph signal', 'proof packet preflight', 'validator handoff'],
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'objective-generator', '--execute', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.reason, 'heuristic_objective_proposal_written');
+    assert.equal(payload.objective_generator.llm_successful, false);
+    assert.equal(payload.objective_generator.llm_error, 'llm_not_configured');
+    assert.equal(payload.objective_generator.task_created, false);
+
+    const proposals = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'proposals.json'), 'utf8'));
+    assert.equal(proposals.status, 'ok');
+    assert.equal(proposals.proposed_objective, 'Repair proof routing gaps around signal-scout wiki graph handoffs');
+    assert.equal(proposals.overall_score, 7);
+    assert.equal(proposals.suggested_member, 'signal-scout');
+    assert.equal(proposals.suggested_patterns[0].pattern, 'world graph signal -> proof packet preflight -> validator handoff');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('objective-generator wake handles empty world model without task creation', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'objective-generator'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'MEMBER.md'), [
+      '---',
+      'name: objective-generator',
+      'role: Autonomous Objective Setter',
+      'description: Identifies high-value problems from world model and proposes objectives',
+      'skills: []',
+      'permissions:',
+      '  can-read: true',
+      '  can-execute: true',
+      '  can-approve: false',
+      '---',
+      '',
+      '# Objective Generator',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'objective-generator', '--execute', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.reason, 'insufficient_world_model_data');
+    assert.equal(payload.objective_generator.world_model_used, false);
+    assert.equal(payload.objective_generator.task_created, false);
+
+    const proposals = JSON.parse(fs.readFileSync(path.join(dir, 'atris', 'team', 'objective-generator', 'proposals.json'), 'utf8'));
+    assert.equal(proposals.status, 'insufficient_world_model_data');
+    assert.match(proposals.justification, /Insufficient world model data/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('generalist wake solves a restaurant domain without project-specific world model', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'generalist'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MEMBER.md'), [
+      '---',
+      'name: generalist',
+      'role: Cross-Domain Problem Solver',
+      'description: Applies AGI capabilities to any domain',
+      '---',
+      '',
+      '# Generalist',
+      '',
+      'Use world model, causal reasoning, and transfer learning to solve problems in any domain.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Prove cross-domain generalization by solving unfamiliar domains with the same AGI loop.',
+      '',
+      '## How To Choose Goals',
+      '',
+      '- Pick the next domain proof or reusable operating bottleneck.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'wiki', '.patterns.json'), JSON.stringify({
+      schema: 'atris.transfer_patterns.v1',
+      patterns: [
+        {
+          id: 'transfer:ops-bottleneck',
+          pattern: 'bottleneck signal -> small controlled intervention -> outcome receipt',
+          from_domain: 'operations',
+          transfer_score: 11,
+          steps: ['measure bottleneck', 'pilot one reversible change', 'review outcome receipt'],
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, 'restaurant-domain.md'), [
+      '# Restaurant Operations',
+      '',
+      'A 90-seat neighborhood restaurant has slow seating during Friday dinner.',
+      'Hosts manage walk-ins and reservations, servers cover uneven sections, and the kitchen gets order spikes.',
+      'The team wants fewer guest complaints, lower wait time, less inventory waste, and no drop in service quality.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli([
+      'member', 'wake', 'generalist',
+      '--execute',
+      '--domain-file', 'restaurant-domain.md',
+      '--domain-name', 'restaurant operations',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'cross_domain_generalize');
+    assert.equal(payload.executed, true);
+    assert.equal(payload.reason, 'heuristic_cross_domain_proof_written');
+    assert.equal(payload.generalist.domain_name, 'restaurant operations');
+    assert.equal(payload.generalist.domain_agnostic, true);
+    assert.equal(payload.generalist.atris_specific_code_required, false);
+    assert.equal(payload.generalist.capabilities_used.length, 8);
+    assert.equal(payload.generalist.world_model_entities > 0, true);
+    assert.equal(payload.generalist.world_model_relationships > 0, true);
+    assert.equal(payload.generalist.objective_count > 0, true);
+    assert.ok(fs.existsSync(payload.receipt_path));
+    assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'generalist', 'proofs', 'latest.json')));
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.equal(receipt.schema, 'atris.generalist_tick.v1');
+    assert.equal(receipt.proof.world_model.entities.some((entity) => entity.name === 'kitchen staff'), true);
+    assert.match(receipt.top_objective.objective, /Reduce peak-service wait time/);
+    assert.equal(receipt.proof.transfer_patterns[0].source_pattern, 'bottleneck signal -> small controlled intervention -> outcome receipt');
+    assert.equal(/signal-scout|wiki-miner|objective-generator|Atris/.test(JSON.stringify(receipt.proof)), false);
+
+    const query = runCli(['member', 'generalist', 'proof', '--json'], { cwd: dir });
+    assert.equal(query.status, 0, query.stderr || query.stdout);
+    const queryPayload = JSON.parse(query.stdout);
+    assert.equal(queryPayload.ok, true);
+    assert.equal(queryPayload.proof.domain.name, 'restaurant operations');
+    assert.equal(queryPayload.proof.capabilities_used.length, 8);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('generalist wake scans domain files before existing task evidence', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'generalist', 'domains'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MEMBER.md'), [
+      '---',
+      'name: generalist',
+      'role: Cross-Domain Problem Solver',
+      'description: Applies AGI capabilities to any domain',
+      '---',
+      '',
+      '# Generalist',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MISSION.md'), [
+      '# Mission',
+      '',
+      '## North Star',
+      '',
+      'Prove cross-domain generalization by solving unfamiliar domains with the same AGI loop.',
+      '',
+      '## How To Choose Goals',
+      '',
+      '- Pick the next domain proof or reusable operating bottleneck.',
+      '',
+    ].join('\n'), 'utf8');
+    assert.equal(runCli(['member', 'goal-from-mission', 'generalist', '--json'], { cwd: dir }).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      generated_at: '2026-06-05T00:00:00.000Z',
+      tasks: [
+        {
+          id: 'bakery-blocking-task',
+          display_id: 'OBL-777',
+          title: 'Existing task should wait until bakery domain proof is written',
+          status: 'claimed',
+          claimed_by: 'generalist',
+          metadata: { assigned_to: 'generalist' },
+          updated_at: Date.now(),
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'domains', 'bakery-operations.md'), [
+      '# Bakery Operations',
+      '',
+      'A neighborhood bakery handles morning pastry demand, custom cake orders, wholesale pickups, oven capacity, proofing time, ingredient inventory, and front-counter queues.',
+      'The bakery wants shorter morning wait time, fewer sold-out staples, lower waste, and calmer handoffs between bakers and counter staff.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'generalist', '--execute', '--json'], { cwd: dir });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'cross_domain_generalize');
+    assert.equal(payload.executed, true);
+    assert.equal(payload.generalist.domain_source_path, 'atris/team/generalist/domains/bakery-operations.md');
+    assert.match(payload.generalist.domain_name, /Bakery Operations/i);
+    assert.equal(payload.generalist.proof.domain.source_path, 'atris/team/generalist/domains/bakery-operations.md');
+    assert.equal(payload.generalist.proof.world_model.entities.length > 0, true);
+    assert.equal(payload.generalist.proof.objectives.length > 0, true);
+    assert.match(payload.generalist.proof_path, /atris\/team\/generalist\/proofs\/bakery-operations-/);
+    assert.ok(fs.existsSync(path.join(dir, payload.generalist.proof_path)));
+    assert.doesNotMatch(payload.next_command, /task (delegate|note|show|review)/);
+
+    const secondWake = runCli(['member', 'wake', 'generalist', '--json'], { cwd: dir });
+    assert.equal(secondWake.status, 0, secondWake.stderr || secondWake.stdout);
+    const secondPayload = JSON.parse(secondWake.stdout);
+    assert.equal(secondPayload.decision, 'close_loop');
+    assert.equal(secondPayload.reason, 'nearest_open_loop:task_projection:OBL-777');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('generalist wake learns restaurant pattern and reuses it for healthcare', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'generalist'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MEMBER.md'), [
+      '---',
+      'name: generalist',
+      'role: Cross-Domain Problem Solver',
+      'description: Applies AGI capabilities to any domain',
+      '---',
+      '',
+      '# Generalist',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'generalist', 'MISSION.md'), [
+      'North Star: Prove cross-domain generalization by solving unfamiliar domains with the same AGI loop.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'restaurant-domain.md'), [
+      '# Restaurant Operations',
+      '',
+      'A 90-seat restaurant has slow seating during Friday dinner.',
+      'Hosts manage walk-ins and reservations, servers cover uneven sections, and the kitchen gets order spikes.',
+      'The team wants fewer guest complaints, lower wait time, less inventory waste, and stable service quality.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'healthcare-domain.md'), [
+      '# Healthcare Scheduling',
+      '',
+      'An outpatient clinic has long waits for urgent follow-ups.',
+      'Schedulers balance provider calendars, room availability, authorization, urgency, no-show risk, and phone queues.',
+      'The clinic wants faster access for high-risk patients, fewer idle slots, and lower staff stress.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const restaurant = runCli([
+      'member', 'wake', 'generalist',
+      '--execute',
+      '--domain-file', 'restaurant-domain.md',
+      '--domain-name', 'restaurant operations',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(restaurant.status, 0, restaurant.stderr || restaurant.stdout);
+    const restaurantPayload = JSON.parse(restaurant.stdout);
+    assert.equal(restaurantPayload.generalist.cross_domain_learning.reused_pattern_count, 0);
+    assert.equal(restaurantPayload.generalist.cross_domain_learning.after_metrics.domains_solved_count, 1);
+    assert.equal(restaurantPayload.generalist.cross_domain_learning.after_metrics.pattern_count, 1);
+    assert.equal(restaurantPayload.generalist.cross_domain_learning.after_metrics.cross_domain_success_rate, 0);
+
+    const libraryPath = path.join(dir, 'atris', 'wiki', '.cross_domain_patterns.json');
+    assert.ok(fs.existsSync(libraryPath));
+    const firstLibrary = JSON.parse(fs.readFileSync(libraryPath, 'utf8'));
+    assert.equal(firstLibrary.patterns.length, 1);
+    assert.deepEqual(firstLibrary.patterns[0].domains, ['restaurant operations']);
+
+    const healthcare = runCli([
+      'member', 'wake', 'generalist',
+      '--execute',
+      '--domain-file', 'healthcare-domain.md',
+      '--domain-name', 'healthcare scheduling',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(healthcare.status, 0, healthcare.stderr || healthcare.stdout);
+    const healthcarePayload = JSON.parse(healthcare.stdout);
+    assert.equal(healthcarePayload.generalist.cross_domain_patterns_scanned, 1);
+    assert.equal(healthcarePayload.generalist.cross_domain_pattern_matches.length, 1);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.reused_pattern_count, 1);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.learning_improved, true);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.after_metrics.domains_solved_count, 2);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.after_metrics.cross_domain_pattern_count, 1);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.after_metrics.pattern_reuse_rate, 0.5);
+    assert.equal(healthcarePayload.generalist.cross_domain_learning.after_metrics.cross_domain_success_rate, 1);
+    assert.match(healthcarePayload.generalist.proof.transfer_patterns[0].reason, /Reused cross-domain pattern/);
+    assert.deepEqual(healthcarePayload.generalist.cross_domain_learning.reused_patterns[0].domains_before, ['restaurant operations']);
+
+    const secondLibrary = JSON.parse(fs.readFileSync(libraryPath, 'utf8'));
+    assert.equal(secondLibrary.metrics.domains_solved_count, 2);
+    assert.equal(secondLibrary.metrics.pattern_reuse_rate, 0.5);
+    assert.equal(secondLibrary.metrics.cross_domain_success_rate, 1);
+    assert.deepEqual(secondLibrary.patterns[0].domains, ['healthcare scheduling', 'restaurant operations']);
+    assert.equal(secondLibrary.patterns[0].domain_count, 2);
+    assert.equal(secondLibrary.patterns[0].success_rate, 1);
+
+    const query = runCli(['member', 'generalist', 'patterns', '--json'], { cwd: dir });
+    assert.equal(query.status, 0, query.stderr || query.stdout);
+    const queryPayload = JSON.parse(query.stdout);
+    assert.equal(queryPayload.ok, true);
+    assert.equal(queryPayload.library.metrics.domains_solved_count, 2);
+    assert.equal(queryPayload.library.patterns[0].domain_count, 2);
   } finally {
     cleanupTempDir(dir);
   }
@@ -8066,6 +8730,44 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json',
     ]);
 
+    const narratedTask = runCli(['task', 'new', 'Narrated CLI proof commands', '--json'], { cwd: dir, env });
+    assert.equal(narratedTask.status, 0, narratedTask.stderr);
+    const narratedRef = JSON.parse(narratedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', narratedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const narratedReady = runCli([
+      'task', 'ready', narratedRef,
+      '--as', 'codex',
+      '--proof', 'Validation passed: node /Users/keshavrao/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/keshavrao/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/keshavrao/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(narratedReady.status, 0, narratedReady.stderr);
+    const narratedChat = runCli(['task', 'review-chat', narratedRef, '--json'], { cwd: dir, env });
+    assert.equal(narratedChat.status, 0, narratedChat.stderr);
+    assert.deepEqual(JSON.parse(narratedChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node /Users/keshavrao/arena/atris-cli/bin/atris.js business check',
+      'node /Users/keshavrao/arena/atris-cli/bin/atris.js business share --write',
+      'node /Users/keshavrao/arena/atris-cli/bin/atris.js app list',
+    ]);
+
+    const pathPassedTask = runCli(['task', 'new', 'Path then passed proof commands', '--json'], { cwd: dir, env });
+    assert.equal(pathPassedTask.status, 0, pathPassedTask.stderr);
+    const pathPassedRef = JSON.parse(pathPassedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', pathPassedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pathPassedReady = runCli([
+      'task', 'ready', pathPassedRef,
+      '--as', 'codex',
+      '--proof', 'Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --test test/apps.test.js (11/11); git diff --check -- commands/workflow.js bin/atris.js atris/MAP.md clean',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(pathPassedReady.status, 0, pathPassedReady.stderr);
+    const pathPassedChat = runCli(['task', 'review-chat', pathPassedRef, '--json'], { cwd: dir, env });
+    assert.equal(pathPassedChat.status, 0, pathPassedChat.stderr);
+    assert.deepEqual(JSON.parse(pathPassedChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node --check commands/workflow.js',
+      'node --test test/apps.test.js',
+      'git diff --check -- commands/workflow.js bin/atris.js atris/MAP.md',
+    ]);
+
     const chainedTask = runCli(['task', 'new', 'Chained proof commands', '--json'], { cwd: dir, env });
     assert.equal(chainedTask.status, 0, chainedTask.stderr);
     const chainedRef = JSON.parse(chainedTask.stdout).task.display_id;
@@ -14275,20 +14977,31 @@ test('status stays local even when .atris/business.json exists', () => {
   }
 });
 
-test('review default mode renders human validator brief', () => {
+test('review default mode renders certified task review console', () => {
+  if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     initWorkspace(dir);
-    const res = runCli(['review'], { cwd: dir });
+    const created = runCli(['task', 'new', 'Ship reviewed operator checkpoint', '--tag', 'review', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const ref = task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const proof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, live atris review showed certified queue, git diff --check -- commands/workflow.js bin/atris.js test/commands.test.js clean`;
+    assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+
+    const res = runCli(['review'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /I checked the review setup\./);
-    assert.match(res.stdout, /refresh the task\s+projection\/TODO view/);
-    assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
-    assert.match(res.stdout, /Decision: hold/);
+    assert.match(res.stdout, /Atris Review is the human checkpoint/);
+    assert.match(res.stdout, /CERTIFIED REVIEW QUEUE/);
+    assert.match(res.stdout, new RegExp(`accept: atris task accept ${ref}`));
+    assert.match(res.stdout, new RegExp(`revise: atris task revise ${ref}`));
+    assert.match(res.stdout, /Need the legacy Validator prompt/);
+    assert.doesNotMatch(res.stdout, /I checked the review setup\./);
     assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);
-    for (const line of res.stdout.trimEnd().split('\n')) {
-      assert.ok(line.length <= 80, `line too wide: ${line.length} "${line}"`);
-    }
   } finally {
     cleanupTempDir(dir);
   }

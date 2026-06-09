@@ -182,6 +182,13 @@ atris-cli/atris/skills/<name>/SKILL.md              ← base, shared (genotype)
 
 **Invocation-time behavior:** skill callers (backend endpoints like `/aeo/draft`, or Claude Code skill system) read `SKILL.md` AND `overlay.md` and concatenate. If overlay.md is missing, treat as empty.
 
+## Member Spec Overlays
+
+Tune may also propose guarded member-spec changes when the target is `atris/team/<member>/MEMBER.md`.
+Keep the same approval gate and write to `atris/team/<member>/overlay.md`; do not silently rewrite the base member spec.
+Ground every member overlay proposal in causal evidence from `atris/wiki/.causal.json` or reusable patterns from `atris/wiki/.patterns.json`.
+The architect member owns these proposals and must keep them advisory until explicit approval.
+
 ## Related
 
 - Base pattern: `atris/skills/autoresearch/SKILL.md` (Karpathy keep/revert)
