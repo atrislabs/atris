@@ -278,6 +278,8 @@ test('zero-shot routes long-horizon work to pro planning context', () => {
     assert.equal(packet.decision.horizon, 'long_term');
     assert.equal(packet.decision.work_size, 'long');
     assert.equal(packet.decision.model_tier, 'pro');
+    assert.equal(packet.commands.first_command, 'atris task page ARC-1 --json');
+    assert.equal(packet.commands.task_page, 'atris task page ARC-1 --json');
     assert.match(packet.decision.agent_directive, /stronger model/);
   } finally {
     cleanupTempDir(dir);

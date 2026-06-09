@@ -191,6 +191,7 @@ function nextCommand(task, lane) {
   if (lane === 'mission_tick' && task && task.ref) return `atris mission tick ${shellToken(task.ref)} --verify --complete-on-pass`;
   if (lane === 'goal_context' && task && task.next_command) return task.next_command;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
+  if (lane === 'long_horizon' && task && task.ref) return `atris task page ${shellToken(task.ref)} --json`;
   if (lane === 'fast_model_task' || lane === 'quick_task') {
     return task && task.tag
       ? `atris task current-step --tag ${shellToken(task.tag)} --json`
@@ -311,6 +312,7 @@ function buildPacket(options = {}) {
       context_check: 'atris radar --json',
       mission_status: 'atris mission status --status active --json',
       codex_goal: 'atris mission goal --json',
+      task_page: selectedTask && selectedTask.ref ? `atris task page ${shellToken(selectedTask.ref)} --json` : null,
       task_current_step: 'atris task current-step --json',
       review_lane_drain: 'atris task review-lane-drain --json',
     },

@@ -132,6 +132,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **Does not mutate:** task state, files, human accept gates, or external systems
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
+- **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
 - **Visible goal fallback:** if no task or mission tick is active, `.atris/state/codex_goal.json` can route `goal_context` to the stored goal command
 - **Examples:**
 - `atris zero-shot` -> human next-move card
