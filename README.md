@@ -29,7 +29,7 @@ atris zero-shot
 ```
 
 `atris next` is the same shortcut when you have no request typed.
-For headless agents, use `atris zero-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, and safe boundaries for the next move.
+For headless agents, use `atris zero-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 

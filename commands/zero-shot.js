@@ -350,6 +350,58 @@ function stripRouteSource(route) {
   return rest;
 }
 
+function routePrompt(route, root) {
+  const focus = route.ref ? `${route.ref} - ${route.title || '(untitled)'}` : 'the current workspace';
+  return [
+    'Atris 0-shot selected the next move for an agent that was activated without a prompt.',
+    `Workspace: ${root}`,
+    `Route: ${route.lane} | horizon=${route.horizon} | work_size=${route.work_size} | model_tier=${route.model_tier}`,
+    `Focus: ${focus}`,
+    `Why: ${route.reason}`,
+    `Run first: ${route.first_command}`,
+    `Directive: ${route.agent_directive}`,
+    'After the first command, stay inside this lane until evidence says the route changed. Do not human-accept, merge, publish, send externally, or switch to unrelated work from this prompt.',
+  ].join('\n');
+}
+
+function publicRoute(route, root) {
+  const cleanRoute = stripRouteSource(route);
+  return {
+    ...cleanRoute,
+    prompt: routePrompt(cleanRoute, root),
+  };
+}
+
+function routeFromDecision(decision, details, command) {
+  return {
+    kind: null,
+    ref: null,
+    title: null,
+    status: null,
+    tag: null,
+    lane: decision.lane,
+    urgency: decision.urgency,
+    model: decision.model,
+    horizon: details.horizon,
+    work_size: details.work_size,
+    model_tier: details.model_tier,
+    first_command: command,
+    agent_directive: details.agent_directive,
+    reason: decision.reason,
+  };
+}
+
+function buildHandoff(route, root) {
+  return {
+    prompt: routePrompt(route, root),
+    first_command: route.first_command,
+    model_tier: route.model_tier,
+    lane: route.lane,
+    route_options_field: 'routes.options',
+    json_command: 'atris zero-shot --json',
+  };
+}
+
 function summarizeRouteLanes(routes) {
   return routes.reduce((summary, route) => {
     summary[route.lane] = (summary[route.lane] || 0) + 1;
@@ -403,8 +455,9 @@ function buildPacket(options = {}) {
   const selectedTaskRoute = selectedRoute && selectedRoute.kind === 'task' ? selectedRoute : null;
   const publicRoutes = {
     ...routeIndex,
-    options: routeIndex.options.map(stripRouteSource),
+    options: routeIndex.options.map(route => publicRoute(route, root)),
   };
+  const handoffRoute = publicRoutes.options[0] || routeFromDecision(decision, details, command);
   return {
     schema: SCHEMA,
     generated_at: new Date().toISOString(),
@@ -419,6 +472,7 @@ function buildPacket(options = {}) {
     },
     queue: taskState.counts,
     routes: publicRoutes,
+    handoff: buildHandoff(handoffRoute, root),
     missions: {
       active: missionState.active_count,
       needs_tick: missionState.needs_tick_count,
@@ -474,6 +528,7 @@ function renderPacket(packet) {
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
     renderRouteSummary(packet.routes),
+    'handoff: copy handoff.prompt from JSON into any model',
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
     `goal: ${packet.goal.objective ? packet.goal.objective.slice(0, 90) : 'none'}`,
     'boundaries: no external sends, no human accept, no task mutation, no file writes',
@@ -493,7 +548,7 @@ function renderHelp() {
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, handoff.prompt, and safety boundaries.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without writing state, accepting tasks, or calling external systems.',
   ].join('\n');
 }

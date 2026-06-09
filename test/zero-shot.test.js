@@ -125,6 +125,7 @@ test('zero-shot falls back to radar when no current task exists', () => {
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /route: no_current_task/);
     assert.match(res.stdout, /run: atris radar --json/);
+    assert.match(res.stdout, /handoff: copy handoff\.prompt from JSON into any model/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -157,6 +158,10 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
     assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.match(packet.handoff.prompt, /Atris 0-shot selected the next move/);
+    assert.match(packet.handoff.prompt, /Run first: atris task current-step --tag cli --json/);
+    assert.match(packet.handoff.prompt, /model_tier=fast/);
+    assert.match(packet.handoff.prompt, /Do not human-accept/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -404,6 +409,9 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
       ['FAST-1', 'fast_model_task', 'fast', 'atris task current-step --tag cli --json'],
       ['ARC-1', 'long_horizon', 'pro', 'atris task page ARC-1 --json'],
     ]);
+    assert.match(packet.routes.options[0].prompt, /Route: owner_gate/);
+    assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
+    assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
   } finally {
     cleanupTempDir(dir);
@@ -419,6 +427,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
+    assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);
