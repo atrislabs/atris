@@ -131,7 +131,8 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Brain activation:** `commands/brain.js` includes the 0-shot route/direct prompt command in `atris brain activate`, and refreshes the ambient latest files
 - **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris 0-shot --prompt` and tell ambient agents to trust `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports fresh
 - **Regression:** `test/zero-shot.test.js`
-- **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
+- **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `atris/TODO.md`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
+- **TODO fallback:** If `.atris/state/tasks.projection.json` is missing or empty, `commands/zero-shot.js` parses `atris/TODO.md`, emits `kind: todo`, preserves read-only boundaries, and points the first command at `atris status --json`
 - **Default safety:** normal `atris 0-shot`, `--json`, and `--prompt` do not mutate task state, files, human accept gates, or external systems
 - **Ambient latest files:** `atris 0-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` without mutating tasks or calling external systems
 - **Freshness check:** `atris 0-shot --check` and no-request `atris next --check` compare durable latest files against current source fingerprints and report fresh, stale, or missing
@@ -155,7 +156,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris 0-shot --write` -> refresh durable latest packet and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 
-**Search:** `rg "normalizeZeroShotAlias|zeroShotCommand|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "normalizeZeroShotAlias|collectTodoTasks|todoTask|zeroShotCommand|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 

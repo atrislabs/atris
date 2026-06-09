@@ -168,6 +168,46 @@ test('next --json returns the zero-shot packet for agents', () => {
   }
 });
 
+test('zero-shot uses TODO.md as a read-only fallback when projection is missing', () => {
+  const dir = makeTempDir();
+  try {
+    seedMinimalAtrisWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** Plan architecture migration roadmap [architecture]',
+      '',
+      '## In Progress',
+      '',
+      '- **[T2]** Fix CLI help copy [cli]',
+      '  **Claimed by:** codex',
+      '',
+      '## Completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['0-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'fast_model_task');
+    assert.equal(packet.decision.selected_kind, 'todo');
+    assert.equal(packet.decision.selected_ref, 'T2');
+    assert.equal(packet.commands.first_command, 'atris status --json');
+    assert.equal(packet.queue.total, 2);
+    assert.equal(packet.queue.open, 1);
+    assert.equal(packet.queue.claimed, 1);
+    assert.equal(packet.routes.options[0].kind, 'todo');
+    assert.equal(packet.routes.options[0].first_command, 'atris status --json');
+    assert.match(packet.routes.options[0].agent_directive, /Source: atris\/TODO\.md/);
+    assert.equal(packet.boundaries.no_task_mutation, true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('0-shot aliases route to the same read-only packet', () => {
   const dir = makeTempDir();
   try {

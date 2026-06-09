@@ -21,6 +21,7 @@ const LEGACY_ZERO_SHOT_CHECK_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --check`;
 const FRESHNESS_SOURCES = [
   ['brain_status', 'atris/brain/STATUS.md'],
   ['task_projection', '.atris/state/tasks.projection.json'],
+  ['todo', 'atris/TODO.md'],
   ['missions', '.atris/state/missions.jsonl'],
   ['codex_goal', '.atris/state/codex_goal.json'],
 ];
@@ -158,12 +159,53 @@ function normalizeTask(task) {
 
 function collectTasks(root) {
   const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json')) || {};
-  const tasks = Array.isArray(projection.tasks) ? projection.tasks.map(normalizeTask).filter(Boolean) : [];
+  const projectionTasks = Array.isArray(projection.tasks) ? projection.tasks.map(normalizeTask).filter(Boolean) : [];
+  const tasks = projectionTasks.length ? projectionTasks : collectTodoTasks(root);
   const counts = { total: tasks.length, open: 0, claimed: 0, review: 0, blocked: 0, failed: 0, done: 0 };
   for (const task of tasks) {
     if (Object.prototype.hasOwnProperty.call(counts, task.status)) counts[task.status] += 1;
   }
-  return { projection_present: Boolean(projection.schema || tasks.length), tasks, counts };
+  return {
+    projection_present: Boolean(projection.schema || projectionTasks.length),
+    source: projectionTasks.length ? 'task_projection' : (tasks.length ? 'todo' : 'none'),
+    tasks,
+    counts,
+  };
+}
+
+function collectTodoTasks(root) {
+  const todoPath = path.join(root, 'atris', 'TODO.md');
+  let parsed;
+  try {
+    parsed = require('../lib/todo-fallback').parseTodoFile(todoPath);
+  } catch {
+    return [];
+  }
+  const rows = [
+    ...(parsed.backlog || []).map((task, index) => todoTask(task, 'open', index)),
+    ...(parsed.inProgress || []).map((task, index) => todoTask(task, 'claimed', index)),
+    ...(parsed.review || []).map((task, index) => todoTask(task, 'review', index)),
+    ...(parsed.completed || []).map((task, index) => todoTask(task, 'done', index)),
+  ];
+  return rows.map(normalizeTask).filter(Boolean);
+}
+
+function todoTask(task, status, index) {
+  const ref = task.id || `TODO-${index + 1}`;
+  return {
+    id: `todo:${status}:${ref}`,
+    display_id: ref,
+    title: task.title,
+    status,
+    tag: task.tag || null,
+    claimed_by: task.claimed || null,
+    metadata: {
+      todo_source: 'atris/TODO.md',
+      todo_id: task.id || null,
+      todo_tags: task.tags || [],
+      verify: task.verify || null,
+    },
+  };
 }
 
 function normalizeMission(mission) {
@@ -274,6 +316,7 @@ function shellToken(value) {
 }
 
 function nextCommand(task, lane) {
+  if (task && task.metadata && task.metadata.todo_source) return 'atris status --json';
   if (lane === 'mission_tick' && task && task.ref) return `atris mission tick ${shellToken(task.ref)} --verify --complete-on-pass`;
   if (lane === 'goal_context' && task && task.next_command) return task.next_command;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;
@@ -290,6 +333,7 @@ function nextCommand(task, lane) {
 
 function laneDetails(task, lane, command) {
   const ref = task && task.ref ? task.ref : 'the current workspace';
+  const todoSource = task && task.metadata && task.metadata.todo_source;
   const details = {
     mission_tick: {
       horizon: 'long_term',
@@ -346,10 +390,14 @@ function laneDetails(task, lane, command) {
       agent_directive: 'Run the context check, then create or claim one bounded task from evidence.',
     },
   };
-  return {
+  const detail = {
     ...(details[lane] || details.quick_task),
     first_command: command,
   };
+  if (todoSource) {
+    detail.agent_directive = `${detail.agent_directive} Source: ${todoSource}; inspect context before importing, claiming, or mutating task state.`;
+  }
+  return detail;
 }
 
 function activeTasks(tasks) {
@@ -384,7 +432,8 @@ function routeForTask(task) {
   const decision = classify(task);
   const command = nextCommand(task, decision.lane);
   const details = laneDetails(task, decision.lane, command);
-  return compactRoute('task', task, decision, details, { source: task });
+  const kind = task && task.metadata && task.metadata.todo_source ? 'todo' : 'task';
+  return compactRoute(kind, task, decision, details, { source: task });
 }
 
 function routeForMission(mission) {

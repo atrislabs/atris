@@ -94,6 +94,7 @@ atris next
 `atris 0-shot`, `atris zero-shot`, and no-request `atris next` are the defaults when you do not know what to prompt next.
 The 0-shot command also accepts natural spellings like `atris 0 shot`, `atris 0shot`, `atris zero shot`, and `atris zeroshot`.
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
+If the task projection is missing, 0-shot reads `atris/TODO.md` as a read-only fallback so fresh workspaces still get a lane.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris 0-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
 Use `atris 0-shot --check` when an ambient agent needs to know whether the latest packet is fresh, stale, or missing.
