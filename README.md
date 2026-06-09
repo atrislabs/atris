@@ -94,7 +94,7 @@ atris next
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
 Use `atris zero-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris zero-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`.
-`atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
+`atris`, `atris atris.md`, `atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
 
 If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 

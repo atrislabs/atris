@@ -571,6 +571,8 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris zero-shot --prompt/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -588,6 +590,10 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.match(res.stdout, /WORKSPACE DETECTED/);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris zero-shot --prompt/);
     assert.match(res.stdout, /Ready\. Run 'atris zero-shot --prompt' to choose the next move\./);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
+    assert.equal(latest.decision.selected_ref, 'CZS-1');
   } finally {
     cleanupTempDir(dir);
   }

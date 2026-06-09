@@ -966,8 +966,12 @@ async function interactiveEntry(userInput) {
   }
 
   try {
-    const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('../commands/zero-shot');
-    const zeroShot = buildZeroShotPacket({ cwd: workspaceDir });
+    const {
+      buildPacket: buildZeroShotPacket,
+      renderHint: renderZeroShotHint,
+      writeLatestPacket: writeLatestZeroShotPacket,
+    } = require('../commands/zero-shot');
+    const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: workspaceDir }));
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);
@@ -1152,8 +1156,12 @@ function showWelcomeVisualization() {
   console.log('');
   if (isInitialized) {
     try {
-      const { buildPacket: buildZeroShotPacket, renderHint: renderZeroShotHint } = require('../commands/zero-shot');
-      console.log(`    ${renderZeroShotHint(buildZeroShotPacket({ cwd }))}`);
+      const {
+        buildPacket: buildZeroShotPacket,
+        renderHint: renderZeroShotHint,
+        writeLatestPacket: writeLatestZeroShotPacket,
+      } = require('../commands/zero-shot');
+      console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
     } catch {}
     console.log(`    Ready. Run 'atris zero-shot --prompt' to choose the next move.`);
   } else {
