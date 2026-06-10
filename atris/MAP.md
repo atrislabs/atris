@@ -710,8 +710,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
 
-- **Entry point:** `commands/autopilot.js:2407` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:2959` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js` (`autopilotAtris`) with a read-only 0-shot preflight before Claude CLI checks, inbox seeding, task selection, or phase execution
+- **From-todo mode:** `commands/autopilot.js` (`autopilotFromTodo`)
+- **Owner-gate stop:** `commands/autopilot.js` refuses to start autopilot when the selected 0-shot route is owner-gated; it prints the first read-only command and `atris 0-shot --all` instead
 - **Reward config:** `lib/reward-config.js` — frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
 - **Reward computer:** `commands/autopilot.js:1345` (`computeTickReward`) — computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
 - **Tick registry writer:** `commands/autopilot.js:713` (`recordTickCommit`) — persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick

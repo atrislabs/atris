@@ -1717,6 +1717,48 @@ function printPlainBlock(text) {
   console.log('');
 }
 
+function buildAutopilotZeroShotPacket() {
+  try {
+    const { buildPacket } = require('./zero-shot');
+    return buildPacket();
+  } catch {
+    return null;
+  }
+}
+
+function autopilotZeroShotLines(packet) {
+  if (!packet || !packet.decision || !packet.commands) return [];
+  const decision = packet.decision;
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none';
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown';
+  const firstCommand = packet.commands.first_command || packet.commands.next_command || 'atris 0-shot --prompt';
+  const lines = [
+    `route: ${route}`,
+    `focus: ${focus}`,
+    `first command: ${firstCommand}`,
+    `menu: ${packet.commands.zero_shot_all || 'atris 0-shot --all'}`,
+    `prompt: ${packet.commands.zero_shot_prompt || 'atris 0-shot --prompt'}`,
+  ];
+  if (decision.reason) lines.splice(2, 0, `why: ${decision.reason}`);
+  if (decision.owner_action) lines.push(`owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) lines.push(`agent-safe action: ${decision.safe_agent_action}`);
+  return lines;
+}
+
+function isAutopilotOwnerGatedZeroShot(packet) {
+  const decision = packet && packet.decision ? packet.decision : {};
+  return decision.lane === 'owner_gate' || Boolean(decision.owner_action);
+}
+
+function printAutopilotZeroShotPreflight(packet) {
+  const lines = autopilotZeroShotLines(packet);
+  if (!lines.length) return;
+  printPlainBlock([
+    '0-shot preflight:',
+    ...lines.map((line) => `- ${line}`)
+  ].join('\n'));
+}
+
 function getTickStatus(cwd) {
   const atrisDir = path.join(cwd, 'atris');
 
@@ -2654,15 +2696,27 @@ async function autopilotAtris(description, options = {}) {
     process.exit(1);
   }
 
-  try { execSync('which claude', { stdio: 'pipe' }); } catch {
-    console.error('claude CLI not found. Install Claude Code first.');
-    process.exit(1);
-  }
-
   const durationMs = parseDuration(duration);
   const durationLabel = duration
     ? duration
     : (maxIterations < 100 ? `${maxIterations} task${maxIterations === 1 ? '' : 's'}` : 'until clean');
+
+  const zeroShotPacket = buildAutopilotZeroShotPacket();
+  printAutopilotZeroShotPreflight(zeroShotPacket);
+  if (isAutopilotOwnerGatedZeroShot(zeroShotPacket)) {
+    const firstCommand = zeroShotPacket.commands?.first_command || zeroShotPacket.commands?.next_command || 'atris 0-shot --prompt';
+    printPlainBlock([
+      'Owner-gated 0-shot route detected. I am not starting autopilot.',
+      `Run first: ${firstCommand}`,
+      `Inspect all routes: ${zeroShotPacket.commands?.zero_shot_all || 'atris 0-shot --all'}`
+    ].join('\n'));
+    return { success: false, completed: 0, ownerGated: true };
+  }
+
+  try { execSync('which claude', { stdio: 'pipe' }); } catch {
+    console.error('claude CLI not found. Install Claude Code first.');
+    process.exit(1);
+  }
 
   if (verbose) {
     console.log('');
