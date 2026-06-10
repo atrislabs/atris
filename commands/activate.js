@@ -164,15 +164,25 @@ function activateAtris() {
     console.log('Wiki:');
     wikiStatus.bullets.forEach((line) => console.log(`- ${line.replace(/^- /, '')}`));
   }
+  let zeroShot = null;
   try {
-    const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: workspaceDir }));
+    zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: workspaceDir }));
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);
     console.log(renderZeroShotDurableSummary(buildZeroShotCheck({ cwd: workspaceDir })));
   } catch {}
   console.log('');
-  console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');
+  if (zeroShot) {
+    const firstCommand = zeroShot.commands?.first_command || zeroShot.handoff?.first_command || 'atris 0-shot --prompt';
+    console.log(`Next: run first: ${firstCommand}`);
+    if (zeroShot.decision?.lane === 'owner_gate') {
+      console.log('Boundary: read-only first command; stop at owner gate; human accept is human-only.');
+    }
+    console.log('Routes: atris 0-shot --all | prompt: atris 0-shot --prompt | model: atris 0-shot --model <tier> --prompt | horizon: atris 0-shot --horizon <horizon> --prompt');
+  } else {
+    console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');
+  }
   console.log('');
 }
 

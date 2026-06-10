@@ -1108,10 +1108,9 @@ test('activate surfaces the zero-shot next route', () => {
     assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
-    assert.match(res.stdout, /Next: atris 0-shot --all/);
-    assert.match(res.stdout, /atris 0-shot --prompt/);
-    assert.match(res.stdout, /atris 0-shot --model <tier> --prompt/);
-    assert.match(res.stdout, /atris 0-shot --horizon <horizon> --prompt/);
+    assert.match(res.stdout, /Next: run first: atris task current-step --tag cli --json/);
+    assert.match(res.stdout, /Routes: atris 0-shot --all \| prompt: atris 0-shot --prompt \| model: atris 0-shot --model <tier> --prompt \| horizon: atris 0-shot --horizon <horizon> --prompt/);
+    assert.doesNotMatch(res.stdout, /Next: atris 0-shot --all/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
@@ -1147,6 +1146,8 @@ test('activate surfaces zero-shot owner-gate context', () => {
     assert.match(res.stdout, /owner human-only: atris task accept CZS-1/);
     assert.match(res.stdout, /agent-safe read-only: atris task page CZS-1 --json; then wait or pick a non-blocked route from atris 0-shot --all/);
     assert.match(res.stdout, /queue total=1 open=0 claimed=0 review=1 blocked=0 failed=0 done=0/);
+    assert.match(res.stdout, /Next: run first: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /Boundary: read-only first command; stop at owner gate; human accept is human-only\./);
   } finally {
     cleanupTempDir(dir);
   }
