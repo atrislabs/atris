@@ -1,17 +1,17 @@
 ---
-last_compiled: 2026-05-10
+last_compiled: 2026-06-10
 sources:
-  - commands/member.js:150-190 (member paths and MISSION.md template)
-  - commands/member.js:348-365 (member run bridge to Mission Runtime)
-  - commands/member.js:1209-1235 (member list)
-  - commands/member.js:1261-1364 (member create scaffold)
-  - commands/member.js:1759-2054 (goal, goal-from-mission, goal-from-score)
-  - commands/member.js:2140-2469 (wake decision and receipts)
-  - commands/member.js:2483-2717 (member loop)
-  - commands/member.js:2720-2943 (tick, review, block, status)
-  - commands/member.js:2955-3054 (member command dispatch and help)
-  - commands/mission.js:304-346 (member now.md and workspace mission status rendering)
-  - bin/atris.js:1242-1245 (member command route)
+  - commands/member.js:211-223 (memberPaths and MISSION.md wiring)
+  - commands/member.js:422-452 (member run bridge to Mission Runtime)
+  - commands/member.js:2886-2933 (member list)
+  - commands/member.js:2941-3044 (member create scaffold)
+  - commands/member.js:3438-3757 (goal, goal-from-mission, goal-from-score)
+  - commands/member.js:6452-6619 (wake decision and receipts)
+  - commands/member.js:6652-6964 (member loop)
+  - commands/member.js:6966-7206 (tick, review, block, status)
+  - commands/member.js:7210-7329 (member command dispatch and help)
+  - commands/mission.js:411-442 (renderMemberNowMarkdown — member now.md rendering)
+  - bin/atris.js:1648 (member command route)
   - atris/team/_template/MEMBER.md
   - atris/features/team-member-standard/idea.md
 ---
