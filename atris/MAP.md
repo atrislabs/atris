@@ -137,7 +137,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Ambient latest files:** `atris 0-shot --write` and no-request `atris next --write` refresh `.atris/state/zero-shot.latest.json`, `.atris/state/zero-shot.prompt.txt`, `.atris/state/zero-shot.menu.txt`, `.atris/state/zero-shot.<fast|pro|validator|human>.prompt.txt`, and `.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt` without mutating tasks or calling external systems
 - **Freshness check:** `atris 0-shot --check` and no-request `atris next --check` compare durable latest files, global prompt content, route menu content, per-model prompt content, per-horizon prompt content, and current source fingerprints, then report fresh, stale, or missing and exit 0 only when fresh
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route, `atris 0-shot --all` menu command, horizon/model bucket counts, and durable prompt/menu/model/horizon freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
-- **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route, first command, `atris 0-shot --all` menu command, and durable prompt/menu/model/horizon freshness so ordinary health checks show the next safe move plus whether persisted 0-shot context is safe to trust
+- **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route, first command, owner-gate context, `atris 0-shot --all` menu command, and durable prompt/menu/model/horizon freshness so ordinary health checks show the next safe move plus whether persisted 0-shot context is safe to trust
 - **Now front door:** generated `atris/now.md` includes the current 0-shot route, `atris 0-shot --all` menu command, durable menu/prompt file freshness, queue counts, route inventory counts with `routes.all_options`, bucket counts, first-by-horizon and first-by-model picks, first command, owner-gate context, and horizon handoff hint so agents loading the first context file can inspect all lanes before acting; `atris now --refresh` refreshes the durable 0-shot packet/menu/prompt files before rendering generated now.md
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
@@ -518,7 +518,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
 - **0-shot regression:** `test/status.test.js` covers `status`, `status --quick`, and `status --json` exposing the computed route
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
-- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only, exposes selected route plus menu command and horizon/model bucket counts, and falls back to `atris 0-shot --prompt` if route collection is unavailable
+- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only, exposes selected route plus owner-gate context, menu command, and horizon/model bucket counts, and falls back to `atris 0-shot --prompt` if route collection is unavailable
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
@@ -526,10 +526,10 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - Today's journal Completed (recent completions, last 3)
 - `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json` through the 0-shot packet builder
 - **Output:**
-- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`) with `0-shot: <lane> <ref> -> <first_command>`, `0-shot menu: atris 0-shot --all`, plus quick/long/review/blocked and model-tier counts
+- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`) with `0-shot: <lane> <ref> -> <first_command>`, `0-shot menu: atris 0-shot --all`, owner-gate context when present, plus quick/long/review/blocked and model-tier counts
 - `--verbose` / `-v`: Legacy visual task board with 0-shot footer
-- `--quick` / `-q`: One-line emoji summary with 0-shot lane/ref and bucket counts
-- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team, zero_shot with horizon_counts/model_counts)
+- `--quick` / `-q`: One-line emoji summary with 0-shot lane/ref, owner-gate context when present, and bucket counts
+- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team, zero_shot with owner_action/safe_agent_action and horizon_counts/model_counts)
 - **Routing:** `bin/atris.js:1484-1488` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting + next safe move for uncertain agents
 

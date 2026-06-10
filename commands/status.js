@@ -93,6 +93,8 @@ function zeroShotStatus(root = process.cwd()) {
       selected_title: decision.selected_title || null,
       model_tier: decision.model_tier || null,
       first_command: commands.first_command || decision.first_command || 'atris 0-shot --prompt',
+      owner_action: decision.owner_action || null,
+      safe_agent_action: decision.safe_agent_action || null,
       menu_command: commands.zero_shot_all || 'atris 0-shot --all',
       prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
       json_command: commands.zero_shot_json || 'atris 0-shot --json',
@@ -117,6 +119,8 @@ function zeroShotStatus(root = process.cwd()) {
       selected_title: null,
       model_tier: null,
       first_command: 'atris 0-shot --prompt',
+      owner_action: null,
+      safe_agent_action: null,
       menu_command: 'atris 0-shot --all',
       prompt_command: 'atris 0-shot --prompt',
       json_command: 'atris 0-shot --json',
@@ -157,6 +161,13 @@ function zeroShotBucketText(zeroShot) {
   const horizons = zeroShot.horizon_counts || normalizeHorizonCounts({});
   const models = zeroShot.model_counts || normalizeModelCounts({});
   return `horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
+}
+
+function zeroShotGateText(zeroShot) {
+  const parts = [];
+  if (zeroShot.owner_action) parts.push(`owner ${zeroShot.owner_action}`);
+  if (zeroShot.safe_agent_action) parts.push(`agent-safe ${zeroShot.safe_agent_action}`);
+  return parts.join(' | ');
 }
 
 function zeroShotFreshnessLabel(exists, fresh) {
@@ -283,7 +294,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'} | durable ${zeroShotDurableText(zeroShot)} | ${zeroShotBucketText(zeroShot)}`);
+    const gateText = zeroShotGateText(zeroShot);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'}${gateText ? ` | ${gateText}` : ''} | durable ${zeroShotDurableText(zeroShot)} | ${zeroShotBucketText(zeroShot)}`);
     return;
   }
 
@@ -308,6 +320,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     const queueParts = [];
     queueParts.push(`0-shot: ${zeroShotStatusText(zeroShot)}.`);
     queueParts.push(`0-shot menu: ${zeroShot.menu_command || 'atris 0-shot --all'}.`);
+    if (zeroShot.owner_action) queueParts.push(`0-shot owner action: ${zeroShot.owner_action}.`);
+    if (zeroShot.safe_agent_action) queueParts.push(`0-shot agent-safe action: ${zeroShot.safe_agent_action}.`);
     queueParts.push(`0-shot durable: ${zeroShotDurableText(zeroShot)}; check with ${zeroShot.check_command || 'atris 0-shot --check'}.`);
     queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
     if (todo.inProgress[0]) {
@@ -450,6 +464,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   o('  plan → do → review    (or: atris log to add ideas)');
   o(`  0-shot → ${zeroShotStatusText(zeroShot)}`);
   o(`  0-shot menu → ${zeroShot.menu_command || 'atris 0-shot --all'}`);
+  if (zeroShot.owner_action) o(`  0-shot owner → ${zeroShot.owner_action}`);
+  if (zeroShot.safe_agent_action) o(`  0-shot agent-safe → ${zeroShot.safe_agent_action}`);
   o(`  0-shot durable → ${zeroShotDurableText(zeroShot)}`);
   o(`  0-shot buckets → ${zeroShotBucketText(zeroShot)}`);
   o('');

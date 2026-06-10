@@ -76,6 +76,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(payload.zero_shot.lane, 'owner_gate');
     assert.equal(payload.zero_shot.selected_ref, 'WAIT-1');
     assert.equal(payload.zero_shot.first_command, 'atris task page WAIT-1 --json');
+    assert.equal(payload.zero_shot.owner_action, 'human-only: atris task accept WAIT-1');
+    assert.equal(payload.zero_shot.safe_agent_action, 'read-only: atris task page WAIT-1 --json; then wait or pick a non-blocked route from atris 0-shot --all');
     assert.equal(payload.zero_shot.menu_command, 'atris 0-shot --all');
     assert.equal(payload.zero_shot.prompt_command, 'atris 0-shot --prompt');
     assert.equal(payload.zero_shot.check_command, 'atris 0-shot --check');
@@ -105,6 +107,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
     assert.match(quick.stdout, /0-shot owner_gate WAIT-1/);
     assert.match(quick.stdout, /menu atris 0-shot --all/);
+    assert.match(quick.stdout, /owner human-only: atris task accept WAIT-1/);
+    assert.match(quick.stdout, /agent-safe read-only: atris task page WAIT-1 --json/);
     assert.match(quick.stdout, /durable status=missing prompt=missing menu=missing model=stale_or_missing horizon=stale_or_missing/);
     assert.match(quick.stdout, /horizons now=0 review=0 long=0 blocked=1/);
     assert.match(quick.stdout, /models fast=0 pro=0 validator=0 human=1/);
@@ -113,6 +117,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(human.status, 0, human.stderr || human.stdout);
     assert.match(human.stdout, /0-shot: owner_gate WAIT-1 -> atris task page WAIT-1 --json/);
     assert.match(human.stdout, /0-shot menu: atris 0-shot --all/);
+    assert.match(human.stdout, /0-shot owner action: human-only: atris task accept WAIT-1/);
+    assert.match(human.stdout, /0-shot agent-safe action: read-only: atris task page WAIT-1 --json/);
     assert.match(human.stdout, /0-shot durable: status=missing prompt=missing menu=missing\s+model=stale_or_missing horizon=stale_or_missing; check with atris 0-shot\s+--check/);
     assert.match(human.stdout, /0-shot buckets: horizons now=0 review=0 long=0 blocked=1; models fast=0\s+pro=0 validator=0 human=1/);
   } finally {
