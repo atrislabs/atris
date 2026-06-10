@@ -1041,7 +1041,7 @@ async function interactiveEntry(userInput) {
 
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
-  const { getBacklogTasks, getInProgressTasks } = require('../lib/state-detection');
+  const { getTaskCounts } = require('../lib/state-detection');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
@@ -1050,6 +1050,8 @@ function showWelcomeVisualization() {
   let filesIndexed = 0;
   let tasksInBacklog = 0;
   let tasksInProgress = 0;
+  let tasksInReview = 0;
+  let tasksCertified = 0;
   let journalEntries = 0;
   let hasMap = false;
   let isInitialized = fs.existsSync(atrisDir);
@@ -1065,15 +1067,15 @@ function showWelcomeVisualization() {
       filesIndexed = fileRefs ? fileRefs.length : 0;
     }
 
-    // Check TODO.md
-    const todoPath = path.join(atrisDir, 'TODO.md');
-    if (fs.existsSync(todoPath)) {
-      try {
-        tasksInBacklog = getBacklogTasks(atrisDir).length;
-        tasksInProgress = getInProgressTasks(atrisDir).length;
-      } catch {
-        // Silently fail - show 0 tasks if parsing fails
-      }
+    // Task lane counts — DB truth first, TODO.md parse as fallback
+    try {
+      const counts = getTaskCounts(atrisDir);
+      tasksInBacklog = counts.backlog;
+      tasksInProgress = counts.active;
+      tasksInReview = counts.review;
+      tasksCertified = counts.reviewCertified;
+    } catch {
+      // Silently fail - show 0 tasks if reading fails
     }
 
     // Count journal entries today
@@ -1122,13 +1124,19 @@ function showWelcomeVisualization() {
     console.log(`    │   📄 Spec:    atris.md v${CLI_VERSION.padEnd(18)}│`);
     console.log(`    │   🗺️  Map:    ${hasMap ? (filesIndexed + ' files indexed').padEnd(26) : 'not generated yet'.padEnd(26)}│`);
     console.log(`    │   📋 Tasks:   ${(tasksInBacklog + ' backlog, ' + tasksInProgress + ' active').padEnd(26)}│`);
+    if (tasksInReview > 0) {
+      const reviewText = tasksCertified > 0
+        ? `${tasksInReview} waiting (${tasksCertified} certified)`
+        : `${tasksInReview} waiting`;
+      console.log(`    │   ⏳ Review:  ${reviewText.padEnd(26)}│`);
+    }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
     console.log('    │                                          │');
     console.log('    │   ┌──────────────────────────────────┐   │');
     console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
     console.log('    │   │     ↓                            │   │');
-    const taskText = `${tasksInBacklog} tasks waiting`;
-    console.log(`    │   │  TODO.md ←── ${taskText.padEnd(17)}│   │`);
+    const taskText = `${tasksInBacklog} task${tasksInBacklog === 1 ? '' : 's'} waiting`;
+    console.log(`    │   │  TODO.md ←── ${taskText.padEnd(20)}│   │`);
     console.log('    │   │     ↓                            │   │');
     console.log('    │   │  navigator → executor → validator│   │');
     console.log('    │   └──────────────────────────────────┘   │');
@@ -1136,7 +1144,11 @@ function showWelcomeVisualization() {
     console.log('    └──────────────────────────────────────────┘');
   }
   console.log('');
-  console.log(`    Ready. Run 'atris plan' to start.`);
+  if (tasksCertified > 0) {
+    console.log(`    Ready. ${tasksCertified} certified await accept — run 'atris task reviews'.`);
+  } else {
+    console.log(`    Ready. Run 'atris plan' to start.`);
+  }
   console.log('');
 }
 
