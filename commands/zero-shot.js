@@ -79,6 +79,34 @@ function parseModelTierArg(args = []) {
   return { tier: requested };
 }
 
+function normalizeHorizon(value) {
+  const horizon = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  if (!horizon) return null;
+  if (horizon === 'quick') return 'now';
+  if (horizon === 'review' || horizon === 'immediate') return 'immediate_review';
+  if (horizon === 'long') return 'long_term';
+  if (horizon === 'context') return 'orient';
+  return HORIZON_ORDER.includes(horizon) ? horizon : null;
+}
+
+function parseHorizonArg(args = []) {
+  let requested = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--horizon') {
+      const horizon = normalizeHorizon(args[i + 1]);
+      return horizon ? { horizon } : { error: `--horizon requires one of: ${HORIZON_ORDER.join(', ')}` };
+    }
+    if (arg.startsWith('--horizon=')) {
+      const horizon = normalizeHorizon(arg.slice('--horizon='.length));
+      return horizon ? { horizon } : { error: `--horizon requires one of: ${HORIZON_ORDER.join(', ')}` };
+    }
+    const flagHorizon = normalizeHorizon(arg.replace(/^--/, ''));
+    if (arg.startsWith('--') && flagHorizon && HORIZON_ORDER.includes(flagHorizon)) requested = flagHorizon;
+  }
+  return { horizon: requested };
+}
+
 function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
 }
@@ -647,9 +675,13 @@ function summarizeRouteHorizons(routes) {
   }, summary);
 }
 
-function selectRoute(routes, requestedModelTier = null) {
-  if (!requestedModelTier) return routes[0] || null;
-  return routes.find(route => route.model_tier === requestedModelTier) || null;
+function selectRoute(routes, requestedModelTier = null, requestedHorizon = null) {
+  if (!requestedModelTier && !requestedHorizon) return routes[0] || null;
+  return routes.find(route => {
+    if (requestedModelTier && route.model_tier !== requestedModelTier) return false;
+    if (requestedHorizon && route.horizon !== requestedHorizon) return false;
+    return true;
+  }) || null;
 }
 
 function noRouteForModel(requestedModelTier) {
@@ -665,6 +697,36 @@ function noRouteForModel(requestedModelTier) {
     work_size: 'context',
     model_tier: requestedModelTier,
     agent_directive: `Do not take work assigned to another model tier from this prompt. Inspect routes.models, then hand off to a tier with available work or wait for new ${requestedModelTier} work.`,
+    first_command: command,
+  };
+  return routeFromDecision(decision, details, command);
+}
+
+function defaultModelTierForHorizon(horizon) {
+  if (horizon === 'immediate_review') return 'validator';
+  if (horizon === 'long_term') return 'pro';
+  if (horizon === 'blocked') return 'human';
+  return 'fast';
+}
+
+function noRouteForSelection(requestedModelTier, requestedHorizon) {
+  if (requestedModelTier && !requestedHorizon) return noRouteForModel(requestedModelTier);
+  const modelTier = requestedModelTier || defaultModelTierForHorizon(requestedHorizon);
+  const scope = requestedModelTier
+    ? `${requestedModelTier} model route in ${requestedHorizon} horizon`
+    : `${requestedHorizon} horizon route`;
+  const decision = {
+    lane: 'no_current_task',
+    urgency: 'orient',
+    model: modelTier,
+    reason: `No ${scope} is available in the current queue.`,
+  };
+  const command = 'atris radar --json';
+  const details = {
+    horizon: requestedHorizon || 'orient',
+    work_size: 'context',
+    model_tier: modelTier,
+    agent_directive: `Do not take work outside the requested 0-shot selection from this prompt. Inspect routes.options, then hand off to an available horizon or wait for new ${requestedHorizon || modelTier} work.`,
     first_command: command,
   };
   return routeFromDecision(decision, details, command);
@@ -693,6 +755,7 @@ function buildRouteIndex({ missionState, goalState, taskState }) {
 function buildPacket(options = {}) {
   const root = findWorkspaceRoot(options.cwd || process.cwd());
   const requestedModelTier = normalizeModelTier(options.model_tier || options.modelTier || options.model);
+  const requestedHorizon = normalizeHorizon(options.horizon || options.requested_horizon || options.requestedHorizon);
   const brain = collectBrain(root);
   const missionState = collectMissions(root);
   const goalState = collectCodexGoal(root);
@@ -700,9 +763,12 @@ function buildPacket(options = {}) {
   const freshness = collectFreshness(root);
   const routeIndex = buildRouteIndex({ missionState, goalState, taskState });
   const { all_options: allRoutes, ...publicRouteIndex } = routeIndex;
-  const selectedRoute = selectRoute(allRoutes, requestedModelTier);
+  const selectedRoute = selectRoute(allRoutes, requestedModelTier, requestedHorizon);
   const modelTierMatch = requestedModelTier ? Boolean(selectedRoute) : null;
-  const fallbackRoute = requestedModelTier && !selectedRoute ? noRouteForModel(requestedModelTier) : null;
+  const horizonMatch = requestedHorizon ? Boolean(selectedRoute) : null;
+  const fallbackRoute = (requestedModelTier || requestedHorizon) && !selectedRoute
+    ? noRouteForSelection(requestedModelTier, requestedHorizon)
+    : null;
   const effectiveRoute = selectedRoute || fallbackRoute;
   const decision = selectedRoute
     ? {
@@ -738,6 +804,8 @@ function buildPacket(options = {}) {
     ...publicRouteIndex,
     requested_model_tier: requestedModelTier,
     model_tier_match: modelTierMatch,
+    requested_horizon: requestedHorizon,
+    horizon_match: horizonMatch,
     options: publicRouteIndex.options.map(route => publicRoute(route, root)),
   };
   const handoffRoute = effectiveRoute ? publicRoute(effectiveRoute, root) : routeFromDecision(decision, details, command);
@@ -754,6 +822,8 @@ function buildPacket(options = {}) {
       selected_kind: selectedRoute ? selectedRoute.kind : null,
       requested_model_tier: requestedModelTier,
       model_tier_match: modelTierMatch,
+      requested_horizon: requestedHorizon,
+      horizon_match: horizonMatch,
     },
     queue: taskState.counts,
     routes: publicRoutes,
@@ -942,6 +1012,13 @@ function renderPacket(packet) {
   const selected = packet.decision.selected_ref
     ? `${packet.decision.selected_ref} - ${packet.decision.selected_title}`
     : 'none';
+  const requestLines = [];
+  if (packet.decision.requested_model_tier) {
+    requestLines.push(`model request: ${packet.decision.requested_model_tier} | match=${packet.decision.model_tier_match}`);
+  }
+  if (packet.decision.requested_horizon) {
+    requestLines.push(`horizon request: ${packet.decision.requested_horizon} | match=${packet.decision.horizon_match}`);
+  }
   const lines = [
     '0-shot next move',
     `route: ${packet.decision.lane} | ${packet.decision.urgency} | ${packet.decision.model}`,
@@ -960,9 +1037,7 @@ function renderPacket(packet) {
     `boundaries: no external sends, no human accept, no task mutation${packet.boundaries.no_file_writes ? ', no file writes' : ''}`,
     `json: ${packet.commands.zero_shot_json}`,
   ];
-  if (packet.decision.requested_model_tier) {
-    lines.splice(2, 0, `model request: ${packet.decision.requested_model_tier} | match=${packet.decision.model_tier_match}`);
-  }
+  if (requestLines.length) lines.splice(2, 0, ...requestLines);
   return lines.join('\n');
 }
 
@@ -973,15 +1048,16 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris 0-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human]',
-    'Alias: atris zero-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human]',
+    'Usage: atris 0-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
+    'Alias: atris zero-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
     'Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot',
     '',
     'Use when you do not know what to prompt next.',
     'Selects one read-only lane: mission_tick, goal_context, quick_task, fast_model_task, long_horizon, review_lane, recovery_lane, owner_gate, or no_current_task.',
     '--model fast|pro|validator|human selects the first route suited to that model tier; --fast, --pro, --validator, and --human are shortcuts.',
+    '--horizon now|review|long|blocked|orient selects the first route in that work horizon; --quick, --review, --long, --blocked, and --orient are shortcuts.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, routes.models, handoff.prompt, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, and per-model prompt files for ambient agents; it does not mutate tasks or call external systems.`,
     '--check compares the durable latest packet, global prompt, per-model prompts, and current source fingerprints, then reports fresh, stale, or missing.',
@@ -999,6 +1075,11 @@ function zeroShotCommand(args = []) {
     console.error(modelArg.error);
     return 1;
   }
+  const horizonArg = parseHorizonArg(args);
+  if (horizonArg.error) {
+    console.error(horizonArg.error);
+    return 1;
+  }
   if (args.includes('--check')) {
     const check = buildLatestCheck();
     if (args.includes('--json')) {
@@ -1008,7 +1089,7 @@ function zeroShotCommand(args = []) {
     }
     return 0;
   }
-  let packet = buildPacket({ modelTier: modelArg.tier });
+  let packet = buildPacket({ modelTier: modelArg.tier, horizon: horizonArg.horizon });
   if (args.includes('--write')) {
     packet = writeLatestPacket(packet);
   }

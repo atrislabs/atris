@@ -763,6 +763,30 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(proPacket.decision.lane, 'recovery_lane');
     assert.equal(proPacket.commands.first_command, 'atris task page FAIL-1 --json');
 
+    const longRes = runCli(['0-shot', '--model', 'pro', '--horizon', 'long', '--json'], { cwd: dir });
+    assert.equal(longRes.status, 0, longRes.stderr || longRes.stdout);
+    const longPacket = JSON.parse(longRes.stdout);
+    assert.equal(longPacket.decision.requested_model_tier, 'pro');
+    assert.equal(longPacket.decision.requested_horizon, 'long_term');
+    assert.equal(longPacket.decision.model_tier_match, true);
+    assert.equal(longPacket.decision.horizon_match, true);
+    assert.equal(longPacket.decision.selected_ref, 'ARC-1');
+    assert.equal(longPacket.decision.lane, 'long_horizon');
+    assert.equal(longPacket.commands.first_command, 'atris task page ARC-1 --json');
+    assert.equal(longPacket.routes.requested_horizon, 'long_term');
+    assert.equal(longPacket.routes.horizon_match, true);
+
+    const missingFastLongRes = runCli(['0-shot', '--model', 'fast', '--horizon', 'long', '--json'], { cwd: dir });
+    assert.equal(missingFastLongRes.status, 0, missingFastLongRes.stderr || missingFastLongRes.stdout);
+    const missingFastLongPacket = JSON.parse(missingFastLongRes.stdout);
+    assert.equal(missingFastLongPacket.decision.requested_model_tier, 'fast');
+    assert.equal(missingFastLongPacket.decision.requested_horizon, 'long_term');
+    assert.equal(missingFastLongPacket.decision.model_tier_match, false);
+    assert.equal(missingFastLongPacket.decision.horizon_match, false);
+    assert.equal(missingFastLongPacket.decision.selected_ref, null);
+    assert.equal(missingFastLongPacket.commands.first_command, 'atris radar --json');
+    assert.match(missingFastLongPacket.handoff.prompt, /No fast model route in long_term horizon is available/);
+
     const missingValidatorRes = runCli(['zero-shot', '--model=validator', '--json'], { cwd: dir });
     assert.equal(missingValidatorRes.status, 0, missingValidatorRes.stderr || missingValidatorRes.stdout);
     const missingValidatorPacket = JSON.parse(missingValidatorRes.stdout);
@@ -808,6 +832,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot/);
     assert.match(res.stdout, /do not know what to prompt/);
     assert.match(res.stdout, /--model fast\|pro\|validator\|human selects/);
+    assert.match(res.stdout, /--horizon now\|review\|long\|blocked\|orient selects/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
     assert.match(res.stdout, /routes\.models/);

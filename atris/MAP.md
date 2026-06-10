@@ -145,6 +145,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Route summary:** JSON includes zero-filled `routes.horizons` counts plus `routes.models` grouped by fast/pro/validator/human, with count and first route for each tier
 - **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON
 - **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
+- **Horizon selection:** `atris 0-shot --horizon now|review|long|blocked|orient` and `--quick`/`--review`/`--long`/`--blocked`/`--orient` select the first route in that quick/review/long-term/blocked/context bucket
 - **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
 - **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
@@ -160,7 +161,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris 0-shot --write` -> refresh durable latest packet and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 
-**Search:** `rg "normalizeZeroShotAlias|parseModelTierArg|selectRoute|collectTodoTasks|todoTask|zeroShotCommand|summarizeRouteModels|summarizeRouteHorizons|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
+**Search:** `rg "normalizeZeroShotAlias|parseModelTierArg|parseHorizonArg|selectRoute|collectTodoTasks|todoTask|zeroShotCommand|summarizeRouteModels|summarizeRouteHorizons|command === '0-shot'|buildPacket|writeLatestPacket|buildLatestCheck|collectFreshness|collectMissions|collectCodexGoal|mission_tick|goal_context" bin/atris.js commands/zero-shot.js test/zero-shot.test.js`
 
 ### Feature: Project Initialization (`atris init`)
 
