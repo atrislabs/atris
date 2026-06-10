@@ -204,6 +204,9 @@ function zeroShotNowSummary(root = process.cwd()) {
   try {
     const packet = buildPacket({ cwd: root });
     const decision = packet.decision || {};
+    const routes = packet.routes || {};
+    const horizons = routes.horizons || {};
+    const models = routes.models || {};
     const command = packet.commands?.first_command || decision.first_command || 'atris 0-shot --prompt';
     const focus = decision.selected_ref ? ` ${decision.selected_ref}` : '';
     return {
@@ -211,6 +214,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       command,
       prompt: packet.commands?.zero_shot_prompt || 'atris 0-shot --prompt',
       json: packet.commands?.zero_shot_json || 'atris 0-shot --json',
+      buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     };
   } catch {
     return {
@@ -218,6 +222,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       command: 'atris 0-shot --prompt',
       prompt: 'atris 0-shot --prompt',
       json: 'atris 0-shot --json',
+      buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
     };
   }
 }
@@ -252,6 +257,7 @@ Last updated: ${generated}
 
 - Decide the next useful move before opening more context.
 - 0-shot route: ${zeroShot.route} -> \`${zeroShot.command}\`
+- 0-shot buckets: ${zeroShot.buckets}
 
 ## Current Priority
 
@@ -273,6 +279,7 @@ Last updated: ${generated}
 ## Next Move
 
 - Run \`${zeroShot.command}\` for the current 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
+- Use \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.
 - Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
 
 ## Receipts

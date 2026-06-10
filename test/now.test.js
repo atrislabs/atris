@@ -173,8 +173,11 @@ test('renderDefaultNow includes the current zero-shot route', () => {
     const content = renderDefaultNow(dir);
 
     assert.match(content, /0-shot route: fast_model_task CZS-1 -> `atris task current-step --tag cli --json`/);
+    assert.match(content, /0-shot buckets: horizons now=1 review=0 long=0 blocked=0; models fast=1 pro=0 validator=0 human=0/);
     assert.match(content, /Run `atris task current-step --tag cli --json` for the current 0-shot lane/);
     assert.match(content, /`atris 0-shot --prompt` for a copy-paste handoff/);
+    assert.match(content, /`atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt`/);
+    assert.match(content, /`\.atris\/state\/zero-shot\.<now\|review\|long\|blocked\|orient>\.prompt\.txt`/);
   } finally {
     cleanup(dir);
   }
