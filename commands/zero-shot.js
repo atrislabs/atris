@@ -39,6 +39,13 @@ const LANE_PRIORITY = {
 };
 const MODEL_TIERS = ['fast', 'pro', 'validator', 'human'];
 const HORIZON_ORDER = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
+const HORIZON_PROMPTS = [
+  ['now', 'now'],
+  ['review', 'immediate_review'],
+  ['long', 'long_term'],
+  ['blocked', 'blocked'],
+  ['orient', 'orient'],
+];
 
 function modelPromptRelativePath(tier) {
   return `.atris/state/zero-shot.${tier}.prompt.txt`;
@@ -46,6 +53,14 @@ function modelPromptRelativePath(tier) {
 
 function modelPromptRelativePaths() {
   return Object.fromEntries(MODEL_TIERS.map(tier => [tier, modelPromptRelativePath(tier)]));
+}
+
+function horizonPromptRelativePath(key) {
+  return `.atris/state/zero-shot.${key}.prompt.txt`;
+}
+
+function horizonPromptRelativePaths() {
+  return Object.fromEntries(HORIZON_PROMPTS.map(([key]) => [key, horizonPromptRelativePath(key)]));
 }
 
 function normalizeModelTier(value) {
@@ -603,6 +618,11 @@ function routeForModelPrompt(packet, tier) {
   return entry.first || noRouteForModel(tier);
 }
 
+function routeForHorizonPrompt(packet, horizon) {
+  const options = packet && packet.routes && Array.isArray(packet.routes.options) ? packet.routes.options : [];
+  return options.find(route => route.horizon === horizon) || noRouteForSelection(null, horizon);
+}
+
 function buildModelPromptRecords(packet, root) {
   return Object.fromEntries(MODEL_TIERS.map(tier => {
     const route = routeForModelPrompt(packet, tier);
@@ -620,6 +640,24 @@ function buildModelPromptRecords(packet, root) {
   }));
 }
 
+function buildHorizonPromptRecords(packet, root) {
+  return Object.fromEntries(HORIZON_PROMPTS.map(([key, horizon]) => {
+    const route = routeForHorizonPrompt(packet, horizon);
+    const relativePath = horizonPromptRelativePath(key);
+    return [key, {
+      key,
+      horizon,
+      prompt_txt: relativePath,
+      prompt_txt_abs: path.join(root, relativePath),
+      horizon_match: Boolean(packet.routes && Array.isArray(packet.routes.options) && packet.routes.options.some(option => option.horizon === horizon)),
+      selected_ref: route.ref || null,
+      lane: route.lane || null,
+      first_command: route.first_command || null,
+      prompt: routePrompt(route, root),
+    }];
+  }));
+}
+
 function publicModelPromptRecords(records) {
   return Object.fromEntries(Object.entries(records).map(([tier, record]) => [tier, {
     prompt_txt: record.prompt_txt,
@@ -629,6 +667,40 @@ function publicModelPromptRecords(records) {
     lane: record.lane,
     first_command: record.first_command,
   }]));
+}
+
+function publicHorizonPromptRecords(records) {
+  return Object.fromEntries(Object.entries(records).map(([key, record]) => [key, {
+    horizon: record.horizon,
+    prompt_txt: record.prompt_txt,
+    prompt_txt_abs: record.prompt_txt_abs,
+    horizon_match: record.horizon_match,
+    selected_ref: record.selected_ref,
+    lane: record.lane,
+    first_command: record.first_command,
+  }]));
+}
+
+function checkPromptRecords(records, keys) {
+  return Object.fromEntries(keys.map(key => {
+    const expectedRecord = records[key];
+    const promptPath = expectedRecord.prompt_txt_abs;
+    const exists = fs.existsSync(promptPath);
+    const expectedText = `${expectedRecord.prompt}\n`;
+    const actualText = exists ? readText(promptPath) : '';
+    const record = {
+      prompt_txt: expectedRecord.prompt_txt,
+      exists,
+      matches_expected: Boolean(exists && actualText === expectedText),
+      actual_sha1: exists ? sha1(actualText) : null,
+      expected_sha1: sha1(expectedText),
+      selected_ref: expectedRecord.selected_ref,
+      lane: expectedRecord.lane,
+      first_command: expectedRecord.first_command,
+    };
+    if (expectedRecord.horizon) record.horizon = expectedRecord.horizon;
+    return [key, record];
+  }));
 }
 
 function summarizeRouteLanes(routes) {
@@ -834,6 +906,7 @@ function buildPacket(options = {}) {
       latest_json: LATEST_PACKET_RELATIVE_PATH,
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
       model_prompt_txt: modelPromptRelativePaths(),
+      horizon_prompt_txt: horizonPromptRelativePaths(),
     },
     missions: {
       active: missionState.active_count,
@@ -877,6 +950,7 @@ function writeLatestPacket(packet) {
   const latestJsonPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
   const promptTxtPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
   const modelPromptRecords = buildModelPromptRecords(packet, root);
+  const horizonPromptRecords = buildHorizonPromptRecords(packet, root);
   const packetToWrite = {
     ...packet,
     boundaries: {
@@ -892,6 +966,8 @@ function writeLatestPacket(packet) {
       prompt_txt_abs: promptTxtPath,
       model_prompt_txt: modelPromptRelativePaths(),
       model_prompts: publicModelPromptRecords(modelPromptRecords),
+      horizon_prompt_txt: horizonPromptRelativePaths(),
+      horizon_prompts: publicHorizonPromptRecords(horizonPromptRecords),
       source_fingerprint: packet.freshness ? packet.freshness.source_fingerprint : null,
     },
   };
@@ -899,6 +975,9 @@ function writeLatestPacket(packet) {
   fs.writeFileSync(latestJsonPath, `${JSON.stringify(packetToWrite, null, 2)}\n`, 'utf8');
   fs.writeFileSync(promptTxtPath, `${packetToWrite.handoff.prompt}\n`, 'utf8');
   for (const record of Object.values(modelPromptRecords)) {
+    fs.writeFileSync(record.prompt_txt_abs, `${record.prompt}\n`, 'utf8');
+  }
+  for (const record of Object.values(horizonPromptRecords)) {
     fs.writeFileSync(record.prompt_txt_abs, `${record.prompt}\n`, 'utf8');
   }
   return packetToWrite;
@@ -917,27 +996,13 @@ function buildLatestCheck(options = {}) {
   const actualPromptText = promptExists ? readText(promptPath) : '';
   const promptFresh = Boolean(promptExists && actualPromptText === expectedPromptText);
   const expectedModelPromptRecords = buildModelPromptRecords(current, root);
-  const modelPrompts = Object.fromEntries(MODEL_TIERS.map(tier => {
-    const expectedRecord = expectedModelPromptRecords[tier];
-    const relativePath = expectedRecord.prompt_txt;
-    const promptPathForTier = expectedRecord.prompt_txt_abs;
-    const existsForTier = fs.existsSync(promptPathForTier);
-    const expectedText = `${expectedRecord.prompt}\n`;
-    const actualText = existsForTier ? readText(promptPathForTier) : '';
-    return [tier, {
-      prompt_txt: relativePath,
-      exists: existsForTier,
-      matches_expected: Boolean(existsForTier && actualText === expectedText),
-      actual_sha1: existsForTier ? sha1(actualText) : null,
-      expected_sha1: sha1(expectedText),
-      selected_ref: expectedRecord.selected_ref,
-      lane: expectedRecord.lane,
-      first_command: expectedRecord.first_command,
-    }];
-  }));
+  const modelPrompts = checkPromptRecords(expectedModelPromptRecords, MODEL_TIERS);
   const modelPromptsFresh = Object.values(modelPrompts).every(record => record.matches_expected);
+  const expectedHorizonPromptRecords = buildHorizonPromptRecords(current, root);
+  const horizonPrompts = checkPromptRecords(expectedHorizonPromptRecords, HORIZON_PROMPTS.map(([key]) => key));
+  const horizonPromptsFresh = Object.values(horizonPrompts).every(record => record.matches_expected);
   const exists = Boolean(latest);
-  const fresh = Boolean(exists && promptFresh && modelPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
+  const fresh = Boolean(exists && promptFresh && modelPromptsFresh && horizonPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
   return {
     schema: 'atris.zero_shot_latest_check.v1',
     ok: fresh,
@@ -946,6 +1011,7 @@ function buildLatestCheck(options = {}) {
     latest_json: LATEST_PACKET_RELATIVE_PATH,
     prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
     model_prompt_txt: modelPromptRelativePaths(),
+    horizon_prompt_txt: horizonPromptRelativePaths(),
     latest_exists: exists,
     prompt_exists: promptExists,
     prompt_fresh: promptFresh,
@@ -953,6 +1019,8 @@ function buildLatestCheck(options = {}) {
     prompt_expected_sha1: sha1(expectedPromptText),
     model_prompts: modelPrompts,
     model_prompts_fresh: modelPromptsFresh,
+    horizon_prompts: horizonPrompts,
+    horizon_prompts_fresh: horizonPromptsFresh,
     latest_generated_at: latest ? latest.generated_at || null : null,
     latest_selected_ref: latest ? latest.decision && latest.decision.selected_ref || null : null,
     current_selected_ref: current.decision.selected_ref || null,
@@ -972,6 +1040,7 @@ function renderLatestCheck(check) {
     `latest: ${check.latest_json}`,
     `prompt: ${check.prompt_fresh ? 'fresh' : (check.prompt_exists ? 'stale' : 'missing')} (${check.prompt_txt})`,
     `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
+    `horizon prompts: ${check.horizon_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
     `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
     `refresh: ${check.refresh_command}`,
   ].join('\n');
@@ -1059,8 +1128,8 @@ function renderHelp() {
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
-    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, and per-model prompt files for ambient agents; it does not mutate tasks or call external systems.`,
-    '--check compares the durable latest packet, global prompt, per-model prompts, and current source fingerprints, then reports fresh, stale, or missing.',
+    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
+    '--check compares the durable latest packet, global prompt, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
