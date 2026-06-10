@@ -639,11 +639,12 @@ function summarizeRouteModels(routes) {
 }
 
 function summarizeRouteHorizons(routes) {
+  const summary = Object.fromEntries(HORIZON_ORDER.map(horizon => [horizon, 0]));
   return routes.reduce((summary, route) => {
     const horizon = route.horizon || 'unknown';
     summary[horizon] = (summary[horizon] || 0) + 1;
     return summary;
-  }, {});
+  }, summary);
 }
 
 function selectRoute(routes, requestedModelTier = null) {

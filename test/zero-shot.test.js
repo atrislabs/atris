@@ -710,9 +710,13 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(packet.routes.lanes.recovery_lane, 1);
     assert.equal(packet.routes.lanes.fast_model_task, 1);
     assert.equal(packet.routes.lanes.long_horizon, 1);
-    assert.equal(packet.routes.horizons.blocked, 1);
-    assert.equal(packet.routes.horizons.now, 2);
-    assert.equal(packet.routes.horizons.long_term, 1);
+    assert.deepEqual(packet.routes.horizons, {
+      now: 2,
+      immediate_review: 0,
+      long_term: 1,
+      blocked: 1,
+      orient: 0,
+    });
     assert.equal(packet.routes.models.human.count, 1);
     assert.equal(packet.routes.models.human.first.ref, 'OWN-2');
     assert.equal(packet.routes.models.human.first.first_command, 'atris task page OWN-2 --json');
