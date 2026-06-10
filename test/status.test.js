@@ -80,6 +80,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(payload.zero_shot.safe_agent_action, 'read-only: atris task page WAIT-1 --json; then wait or pick a non-blocked route from atris 0-shot --all');
     assert.equal(payload.zero_shot.menu_command, 'atris 0-shot --all');
     assert.equal(payload.zero_shot.prompt_command, 'atris 0-shot --prompt');
+    assert.equal(payload.zero_shot.model_prompt_commands.fast, 'atris 0-shot --model fast --prompt');
+    assert.equal(payload.zero_shot.horizon_prompt_commands.blocked, 'atris 0-shot --horizon blocked --prompt');
     assert.equal(payload.zero_shot.check_command, 'atris 0-shot --check');
     assert.equal(payload.zero_shot.refresh_command, 'atris 0-shot --write');
     assert.equal(payload.zero_shot.durable_status, 'missing');
@@ -102,6 +104,11 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
       validator: 0,
       human: 1,
     });
+    assert.equal(payload.zero_shot.model_first.human.ref, 'WAIT-1');
+    assert.equal(payload.zero_shot.model_first.human.model_tier, 'human');
+    assert.equal(payload.zero_shot.horizon_first.blocked.ref, 'WAIT-1');
+    assert.equal(payload.zero_shot.horizon_first.blocked.first_command, 'atris task page WAIT-1 --json');
+    assert.equal(payload.zero_shot.horizon_first.now, null);
 
     const quick = runCli(['status', '--quick'], { cwd: dir });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
@@ -112,6 +119,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.match(quick.stdout, /durable status=missing prompt=missing menu=missing model=stale_or_missing horizon=stale_or_missing/);
     assert.match(quick.stdout, /horizons now=0 review=0 long=0 blocked=1/);
     assert.match(quick.stdout, /models fast=0 pro=0 validator=0 human=1/);
+    assert.match(quick.stdout, /model first fast=none pro=none validator=none human=WAIT-1\/human/);
+    assert.match(quick.stdout, /horizon first now=none review=none long=none blocked=WAIT-1\/human orient=none/);
 
     const human = runCli(['status'], { cwd: dir });
     assert.equal(human.status, 0, human.stderr || human.stdout);
@@ -121,6 +130,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.match(human.stdout, /0-shot agent-safe action: read-only: atris task page WAIT-1 --json/);
     assert.match(human.stdout, /0-shot durable: status=missing prompt=missing menu=missing\s+model=stale_or_missing horizon=stale_or_missing; check with atris 0-shot\s+--check/);
     assert.match(human.stdout, /0-shot buckets: horizons now=0 review=0 long=0 blocked=1; models fast=0\s+pro=0 validator=0 human=1/);
+    assert.match(human.stdout, /0-shot first by model: fast=none pro=none validator=none\s+human=WAIT-1\/human/);
+    assert.match(human.stdout, /0-shot first by horizon: now=none review=none long=none\s+blocked=WAIT-1\/human orient=none/);
   } finally {
     cleanup(dir);
   }

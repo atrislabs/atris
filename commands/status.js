@@ -6,6 +6,13 @@ const { buildLatestCheck, buildPacket } = require('./zero-shot');
 
 const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
 const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
+const ZERO_SHOT_HORIZON_LABELS = [
+  ['now', 'now'],
+  ['review', 'immediate_review'],
+  ['long', 'long_term'],
+  ['blocked', 'blocked'],
+  ['orient', 'orient'],
+];
 
 // Box drawing helpers
 const W = 64; // inner width
@@ -98,6 +105,8 @@ function zeroShotStatus(root = process.cwd()) {
       menu_command: commands.zero_shot_all || 'atris 0-shot --all',
       prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
       json_command: commands.zero_shot_json || 'atris 0-shot --json',
+      model_prompt_commands: commands.model_prompt || defaultModelPromptCommands(),
+      horizon_prompt_commands: commands.horizon_prompt || defaultHorizonPromptCommands(),
       check_command: check.check_command || 'atris 0-shot --check',
       refresh_command: check.refresh_command || 'atris 0-shot --write',
       durable_status: check.status || 'unknown',
@@ -111,6 +120,8 @@ function zeroShotStatus(root = process.cwd()) {
       prompt_txt: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
       horizon_counts: normalizeHorizonCounts(routes.horizons || {}),
       model_counts: normalizeModelCounts(routes.models || {}),
+      horizon_first: normalizeHorizonFirst(routes.horizon_first || {}),
+      model_first: normalizeModelFirst(routes.models || {}),
     };
   } catch {
     return {
@@ -124,6 +135,8 @@ function zeroShotStatus(root = process.cwd()) {
       menu_command: 'atris 0-shot --all',
       prompt_command: 'atris 0-shot --prompt',
       json_command: 'atris 0-shot --json',
+      model_prompt_commands: defaultModelPromptCommands(),
+      horizon_prompt_commands: defaultHorizonPromptCommands(),
       check_command: 'atris 0-shot --check',
       refresh_command: 'atris 0-shot --write',
       durable_status: 'unavailable',
@@ -137,8 +150,18 @@ function zeroShotStatus(root = process.cwd()) {
       prompt_txt: '.atris/state/zero-shot.prompt.txt',
       horizon_counts: normalizeHorizonCounts({}),
       model_counts: normalizeModelCounts({}),
+      horizon_first: normalizeHorizonFirst({}),
+      model_first: normalizeModelFirst({}),
     };
   }
+}
+
+function defaultModelPromptCommands() {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(tier => [tier, `atris 0-shot --model ${tier} --prompt`]));
+}
+
+function defaultHorizonPromptCommands() {
+  return Object.fromEntries(ZERO_SHOT_HORIZON_LABELS.map(([label]) => [label, `atris 0-shot --horizon ${label} --prompt`]));
 }
 
 function normalizeHorizonCounts(counts = {}) {
@@ -152,15 +175,54 @@ function normalizeModelCounts(models = {}) {
   }));
 }
 
+function compactFirstRoute(route) {
+  if (!route || typeof route !== 'object') return null;
+  return {
+    kind: route.kind || null,
+    ref: route.ref || null,
+    title: route.title || null,
+    lane: route.lane || null,
+    horizon: route.horizon || null,
+    model_tier: route.model_tier || null,
+    first_command: route.first_command || null,
+  };
+}
+
+function normalizeHorizonFirst(first = {}) {
+  return Object.fromEntries(ZERO_SHOT_HORIZON_LABELS.map(([, key]) => [key, compactFirstRoute(first[key])]));
+}
+
+function normalizeModelFirst(models = {}) {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(key => {
+    const value = models[key];
+    return [key, compactFirstRoute(value && typeof value === 'object' ? value.first : null)];
+  }));
+}
+
 function zeroShotStatusText(zeroShot) {
   const focus = zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : '';
   return `${zeroShot.lane}${focus} -> ${zeroShot.first_command}`;
+}
+
+function firstRouteText(route) {
+  if (!route) return 'none';
+  return `${route.ref || route.lane || 'workspace'}/${route.model_tier || 'unknown'}`;
 }
 
 function zeroShotBucketText(zeroShot) {
   const horizons = zeroShot.horizon_counts || normalizeHorizonCounts({});
   const models = zeroShot.model_counts || normalizeModelCounts({});
   return `horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
+}
+
+function zeroShotHorizonFirstText(zeroShot) {
+  const first = zeroShot.horizon_first || normalizeHorizonFirst({});
+  return `horizon first now=${firstRouteText(first.now)} review=${firstRouteText(first.immediate_review)} long=${firstRouteText(first.long_term)} blocked=${firstRouteText(first.blocked)} orient=${firstRouteText(first.orient)}`;
+}
+
+function zeroShotModelFirstText(zeroShot) {
+  const first = zeroShot.model_first || normalizeModelFirst({});
+  return `model first fast=${firstRouteText(first.fast)} pro=${firstRouteText(first.pro)} validator=${firstRouteText(first.validator)} human=${firstRouteText(first.human)}`;
 }
 
 function zeroShotGateText(zeroShot) {
@@ -295,7 +357,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   // Quick mode
   if (isQuick) {
     const gateText = zeroShotGateText(zeroShot);
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'}${gateText ? ` | ${gateText}` : ''} | durable ${zeroShotDurableText(zeroShot)} | ${zeroShotBucketText(zeroShot)}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'}${gateText ? ` | ${gateText}` : ''} | durable ${zeroShotDurableText(zeroShot)} | ${zeroShotBucketText(zeroShot)} | ${zeroShotModelFirstText(zeroShot)} | ${zeroShotHorizonFirstText(zeroShot)}`);
     return;
   }
 
@@ -324,6 +386,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     if (zeroShot.safe_agent_action) queueParts.push(`0-shot agent-safe action: ${zeroShot.safe_agent_action}.`);
     queueParts.push(`0-shot durable: ${zeroShotDurableText(zeroShot)}; check with ${zeroShot.check_command || 'atris 0-shot --check'}.`);
     queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
+    queueParts.push(`0-shot first by model: ${zeroShotModelFirstText(zeroShot).replace(/^model first /, '')}.`);
+    queueParts.push(`0-shot first by horizon: ${zeroShotHorizonFirstText(zeroShot).replace(/^horizon first /, '')}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
     } else {
@@ -468,6 +532,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   if (zeroShot.safe_agent_action) o(`  0-shot agent-safe → ${zeroShot.safe_agent_action}`);
   o(`  0-shot durable → ${zeroShotDurableText(zeroShot)}`);
   o(`  0-shot buckets → ${zeroShotBucketText(zeroShot)}`);
+  o(`  0-shot first model → ${zeroShotModelFirstText(zeroShot).replace(/^model first /, '')}`);
+  o(`  0-shot first horizon → ${zeroShotHorizonFirstText(zeroShot).replace(/^horizon first /, '')}`);
   o('');
 }
 
