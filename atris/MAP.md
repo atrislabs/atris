@@ -122,7 +122,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Gives any agent or operator a next-move packet when the prompt is vague or empty.
 
-- **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files; default `atris 0-shot` / `atris next` human output includes direct model-tier and horizon selector commands
+- **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files; default `atris 0-shot` / `atris next` human output includes direct model-tier and horizon selector commands, and `atris next --model/--horizon` dispatches through the 0-shot selector instead of planner input
 - **Natural aliases:** `bin/atris.js` normalizes `0shot`, `0 shot`, `zeroshot`, and `zero shot` to `0-shot` before dispatch
 - **First-message boot:** `bin/atris.js` `interactiveEntry()` and `showWelcomeVisualization()` point initialized workspaces at `atris 0-shot --all`, direct model-tier prompts, direct horizon prompts, and refresh the ambient latest files
 - **Implementation:** `commands/zero-shot.js`

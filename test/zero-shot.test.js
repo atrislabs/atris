@@ -205,6 +205,20 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.equal(modelPacket.decision.requested_model_tier, 'fast');
     assert.equal(modelPacket.decision.model_tier_match, true);
     assert.equal(modelPacket.decision.selected_ref, 'CZS-1');
+
+    const horizonRes = runCli(['next', '--horizon', 'now', '--json'], { cwd: dir });
+    assert.equal(horizonRes.status, 0, horizonRes.stderr || horizonRes.stdout);
+    const horizonPacket = JSON.parse(horizonRes.stdout);
+    assert.equal(horizonPacket.decision.requested_horizon, 'now');
+    assert.equal(horizonPacket.decision.horizon_match, true);
+    assert.equal(horizonPacket.decision.selected_ref, 'CZS-1');
+
+    const quickRes = runCli(['next', '--quick', '--json'], { cwd: dir });
+    assert.equal(quickRes.status, 0, quickRes.stderr || quickRes.stdout);
+    const quickPacket = JSON.parse(quickRes.stdout);
+    assert.equal(quickPacket.decision.requested_horizon, 'now');
+    assert.equal(quickPacket.decision.horizon_match, true);
+    assert.equal(quickPacket.decision.selected_ref, 'CZS-1');
   } finally {
     cleanupTempDir(dir);
   }
