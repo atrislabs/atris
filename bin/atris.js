@@ -555,7 +555,7 @@ function showNextHelp(commandName = 'next') {
   console.log('Options:');
   console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
   console.log('  --prompt     Print the copy-pasteable zero-shot prompt when no request is provided.');
-  console.log('  --write      Refresh .atris/state/zero-shot.latest.json, zero-shot.prompt.txt, and per-model prompts.');
+  console.log('  --write      Refresh .atris/state/zero-shot.latest.json, zero-shot.prompt.txt, per-model prompts, and per-horizon prompts.');
   console.log('  --check      Check whether durable zero-shot files are fresh.');
   console.log('  --help, -h   Show this help.');
   console.log('');
