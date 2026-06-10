@@ -1,0 +1,87 @@
+{
+  "schema": "atris.mission_receipt.v1",
+  "mission_id": "mission-2026-06-10-worktree-dogfood-b-capture-p-1b9e2169",
+  "objective": "Worktree dogfood B: capture parallel-mission friction notes from inside worktree B",
+  "owner": "devin-b",
+  "at": "2026-06-10T07:12:46.564Z",
+  "verifier": "test -f atris/dogfood/worktree-b-friction.md",
+  "result": {
+    "kind": "mission_tick",
+    "tick": {
+      "status": "ran",
+      "reason": "tick-recorded",
+      "tick_index": 1,
+      "ran": true,
+      "started_at": "2026-06-10T07:12:46.509Z",
+      "claude": {
+        "skipped": true,
+        "reason": "orchestrator-is-caller-session"
+      },
+      "summary": "friction notes written in worktree B",
+      "verifier_passed": true,
+      "finished_at": "2026-06-10T07:12:46.564Z",
+      "worktree": {
+        "available": true,
+        "before_dirty_count": 1,
+        "after_dirty_count": 1,
+        "changed": false,
+        "baseline_source": "mission_start",
+        "baseline_dirty_count": 0,
+        "new_since_baseline_count": 1,
+        "new_since_baseline_sample": [
+          "atris/dogfood/worktree-b-friction.md"
+        ],
+        "unverified_dirty": false,
+        "unverified_change": false,
+        "new_dirty_count": 0,
+        "cleared_dirty_count": 0,
+        "dirty_sample_after": [
+          "?? atris/dogfood/worktree-b-friction.md"
+        ],
+        "new_dirty_sample": [],
+        "cleared_dirty_sample": [],
+        "before_dirty_hash": "a3647263a62dab107571c687249eec91f07772b0",
+        "after_dirty_hash": "a3647263a62dab107571c687249eec91f07772b0"
+      }
+    },
+    "frozen": {
+      "verifier": "test -f atris/dogfood/worktree-b-friction.md",
+      "lane": "code",
+      "started_at": "2026-06-10T07:12:46.509Z"
+    },
+    "verifier_result": {
+      "command": "test -f atris/dogfood/worktree-b-friction.md",
+      "resolved_command": null,
+      "status": 0,
+      "signal": null,
+      "passed": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    "rate_limit_info": null,
+    "worktree": {
+      "available": true,
+      "before_dirty_count": 1,
+      "after_dirty_count": 1,
+      "changed": false,
+      "baseline_source": "mission_start",
+      "baseline_dirty_count": 0,
+      "new_since_baseline_count": 1,
+      "new_since_baseline_sample": [
+        "atris/dogfood/worktree-b-friction.md"
+      ],
+      "unverified_dirty": false,
+      "unverified_change": false,
+      "new_dirty_count": 0,
+      "cleared_dirty_count": 0,
+      "dirty_sample_after": [
+        "?? atris/dogfood/worktree-b-friction.md"
+      ],
+      "new_dirty_sample": [],
+      "cleared_dirty_sample": [],
+      "before_dirty_hash": "a3647263a62dab107571c687249eec91f07772b0",
+      "after_dirty_hash": "a3647263a62dab107571c687249eec91f07772b0"
+    },
+    "passed": true
+  }
+}
