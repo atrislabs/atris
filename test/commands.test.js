@@ -685,7 +685,8 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     const payload = JSON.parse(goal.stdout);
     assert.equal(payload.action, 'goal_from_mission_created');
     assert.equal(payload.goal.source, 'mission');
-    assert.match(payload.goal.title, /Prove one bounded step toward/);
+    assert.match(payload.goal.title, /Make Missions change the world/);
+    assert.doesNotMatch(payload.goal.title, /Prove one bounded step toward/, 'goal title carries the mission focus without boilerplate');
     assert.match(payload.goal.why, /Make Missions change the world/);
     assert.equal(payload.goal.mission_file, 'atris/team/mission-lead/MISSION.md');
     assert.equal(payload.goal.now_file, 'atris/team/mission-lead/now.md');
@@ -715,6 +716,39 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     const reusedPayload = JSON.parse(reused.stdout);
     assert.equal(reusedPayload.action, 'goal_from_mission_reused');
     assert.equal(reusedPayload.goal.id, payload.goal.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member goal-from-mission stops when active mission is blocked', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', 'Make Missions change the world with self-generated goals',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const nowPath = path.join(dir, 'atris', 'team', 'mission-lead', 'now.md');
+    const nowText = fs.readFileSync(nowPath, 'utf8');
+    fs.writeFileSync(nowPath, nowText.replace(/^- status: .+$/m, '- status: blocked').replace(/^- next: .+$/m, '- next: fix verifier failure or revise mission'), 'utf8');
+
+    const blocked = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(blocked.status, 0, blocked.stderr || blocked.stdout);
+    const payload = JSON.parse(blocked.stdout);
+    assert.equal(payload.action, 'needs_user');
+    assert.equal(payload.needs_user, true);
+    assert.match(payload.ask, /blocked/i);
+    assert.match(payload.ask, /fix verifier failure or revise mission/i);
+
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    if (fs.existsSync(goalsPath)) {
+      const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+      assert.equal(state.goals.length, 0);
+    }
   } finally {
     cleanupTempDir(dir);
   }
@@ -1515,6 +1549,41 @@ test('auto-improver wake writes dogfood receipt and bounded task', () => {
     const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
     assert.match(receipt.scan.prevented_fire_candidate.title, /Recurring log pattern/);
     assert.equal(receipt.created_task.task_ref, payload.created_task.task_ref);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake ignores self-generated recurring-pattern log noise', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const nestedNoise = '- candidate: Recurring log pattern: candidate: Recurring log pattern: "mission_status": "blocked"';
+    const realPattern = 'ERROR team hub mission_status blocked waiting for owner';
+    fs.writeFileSync(path.join(logsDir, '2026-06-09.md'), [
+      '# test log',
+      `- ${nestedNoise}`,
+      `- ${nestedNoise}`,
+      `- ${realPattern}`,
+      `- ${realPattern}`,
+      `- ${realPattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'task_created');
+    assert.match(payload.created_task.title || payload.created_task.task?.title || '', /^Auto-improver: /);
+    assert.doesNotMatch(payload.created_task.title || payload.created_task.task?.title || '', /candidate: Recurring log pattern: candidate:/);
+
+    const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
+    assert.doesNotMatch(receipt.scan.prevented_fire_candidate.title, /candidate: Recurring log pattern: candidate:/);
   } finally {
     cleanupTempDir(dir);
   }
