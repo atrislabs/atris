@@ -12,6 +12,7 @@ const ZERO_SHOT_COMMAND = 'atris 0-shot';
 const LEGACY_ZERO_SHOT_COMMAND = 'atris zero-shot';
 const ZERO_SHOT_JSON_COMMAND = `${ZERO_SHOT_COMMAND} --json`;
 const ZERO_SHOT_PROMPT_COMMAND = `${ZERO_SHOT_COMMAND} --prompt`;
+const ZERO_SHOT_ALL_COMMAND = `${ZERO_SHOT_COMMAND} --all`;
 const ZERO_SHOT_WRITE_COMMAND = `${ZERO_SHOT_COMMAND} --write`;
 const ZERO_SHOT_CHECK_COMMAND = `${ZERO_SHOT_COMMAND} --check`;
 const LEGACY_ZERO_SHOT_JSON_COMMAND = `${LEGACY_ZERO_SHOT_COMMAND} --json`;
@@ -605,6 +606,7 @@ function buildHandoff(route, root) {
     route_options_field: 'routes.options',
     json_command: ZERO_SHOT_JSON_COMMAND,
     prompt_command: ZERO_SHOT_PROMPT_COMMAND,
+    all_command: ZERO_SHOT_ALL_COMMAND,
     write_command: ZERO_SHOT_WRITE_COMMAND,
     legacy_json_command: LEGACY_ZERO_SHOT_JSON_COMMAND,
     legacy_prompt_command: LEGACY_ZERO_SHOT_PROMPT_COMMAND,
@@ -923,6 +925,7 @@ function buildPacket(options = {}) {
     commands: {
       zero_shot_json: ZERO_SHOT_JSON_COMMAND,
       zero_shot_prompt: ZERO_SHOT_PROMPT_COMMAND,
+      zero_shot_all: ZERO_SHOT_ALL_COMMAND,
       zero_shot_write: ZERO_SHOT_WRITE_COMMAND,
       legacy_zero_shot_json: LEGACY_ZERO_SHOT_JSON_COMMAND,
       legacy_zero_shot_prompt: LEGACY_ZERO_SHOT_PROMPT_COMMAND,
@@ -1077,7 +1080,29 @@ function renderModelSummary(models) {
   return renderCountSummary('models', counts, MODEL_TIERS);
 }
 
-function renderPacket(packet) {
+function renderRouteMenu(packet) {
+  const routes = packet.routes || {};
+  const options = Array.isArray(routes.options) ? routes.options : [];
+  const lines = ['route menu:'];
+  if (!options.length) {
+    lines.push('  none | run: atris radar --json');
+  } else {
+    options.forEach((route, index) => {
+      const focus = route.ref ? `${route.ref} - ${route.title || '(untitled)'}` : (route.title || 'workspace');
+      lines.push(`${index + 1}. ${route.horizon}/${route.model_tier}/${route.lane} | ${focus}`);
+      lines.push(`   run: ${route.first_command}`);
+      lines.push(`   why: ${route.reason}`);
+    });
+    if (routes.total > options.length) {
+      lines.push(`   +${routes.total - options.length} more not shown; use atris 0-shot --json for routes.options`);
+    }
+  }
+  lines.push('select horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt');
+  lines.push('select model: atris 0-shot --model fast|pro|validator|human --prompt');
+  return lines.join('\n');
+}
+
+function renderPacket(packet, options = {}) {
   const selected = packet.decision.selected_ref
     ? `${packet.decision.selected_ref} - ${packet.decision.selected_title}`
     : 'none';
@@ -1098,7 +1123,9 @@ function renderPacket(packet) {
     renderRouteSummary(packet.routes),
     renderCountSummary('horizons', packet.routes && packet.routes.horizons, HORIZON_ORDER),
     renderModelSummary(packet.routes && packet.routes.models),
+    ...(options.all ? [renderRouteMenu(packet)] : []),
     `prompt: ${packet.commands.zero_shot_prompt}`,
+    `all: ${packet.commands.zero_shot_all}`,
     `write: ${packet.commands.zero_shot_write} -> ${packet.durable.latest_json}`,
     `check: ${packet.freshness.check_command}`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,
@@ -1117,8 +1144,8 @@ function renderHint(packet) {
 
 function renderHelp() {
   return [
-    'Usage: atris 0-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
-    'Alias: atris zero-shot [--json|--prompt|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
+    'Usage: atris 0-shot [--json|--prompt|--all|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
+    'Alias: atris zero-shot [--json|--prompt|--all|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]',
     'Also accepts: atris 0 shot, atris 0shot, atris zero shot, atris zeroshot',
     '',
     'Use when you do not know what to prompt next.',
@@ -1128,6 +1155,7 @@ function renderHelp() {
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
+    '--all prints the selected route plus the visible route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
     '--check compares the durable latest packet, global prompt, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
@@ -1167,7 +1195,7 @@ function zeroShotCommand(args = []) {
   } else if (args.includes('--prompt')) {
     console.log(packet.handoff.prompt);
   } else {
-    console.log(renderPacket(packet));
+    console.log(renderPacket(packet, { all: args.includes('--all') || args.includes('--menu') || args.includes('--routes') }));
   }
   return 0;
 }

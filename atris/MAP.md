@@ -143,7 +143,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
 - **Route summary:** JSON includes zero-filled `routes.horizons` counts plus `routes.models` grouped by fast/pro/validator/human, with count and first route for each tier
-- **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON
+- **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON; `atris 0-shot --all` expands the visible route menu with each shown route's horizon, model tier, lane, first command, and reason
 - **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
 - **Horizon selection:** `atris 0-shot --horizon now|review|long|blocked|orient` and `--quick`/`--review`/`--long`/`--blocked`/`--orient` select the first route in that quick/review/long-term/blocked/context bucket
 - **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
@@ -158,6 +158,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris zero-shot` -> compatible human next-move card
 - `atris 0-shot --json` -> machine-readable packet
 - `atris 0-shot --prompt` -> copy-pasteable prompt for any model
+- `atris 0-shot --all` -> readable route menu for the selected next move plus visible quick/review/long/blocked/orient options
 - `atris 0-shot --write` -> refresh durable latest packet and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 

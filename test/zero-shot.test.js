@@ -781,6 +781,7 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.match(packet.routes.options[0].prompt, /Route: owner_gate/);
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
     assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
+    assert.equal(packet.commands.zero_shot_all, 'atris 0-shot --all');
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.models.human.first, 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes, 'all_options'), false);
@@ -868,6 +869,34 @@ test('zero-shot human output summarizes work by horizon and model tier', () => {
   }
 });
 
+test('zero-shot --all prints a readable route menu without writing state', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'FAST-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      { display_id: 'ARC-1', title: 'Plan architecture migration roadmap', status: 'claimed', tag: 'architecture' },
+      { display_id: 'OWN-2', title: 'Publish release after human approval', status: 'claimed', tag: 'release' },
+      { display_id: 'FAIL-1', title: 'Fix failing release gate', status: 'failed', tag: 'release' },
+    ]);
+
+    const res = runCli(['0-shot', '--all'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot next move/);
+    assert.match(res.stdout, /route menu:/);
+    assert.match(res.stdout, /1\. blocked\/human\/owner_gate \| OWN-2 - Publish release after human approval/);
+    assert.match(res.stdout, /run: atris task page OWN-2 --json/);
+    assert.match(res.stdout, /2\. now\/pro\/recovery_lane \| FAIL-1 - Fix failing release gate/);
+    assert.match(res.stdout, /3\. now\/fast\/fast_model_task \| FAST-1 - Fix CLI help copy/);
+    assert.match(res.stdout, /4\. long_term\/pro\/long_horizon \| ARC-1 - Plan architecture migration roadmap/);
+    assert.match(res.stdout, /select horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.match(res.stdout, /select model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
+    assert.match(res.stdout, /all: atris 0-shot --all/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('zero-shot help is workspace-free and non-mutating', () => {
   const dir = makeTempDir();
   try {
@@ -884,6 +913,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /routes\.models/);
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
+    assert.match(res.stdout, /--all prints the selected route plus the visible route menu/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
     assert.match(res.stdout, /--check compares the durable latest packet/);
     assert.match(res.stdout, /mission_tick/);
