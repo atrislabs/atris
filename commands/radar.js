@@ -8,6 +8,8 @@ const { buildPacket, collectFreshness } = require('./zero-shot');
 
 const ZERO_SHOT_LATEST_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const ZERO_SHOT_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
+const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
+const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
 
 function safeJson(text, fallback = null) {
   try { return JSON.parse(text); } catch { return fallback; }
@@ -421,6 +423,31 @@ function zeroShotRouteFromPacket(packet = null) {
   };
 }
 
+function normalizeZeroShotHorizons(counts = {}) {
+  return Object.fromEntries(ZERO_SHOT_HORIZONS.map(key => [key, Number(counts[key] || 0)]));
+}
+
+function normalizeZeroShotModels(models = {}) {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(key => {
+    const value = models[key];
+    return [key, Number(value && typeof value === 'object' ? value.count || 0 : value || 0)];
+  }));
+}
+
+function zeroShotBucketsFromPacket(packet = null) {
+  const routes = packet?.routes || {};
+  return {
+    horizon_counts: normalizeZeroShotHorizons(routes.horizons || {}),
+    model_counts: normalizeZeroShotModels(routes.models || {}),
+  };
+}
+
+function zeroShotBucketLine(zeroShot = {}) {
+  const horizons = zeroShot.horizon_counts || normalizeZeroShotHorizons({});
+  const models = zeroShot.model_counts || normalizeZeroShotModels({});
+  return `0-shot buckets: horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
+}
+
 function loadZeroShot(root, deps, options = {}) {
   const latest = readJsonFile(path.join(root, ZERO_SHOT_LATEST_RELATIVE_PATH), deps, null);
   const promptExists = deps.exists(path.join(root, ZERO_SHOT_PROMPT_RELATIVE_PATH));
@@ -441,6 +468,7 @@ function loadZeroShot(root, deps, options = {}) {
   const currentRoute = zeroShotRouteFromPacket(currentPacket);
   const latestRoute = zeroShotRouteFromPacket(latest);
   const selectedRoute = currentPacket ? currentRoute : latestRoute;
+  const selectedBuckets = zeroShotBucketsFromPacket(currentPacket || latest);
   return {
     schema: 'atris.radar_zero_shot.v1',
     status: fresh ? 'fresh' : (latestExists ? 'stale' : 'missing'),
@@ -453,6 +481,8 @@ function loadZeroShot(root, deps, options = {}) {
     selected_title: selectedRoute.selected_title,
     model_tier: selectedRoute.model_tier,
     first_command: selectedRoute.first_command,
+    horizon_counts: selectedBuckets.horizon_counts,
+    model_counts: selectedBuckets.model_counts,
     current: currentPacket ? currentRoute : null,
     latest: latest ? latestRoute : null,
     latest_json: ZERO_SHOT_LATEST_RELATIVE_PATH,
@@ -663,6 +693,7 @@ function renderRadar(data) {
     const zs = data.os.zero_shot;
     const focus = [zs.lane, zs.selected_ref].filter(Boolean).join(' ') || 'none';
     lines.push(`0-shot: ${zs.status} ${focus} -> ${zs.first_command || zs.refresh_command}`);
+    lines.push(zeroShotBucketLine(zs));
   }
   if (data.os) {
     const xp = data.os.xp || {};
