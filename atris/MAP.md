@@ -147,7 +147,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON; `atris 0-shot --all` expands the full route menu with each route's horizon, model tier, lane, first command, owner-gate context, and reason
 - **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
 - **Horizon selection:** `atris 0-shot --horizon now|review|long|blocked|orient` and `--quick`/`--review`/`--long`/`--blocked`/`--orient` select the first route in that quick/review/long-term/blocked/context bucket
-- **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print a copy-paste handoff with selected route, queue counts, owner-gate context, route inventory, horizon buckets, model buckets, all-route menu command, and model/horizon selection commands
+- **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print a copy-paste handoff with selected route, queue counts, owner-gate context, route inventory, horizon buckets, model buckets, all-route menu command, and direct per-model/per-horizon selection commands
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work
 - **Long task route:** `long_horizon` task work opens the selected read-only task page for pro planning context
 - **Recovery route:** `failed` task rows use `recovery_lane` and open the selected read-only task page before retry/revise work

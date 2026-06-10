@@ -631,6 +631,15 @@ function queueSummaryText(queue = {}) {
   return `total=${queue.total || 0} open=${queue.open || 0} claimed=${queue.claimed || 0} review=${queue.review || 0} blocked=${queue.blocked || 0} failed=${queue.failed || 0} done=${queue.done || 0}`;
 }
 
+function selectionPromptLines() {
+  const models = Object.entries(modelPromptCommands()).map(([tier, command]) => `${tier}=${command}`).join('; ');
+  const horizons = Object.entries(horizonPromptCommands()).map(([key, command]) => `${key}=${command}`).join('; ');
+  return [
+    `Model selection prompts: ${models}.`,
+    `Horizon selection prompts: ${horizons}.`,
+  ];
+}
+
 function routeContextPromptLines(routes = {}, queue = {}) {
   const horizons = routes.horizons || {};
   const models = routes.models || {};
@@ -643,7 +652,7 @@ function routeContextPromptLines(routes = {}, queue = {}) {
     `Model buckets: fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     `First routes by model: ${firstRoutesByModelText(models)}`,
     'Inspect all routes before switching lanes: atris 0-shot --all; machine-readable full list: run atris 0-shot --json and read routes.all_options.',
-    'Selection prompts: atris 0-shot --model fast|pro|validator|human --prompt; atris 0-shot --horizon now|review|long|blocked|orient --prompt.',
+    ...selectionPromptLines(),
   ];
 }
 

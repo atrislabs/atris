@@ -397,7 +397,8 @@ test('zero-shot --prompt prints only the any-model handoff prompt', () => {
     assert.match(res.stdout, /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
     assert.match(res.stdout, /First routes by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /First routes by model: fast=CZS-1\/fast pro=none validator=none human=none/);
-    assert.match(res.stdout, /Selection prompts: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
+    assert.match(res.stdout, /Model selection prompts: fast=atris 0-shot --model fast --prompt; pro=atris 0-shot --model pro --prompt; validator=atris 0-shot --model validator --prompt; human=atris 0-shot --model human --prompt/);
+    assert.match(res.stdout, /Horizon selection prompts: now=atris 0-shot --horizon now --prompt; review=atris 0-shot --horizon review --prompt; long=atris 0-shot --horizon long --prompt; blocked=atris 0-shot --horizon blocked --prompt; orient=atris 0-shot --horizon orient --prompt/);
     assert.doesNotMatch(res.stdout, /"schema"/);
     assert.doesNotMatch(res.stdout, /0-shot next move/);
   } finally {
