@@ -1174,15 +1174,28 @@ function showWelcomeVisualization() {
   }
   console.log('');
   if (isInitialized) {
+    let zeroShot = null;
     try {
       const {
+        buildLatestCheck: buildZeroShotCheck,
         buildPacket: buildZeroShotPacket,
+        renderDurableSummary: renderZeroShotDurableSummary,
         renderHint: renderZeroShotHint,
         writeLatestPacket: writeLatestZeroShotPacket,
       } = require('../commands/zero-shot');
-      console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
+      zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd }));
+      console.log(`    ${renderZeroShotHint(zeroShot)}`);
+      console.log(`    ${zeroShot.decision.reason}`);
+      console.log(`    ${renderZeroShotDurableSummary(buildZeroShotCheck({ cwd }))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris 0-shot --all' to inspect the route menu, 'atris 0-shot --model fast|pro|validator|human --prompt' for a model lane, or 'atris 0-shot --horizon now|review|long|blocked|orient --prompt' for a time horizon.`);
+    if (zeroShot) {
+      const firstCommand = zeroShot.commands?.first_command || zeroShot.handoff?.first_command || 'atris 0-shot --prompt';
+      console.log(`    Next: run first: ${firstCommand}`);
+      if (zeroShot.decision?.lane === 'owner_gate') {
+        console.log('    Boundary: read-only first command; stop at owner gate; human accept is human-only.');
+      }
+    }
+    console.log(`    Ready. Run 'atris 0-shot --all' to inspect the route menu, 'atris 0-shot --prompt' for copy-paste, 'atris 0-shot --model fast|pro|validator|human --prompt' for a model lane, or 'atris 0-shot --horizon now|review|long|blocked|orient --prompt' for a time horizon.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }
