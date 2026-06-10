@@ -4471,7 +4471,8 @@ function cmdDay(args) {
     owners: groups.length,
     open: (projection.tasks || []).filter(task => task.status === 'open').length,
     claimed: (projection.tasks || []).filter(task => task.status === 'claimed').length,
-    review: (projection.tasks || []).filter(task => task.status === 'review' || task.status === 'failed' || (task.status === 'done' && task.review && task.review.reward === null)).length,
+    review: (projection.tasks || []).filter(task => task.status === 'review').length,
+    failed: (projection.tasks || []).filter(task => task.status === 'failed').length,
     stale_failed: staleFailed.length,
   };
   const date = new Date().toISOString().slice(0, 10);
@@ -4491,7 +4492,8 @@ function cmdDay(args) {
     return;
   }
   console.log('TASK DAY');
-  console.log(`${date}  active ${counts.active} / owners ${counts.owners} / review ${counts.review}`);
+  const failedText = counts.failed > 0 ? ` / failed ${counts.failed}` : '';
+  console.log(`${date}  active ${counts.active} / owners ${counts.owners} / review ${counts.review}${failedText}`);
   console.log('');
   if (!groups.length) {
     console.log('clear   no active tasks');

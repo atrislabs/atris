@@ -114,11 +114,15 @@ test('task day CLI collapses stale failed rows into one summary line', () => {
     assert.doesNotMatch(day.stdout, /Doomed old task/);
     assert.match(day.stdout, /Live open task/);
     assert.match(day.stdout, /stale\s+1 failed >7d hidden — atris task list --status failed/);
+    // Header counts are lane truth: review counts review-status only, failed shown separately.
+    assert.match(day.stdout, /active 1 \/ owners 1 \/ review 0 \/ failed 1/);
 
     const dayJson = runCli(['task', 'day', '--json'], { cwd: dir, env });
     assert.equal(dayJson.status, 0, dayJson.stderr);
     const payload = JSON.parse(dayJson.stdout);
     assert.equal(payload.counts.stale_failed, 1);
+    assert.equal(payload.counts.review, 0);
+    assert.equal(payload.counts.failed, 1);
     assert.deepEqual(payload.stale_failed.refs, [doomed.display_id]);
   } finally {
     cleanupTempDir(dir);
