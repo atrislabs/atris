@@ -1269,6 +1269,30 @@ test('activate surfaces the zero-shot next route', () => {
   }
 });
 
+test('activate finds the workspace from a subdirectory', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+    const subdir = path.join(dir, 'commands');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const res = runCli(['activate'], { cwd: subdir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris Activate/);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh/);
+    assert.match(res.stdout, /Next: run first: atris task current-step --tag cli --json/);
+    assert.doesNotMatch(res.stdout, /atris\/ folder not found/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(subdir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(subdir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('activate surfaces zero-shot owner-gate context', () => {
   const dir = makeTempDir();
   try {

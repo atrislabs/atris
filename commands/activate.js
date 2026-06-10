@@ -11,8 +11,22 @@ const {
   writeLatestPacket: writeLatestZeroShotPacket,
 } = require('./zero-shot');
 
+function findAtrisWorkspaceRoot(start = process.cwd()) {
+  let dir = path.resolve(start);
+  for (let i = 0; i < 32; i += 1) {
+    if (fs.existsSync(path.join(dir, 'atris')) || fs.existsSync(path.join(dir, '.atris'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(start);
+}
+
 function activateAtris() {
-  const workspaceDir = process.cwd();
+  const workspaceDir = findAtrisWorkspaceRoot(process.cwd());
+  if (workspaceDir !== process.cwd()) {
+    process.chdir(workspaceDir);
+  }
   const targetDir = path.join(workspaceDir, 'atris');
 
   if (!fs.existsSync(targetDir)) {
