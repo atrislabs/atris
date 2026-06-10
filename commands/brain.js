@@ -885,6 +885,28 @@ function activationZeroShotLine(state) {
   return `${renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:')} | ${menuHint} | ${horizonHint}${durableHint}`;
 }
 
+function activationZeroShotFirstMove(state) {
+  let packet = null;
+  try {
+    packet = buildZeroShotPacket({ cwd: state.root });
+  } catch {}
+  const firstCommand = packet?.commands?.first_command || packet?.handoff?.first_command || 'atris 0-shot --prompt';
+  const lane = packet?.decision?.lane || '0-shot';
+  const ref = packet?.decision?.selected_ref || null;
+  const title = packet?.decision?.selected_title || null;
+  const focus = ref ? `${ref}${title ? ` - ${title}` : ''}` : 'the current workspace';
+  const ownerGate = lane === 'owner_gate';
+  return {
+    firstCommand,
+    lane,
+    focus,
+    why: `0-shot selected ${lane} for ${focus}, so an agent activated without a prompt can move immediately.`,
+    proof: ownerGate
+      ? `Run ${firstCommand}, inspect the proof/context, and stop at the owner gate; only a human may accept.`
+      : `Run ${firstCommand}, follow the 0-shot directive, and record feedback when the route changes.`,
+  };
+}
+
 function renderActivationCard(state, options = {}) {
   const requestedMember = options.member || readRememberedOperator(state.root);
   const member = readMemberContext(state.root, requestedMember);
@@ -892,12 +914,14 @@ function renderActivationCard(state, options = {}) {
     return renderMissingMemberCard(state, requestedMember);
   }
   if (!member && !options.member) {
+    const zeroShotMove = activationZeroShotFirstMove(state);
     return `CONTEXT: ${state.name} Brain
 OPERATOR: unknown
 ${activationZeroShotLine(state)}
-NEXT MOVE: Tell Atris who is operating: atris brain activate --member <name> --root ${state.root}
-WHY: The brain should route work by operator, customer, and proof path before it assigns the next move.
-PROOF: Activation re-runs with a known operator and produces a specific work block.
+NEXT MOVE: Run first: ${zeroShotMove.firstCommand}
+WHY: ${zeroShotMove.why}
+PROOF: ${zeroShotMove.proof}
+MEMBER ROUTE: atris brain activate --member <name> --root ${state.root} --verify
 FEEDBACK: yes / edit / no`;
   }
   const profileIssues = memberProfileIssues(member);

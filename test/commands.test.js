@@ -4233,8 +4233,11 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(res.stdout, /menu: atris 0-shot --all/);
     assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
-    assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
-    assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
+    assert.match(res.stdout, /NEXT MOVE: Run first: atris radar --json/);
+    assert.match(res.stdout, /WHY: 0-shot selected no_current_task for the current workspace/);
+    assert.match(res.stdout, /PROOF: Run atris radar --json, follow the 0-shot directive/);
+    assert.match(res.stdout, /MEMBER ROUTE: atris brain activate --member <name> --root .* --verify/);
+    assert.doesNotMatch(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
     assert.match(res.stdout, /VERIFY: brain artifacts present/);
 
@@ -4254,6 +4257,43 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(body.card, /menu: atris 0-shot --all/);
     assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(body.card, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
+    assert.match(body.card, /NEXT MOVE: Run first: atris radar --json/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain activate unknown operator starts from owner-gate zero-shot route', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [{
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      }],
+    }, null, 2), 'utf8');
+
+    const res = runCli(['brain', 'activate', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /OPERATOR: unknown/);
+    assert.match(res.stdout, /ZERO SHOT: owner_gate -> atris task page CZS-1 --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /owner human-only: atris task accept CZS-1/);
+    assert.match(res.stdout, /agent-safe read-only: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /NEXT MOVE: Run first: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /WHY: 0-shot selected owner_gate for CZS-1 - Add zero-shot CLI command/);
+    assert.match(res.stdout, /PROOF: Run atris task page CZS-1 --json, inspect the proof\/context, and stop at the owner gate/);
+    assert.match(res.stdout, /MEMBER ROUTE: atris brain activate --member <name> --root .* --verify/);
+    assert.doesNotMatch(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
+    assert.match(res.stdout, /VERIFY: brain artifacts present/);
   } finally {
     cleanupTempDir(dir);
   }
