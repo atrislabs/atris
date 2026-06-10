@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { buildLatestCheck, buildPacket } = require('./zero-shot');
+const { buildLatestCheck, buildPacket, writeLatestPacket } = require('./zero-shot');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -254,6 +254,15 @@ function zeroShotNowSummary(root = process.cwd()) {
   }
 }
 
+function refreshZeroShotDurable(root = process.cwd()) {
+  try {
+    writeLatestPacket(buildPacket({ cwd: root }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function currentJournalPath(root = process.cwd()) {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -396,6 +405,7 @@ function ensureNowFile(root = process.cwd()) {
   }
   const nowPath = path.join(atrisDir, 'now.md');
   if (!fs.existsSync(nowPath)) {
+    if (isWorkspace) refreshZeroShotDurable(root);
     const content = isWorkspace ? renderDefaultNow(root) : renderPortfolioNow(root);
     fs.writeFileSync(nowPath, content, 'utf8');
     return { created: true, path: nowPath };
@@ -420,6 +430,7 @@ function refreshNowFile(root = process.cwd(), options = {}) {
       return { path: nowPath, preserved: true };
     }
   }
+  if (isWorkspace) refreshZeroShotDurable(root);
   const content = isWorkspace ? renderDefaultNow(root) : renderPortfolioNow(root);
   fs.writeFileSync(nowPath, content, 'utf8');
   return { path: nowPath, preserved: false };

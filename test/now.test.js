@@ -83,6 +83,10 @@ test('refreshNowFile regenerates now.md from current local signals', () => {
 
     assert.match(content, /Open TODO items: 2/);
     assert.match(content, /Completed receipts today: 1/);
+    assert.match(content, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.doesNotMatch(content, /^old$/);
   } finally {
     cleanup(dir);
