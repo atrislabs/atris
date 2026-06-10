@@ -129,6 +129,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
       selected_ref: 'CLI-95',
       selected_title: 'Add live operator radar command',
       model_tier: 'validator',
+      owner_action: 'human-only: atris task accept CLI-95',
+      safe_agent_action: 'read-only: atris task page CLI-95 --json; then wait or pick a non-blocked route from atris 0-shot --all',
       first_command: 'atris task review-chat CLI-95 --as codex-review',
     },
     commands: {
@@ -189,6 +191,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
         selected_ref: 'CLI-95',
         selected_title: 'Add live operator radar command',
         model_tier: 'validator',
+        owner_action: 'human-only: atris task accept CLI-95',
+        safe_agent_action: 'read-only: atris task page CLI-95 --json; then wait or pick a non-blocked route from atris 0-shot --all',
       },
       commands: {
         first_command: 'atris task review-chat CLI-95 --as codex-review',
@@ -240,6 +244,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.zero_shot.lane, 'review_lane');
   assert.equal(data.os.zero_shot.selected_ref, 'CLI-95');
   assert.equal(data.os.zero_shot.first_command, 'atris task review-chat CLI-95 --as codex-review');
+  assert.equal(data.os.zero_shot.owner_action, 'human-only: atris task accept CLI-95');
+  assert.equal(data.os.zero_shot.safe_agent_action, 'read-only: atris task page CLI-95 --json; then wait or pick a non-blocked route from atris 0-shot --all');
   assert.equal(data.os.zero_shot.menu_command, 'atris 0-shot --all');
   assert.deepEqual(data.os.zero_shot.horizon_counts, {
     now: 2,
@@ -255,7 +261,9 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     human: 0,
   });
   assert.equal(data.os.zero_shot.current.selected_ref, 'CLI-95');
+  assert.equal(data.os.zero_shot.current.owner_action, 'human-only: atris task accept CLI-95');
   assert.equal(data.os.zero_shot.latest.selected_ref, 'CLI-95');
+  assert.equal(data.os.zero_shot.latest.owner_action, 'human-only: atris task accept CLI-95');
   assert.equal(data.os.business.slug, 'cashmere-ai');
   assert.equal(data.os.business.share_ready, true);
   assert.equal(data.os.business.onboarding.packs, 1);
@@ -278,6 +286,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /0-shot: fresh review_lane CLI-95 -> atris task review-chat CLI-95 --as codex-review/);
   assert.match(renderRadar(data), /0-shot menu: atris 0-shot --all/);
+  assert.match(renderRadar(data), /0-shot owner action: human-only: atris task accept CLI-95/);
+  assert.match(renderRadar(data), /0-shot agent-safe action: read-only: atris task page CLI-95 --json/);
   assert.match(renderRadar(data), /0-shot durable: prompt=fresh menu=fresh model=fresh horizon=fresh check: atris 0-shot --check/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=2 review=1 long=1 blocked=0; models fast=2 pro=1 validator=1 human=0/);
   assert.match(renderRadar(data), /CLI-95/);

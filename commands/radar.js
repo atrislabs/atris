@@ -421,6 +421,8 @@ function zeroShotRouteFromPacket(packet = null) {
     selected_title: decision.selected_title || null,
     model_tier: decision.model_tier || null,
     first_command: commands.first_command || decision.first_command || null,
+    owner_action: decision.owner_action || null,
+    safe_agent_action: decision.safe_agent_action || null,
   };
 }
 
@@ -522,6 +524,8 @@ function loadZeroShot(root, deps, options = {}) {
     selected_title: selectedRoute.selected_title,
     model_tier: selectedRoute.model_tier,
     first_command: selectedRoute.first_command,
+    owner_action: selectedRoute.owner_action,
+    safe_agent_action: selectedRoute.safe_agent_action,
     menu_command: selectedPacket?.commands?.zero_shot_all || 'atris 0-shot --all',
     horizon_counts: selectedBuckets.horizon_counts,
     model_counts: selectedBuckets.model_counts,
@@ -737,6 +741,8 @@ function renderRadar(data) {
     const focus = [zs.lane, zs.selected_ref].filter(Boolean).join(' ') || 'none';
     lines.push(`0-shot: ${zs.status} ${focus} -> ${zs.first_command || zs.refresh_command}`);
     lines.push(`0-shot menu: ${zs.menu_command || 'atris 0-shot --all'}`);
+    if (zs.owner_action) lines.push(`0-shot owner action: ${zs.owner_action}`);
+    if (zs.safe_agent_action) lines.push(`0-shot agent-safe action: ${zs.safe_agent_action}`);
     lines.push(`0-shot durable: ${zeroShotDurableLine(zs)}`);
     lines.push(zeroShotBucketLine(zs));
   }
