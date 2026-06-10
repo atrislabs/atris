@@ -125,6 +125,10 @@ test('policyHintsForProof fires only on missing evidence and never without mined
   const full = policyHintsForProof('npm test green; receipt atris/runs/run.json', mined);
   assert.deepEqual(full, []);
 
+  // grep/diff-style verifiers are runnable commands too (CLI-217 false positive).
+  const grepStyle = policyHintsForProof("verify: grep -q 'last_verified: 2026-06-10' page.md passed; receipt atris/runs/r.json", mined);
+  assert.deepEqual(grepStyle, []);
+
   assert.deepEqual(policyHintsForProof('anything', null), []);
   assert.deepEqual(policyHintsForProof('anything', { lessons: [] }), []);
 });
