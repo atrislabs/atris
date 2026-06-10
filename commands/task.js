@@ -6191,6 +6191,12 @@ function cmdReady(args) {
     handoff.codex_prompt = reviewChat.codex_prompt;
     handoff.verification_focus = reviewChat.verification_focus;
   }
+  // Mined policy lessons (atris lesson mine) coach the proof at submission
+  // time: evidence patterns that historically certify get suggested before
+  // the task stalls in the review lane. Advisory only — never blocks ready.
+  const { readPolicyLessons, policyHintsForProof } = require('../lib/policy-lessons');
+  const policyHints = policyHintsForProof(String(proof), readPolicyLessons(taskDb.workspaceRoot()));
+  if (policyHints.length) handoff.policy_hints = policyHints;
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -6209,6 +6215,9 @@ function cmdReady(args) {
   }
   console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
   console.log(handoff.rule);
+  for (const hint of policyHints) {
+    console.log(`policy (${hint.id}): ${hint.hint}`);
+  }
 }
 
 function cmdAccept(args) {
