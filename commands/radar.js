@@ -467,6 +467,7 @@ function loadZeroShot(root, deps, options = {}) {
   } catch {}
   const currentRoute = zeroShotRouteFromPacket(currentPacket);
   const latestRoute = zeroShotRouteFromPacket(latest);
+  const selectedPacket = currentPacket || latest;
   const selectedRoute = currentPacket ? currentRoute : latestRoute;
   const selectedBuckets = zeroShotBucketsFromPacket(currentPacket || latest);
   return {
@@ -481,6 +482,7 @@ function loadZeroShot(root, deps, options = {}) {
     selected_title: selectedRoute.selected_title,
     model_tier: selectedRoute.model_tier,
     first_command: selectedRoute.first_command,
+    menu_command: selectedPacket?.commands?.zero_shot_all || 'atris 0-shot --all',
     horizon_counts: selectedBuckets.horizon_counts,
     model_counts: selectedBuckets.model_counts,
     current: currentPacket ? currentRoute : null,
@@ -693,6 +695,7 @@ function renderRadar(data) {
     const zs = data.os.zero_shot;
     const focus = [zs.lane, zs.selected_ref].filter(Boolean).join(' ') || 'none';
     lines.push(`0-shot: ${zs.status} ${focus} -> ${zs.first_command || zs.refresh_command}`);
+    lines.push(`0-shot menu: ${zs.menu_command || 'atris 0-shot --all'}`);
     lines.push(zeroShotBucketLine(zs));
   }
   if (data.os) {

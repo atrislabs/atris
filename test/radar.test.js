@@ -221,6 +221,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.zero_shot.lane, 'review_lane');
   assert.equal(data.os.zero_shot.selected_ref, 'CLI-95');
   assert.equal(data.os.zero_shot.first_command, 'atris task review-chat CLI-95 --as codex-review');
+  assert.equal(data.os.zero_shot.menu_command, 'atris 0-shot --all');
   assert.deepEqual(data.os.zero_shot.horizon_counts, {
     now: 2,
     immediate_review: 1,
@@ -257,6 +258,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(data.next_action, /review CLI-95/);
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /0-shot: fresh review_lane CLI-95 -> atris task review-chat CLI-95 --as codex-review/);
+  assert.match(renderRadar(data), /0-shot menu: atris 0-shot --all/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=2 review=1 long=1 blocked=0; models fast=2 pro=1 validator=1 human=0/);
   assert.match(renderRadar(data), /CLI-95/);
   assert.match(renderRadar(data), /Stale mission candidates/);
@@ -358,12 +360,14 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
   assert.equal(data.os.zero_shot.status, 'stale');
   assert.equal(data.os.zero_shot.route_source, 'current');
   assert.equal(data.os.zero_shot.selected_ref, 'NOW-1');
+  assert.equal(data.os.zero_shot.menu_command, 'atris 0-shot --all');
   assert.equal(data.os.zero_shot.latest.selected_ref, 'OLD-1');
   assert.equal(data.os.zero_shot.current.selected_ref, 'NOW-1');
   assert.equal(data.os.zero_shot.horizon_counts.now, 1);
   assert.equal(data.os.zero_shot.model_counts.fast, 1);
   assert.notEqual(data.os.zero_shot.latest_source_fingerprint, data.os.zero_shot.current_source_fingerprint);
   assert.match(renderRadar(data), /0-shot: stale fast_model_task NOW-1 -> atris task current-step --json/);
+  assert.match(renderRadar(data), /0-shot menu: atris 0-shot --all/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=1 review=0 long=0 blocked=0; models fast=1 pro=0 validator=0 human=0/);
 });
 

@@ -92,6 +92,7 @@ function zeroShotStatus(root = process.cwd()) {
       selected_title: decision.selected_title || null,
       model_tier: decision.model_tier || null,
       first_command: commands.first_command || decision.first_command || 'atris 0-shot --prompt',
+      menu_command: commands.zero_shot_all || 'atris 0-shot --all',
       prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
       json_command: commands.zero_shot_json || 'atris 0-shot --json',
       horizon_counts: normalizeHorizonCounts(routes.horizons || {}),
@@ -104,6 +105,7 @@ function zeroShotStatus(root = process.cwd()) {
       selected_title: null,
       model_tier: null,
       first_command: 'atris 0-shot --prompt',
+      menu_command: 'atris 0-shot --all',
       prompt_command: 'atris 0-shot --prompt',
       json_command: 'atris 0-shot --json',
       horizon_counts: normalizeHorizonCounts({}),
@@ -235,7 +237,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | ${zeroShotBucketText(zeroShot)}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'} | ${zeroShotBucketText(zeroShot)}`);
     return;
   }
 
@@ -259,6 +261,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
     const queueParts = [];
     queueParts.push(`0-shot: ${zeroShotStatusText(zeroShot)}.`);
+    queueParts.push(`0-shot menu: ${zeroShot.menu_command || 'atris 0-shot --all'}.`);
     queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
@@ -399,6 +402,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   o('');
   o('  plan → do → review    (or: atris log to add ideas)');
   o(`  0-shot → ${zeroShotStatusText(zeroShot)}`);
+  o(`  0-shot menu → ${zeroShot.menu_command || 'atris 0-shot --all'}`);
   o(`  0-shot buckets → ${zeroShotBucketText(zeroShot)}`);
   o('');
 }
