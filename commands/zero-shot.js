@@ -57,12 +57,20 @@ function modelPromptRelativePaths() {
   return Object.fromEntries(MODEL_TIERS.map(tier => [tier, modelPromptRelativePath(tier)]));
 }
 
+function modelPromptCommands() {
+  return Object.fromEntries(MODEL_TIERS.map(tier => [tier, `${ZERO_SHOT_COMMAND} --model ${tier} --prompt`]));
+}
+
 function horizonPromptRelativePath(key) {
   return `.atris/state/zero-shot.${key}.prompt.txt`;
 }
 
 function horizonPromptRelativePaths() {
   return Object.fromEntries(HORIZON_PROMPTS.map(([key]) => [key, horizonPromptRelativePath(key)]));
+}
+
+function horizonPromptCommands() {
+  return Object.fromEntries(HORIZON_PROMPTS.map(([key]) => [key, `${ZERO_SHOT_COMMAND} --horizon ${key} --prompt`]));
 }
 
 function normalizeModelTier(value) {
@@ -145,6 +153,10 @@ function readJson(file) {
 
 function sha1(value) {
   return crypto.createHash('sha1').update(String(value || '')).digest('hex');
+}
+
+function stableJson(value) {
+  return JSON.stringify(value || null);
 }
 
 function readJsonLines(file) {
@@ -1036,6 +1048,8 @@ function buildPacket(options = {}) {
       legacy_zero_shot_json: LEGACY_ZERO_SHOT_JSON_COMMAND,
       legacy_zero_shot_prompt: LEGACY_ZERO_SHOT_PROMPT_COMMAND,
       legacy_zero_shot_write: LEGACY_ZERO_SHOT_WRITE_COMMAND,
+      model_prompt: modelPromptCommands(),
+      horizon_prompt: horizonPromptCommands(),
       next_command: command,
       first_command: command,
       context_check: 'atris radar --json',
@@ -1119,8 +1133,12 @@ function buildLatestCheck(options = {}) {
   const expectedHorizonPromptRecords = buildHorizonPromptRecords(current, root);
   const horizonPrompts = checkPromptRecords(expectedHorizonPromptRecords, HORIZON_PROMPTS.map(([key]) => key));
   const horizonPromptsFresh = Object.values(horizonPrompts).every(record => record.matches_expected);
+  const latestCommands = latest && latest.commands && typeof latest.commands === 'object' ? latest.commands : {};
+  const latestModelPromptCommandsFresh = stableJson(latestCommands.model_prompt) === stableJson(current.commands.model_prompt);
+  const latestHorizonPromptCommandsFresh = stableJson(latestCommands.horizon_prompt) === stableJson(current.commands.horizon_prompt);
+  const latestCommandsFresh = Boolean(latest && latestModelPromptCommandsFresh && latestHorizonPromptCommandsFresh);
   const exists = Boolean(latest);
-  const fresh = Boolean(exists && promptFresh && menuFresh && modelPromptsFresh && horizonPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
+  const fresh = Boolean(exists && latestCommandsFresh && promptFresh && menuFresh && modelPromptsFresh && horizonPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
   return {
     schema: 'atris.zero_shot_latest_check.v1',
     ok: fresh,
@@ -1144,6 +1162,9 @@ function buildLatestCheck(options = {}) {
     model_prompts_fresh: modelPromptsFresh,
     horizon_prompts: horizonPrompts,
     horizon_prompts_fresh: horizonPromptsFresh,
+    latest_commands_fresh: latestCommandsFresh,
+    latest_model_prompt_commands_fresh: latestModelPromptCommandsFresh,
+    latest_horizon_prompt_commands_fresh: latestHorizonPromptCommandsFresh,
     latest_generated_at: latest ? latest.generated_at || null : null,
     latest_selected_ref: latest ? latest.decision && latest.decision.selected_ref || null : null,
     current_selected_ref: current.decision.selected_ref || null,
@@ -1165,6 +1186,7 @@ function renderLatestCheck(check) {
     `menu: ${check.menu_fresh ? 'fresh' : (check.menu_exists ? 'stale' : 'missing')} (${check.menu_txt})`,
     `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
     `horizon prompts: ${check.horizon_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
+    `latest commands: ${check.latest_commands_fresh ? 'fresh' : 'stale_or_missing'}`,
     `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
     `refresh: ${check.refresh_command}`,
   ].join('\n');
@@ -1342,7 +1364,7 @@ function renderHelp() {
     '--model fast|pro|validator|human selects the first route suited to that model tier; --fast, --pro, --validator, and --human are shortcuts.',
     '--horizon now|review|long|blocked|orient selects the first route in that work horizon; --quick, --review, --long, --blocked, and --orient are shortcuts.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, owner-gate context, requested_horizon, bounded routes.options, full routes.all_options, routes.models, handoff.prompt, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, owner-gate context, requested_horizon, bounded routes.options, full routes.all_options, routes.models, commands.model_prompt, commands.horizon_prompt, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model, including selected route, route inventory, horizon buckets, and model buckets.',
     '--all prints the selected route plus the full route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,

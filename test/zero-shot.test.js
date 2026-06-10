@@ -178,6 +178,10 @@ test('next --json returns the zero-shot packet for agents', () => {
     const packet = JSON.parse(res.stdout);
     assert.equal(packet.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(packet.commands.first_command, 'atris task current-step --tag cli --json');
+    assert.equal(packet.commands.model_prompt.fast, 'atris 0-shot --model fast --prompt');
+    assert.equal(packet.commands.model_prompt.pro, 'atris 0-shot --model pro --prompt');
+    assert.equal(packet.commands.horizon_prompt.now, 'atris 0-shot --horizon now --prompt');
+    assert.equal(packet.commands.horizon_prompt.long, 'atris 0-shot --horizon long --prompt');
     assert.equal(packet.decision.lane, 'fast_model_task');
     assert.match(packet.handoff.prompt, /Atris 0-shot selected the next move/);
     assert.match(packet.handoff.prompt, /Run first: atris task current-step --tag cli --json/);
@@ -536,9 +540,28 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(fresh.horizon_prompts.now.actual_sha1, fresh.horizon_prompts.now.expected_sha1);
     assert.equal(fresh.horizon_prompts.long.exists, true);
     assert.equal(fresh.horizon_prompts.long.matches_expected, true);
+    assert.equal(fresh.latest_commands_fresh, true);
+    assert.equal(fresh.latest_model_prompt_commands_fresh, true);
+    assert.equal(fresh.latest_horizon_prompt_commands_fresh, true);
     assert.equal(fresh.latest_selected_ref, 'CZS-1');
     assert.equal(fresh.current_selected_ref, 'CZS-1');
     assert.equal(fresh.latest_source_fingerprint, fresh.current_source_fingerprint);
+
+    const latestPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
+    const staleLatestCommands = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
+    delete staleLatestCommands.commands.model_prompt;
+    fs.writeFileSync(latestPath, `${JSON.stringify(staleLatestCommands, null, 2)}\n`, 'utf8');
+    const staleLatestCommandsRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(staleLatestCommandsRes.status, 1, staleLatestCommandsRes.stderr || staleLatestCommandsRes.stdout);
+    const staleLatestCommandsPayload = JSON.parse(staleLatestCommandsRes.stdout);
+    assert.equal(staleLatestCommandsPayload.status, 'stale');
+    assert.equal(staleLatestCommandsPayload.ok, false);
+    assert.equal(staleLatestCommandsPayload.latest_commands_fresh, false);
+    assert.equal(staleLatestCommandsPayload.latest_model_prompt_commands_fresh, false);
+    assert.equal(staleLatestCommandsPayload.latest_horizon_prompt_commands_fresh, true);
+
+    const rewriteAfterLatestCommandDrift = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(rewriteAfterLatestCommandDrift.status, 0, rewriteAfterLatestCommandDrift.stderr || rewriteAfterLatestCommandDrift.stdout);
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt'), 'stale route menu\n', 'utf8');
     const staleMenuRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
@@ -639,6 +662,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.match(text.stdout, /menu: stale/);
     assert.match(text.stdout, /model prompts: stale_or_missing/);
     assert.match(text.stdout, /horizon prompts: stale_or_missing/);
+    assert.match(text.stdout, /latest commands: fresh/);
     assert.match(text.stdout, /selected: CZS-1 -> current REV-1/);
   } finally {
     cleanupTempDir(dir);
@@ -975,6 +999,10 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.match(packet.handoff.prompt, /First routes by model: fast=FAST-1\/fast pro=FAIL-1\/pro validator=none human=OWN-2\/human/);
     assert.equal(packet.handoff.route_options_field, 'routes.all_options');
     assert.equal(packet.commands.zero_shot_all, 'atris 0-shot --all');
+    assert.equal(packet.commands.model_prompt.fast, 'atris 0-shot --model fast --prompt');
+    assert.equal(packet.commands.model_prompt.validator, 'atris 0-shot --model validator --prompt');
+    assert.equal(packet.commands.horizon_prompt.review, 'atris 0-shot --horizon review --prompt');
+    assert.equal(packet.commands.horizon_prompt.blocked, 'atris 0-shot --horizon blocked --prompt');
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.all_options[0], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.models.human.first, 'source'), false);
@@ -1148,6 +1176,8 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /routes\.options/);
     assert.match(res.stdout, /routes\.all_options/);
     assert.match(res.stdout, /routes\.models/);
+    assert.match(res.stdout, /commands\.model_prompt/);
+    assert.match(res.stdout, /commands\.horizon_prompt/);
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
     assert.match(res.stdout, /--all prints the selected route plus the full route menu/);
