@@ -4,12 +4,18 @@
 
 ## Backlog
 
-- **[CLI-199]** Auto-improver: Recurring log pattern: check: `node bin/atris.js loop --dry-run --json` now reports # stale... [auto-improver]
+- **[CLI-216]** Ship launch post: post linkedin-post.md, capture URL in journal, delete the file
+- **[CLI-215]** Mine 139 career XP receipts + 317 episodes + 12 scorecards into policy lessons; prove one before/after agent behavior change with receipts [rsi]
+- **[CLI-214]** Refresh business goals source of truth: live MRR/customer snapshot into wiki goals page, replacing historical 0.6-confidence numbers [business]
+- **[CLI-213]** Review lane self-drain cadence: wire review-lane-run into always-on loop; receipt proves queue drains agent-side to certified with zero human turns [mission]
+- **[CLI-212]** Dogfood two parallel mission start --worktree loops; fix cross-worktree mission status rollup friction [mission]
 
 ## In Progress
 
 - **[CLI-200]** Auto-improver: Recurring log pattern: Next tick will stop until a human looks at the error. [auto-improver]
   **Claimed by:** keshavrao
+- **[CLI-199]** Auto-improver: Recurring log pattern: check: `node bin/atris.js loop --dry-run --json` now reports # stale... [auto-improver]
+  **Claimed by:** devin
 
 ## Review
 
@@ -27,13 +33,21 @@
 
 ## Completed
 
-- **[CLI-202]** Make atris review open the certified review console [review]
-- **[CLI-201]** Ship atris improve CLI command (paid /api/improve tick + credits + local fallback) so the member loop can run a verified improvement tick headlessly [agent]
-- **[CLI-198]** Add generalist domain scanner to wake [member-command]
-- **[CLI-197]** Create AgentGrads business workspace [business]
-- **[CLI-196]** Load cloud apps in CLI [apps]
-- **[CLI-195]** Add anti-slop memo rules to copy-editor skill [skills]
-- **[CLI-194]** Prevent closed member experiment mutation [member]
-- **[CLI-193]** Clean member loop state on archive [member]
+- **[CLI-211]** mission start --worktree: isolated checkout with clean baseline [mission]
+  **Verify:** node --test test/mission-worktree-start.test.js
+- **[CLI-210]** Evidence-aware review queue and risky-first accept-group spot-check [task-plane]
+  **Verify:** node --test test/task-receipt-evidence.test.js
+- **[CLI-209]** Surface validated receipt evidence in review queue and accept [task-plane]
+  **Verify:** node --test test/task-receipt-evidence.test.js
+- **[CLI-208]** Stop receipts and completion gate visibility in mission status [mission]
+  **Verify:** node --test test/mission-stop-receipt.test.js
+- **[CLI-207]** Prune mission baseline sidecar on close with audit summary [mission]
+  **Verify:** node --test test/mission-baseline-lifecycle.test.js
+- **[CLI-206]** Gate mission complete behind passing verifier proof [mission]
+  **Verify:** node --test test/mission-complete-guard.test.js
+- **[CLI-205]** Baseline mission receipts against mission-start snapshot [mission]
+  **Verify:** node --test test/mission-worktree-baseline.test.js
+- **[CLI-204]** Wiki loop: recompile stale jack-dorsey page [wiki]
+  **Verify:** git diff --check
 
-(185 older completed tasks archived in `atris task list --status done` and `atris task events`.)
+(194 older completed tasks archived in `atris task list --status done` and `atris task events`.)
