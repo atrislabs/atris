@@ -419,6 +419,81 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
   assert.match(renderRadar(data), /0-shot buckets: horizons now=1 review=0 long=0 blocked=0; models fast=1 pro=0 validator=0 human=0/);
 });
 
+test('collectRadar leads owner-gated zero-shot routes with the read-only first command', () => {
+  const root = '/tmp/radar-zero-shot-owner-gate';
+  const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  const files = new Map([
+    [taskFile, JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CZS-1',
+          title: 'Add zero-shot CLI command',
+          status: 'review',
+          workspace_root: root,
+          metadata: { agent_certified: true },
+        },
+      ],
+    })],
+  ]);
+
+  function execFileSync(cmd, args) {
+    if (cmd === 'ps') return '';
+    if (cmd === 'git' && args[2] === 'worktree') return [`worktree ${root}`, 'HEAD abc', 'branch refs/heads/master', ''].join('\n');
+    if (cmd === 'git' && args[2] === 'branch') return 'master\n';
+    if (cmd === 'git' && args[2] === 'status') return '';
+    throw new Error(`unexpected command ${cmd} ${args.join(' ')}`);
+  }
+
+  const data = collectRadar({
+    root,
+    platform: 'darwin',
+    nowMs: Date.parse('2026-05-18T12:00:00.000Z'),
+    execFileSync,
+    existsSync: file => files.has(file),
+    readFileSync: file => files.get(file),
+    readdirSync: () => [],
+    buildZeroShotPacket: () => ({
+      decision: {
+        lane: 'owner_gate',
+        selected_ref: 'CZS-1',
+        selected_title: 'Add zero-shot CLI command',
+        model_tier: 'human',
+        owner_action: 'human-only: atris task accept CZS-1',
+        safe_agent_action: 'read-only: atris task page CZS-1 --json; then wait or pick a non-blocked route from atris 0-shot --all',
+      },
+      commands: {
+        first_command: 'atris task page CZS-1 --json',
+        zero_shot_all: 'atris 0-shot --all',
+      },
+      routes: {
+        horizons: { blocked: 1 },
+        models: { human: { count: 1 } },
+      },
+    }),
+    buildZeroShotCheck: () => ({
+      status: 'fresh',
+      ok: true,
+      latest_exists: true,
+      prompt_exists: true,
+      prompt_fresh: true,
+      menu_exists: true,
+      menu_fresh: true,
+      model_prompts_fresh: true,
+      horizon_prompts_fresh: true,
+      latest_source_fingerprint: 'fingerprint',
+      current_source_fingerprint: 'fingerprint',
+    }),
+  });
+
+  assert.equal(data.next_action, 'run first atris task page CZS-1 --json from 0-shot; stop at owner gate');
+  const rendered = renderRadar(data);
+  assert.match(rendered, /^Next: run first atris task page CZS-1 --json from 0-shot; stop at owner gate/m);
+  assert.doesNotMatch(rendered, /^Next: human accept\/revise CZS-1/m);
+  assert.match(rendered, /0-shot: fresh owner_gate CZS-1 -> atris task page CZS-1 --json/);
+  assert.match(rendered, /0-shot owner action: human-only: atris task accept CZS-1/);
+  assert.match(rendered, /0-shot agent-safe action: read-only: atris task page CZS-1 --json/);
+});
+
 test('renderAgentTop explains workspaces with no active task', () => {
   const data = {
     root: '/tmp/root',

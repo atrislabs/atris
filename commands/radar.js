@@ -473,6 +473,13 @@ function zeroShotDurableLine(zeroShot = {}) {
   ].join(' ');
 }
 
+function zeroShotNextAction(zeroShot = {}, fallback) {
+  if (zeroShot.lane === 'owner_gate' && zeroShot.first_command) {
+    return `run first ${zeroShot.first_command} from 0-shot; stop at owner gate`;
+  }
+  return fallback;
+}
+
 function loadZeroShotCheck(root, options = {}) {
   if (typeof options.buildZeroShotCheck === 'function') return options.buildZeroShotCheck(root);
   if (options.existsSync || options.readFileSync) return null;
@@ -723,7 +730,8 @@ function collectRadar(options = {}) {
   };
   osState.zero_shot = loadZeroShot(root, deps, options);
   osState.business = loadBusinessCollaboration(root, deps, osState.team);
-  return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: nextAction(tasks, missions, worktrees, agents, osState), agents, tasks, missions, worktrees };
+  const defaultNextAction = nextAction(tasks, missions, worktrees, agents, osState);
+  return { root, generated_at: new Date(nowMs).toISOString(), summary: summarize(tasks, missions, worktrees, agents), os: osState, next_action: zeroShotNextAction(osState.zero_shot, defaultNextAction), agents, tasks, missions, worktrees };
 }
 
 function renderRadar(data) {
