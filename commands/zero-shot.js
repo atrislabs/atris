@@ -571,6 +571,26 @@ function routePrompt(route, root) {
   ].join('\n');
 }
 
+function routeContextPromptLines(routes = {}) {
+  const horizons = routes.horizons || {};
+  const models = routes.models || {};
+  return [
+    `Route inventory: total=${routes.total || 0} compact=${routes.shown || 0} hidden=${routes.hidden_count || 0} full_field=routes.all_options`,
+    `Horizon buckets: now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
+    `Model buckets: fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
+    'Inspect all routes before switching lanes: atris 0-shot --all; machine-readable full list: run atris 0-shot --json and read routes.all_options.',
+    'Selection prompts: atris 0-shot --model fast|pro|validator|human --prompt; atris 0-shot --horizon now|review|long|blocked|orient --prompt.',
+  ];
+}
+
+function handoffPrompt(route, root, routes) {
+  return [
+    routePrompt(route, root),
+    '',
+    ...routeContextPromptLines(routes),
+  ].join('\n');
+}
+
 function publicRoute(route, root) {
   const cleanRoute = stripRouteSource(route);
   return {
@@ -598,9 +618,9 @@ function routeFromDecision(decision, details, command) {
   };
 }
 
-function buildHandoff(route, root) {
+function buildHandoff(route, root, routes) {
   return {
-    prompt: routePrompt(route, root),
+    prompt: handoffPrompt(route, root, routes),
     first_command: route.first_command,
     model_tier: route.model_tier,
     lane: route.lane,
@@ -645,7 +665,7 @@ function buildModelPromptRecords(packet, root) {
       selected_ref: route.ref || null,
       lane: route.lane || null,
       first_command: route.first_command || null,
-      prompt: routePrompt(route, root),
+      prompt: handoffPrompt(route, root, packet.routes || {}),
     }];
   }));
 }
@@ -664,7 +684,7 @@ function buildHorizonPromptRecords(packet, root) {
       selected_ref: route.ref || null,
       lane: route.lane || null,
       first_command: route.first_command || null,
-      prompt: routePrompt(route, root),
+      prompt: handoffPrompt(route, root, packet.routes || {}),
     }];
   }));
 }
@@ -915,7 +935,7 @@ function buildPacket(options = {}) {
     },
     queue: taskState.counts,
     routes: publicRoutes,
-    handoff: buildHandoff(handoffRoute, root),
+    handoff: buildHandoff(handoffRoute, root, publicRoutes),
     freshness,
     durable: {
       write_command: ZERO_SHOT_WRITE_COMMAND,
@@ -1218,7 +1238,7 @@ function renderHelp() {
     '--horizon now|review|long|blocked|orient selects the first route in that work horizon; --quick, --review, --long, --blocked, and --orient are shortcuts.',
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, bounded routes.options, full routes.all_options, routes.models, handoff.prompt, and safety boundaries.',
-    '--prompt prints only the copy-pasteable handoff.prompt for any model.',
+    '--prompt prints only the copy-pasteable handoff.prompt for any model, including selected route, route inventory, horizon buckets, and model buckets.',
     '--all prints the selected route plus the full route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
     '--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then exits 0 only when fresh.',

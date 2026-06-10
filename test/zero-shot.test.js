@@ -177,6 +177,10 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.match(packet.handoff.prompt, /Atris 0-shot selected the next move/);
     assert.match(packet.handoff.prompt, /Run first: atris task current-step --tag cli --json/);
     assert.match(packet.handoff.prompt, /model_tier=fast/);
+    assert.match(packet.handoff.prompt, /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
+    assert.match(packet.handoff.prompt, /Horizon buckets: now=1 review=0 long=0 blocked=0 orient=0/);
+    assert.match(packet.handoff.prompt, /Model buckets: fast=1 pro=0 validator=0 human=0/);
+    assert.match(packet.handoff.prompt, /Inspect all routes before switching lanes: atris 0-shot --all/);
     assert.match(packet.handoff.prompt, /Do not human-accept/);
   } finally {
     cleanupTempDir(dir);
@@ -264,6 +268,8 @@ test('zero-shot --prompt prints only the any-model handoff prompt', () => {
     assert.match(res.stdout, /^Atris 0-shot selected the next move/);
     assert.match(res.stdout, /Route: fast_model_task/);
     assert.match(res.stdout, /Run first: atris task current-step --tag cli --json/);
+    assert.match(res.stdout, /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
+    assert.match(res.stdout, /Selection prompts: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.doesNotMatch(res.stdout, /"schema"/);
     assert.doesNotMatch(res.stdout, /0-shot next move/);
   } finally {
@@ -282,6 +288,7 @@ test('next --prompt returns the zero-shot prompt when no request is provided', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /^Atris 0-shot selected the next move/);
     assert.match(res.stdout, /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(res.stdout, /Horizon buckets: now=1 review=0 long=0 blocked=0 orient=0/);
     assert.match(res.stdout, /Do not human-accept/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
   } finally {
@@ -375,10 +382,12 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.match(menuText, /select model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route: fast_model_task/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
     assert.match(fs.readFileSync(proPromptPath, 'utf8'), /No pro model route is available/);
     assert.match(fs.readFileSync(validatorPromptPath, 'utf8'), /No validator model route is available/);
     assert.match(fs.readFileSync(humanPromptPath, 'utf8'), /No human model route is available/);
     assert.match(fs.readFileSync(horizonPromptPaths.now, 'utf8'), /Route: fast_model_task/);
+    assert.match(fs.readFileSync(horizonPromptPaths.now, 'utf8'), /Model buckets: fast=1 pro=0 validator=0 human=0/);
     assert.match(fs.readFileSync(horizonPromptPaths.long, 'utf8'), /No long_term horizon route is available/);
   } finally {
     cleanupTempDir(dir);
@@ -842,7 +851,9 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     ]);
     assert.match(packet.routes.options[0].prompt, /Route: owner_gate/);
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
-    assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
+    assert.equal(packet.handoff.prompt.startsWith(packet.routes.options[0].prompt), true);
+    assert.match(packet.handoff.prompt, /Route inventory: total=4 compact=4 hidden=0 full_field=routes\.all_options/);
+    assert.match(packet.handoff.prompt, /Model buckets: fast=1 pro=2 validator=0 human=1/);
     assert.equal(packet.handoff.route_options_field, 'routes.all_options');
     assert.equal(packet.commands.zero_shot_all, 'atris 0-shot --all');
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
