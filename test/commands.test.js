@@ -8462,6 +8462,17 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(firstNextPayload.task_id, readyPayload.task.id);
     assert.equal(firstNextPayload.handoff.next_action, 'human_accept_waiting');
     assert.equal(firstNextPayload.continue_work_command, null);
+    assert.equal(firstNextPayload.zero_shot.lane, 'owner_gate');
+    assert.equal(firstNextPayload.zero_shot.first_command, `atris task page ${ref} --json`);
+    assert.equal(firstNextPayload.zero_shot.owner_action, `human-only: atris task accept ${ref}`);
+    assert.equal(firstNextPayload.zero_shot.safe_agent_action, `read-only: atris task page ${ref} --json; then wait or pick a non-blocked route from atris 0-shot --all`);
+    assert.equal(firstNextPayload.zero_shot.menu_command, 'atris 0-shot --all');
+    assert.equal(firstNextPayload.zero_shot.prompt_command, 'atris 0-shot --prompt');
+
+    const firstNextText = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(firstNextText.status, 0, firstNextText.stderr);
+    assert.match(firstNextText.stdout, new RegExp(`Owner action: human-only: atris task accept ${ref}`));
+    assert.match(firstNextText.stdout, new RegExp(`Agent-safe action: read-only: atris task page ${ref} --json`));
 
     const certified = runCli([
       'task', 'ready', ref,

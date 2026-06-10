@@ -4418,6 +4418,20 @@ function cmdClaim(args) {
   }
 }
 
+function taskNextZeroShotGateContext(task, handoff) {
+  if (!task || !handoff || handoff.next_action !== 'human_accept_waiting') return null;
+  const ref = taskRef(task);
+  const firstCommand = `atris task page ${ref} --json`;
+  return {
+    lane: 'owner_gate',
+    first_command: firstCommand,
+    owner_action: `human-only: atris task accept ${ref}`,
+    safe_agent_action: `read-only: ${firstCommand}; then wait or pick a non-blocked route from atris 0-shot --all`,
+    menu_command: 'atris 0-shot --all',
+    prompt_command: 'atris 0-shot --prompt',
+  };
+}
+
 function cmdNext(args) {
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
@@ -4464,6 +4478,7 @@ function cmdNext(args) {
       const continueWorkCommand = handoff.next_action === 'continue_work'
         ? continueWorkCommandForTask(reviewTask, { owner })
         : null;
+      const zeroShotContext = taskNextZeroShotGateContext(reviewTask, handoff);
       if (wantsJson(args)) {
         printJson({
           ok: true,
@@ -4475,6 +4490,7 @@ function cmdNext(args) {
           continue_work_command: continueWorkCommand,
           continue_work_api: continueWorkCommand ? { method: 'POST', path: `/api/tasks/${encodeURIComponent(reviewTask.id)}/continue-work` } : null,
           review_task: reviewTask,
+          ...(zeroShotContext ? { zero_shot: zeroShotContext } : {}),
         });
         return;
       }
@@ -4487,6 +4503,10 @@ function cmdNext(args) {
         : handoff.next_action === 'human_accept_waiting'
         ? 'No concrete next agent task is attached; AgentXP waits for human accept.'
         : 'Review this task again before continuing.');
+      if (zeroShotContext) {
+        console.log(`Owner action: ${zeroShotContext.owner_action}`);
+        console.log(`Agent-safe action: ${zeroShotContext.safe_agent_action}`);
+      }
       if (continueWorkCommand) console.log(`Command: ${continueWorkCommand}`);
       return;
     }
