@@ -1212,7 +1212,7 @@ function renderHelp() {
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     '--all prints the selected route plus the full route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
-    '--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
+    '--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then exits 0 only when fresh.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
@@ -1239,7 +1239,7 @@ function zeroShotCommand(args = []) {
     } else {
       console.log(renderLatestCheck(check));
     }
-    return 0;
+    return check.ok ? 0 : 1;
   }
   let packet = buildPacket({ modelTier: modelArg.tier, horizon: horizonArg.horizon });
   if (args.includes('--write')) {

@@ -426,7 +426,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt'), 'stale route menu\n', 'utf8');
     const staleMenuRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(staleMenuRes.status, 0, staleMenuRes.stderr || staleMenuRes.stdout);
+    assert.equal(staleMenuRes.status, 1, staleMenuRes.stderr || staleMenuRes.stdout);
     const staleMenu = JSON.parse(staleMenuRes.stdout);
     assert.equal(staleMenu.status, 'stale');
     assert.equal(staleMenu.ok, false);
@@ -439,7 +439,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt'), 'stale global prompt\n', 'utf8');
     const staleGlobalPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(staleGlobalPromptRes.status, 0, staleGlobalPromptRes.stderr || staleGlobalPromptRes.stdout);
+    assert.equal(staleGlobalPromptRes.status, 1, staleGlobalPromptRes.stderr || staleGlobalPromptRes.stdout);
     const staleGlobalPrompt = JSON.parse(staleGlobalPromptRes.stdout);
     assert.equal(staleGlobalPrompt.status, 'stale');
     assert.equal(staleGlobalPrompt.ok, false);
@@ -453,7 +453,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.pro.prompt.txt'), 'stale pro prompt\n', 'utf8');
     const staleModelPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(staleModelPromptRes.status, 0, staleModelPromptRes.stderr || staleModelPromptRes.stdout);
+    assert.equal(staleModelPromptRes.status, 1, staleModelPromptRes.stderr || staleModelPromptRes.stdout);
     const staleModelPrompt = JSON.parse(staleModelPromptRes.stdout);
     assert.equal(staleModelPrompt.status, 'stale');
     assert.equal(staleModelPrompt.ok, false);
@@ -469,7 +469,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.long.prompt.txt'), 'stale long prompt\n', 'utf8');
     const staleHorizonPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(staleHorizonPromptRes.status, 0, staleHorizonPromptRes.stderr || staleHorizonPromptRes.stdout);
+    assert.equal(staleHorizonPromptRes.status, 1, staleHorizonPromptRes.stderr || staleHorizonPromptRes.stdout);
     const staleHorizonPrompt = JSON.parse(staleHorizonPromptRes.stdout);
     assert.equal(staleHorizonPrompt.status, 'stale');
     assert.equal(staleHorizonPrompt.ok, false);
@@ -486,7 +486,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
 
     fs.rmSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt'));
     const missingModelPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(missingModelPromptRes.status, 0, missingModelPromptRes.stderr || missingModelPromptRes.stdout);
+    assert.equal(missingModelPromptRes.status, 1, missingModelPromptRes.stderr || missingModelPromptRes.stdout);
     const missingModelPrompt = JSON.parse(missingModelPromptRes.stdout);
     assert.equal(missingModelPrompt.status, 'stale');
     assert.equal(missingModelPrompt.ok, false);
@@ -505,7 +505,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     }, null, 2));
 
     const staleRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(staleRes.status, 0, staleRes.stderr || staleRes.stdout);
+    assert.equal(staleRes.status, 1, staleRes.stderr || staleRes.stdout);
     const stale = JSON.parse(staleRes.stdout);
     assert.equal(stale.status, 'stale');
     assert.equal(stale.ok, false);
@@ -516,7 +516,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(stale.legacy_refresh_command, 'atris zero-shot --write');
 
     const text = runCli(['zero-shot', '--check'], { cwd: dir });
-    assert.equal(text.status, 0, text.stderr || text.stdout);
+    assert.equal(text.status, 1, text.stderr || text.stdout);
     assert.match(text.stdout, /0-shot latest check/);
     assert.match(text.stdout, /status: stale/);
     assert.match(text.stdout, /prompt: stale/);
@@ -537,7 +537,7 @@ test('zero-shot --check reports missing durable latest files', () => {
     ]);
 
     const res = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.status, 1, res.stderr || res.stdout);
     const check = JSON.parse(res.stdout);
     assert.equal(check.status, 'missing');
     assert.equal(check.ok, false);
@@ -547,6 +547,12 @@ test('zero-shot --check reports missing durable latest files', () => {
     assert.equal(check.menu_fresh, false);
     assert.equal(check.current_selected_ref, 'CZS-1');
     assert.equal(check.refresh_command, 'atris 0-shot --write');
+
+    const nextRes = runCli(['next', '--check', '--json'], { cwd: dir });
+    assert.equal(nextRes.status, 1, nextRes.stderr || nextRes.stdout);
+    const nextCheck = JSON.parse(nextRes.stdout);
+    assert.equal(nextCheck.status, 'missing');
+    assert.equal(nextCheck.ok, false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1012,7 +1018,7 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /--all prints the selected route plus the full route menu/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
     assert.match(res.stdout, /\.atris\/state\/zero-shot\.menu\.txt/);
-    assert.match(res.stdout, /--check compares the durable latest packet, global prompt, route menu/);
+    assert.match(res.stdout, /--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then exits 0 only when fresh/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);

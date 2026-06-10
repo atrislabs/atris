@@ -1513,7 +1513,7 @@ if (command === 'init') {
   const userInput = rawArgs.filter((arg) => !arg.startsWith('-')).join(' ').trim();
   if (command === 'next' && !userInput) {
     Promise.resolve(require('../commands/zero-shot').zeroShotCommand(rawArgs))
-      .then(() => process.exit(0))
+      .then((code) => process.exit(code || 0))
       .catch((error) => {
         console.error(`✗ Error: ${error.message || error}`);
         process.exit(1);
