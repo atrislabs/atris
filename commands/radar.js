@@ -11,6 +11,13 @@ const ZERO_SHOT_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
 const ZERO_SHOT_MENU_RELATIVE_PATH = '.atris/state/zero-shot.menu.txt';
 const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
 const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
+const ZERO_SHOT_HORIZON_LABELS = [
+  ['now', 'now'],
+  ['review', 'immediate_review'],
+  ['long', 'long_term'],
+  ['blocked', 'blocked'],
+  ['orient', 'orient'],
+];
 
 function safeJson(text, fallback = null) {
   try { return JSON.parse(text); } catch { return fallback; }
@@ -437,6 +444,38 @@ function normalizeZeroShotModels(models = {}) {
   }));
 }
 
+function compactZeroShotRoute(route) {
+  if (!route || typeof route !== 'object') return null;
+  return {
+    kind: route.kind || null,
+    ref: route.ref || null,
+    title: route.title || null,
+    lane: route.lane || null,
+    horizon: route.horizon || null,
+    model_tier: route.model_tier || null,
+    first_command: route.first_command || null,
+  };
+}
+
+function normalizeZeroShotHorizonFirst(first = {}) {
+  return Object.fromEntries(ZERO_SHOT_HORIZON_LABELS.map(([, key]) => [key, compactZeroShotRoute(first[key])]));
+}
+
+function normalizeZeroShotModelFirst(models = {}) {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(key => {
+    const value = models[key];
+    return [key, compactZeroShotRoute(value && typeof value === 'object' ? value.first : null)];
+  }));
+}
+
+function defaultZeroShotModelPromptCommands() {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(tier => [tier, `atris 0-shot --model ${tier} --prompt`]));
+}
+
+function defaultZeroShotHorizonPromptCommands() {
+  return Object.fromEntries(ZERO_SHOT_HORIZON_LABELS.map(([label]) => [label, `atris 0-shot --horizon ${label} --prompt`]));
+}
+
 function zeroShotBucketsFromPacket(packet = null) {
   const routes = packet?.routes || {};
   return {
@@ -449,6 +488,21 @@ function zeroShotBucketLine(zeroShot = {}) {
   const horizons = zeroShot.horizon_counts || normalizeZeroShotHorizons({});
   const models = zeroShot.model_counts || normalizeZeroShotModels({});
   return `0-shot buckets: horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
+}
+
+function zeroShotFirstRouteText(route) {
+  if (!route) return 'none';
+  return `${route.ref || route.lane || 'workspace'}/${route.model_tier || 'unknown'}`;
+}
+
+function zeroShotModelFirstLine(zeroShot = {}) {
+  const first = zeroShot.model_first || normalizeZeroShotModelFirst({});
+  return `0-shot first model: fast=${zeroShotFirstRouteText(first.fast)} pro=${zeroShotFirstRouteText(first.pro)} validator=${zeroShotFirstRouteText(first.validator)} human=${zeroShotFirstRouteText(first.human)}`;
+}
+
+function zeroShotHorizonFirstLine(zeroShot = {}) {
+  const first = zeroShot.horizon_first || normalizeZeroShotHorizonFirst({});
+  return `0-shot first horizon: now=${zeroShotFirstRouteText(first.now)} review=${zeroShotFirstRouteText(first.immediate_review)} long=${zeroShotFirstRouteText(first.long_term)} blocked=${zeroShotFirstRouteText(first.blocked)} orient=${zeroShotFirstRouteText(first.orient)}`;
 }
 
 function zeroShotFreshnessLabel(exists, fresh) {
@@ -534,8 +588,12 @@ function loadZeroShot(root, deps, options = {}) {
     owner_action: selectedRoute.owner_action,
     safe_agent_action: selectedRoute.safe_agent_action,
     menu_command: selectedPacket?.commands?.zero_shot_all || 'atris 0-shot --all',
+    model_prompt_commands: selectedPacket?.commands?.model_prompt || defaultZeroShotModelPromptCommands(),
+    horizon_prompt_commands: selectedPacket?.commands?.horizon_prompt || defaultZeroShotHorizonPromptCommands(),
     horizon_counts: selectedBuckets.horizon_counts,
     model_counts: selectedBuckets.model_counts,
+    horizon_first: normalizeZeroShotHorizonFirst(selectedPacket?.routes?.horizon_first || {}),
+    model_first: normalizeZeroShotModelFirst(selectedPacket?.routes?.models || {}),
     current: currentPacket ? currentRoute : null,
     latest: latest ? latestRoute : null,
     latest_json: ZERO_SHOT_LATEST_RELATIVE_PATH,
@@ -753,6 +811,8 @@ function renderRadar(data) {
     if (zs.safe_agent_action) lines.push(`0-shot agent-safe action: ${zs.safe_agent_action}`);
     lines.push(`0-shot durable: ${zeroShotDurableLine(zs)}`);
     lines.push(zeroShotBucketLine(zs));
+    lines.push(zeroShotModelFirstLine(zs));
+    lines.push(zeroShotHorizonFirstLine(zs));
   }
   if (data.os) {
     const xp = data.os.xp || {};

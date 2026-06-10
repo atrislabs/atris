@@ -196,13 +196,31 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
       },
       commands: {
         first_command: 'atris task review-chat CLI-95 --as codex-review',
+        model_prompt: {
+          fast: 'atris 0-shot --model fast --prompt',
+          pro: 'atris 0-shot --model pro --prompt',
+          validator: 'atris 0-shot --model validator --prompt',
+          human: 'atris 0-shot --model human --prompt',
+        },
+        horizon_prompt: {
+          now: 'atris 0-shot --horizon now --prompt',
+          review: 'atris 0-shot --horizon review --prompt',
+          long: 'atris 0-shot --horizon long --prompt',
+          blocked: 'atris 0-shot --horizon blocked --prompt',
+          orient: 'atris 0-shot --horizon orient --prompt',
+        },
       },
       routes: {
         horizons: { immediate_review: 1, now: 2, long_term: 1 },
+        horizon_first: {
+          now: { ref: 'FAST-1', lane: 'fast_model_task', horizon: 'now', model_tier: 'fast', first_command: 'atris task current-step --json' },
+          immediate_review: { ref: 'CLI-95', lane: 'review_lane', horizon: 'immediate_review', model_tier: 'validator', first_command: 'atris task review-chat CLI-95 --as codex-review' },
+          long_term: { ref: 'ARC-1', lane: 'long_horizon', horizon: 'long_term', model_tier: 'pro', first_command: 'atris task page ARC-1 --json' },
+        },
         models: {
-          fast: { count: 2 },
-          pro: { count: 1 },
-          validator: { count: 1 },
+          fast: { count: 2, first: { ref: 'FAST-1', lane: 'fast_model_task', horizon: 'now', model_tier: 'fast', first_command: 'atris task current-step --json' } },
+          pro: { count: 1, first: { ref: 'ARC-1', lane: 'long_horizon', horizon: 'long_term', model_tier: 'pro', first_command: 'atris task page ARC-1 --json' } },
+          validator: { count: 1, first: { ref: 'CLI-95', lane: 'review_lane', horizon: 'immediate_review', model_tier: 'validator', first_command: 'atris task review-chat CLI-95 --as codex-review' } },
           human: { count: 0 },
         },
       },
@@ -247,6 +265,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.zero_shot.owner_action, 'human-only: atris task accept CLI-95');
   assert.equal(data.os.zero_shot.safe_agent_action, 'read-only: atris task page CLI-95 --json; then wait or pick a non-blocked route from atris 0-shot --all');
   assert.equal(data.os.zero_shot.menu_command, 'atris 0-shot --all');
+  assert.equal(data.os.zero_shot.model_prompt_commands.fast, 'atris 0-shot --model fast --prompt');
+  assert.equal(data.os.zero_shot.horizon_prompt_commands.long, 'atris 0-shot --horizon long --prompt');
   assert.deepEqual(data.os.zero_shot.horizon_counts, {
     now: 2,
     immediate_review: 1,
@@ -260,6 +280,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     validator: 1,
     human: 0,
   });
+  assert.equal(data.os.zero_shot.model_first.fast.ref, 'FAST-1');
+  assert.equal(data.os.zero_shot.model_first.validator.ref, 'CLI-95');
+  assert.equal(data.os.zero_shot.horizon_first.now.ref, 'FAST-1');
+  assert.equal(data.os.zero_shot.horizon_first.long_term.ref, 'ARC-1');
   assert.equal(data.os.zero_shot.current.selected_ref, 'CLI-95');
   assert.equal(data.os.zero_shot.current.owner_action, 'human-only: atris task accept CLI-95');
   assert.equal(data.os.zero_shot.latest.selected_ref, 'CLI-95');
@@ -290,6 +314,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(renderRadar(data), /0-shot agent-safe action: read-only: atris task page CLI-95 --json/);
   assert.match(renderRadar(data), /0-shot durable: prompt=fresh menu=fresh model=fresh horizon=fresh check: atris 0-shot --check/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=2 review=1 long=1 blocked=0; models fast=2 pro=1 validator=1 human=0/);
+  assert.match(renderRadar(data), /0-shot first model: fast=FAST-1\/fast pro=ARC-1\/pro validator=CLI-95\/validator human=none/);
+  assert.match(renderRadar(data), /0-shot first horizon: now=FAST-1\/fast review=CLI-95\/validator long=ARC-1\/pro blocked=none orient=none/);
   assert.match(renderRadar(data), /CLI-95/);
   assert.match(renderRadar(data), /Stale mission candidates/);
   assert.match(renderRadar(data), /Review queue/);
