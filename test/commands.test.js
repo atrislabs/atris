@@ -532,6 +532,42 @@ test('member activate surfaces zero-shot route for agent boot', () => {
   }
 });
 
+test('member activate finds workspace from a subdirectory', () => {
+  const dir = makeTempDir();
+  try {
+    const memberDir = path.join(dir, 'atris', 'team', 'navigator');
+    const subdir = path.join(dir, 'commands');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.mkdirSync(subdir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), [
+      '---',
+      'name: Navigator',
+      'role: Planning Agent',
+      '---',
+      '',
+      '# Navigator',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['member', 'activate', 'navigator'], {
+      cwd: subdir,
+      env: { HOME: path.join(dir, 'home') },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Member "Navigator" activated\./);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh/);
+    assert.match(res.stdout, /Next: run first: atris radar --json/);
+    assert.doesNotMatch(res.stderr + res.stdout, /Member "navigator" not found/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(subdir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(subdir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member activate shows owner-gate first command for agent boot', () => {
   const dir = makeTempDir();
   try {

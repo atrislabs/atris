@@ -12,6 +12,17 @@ function todayLogName() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.md`;
 }
 
+function findAtrisWorkspaceRoot(start = process.cwd()) {
+  let dir = path.resolve(start);
+  for (let i = 0; i < 32; i += 1) {
+    if (fs.existsSync(path.join(dir, 'atris')) || fs.existsSync(path.join(dir, '.atris'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(start);
+}
+
 function ensureMemberLog(memberDir, { name, role, description, source = 'cli' } = {}) {
   const logsDir = path.join(memberDir, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -3016,6 +3027,10 @@ function memberActivate(name) {
     process.exit(1);
   }
 
+  const workspaceDir = findAtrisWorkspaceRoot(process.cwd());
+  if (workspaceDir !== process.cwd()) {
+    process.chdir(workspaceDir);
+  }
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const memberDir = path.join(teamDir, name);
   const memberFile = path.join(memberDir, 'MEMBER.md');
