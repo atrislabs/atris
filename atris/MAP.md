@@ -516,7 +516,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Regression:** `test/commands.test.js:4287-4302` covers `status --help` without `atris/` or `$HOME/.atris`
 - **0-shot regression:** `test/status.test.js` covers `status`, `status --quick`, and `status --json` exposing the computed route
 - **Signature:** `statusAtris(isQuick = false, jsonMode = false, verbose = false)`
-- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only and falls back to `atris 0-shot --prompt` if route collection is unavailable
+- **0-shot helper:** `zeroShotStatus(root)` calls `commands/zero-shot.js` `buildPacket()` read-only, exposes selected route plus horizon/model bucket counts, and falls back to `atris 0-shot --prompt` if route collection is unavailable
 - **Reads:**
 - TODO.md Backlog (unclaimed tasks)
 - TODO.md In Progress (claimed tasks with ownership)
@@ -524,10 +524,10 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - Today's journal Completed (recent completions, last 3)
 - `.atris/state/tasks.projection.json`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json` through the 0-shot packet builder
 - **Output:**
-- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`) with `0-shot: <lane> <ref> -> <first_command>`
+- Default: Chief-of-staff summary (`Where we are` / `What is queued` / `What is blocking`) with `0-shot: <lane> <ref> -> <first_command>` plus quick/long/review/blocked and model-tier counts
 - `--verbose` / `-v`: Legacy visual task board with 0-shot footer
-- `--quick` / `-q`: One-line emoji summary with 0-shot lane/ref
-- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team, zero_shot)
+- `--quick` / `-q`: One-line emoji summary with 0-shot lane/ref and bucket counts
+- `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team, zero_shot with horizon_counts/model_counts)
 - **Routing:** `bin/atris.js:1484-1488` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting + next safe move for uncertain agents
 

@@ -77,14 +77,30 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.equal(payload.zero_shot.selected_ref, 'WAIT-1');
     assert.equal(payload.zero_shot.first_command, 'atris task page WAIT-1 --json');
     assert.equal(payload.zero_shot.prompt_command, 'atris 0-shot --prompt');
+    assert.deepEqual(payload.zero_shot.horizon_counts, {
+      now: 0,
+      immediate_review: 0,
+      long_term: 0,
+      blocked: 1,
+      orient: 0,
+    });
+    assert.deepEqual(payload.zero_shot.model_counts, {
+      fast: 0,
+      pro: 0,
+      validator: 0,
+      human: 1,
+    });
 
     const quick = runCli(['status', '--quick'], { cwd: dir });
     assert.equal(quick.status, 0, quick.stderr || quick.stdout);
     assert.match(quick.stdout, /0-shot owner_gate WAIT-1/);
+    assert.match(quick.stdout, /horizons now=0 review=0 long=0 blocked=1/);
+    assert.match(quick.stdout, /models fast=0 pro=0 validator=0 human=1/);
 
     const human = runCli(['status'], { cwd: dir });
     assert.equal(human.status, 0, human.stderr || human.stdout);
     assert.match(human.stdout, /0-shot: owner_gate WAIT-1 -> atris task page WAIT-1 --json/);
+    assert.match(human.stdout, /0-shot buckets: horizons now=0 review=0 long=0 blocked=1; models fast=0\s+pro=0 validator=0 human=1/);
   } finally {
     cleanup(dir);
   }

@@ -4,6 +4,9 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { parseTodo, getTeamActivity } = require('../lib/todo');
 const { buildPacket } = require('./zero-shot');
 
+const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
+const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
+
 // Box drawing helpers
 const W = 64; // inner width
 const line = (char = '─') => char.repeat(W);
@@ -82,6 +85,7 @@ function zeroShotStatus(root = process.cwd()) {
     const packet = buildPacket({ cwd: root });
     const decision = packet.decision || {};
     const commands = packet.commands || {};
+    const routes = packet.routes || {};
     return {
       lane: decision.lane || 'unknown',
       selected_ref: decision.selected_ref || null,
@@ -90,6 +94,8 @@ function zeroShotStatus(root = process.cwd()) {
       first_command: commands.first_command || decision.first_command || 'atris 0-shot --prompt',
       prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
       json_command: commands.zero_shot_json || 'atris 0-shot --json',
+      horizon_counts: normalizeHorizonCounts(routes.horizons || {}),
+      model_counts: normalizeModelCounts(routes.models || {}),
     };
   } catch {
     return {
@@ -100,13 +106,32 @@ function zeroShotStatus(root = process.cwd()) {
       first_command: 'atris 0-shot --prompt',
       prompt_command: 'atris 0-shot --prompt',
       json_command: 'atris 0-shot --json',
+      horizon_counts: normalizeHorizonCounts({}),
+      model_counts: normalizeModelCounts({}),
     };
   }
+}
+
+function normalizeHorizonCounts(counts = {}) {
+  return Object.fromEntries(ZERO_SHOT_HORIZONS.map(key => [key, Number(counts[key] || 0)]));
+}
+
+function normalizeModelCounts(models = {}) {
+  return Object.fromEntries(ZERO_SHOT_MODELS.map(key => {
+    const value = models[key];
+    return [key, Number(value && typeof value === 'object' ? value.count || 0 : value || 0)];
+  }));
 }
 
 function zeroShotStatusText(zeroShot) {
   const focus = zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : '';
   return `${zeroShot.lane}${focus} -> ${zeroShot.first_command}`;
+}
+
+function zeroShotBucketText(zeroShot) {
+  const horizons = zeroShot.horizon_counts || normalizeHorizonCounts({});
+  const models = zeroShot.model_counts || normalizeModelCounts({});
+  return `horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
 }
 
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
@@ -210,7 +235,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | ${zeroShotBucketText(zeroShot)}`);
     return;
   }
 
@@ -234,6 +259,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
     const queueParts = [];
     queueParts.push(`0-shot: ${zeroShotStatusText(zeroShot)}.`);
+    queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
     } else {
@@ -373,6 +399,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   o('');
   o('  plan → do → review    (or: atris log to add ideas)');
   o(`  0-shot → ${zeroShotStatusText(zeroShot)}`);
+  o(`  0-shot buckets → ${zeroShotBucketText(zeroShot)}`);
   o('');
 }
 
