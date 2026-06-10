@@ -14,6 +14,17 @@ const ZERO_SHOT_HORIZON_LABELS = [
   ['orient', 'orient'],
 ];
 
+function findAtrisWorkspaceRoot(start = process.cwd()) {
+  let dir = path.resolve(start);
+  for (let i = 0; i < 32; i += 1) {
+    if (fs.existsSync(path.join(dir, 'atris')) || fs.existsSync(path.join(dir, '.atris'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(start);
+}
+
 // Box drawing helpers
 const W = 64; // inner width
 const line = (char = '─') => char.repeat(W);
@@ -264,7 +275,10 @@ function zeroShotDurableText(zeroShot) {
 }
 
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
-  const root = process.cwd();
+  const root = findAtrisWorkspaceRoot(process.cwd());
+  if (root !== process.cwd()) {
+    process.chdir(root);
+  }
   const targetDir = path.join(root, 'atris');
 
   if (!fs.existsSync(targetDir)) {

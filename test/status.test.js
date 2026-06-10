@@ -138,3 +138,29 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     cleanup(dir);
   }
 });
+
+test('status finds the workspace from a subdirectory', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir);
+    const subdir = path.join(dir, 'commands');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const json = runCli(['status', '--json'], { cwd: subdir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.zero_shot.lane, 'owner_gate');
+    assert.equal(payload.zero_shot.selected_ref, 'WAIT-1');
+    assert.equal(payload.zero_shot.first_command, 'atris task page WAIT-1 --json');
+
+    const quick = runCli(['status', '--quick'], { cwd: subdir });
+    assert.equal(quick.status, 0, quick.stderr || quick.stdout);
+    assert.match(quick.stdout, /0-shot owner_gate WAIT-1/);
+    assert.doesNotMatch(quick.stdout + quick.stderr, /atris\/ folder not found/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), true);
+    assert.equal(fs.existsSync(path.join(subdir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(subdir, '.atris')), false);
+  } finally {
+    cleanup(dir);
+  }
+});
