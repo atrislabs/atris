@@ -449,7 +449,7 @@ function showHelp() {
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
   console.log('');
-  console.log('💡 Tip: If you are unsure, run "atris 0-shot --all"');
+  console.log('💡 Tip: If you are unsure, run "atris next" or "atris 0-shot --all"; use "atris 0-shot --model fast|pro|validator|human --prompt" for model lanes.');
   console.log('');
 }
 
@@ -546,15 +546,18 @@ function showActivateHelp() {
 
 function showNextHelp(commandName = 'next') {
   console.log('');
-  console.log(`Usage: atris ${commandName} [request] [--json|--prompt|--write|--check]`);
+  console.log(`Usage: atris ${commandName} [request] [--json|--prompt|--write|--check] [--model fast|pro|validator|human] [--horizon now|review|long|blocked|orient]`);
   console.log('');
   console.log('Description:');
   console.log('  With no request, print the zero-shot next move from brain + task state.');
+  console.log('  With --model or --horizon, select the first zero-shot route for that model tier or work horizon.');
   console.log('  With a request, route it through the Atris entry.');
   console.log('');
   console.log('Options:');
   console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
   console.log('  --prompt     Print the copy-pasteable zero-shot prompt when no request is provided.');
+  console.log('  --model      Select fast, pro, validator, or human model lanes for zero-shot.');
+  console.log('  --horizon    Select now, review, long, blocked, or orient work horizons for zero-shot.');
   console.log('  --write      Refresh .atris/state/zero-shot.latest.json, zero-shot.prompt.txt, per-model prompts, and per-horizon prompts.');
   console.log('  --check      Check whether durable zero-shot files are fresh.');
   console.log('  --help, -h   Show this help.');
@@ -1512,7 +1515,8 @@ if (command === 'init') {
     process.exit(0);
   }
   const userInput = rawArgs.filter((arg) => !arg.startsWith('-')).join(' ').trim();
-  if (command === 'next' && !userInput) {
+  const nextZeroShotMode = command === 'next' && (!userInput || (rawArgs[0] && rawArgs[0].startsWith('-')));
+  if (nextZeroShotMode) {
     Promise.resolve(require('../commands/zero-shot').zeroShotCommand(rawArgs))
       .then((code) => process.exit(code || 0))
       .catch((error) => {

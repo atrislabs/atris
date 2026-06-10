@@ -14026,6 +14026,10 @@ test('activate and next --help print usage without loading workflow context', ()
         assert.match(res.stdout, /zero-shot next move/);
         assert.match(res.stdout, /--json/);
         assert.match(res.stdout, /--prompt/);
+        assert.match(res.stdout, /--model/);
+        assert.match(res.stdout, /fast, pro, validator, or human/);
+        assert.match(res.stdout, /--horizon/);
+        assert.match(res.stdout, /now, review, long, blocked, or orient/);
         assert.match(res.stdout, /per-horizon prompts/);
         assert.match(res.stdout, /--check/);
       }

@@ -198,6 +198,13 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.match(packet.handoff.prompt, /First routes by model: fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(packet.handoff.prompt, /Inspect all routes before switching lanes: atris 0-shot --all/);
     assert.match(packet.handoff.prompt, /Do not human-accept/);
+
+    const modelRes = runCli(['next', '--model', 'fast', '--json'], { cwd: dir });
+    assert.equal(modelRes.status, 0, modelRes.stderr || modelRes.stdout);
+    const modelPacket = JSON.parse(modelRes.stdout);
+    assert.equal(modelPacket.decision.requested_model_tier, 'fast');
+    assert.equal(modelPacket.decision.model_tier_match, true);
+    assert.equal(modelPacket.decision.selected_ref, 'CZS-1');
   } finally {
     cleanupTempDir(dir);
   }
@@ -1210,7 +1217,8 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);
-    assert.match(res.stdout, /If you are unsure, run "atris 0-shot --all"/);
+    assert.match(res.stdout, /If you are unsure, run "atris next" or "atris 0-shot --all"/);
+    assert.match(res.stdout, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
