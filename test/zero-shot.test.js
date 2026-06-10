@@ -59,6 +59,19 @@ function seedWorkspace(dir, tasks) {
   }, null, 2));
 }
 
+function overflowRouteTasks() {
+  return [
+    ...Array.from({ length: 8 }, (_, index) => ({
+      display_id: `FAST-${index + 1}`,
+      title: `Fix CLI help copy ${index + 1}`,
+      status: 'claimed',
+      tag: `cli${index + 1}`,
+    })),
+    { display_id: 'ARC-9', title: 'Plan architecture migration roadmap', status: 'claimed', tag: 'architecture' },
+    { display_id: 'FAST-10', title: 'Fix CLI help copy 10', status: 'claimed', tag: 'cli10' },
+  ];
+}
+
 test('zero-shot --json selects review-lane work without mutating projection files', () => {
   const dir = makeTempDir();
   try {
@@ -815,13 +828,20 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
       ['FAST-1', 'fast_model_task', 'fast', 'atris task current-step --tag cli --json'],
       ['ARC-1', 'long_horizon', 'pro', 'atris task page ARC-1 --json'],
     ]);
+    assert.deepEqual(packet.routes.all_options.map(route => [route.ref, route.lane, route.model_tier, route.first_command]), [
+      ['OWN-2', 'owner_gate', 'human', 'atris task page OWN-2 --json'],
+      ['FAIL-1', 'recovery_lane', 'pro', 'atris task page FAIL-1 --json'],
+      ['FAST-1', 'fast_model_task', 'fast', 'atris task current-step --tag cli --json'],
+      ['ARC-1', 'long_horizon', 'pro', 'atris task page ARC-1 --json'],
+    ]);
     assert.match(packet.routes.options[0].prompt, /Route: owner_gate/);
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
     assert.equal(packet.handoff.prompt, packet.routes.options[0].prompt);
+    assert.equal(packet.handoff.route_options_field, 'routes.all_options');
     assert.equal(packet.commands.zero_shot_all, 'atris 0-shot --all');
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.options[0], 'source'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.all_options[0], 'source'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(packet.routes.models.human.first, 'source'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(packet.routes, 'all_options'), false);
 
     const fastRes = runCli(['zero-shot', '--model', 'fast', '--json'], { cwd: dir });
     assert.equal(fastRes.status, 0, fastRes.stderr || fastRes.stdout);
@@ -881,6 +901,44 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(missingValidatorPacket.commands.first_command, 'atris radar --json');
     assert.equal(missingValidatorPacket.routes.models.validator.count, 0);
     assert.match(missingValidatorPacket.handoff.prompt, /No validator model route is available/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot exposes complete route inventory beyond the visible limit', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, overflowRouteTasks());
+
+    const jsonRes = runCli(['zero-shot', '--json'], { cwd: dir });
+    assert.equal(jsonRes.status, 0, jsonRes.stderr || jsonRes.stdout);
+    const packet = JSON.parse(jsonRes.stdout);
+    assert.equal(packet.routes.total, 10);
+    assert.equal(packet.routes.shown, 8);
+    assert.equal(packet.routes.visible_limit, 8);
+    assert.equal(packet.routes.hidden_count, 2);
+    assert.equal(packet.routes.options.length, 8);
+    assert.equal(packet.routes.all_options.length, 10);
+    assert.equal(packet.routes.options.some(route => route.ref === 'ARC-9'), false);
+    assert.equal(packet.routes.all_options.some(route => route.ref === 'ARC-9'), true);
+    assert.equal(packet.routes.all_options.every(route => !Object.prototype.hasOwnProperty.call(route, 'source')), true);
+    assert.match(packet.routes.all_options[9].prompt, /Run first: atris task page ARC-9 --json/);
+
+    const allRes = runCli(['0-shot', '--all'], { cwd: dir });
+    assert.equal(allRes.status, 0, allRes.stderr || allRes.stdout);
+    assert.match(allRes.stdout, /9\. now\/fast\/fast_model_task \| FAST-10 - Fix CLI help copy 10/);
+    assert.match(allRes.stdout, /10\. long_term\/pro\/long_horizon \| ARC-9 - Plan architecture migration roadmap/);
+    assert.doesNotMatch(allRes.stdout, /more not shown/);
+
+    const writeRes = runCli(['zero-shot', '--write', '--json'], { cwd: dir });
+    assert.equal(writeRes.status, 0, writeRes.stderr || writeRes.stdout);
+    const written = JSON.parse(writeRes.stdout);
+    assert.equal(written.durable.horizon_prompts.long.horizon_match, true);
+    assert.equal(written.durable.horizon_prompts.long.selected_ref, 'ARC-9');
+    const longPrompt = fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.long.prompt.txt'), 'utf8');
+    assert.match(longPrompt, /Route: long_horizon/);
+    assert.match(longPrompt, /Focus: ARC-9 - Plan architecture migration roadmap/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -947,10 +1005,11 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /--horizon now\|review\|long\|blocked\|orient selects/);
     assert.match(res.stdout, /first_command/);
     assert.match(res.stdout, /routes\.options/);
+    assert.match(res.stdout, /routes\.all_options/);
     assert.match(res.stdout, /routes\.models/);
     assert.match(res.stdout, /handoff\.prompt/);
     assert.match(res.stdout, /--prompt prints only/);
-    assert.match(res.stdout, /--all prints the selected route plus the visible route menu/);
+    assert.match(res.stdout, /--all prints the selected route plus the full route menu/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
     assert.match(res.stdout, /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(res.stdout, /--check compares the durable latest packet, global prompt, route menu/);

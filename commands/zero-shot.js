@@ -604,7 +604,7 @@ function buildHandoff(route, root) {
     first_command: route.first_command,
     model_tier: route.model_tier,
     lane: route.lane,
-    route_options_field: 'routes.options',
+    route_options_field: 'routes.all_options',
     json_command: ZERO_SHOT_JSON_COMMAND,
     prompt_command: ZERO_SHOT_PROMPT_COMMAND,
     all_command: ZERO_SHOT_ALL_COMMAND,
@@ -615,6 +615,13 @@ function buildHandoff(route, root) {
   };
 }
 
+function allPublicRouteOptions(packet) {
+  const routes = packet && packet.routes ? packet.routes : {};
+  if (Array.isArray(routes.all_options)) return routes.all_options;
+  if (Array.isArray(routes.options)) return routes.options;
+  return [];
+}
+
 function routeForModelPrompt(packet, tier) {
   const models = packet && packet.routes && packet.routes.models ? packet.routes.models : {};
   const entry = models[tier] || {};
@@ -622,7 +629,7 @@ function routeForModelPrompt(packet, tier) {
 }
 
 function routeForHorizonPrompt(packet, horizon) {
-  const options = packet && packet.routes && Array.isArray(packet.routes.options) ? packet.routes.options : [];
+  const options = allPublicRouteOptions(packet);
   return options.find(route => route.horizon === horizon) || noRouteForSelection(null, horizon);
 }
 
@@ -646,13 +653,14 @@ function buildModelPromptRecords(packet, root) {
 function buildHorizonPromptRecords(packet, root) {
   return Object.fromEntries(HORIZON_PROMPTS.map(([key, horizon]) => {
     const route = routeForHorizonPrompt(packet, horizon);
+    const options = allPublicRouteOptions(packet);
     const relativePath = horizonPromptRelativePath(key);
     return [key, {
       key,
       horizon,
       prompt_txt: relativePath,
       prompt_txt_abs: path.join(root, relativePath),
-      horizon_match: Boolean(packet.routes && Array.isArray(packet.routes.options) && packet.routes.options.some(option => option.horizon === horizon)),
+      horizon_match: options.some(option => option.horizon === horizon),
       selected_ref: route.ref || null,
       lane: route.lane || null,
       first_command: route.first_command || null,
@@ -801,7 +809,7 @@ function noRouteForSelection(requestedModelTier, requestedHorizon) {
     horizon: requestedHorizon || 'orient',
     work_size: 'context',
     model_tier: modelTier,
-    agent_directive: `Do not take work outside the requested 0-shot selection from this prompt. Inspect routes.options, then hand off to an available horizon or wait for new ${requestedHorizon || modelTier} work.`,
+    agent_directive: `Do not take work outside the requested 0-shot selection from this prompt. Inspect routes.all_options, then hand off to an available horizon or wait for new ${requestedHorizon || modelTier} work.`,
     first_command: command,
   };
   return routeFromDecision(decision, details, command);
@@ -875,13 +883,18 @@ function buildPacket(options = {}) {
       first_command: fallbackRoute.first_command,
     } : laneDetails(null, decision.lane, command));
   const selectedTaskRoute = selectedRoute && selectedRoute.kind === 'task' ? selectedRoute : null;
+  const publicOptions = publicRouteIndex.options.map(route => publicRoute(route, root));
+  const publicAllOptions = allRoutes.map(route => publicRoute(route, root));
   const publicRoutes = {
     ...publicRouteIndex,
     requested_model_tier: requestedModelTier,
     model_tier_match: modelTierMatch,
     requested_horizon: requestedHorizon,
     horizon_match: horizonMatch,
-    options: publicRouteIndex.options.map(route => publicRoute(route, root)),
+    visible_limit: ROUTE_LIMIT,
+    hidden_count: Math.max(0, publicAllOptions.length - publicOptions.length),
+    options: publicOptions,
+    all_options: publicAllOptions,
   };
   const handoffRoute = effectiveRoute ? publicRoute(effectiveRoute, root) : routeFromDecision(decision, details, command);
   return {
@@ -1123,7 +1136,8 @@ function renderModelSummary(models) {
 
 function renderRouteMenu(packet) {
   const routes = packet.routes || {};
-  const options = Array.isArray(routes.options) ? routes.options : [];
+  const hasFullOptions = Array.isArray(routes.all_options);
+  const options = allPublicRouteOptions(packet);
   const lines = ['route menu:'];
   if (!options.length) {
     lines.push('  none | run: atris radar --json');
@@ -1134,7 +1148,7 @@ function renderRouteMenu(packet) {
       lines.push(`   run: ${route.first_command}`);
       lines.push(`   why: ${route.reason}`);
     });
-    if (routes.total > options.length) {
+    if (!hasFullOptions && routes.total > options.length) {
       lines.push(`   +${routes.total - options.length} more not shown; use atris 0-shot --json for routes.options`);
     }
   }
@@ -1194,9 +1208,9 @@ function renderHelp() {
     '--model fast|pro|validator|human selects the first route suited to that model tier; --fast, --pro, --validator, and --human are shortcuts.',
     '--horizon now|review|long|blocked|orient selects the first route in that work horizon; --quick, --review, --long, --blocked, and --orient are shortcuts.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, routes.options, routes.models, handoff.prompt, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, bounded routes.options, full routes.all_options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
-    '--all prints the selected route plus the visible route menu across horizons and model tiers.',
+    '--all prints the selected route plus the full route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
     '--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
