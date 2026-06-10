@@ -235,6 +235,94 @@ test('zero-shot uses TODO.md as a read-only fallback when projection is missing'
   }
 });
 
+test('zero-shot includes TODO routes as read-only options beside task projection work', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      {
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      },
+    ]);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** Plan architecture migration roadmap [architecture]',
+      '',
+      '## In Progress',
+      '',
+      '- **[T2]** Fix CLI help copy [cli]',
+      '  **Claimed by:** codex',
+      '',
+      '## Review',
+      '',
+      '(Empty)',
+      '',
+      '## Blocked',
+      '',
+      '- **[B1]** Waiting for billing owner approval [billing]',
+      '',
+      '## Completed',
+      '',
+      '- **[D1]** Completed historical task [cli]',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['0-shot', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const packet = JSON.parse(res.stdout);
+    assert.equal(packet.decision.lane, 'owner_gate');
+    assert.equal(packet.decision.selected_kind, 'task');
+    assert.equal(packet.decision.selected_ref, 'CZS-1');
+    assert.equal(packet.queue.total, 4);
+    assert.equal(packet.queue.open, 1);
+    assert.equal(packet.queue.claimed, 1);
+    assert.equal(packet.queue.review, 1);
+    assert.equal(packet.queue.blocked, 1);
+    assert.equal(packet.queue.done, 0);
+    assert.equal(packet.routes.total, 4);
+    assert.deepEqual(packet.routes.all_options.map(route => [route.kind, route.ref, route.lane, route.model_tier, route.first_command]), [
+      ['task', 'CZS-1', 'owner_gate', 'human', 'atris task page CZS-1 --json'],
+      ['todo', 'B1', 'owner_gate', 'human', 'atris status --json'],
+      ['todo', 'T2', 'fast_model_task', 'fast', 'atris status --json'],
+      ['todo', 'T1', 'long_horizon', 'pro', 'atris status --json'],
+    ]);
+    assert.equal(packet.routes.horizon_first.now.ref, 'T2');
+    assert.equal(packet.routes.horizon_first.long_term.ref, 'T1');
+    assert.equal(packet.routes.horizon_first.blocked.ref, 'CZS-1');
+    assert.equal(packet.routes.models.fast.first.ref, 'T2');
+    assert.equal(packet.routes.models.pro.first.ref, 'T1');
+    assert.equal(packet.routes.models.human.count, 2);
+    assert.match(packet.routes.models.fast.first.agent_directive, /Source: atris\/TODO\.md/);
+
+    const fastRes = runCli(['0-shot', '--model', 'fast', '--json'], { cwd: dir });
+    assert.equal(fastRes.status, 0, fastRes.stderr || fastRes.stdout);
+    const fastPacket = JSON.parse(fastRes.stdout);
+    assert.equal(fastPacket.decision.selected_kind, 'todo');
+    assert.equal(fastPacket.decision.selected_ref, 'T2');
+    assert.equal(fastPacket.decision.lane, 'fast_model_task');
+    assert.equal(fastPacket.commands.first_command, 'atris status --json');
+
+    const longRes = runCli(['0-shot', '--horizon', 'long', '--json'], { cwd: dir });
+    assert.equal(longRes.status, 0, longRes.stderr || longRes.stdout);
+    const longPacket = JSON.parse(longRes.stdout);
+    assert.equal(longPacket.decision.selected_kind, 'todo');
+    assert.equal(longPacket.decision.selected_ref, 'T1');
+    assert.equal(longPacket.decision.lane, 'long_horizon');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('0-shot aliases route to the same read-only packet', () => {
   const dir = makeTempDir();
   try {

@@ -246,14 +246,23 @@ function normalizeTask(task) {
 function collectTasks(root) {
   const projection = readJson(path.join(root, '.atris', 'state', 'tasks.projection.json')) || {};
   const projectionTasks = Array.isArray(projection.tasks) ? projection.tasks.map(normalizeTask).filter(Boolean) : [];
-  const tasks = projectionTasks.length ? projectionTasks : collectTodoTasks(root);
+  const todoTasks = collectTodoTasks(root);
+  const projectionRefs = new Set(projectionTasks.map(task => String(task.ref || task.id || '').toLowerCase()).filter(Boolean));
+  const supplementalTodoTasks = projectionTasks.length
+    ? todoTasks.filter(task => {
+      if (TERMINAL_TASK_STATUSES.has(task.status)) return false;
+      const ref = String(task.ref || task.id || '').toLowerCase();
+      return !ref || !projectionRefs.has(ref);
+    })
+    : [];
+  const tasks = projectionTasks.length ? [...projectionTasks, ...supplementalTodoTasks] : todoTasks;
   const counts = { total: tasks.length, open: 0, claimed: 0, review: 0, blocked: 0, failed: 0, done: 0 };
   for (const task of tasks) {
     if (Object.prototype.hasOwnProperty.call(counts, task.status)) counts[task.status] += 1;
   }
   return {
     projection_present: Boolean(projection.schema || projectionTasks.length),
-    source: projectionTasks.length ? 'task_projection' : (tasks.length ? 'todo' : 'none'),
+    source: projectionTasks.length ? (supplementalTodoTasks.length ? 'task_projection+todo' : 'task_projection') : (tasks.length ? 'todo' : 'none'),
     tasks,
     counts,
   };
@@ -271,6 +280,7 @@ function collectTodoTasks(root) {
     ...(parsed.backlog || []).map((task, index) => todoTask(task, 'open', index)),
     ...(parsed.inProgress || []).map((task, index) => todoTask(task, 'claimed', index)),
     ...(parsed.review || []).map((task, index) => todoTask(task, 'review', index)),
+    ...(parsed.blocked || []).map((task, index) => todoTask(task, 'blocked', index)),
     ...(parsed.completed || []).map((task, index) => todoTask(task, 'done', index)),
   ];
   return rows.map(normalizeTask).filter(Boolean);
