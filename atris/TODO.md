@@ -5,21 +5,20 @@
 ## Backlog
 
 - **[CLI-216]** Ship launch post: post linkedin-post.md, capture URL in journal, delete the file
-- **[CLI-215]** Mine 139 career XP receipts + 317 episodes + 12 scorecards into policy lessons; prove one before/after agent behavior change with receipts [rsi]
-- **[CLI-214]** Refresh business goals source of truth: live MRR/customer snapshot into wiki goals page, replacing historical 0.6-confidence numbers [business]
-- **[CLI-213]** Review lane self-drain cadence: wire review-lane-run into always-on loop; receipt proves queue drains agent-side to certified with zero human turns [mission]
-- **[CLI-212]** Dogfood two parallel mission start --worktree loops; fix cross-worktree mission status rollup friction [mission]
 
 ## In Progress
 
 - **[CLI-200]** Auto-improver: Recurring log pattern: Next tick will stop until a human looks at the error. [auto-improver]
   **Claimed by:** keshavrao
-- **[CLI-199]** Auto-improver: Recurring log pattern: check: `node bin/atris.js loop --dry-run --json` now reports # stale... [auto-improver]
-  **Claimed by:** devin
 
 ## Review
 
-(Empty)
+- **[CLI-217]** Policy hint false positive: VERIFY_COMMAND_PATTERN misses grep/diff-style verifiers [rsi]
+- **[CLI-215]** Mine 139 career XP receipts + 317 episodes + 12 scorecards into policy lessons; prove one before/after agent behavior change with receipts [rsi]
+- **[CLI-214]** Refresh business goals source of truth: live MRR/customer snapshot into wiki goals page, replacing historical 0.6-confidence numbers [business]
+- **[CLI-213]** Review lane self-drain cadence: wire review-lane-run into always-on loop; receipt proves queue drains agent-side to certified with zero human turns [mission]
+- **[CLI-212]** Dogfood two parallel mission start --worktree loops; fix cross-worktree mission status rollup friction [mission]
+- **[CLI-199]** Auto-improver: Recurring log pattern: check: `node bin/atris.js loop --dry-run --json` now reports # stale... [auto-improver]
 
 ## Blocked
 
