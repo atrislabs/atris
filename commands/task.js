@@ -2250,6 +2250,24 @@ function reviewLaneDrainBehaviorConformance() {
 
 function taskReviewLaneActDecision(drain = {}) {
   const nextAction = drain && drain.next_action;
+  if (nextAction === 'pending_review_chat') {
+    // The posted review chat is answerable by the lane itself, but only with
+    // disk-backed evidence: the act step re-checks receipts before any pass.
+    if (!drain.task || !drain.task.id) {
+      return {
+        ok: false,
+        step_action: nextAction,
+        reason: drain && drain.reason || PENDING_REVIEW_CHAT_STOP_REASON,
+      };
+    }
+    return {
+      ok: true,
+      step_action: 'auto_review',
+      task_id: drain.task.id,
+      command: null,
+      api: null,
+    };
+  }
   if (nextAction !== 'review_chat' && nextAction !== 'continue_work') {
     return {
       ok: false,
@@ -2311,9 +2329,30 @@ function reviewLaneActBehaviorConformance() {
     task: { id: 'proof-boundary-id' },
     reason: PROOF_BOUNDARY_BLOCKED_REASON,
   });
+  const pendingReviewChat = taskReviewLaneActDecision({
+    next_action: 'pending_review_chat',
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    task: { id: 'pending-review-chat-id' },
+    reason: PENDING_REVIEW_CHAT_STOP_REASON,
+  });
+  const pendingReviewChatNoTask = taskReviewLaneActDecision({
+    next_action: 'pending_review_chat',
+    safe_for_agent: false,
+    command: null,
+    api: null,
+    task: null,
+    reason: PENDING_REVIEW_CHAT_STOP_REASON,
+  });
   const checks = {
     allows_review_chat: reviewChat.ok === true && reviewChat.step_action === 'review_chat',
     allows_continue_work: continueWork.ok === true && continueWork.step_action === 'continue_work',
+    allows_evidence_gated_auto_review: pendingReviewChat.ok === true
+      && pendingReviewChat.step_action === 'auto_review'
+      && pendingReviewChat.command === null,
+    blocks_auto_review_without_task: pendingReviewChatNoTask.ok === false
+      && pendingReviewChatNoTask.reason === PENDING_REVIEW_CHAT_STOP_REASON,
     blocks_human_accept_waiting_even_if_marked_safe: humanAccept.ok === false && humanAccept.reason !== null,
     blocks_proof_boundary_blocked: proofBoundary.ok === false && proofBoundary.reason === PROOF_BOUNDARY_BLOCKED_REASON,
     blocks_capability_drift: drift.ok === false && drift.reason === 'capability_conformance_failed',
@@ -2329,6 +2368,7 @@ function reviewLaneLoopBehaviorConformance() {
   const humanOnly = taskReviewLaneLoopStopIsSafe('human_accept_waiting_is_human_only');
   const proofBoundary = taskReviewLaneLoopStopIsSafe(PROOF_BOUNDARY_BLOCKED_REASON);
   const pendingReviewChat = taskReviewLaneLoopStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
+  const autoReviewNoEvidence = taskReviewLaneLoopStopIsSafe(AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON);
   const noAction = taskReviewLaneLoopStopIsSafe('no_review_lane_action');
   const repeated = taskReviewLaneLoopStopIsSafe('repeat_selection');
   const drift = taskReviewLaneLoopStopIsSafe('capabilities_check_failed');
@@ -2340,6 +2380,7 @@ function reviewLaneLoopBehaviorConformance() {
     human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
     proof_boundary_blocked_stops_without_execution: proofBoundary.ok === true && proofBoundary.human_accept === false,
     pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
+    auto_review_without_evidence_stops_without_certification: autoReviewNoEvidence.ok === true && autoReviewNoEvidence.human_accept === false,
     no_action_stops_without_execution: noAction.ok === true,
     repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
     capability_drift_blocks_loop: drift.ok === false,
@@ -2356,6 +2397,7 @@ function reviewLaneRunBehaviorConformance() {
   const humanOnly = taskReviewLaneRunStopIsSafe('human_accept_waiting_is_human_only');
   const proofBoundary = taskReviewLaneRunStopIsSafe(PROOF_BOUNDARY_BLOCKED_REASON);
   const pendingReviewChat = taskReviewLaneRunStopIsSafe(PENDING_REVIEW_CHAT_STOP_REASON);
+  const autoReviewNoEvidence = taskReviewLaneRunStopIsSafe(AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON);
   const noAction = taskReviewLaneRunStopIsSafe('no_review_lane_action');
   const reusedFollowUp = taskReviewLaneRunStopIsSafe('continue_work_reused_existing_follow_up');
   const repeated = taskReviewLaneRunStopIsSafe('repeat_selection');
@@ -2369,6 +2411,7 @@ function reviewLaneRunBehaviorConformance() {
     human_accept_waiting_stops_without_execution: humanOnly.ok === true && humanOnly.human_accept === false,
     proof_boundary_blocked_stops_without_execution: proofBoundary.ok === true && proofBoundary.human_accept === false,
     pending_review_chat_stops_without_execution: pendingReviewChat.ok === true && pendingReviewChat.human_accept === false,
+    auto_review_without_evidence_stops_without_certification: autoReviewNoEvidence.ok === true && autoReviewNoEvidence.human_accept === false,
     no_action_stops_without_execution: noAction.ok === true,
     reused_follow_up_stops_without_duplicate_action: reusedFollowUp.ok === true,
     repeat_selection_stops_before_duplicate_execution: repeated.ok === true,
@@ -3098,6 +3141,53 @@ function taskReviewLaneActOptionsFromBody(body = {}, searchParams = new URLSearc
   };
 }
 
+const AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON = 'auto_review_no_green_evidence';
+
+// Evidence gate for the lane's own second review pass: every receipt named in
+// the proof must exist on disk and carry an explicit passing verifier state.
+// Prose-only proof, missing receipts, or unknown verifier state never certify.
+function autoReviewableEvidence(proofText, root = process.cwd()) {
+  const evidence = extractReceiptEvidence(proofText, root);
+  if (!evidence || evidence.missing.length || !evidence.receipts.length) return { ok: false, evidence };
+  return { ok: evidence.receipts.every((entry) => entry.verifier_passed === true), evidence };
+}
+
+function autoReviewPendingReviewTask(taskDb, db, taskId, { reviewer = 'codex-review' } = {}) {
+  const actor = reviewActor(reviewer);
+  const task = taskDetail(taskDb, db, taskId);
+  if (!task) return { acted: false, reason: 'not_found' };
+  if (task.status !== 'review') return { acted: false, reason: `not_reviewable_${task.status}` };
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  if (review.agent_certified === true || metadata.agent_certified === true) {
+    return { acted: false, reason: 'already_agent_certified' };
+  }
+  const proof = String(review.proof || metadata.latest_agent_proof || '').trim();
+  const { ok, evidence } = autoReviewableEvidence(proof);
+  if (!ok) return { acted: false, reason: AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON, evidence };
+  const reviewed = taskDb.reviewTask(db, {
+    id: taskId,
+    actor,
+    reward: 0,
+    proof,
+    lesson: `auto-review: receipts verified passing on disk: ${evidence.receipts.map((entry) => entry.path).join(', ')}`,
+  });
+  if (!reviewed.reviewed) return { acted: false, reason: reviewed.reason || 'auto_review_failed' };
+  const { outPath } = writeDefaultProjection(taskDb, db);
+  return {
+    acted: true,
+    reason: null,
+    auto_review: {
+      reviewer: actor,
+      receipts: evidence.receipts.map((entry) => entry.path),
+      review_pass_count: reviewed.event?.payload?.review_pass_count ?? null,
+      agent_certified: reviewed.event?.payload?.agent_certified === true,
+    },
+    evidence,
+    projection_path: outPath,
+  };
+}
+
 function taskReviewLaneAct(taskDb, db, options = {}) {
   const owner = String(options.owner || DEFAULT_OWNER);
   const reviewer = reviewActor(options.reviewer || 'codex-review');
@@ -3133,7 +3223,7 @@ function taskReviewLaneAct(taskDb, db, options = {}) {
       writes_projection: true,
       human_accept: false,
       xp_after_human_accept: true,
-      allowed_actions: ['review_chat', 'continue_work'],
+      allowed_actions: ['review_chat', 'continue_work', 'auto_review'],
     },
   };
   if (!drainReport.ok) {
@@ -3190,6 +3280,18 @@ function taskReviewLaneAct(taskDb, db, options = {}) {
         result,
       };
     }
+    if (decision.step_action === 'auto_review') {
+      const result = autoReviewPendingReviewTask(taskDb, db, decision.task_id, { reviewer });
+      return {
+        ...base,
+        ok: true,
+        acted: Boolean(result.acted),
+        selected_action: 'auto_review',
+        reason: result.acted ? null : result.reason,
+        projection_path: result.projection_path || drainReport.projection_path,
+        result,
+      };
+    }
   } catch (error) {
     return {
       ...base,
@@ -3240,6 +3342,7 @@ function taskReviewLaneLoopStopIsSafe(reason) {
     PROOF_BOUNDARY_BLOCKED_REASON,
     'human_accept_waiting_is_human_only',
     PENDING_REVIEW_CHAT_STOP_REASON,
+    AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON,
     'no_review_lane_action',
     'continue_work_reused_existing_follow_up',
     'repeat_selection',
@@ -3321,6 +3424,7 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
   const seenActions = new Set();
   const excludeTaskIds = normalizeTaskIdSet(options.excludeTaskIds);
   let stoppedReason = 'max_steps_reached';
+  let skippedNoEvidence = false;
   let status = 200;
   let finalDrain = null;
   let finalDecision = null;
@@ -3342,6 +3446,10 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
 
     if (!preview.ok) {
       stoppedReason = preview.reason || 'review_lane_act_failed';
+      // An empty lane after evidence-less skips is the skips' story, not "no action".
+      if (stoppedReason === 'no_review_lane_action' && skippedNoEvidence) {
+        stoppedReason = AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON;
+      }
       status = taskReviewLaneLoopStopIsSafe(stoppedReason).ok ? 200 : preview.status || 409;
       steps.push(compactReviewLaneLoopStep(index, preview, { phase: 'preview' }));
       break;
@@ -3349,7 +3457,7 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
 
     const actionKey = taskReviewLaneActSelectionKey(preview);
     if (!actionKey) {
-      stoppedReason = 'no_review_lane_action';
+      stoppedReason = skippedNoEvidence ? AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON : 'no_review_lane_action';
       steps.push(compactReviewLaneLoopStep(index, {
         ...preview,
         ok: true,
@@ -3398,6 +3506,13 @@ function taskReviewLaneLoop(taskDb, db, options = {}) {
       break;
     }
     if (!act.acted) {
+      // Evidence-less pending reviews must not head-block the lane: exclude the
+      // task and keep draining whatever sits behind it.
+      if (act.reason === AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON && act.decision && act.decision.task_id) {
+        excludeTaskIds.add(String(act.decision.task_id));
+        skippedNoEvidence = true;
+        continue;
+      }
       stoppedReason = act.reason || 'no_review_lane_action';
       break;
     }
@@ -3484,6 +3599,7 @@ function taskReviewLaneRunStopIsSafe(reason) {
     PROOF_BOUNDARY_BLOCKED_REASON,
     'human_accept_waiting_is_human_only',
     PENDING_REVIEW_CHAT_STOP_REASON,
+    AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON,
     'no_review_lane_action',
     'continue_work_reused_existing_follow_up',
     'repeat_selection',
@@ -3548,6 +3664,7 @@ function taskReviewLaneRun(taskDb, db, options = {}) {
   const runs = [];
   const excludeTaskIds = normalizeTaskIdSet(options.excludeTaskIds);
   let stoppedReason = 'max_runs_reached';
+  let skippedNoEvidence = false;
   let stoppedOn = null;
   let status = 200;
   let projectionPath = null;
@@ -3567,6 +3684,12 @@ function taskReviewLaneRun(taskDb, db, options = {}) {
 	    for (const step of loop.steps || []) {
 	      if (step && step.acted && step.decision && step.decision.task_id) {
 	        excludeTaskIds.add(String(step.decision.task_id));
+	      } else if (step && !step.acted && step.reason === AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON
+	        && step.decision && step.decision.task_id) {
+	        // Refused auto-reviews stay refused for this run: exclude them so the
+	        // next inner loop drains the tasks behind them instead of re-selecting.
+	        excludeTaskIds.add(String(step.decision.task_id));
+	        skippedNoEvidence = true;
 	      }
 	    }
     projectionPath = loop.projection_path || projectionPath;
@@ -3589,6 +3712,9 @@ function taskReviewLaneRun(taskDb, db, options = {}) {
       status = loop.status || 200;
       break;
     }
+  }
+  if (stoppedReason === 'no_review_lane_action' && skippedNoEvidence) {
+    stoppedReason = AUTO_REVIEW_NO_GREEN_EVIDENCE_REASON;
   }
 
   const totalActedCount = runs.reduce((sum, run) => sum + (Number(run.acted_count) || 0), 0);
