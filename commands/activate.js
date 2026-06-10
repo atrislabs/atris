@@ -4,7 +4,9 @@ const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journa
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
 const { readWikiStatus } = require('../lib/wiki');
 const {
+  buildLatestCheck: buildZeroShotCheck,
   buildPacket: buildZeroShotPacket,
+  renderDurableSummary: renderZeroShotDurableSummary,
   renderHint: renderZeroShotHint,
   writeLatestPacket: writeLatestZeroShotPacket,
 } = require('./zero-shot');
@@ -167,6 +169,7 @@ function activateAtris() {
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);
+    console.log(renderZeroShotDurableSummary(buildZeroShotCheck({ cwd: workspaceDir })));
   } catch {}
   console.log('');
   console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');

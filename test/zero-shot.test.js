@@ -992,6 +992,7 @@ test('activate surfaces the zero-shot next route', () => {
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next: atris 0-shot --all/);
     assert.match(res.stdout, /atris 0-shot --prompt/);
     assert.match(res.stdout, /atris 0-shot --model <tier> --prompt/);

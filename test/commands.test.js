@@ -515,6 +515,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Member "Navigator" activated\./);
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next route JSON: atris 0-shot --json/);
     assert.match(res.stdout, /Next route menu: atris 0-shot --all/);
     assert.match(res.stdout, /Next route prompt: atris 0-shot --prompt/);
@@ -4225,6 +4226,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.match(res.stdout, /menu: atris 0-shot --all/);
     assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
     assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
@@ -4242,6 +4244,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.match(body.card, /menu: atris 0-shot --all/);
     assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.match(body.card, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
   } finally {
     cleanupTempDir(dir);
   }

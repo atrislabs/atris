@@ -1066,6 +1066,30 @@ function renderLatestCheck(check) {
   ].join('\n');
 }
 
+function durableFreshnessLabel(exists, fresh) {
+  if (fresh) return 'fresh';
+  if (exists) return 'stale';
+  return 'missing';
+}
+
+function durableGroupFreshnessLabel(fresh) {
+  if (fresh === true) return 'fresh';
+  if (fresh === false) return 'stale_or_missing';
+  return 'unknown';
+}
+
+function renderDurableSummary(check = {}) {
+  return [
+    `0-shot durable: status=${check.status || 'unknown'}`,
+    `prompt=${durableFreshnessLabel(check.prompt_exists, check.prompt_fresh)}`,
+    `menu=${durableFreshnessLabel(check.menu_exists, check.menu_fresh)}`,
+    `model=${durableGroupFreshnessLabel(check.model_prompts_fresh)}`,
+    `horizon=${durableGroupFreshnessLabel(check.horizon_prompts_fresh)}`,
+    `| files: ${check.menu_txt || LATEST_MENU_RELATIVE_PATH}, ${check.prompt_txt || LATEST_PROMPT_RELATIVE_PATH}`,
+    `| check: ${check.check_command || ZERO_SHOT_CHECK_COMMAND}`,
+  ].join(' ');
+}
+
 function renderRouteSummary(routes) {
   const options = routes && Array.isArray(routes.options) ? routes.options : [];
   if (!options.length) return 'routes: none';
@@ -1228,6 +1252,7 @@ module.exports = {
   collectTasks,
   buildLatestCheck,
   renderHint,
+  renderDurableSummary,
   renderLatestCheck,
   renderPacket,
   writeLatestPacket,
