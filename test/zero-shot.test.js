@@ -125,6 +125,11 @@ test('zero-shot routes certified review rows to the human accept gate', () => {
     assert.match(packet.decision.reason, /waiting for human accept/);
     assert.equal(packet.commands.first_command, 'atris task page CZS-1 --json');
     assert.match(packet.decision.agent_directive, /Do not mutate or accept/);
+    assert.equal(packet.decision.owner_action, 'human-only: atris task accept CZS-1');
+    assert.equal(packet.decision.safe_agent_action, 'read-only: atris task page CZS-1 --json; then wait or pick a non-blocked route from atris 0-shot --all');
+    assert.match(packet.handoff.prompt, /Owner action: human-only: atris task accept CZS-1/);
+    assert.match(packet.handoff.prompt, /Agent-safe action: read-only: atris task page CZS-1 --json/);
+    assert.match(packet.handoff.prompt, /do not cross the owner gate/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -768,6 +773,8 @@ test('zero-shot routes owner-gated work to the human lane', () => {
     assert.equal(packet.decision.model_tier, 'human');
     assert.equal(packet.commands.first_command, 'atris task page OWN-2 --json');
     assert.match(packet.decision.agent_directive, /Do not mutate or accept/);
+    assert.equal(packet.decision.owner_action, 'owner-only: clear the approval or blocker for OWN-2');
+    assert.match(packet.decision.safe_agent_action, /read-only: atris task page OWN-2 --json/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -849,6 +856,7 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(packet.routes.models.human.count, 1);
     assert.equal(packet.routes.models.human.first.ref, 'OWN-2');
     assert.equal(packet.routes.models.human.first.first_command, 'atris task page OWN-2 --json');
+    assert.equal(packet.routes.models.human.first.owner_action, 'owner-only: clear the approval or blocker for OWN-2');
     assert.equal(packet.routes.models.pro.count, 2);
     assert.equal(packet.routes.models.pro.first.ref, 'FAIL-1');
     assert.equal(packet.routes.models.fast.count, 1);
@@ -870,6 +878,8 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.match(packet.routes.options[0].prompt, /Route: owner_gate/);
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
     assert.equal(packet.handoff.prompt.startsWith(packet.routes.options[0].prompt), true);
+    assert.match(packet.handoff.prompt, /Owner action: owner-only: clear the approval or blocker for OWN-2/);
+    assert.match(packet.handoff.prompt, /Agent-safe action: read-only: atris task page OWN-2 --json/);
     assert.match(packet.handoff.prompt, /Route inventory: total=4 compact=4 hidden=0 full_field=routes\.all_options/);
     assert.match(packet.handoff.prompt, /Queue: total=4 open=0 claimed=3 review=0 blocked=0 failed=1 done=0/);
     assert.match(packet.handoff.prompt, /First routes by horizon: now=FAIL-1\/pro review=none long=ARC-1\/pro blocked=OWN-2\/human orient=none/);
@@ -1021,6 +1031,8 @@ test('zero-shot --all prints a readable route menu without writing state', () =>
     assert.match(res.stdout, /route menu:/);
     assert.match(res.stdout, /1\. blocked\/human\/owner_gate \| OWN-2 - Publish release after human approval/);
     assert.match(res.stdout, /run: atris task page OWN-2 --json/);
+    assert.match(res.stdout, /owner: owner-only: clear the approval or blocker for OWN-2/);
+    assert.match(res.stdout, /agent-safe: read-only: atris task page OWN-2 --json/);
     assert.match(res.stdout, /2\. now\/pro\/recovery_lane \| FAIL-1 - Fix failing release gate/);
     assert.match(res.stdout, /3\. now\/fast\/fast_model_task \| FAST-1 - Fix CLI help copy/);
     assert.match(res.stdout, /4\. long_term\/pro\/long_horizon \| ARC-1 - Plan architecture migration roadmap/);

@@ -417,6 +417,28 @@ function nextCommand(task, lane) {
   return 'atris radar --json';
 }
 
+function humanAcceptCommand(task) {
+  if (!task || !task.ref || !isHumanAcceptWaiting(task)) return null;
+  const review = task.review && typeof task.review === 'object' ? task.review : {};
+  return review.human_accept_command
+    || (review.human_accept && review.human_accept.command)
+    || (review.verification_chat && review.verification_chat.human_accept_command)
+    || (review.handoff && review.handoff.human_accept_command)
+    || `atris task accept ${shellToken(task.ref)}`;
+}
+
+function ownerGateContext(task, command) {
+  if (!task || !task.ref) return {};
+  const acceptCommand = humanAcceptCommand(task);
+  const ownerAction = acceptCommand
+    ? `human-only: ${acceptCommand}`
+    : `owner-only: clear the approval or blocker for ${task.ref}`;
+  return {
+    owner_action: ownerAction,
+    safe_agent_action: `read-only: ${command}; then wait or pick a non-blocked route from atris 0-shot --all`,
+  };
+}
+
 function laneDetails(task, lane, command) {
   const ref = task && task.ref ? task.ref : 'the current workspace';
   const todoSource = task && task.metadata && task.metadata.todo_source;
@@ -480,6 +502,7 @@ function laneDetails(task, lane, command) {
     ...(details[lane] || details.quick_task),
     first_command: command,
   };
+  if (lane === 'owner_gate') Object.assign(detail, ownerGateContext(task, command));
   if (todoSource) {
     detail.agent_directive = `${detail.agent_directive} Source: ${todoSource}; inspect context before importing, claiming, or mutating task state.`;
   }
@@ -509,6 +532,8 @@ function compactRoute(kind, item, decision, details, extra = {}) {
     model_tier: details.model_tier,
     first_command: details.first_command,
     agent_directive: details.agent_directive,
+    owner_action: details.owner_action,
+    safe_agent_action: details.safe_agent_action,
     reason: decision.reason,
     source: extra.source || null,
   };
@@ -557,6 +582,13 @@ function stripRouteSource(route) {
   return rest;
 }
 
+function routeBoundaryLine(route) {
+  if (route && route.lane === 'owner_gate') {
+    return 'After the first command, do not cross the owner gate. If a non-blocked route exists in atris 0-shot --all, hand off or select it explicitly; otherwise wait. Do not human-accept, merge, publish, send externally, or mutate task state from this prompt.';
+  }
+  return 'After the first command, stay inside this lane until evidence says the route changed. Do not human-accept, merge, publish, send externally, or switch to unrelated work from this prompt.';
+}
+
 function routePrompt(route, root) {
   const focus = route.ref ? `${route.ref} - ${route.title || '(untitled)'}` : 'the current workspace';
   return [
@@ -567,7 +599,9 @@ function routePrompt(route, root) {
     `Why: ${route.reason}`,
     `Run first: ${route.first_command}`,
     `Directive: ${route.agent_directive}`,
-    'After the first command, stay inside this lane until evidence says the route changed. Do not human-accept, merge, publish, send externally, or switch to unrelated work from this prompt.',
+    ...(route.owner_action ? [`Owner action: ${route.owner_action}`] : []),
+    ...(route.safe_agent_action ? [`Agent-safe action: ${route.safe_agent_action}`] : []),
+    routeBoundaryLine(route),
   ].join('\n');
 }
 
@@ -622,6 +656,8 @@ function routeFromDecision(decision, details, command) {
     model_tier: details.model_tier,
     first_command: command,
     agent_directive: details.agent_directive,
+    owner_action: details.owner_action,
+    safe_agent_action: details.safe_agent_action,
     reason: decision.reason,
   };
 }
@@ -761,6 +797,8 @@ function compactRouteChoice(route) {
     model_tier: route.model_tier || null,
     first_command: route.first_command || null,
     agent_directive: route.agent_directive || null,
+    owner_action: route.owner_action || null,
+    safe_agent_action: route.safe_agent_action || null,
     reason: route.reason || null,
   };
 }
@@ -912,6 +950,8 @@ function buildPacket(options = {}) {
       work_size: selectedRoute.work_size,
       model_tier: selectedRoute.model_tier,
       agent_directive: selectedRoute.agent_directive,
+      owner_action: selectedRoute.owner_action,
+      safe_agent_action: selectedRoute.safe_agent_action,
       first_command: selectedRoute.first_command,
     }
     : (fallbackRoute ? {
@@ -919,6 +959,8 @@ function buildPacket(options = {}) {
       work_size: fallbackRoute.work_size,
       model_tier: fallbackRoute.model_tier,
       agent_directive: fallbackRoute.agent_directive,
+      owner_action: fallbackRoute.owner_action,
+      safe_agent_action: fallbackRoute.safe_agent_action,
       first_command: fallbackRoute.first_command,
     } : laneDetails(null, decision.lane, command));
   const selectedTaskRoute = selectedRoute && selectedRoute.kind === 'task' ? selectedRoute : null;
@@ -1209,6 +1251,8 @@ function renderRouteMenu(packet) {
       const focus = route.ref ? `${route.ref} - ${route.title || '(untitled)'}` : (route.title || 'workspace');
       lines.push(`${index + 1}. ${route.horizon}/${route.model_tier}/${route.lane} | ${focus}`);
       lines.push(`   run: ${route.first_command}`);
+      if (route.owner_action) lines.push(`   owner: ${route.owner_action}`);
+      if (route.safe_agent_action) lines.push(`   agent-safe: ${route.safe_agent_action}`);
       lines.push(`   why: ${route.reason}`);
     });
     if (!hasFullOptions && routes.total > options.length) {
@@ -1282,7 +1326,7 @@ function renderHelp() {
     '--model fast|pro|validator|human selects the first route suited to that model tier; --fast, --pro, --validator, and --human are shortcuts.',
     '--horizon now|review|long|blocked|orient selects the first route in that work horizon; --quick, --review, --long, --blocked, and --orient are shortcuts.',
     'Human output shows the first command to run.',
-    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, bounded routes.options, full routes.all_options, routes.models, handoff.prompt, and safety boundaries.',
+    '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, owner-gate context, requested_horizon, bounded routes.options, full routes.all_options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model, including selected route, route inventory, horizon buckets, and model buckets.',
     '--all prints the selected route plus the full route menu across horizons and model tiers.',
     `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
