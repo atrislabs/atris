@@ -926,6 +926,7 @@ test('activate surfaces the zero-shot next route', () => {
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
     assert.match(res.stdout, /Next: atris 0-shot --prompt/);
     assert.match(res.stdout, /atris 0-shot --model <tier> --prompt/);
+    assert.match(res.stdout, /atris 0-shot --horizon <horizon> --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);

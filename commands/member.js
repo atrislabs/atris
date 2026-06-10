@@ -3131,7 +3131,7 @@ function memberActivate(name) {
     const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: process.cwd() }));
     console.log(renderZeroShotHint(zeroShot));
     console.log(`Next route JSON: atris 0-shot --json`);
-    console.log(`Next route prompt: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt)`);
+    console.log(`Next route prompt: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt)`);
   } catch {}
   console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
 }

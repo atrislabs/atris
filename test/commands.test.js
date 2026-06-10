@@ -517,6 +517,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.match(res.stdout, /Next route JSON: atris 0-shot --json/);
     assert.match(res.stdout, /Next route prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /atris 0-shot --horizon <horizon> --prompt/);
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
@@ -4219,6 +4220,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: unknown/);
     assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(res.stdout, /NEXT MOVE: Tell Atris who is operating/);
     assert.match(res.stdout, /PROOF: Activation re-runs with a known operator/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
@@ -4233,6 +4235,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4248,6 +4251,7 @@ test('brain activate can target a member and print their next work block', () =>
     assert.match(res.stdout, /CONTEXT: Demo Lab Brain/);
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);
     const remembered = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'operator.json'), 'utf8'));
