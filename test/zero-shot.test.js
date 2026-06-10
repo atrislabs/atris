@@ -1254,7 +1254,7 @@ test('activate surfaces the zero-shot next route', () => {
     assert.match(res.stdout, /horizon first now=CZS-1\/fast review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next: run first: atris task current-step --tag cli --json/);
-    assert.match(res.stdout, /Routes: atris 0-shot --all \| prompt: atris 0-shot --prompt \| model: atris 0-shot --model <tier> --prompt \| horizon: atris 0-shot --horizon <horizon> --prompt/);
+    assert.match(res.stdout, /Routes: atris 0-shot --all \| prompt: atris 0-shot --prompt \| model: atris 0-shot --model fast\|pro\|validator\|human --prompt \| horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.doesNotMatch(res.stdout, /Next: atris 0-shot --all/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);

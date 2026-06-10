@@ -3138,7 +3138,7 @@ function memberActivate(name) {
     if (zeroShot.decision?.lane === 'owner_gate') {
       console.log('Boundary: read-only first command; stop at owner gate; human accept is human-only.');
     }
-    console.log(`Routes: atris 0-shot --json | atris 0-shot --all | atris 0-shot --prompt | atris 0-shot --model <tier> --prompt | atris 0-shot --horizon <horizon> --prompt`);
+    console.log(`Routes: atris 0-shot --json | atris 0-shot --all | atris 0-shot --prompt | atris 0-shot --model fast|pro|validator|human --prompt | atris 0-shot --horizon now|review|long|blocked|orient --prompt`);
   } catch {}
   console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
 }

@@ -179,9 +179,9 @@ function activateAtris() {
     if (zeroShot.decision?.lane === 'owner_gate') {
       console.log('Boundary: read-only first command; stop at owner gate; human accept is human-only.');
     }
-    console.log('Routes: atris 0-shot --all | prompt: atris 0-shot --prompt | model: atris 0-shot --model <tier> --prompt | horizon: atris 0-shot --horizon <horizon> --prompt');
+    console.log('Routes: atris 0-shot --all | prompt: atris 0-shot --prompt | model: atris 0-shot --model fast|pro|validator|human --prompt | horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt');
   } else {
-    console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');
+    console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model fast|pro|validator|human --prompt / atris 0-shot --horizon now|review|long|blocked|orient --prompt; then atris plan -> do -> review)');
   }
   console.log('');
 }

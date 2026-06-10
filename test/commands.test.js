@@ -521,7 +521,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /horizon first now=none review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next: run first: atris radar --json/);
-    assert.match(res.stdout, /Routes: atris 0-shot --json \| atris 0-shot --all \| atris 0-shot --prompt \| atris 0-shot --model <tier> --prompt \| atris 0-shot --horizon <horizon> --prompt/);
+    assert.match(res.stdout, /Routes: atris 0-shot --json \| atris 0-shot --all \| atris 0-shot --prompt \| atris 0-shot --model fast\|pro\|validator\|human --prompt \| atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.doesNotMatch(res.stdout, /Next route menu/);
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
