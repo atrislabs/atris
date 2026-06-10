@@ -831,6 +831,19 @@ function findAtrisWorkspaceRoot(start = process.cwd()) {
   }
 }
 
+function zeroShotModelTierForMode(mode) {
+  const normalized = normalizeMode(mode);
+  if (normalized === 'code-fast') return 'fast';
+  if (normalized === 'fast') return 'fast';
+  if (normalized === 'pro') return 'pro';
+  return null;
+}
+
+function isOwnerGatedZeroShotPacket(packet) {
+  const decision = packet && packet.decision;
+  return Boolean(decision && (decision.lane === 'owner_gate' || decision.owner_action));
+}
+
 function buildAxZeroShotPacket(options = {}) {
   if (Object.prototype.hasOwnProperty.call(options, 'zeroShotPacket')) return options.zeroShotPacket;
   if (options.zeroShot === false) return null;
@@ -838,7 +851,10 @@ function buildAxZeroShotPacket(options = {}) {
   if (!root) return null;
   try {
     const { buildPacket } = require('./commands/zero-shot');
-    return buildPacket({ cwd: root });
+    const defaultPacket = buildPacket({ cwd: root });
+    if (isOwnerGatedZeroShotPacket(defaultPacket)) return defaultPacket;
+    const modelTier = zeroShotModelTierForMode(options.mode);
+    return modelTier ? buildPacket({ cwd: root, model: modelTier }) : defaultPacket;
   } catch (_) {
     return null;
   }
@@ -862,6 +878,9 @@ function formatZeroShotMessage(packet, options = {}) {
     `- focus: ${focus}`,
   ];
   if (decision.reason) lines.push(`- why: ${decision.reason}`);
+  if (decision.requested_model_tier) {
+    lines.push(`- model request: ${decision.requested_model_tier} | match=${decision.model_tier_match}`);
+  }
   lines.push(`- run first: ${firstCommand}`);
   lines.push(`- menu: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
   lines.push(`- prompt: ${commands.zero_shot_prompt || 'atris 0-shot --prompt'}`);

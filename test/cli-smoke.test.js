@@ -553,6 +553,75 @@ test('ax prepends zero-shot handoff context for fast/pro/code-fast turns', () =>
   assert.match(codeFastPayload.message, /prompt: atris 0-shot --prompt/);
 });
 
+test('ax selects model-specific zero-shot lanes while preserving owner gates', () => {
+  const ax = require('../ax');
+  const dir = makeTempDir();
+  const stateDir = path.join(dir, '.atris', 'state');
+  const projectionPath = path.join(stateDir, 'tasks.projection.json');
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(projectionPath, JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        {
+          display_id: 'FAST-1',
+          title: 'Fix small CLI help typo',
+          status: 'open',
+          tag: 'cli',
+        },
+        {
+          display_id: 'LONG-1',
+          title: 'Plan release roadmap architecture',
+          status: 'open',
+          tag: 'strategy',
+        },
+      ],
+    }, null, 2));
+
+    const fastPayload = ax.buildPayload('what next?', { cwd: dir, mode: 'fast' });
+    assert.match(fastPayload.message, /ax mode: fast/);
+    assert.match(fastPayload.message, /model request: fast \| match=true/);
+    assert.match(fastPayload.message, /route: fast_model_task \| now \| fast/);
+    assert.match(fastPayload.message, /focus: FAST-1 - Fix small CLI help typo/);
+
+    const proPayload = ax.buildPayload('what next?', { cwd: dir, mode: 'pro' });
+    assert.match(proPayload.message, /ax mode: pro/);
+    assert.match(proPayload.message, /model request: pro \| match=true/);
+    assert.match(proPayload.message, /route: long_horizon \| long_term \| pro/);
+    assert.match(proPayload.message, /focus: LONG-1 - Plan release roadmap architecture/);
+
+    fs.writeFileSync(projectionPath, JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        {
+          display_id: 'WAIT-1',
+          title: 'Human accept waiting',
+          status: 'review',
+          review: {
+            approval_status: 'pending',
+            agent_certified: true,
+            handoff: { next_action: 'human_accept_waiting' },
+          },
+        },
+        {
+          display_id: 'FAST-1',
+          title: 'Fix small CLI help typo',
+          status: 'open',
+          tag: 'cli',
+        },
+      ],
+    }, null, 2));
+
+    const gatedPayload = ax.buildPayload('what next?', { cwd: dir, mode: 'fast' });
+    assert.match(gatedPayload.message, /route: owner_gate \| blocked \| human/);
+    assert.match(gatedPayload.message, /focus: WAIT-1 - Human accept waiting/);
+    assert.match(gatedPayload.message, /owner gate: human-only: atris task accept WAIT-1/);
+    assert.doesNotMatch(gatedPayload.message, /model request: fast/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('default entry auto-advances to plan when inbox has items', () => {
   const dir = makeTempDir();
   try {
