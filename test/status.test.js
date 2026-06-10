@@ -132,6 +132,8 @@ test('status surfaces the current zero-shot route in JSON, quick, and human outp
     assert.match(human.stdout, /0-shot buckets: horizons now=0 review=0 long=0 blocked=1; models fast=0\s+pro=0 validator=0 human=1/);
     assert.match(human.stdout, /0-shot first by model: fast=none pro=none validator=none\s+human=WAIT-1\/human/);
     assert.match(human.stdout, /0-shot first by horizon: now=none review=none long=none\s+blocked=WAIT-1\/human orient=none/);
+    assert.match(human.stdout, /0-shot model selector: atris 0-shot --model\s+fast\|pro\|validator\|human\s+--prompt/);
+    assert.match(human.stdout, /0-shot horizon selector: atris 0-shot --horizon\s+now\|review\|long\|blocked\|orient\s+--prompt/);
   } finally {
     cleanup(dir);
   }

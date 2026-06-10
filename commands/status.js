@@ -225,6 +225,14 @@ function zeroShotModelFirstText(zeroShot) {
   return `model first fast=${firstRouteText(first.fast)} pro=${firstRouteText(first.pro)} validator=${firstRouteText(first.validator)} human=${firstRouteText(first.human)}`;
 }
 
+function zeroShotModelSelectorText() {
+  return 'atris 0-shot --model fast|pro|validator|human --prompt';
+}
+
+function zeroShotHorizonSelectorText() {
+  return 'atris 0-shot --horizon now|review|long|blocked|orient --prompt';
+}
+
 function zeroShotGateText(zeroShot) {
   const parts = [];
   if (zeroShot.owner_action) parts.push(`owner ${zeroShot.owner_action}`);
@@ -388,6 +396,8 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
     queueParts.push(`0-shot first by model: ${zeroShotModelFirstText(zeroShot).replace(/^model first /, '')}.`);
     queueParts.push(`0-shot first by horizon: ${zeroShotHorizonFirstText(zeroShot).replace(/^horizon first /, '')}.`);
+    queueParts.push(`0-shot model selector: ${zeroShotModelSelectorText()}.`);
+    queueParts.push(`0-shot horizon selector: ${zeroShotHorizonSelectorText()}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
     } else {
