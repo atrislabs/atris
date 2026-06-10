@@ -338,7 +338,7 @@ function showHelp() {
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
-  console.log('  lesson     - Append a one-line lesson to atris/lessons.md');
+  console.log('  lesson     - Append a one-line lesson to atris/lessons.md (mine: distill receipts/episodes/scorecards into policy lessons)');
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
