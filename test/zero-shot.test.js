@@ -1057,6 +1057,7 @@ test('activate surfaces the zero-shot next route', () => {
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next: atris 0-shot --all/);
     assert.match(res.stdout, /atris 0-shot --prompt/);
@@ -1083,6 +1084,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
@@ -1102,6 +1104,7 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);

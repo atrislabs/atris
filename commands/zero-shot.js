@@ -1194,7 +1194,16 @@ function renderPacket(packet, options = {}) {
 
 function renderHint(packet) {
   if (!packet || !packet.decision || !packet.commands) return `0-shot: ${ZERO_SHOT_PROMPT_COMMAND}`;
-  return `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command} | prompt: ${packet.commands.zero_shot_prompt || ZERO_SHOT_PROMPT_COMMAND}`;
+  const routes = packet.routes || {};
+  const horizons = routes.horizons || {};
+  const models = routes.models || {};
+  return [
+    `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command}`,
+    `prompt: ${packet.commands.zero_shot_prompt || ZERO_SHOT_PROMPT_COMMAND}`,
+    `routes total=${routes.total || 0} hidden=${routes.hidden_count || 0}`,
+    `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
+    `models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
+  ].join(' | ');
 }
 
 function renderHelp() {
