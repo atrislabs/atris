@@ -874,8 +874,9 @@ function activationZeroShotPacket(state) {
 function activationZeroShotLine(state) {
   const packet = activationZeroShotPacket(state);
   const horizonHint = 'horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt';
-  if (!packet) return `ZERO SHOT: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --json) | ${horizonHint}`;
-  return `${renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:')} | ${horizonHint}`;
+  const menuHint = 'menu: atris 0-shot --all';
+  if (!packet) return `ZERO SHOT: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --json) | ${menuHint} | ${horizonHint}`;
+  return `${renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:')} | ${menuHint} | ${horizonHint}`;
 }
 
 function renderActivationCard(state, options = {}) {

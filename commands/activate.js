@@ -169,7 +169,7 @@ function activateAtris() {
     console.log(`   ${zeroShot.decision.reason}`);
   } catch {}
   console.log('');
-  console.log('Next: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');
+  console.log('Next: atris 0-shot --all (or atris 0-shot --prompt / atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt; then atris plan -> do -> review)');
   console.log('');
 }
 
