@@ -262,6 +262,36 @@ function listMissions(root = process.cwd()) {
     .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
 }
 
+// Cross-worktree rollup: missions started with --worktree keep their state inside
+// that worktree, so a plain `mission status` from any single checkout is blind to
+// them. Enumerate sibling git worktrees and surface their missions read-only.
+function listWorktreeRollupMissions(root = process.cwd()) {
+  let entries = [];
+  try {
+    entries = require('./worktree').listWorktrees(root);
+  } catch {
+    return []; // not a git repo (or git unavailable): nothing to roll up
+  }
+  let here = root;
+  try {
+    here = fs.realpathSync(root);
+  } catch { /* keep raw path */ }
+  const rolled = [];
+  for (const entry of entries) {
+    let wtRoot;
+    try {
+      wtRoot = fs.realpathSync(entry.path);
+    } catch {
+      continue; // stale worktree record
+    }
+    if (wtRoot === here) continue;
+    for (const mission of listMissions(wtRoot)) {
+      rolled.push({ ...mission, worktree_root: entry.path, worktree_branch: entry.branch });
+    }
+  }
+  return rolled;
+}
+
 function resolveMission(ref, root = process.cwd()) {
   const missions = listMissions(root);
   if (!ref) return missions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || missions[0] || null;
@@ -589,19 +619,30 @@ function startMission(args) {
 
 function statusMission(args) {
   const asJson = wantsJson(args);
-  const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json'])[0] || '';
+  const localOnly = hasFlag(args, '--local');
+  const ref = stripKnownFlags(args, ['--status', '--limit'], ['--json', '--local'])[0] || '';
   const statusFilter = readFlag(args, '--status', '');
   if (statusFilter && !VALID_STATUSES.has(statusFilter) && !STATUS_ALIASES.has(statusFilter)) {
     exitMissionError(`Invalid --status: ${statusFilter}`, 2, asJson);
   }
   const limit = readPositiveIntegerFlag(args, '--limit', null, { json: asJson });
   let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
+  if (!ref && !localOnly) {
+    const seen = new Set(missions.map((mission) => mission.id));
+    for (const rolled of listWorktreeRollupMissions()) {
+      if (seen.has(rolled.id)) continue;
+      seen.add(rolled.id);
+      missions.push(rolled);
+    }
+    missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  }
   if (!ref && statusFilter) missions = missions.filter((mission) => missionMatchesStatusFilter(mission, statusFilter));
   if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
-  for (const owner of new Set(missions.map((mission) => mission.owner).filter(Boolean))) {
+  // Member state renders are cwd-local writes; rolled-up missions stay read-only.
+  for (const owner of new Set(missions.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
   }
   const payload = {
@@ -620,6 +661,7 @@ function statusMission(args) {
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
         `  state: ${mission.status}`,
+        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
         `  next: ${mission.next_action || 'tick or verify'}`,
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
@@ -2056,7 +2098,8 @@ function help() {
 atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree]
-  atris mission status [id] [--status <state>] [--limit <n>] [--json]
+  atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+                       (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]

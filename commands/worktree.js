@@ -513,6 +513,7 @@ module.exports = {
   defaultShipTarget,
   defaultStartBase,
   defaultWorktreePath,
+  listWorktrees,
   parseWorktrees,
   normalizeTargetRef,
   prMergeRef,
