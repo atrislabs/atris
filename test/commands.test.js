@@ -518,6 +518,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /queue total=0 open=0 claimed=0 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
+    assert.match(res.stdout, /horizon first now=none review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /Next: run first: atris radar --json/);
     assert.match(res.stdout, /Routes: atris 0-shot --json \| atris 0-shot --all \| atris 0-shot --prompt \| atris 0-shot --model <tier> --prompt \| atris 0-shot --horizon <horizon> --prompt/);
@@ -4350,6 +4351,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(body.card, /queue total=0 open=0 claimed=0 review=0 blocked=0 failed=0 done=0/);
     assert.match(body.card, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(body.card, /model first fast=none pro=none validator=none human=none/);
+    assert.match(body.card, /horizon first now=none review=none long=none blocked=none orient=none/);
     assert.match(body.card, /menu: atris 0-shot --all/);
     assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(body.card, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);

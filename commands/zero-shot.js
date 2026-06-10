@@ -1327,6 +1327,7 @@ function renderHint(packet) {
     `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
     `models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     `model first ${firstRoutesByModelText(models)}`,
+    `horizon first ${firstRoutesByHorizonText(routes.horizon_first || {})}`,
   ].join(' | ');
 }
 
