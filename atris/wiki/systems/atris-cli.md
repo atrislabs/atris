@@ -17,8 +17,8 @@ sources:
   - lib/task-db.js
 created: 2026-04-07
 updated: 2026-05-10
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.9
 dependencies:
   - atris/wiki/briefs/atris-cli-overview.md
@@ -32,7 +32,7 @@ tags: [project, cli, atris]
 
 # Atris CLI
 
-`atris` is a Node.js CLI, currently version `3.15.22`, that turns a repo into an AI workspace with context, task ownership, memory, verification, and optional cloud/business computers.
+`atris` is a Node.js CLI, currently version `3.15.57`, that turns a repo into an AI workspace with context, task ownership, memory, verification, and optional cloud/business computers.
 
 The public model is:
 
@@ -76,7 +76,9 @@ Memory:
 
 Ownership and execution:
 
-- `atris task`: claims, dialogue, proof, review episodes, JSON projection, TODO import/render, and sync dry-run
+- `atris task`: claims, dialogue, proof, review episodes, JSON projection, TODO import/render, and sync dry-run; `atris task done --proof` records review/RL context, but only human `atris task accept` mints Career XP
+- `atris play`, `atris gm`, `atris xp`: the AgentXP proof-backed game loop (player mission loop, GM review queues, local card + hosted leaderboard sync)
+- `ax`: the local Atris 2 coding-agent CLI talking to a local AtrisOS backend (`--fast`, `--pro`, `--max`, `--chat`, `--doctor`)
 - `atris mission`: goal + verifier + member owner + receipt loop
 - `atris member`: member identity, goals, tick/review/block/status loop, and push/pull
 - `atris computer`: local/cloud computer surface, including `computer card`

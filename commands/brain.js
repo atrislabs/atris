@@ -605,10 +605,6 @@ function latestRecommendation(root) {
   return nextMove(collectState(root));
 }
 
-function loadBrainState(root) {
-  return readJson(path.join(root, 'atris', 'brain', 'state.json')) || collectState(root);
-}
-
 function normalizeMemberSlug(memberSlug) {
   return String(memberSlug || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
 }
@@ -1281,7 +1277,7 @@ function generatedBootBlock(state) {
 This workspace has a compiled agent brain.
 
 On session start, activate it first:
-\`atris brain activate --root ${state.root} --verify\`
+\`atris brain activate --root . --verify\`
 
 Load these first:
 ${renderBulletedLoadOrder(state)}
@@ -1292,7 +1288,7 @@ Shape: \`<operator>, today is about <move>\` -> \`I picked this because <why now
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 
 Re-run after meaningful work:
-\`atris brain compile --root ${state.root}\`
+\`atris brain compile --root .\`
 ${GENERATED_END}
 `;
 }

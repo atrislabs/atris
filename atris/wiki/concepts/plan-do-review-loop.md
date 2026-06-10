@@ -9,8 +9,8 @@ sources:
   - atris/team/navigator/MEMBER.md
   - atris/team/executor/MEMBER.md
   - atris/team/validator/MEMBER.md
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.89
 dependencies:
   - atris/wiki/briefs/atris-cli-overview.md
@@ -67,9 +67,10 @@ The member files still contain older wording about moving tasks directly through
 
 ## REVIEW pass/fail
 
-REVIEW is the only gate that can close a task:
+REVIEW is the only gate that can close a task, and closing splits into two gates:
 
-- **Pass** -> `atris task finish <id> --proof "..."`, then `atris task review` can record lessons or create the next task.
+- **Pass (agent)** -> `atris task ready <id> --proof "..."` moves proof-backed work to Review; `atris task done --proof` records review/RL context. `atris task review` can record lessons or create the next task.
+- **Pass (human)** -> only human `atris task accept <id>` moves the task to Done and mints Career XP; `atris task revise <id> --note "..."` sends work back to Do.
 - **Fail** -> stay in DO, show the issues, and re-execute against the same task.
 
 A failing review never auto-advances and never skips back to PLAN. The work stays at DO until the validator's checks go green.
@@ -98,7 +99,7 @@ The loop only works because nothing important is allowed to live only in the con
 | Decision / tradeoff       | journal → Notes       |
 | Durable project knowledge | `atris/wiki/` + STATUS |
 | Something learned         | `lessons.md`          |
-| Work finished             | `atris task finish --proof` |
+| Work finished             | `atris task ready --proof`, human `atris task accept` |
 
 Discoveries get routed at the moment they happen, not batched at session end. The loop is project-local: `atris/MAP.md` is navigation, `atris task` is active ownership, `atris/TODO.md` is a rendered board, `atris/logs/` is daily operating memory, and `atris/wiki/` is the durable knowledge layer that compounds across sessions.
 

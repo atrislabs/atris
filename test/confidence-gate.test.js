@@ -51,10 +51,12 @@ test('plan, do, and review prompts include the confidence gate', () => {
     assert.match(doing.stdout, /Run the Confidence Gate against the task before editing/);
     assert.match(doing.stdout, /rerun the gate against proof and residual risk/);
 
+    // Default review is concise and points to --verbose for the legacy gate.
     const review = runCli(['review'], { cwd: dir });
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, /Confidence Gate: review must find loopholes/);
+    assert.match(review.stdout, /atris review --verbose/);
 
+    // The full Confidence Gate lives in the verbose validator prompt.
     const verboseReview = runCli(['review', '--verbose'], { cwd: dir });
     assert.equal(verboseReview.status, 0, verboseReview.stderr);
     assert.match(verboseReview.stdout, /Confidence Gate:/);

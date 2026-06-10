@@ -8,9 +8,9 @@ sources:
   - commands/loop.js
   - README.md
 created: 2026-04-07
-updated: 2026-05-10
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+updated: 2026-06-09
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.9
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -76,6 +76,7 @@ actionability: "When to use this page."
 - `atris wiki lint` asks the agent to find broken refs, orphans, contradictions, and gaps.
 - `atris wiki verify` enforces the agent-readable frontmatter contract.
 - `atris wiki loop` aliases the local upkeep loop.
+- `atris wiki entities [--type T] [--json]` lists extracted graph entities; `atris wiki related <entity> [--json]` lists graph relationships touching an entity.
 - `atris loop --dry-run --json` reports stale pages, orphan pages, and suggested ingest sources without mutating files.
 - `--private` writes/reads from `.atris/presidio`; `--cloud` routes through a business workspace chat path.
 

@@ -1,10 +1,8 @@
 # atris
 
-**atris** is an operating system for intelligence.
+**atris** is an operating system for AI work. It turns any repo into a workspace an agent can actually operate: shared context it reads before it acts, a `plan -> do -> review` loop, durable tasks and daily logs, and verification that ends work on a real check instead of a promise.
 
-It turns any repo into an AI workspace with shared context, a `plan -> do -> review` loop, daily logs, feature packs, and reusable skills.
-
-Atris gives every owner persistent AI computers.
+Every owner gets persistent computers to run it:
 
 ```text
 Owner = User | Business
@@ -88,17 +86,18 @@ Integrates with any agent.
 
 ## Chat With Atris 2
 
-`ax` is the local Atris 2 coding-agent CLI. It talks to the AtrisOS backend at `http://127.0.0.1:8000/api/atris2/turn`, streams text, shows tool activity, and sends the current folder as the workspace.
+`ax` is the local Atris 2 coding-agent CLI. It talks to a local AtrisOS backend (default `http://127.0.0.1:8000`), streams text, shows tool activity, and sends the current folder as the workspace.
 
 ```bash
 cd your-project
 ax --pro "find the task system and explain it"
 ax --fast "what files are here?"
+ax --max "refactor this module and verify the tests"
 ax --pro --chat
 ax --doctor
 ```
 
-Use Pro for agentic file work and edit/test loops. Use Fast for quick workspace search, short chats, and small edits.
+Use Pro for agentic file work and edit/test loops. Use Fast for quick workspace search, short chats, and small edits. Use Max for the hardest jobs — it runs the highest-reasoning model and takes longer per turn.
 
 ## Play AgentXP
 
@@ -188,7 +187,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris autopilot` | Guided loop with approvals |
 | `atris log` | Add inbox items to today's journal |
 | `atris status` | Show active work and completions |
-| `atris task` | Durable local task state with claims, dialogue, review episodes, JSON export, TODO import, TODO render, board, and sync dry-run |
+| `atris task` | Durable local task state and the agent work loop |
 | `atris play` | Enter the AgentXP player loop for one proof-backed mission |
 | `atris gm` | Enter AgentXP General Manager mode for player missions and review queues |
 | `atris xp` | Show the local AgentXP card and sync eligible proof to the hosted leaderboard |
@@ -211,7 +210,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
 - `atris member` keeps team-member identity and learning local-first: `MEMBER.md` is the role contract, `goals.json` is the machine-readable goal/experiment state, `goals.md` is the human readout, and `logs/YYYY-MM-DD.md` records what happened. Use `atris member goal`, `tick`, `status`, `block`, and `review --value 1..5` to test whether a member is making useful progress or needs the operator/orchestrator.
 - `atris codex-goal` is the guarded bridge for native Codex `/goal`: `status` reads `~/.codex/state_5.sqlite`, while `reset --thread <id> --confirm-complete-goal-reset` backs up the DB, dumps the exact completed `thread_goals` row, deletes only that completed row, and writes a receipt. The next native goal must still be created by the live Codex thread; Atris Mission/member goals remain the durable loop state.
-- `atris task` keeps durable local task state and append-only events for agents while `atris/TODO.md` remains a readable regenerated project board. Human views use semantic refs like `OBL-18`; commands accept `OBL-18`, `OBL18`, full 26-char task IDs, or any unique legacy prefix, while JSON/API keep the full `id` canonical and expose `display_id` plus `legacy_ref`. Use `atris task new`, `atris task delegate "..." --to <owner>`, `atris task day`, `atris task next`, `atris task say`, and `atris task ready <id> --proof "..."` for the agent loop; once proof is in Review, run `atris task review-chat <id> --as codex-review` to append a task-owned `/codex` verification prompt. Human approval uses `atris task accept <id>` to move the task to Done and award Career XP, and `atris task revise <id> --note "..."` sends work back to Do. Add `--json` for headless agents. Use `atris task serve` to open the local Task Factory board with goals, work streams, lineage, proof, lessons, and the compounding chain. Every change refreshes compact `.atris/state/tasks.projection.json` for web/desktop; use `atris task show <ref>` or `atris task events --all` for the full ledger. Use `atris task sync --dry-run` to preview the canonical Supabase/Swarlo task writes before any cloud mutation. Use `--via swarlo` on delegation when the live coordination layer should claim/report from the same task record. Use `--create-next` with review/finish to turn a `--next` suggestion into the next durable task. Use `atris task setup --import-todo` to bootstrap, `atris task review` to write an RSI episode, and `atris task render` to rebuild markdown if it gets clobbered. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo is the live claim/report layer.
+- `atris task` keeps durable local task state and append-only events for agents; `atris/TODO.md` is just a regenerated readable board. Run the loop with `atris task new`, `delegate "..." --to <owner>`, `next`, `say`, and `ready <id> --proof "..."`; human approval is `atris task accept <id>` (moves to Done, awards Career XP) or `revise <id> --note "..."`. Add `--json` for headless agents, `atris task serve` for the local board, and `atris task show <ref>` / `events --all` for the full ledger. Commands accept semantic refs (`OBL-18`), full IDs, or any unique prefix. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo the live claim layer.
 - `atris experiments` runs small test packs in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
@@ -279,7 +278,7 @@ atris skill link [--all]
 
 For Codex, copy any skill folder into `~/.codex/skills/`.
 
-## v3.2.0
+## Recent changes
 
 - **Staleness gate** — tasks tagged `[unverified]` are skipped at the moment of use, not pruned eagerly. Three-state model: actionable / unverified / deleted.
 - **Lesson gate** — `isLessonResolved` checks whether a lesson already shipped before proposing new work from it. Prevents the loop from re-solving solved problems.

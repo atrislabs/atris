@@ -422,6 +422,13 @@ function renderMemberMissionState(owner, root = process.cwd()) {
   return { missionPath, nowPath };
 }
 
+// One glanceable label for how a mission earned its completion: evidence
+// source when the gate passed, an explicit marker when an operator forced it.
+function completionGateLabel(gate) {
+  if (!gate) return null;
+  return gate.forced ? `forced override (${gate.source})` : gate.source;
+}
+
 function renderMissionStatus(root = process.cwd()) {
   const paths = statePaths(root);
   const missions = listMissions(root);
@@ -443,6 +450,8 @@ function renderMissionStatus(root = process.cwd()) {
       lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
       if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
+      const gateLabel = completionGateLabel(mission.completion_gate);
+      if (gateLabel) lines.push(`  - gate: ${gateLabel}`);
     }
     lines.push('');
   }
@@ -476,9 +485,9 @@ function missionFromArgs(args) {
     '--stop',
     '--task',
     '--ask',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree']).join(' ').trim();
   if (!objective) {
-    exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]', 1, wantsJson(args));
+    exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
   const owner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
@@ -528,6 +537,21 @@ function missingVerifierWarning(mission) {
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
+  // --worktree: bind the mission to its own isolated checkout. We chdir before
+  // any state writes so the mission record, baseline sidecar, receipts, and
+  // member files all land inside the worktree — ticks run there, and the main
+  // checkout's dirt never reaches the mission baseline.
+  if (hasFlag(args, '--worktree')) {
+    let created;
+    try {
+      const { createAgentWorktree } = require('./worktree');
+      created = createAgentWorktree({ member: mission.owner, task: mission.objective });
+    } catch (e) {
+      exitMissionError(`[mission start] worktree creation failed: ${e.message}`, 2, asJson);
+    }
+    mission.worktree = { path: created.path, branch: created.branch, base: created.base };
+    process.chdir(created.path);
+  }
   if (mission.xp_task_enabled) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
@@ -547,15 +571,17 @@ function startMission(args) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   printJsonOrText(
-    { ok: true, action: 'mission_started', mission: saved, warnings, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath },
+    { ok: true, action: 'mission_started', mission: saved, warnings, state_path: statePaths().missionsJsonl, member_state: memberState, log_path: logPath, worktree_baseline: worktreeBaseline ? { path: path.relative(process.cwd(), missionBaselinePath(saved.id)), dirty_count: worktreeBaseline.dirty_count, dirty_hash: worktreeBaseline.dirty_hash } : null },
     [
       `Started mission: ${saved.objective}`,
       `Owner: ${saved.owner}`,
       `State: ${saved.status}`,
+      ...(saved.worktree ? [`Worktree: ${saved.worktree.path}`, `Branch: ${saved.worktree.branch}`] : []),
       ...warnings.map((warning) => `Warning: ${warning.message}`),
       ...(saved.xp_task ? [`AgentXP task: ${saved.xp_task.ref}`] : []),
-      `Next: atris mission tick ${saved.id}`,
+      ...(saved.worktree ? [`Next: cd ${saved.worktree.path} && atris mission tick ${saved.id}`] : [`Next: atris mission tick ${saved.id}`]),
     ],
     asJson,
   );
@@ -596,6 +622,7 @@ function statusMission(args) {
         `  state: ${mission.status}`,
         `  next: ${mission.next_action || 'tick or verify'}`,
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
+        ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
     asJson,
@@ -690,7 +717,77 @@ function gitWorktreeSnapshot(root = process.cwd()) {
   };
 }
 
-function worktreeReceipt(before, after, { verifier = '' } = {}) {
+// Porcelain v1 entries are "XY path" or "XY old -> new"; baselines compare by
+// post-rename path so a status-letter change alone never counts as new dirt.
+function porcelainEntryPath(line) {
+  const trimmed = String(line || '').slice(3);
+  const arrow = trimmed.indexOf(' -> ');
+  return arrow >= 0 ? trimmed.slice(arrow + 4) : trimmed;
+}
+
+const LOOP_EXHAUST_PREFIXES = ['.atris/', 'atris/runs/', 'atris/status/'];
+
+function isLoopExhaustPath(entryPath) {
+  return LOOP_EXHAUST_PREFIXES.some((prefix) => String(entryPath).startsWith(prefix));
+}
+
+function missionBaselinePath(missionId, root = process.cwd()) {
+  return path.join(root, '.atris', 'state', 'mission-baselines', `${missionId}.json`);
+}
+
+// Write-once sidecar capturing the dirt the mission inherited. Receipts subtract
+// these paths so pre-existing workspace noise stops flagging unverified_dirty.
+// Stored outside missions.jsonl because that log re-appends the full mission
+// record on every save. Captured after start bookkeeping so the mission's own
+// state writes land inside the baseline, not in new_since_baseline.
+function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
+  const snapshot = gitWorktreeSnapshot(root);
+  if (!snapshot.available) return null;
+  const baselineFile = missionBaselinePath(mission.id, root);
+  const paths = new Set((snapshot.entries || []).map(porcelainEntryPath));
+  // The sidecar itself and the per-tick lock are mission bookkeeping; without
+  // these the mission would flag its own state files as unverified dirt.
+  paths.add(path.relative(root, baselineFile));
+  paths.add(path.relative(root, path.join(root, '.atris', 'state', `mission-${mission.id}.lock`)));
+  const baseline = {
+    schema: 'atris.mission_worktree_baseline.v1',
+    mission_id: mission.id,
+    captured_at: stampIso(),
+    dirty_count: snapshot.dirty_count,
+    dirty_hash: snapshot.dirty_hash,
+    paths: Array.from(paths).sort(),
+  };
+  fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
+  fs.writeFileSync(baselineFile, JSON.stringify(baseline, null, 2) + '\n', 'utf8');
+  return baseline;
+}
+
+function loadMissionWorktreeBaseline(missionId, root = process.cwd()) {
+  try {
+    const baseline = JSON.parse(fs.readFileSync(missionBaselinePath(missionId, root), 'utf8'));
+    return Array.isArray(baseline?.paths) ? baseline : null;
+  } catch {
+    return null;
+  }
+}
+
+// Closed missions no longer tick, so the sidecar is dead weight; prune it and
+// fold a compact audit summary into the mission record (full path lists stay
+// out of missions.jsonl, which re-appends the whole record on every save).
+// Paused missions keep their sidecar — resume ticks still subtract it.
+function pruneMissionWorktreeBaseline(mission, root = process.cwd()) {
+  const baseline = loadMissionWorktreeBaseline(mission.id, root);
+  try { fs.rmSync(missionBaselinePath(mission.id, root), { force: true }); } catch {}
+  if (!baseline) return null;
+  return {
+    captured_at: baseline.captured_at,
+    dirty_count: baseline.dirty_count,
+    dirty_hash: baseline.dirty_hash,
+    path_count: baseline.paths.length,
+  };
+}
+
+function worktreeReceipt(before, after, { verifier = '', baseline = null } = {}) {
   if (!before?.available || !after?.available) {
     return {
       available: false,
@@ -704,12 +801,27 @@ function worktreeReceipt(before, after, { verifier = '' } = {}) {
   const clearedDirty = (before.entries || []).filter((entry) => !afterSet.has(entry));
   const changed = before.dirty_hash !== after.dirty_hash;
   const hasVerifier = !!String(verifier || '').trim();
+  // Baseline = dirt the mission inherited (mission-start sidecar when present,
+  // tick-start snapshot for legacy missions). Only paths dirtied beyond that
+  // baseline count toward the unverified signal. Loop exhaust the mission
+  // writes about itself (state plane, receipts, rendered status) is not work
+  // product, so it never counts — otherwise every multi-tick mission in a repo
+  // that doesn't gitignore those dirs would flag its own bookkeeping.
+  const baselinePaths = baseline
+    ? new Set(baseline.paths)
+    : new Set((before.entries || []).map(porcelainEntryPath));
+  const newSinceBaseline = Array.from(new Set((after.entries || []).map(porcelainEntryPath)))
+    .filter((entryPath) => !baselinePaths.has(entryPath) && !isLoopExhaustPath(entryPath));
   return {
     available: true,
     before_dirty_count: before.dirty_count,
     after_dirty_count: after.dirty_count,
     changed,
-    unverified_dirty: !hasVerifier && after.dirty_count > 0,
+    baseline_source: baseline ? 'mission_start' : 'tick_start',
+    baseline_dirty_count: baseline ? baseline.dirty_count : before.dirty_count,
+    new_since_baseline_count: newSinceBaseline.length,
+    new_since_baseline_sample: newSinceBaseline.slice(0, 25),
+    unverified_dirty: !hasVerifier && newSinceBaseline.length > 0,
     unverified_change: !hasVerifier && changed,
     new_dirty_count: newDirty.length,
     cleared_dirty_count: clearedDirty.length,
@@ -1345,6 +1457,7 @@ async function runMission(args) {
       started_at: stampIso(),
     };
     const runWorktreeBefore = gitWorktreeSnapshot(cwd);
+    const runWorktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
     const cadence = cadenceOverride || mission.cadence || 'manual';
     let cadenceSeconds = parseCadenceSeconds(cadence);
     // cadence=manual|once: exactly 1 tick unless user explicitly raised --max-ticks
@@ -1461,7 +1574,7 @@ async function runMission(args) {
         verifierResult = runVerifier(frozen.verifier);
         result.verifier_passed = verifierResult.passed;
       }
-      const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier });
+      const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
 
       // Persist tick to mission state + write structured receipt
       const finishedAt = stampIso();
@@ -1564,7 +1677,7 @@ async function runMission(args) {
       }, cwd, 'mission_run_paused', { reason: pauseReason }).mission;
     }
 
-    const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier });
+    const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
     const finalReceipt = writeReceipt(mission, {
       kind: 'mission_run_summary',
       frozen,
@@ -1639,12 +1752,13 @@ function tickMission(args) {
     const lastTickIndex = Number(mission.last_tick_index || 0);
     const tickIdx = lastTickIndex + 1;
     const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
+    const worktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
 
     let verifierResult = null;
     if (verify && mission.verifier) {
       verifierResult = runVerifier(mission.verifier);
     }
-    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: mission.verifier });
+    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: mission.verifier, baseline: worktreeBaseline });
 
     const tickRecord = {
       status: 'ran',
@@ -1721,10 +1835,49 @@ function tickMission(args) {
   }
 }
 
+// Proof receipts are JSON files written by writeReceipt(); anything else
+// (free text, command strings, missing paths) reads as null and falls back
+// to durable mission state.
+function readReceiptProof(proof, root = process.cwd()) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.resolve(root, String(proof || '')), 'utf8'));
+    return parsed?.schema === 'atris.mission_receipt.v1' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function receiptShowsPass(receipt) {
+  const result = receipt?.result;
+  return result?.passed === true
+    || result?.verifier_result?.passed === true
+    || result?.tick?.verifier_passed === true;
+}
+
+// Terminal gate: a verifier mission may only complete on real evidence — a
+// passing receipt belonging to this mission, or durable state showing the
+// verifier passed. Mirrors the task plane's proof-only accept guard so the
+// final transition consumes the receipts instead of trusting free text.
+function missionCompletionGate(mission, proof, root = process.cwd()) {
+  if (!String(mission.verifier || '').trim()) return { ok: true, source: 'no_verifier' };
+  const receipt = readReceiptProof(proof, root);
+  if (receipt) {
+    if (receipt.mission_id !== mission.id) {
+      return { ok: false, source: 'receipt', reason: `proof receipt belongs to mission ${receipt.mission_id}, not ${mission.id}` };
+    }
+    return receiptShowsPass(receipt)
+      ? { ok: true, source: 'receipt', receipt_path: String(proof) }
+      : { ok: false, source: 'receipt', reason: 'proof receipt does not show a passing verifier' };
+  }
+  if (mission.verifier_result?.passed === true) return { ok: true, source: 'mission_state' };
+  return { ok: false, source: 'mission_state', reason: 'verifier has not passed for this mission and proof is not a passing receipt' };
+}
+
 function completeMission(args) {
   const asJson = wantsJson(args);
+  const force = hasFlag(args, '--force');
   const proof = readFlag(args, '--proof', '');
-  const ref = stripKnownFlags(args, ['--proof'], ['--json'])[0] || '';
+  const ref = stripKnownFlags(args, ['--proof'], ['--json', '--force'])[0] || '';
   if (!ref || !proof) {
     exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
   }
@@ -1732,14 +1885,21 @@ function completeMission(args) {
   if (!mission) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
+  const gate = missionCompletionGate(mission, proof, process.cwd());
+  if (!gate.ok && !force) {
+    exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
+  }
+  const baselineSummary = pruneMissionWorktreeBaseline(mission, process.cwd());
   const next = {
     ...mission,
     status: 'complete',
     completed_at: stampIso(),
     proof,
+    completion_gate: { ...gate, forced: force && !gate.ok },
+    worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: 'mission complete',
   };
-  const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof });
+  const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof, completion_gate: next.completion_gate });
   const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
   const codexGoalState = refreshCodexGoalController(process.cwd());
   const xpNextCommand = missionXpReadyAction(saved, proof);
@@ -1763,19 +1923,37 @@ function stopMission(args) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
   const status = pause ? 'paused' : 'stopped';
+  // Full stops abandon work, so leave evidence: snapshot the worktree against
+  // the mission baseline (what did this mission leave dirty?) before pruning it.
+  let receiptPath = null;
+  if (!pause) {
+    const snapshot = gitWorktreeSnapshot(process.cwd());
+    const worktree = worktreeReceipt(snapshot, snapshot, {
+      verifier: mission.verifier,
+      baseline: loadMissionWorktreeBaseline(mission.id, process.cwd()),
+    });
+    receiptPath = writeReceipt(mission, { kind: 'mission_stop', reason, worktree });
+  }
+  const baselineSummary = pause ? null : pruneMissionWorktreeBaseline(mission, process.cwd());
   const next = {
     ...mission,
     status,
     stopped_at: status === 'stopped' ? stampIso() : mission.stopped_at || null,
     paused_at: status === 'paused' ? stampIso() : mission.paused_at || null,
     stop_reason: reason,
+    receipt_path: receiptPath || mission.receipt_path || null,
+    worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
   };
-  const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason });
+  const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
   const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason });
   printJsonOrText(
-    { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, log_path: logPath },
-    [`${pause ? 'Paused' : 'Stopped'} mission: ${saved.objective}`, `Reason: ${reason}`],
+    { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath },
+    [
+      `${pause ? 'Paused' : 'Stopped'} mission: ${saved.objective}`,
+      `Reason: ${reason}`,
+      ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
+    ],
     asJson,
   );
 }
@@ -1877,7 +2055,7 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree]
   atris mission status [id] [--status <state>] [--limit <n>] [--json]
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]

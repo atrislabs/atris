@@ -321,7 +321,8 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*local \? \(mode === 'pro' \? 14 : 8\) : 1/);
+  assert.match(ax, /max_turns:\s*local \? \(mode === 'fast' \? 8 : 14\) : 1/);
+  assert.match(ax, /'atris:max'/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
   assert.doesNotMatch(ax, /\/api\/agent-sdk\/fast/);
@@ -343,7 +344,8 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /ax \[--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
+  assert.match(res.stdout, /--max {3}local workspace agent, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
@@ -367,15 +369,17 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.match(payload.message, /Recent conversation/);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
+  assert.equal(ax.modelForMode('max'), 'atris:max');
   assert.equal(ax.modelForMode('code-fast'), 'composer-2-5-fast');
   assert.equal(ax.backendUrl(), 'http://127.0.0.1:8000/api/atris2/turn');
-  assert.equal(ax.formatPrompt('pro'), '› ');
+  assert.equal(ax.formatPrompt('pro'), 'pro › ');
   assert.equal(ax.formatDuration(6197), '6s');
   assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
   assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
   assert.equal(ax.formatStatusMessage('retrying_with_required_local_tool'), null);
   assert.equal(ax.formatStatusMessage('loading_workspace_context'), 'loading workspace context');
-  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat \(atris:pro\)/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat/);
+  assert.doesNotMatch(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /atris:pro/);
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /\/workspace\/demo/);
   assert.deepEqual(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' }), {
     endpoint: 'http://127.0.0.1:8000/api/atris2/turn',
@@ -399,7 +403,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
         reasoning_effort: 'medium'
       }
     }),
-    'local workspace  openai:gpt-5.5  thinking medium'
+    'local workspace  thinking medium'
   );
   assert.deepEqual(
     ax.parseSseBlock('data: {"type":"text_delta","content":"ok"}\n\n'),
@@ -443,7 +447,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   ax.handleEvent({ type: 'text_delta', content: 'What would you like me to inspect?' }, state, output);
   ax.handleEvent({ type: 'status', message: 'retrying_with_required_local_tool' }, state, output);
   ax.handleEvent({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'Task', input: { type: 'status' } }] }, state, output);
-  assert.equal(writes.join(''), '  run   local workspace  openai:gpt-5.5  thinking medium\n\n  tool  Task  status\n');
+  assert.equal(writes.join(''), '● Task(status)\n');
   assert.equal(state.output, '');
 
   const ttyWrites = [];
@@ -671,10 +675,10 @@ test('review prints concise validator prompt by default', () => {
 
     const res = runCli(['review'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /I checked the review setup\./);
-    assert.match(res.stdout, /refresh the task\s+projection\/TODO view/);
+    assert.match(res.stdout, /Atris Review is the human checkpoint/);
+    assert.match(res.stdout, /CERTIFIED REVIEW QUEUE/);
     assert.doesNotMatch(res.stdout, /clear completed tasks out of TODO/);
-    assert.match(res.stdout, /Decision:/);
+    assert.match(res.stdout, /Need the legacy Validator prompt\? Run `atris review --verbose`/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/);
   } finally {
     cleanupTempDir(dir);

@@ -1386,10 +1386,6 @@ function readTaskProjectionState(workspace) {
   }
 }
 
-function readTaskProjection(workspace) {
-  return readTaskProjectionState(workspace).tasks;
-}
-
 function taskRef(task) {
   return task?.display_id || task?.legacy_ref || task?.id || 'task';
 }
@@ -1720,36 +1716,6 @@ function buildCareerXpSessionCapsule(args = []) {
   return capsule;
 }
 
-function normalizeLocalScore(score, workspace) {
-  const card = score.profile_card || score.player_card || {};
-  const integrity = score.integrity || {};
-  const careerXp = asNumber(card.agent_xp ?? card.career_xp);
-  const leaderboardEligible = Boolean(
-    card.leaderboard_eligible ?? integrity.leaderboard_eligible
-  );
-
-  return {
-    metric_label: AGENT_XP_LABEL,
-    agent_xp: careerXp,
-    career_xp: careerXp,
-    level: levelFromXp(careerXp),
-    operator: score.operator || null,
-    leaderboard_eligible: leaderboardEligible,
-    source: 'local_contribution_score',
-    workspace_root: score.workspace_root || workspace,
-    current_form_by_arena: {
-      local_workspace: {
-        ovr: asNumber(card.ovr || card.current_form),
-        current_form: asNumber(card.current_form || card.ovr),
-        visible_stats: Array.isArray(card.visible_stats) ? card.visible_stats : [],
-        leaderboard_eligible: leaderboardEligible,
-        integrity_status: score.label || integrity.status || 'unknown',
-      },
-    },
-    contribution_graph: score.contribution_graph || {},
-  };
-}
-
 function renderContributionGraph(graph) {
   if (!graph || !Array.isArray(graph.days)) return;
   console.log('');
@@ -1765,36 +1731,6 @@ function renderLocalActivity(activity) {
   console.log(
     `Local activity: ${activity.detected_providers.join(', ')} | context ${formatNumber(activity.context_agent_xp)} | not public ${AGENT_XP_LABEL}`
   );
-}
-
-function loadLocalPayload(args) {
-  const workspace = path.resolve(readFlag(args, '--workspace', process.cwd()));
-  const operator = readFlag(
-    args,
-    '--operator',
-    process.env.ATRIS_OPERATOR || process.env.USER || os.userInfo().username
-  );
-  const script = path.join(workspace, 'scripts', 'contribution_score.py');
-
-  if (!fs.existsSync(script)) {
-    throw new Error(`No local contribution scorer found at ${path.relative(process.cwd(), script)}`);
-  }
-
-  const result = spawnSync(
-    process.env.PYTHON || 'python3',
-    [script, '--workspace', workspace, '--operator', operator, '--json'],
-    { cwd: workspace, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }
-  );
-
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || '').trim();
-    throw new Error(detail || `Local scorer exited ${result.status}`);
-  }
-
-  return normalizeLocalScore(JSON.parse(result.stdout), workspace);
 }
 
 function earnedAgentXp(value) {

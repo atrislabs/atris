@@ -10,8 +10,8 @@ sources:
   - commands/computer.js
 created: 2026-04-27
 updated: 2026-05-10
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.88
 dependencies:
   - atris/wiki/systems/atris-cli.md
