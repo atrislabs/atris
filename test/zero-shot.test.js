@@ -288,6 +288,7 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     const packet = JSON.parse(res.stdout);
     const latestJsonPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
     const promptTxtPath = path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt');
+    const menuTxtPath = path.join(dir, '.atris', 'state', 'zero-shot.menu.txt');
     const fastPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt');
     const proPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.pro.prompt.txt');
     const validatorPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.validator.prompt.txt');
@@ -302,6 +303,7 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(packet.durable.wrote, true);
     assert.equal(packet.durable.latest_json, '.atris/state/zero-shot.latest.json');
     assert.equal(packet.durable.prompt_txt, '.atris/state/zero-shot.prompt.txt');
+    assert.equal(packet.durable.menu_txt, '.atris/state/zero-shot.menu.txt');
     assert.deepEqual(packet.durable.model_prompt_txt, {
       fast: '.atris/state/zero-shot.fast.prompt.txt',
       pro: '.atris/state/zero-shot.pro.prompt.txt',
@@ -325,6 +327,9 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(packet.durable.source_fingerprint, packet.freshness.source_fingerprint);
     assert.equal(fs.existsSync(latestJsonPath), true);
     assert.equal(fs.existsSync(promptTxtPath), true);
+    assert.equal(fs.existsSync(menuTxtPath), true);
+    const menuTxtRealPath = fs.realpathSync(menuTxtPath);
+    assert.equal(packet.durable.menu_txt_abs, menuTxtRealPath);
     assert.equal(fs.existsSync(fastPromptPath), true);
     assert.equal(fs.existsSync(proPromptPath), true);
     assert.equal(fs.existsSync(validatorPromptPath), true);
@@ -335,6 +340,8 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(latest.generated_at, packet.generated_at);
     assert.equal(latest.handoff.prompt, packet.handoff.prompt);
     assert.equal(latest.durable.source_fingerprint, packet.freshness.source_fingerprint);
+    assert.equal(latest.durable.menu_txt, '.atris/state/zero-shot.menu.txt');
+    assert.equal(latest.durable.menu_txt_abs, menuTxtRealPath);
     assert.equal(latest.durable.model_prompts.fast.model_tier_match, true);
     assert.equal(latest.durable.model_prompts.fast.selected_ref, 'CZS-1');
     assert.equal(latest.durable.model_prompts.fast.first_command, 'atris task current-step --tag cli --json');
@@ -347,6 +354,12 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(latest.durable.horizon_prompts.long.horizon_match, false);
     assert.equal(latest.durable.horizon_prompts.long.first_command, 'atris radar --json');
     assert.equal(fs.readFileSync(promptTxtPath, 'utf8'), `${packet.handoff.prompt}\n`);
+    const menuText = fs.readFileSync(menuTxtPath, 'utf8');
+    assert.match(menuText, /^route menu:/);
+    assert.match(menuText, /1\. now\/fast\/fast_model_task \| CZS-1 - Add zero-shot CLI command/);
+    assert.match(menuText, /run: atris task current-step --tag cli --json/);
+    assert.match(menuText, /select horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.match(menuText, /select model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route: fast_model_task/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Focus: CZS-1 - Add zero-shot CLI command/);
     assert.match(fs.readFileSync(proPromptPath, 'utf8'), /No pro model route is available/);
@@ -378,6 +391,10 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(fresh.prompt_fresh, true);
     assert.equal(typeof fresh.prompt_actual_sha1, 'string');
     assert.equal(fresh.prompt_actual_sha1, fresh.prompt_expected_sha1);
+    assert.equal(fresh.menu_exists, true);
+    assert.equal(fresh.menu_fresh, true);
+    assert.equal(typeof fresh.menu_actual_sha1, 'string');
+    assert.equal(fresh.menu_actual_sha1, fresh.menu_expected_sha1);
     assert.equal(fresh.model_prompts_fresh, true);
     assert.equal(fresh.model_prompts.fast.exists, true);
     assert.equal(fresh.model_prompts.fast.matches_expected, true);
@@ -394,6 +411,19 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(fresh.current_selected_ref, 'CZS-1');
     assert.equal(fresh.latest_source_fingerprint, fresh.current_source_fingerprint);
 
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt'), 'stale route menu\n', 'utf8');
+    const staleMenuRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(staleMenuRes.status, 0, staleMenuRes.stderr || staleMenuRes.stdout);
+    const staleMenu = JSON.parse(staleMenuRes.stdout);
+    assert.equal(staleMenu.status, 'stale');
+    assert.equal(staleMenu.ok, false);
+    assert.equal(staleMenu.menu_exists, true);
+    assert.equal(staleMenu.menu_fresh, false);
+    assert.notEqual(staleMenu.menu_actual_sha1, staleMenu.menu_expected_sha1);
+
+    const rewriteAfterMenuDrift = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(rewriteAfterMenuDrift.status, 0, rewriteAfterMenuDrift.stderr || rewriteAfterMenuDrift.stdout);
+
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt'), 'stale global prompt\n', 'utf8');
     const staleGlobalPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
     assert.equal(staleGlobalPromptRes.status, 0, staleGlobalPromptRes.stderr || staleGlobalPromptRes.stdout);
@@ -402,6 +432,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(staleGlobalPrompt.ok, false);
     assert.equal(staleGlobalPrompt.prompt_exists, true);
     assert.equal(staleGlobalPrompt.prompt_fresh, false);
+    assert.equal(staleGlobalPrompt.menu_fresh, true);
     assert.notEqual(staleGlobalPrompt.prompt_actual_sha1, staleGlobalPrompt.prompt_expected_sha1);
 
     const rewriteAfterGlobalDrift = runCli(['zero-shot', '--write'], { cwd: dir });
@@ -414,6 +445,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(staleModelPrompt.status, 'stale');
     assert.equal(staleModelPrompt.ok, false);
     assert.equal(staleModelPrompt.prompt_fresh, true);
+    assert.equal(staleModelPrompt.menu_fresh, true);
     assert.equal(staleModelPrompt.model_prompts_fresh, false);
     assert.equal(staleModelPrompt.model_prompts.pro.exists, true);
     assert.equal(staleModelPrompt.model_prompts.pro.matches_expected, false);
@@ -429,6 +461,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(staleHorizonPrompt.status, 'stale');
     assert.equal(staleHorizonPrompt.ok, false);
     assert.equal(staleHorizonPrompt.prompt_fresh, true);
+    assert.equal(staleHorizonPrompt.menu_fresh, true);
     assert.equal(staleHorizonPrompt.model_prompts_fresh, true);
     assert.equal(staleHorizonPrompt.horizon_prompts_fresh, false);
     assert.equal(staleHorizonPrompt.horizon_prompts.long.exists, true);
@@ -474,6 +507,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.match(text.stdout, /0-shot latest check/);
     assert.match(text.stdout, /status: stale/);
     assert.match(text.stdout, /prompt: stale/);
+    assert.match(text.stdout, /menu: stale/);
     assert.match(text.stdout, /model prompts: stale_or_missing/);
     assert.match(text.stdout, /horizon prompts: stale_or_missing/);
     assert.match(text.stdout, /selected: CZS-1 -> current REV-1/);
@@ -496,6 +530,8 @@ test('zero-shot --check reports missing durable latest files', () => {
     assert.equal(check.ok, false);
     assert.equal(check.latest_exists, false);
     assert.equal(check.prompt_exists, false);
+    assert.equal(check.menu_exists, false);
+    assert.equal(check.menu_fresh, false);
     assert.equal(check.current_selected_ref, 'CZS-1');
     assert.equal(check.refresh_command, 'atris 0-shot --write');
   } finally {
@@ -515,6 +551,7 @@ test('next --write refreshes the same durable zero-shot files', () => {
     assert.match(res.stdout, /^Atris 0-shot selected the next move/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -915,7 +952,8 @@ test('zero-shot help is workspace-free and non-mutating', () => {
     assert.match(res.stdout, /--prompt prints only/);
     assert.match(res.stdout, /--all prints the selected route plus the visible route menu/);
     assert.match(res.stdout, /--write refreshes \.atris\/state\/zero-shot\.latest\.json/);
-    assert.match(res.stdout, /--check compares the durable latest packet/);
+    assert.match(res.stdout, /\.atris\/state\/zero-shot\.menu\.txt/);
+    assert.match(res.stdout, /--check compares the durable latest packet, global prompt, route menu/);
     assert.match(res.stdout, /mission_tick/);
     assert.match(res.stdout, /goal_context/);
     assert.match(res.stdout, /recovery_lane/);
@@ -960,6 +998,7 @@ test('activate surfaces the zero-shot next route', () => {
     assert.match(res.stdout, /atris 0-shot --horizon <horizon> --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
     assert.equal(latest.durable.wrote, true);
@@ -980,6 +1019,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -999,6 +1039,7 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
     assert.equal(latest.decision.selected_ref, 'CZS-1');

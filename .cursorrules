@@ -10,7 +10,7 @@ atris task list --status open
 atris task claim <id> --as <agent>
 ```
 
-Run `atris` first. If the prompt is vague or empty, run `atris 0-shot --all` to inspect the route menu before choosing work; use `atris 0-shot --prompt` for a copy-paste handoff. If you know the needed horizon, run `atris 0-shot --horizon now|review|long|blocked|orient --prompt`. Use `atris 0-shot --json` when you need structured route metadata. Ambient agents may read `.atris/state/zero-shot.prompt.txt` or a horizon prompt such as `.atris/state/zero-shot.long.prompt.txt` only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --all`. If no task exists, create one with `atris task new "<small concrete title>" --tag <area>` before editing.
+Run `atris` first. If the prompt is vague or empty, run `atris 0-shot --all` to inspect the route menu before choosing work; use `atris 0-shot --prompt` for a copy-paste handoff. If you know the needed horizon, run `atris 0-shot --horizon now|review|long|blocked|orient --prompt`. Use `atris 0-shot --json` when you need structured route metadata. Ambient agents may read `.atris/state/zero-shot.prompt.txt`, `.atris/state/zero-shot.menu.txt`, or a horizon prompt such as `.atris/state/zero-shot.long.prompt.txt` only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --all`. If no task exists, create one with `atris task new "<small concrete title>" --tag <area>` before editing.
 
 ## Core Files
 

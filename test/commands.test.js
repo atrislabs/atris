@@ -522,6 +522,7 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2532,6 +2533,7 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
     const startZeroShot = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
     assert.equal(startZeroShot.decision.lane, 'mission_tick');
     assert.equal(startZeroShot.decision.selected_ref, startPayload.mission.id);
@@ -4236,6 +4238,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.equal(body.zero_shot.durable.wrote, true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
     assert.match(body.card, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.match(body.card, /menu: atris 0-shot --all/);
     assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
@@ -9925,8 +9928,10 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.ok(fs.existsSync(createPayload.projection_path));
     const latestZeroShotPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
     const promptZeroShotPath = path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt');
+    const menuZeroShotPath = path.join(dir, '.atris', 'state', 'zero-shot.menu.txt');
     assert.equal(fs.existsSync(latestZeroShotPath), true);
     assert.equal(fs.existsSync(promptZeroShotPath), true);
+    assert.equal(fs.existsSync(menuZeroShotPath), true);
     const latestZeroShot = JSON.parse(fs.readFileSync(latestZeroShotPath, 'utf8'));
     assert.equal(latestZeroShot.durable.wrote, true);
     assert.equal(latestZeroShot.decision.selected_ref, createPayload.task.display_id);
@@ -13103,6 +13108,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /atris 0-shot --json/);
     assert.match(agents, /0-shot --check` reports `fresh`/);
     assert.match(agents, /\.atris\/state\/zero-shot\.prompt\.txt/);
+    assert.match(agents, /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(agents, /\.atris\/state\/zero-shot\.fast\.prompt\.txt/);
     assert.match(agents, /\.atris\/state\/zero-shot\.human\.prompt\.txt/);
     assert.match(agents, /\.atris\/state\/zero-shot\.long\.prompt\.txt/);
@@ -13114,6 +13120,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(claudeCommand, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(claudeCommand, /atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(claudeCommand, /0-shot --check` reports `fresh`/);
+    assert.match(claudeCommand, /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(claudeCommand, /\.atris\/state\/zero-shot\.validator\.prompt\.txt/);
     assert.match(claudeCommand, /\.atris\/state\/zero-shot\.review\.prompt\.txt/);
     assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
@@ -13123,6 +13130,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(rootClaude, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(rootClaude, /atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(rootClaude, /0-shot --check` reports `fresh`/);
+    assert.match(rootClaude, /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(rootClaude, /\.atris\/state\/zero-shot\.pro\.prompt\.txt/);
     assert.match(rootClaude, /\.atris\/state\/zero-shot\.blocked\.prompt\.txt/);
   } finally {
@@ -14000,6 +14008,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(rootAgents, /atris 0-shot --horizon long --prompt/);
     assert.match(rootAgents, /0-shot --check` reports `fresh`/);
     assert.match(rootAgents, /\.atris\/state\/zero-shot\.prompt\.txt/);
+    assert.match(rootAgents, /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(rootAgents, /\.atris\/state\/zero-shot\.fast\.prompt\.txt/);
     assert.match(rootAgents, /\.atris\/state\/zero-shot\.human\.prompt\.txt/);
     assert.match(rootAgents, /\.atris\/state\/zero-shot\.long\.prompt\.txt/);
@@ -14073,10 +14082,12 @@ test('business workspace scaffold preserves existing root agent adapter files', 
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --all/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --horizon long --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /0-shot --check` reports `fresh`/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.validator\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.long\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris task next/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /0-shot --check` reports `fresh`/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.human\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.blocked\.prompt\.txt/);
   } finally {
@@ -14107,10 +14118,12 @@ test('business sync repairs missing root agent adapters without overwriting cust
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --all/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --horizon long --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /0-shot --check` reports `fresh`/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.fast\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.now\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /atris mission status --status active --json/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /0-shot --check` reports `fresh`/);
+    assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.menu\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.pro\.prompt\.txt/);
     assert.match(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8'), /\.atris\/state\/zero-shot\.orient\.prompt\.txt/);
     assert.match(res.stdout, /Root agent adapters:/);

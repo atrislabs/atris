@@ -8,6 +8,7 @@ const SCHEMA = 'atris.zero_shot_next_move.v1';
 const ROUTE_LIMIT = 8;
 const LATEST_PACKET_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const LATEST_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
+const LATEST_MENU_RELATIVE_PATH = '.atris/state/zero-shot.menu.txt';
 const ZERO_SHOT_COMMAND = 'atris 0-shot';
 const LEGACY_ZERO_SHOT_COMMAND = 'atris zero-shot';
 const ZERO_SHOT_JSON_COMMAND = `${ZERO_SHOT_COMMAND} --json`;
@@ -907,6 +908,7 @@ function buildPacket(options = {}) {
       write_command: ZERO_SHOT_WRITE_COMMAND,
       latest_json: LATEST_PACKET_RELATIVE_PATH,
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+      menu_txt: LATEST_MENU_RELATIVE_PATH,
       model_prompt_txt: modelPromptRelativePaths(),
       horizon_prompt_txt: horizonPromptRelativePaths(),
     },
@@ -952,6 +954,7 @@ function writeLatestPacket(packet) {
   const root = packet.workspace_root || findWorkspaceRoot(process.cwd());
   const latestJsonPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
   const promptTxtPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
+  const menuTxtPath = path.join(root, LATEST_MENU_RELATIVE_PATH);
   const modelPromptRecords = buildModelPromptRecords(packet, root);
   const horizonPromptRecords = buildHorizonPromptRecords(packet, root);
   const packetToWrite = {
@@ -965,8 +968,10 @@ function writeLatestPacket(packet) {
       wrote: true,
       latest_json: LATEST_PACKET_RELATIVE_PATH,
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+      menu_txt: LATEST_MENU_RELATIVE_PATH,
       latest_json_abs: latestJsonPath,
       prompt_txt_abs: promptTxtPath,
+      menu_txt_abs: menuTxtPath,
       model_prompt_txt: modelPromptRelativePaths(),
       model_prompts: publicModelPromptRecords(modelPromptRecords),
       horizon_prompt_txt: horizonPromptRelativePaths(),
@@ -977,6 +982,7 @@ function writeLatestPacket(packet) {
   fs.mkdirSync(path.dirname(latestJsonPath), { recursive: true });
   fs.writeFileSync(latestJsonPath, `${JSON.stringify(packetToWrite, null, 2)}\n`, 'utf8');
   fs.writeFileSync(promptTxtPath, `${packetToWrite.handoff.prompt}\n`, 'utf8');
+  fs.writeFileSync(menuTxtPath, `${renderRouteMenu(packetToWrite)}\n`, 'utf8');
   for (const record of Object.values(modelPromptRecords)) {
     fs.writeFileSync(record.prompt_txt_abs, `${record.prompt}\n`, 'utf8');
   }
@@ -991,6 +997,7 @@ function buildLatestCheck(options = {}) {
   const root = current.workspace_root;
   const latestPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
   const promptPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
+  const menuPath = path.join(root, LATEST_MENU_RELATIVE_PATH);
   const latest = readJson(latestPath);
   const currentFingerprint = current.freshness.source_fingerprint;
   const latestFingerprint = latest && latest.freshness ? latest.freshness.source_fingerprint : null;
@@ -998,6 +1005,10 @@ function buildLatestCheck(options = {}) {
   const expectedPromptText = `${current.handoff.prompt}\n`;
   const actualPromptText = promptExists ? readText(promptPath) : '';
   const promptFresh = Boolean(promptExists && actualPromptText === expectedPromptText);
+  const menuExists = fs.existsSync(menuPath);
+  const expectedMenuText = `${renderRouteMenu(current)}\n`;
+  const actualMenuText = menuExists ? readText(menuPath) : '';
+  const menuFresh = Boolean(menuExists && actualMenuText === expectedMenuText);
   const expectedModelPromptRecords = buildModelPromptRecords(current, root);
   const modelPrompts = checkPromptRecords(expectedModelPromptRecords, MODEL_TIERS);
   const modelPromptsFresh = Object.values(modelPrompts).every(record => record.matches_expected);
@@ -1005,7 +1016,7 @@ function buildLatestCheck(options = {}) {
   const horizonPrompts = checkPromptRecords(expectedHorizonPromptRecords, HORIZON_PROMPTS.map(([key]) => key));
   const horizonPromptsFresh = Object.values(horizonPrompts).every(record => record.matches_expected);
   const exists = Boolean(latest);
-  const fresh = Boolean(exists && promptFresh && modelPromptsFresh && horizonPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
+  const fresh = Boolean(exists && promptFresh && menuFresh && modelPromptsFresh && horizonPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
   return {
     schema: 'atris.zero_shot_latest_check.v1',
     ok: fresh,
@@ -1013,6 +1024,7 @@ function buildLatestCheck(options = {}) {
     workspace_root: root,
     latest_json: LATEST_PACKET_RELATIVE_PATH,
     prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+    menu_txt: LATEST_MENU_RELATIVE_PATH,
     model_prompt_txt: modelPromptRelativePaths(),
     horizon_prompt_txt: horizonPromptRelativePaths(),
     latest_exists: exists,
@@ -1020,6 +1032,10 @@ function buildLatestCheck(options = {}) {
     prompt_fresh: promptFresh,
     prompt_actual_sha1: promptExists ? sha1(actualPromptText) : null,
     prompt_expected_sha1: sha1(expectedPromptText),
+    menu_exists: menuExists,
+    menu_fresh: menuFresh,
+    menu_actual_sha1: menuExists ? sha1(actualMenuText) : null,
+    menu_expected_sha1: sha1(expectedMenuText),
     model_prompts: modelPrompts,
     model_prompts_fresh: modelPromptsFresh,
     horizon_prompts: horizonPrompts,
@@ -1042,6 +1058,7 @@ function renderLatestCheck(check) {
     `status: ${check.status}`,
     `latest: ${check.latest_json}`,
     `prompt: ${check.prompt_fresh ? 'fresh' : (check.prompt_exists ? 'stale' : 'missing')} (${check.prompt_txt})`,
+    `menu: ${check.menu_fresh ? 'fresh' : (check.menu_exists ? 'stale' : 'missing')} (${check.menu_txt})`,
     `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
     `horizon prompts: ${check.horizon_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
     `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
@@ -1156,8 +1173,8 @@ function renderHelp() {
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, requested_horizon, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
     '--all prints the selected route plus the visible route menu across horizons and model tiers.',
-    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
-    '--check compares the durable latest packet, global prompt, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
+    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, ${LATEST_MENU_RELATIVE_PATH}, per-model prompt files, and per-horizon prompt files for ambient agents; it does not mutate tasks or call external systems.`,
+    '--check compares the durable latest packet, global prompt, route menu, per-model prompts, per-horizon prompts, and current source fingerprints, then reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
