@@ -571,11 +571,16 @@ function routePrompt(route, root) {
   ].join('\n');
 }
 
-function routeContextPromptLines(routes = {}) {
+function queueSummaryText(queue = {}) {
+  return `total=${queue.total || 0} open=${queue.open || 0} claimed=${queue.claimed || 0} review=${queue.review || 0} blocked=${queue.blocked || 0} failed=${queue.failed || 0} done=${queue.done || 0}`;
+}
+
+function routeContextPromptLines(routes = {}, queue = {}) {
   const horizons = routes.horizons || {};
   const models = routes.models || {};
   const horizonFirst = routes.horizon_first || {};
   return [
+    `Queue: ${queueSummaryText(queue)}`,
     `Route inventory: total=${routes.total || 0} compact=${routes.shown || 0} hidden=${routes.hidden_count || 0} full_field=routes.all_options`,
     `Horizon buckets: now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
     `First routes by horizon: ${firstRoutesByHorizonText(horizonFirst)}`,
@@ -586,11 +591,11 @@ function routeContextPromptLines(routes = {}) {
   ];
 }
 
-function handoffPrompt(route, root, routes) {
+function handoffPrompt(route, root, routes, queue) {
   return [
     routePrompt(route, root),
     '',
-    ...routeContextPromptLines(routes),
+    ...routeContextPromptLines(routes, queue),
   ].join('\n');
 }
 
@@ -621,9 +626,9 @@ function routeFromDecision(decision, details, command) {
   };
 }
 
-function buildHandoff(route, root, routes) {
+function buildHandoff(route, root, routes, queue) {
   return {
-    prompt: handoffPrompt(route, root, routes),
+    prompt: handoffPrompt(route, root, routes, queue),
     first_command: route.first_command,
     model_tier: route.model_tier,
     lane: route.lane,
@@ -668,7 +673,7 @@ function buildModelPromptRecords(packet, root) {
       selected_ref: route.ref || null,
       lane: route.lane || null,
       first_command: route.first_command || null,
-      prompt: handoffPrompt(route, root, packet.routes || {}),
+      prompt: handoffPrompt(route, root, packet.routes || {}, packet.queue || {}),
     }];
   }));
 }
@@ -687,7 +692,7 @@ function buildHorizonPromptRecords(packet, root) {
       selected_ref: route.ref || null,
       lane: route.lane || null,
       first_command: route.first_command || null,
-      prompt: handoffPrompt(route, root, packet.routes || {}),
+      prompt: handoffPrompt(route, root, packet.routes || {}, packet.queue || {}),
     }];
   }));
 }
@@ -949,7 +954,7 @@ function buildPacket(options = {}) {
     },
     queue: taskState.counts,
     routes: publicRoutes,
-    handoff: buildHandoff(handoffRoute, root, publicRoutes),
+    handoff: buildHandoff(handoffRoute, root, publicRoutes, taskState.counts),
     freshness,
     durable: {
       write_command: ZERO_SHOT_WRITE_COMMAND,
@@ -1258,6 +1263,7 @@ function renderHint(packet) {
   return [
     `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command}`,
     `prompt: ${packet.commands.zero_shot_prompt || ZERO_SHOT_PROMPT_COMMAND}`,
+    `queue ${queueSummaryText(packet.queue || {})}`,
     `routes total=${routes.total || 0} hidden=${routes.hidden_count || 0}`,
     `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
     `models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,

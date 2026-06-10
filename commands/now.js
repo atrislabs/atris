@@ -42,6 +42,10 @@ function zeroShotFirstByModelText(models = {}) {
     .join(' ');
 }
 
+function zeroShotQueueText(queue = {}) {
+  return `total=${queue.total || 0} open=${queue.open || 0} claimed=${queue.claimed || 0} review=${queue.review || 0} blocked=${queue.blocked || 0} failed=${queue.failed || 0} done=${queue.done || 0}`;
+}
+
 function formatLocalDate(date = new Date()) {
   const year = String(date.getFullYear());
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -255,6 +259,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       menuFile: check.menu_txt || '.atris/state/zero-shot.menu.txt',
       promptFile: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
       durable: `status=${check.status} prompt=${zeroShotFreshnessLabel(check.prompt_exists, check.prompt_fresh)} menu=${zeroShotFreshnessLabel(check.menu_exists, check.menu_fresh)} model=${zeroShotGroupFreshnessLabel(check.model_prompts_fresh)} horizon=${zeroShotGroupFreshnessLabel(check.horizon_prompts_fresh)}`,
+      queue: zeroShotQueueText(packet.queue || {}),
       inventory: `routes total=${routes.total || 0} compact=${routes.shown || 0} hidden=${routes.hidden_count || 0} full=routes.all_options`,
       buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
       firstByHorizon: zeroShotFirstByHorizonText(routes.horizon_first || {}),
@@ -272,6 +277,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       menuFile: '.atris/state/zero-shot.menu.txt',
       promptFile: '.atris/state/zero-shot.prompt.txt',
       durable: 'status=unavailable prompt=unknown menu=unknown model=unknown horizon=unknown',
+      queue: 'total=0 open=0 claimed=0 review=0 blocked=0 failed=0 done=0',
       inventory: 'routes total=0 compact=0 hidden=0 full=routes.all_options',
       buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
       firstByHorizon: 'now=none review=none long=none blocked=none orient=none',
@@ -322,6 +328,7 @@ Last updated: ${generated}
 - 0-shot menu: \`${zeroShot.menu}\`
 - 0-shot durable: ${zeroShot.durable}
 - 0-shot files: \`${zeroShot.menuFile}\`, \`${zeroShot.promptFile}\`
+- 0-shot queue: ${zeroShot.queue}
 - 0-shot inventory: ${zeroShot.inventory}
 - 0-shot buckets: ${zeroShot.buckets}
 - 0-shot first by horizon: ${zeroShot.firstByHorizon}

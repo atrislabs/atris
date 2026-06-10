@@ -177,6 +177,7 @@ test('next --json returns the zero-shot packet for agents', () => {
     assert.match(packet.handoff.prompt, /Atris 0-shot selected the next move/);
     assert.match(packet.handoff.prompt, /Run first: atris task current-step --tag cli --json/);
     assert.match(packet.handoff.prompt, /model_tier=fast/);
+    assert.match(packet.handoff.prompt, /Queue: total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(packet.handoff.prompt, /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
     assert.match(packet.handoff.prompt, /Horizon buckets: now=1 review=0 long=0 blocked=0 orient=0/);
     assert.match(packet.handoff.prompt, /First routes by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
@@ -270,6 +271,7 @@ test('zero-shot --prompt prints only the any-model handoff prompt', () => {
     assert.match(res.stdout, /^Atris 0-shot selected the next move/);
     assert.match(res.stdout, /Route: fast_model_task/);
     assert.match(res.stdout, /Run first: atris task current-step --tag cli --json/);
+    assert.match(res.stdout, /Queue: total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
     assert.match(res.stdout, /First routes by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /First routes by model: fast=CZS-1\/fast pro=none validator=none human=none/);
@@ -292,6 +294,7 @@ test('next --prompt returns the zero-shot prompt when no request is provided', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /^Atris 0-shot selected the next move/);
     assert.match(res.stdout, /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(res.stdout, /Queue: total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /Horizon buckets: now=1 review=0 long=0 blocked=0 orient=0/);
     assert.match(res.stdout, /First routes by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
     assert.match(res.stdout, /First routes by model: fast=CZS-1\/fast pro=none validator=none human=none/);
@@ -390,6 +393,7 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.match(menuText, /select model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route: fast_model_task/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Queue: total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route inventory: total=1 compact=1 hidden=0 full_field=routes\.all_options/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /First routes by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
     assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /First routes by model: fast=CZS-1\/fast pro=none validator=none human=none/);
@@ -867,6 +871,7 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.match(packet.routes.options[1].prompt, /Run first: atris task page FAIL-1 --json/);
     assert.equal(packet.handoff.prompt.startsWith(packet.routes.options[0].prompt), true);
     assert.match(packet.handoff.prompt, /Route inventory: total=4 compact=4 hidden=0 full_field=routes\.all_options/);
+    assert.match(packet.handoff.prompt, /Queue: total=4 open=0 claimed=3 review=0 blocked=0 failed=1 done=0/);
     assert.match(packet.handoff.prompt, /First routes by horizon: now=FAIL-1\/pro review=none long=ARC-1\/pro blocked=OWN-2\/human orient=none/);
     assert.match(packet.handoff.prompt, /Model buckets: fast=1 pro=2 validator=0 human=1/);
     assert.match(packet.handoff.prompt, /First routes by model: fast=FAST-1\/fast pro=FAIL-1\/pro validator=none human=OWN-2\/human/);
@@ -1087,6 +1092,7 @@ test('activate surfaces the zero-shot next route', () => {
     const res = runCli(['activate'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /queue total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
@@ -1115,6 +1121,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /CONTEXT LOADED/);
     assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /queue total=0 open=0 claimed=0 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
@@ -1136,6 +1143,7 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /queue total=1 open=0 claimed=1 review=0 blocked=0 failed=0 done=0/);
     assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff\./);
