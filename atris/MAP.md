@@ -159,6 +159,23 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Search:** `rg "activateAtris|readWikiStatus" commands/activate.js lib/wiki.js`
 
+### Feature: Compile Loop (`atris compile`)
+
+**Purpose:** Compile a recurring process into deterministic code verified by backtesting against real execution records — LLM only at build time, the promoted artifact runs token-free; drift below the gate flips status to `drifted` and suggests a recompile
+
+- **Entry point:** `bin/atris.js` command routing for `compile`
+- **Handler:** `commands/compile.js`
+- **Core functions:** `commands/compile.js:96` (`appendRecord`), `commands/compile.js:163` (`runBacktest`), `commands/compile.js:214` (`promoteProcess`), `commands/compile.js:237` (`buildCompilePrompt`), `commands/compile.js:262` (`executeBuild`), `commands/compile.js:388` (`compileCommand`)
+- **How it works:**
+- `atris compile record <name> --input ... --output ... [--expected ...]` appends an execution record to `.atris/state/processes/<name>/records.jsonl`
+- `atris compile build <name>` spawns `claude -p` to compile records + `atris/processes/<name>/spec.md` into `atris/processes/<name>/run.js` (contract: `module.exports = { run }`, deterministic, Node built-ins only); bumps version, clears the old backtest
+- `atris compile backtest <name>` replays every record through `run()`, scores accuracy vs the gate (default 0.99), writes results into `atris/processes/<name>/process.json`
+- `atris compile promote <name>` activates only if the current version's backtest accuracy meets the gate
+- `atris compile exec <name> --input ... [--record]` runs the artifact token-free; `--record` feeds the run back into the ledger
+- Drift detection: an active process whose backtest falls below its gate is marked `drifted` (self-healing against process drift)
+- **Tests:** `test/compile.test.js` (14 tests: records, deep-equal, backtest, promote gate, stale-version guard, drift, async runners, prompt contract)
+- **Search:** `rg "runBacktest|promoteProcess|executeBuild" commands/compile.js`
+
 ### Feature: Experiments (`atris experiments`)
 
 **Purpose:** Scaffold, validate, run, compare, and rehearse bounded experiment packs inside `atris/experiments/`, including Endstate benchmark receipts
