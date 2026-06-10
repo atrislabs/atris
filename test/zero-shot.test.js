@@ -1124,6 +1124,34 @@ test('activate surfaces the zero-shot next route', () => {
   }
 });
 
+test('activate surfaces zero-shot owner-gate context', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      {
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          human_accept: { command: 'atris task accept CZS-1' },
+        },
+      },
+    ]);
+
+    const res = runCli(['activate'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot: owner_gate -> atris task page CZS-1 --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /owner human-only: atris task accept CZS-1/);
+    assert.match(res.stdout, /agent-safe read-only: atris task page CZS-1 --json; then wait or pick a non-blocked route from atris 0-shot --all/);
+    assert.match(res.stdout, /queue total=1 open=0 claimed=0 review=1 blocked=0 failed=0 done=0/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('bare atris cold start surfaces zero-shot before prompting', () => {
   const dir = makeTempDir();
   try {

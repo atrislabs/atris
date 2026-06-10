@@ -1304,9 +1304,14 @@ function renderHint(packet) {
   const routes = packet.routes || {};
   const horizons = routes.horizons || {};
   const models = routes.models || {};
+  const ownerGateLines = [
+    packet.decision.owner_action ? `owner ${packet.decision.owner_action}` : null,
+    packet.decision.safe_agent_action ? `agent-safe ${packet.decision.safe_agent_action}` : null,
+  ].filter(Boolean);
   return [
     `0-shot: ${packet.decision.lane} -> ${packet.commands.next_command}`,
     `prompt: ${packet.commands.zero_shot_prompt || ZERO_SHOT_PROMPT_COMMAND}`,
+    ...ownerGateLines,
     `queue ${queueSummaryText(packet.queue || {})}`,
     `routes total=${routes.total || 0} hidden=${routes.hidden_count || 0}`,
     `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
