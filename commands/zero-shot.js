@@ -423,8 +423,15 @@ function shellToken(value) {
   return `'${text.replace(/'/g, "'\\''")}'`;
 }
 
+function todoLookupCommand(task) {
+  const ref = task && task.ref && !/^TODO-\d+$/i.test(String(task.ref)) ? String(task.ref) : '';
+  const title = task && task.title ? String(task.title) : '';
+  const needle = ref || title;
+  return needle ? `rg -n --fixed-strings -- ${shellToken(needle)} atris/TODO.md` : 'atris status --json';
+}
+
 function nextCommand(task, lane) {
-  if (task && task.metadata && task.metadata.todo_source) return 'atris status --json';
+  if (task && task.metadata && task.metadata.todo_source) return todoLookupCommand(task);
   if (lane === 'mission_tick' && task && task.ref) return `atris mission tick ${shellToken(task.ref)} --verify --complete-on-pass`;
   if (lane === 'goal_context' && task && task.next_command) return task.next_command;
   if (lane === 'review_lane' && task && task.ref) return `atris task review-chat ${shellToken(task.ref)} --as codex-review`;

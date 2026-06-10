@@ -250,12 +250,12 @@ test('zero-shot uses TODO.md as a read-only fallback when projection is missing'
     assert.equal(packet.decision.lane, 'fast_model_task');
     assert.equal(packet.decision.selected_kind, 'todo');
     assert.equal(packet.decision.selected_ref, 'T2');
-    assert.equal(packet.commands.first_command, 'atris status --json');
+    assert.equal(packet.commands.first_command, 'rg -n --fixed-strings -- T2 atris/TODO.md');
     assert.equal(packet.queue.total, 2);
     assert.equal(packet.queue.open, 1);
     assert.equal(packet.queue.claimed, 1);
     assert.equal(packet.routes.options[0].kind, 'todo');
-    assert.equal(packet.routes.options[0].first_command, 'atris status --json');
+    assert.equal(packet.routes.options[0].first_command, 'rg -n --fixed-strings -- T2 atris/TODO.md');
     assert.match(packet.routes.options[0].agent_directive, /Source: atris\/TODO\.md/);
     assert.equal(packet.boundaries.no_task_mutation, true);
     assert.equal(fs.existsSync(path.join(dir, '.atris')), false);
@@ -321,9 +321,9 @@ test('zero-shot includes TODO routes as read-only options beside task projection
     assert.equal(packet.routes.total, 4);
     assert.deepEqual(packet.routes.all_options.map(route => [route.kind, route.ref, route.lane, route.model_tier, route.first_command]), [
       ['task', 'CZS-1', 'owner_gate', 'human', 'atris task page CZS-1 --json'],
-      ['todo', 'B1', 'owner_gate', 'human', 'atris status --json'],
-      ['todo', 'T2', 'fast_model_task', 'fast', 'atris status --json'],
-      ['todo', 'T1', 'long_horizon', 'pro', 'atris status --json'],
+      ['todo', 'B1', 'owner_gate', 'human', 'rg -n --fixed-strings -- B1 atris/TODO.md'],
+      ['todo', 'T2', 'fast_model_task', 'fast', 'rg -n --fixed-strings -- T2 atris/TODO.md'],
+      ['todo', 'T1', 'long_horizon', 'pro', 'rg -n --fixed-strings -- T1 atris/TODO.md'],
     ]);
     assert.equal(packet.routes.horizon_first.now.ref, 'T2');
     assert.equal(packet.routes.horizon_first.long_term.ref, 'T1');
@@ -339,7 +339,7 @@ test('zero-shot includes TODO routes as read-only options beside task projection
     assert.equal(fastPacket.decision.selected_kind, 'todo');
     assert.equal(fastPacket.decision.selected_ref, 'T2');
     assert.equal(fastPacket.decision.lane, 'fast_model_task');
-    assert.equal(fastPacket.commands.first_command, 'atris status --json');
+    assert.equal(fastPacket.commands.first_command, 'rg -n --fixed-strings -- T2 atris/TODO.md');
 
     const longRes = runCli(['0-shot', '--horizon', 'long', '--json'], { cwd: dir });
     assert.equal(longRes.status, 0, longRes.stderr || longRes.stdout);
