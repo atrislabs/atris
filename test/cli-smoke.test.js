@@ -36,6 +36,27 @@ function runCli(args, { cwd, input, env } = {}) {
   return result;
 }
 
+function seedOwnerGatedZeroShotProjection(dir) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+    schema: 'atris.task_projection.v1',
+    tasks: [
+      {
+        display_id: 'CZS-1',
+        title: 'Add atris zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      },
+    ],
+  }, null, 2));
+}
+
 test('init creates structured TODO and feature templates', () => {
   const dir = makeTempDir();
   try {
@@ -639,6 +660,30 @@ test('plan suggests brainstorm when uncertainty detected', () => {
     const res = runCli(['plan'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Try `atris brainstorm` first/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('plan and do surface the current zero-shot route before workflow instructions', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    seedOwnerGatedZeroShotProjection(dir);
+
+    let res = runCli(['plan'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /CURRENT 0-SHOT ROUTE/);
+    assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
+    assert.match(res.stdout, /first command: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /do only the agent-safe action and do not write tasks or accept/);
+
+    res = runCli(['do'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /CURRENT 0-SHOT ROUTE/);
+    assert.match(res.stdout, /first command: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /do only the agent-safe action and do not claim, mutate, or accept/);
+    assert.match(res.stdout, /Start with the 0-shot first command above/);
   } finally {
     cleanupTempDir(dir);
   }

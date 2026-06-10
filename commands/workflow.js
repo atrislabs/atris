@@ -53,6 +53,43 @@ function printConfidenceGate(indent = '') {
   for (const line of CONFIDENCE_GATE_LINES) console.log(`${indent}${line}`);
 }
 
+function buildWorkflowZeroShotPacket() {
+  try {
+    const { buildPacket } = require('./zero-shot');
+    return buildPacket();
+  } catch {
+    return null;
+  }
+}
+
+function zeroShotWorkflowLines(packet) {
+  if (!packet || !packet.decision || !packet.commands) return [];
+  const decision = packet.decision;
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none';
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ');
+  const firstCommand = packet.commands.first_command || packet.commands.next_command || 'atris 0-shot --prompt';
+  const lines = [
+    '0-shot next move:',
+    `- route: ${route || 'unknown'}`,
+    `- focus: ${focus}`,
+    `- first command: ${firstCommand}`,
+    `- menu: ${packet.commands.zero_shot_all || 'atris 0-shot --all'}`,
+    `- prompt: ${packet.commands.zero_shot_prompt || 'atris 0-shot --prompt'}`,
+  ];
+  if (decision.reason) lines.splice(3, 0, `- why: ${decision.reason}`);
+  if (decision.owner_action) lines.push(`- owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) lines.push(`- agent-safe action: ${decision.safe_agent_action}`);
+  return lines;
+}
+
+function printWorkflowZeroShot(packet) {
+  const lines = zeroShotWorkflowLines(packet);
+  if (!lines.length) return;
+  console.log('🎯 CURRENT 0-SHOT ROUTE');
+  for (const line of lines) console.log(line);
+  console.log('');
+}
+
 function confidenceGatePrompt(stage) {
   return [
     `Confidence Gate (${stage}):`,
@@ -299,6 +336,7 @@ async function planAtris(userInput = null) {
         })
         .length
     : 0;
+  const zeroShotPacket = buildWorkflowZeroShotPacket();
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
@@ -357,6 +395,7 @@ async function planAtris(userInput = null) {
   console.log('');
   console.log(`📥 Inbox items: ${inboxCount}`);
   console.log('');
+  printWorkflowZeroShot(zeroShotPacket);
 
   if (showFull) {
     console.log('📋 NAVIGATOR SPEC (full):');
@@ -388,6 +427,13 @@ async function planAtris(userInput = null) {
   if (lessonsRef) console.log(`- ${lessonsRef}`);
   console.log(`- ${journalPath}`);
   console.log('');
+  const zeroShotPromptLines = zeroShotWorkflowLines(zeroShotPacket);
+  if (zeroShotPromptLines.length > 0) {
+    console.log('Before workflow, inspect current 0-shot state:');
+    for (const line of zeroShotPromptLines) console.log(line);
+    console.log('If owner-gated, do only the agent-safe action and do not write tasks or accept.');
+    console.log('');
+  }
   if (!mapFileRef || mapIsPlaceholder) {
     console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before writing tasks.');
     console.log('');
@@ -669,6 +715,7 @@ async function doAtris() {
   } catch {
     workspaceSummary = null;
   }
+  const zeroShotPacket = buildWorkflowZeroShotPacket();
 
   // Prompt-mode output (keep concise by default)
   console.log('');
@@ -687,6 +734,8 @@ async function doAtris() {
   console.log(`- MAP: ${mapDisplay}`);
   console.log(`- TODO: ${taskSourcePath || 'atris/TODO.md (missing)'}`);
   console.log(`- Features index: ${featuresReadmeRef || 'atris/features/README.md (missing)'}`);
+  console.log('');
+  printWorkflowZeroShot(zeroShotPacket);
 
   // Show top learnings during execution
   try {
@@ -736,19 +785,28 @@ async function doAtris() {
   if (taskSourcePath) console.log(`- ${taskSourcePath}`);
   if (featuresReadmeRef) console.log(`- ${featuresReadmeRef}`);
   console.log('');
+  const zeroShotPromptLines = zeroShotWorkflowLines(zeroShotPacket);
+  if (zeroShotPromptLines.length > 0) {
+    console.log('Before workflow, inspect current 0-shot state:');
+    for (const line of zeroShotPromptLines) console.log(line);
+    console.log('If owner-gated, do only the agent-safe action and do not claim, mutate, or accept.');
+    console.log('');
+  }
   if (!mapPath || mapIsPlaceholder) {
     console.log('Note: If `atris/MAP.md` is missing or placeholder, generate it from `atris/atris.md` before navigating the codebase.');
     console.log('');
   }
   console.log('Workflow:');
-  console.log('1) Read atris/TODO.md — claim next unclaimed Backlog task');
+  console.log('1) Start with the 0-shot first command above.');
+  console.log('   If it is owner-gated, do only the read-only agent-safe action and stop.');
+  console.log('2) Otherwise, read atris/TODO.md — claim next unclaimed Backlog task');
   console.log('   Move to ## In Progress: add "Claimed by: executor at YYYY-MM-DD HH:MM"');
-  console.log('2) Run the Confidence Gate against the task before editing');
+  console.log('3) Run the Confidence Gate against the task before editing');
   printConfidenceGate('   ');
-  console.log('3) Execute step-by-step. Run tests as you go.');
-  console.log('4) Before completion, rerun the gate against proof and residual risk');
-  console.log('5) When done, move task to ## Completed');
-  console.log('6) Log to atris/team/executor/journal/YYYY-MM-DD.md');
+  console.log('4) Execute step-by-step. Run tests as you go.');
+  console.log('5) Before completion, rerun the gate against proof and residual risk');
+  console.log('6) When done, move task to ## Completed');
+  console.log('7) Log to atris/team/executor/journal/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, Errors hit, Learned)');
   console.log('');
   console.log('⛔ Do NOT plan — just execute what\'s written.');
