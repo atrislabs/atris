@@ -2081,6 +2081,11 @@ function collectAutoImproverLogSignals(root) {
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
         if (isAutoImproverGeneratedLogLine(line)) continue;
+        // Declared verification receipts ("check: <command> ...") describe what
+        // was verified, not what broke. Wiki upkeep sweeps write one per page,
+        // so counting them as failures spawns bogus recurring-pattern tasks
+        // (CLI-199 came from 13 such lines in atris/wiki/log.md).
+        if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
         if (unclearRegex.test(line)) unclearNextActions += 1;
         if (!failureRegex.test(line)) continue;
