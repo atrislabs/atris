@@ -174,20 +174,6 @@ async function walkCloud(token, businessId, workspaceId) {
 }
 
 /**
- * Get cloud file content (for hash computation when /files doesn't return hashes).
- */
-async function fetchCloudFileHash(token, businessId, workspaceId, filePath) {
-  const result = await apiRequestJson(
-    `/business/${businessId}/workspaces/${workspaceId}/file?path=${encodeURIComponent(filePath)}`,
-    { method: 'GET', token }
-  );
-  if (!result.ok) return null;
-  const content = result.data && result.data.content;
-  if (typeof content !== 'string') return null;
-  return hashContent(Buffer.from(content, 'utf-8'));
-}
-
-/**
  * Wake the EC2 computer and wait until it's running.
  * Returns the endpoint URL or null on timeout.
  */

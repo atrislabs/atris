@@ -5,15 +5,15 @@ title: Agent Activation Contract
 sources:
   - atris/CLAUDE.md
   - commands/activate.js
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.9
 dependencies:
   - atris/wiki/concepts/plan-do-review-loop.md
   - atris/wiki/concepts/wiki-as-memory-substrate.md
 actionability: "Use this before changing agent boot instructions, `atris activate`, MAP-first behavior, first-message requirements, or durable-memory routing."
 created: 2026-05-10
-updated: 2026-05-10
+updated: 2026-06-09
 tags:
   - agent-activation
   - protocol
@@ -68,6 +68,8 @@ Before any file search, read `atris/MAP.md` and search the map for the target ke
 Work follows `atris plan -> atris do -> atris review`. Planning requires an ASCII visualization and an approval gate. Execution is step-by-step, with verification as reality changes. Completed tasks should be removed from the active queue; the target state is zero stale tasks.
 
 Durable project knowledge belongs in `atris/wiki/` or through the local wiki flow. Ephemeral progress belongs in task state and the daily journal, not in ad hoc context.
+
+`atris/CLAUDE.md` now also carries an explicit agent contract: before edits, claim or create one small task with `atris task` and write the goal/files/done/check contract into task dialogue; after edits, move proof-backed work to Review with `atris task ready <id> --proof "..."`. Proof-ready and human accept are separate gates: an agent's native goal can complete once proof is in Review, but only a human-run `atris task accept <id>` marks the task Done and awards AgentXP. Work that should outlive the chat runs through `atris mission` (start with a verifier, bounded step, `mission tick --verify`, then complete or continue).
 
 ## Limits
 

@@ -106,9 +106,9 @@ atris log
 
 ### Adding a New Command
 
-1. **Add the command handler in bin/atris.js** — Follow the pattern of existing commands (planAtris, doAtris, etc.)
-2. **Update showHelp()** — Add a one-liner to the help text at line 66
-3. **Add routing logic** — Add `else if (command === 'newcmd')` block in the main command switch at line 98
+1. **Add the command handler** — Most commands live in `commands/<name>.js` and are imported into the router in `bin/atris.js`. Follow an existing modular command (e.g. `commands/clean.js`, `commands/verify.js`).
+2. **Update `showHelp()`** in `bin/atris.js` — Add a one-liner to the help text.
+3. **Add routing logic** — Add the command to the `knownCommands` list and an `else if (command === 'newcmd')` branch in the dispatch chain in `bin/atris.js`.
 4. **Test it** — Run `npm link && atris newcmd` in a test project
 5. **Update MAP.md** — Add entry to the By-Feature section with exact line numbers
 6. **Update PERSONA.md if needed** — If the command changes workflow/style
@@ -160,7 +160,7 @@ atris brainstorm
 # Autonomous plan → do → review loop (uses claude -p subprocesses)
 atris run
 
-# Autonomous plan → do → review with PRD + acceptance criteria
+# Suggest → justify → execute, one task at a time (--auto runs unattended)
 atris autopilot
 
 # View auth status (for cloud features)
@@ -201,7 +201,7 @@ Commands fall into a few categories:
 
 **Guided Loops:**
 - `run` — Autonomous plan → do → review loop (no human in the loop)
-- `autopilot` — PRD-driven plan → do → review with acceptance criteria
+- `autopilot` — Suggest → justify → execute loop, one task at a time (human approves; `--auto` runs unattended)
 - `analytics` — Show productivity from journal data
 
 **Cloud Features (optional):**
@@ -318,7 +318,7 @@ This is how the system is meant to be used:
 
 Automates the plan → do → review loop end-to-end using `claude -p` subprocesses. No human in the loop — it reads inbox/backlog, plans tasks, builds them, reviews, then loops until work is done or max cycles hit.
 
-**Implementation:** `commands/run.js` (see MAP.md lines 275-308 for full breakdown)
+**Implementation:** `commands/run.js` (see the `atris run` entry in `atris/MAP.md` for the full breakdown)
 
 **When to use `atris run` vs manual `plan`/`do`/`review`:**
 - Use `atris run` for autonomous batch processing — you have inbox items or backlog tasks and want them executed without intervention
@@ -460,7 +460,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 This workspace has a compiled agent brain.
 
 On session start, activate it first:
-`atris brain activate --root /Users/keshavrao/arena/atris-cli --verify`
+`atris brain activate --root . --verify`
 
 Load these first:
 - `atris/now.md`
@@ -479,5 +479,5 @@ Shape: `<operator>, today is about <move>` -> `I picked this because <why now>` 
 Definitions: operator = current person or agent; move = one concrete high-leverage workflow; why now = business reason; ready = prepared action or proof; paths = 2-4 optional deeper views.
 
 Re-run after meaningful work:
-`atris brain compile --root /Users/keshavrao/arena/atris-cli`
+`atris brain compile --root .`
 <!-- ATRIS_BRAIN_COMPILE:END -->

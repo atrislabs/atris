@@ -312,7 +312,7 @@ test('mission required arguments are JSON-readable', () => {
       [
         'start',
         ['mission', 'start', '--json'],
-        'Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual]',
+        'Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]',
       ],
       [
         'complete',
@@ -705,6 +705,10 @@ test('mission completion automatically refreshes Codex goal controller to next m
     ], { cwd: dir });
     assert.equal(secondStarted.status, 0, secondStarted.stderr || secondStarted.stdout);
     const second = JSON.parse(secondStarted.stdout).mission;
+
+    // Completion gate requires verifier evidence: pass the verifier first.
+    const ticked = runCli(['mission', 'tick', first.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
 
     const completed = runCli([
       'mission',

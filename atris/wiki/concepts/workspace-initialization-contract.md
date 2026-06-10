@@ -4,8 +4,8 @@ slug: workspace-initialization-contract
 title: Workspace Initialization Contract
 sources:
   - commands/init.js
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.86
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -13,7 +13,7 @@ dependencies:
   - atris/wiki/concepts/wiki-as-memory-substrate.md
 actionability: "Use this before changing `atris init`, workspace scaffolds, generated agent instructions, project detection, or boot hook behavior."
 created: 2026-05-10
-updated: 2026-05-10
+updated: 2026-06-09
 tags:
   - initialization
   - workspace
@@ -40,7 +40,7 @@ The command handles `atris init [--force]`. Help flags print usage without files
 - Memory surfaces: wiki scaffold via `ensureWikiScaffold`, feature templates, experiments harness, and `INTUITION.md`.
 - Team surfaces: `atris/team/<member>/MEMBER.md` plus `skills/`, `tools/`, and `context/` folders for default members.
 - Project profile: `.project-profile.json` from package files, framework hints, directory shape, and default test command.
-- Agent entry files: `AGENTS.md`, `.cursorrules`, `.cursor/rules/atris.mdc`, `.claude/commands/atris.md`, `.claude/commands/atris-autopilot.md`, `atris/CLAUDE.md`, `.claude/settings.json`, and root `CLAUDE.md` Atris markers.
+- Agent entry files: `AGENTS.md`, `.cursorrules`, `.cursor/rules/atris.mdc`, `.claude/commands/atris.md`, `.claude/commands/atris-autopilot.md`, `atris/CLAUDE.md`, `.claude/settings.json`, `.devin/config.local.json`, and root `CLAUDE.md` Atris markers.
 - Skills: package `atris/skills/` copied into the workspace and linked into `.claude/skills/` when possible.
 
 ## Project Detection

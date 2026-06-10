@@ -146,12 +146,6 @@ function formatWorkerName(worker) {
   return active === 'openai' ? 'OpenAI' : 'Claude';
 }
 
-function formatBillingMode(worker) {
-  return activeWorker(worker) === 'openai'
-    ? 'Atris credits'
-    : 'Claude subscription lane';
-}
-
 function extractAttachedWorkspaceMismatch(...values) {
   const text = values
     .filter((value) => value !== null && value !== undefined)
@@ -412,12 +406,6 @@ async function printCloudSessionStatus(token, ctx, worker, model) {
   if (d.endpoint) console.log(`  Endpoint: ${d.endpoint}`);
 }
 
-function formatDropdownLine(choice, selected) {
-  const pointer = selected ? '>' : ' ';
-  const label = selected ? ui.bold(choice.label) : choice.label;
-  return `${pointer} ${label}  ${ui.dim(choice.detail || '')}`.trimEnd();
-}
-
 function questionAsync(rl, question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
@@ -443,38 +431,6 @@ async function selectFromDropdown(title, choices) {
     return choices[selected - 1];
   }
   return choices[0];
-}
-
-function describeLocalClaudeAuth() {
-  if (process.env.ANTHROPIC_API_KEY) {
-    return 'Local auth: ANTHROPIC_API_KEY set on this Mac';
-  }
-  const hasClaude = spawnSync('which', ['claude'], { encoding: 'utf8', timeout: 1000 }).status === 0;
-  if (!hasClaude) {
-    return 'Local auth: Claude CLI not found; use Cloud workspace or install Claude Code';
-  }
-  const status = spawnSync('claude', ['auth', 'status', '--json'], {
-    encoding: 'utf8',
-    timeout: 1500,
-    stdio: 'pipe',
-  });
-  if (status.error && status.error.code === 'ETIMEDOUT') {
-    return 'Local auth: Claude CLI installed, auth check timed out; Cloud subscription does not carry over';
-  }
-  const raw = String(status.stdout || status.stderr || '').trim();
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed.loggedIn || parsed.status === 'logged_in' || parsed.authMethod) {
-      const plan = parsed.subscriptionType || parsed.plan || parsed.authMethod || 'connected';
-      return `Local auth: Claude logged in on this Mac (${plan})`;
-    }
-  } catch {
-    // Fall through to text checks.
-  }
-  if (/logged\s*in|subscription|max|pro/i.test(raw)) {
-    return 'Local auth: Claude appears logged in on this Mac';
-  }
-  return 'Local auth: not confirmed; run `claude login` on this Mac or choose Cloud workspace';
 }
 
 async function chooseComputerSurface(hasBusinessBinding, hasLocalHarness) {
@@ -721,22 +677,6 @@ function findAtrisCodeTerminal() {
     if (fs.existsSync(p)) return p;
   }
   return null;
-}
-
-function findAtrisCodePython(terminalPath) {
-  const envPython = process.env.ATRIS_CODE_PYTHON;
-  if (envPython && fs.existsSync(envPython)) return envPython;
-  if (!terminalPath) return 'python3';
-
-  const projectRoot = path.dirname(path.dirname(terminalPath));
-  const candidates = [
-    path.join(projectRoot, 'venv', 'bin', 'python3'),
-    path.join(projectRoot, '.venv', 'bin', 'python3'),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return 'python3';
 }
 
 function computerLocalLegacy(extraArgs = []) {

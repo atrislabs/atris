@@ -3,11 +3,13 @@ title: Recursive self-improvement — capability position
 type: concept
 status: living
 last_reviewed: 2026-06-08
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 sources:
-  - commands/improve.js (the loop's CLI bridge + scorecard/history machinery)
-  - atris/experiments/policy-optimize/ (keep/revert on a real model's policy)
-  - atris/experiments/weight-optimize/ (keep/revert on real network weights)
-  - atris/lessons.md (improve-cli-bridge, improve-loop-operated-recursively)
+  - commands/improve.js
+  - atris/experiments/policy-optimize/README.md
+  - atris/experiments/weight-optimize/README.md
+  - atris/lessons.md
 related:
   - "[[verifiable-reward-loop]]"
   - "[[wiki-as-memory-substrate]]"
@@ -17,6 +19,12 @@ related:
 
 The honest answer to "is the self-improvement loop progress toward more capable
 AI?" — stated so the next agent neither overclaims nor underclaims.
+
+> Source note: `commands/improve.js` is the loop's CLI bridge plus the
+> scorecard/history machinery. `atris/experiments/policy-optimize/` covers
+> keep/revert on a real model's policy; `atris/experiments/weight-optimize/`
+> covers keep/revert on real network weights. Lesson IDs: improve-cli-bridge,
+> improve-loop-operated-recursively.
 
 ## What is real and shipped
 

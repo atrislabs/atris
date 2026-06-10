@@ -21,6 +21,132 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
   assert.equal(payload.max_turns, 8);
 });
 
+test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
+  assert.equal(ax.modelForMode('max'), 'atris:max');
+
+  const payload = ax.buildPayload('refactor this module and verify the tests', {
+    mode: 'max',
+    cwd: '/tmp/project',
+  });
+  assert.equal(payload.model, 'atris:max');
+  assert.equal(payload.workspace_path, '/tmp/project');
+  assert.equal(payload.max_turns, 14);
+
+  const cloudWrite = ax.buildPayload('send a slack message to the team', {
+    mode: 'max',
+    route: 'cloud',
+  });
+  assert.equal(cloudWrite.max_turns, 4);
+
+  assert.match(ax.formatHeader({ mode: 'max', cwd: '/tmp/project', chat: true }), /Atris 2 Max chat/);
+
+  const profile = ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' });
+  assert.equal(profile.model, 'atris:max');
+  assert.equal(profile.max_turns, 14);
+  assert.match(profile.reasoning, /high reasoning/);
+});
+
+test('ax never shows model ids to the user and swaps tiers in chat', () => {
+  const modelPattern = /atris:|composer-2-5|gpt-|kimi|fable|fireworks|openrouter/i;
+  for (const mode of ['fast', 'pro', 'max', 'code-fast']) {
+    assert.doesNotMatch(ax.formatHeader({ mode, cwd: '/tmp/project', chat: true }), modelPattern);
+  }
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/fast \/pro \/max swap tiers/);
+
+  const profileText = ax.formatRunProfile(ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' }), { color: false });
+  assert.doesNotMatch(profileText, modelPattern);
+
+  assert.equal(
+    ax.formatSystemInit({ tool_runtime: { mode: 'workspace_tools', tool_model: 'gpt-5.5', reasoning_effort: 'high' } }),
+    'workspace tools  thinking high'
+  );
+
+  assert.equal(ax.tierLabel('max'), 'Atris 2 Max');
+  assert.equal(ax.chatTierCommand('/max'), 'max');
+  assert.equal(ax.chatTierCommand(' /FAST '), 'fast');
+  assert.equal(ax.chatTierCommand('/pro'), 'pro');
+  assert.equal(ax.chatTierCommand('build /max speed'), null);
+  assert.equal(ax.chatTierCommand('max'), null);
+
+  assert.equal(ax.formatPrompt('max'), 'max › ');
+  assert.equal(ax.formatPrompt(), '› ');
+});
+
+test('ax chat renders claude-style blocks and a slash menu', () => {
+  const writes = [];
+  const out = { isTTY: false, write: (chunk) => writes.push(chunk) };
+  const state = {
+    events: [], errors: [], output: '', pendingText: '', wroteText: false,
+    wroteActivity: false, lastChar: '\n', progress: null, inAuxBlock: false,
+    needsBullet: true, lastAux: '',
+  };
+
+  ax.handleEvent({ type: 'system_init', tool_runtime: { mode: 'local_workspace', tool_model: 'openai:gpt-5.5' } }, state, out);
+  ax.handleEvent({ type: 'text_delta', content: 'Draft answer that gets superseded.' }, state, out);
+  ax.handleEvent({ type: 'status', message: 'retrying_with_required_file_reads' }, state, out);
+  ax.handleEvent({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'Read', input: { file_path: 'src/config.js' } }] }, state, out);
+  ax.handleEvent({ type: 'tool_results', results: [{ content: '{"status":"ok","path":"atris/AGENTS.md","content":"line1\\nline2\\nline3"}' }] }, state, out);
+  ax.handleEvent({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'Task', input: { type: 'status' } }] }, state, out);
+
+  assert.equal(
+    writes.join(''),
+    '● Read(src/  config.js)\n  ⎿  3 lines  atris/  AGENTS.md\n\n● Task(status)\n'
+  );
+  assert.equal(state.output, '');
+
+  assert.equal(
+    ax.summarizeToolResult({ content: '{"status": "ok", "path": "atris/AGENTS.md", "content": "# AGE' }),
+    'ok  atris/  AGENTS.md'
+  );
+  assert.equal(ax.summarizeToolResult({ content: 'first line\nsecond\nthird' }), 'first line  … +2 lines');
+
+  const menu = ax.chatMenu({ color: false });
+  assert.match(menu, /\/fast/);
+  assert.match(menu, /\/pro/);
+  assert.match(menu, /\/max/);
+  assert.match(menu, /\/help/);
+  assert.doesNotMatch(menu, /atris:|gpt-|kimi|fable|composer/i);
+
+  assert.deepEqual(ax.chatCompleter('/f'), [['/fast'], '/f']);
+  assert.deepEqual(ax.chatCompleter('/'), [['/fast', '/pro', '/max', '/help'], '/']);
+  assert.deepEqual(ax.chatCompleter('hello'), [[], 'hello']);
+});
+
+test('ax shows credits, tier colors, spinner verbs, and clickable paths', () => {
+  assert.equal(ax.formatDoneLine(7000, 3), '— Worked for 7s · 3 credits —');
+  assert.equal(ax.formatDoneLine(7000, 1), '— Worked for 7s · 1 credit —');
+  assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
+  assert.equal(
+    ax.creditsFromState({ events: [{ type: 'receipt', receipt: { billing: { billed: true, credits_charged: 5 } } }] }),
+    5
+  );
+  assert.equal(
+    ax.creditsFromState({ events: [{ type: 'receipt', receipt: { billing: { billed: false, credits_charged: 5 } } }] }),
+    null
+  );
+  assert.equal(ax.creditsFromState({ events: [] }), null);
+
+  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
+  assert.equal(ax.formatWorkingLine(2100, 'Reading', '⠙'), '⠙ Reading… (2s · ctrl-c to interrupt)');
+
+  const colored = { color: true, isTTY: true };
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  try {
+    assert.match(ax.formatPrompt('max', colored), /\x1b\[35m/);
+    assert.match(ax.formatPrompt('fast', colored), /\x1b\[32m/);
+    assert.match(ax.formatPrompt('pro', colored), /\x1b\[36m/);
+    assert.match(ax.formatHeader({ mode: 'max', cwd: '/tmp', chat: true }, colored), /\x1b\[35m/);
+
+    assert.match(ax.formatPathSubject('src/config.js', colored), /\x1b\]8;;file:\/\//);
+    assert.doesNotMatch(ax.formatPathSubject('src/config.js'), /\x1b\]8/);
+    assert.doesNotMatch(ax.formatPathSubject('cloud scratch', colored), /\x1b\]8/);
+  } finally {
+    if (previousNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previousNoColor;
+  }
+});
+
 test('ax routes connector reads to authenticated cloud context', () => {
   assert.equal(ax.resolveRoute('what is on my calendar today?'), 'cloud');
   assert.equal(ax.resolveRoute('which integrations are connected?'), 'cloud');
@@ -111,6 +237,39 @@ test('ax can force local or cloud routing', () => {
   assert.equal(ax.buildPayload('what files are here?', { route: 'cloud', cwd: '/tmp/project' }).workspace_path, undefined);
 });
 
+test('ax sends a no-op verify_command unless --verify opts in', () => {
+  const defaultPayload = ax.buildPayload('what files are here?', {
+    mode: 'fast',
+    cwd: '/tmp/project',
+  });
+  assert.equal(defaultPayload.verify_command, 'true');
+
+  const blankPayload = ax.buildPayload('what files are here?', {
+    mode: 'fast',
+    cwd: '/tmp/project',
+    verify: '   ',
+  });
+  assert.equal(blankPayload.verify_command, 'true');
+
+  const localPayload = ax.buildPayload('fix the failing suite', {
+    mode: 'max',
+    cwd: '/tmp/project',
+    verify: 'npm test',
+  });
+  assert.equal(localPayload.verify_command, 'npm test');
+  assert.equal(localPayload.workspace_path, '/tmp/project');
+
+  const businessPayload = ax.buildPayload('fix the failing suite', {
+    mode: 'pro',
+    business: { slug: 'acme' },
+    verify: 'pytest -q',
+  });
+  assert.equal(businessPayload.verify_command, 'pytest -q');
+  assert.equal(businessPayload.workspace_path, '/workspace/acme');
+
+  assert.match(ax.formatUsage(), /--verify <cmd>/);
+});
+
 test('ax exposes Atris Code Fast as an explicit public lane', () => {
   const previousBackend = process.env.AX_CODE_FAST_BACKEND_URL;
   const previousApiBase = process.env.AX_CODE_FAST_API_BASE;
@@ -132,7 +291,8 @@ test('ax exposes Atris Code Fast as an explicit public lane', () => {
       ax.buildCodeFastPayload('say ok', { route: 'local', cwd: '/tmp/project' }).workspace_path,
       '/tmp/project'
     );
-    assert.match(ax.formatHeader({ mode: 'code-fast', cwd: '/tmp/project' }), /Atris Code Fast \(composer-2-5-fast\)/);
+    assert.match(ax.formatHeader({ mode: 'code-fast', cwd: '/tmp/project' }), /Atris Code Fast/);
+    assert.doesNotMatch(ax.formatHeader({ mode: 'code-fast', cwd: '/tmp/project' }), /composer-2-5-fast/);
     assert.equal(ax.buildRunProfile({ mode: 'code-fast', cwd: '/tmp/project' }).model, 'composer-2-5-fast');
     assert.equal(
       ax.codeFastWorkspaceNotice({ billing: { workspace_mode: 'cloud_scratch' } }),

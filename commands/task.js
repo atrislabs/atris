@@ -9,6 +9,7 @@ const path = require('path');
 const os = require('os');
 const { taskProofState } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
+const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -3663,7 +3664,14 @@ function reviewQueueLimit(args, total) {
   return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
 }
 
-function reviewQueueItem(task) {
+// Risk order for human attention: named receipts that are missing/failing (0)
+// beat prose-only proofs (1) beat fully validated green evidence (2).
+function evidenceRiskRank(evidence) {
+  if (!evidence) return 1;
+  return evidence.all_passing ? 2 : 0;
+}
+
+function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
   const ref = taskRef(task);
   const handoff = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
   const reviewChat = taskReviewChatHandoff(task, { reviewer: 'codex-review', allowCertified: true });
@@ -3682,6 +3690,8 @@ function reviewQueueItem(task) {
     accept_command: acceptCommand,
     revise_command: `atris task revise ${ref} --note "<what must change>"`,
   };
+  const resolvedEvidence = evidence === undefined ? extractReceiptEvidence(task.review?.proof, root) : evidence;
+  if (resolvedEvidence) item.evidence = resolvedEvidence;
   if (!acceptCommand && handoff?.reason) {
     item.blocked_accept_reason = handoff.reason;
     item.next_action_detail = handoff.next_action_detail || null;
@@ -3735,7 +3745,13 @@ function taskReviewQueue(projection, args = []) {
       || task.review?.agent_certified === true;
   });
   const limit = reviewQueueLimit(args, certified.length);
-  const items = certified.slice(0, limit).map(reviewQueueItem);
+  const root = projection.workspace_root || process.cwd();
+  // Green-evidence items float to the top: they are the cheapest accepts.
+  const evidenceByTaskId = new Map(certified.map((task) => [task.id, extractReceiptEvidence(task.review?.proof, root)]));
+  const ordered = [...certified].sort((a, b) =>
+    evidenceRiskRank(evidenceByTaskId.get(b.id)) - evidenceRiskRank(evidenceByTaskId.get(a.id))
+    || Number(b.updated_at || 0) - Number(a.updated_at || 0));
+  const items = ordered.slice(0, limit).map((task) => reviewQueueItem(task, root, evidenceByTaskId.get(task.id)));
   return {
     schema: 'atris.task_review_queue.v1',
     generated_at: projection.generated_at,
@@ -3743,6 +3759,7 @@ function taskReviewQueue(projection, args = []) {
     counts: {
       review: reviewTasks.length,
       certified: certified.length,
+      evidence_passing: certified.filter((task) => evidenceByTaskId.get(task.id)?.all_passing).length,
       blocking: blocking.length,
       proof_boundary_blocked: proofBoundaryBlocked.length,
       shown: items.length,
@@ -3777,6 +3794,7 @@ function reviewGroupValue(task, key) {
 
 function taskReviewGroups(projection, key) {
   const certified = certifiedPendingReviewTasks(projection);
+  const root = projection.workspace_root || process.cwd();
   const groups = new Map();
   for (const task of certified) {
     const value = reviewGroupValue(task, key);
@@ -3786,6 +3804,7 @@ function taskReviewGroups(projection, key) {
   const list = [...groups.entries()].map(([value, tasks]) => ({
     value,
     count: tasks.length,
+    evidence_passing: tasks.filter(t => extractReceiptEvidence(t.review?.proof, root)?.all_passing).length,
     sample_titles: tasks.slice(0, 3).map(t => t.title).filter(Boolean),
     oldest_updated_at: tasks.reduce((min, t) => Math.min(min, Number(t.updated_at || 0) || 0), Infinity),
     accept_group_command: `atris task accept-group ${key}=${JSON.stringify(value)} --spot-check 3`,
@@ -3842,9 +3861,18 @@ function cmdReviews(args) {
   queue.items.forEach((item, index) => {
     const tag = item.tag ? ` [${item.tag}]` : '';
     const passes = item.review_pass_count ? ` (${item.review_pass_count} reviews)` : '';
+    const badge = item.evidence?.all_passing ? ' [evidence:passing]' : '';
     console.log('');
-    console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}`);
+    console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
     if (item.proof) console.log(`   proof: ${item.proof}`);
+    if (item.evidence) {
+      item.evidence.receipts.forEach((receipt) => {
+        const verdict = receipt.verifier_passed === true ? ' verifier:passed'
+          : receipt.verifier_passed === false ? ' verifier:FAILED' : '';
+        console.log(`   receipt: ${receipt.path}${verdict}`);
+      });
+      item.evidence.missing.forEach((missingPath) => console.log(`   receipt: ${missingPath} MISSING`));
+    }
     if (item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
     if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
     if (item.accept_command) console.log(`   accept: ${item.accept_command}`);
@@ -3899,9 +3927,15 @@ function cmdAcceptGroup(args) {
     console.error(`accept-group: no certified-pending tasks in ${key}=${value}`);
     process.exit(1);
   }
-  // Deterministic sample (stable by id) so the same command always surfaces the same rows to verify.
+  // Deterministic sample, weakest evidence first: missing/failing receipts beat
+  // prose-only proofs beat validated green evidence; id tie-break keeps the same
+  // command surfacing the same rows to verify.
+  const groupRoot = projection.workspace_root || process.cwd();
+  const groupEvidence = new Map(group.map(task => [task.id, extractReceiptEvidence(task.review?.proof, groupRoot)]));
   const need = Math.min(spotCheck, group.length);
-  const sample = [...group].sort((a, b) => String(a.id).localeCompare(String(b.id))).slice(0, need);
+  const sample = [...group].sort((a, b) =>
+    evidenceRiskRank(groupEvidence.get(a.id)) - evidenceRiskRank(groupEvidence.get(b.id))
+    || String(a.id).localeCompare(String(b.id))).slice(0, need);
 
   if (!confirm) {
     if (wantsJson(args)) {
@@ -3910,17 +3944,27 @@ function cmdAcceptGroup(args) {
         action: 'accept_group_preview',
         group: `${key}=${value}`,
         count: group.length,
-        spot_check: sample.map(task => ({ ref: taskRef(task), id: task.id, title: task.title, proof: taskReviewClip(task.review?.proof, 240) || null })),
+        evidence_passing: group.filter(task => groupEvidence.get(task.id)?.all_passing).length,
+        spot_check: sample.map(task => ({ ref: taskRef(task), id: task.id, title: task.title, proof: taskReviewClip(task.review?.proof, 240) || null, evidence: groupEvidence.get(task.id) || null })),
         verified_ids_to_paste: sample.map(task => task.id),
       });
       return;
     }
     console.log(`accept-group DRY RUN — ${key}=${value}: ${group.length} certified task(s)`);
-    console.log(`Spot-check these ${need} (open + verify), then accept the whole cluster:`);
+    console.log(`Spot-check these ${need} (weakest evidence first; open + verify), then accept the whole cluster:`);
     sample.forEach((task) => {
       console.log(`  ${taskRef(task)}  ${task.title}`);
       const proof = taskReviewClip(task.review?.proof, 200);
       if (proof) console.log(`     proof: ${proof}`);
+      const evidence = groupEvidence.get(task.id);
+      if (evidence) {
+        evidence.receipts.forEach((receipt) => {
+          const verdict = receipt.verifier_passed === true ? ' verifier:passed'
+            : receipt.verifier_passed === false ? ' verifier:FAILED' : '';
+          console.log(`     receipt: ${receipt.path}${verdict}`);
+        });
+        evidence.missing.forEach((missingPath) => console.log(`     receipt: ${missingPath} MISSING`));
+      }
     });
     console.log('');
     console.log(`If they hold up — accept all ${group.length} (career XP only on the ${need} you verified):`);
@@ -6111,6 +6155,9 @@ function cmdAccept(args) {
   });
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  // Inform the gate, never block it: show what the receipts named in the proof
+  // actually say so the accepting human isn't trusting prose.
+  const evidence = extractReceiptEvidence(proof, projection.workspace_root || process.cwd());
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -6119,6 +6166,7 @@ function cmdAccept(args) {
       reviewed: true,
       reward: reviewed.episode.reward.value,
       episode: reviewed.episode,
+      evidence,
       xp_projection: xpProjection,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -6126,6 +6174,14 @@ function cmdAccept(args) {
     return;
   }
   console.log(`accepted ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${reviewed.episode.reward.value}`);
+  if (evidence) {
+    evidence.receipts.forEach((receipt) => {
+      const verdict = receipt.verifier_passed === true ? ' verifier:passed'
+        : receipt.verifier_passed === false ? ' verifier:FAILED' : '';
+      console.log(`  receipt: ${receipt.path}${verdict}`);
+    });
+    evidence.missing.forEach((missingPath) => console.log(`  receipt: ${missingPath} MISSING`));
+  }
 }
 
 function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {

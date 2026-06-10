@@ -58,8 +58,15 @@ const ANSI = {
   dim: '\x1b[2m',
   muted: '\x1b[90m',
   accent: '\x1b[36m',
-  ok: '\x1b[32m'
+  ok: '\x1b[32m',
+  magenta: '\x1b[35m'
 };
+
+const TIER_COLORS = { fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+
+function tierColor(mode) {
+  return TIER_COLORS[mode] || ANSI.accent;
+}
 
 function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
@@ -88,11 +95,11 @@ function tierLabel(mode) {
   return 'Atris 2 Pro';
 }
 
-function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}) {
+function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}, options = {}) {
   return [
-    `${tierLabel(mode)}${chat ? ' chat' : ''}`,
+    paint(`${tierLabel(mode)}${chat ? ' chat' : ''}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
     cwd,
-    chat ? 'swap tiers with /fast /pro /max · exit with exit, quit, or :q' : '',
+    chat ? paint('type / for the menu · /fast /pro /max swap tiers · exit to leave', [ANSI.muted], options) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -115,11 +122,13 @@ function formatUsage() {
     '  --local force local workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
+    '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
     '',
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
     '  ax --max refactor this module and verify the tests',
+    '  ax --max --verify "npm test" fix the failing suite',
     '  ax --code-fast explain this error',
     '  ax --fast what is on my calendar today',
     '  ax --pro --chat',
@@ -131,7 +140,9 @@ function timestampForFile(date = new Date()) {
 }
 
 function stripAnsi(value) {
-  return String(value || '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+  return String(value || '')
+    .replace(/\x1b\]8;;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
 function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', output = process.stdout } = {}) {
@@ -494,8 +505,10 @@ function normalizeMode(mode) {
   return mode === 'fast' ? 'fast' : 'pro';
 }
 
-function formatPrompt(mode) {
-  return mode ? `${normalizeMode(mode)} › ` : '› ';
+function formatPrompt(mode, options = {}) {
+  if (!mode) return '› ';
+  const tier = normalizeMode(mode);
+  return `${paint(tier, [ANSI.bold, tierColor(tier)], options)} › `;
 }
 
 const TIER_COMMANDS = new Map([
@@ -508,13 +521,53 @@ function chatTierCommand(line) {
   return TIER_COMMANDS.get(String(line || '').trim().toLowerCase()) || null;
 }
 
-function formatWorkingLine(ms) {
+const CHAT_COMMANDS = [
+  ['/fast', 'quick answers, lowest latency'],
+  ['/pro', 'deeper tool loop for real work'],
+  ['/max', 'highest reasoning for the hardest jobs'],
+  ['/help', 'show this menu'],
+  ['exit', 'leave chat'],
+];
+
+function chatMenu(options = {}) {
+  return CHAT_COMMANDS
+    .map(([name, desc]) => {
+      const tier = TIER_COMMANDS.get(name);
+      const color = tier ? tierColor(tier) : ANSI.accent;
+      return `  ${paint(name.padEnd(6), [color], options)}  ${paint(desc, [ANSI.muted], options)}`;
+    })
+    .join('\n');
+}
+
+function chatCompleter(line) {
+  const trimmed = String(line || '').trimStart().toLowerCase();
+  if (!trimmed.startsWith('/')) return [[], line];
+  const names = CHAT_COMMANDS.map(([name]) => name).filter(name => name.startsWith('/'));
+  const hits = names.filter(name => name.startsWith(trimmed));
+  return [hits.length ? hits : names, trimmed];
+}
+
+function formatWorkingLine(ms, verb, frame) {
   const totalSeconds = Math.max(1, Math.round((Number(ms) || 0) / 1000));
+  if (verb) return `${frame || '•'} ${verb}… (${formatSeconds(totalSeconds)} · ctrl-c to interrupt)`;
   return `• Working (${formatSeconds(totalSeconds)} • ctrl-c to interrupt)`;
 }
 
-function formatDoneLine(ms) {
-  return `— Worked for ${formatDuration(ms)} —`;
+function verbForTool(tool) {
+  const name = String(tool || '').toLowerCase();
+  if (name.includes('read')) return 'Reading';
+  if (name.includes('grep') || name.includes('glob') || name.includes('search')) return 'Searching';
+  if (name.includes('bash') || name.includes('command') || name.includes('run')) return 'Running';
+  if (name.includes('write') || name.includes('edit')) return 'Editing';
+  return 'Working';
+}
+
+function formatDoneLine(ms, credits) {
+  const base = `— Worked for ${formatDuration(ms)}`;
+  if (Number.isFinite(credits) && credits > 0) {
+    return `${base} · ${credits} ${credits === 1 ? 'credit' : 'credits'} —`;
+  }
+  return `${base} —`;
 }
 
 function useColor(options = {}) {
@@ -642,19 +695,29 @@ function truncateMiddle(value, limit = 120) {
   return `${text.slice(0, head)}...${text.slice(-tail)}`;
 }
 
+function hyperlinkPath(text, target, options = {}) {
+  if (!useColor(options)) return text;
+  const original = String(target || '').trim();
+  // Only link things that look like paths; skip prose like "cloud scratch".
+  if (!original || /\s/.test(original)) return text;
+  const href = `file://${encodeURI(path.resolve(original))}`;
+  return `\x1b]8;;${href}\x07${text}\x1b]8;;\x07`;
+}
+
 function formatPathSubject(value, options = {}) {
   const raw = truncateMiddle(String(value || '').trim(), options.limit || 120);
   if (!raw) return '';
   if (raw === '.' || raw === '/' || raw.endsWith('/')) {
-    return paint(raw, [ANSI.accent], options);
+    return hyperlinkPath(paint(raw, [ANSI.accent], options), value, options);
   }
 
   const slash = raw.lastIndexOf('/');
-  if (slash === -1) return paint(raw, [ANSI.bold, ANSI.accent], options);
+  if (slash === -1) return hyperlinkPath(paint(raw, [ANSI.bold, ANSI.accent], options), value, options);
 
   const parent = raw.slice(0, slash + 1);
   const filename = raw.slice(slash + 1);
-  return `${paint(parent, [ANSI.muted], options)}  ${paint(filename, [ANSI.bold, ANSI.accent], options)}`;
+  const text = `${paint(parent, [ANSI.muted], options)}  ${paint(filename, [ANSI.bold, ANSI.accent], options)}`;
+  return hyperlinkPath(text, value, options);
 }
 
 function formatAuxRow(label, value, options = {}) {
@@ -667,6 +730,9 @@ function createProgressReporter(output, options = {}) {
   const enabled = options.showProgress !== false;
   const isTty = Boolean(output && output.isTTY);
   const startedAt = Date.now();
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frameIndex = 0;
+  let verb = 'Working';
   let interval = null;
   let timeout = null;
   let shown = false;
@@ -674,11 +740,11 @@ function createProgressReporter(output, options = {}) {
 
   const render = () => {
     if (!enabled || closed) return;
-    const line = formatWorkingLine(Date.now() - startedAt);
     if (isTty) {
-      output.write(`\r${line}\x1b[K`);
+      const frame = paint(frames[frameIndex++ % frames.length], [ANSI.accent], output);
+      output.write(`\r${formatWorkingLine(Date.now() - startedAt, verb, frame)}\x1b[K`);
     } else if (!shown) {
-      output.write(`${line}\n`);
+      output.write(`${formatWorkingLine(Date.now() - startedAt)}\n`);
     }
     shown = true;
   };
@@ -688,8 +754,11 @@ function createProgressReporter(output, options = {}) {
       if (!enabled) return;
       timeout = setTimeout(() => {
         render();
-        if (isTty) interval = setInterval(render, 1000);
+        if (isTty) interval = setInterval(render, 120);
       }, 700);
+    },
+    setVerb(next) {
+      verb = next || 'Working';
     },
     clear() {
       if (!isTty || !shown || closed) return;
@@ -718,22 +787,34 @@ function parseSseBlock(block) {
   return JSON.parse(data);
 }
 
-function summarizeToolInput(block) {
-  const options = arguments[1] || {};
-  const tool = block.tool || 'tool';
+function summarizeToolArgs(block, options = {}) {
   const input = block.input || {};
-  const toolName = paint(tool, [ANSI.bold], options);
   const pathValue = input.file_path || input.path;
-  if (input.command) return `${toolName}  ${truncateMiddle(input.command, 120)}`;
+  if (input.command) return truncateMiddle(input.command, 120);
   if (input.pattern || input.query) {
     const pattern = truncateMiddle(input.pattern || input.query, 80);
-    return pathValue
-      ? `${toolName}  ${pattern}  in  ${formatPathSubject(pathValue, options)}`
-      : `${toolName}  ${pattern}`;
+    return pathValue ? `${pattern}  in  ${formatPathSubject(pathValue, options)}` : pattern;
   }
-  if (pathValue) return `${toolName}  ${formatPathSubject(pathValue, options)}`;
+  if (pathValue) return formatPathSubject(pathValue, options);
   const subject = input.type || '';
-  return subject ? `${toolName}  ${String(subject).slice(0, 120)}` : toolName;
+  return subject ? String(subject).slice(0, 120) : '';
+}
+
+function summarizeToolInput(block) {
+  const options = arguments[1] || {};
+  const toolName = paint(block.tool || 'tool', [ANSI.bold], options);
+  const args = summarizeToolArgs(block, options);
+  return args ? `${toolName}  ${args}` : toolName;
+}
+
+function formatToolCallLine(block, options = {}) {
+  const tool = paint(block.tool || 'tool', [ANSI.bold], options);
+  const args = summarizeToolArgs(block, options);
+  return `${paint('●', [ANSI.ok], options)} ${tool}(${args})`;
+}
+
+function formatToolResultLine(summary, options = {}) {
+  return `  ${paint('⎿', [ANSI.muted], options)}  ${summary}`;
 }
 
 function summarizeToolResult(result) {
@@ -755,14 +836,24 @@ function summarizeToolResult(result) {
       const where = parsed.path ? `  in  ${formatPathSubject(parsed.path, options)}` : '';
       return `${parts.join(' / ')}${where}`;
     }
+    if (typeof parsed.content === 'string' && parsed.content) {
+      const lines = parsed.content.split('\n').length;
+      const where = parsed.path ? `  ${formatPathSubject(parsed.path, options)}` : '';
+      return `${lines} ${lines === 1 ? 'line' : 'lines'}${where}`;
+    }
     if (parsed.path && parsed.status) return `${parsed.status}  ${formatPathSubject(parsed.path, options)}`;
     if (parsed.path) return formatPathSubject(parsed.path, options);
     if (parsed.status) return parsed.status;
   } catch (_) {
-    // Bash output and older streams can be plain text.
+    // Truncated relay JSON and bash output fall through to the text path.
   }
 
-  return content.length > 120 ? `${content.slice(0, 117)}...` : content;
+  const head = content.match(/^\{"status":\s*"(\w+)",\s*"path":\s*"([^"]+)"/);
+  if (head) return `${head[1]}  ${formatPathSubject(head[2], options)}`;
+
+  const lines = content.split('\n');
+  const first = lines[0].length > 120 ? `${lines[0].slice(0, 117)}...` : lines[0];
+  return lines.length > 1 ? `${first}  … +${lines.length - 1} lines` : first;
 }
 
 function formatStatusMessage(message) {
@@ -786,6 +877,7 @@ function clearRetriedText(state) {
   state.wroteText = false;
   state.lastChar = '\n';
   state.inAuxBlock = false;
+  state.needsBullet = true;
   resetMarkdownState(state);
 }
 
@@ -804,6 +896,10 @@ function flushPendingText(state, output) {
   if (!state.pendingText && !hasMarkdownRemainder) return;
   stopProgress(state);
   if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
+  if (state.pendingText && state.needsBullet && output && output.isTTY) {
+    output.write('● ');
+    state.needsBullet = false;
+  }
   if (state.pendingText) output.write(output && output.isTTY ? renderTerminalMarkdown(state.pendingText, output) : state.pendingText);
   const flushedMarkdown = hasMarkdownRemainder ? flushStreamingMarkdown(state, output) : '';
   state.wroteText = true;
@@ -819,6 +915,10 @@ function writeStreamingText(state, output, content) {
   stopProgress(state);
   if (state.inAuxBlock && state.lastChar === '\n') output.write('\n');
   const rendered = renderStreamingMarkdown(state, content, output);
+  if (rendered && state.needsBullet && output.isTTY) {
+    output.write('● ');
+    state.needsBullet = false;
+  }
   if (rendered) output.write(rendered);
   state.wroteText = true;
   state.wroteActivity = true;
@@ -828,13 +928,15 @@ function writeStreamingText(state, output, content) {
 
 function writeAuxLine(state, output, line) {
   if (!line) return;
-  stopProgress(state);
+  // Keep the spinner alive between tool lines — just clear it off the row.
+  if (state.progress) state.progress.clear();
   if (state.wroteText && state.lastChar !== '\n') output.write('\n');
   if (!state.inAuxBlock && state.wroteActivity && state.lastChar === '\n') output.write('\n');
   output.write(`${line}\n`);
   state.wroteActivity = true;
   state.lastChar = '\n';
   state.inAuxBlock = true;
+  state.needsBullet = true;
 }
 
 function compactHistory(history, limit = 8) {
@@ -862,11 +964,12 @@ function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
+  const verifyCommand = String(options.verify || '').trim();
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
-    verify_command: 'true'
+    verify_command: verifyCommand || 'true'
   };
   if (options.business) {
     // Business cloud workspace: the model loop stays on the backend and every
@@ -920,7 +1023,6 @@ function handleEvent(event, state, output) {
 
   if (event.type === 'system_init') {
     state.runtime = event;
-    writeAuxLine(state, output, formatAuxRow('run', formatSystemInit(event, output), output));
     return;
   }
 
@@ -935,7 +1037,10 @@ function handleEvent(event, state, output) {
     for (const block of event.blocks) {
       if (block && block.type === 'tool_use') {
         flushPendingText(state, output);
-        writeAuxLine(state, output, formatAuxRow('tool', summarizeToolInput(block, output), output));
+        if (state.lastAux === 'result' && state.inAuxBlock) output.write('\n');
+        writeAuxLine(state, output, formatToolCallLine(block, output));
+        state.lastAux = 'call';
+        if (state.progress && state.progress.setVerb) state.progress.setVerb(verbForTool(block.tool));
       }
     }
     return;
@@ -944,7 +1049,8 @@ function handleEvent(event, state, output) {
   if (event.type === 'tool_results' && Array.isArray(event.results)) {
     for (const result of event.results) {
       flushPendingText(state, output);
-      writeAuxLine(state, output, formatAuxRow('ok', summarizeToolResult(result, output), output));
+      writeAuxLine(state, output, formatToolResultLine(summarizeToolResult(result, output), output));
+      state.lastAux = 'result';
     }
     return;
   }
@@ -952,8 +1058,11 @@ function handleEvent(event, state, output) {
   if (event.type === 'tool_call_request') {
     flushPendingText(state, output);
     const args = event.args || {};
-    const label = `cloud:${args.type || event.name || 'tool'}${args.command ? ` $ ${String(args.command).slice(0, 80)}` : ''}${args.path ? ` ${args.path}` : ''}`;
-    writeAuxLine(state, output, formatAuxRow('tool', label, output));
+    const cloudBlock = { tool: `cloud:${args.type || event.name || 'tool'}`, input: { command: args.command, path: args.path } };
+    if (state.lastAux === 'result' && state.inAuxBlock) output.write('\n');
+    writeAuxLine(state, output, formatToolCallLine(cloudBlock, output));
+    state.lastAux = 'call';
+    if (state.progress && state.progress.setVerb) state.progress.setVerb(verbForTool(args.type || event.name));
     if (state.relay) {
       // Relayed calls run sequentially: the backend awaits each tool-result
       // before continuing its loop, so a promise chain preserves order.
@@ -967,12 +1076,14 @@ function handleEvent(event, state, output) {
   }
 
   if (event.type === 'status' && event.message && event.message !== 'complete') {
-    if (event.message === 'retrying_with_required_local_tool') {
+    // Any retry status supersedes the draft answer already buffered — drop it
+    // silently instead of printing the abandoned text plus an info row.
+    if (/^retrying/i.test(event.message)) {
       clearRetriedText(state);
       return;
     }
     flushPendingText(state, output);
-    writeAuxLine(state, output, formatAuxRow('info', formatStatusMessage(event.message), output));
+    writeAuxLine(state, output, paint(`· ${formatStatusMessage(event.message)}`, [ANSI.muted], output));
     return;
   }
 
@@ -1021,6 +1132,8 @@ async function postTurn(message, options = {}) {
     lastChar: '\n',
     progress: null,
     inAuxBlock: false,
+    needsBullet: true,
+    lastAux: '',
     markdownMode: 'normal',
     markdownBuffer: '',
     markdownCarry: '',
@@ -1146,6 +1259,8 @@ async function postCodeFastTurn(message, options = {}) {
     lastChar: '\n',
     progress: null,
     inAuxBlock: false,
+    needsBullet: true,
+    lastAux: '',
     markdownMode: 'normal',
     markdownBuffer: '',
     markdownCarry: ''
@@ -1242,7 +1357,7 @@ async function chat(options = {}) {
   const output = logger ? logger.output : baseOutput;
   const history = [];
 
-  output.write(`${formatHeader({ mode, cwd, chat: true })}\n\n`);
+  output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
 
   const runLine = async (line) => {
@@ -1250,19 +1365,29 @@ async function chat(options = {}) {
     if (!trimmed) return false;
     if (EXIT_WORDS.has(trimmed.toLowerCase())) return true;
 
+    if (trimmed === '/' || trimmed.toLowerCase() === '/help') {
+      output.write(`${chatMenu(output)}\n\n`);
+      return false;
+    }
+
     const tier = chatTierCommand(trimmed);
     if (tier) {
       mode = tier;
       if (logger) logger.write(`${trimmed}\n`);
-      output.write(`${paint(`· ${tierLabel(mode)}`, [ANSI.muted], output)}\n\n`);
+      output.write(`${paint(`· ${tierLabel(mode)}`, [tierColor(mode)], output)}\n\n`);
+      return false;
+    }
+
+    if (trimmed.startsWith('/')) {
+      output.write(`${chatMenu(output)}\n\n`);
       return false;
     }
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
-    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route, business: options.business });
+    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route, business: options.business, verify: options.verify });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
-    output.write(`${formatDoneLine(result.durationMs)}\n\n`);
+    output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     history.push({ role: 'user', content: trimmed });
     history.push({ role: 'assistant', content: result.output || '' });
     return false;
@@ -1277,8 +1402,8 @@ async function chat(options = {}) {
     return;
   }
 
-  const rl = readline.createInterface({ input, output: baseOutput });
-  const ask = () => new Promise(resolve => rl.question(formatPrompt(mode), resolve));
+  const rl = readline.createInterface({ input, output: baseOutput, completer: chatCompleter });
+  const ask = () => new Promise(resolve => rl.question(formatPrompt(mode, baseOutput), resolve));
   while (true) {
     const line = await ask();
     if (await runLine(line)) {
@@ -1312,6 +1437,14 @@ function bufferedOutput() {
 function receiptFromState(state) {
   const event = [...(state.events || [])].reverse().find(item => item && item.type === 'receipt' && item.receipt);
   return event ? event.receipt : null;
+}
+
+function creditsFromState(state) {
+  const receipt = receiptFromState(state);
+  const billing = receipt && receipt.billing;
+  if (!billing || billing.billed === false) return null;
+  const credits = Number(billing.credits_charged);
+  return Number.isFinite(credits) && credits > 0 ? credits : null;
 }
 
 function toolEventsFromState(state) {
@@ -1483,6 +1616,19 @@ async function main() {
     args.splice(bizIdx, 2);
   }
 
+  // --verify <cmd>: opt-in turn verifier. The flag takes a value, so splice
+  // the pair out before building the prompt.
+  let verify = '';
+  const verifyIdx = args.indexOf('--verify');
+  if (verifyIdx !== -1) {
+    verify = String(args[verifyIdx + 1] || '').trim();
+    if (!verify) {
+      console.error('Usage: ax --verify "<cmd>" [prompt]');
+      process.exit(1);
+    }
+    args.splice(verifyIdx, 2);
+  }
+
   const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--max') ? 'max' : args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
   const benchmark = args.includes('--benchmark');
@@ -1532,22 +1678,22 @@ async function main() {
     }
 
     if (doctor) {
-      console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
+      console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
       console.log('');
       console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route }), process.stdout));
       return;
     }
 
     if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business });
+      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
       return;
     }
 
-    console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }));
+    console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
-    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business });
+    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     console.log('');
-    console.log(formatDoneLine(result.durationMs));
+    console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
     printBackendHint();
@@ -1570,8 +1716,11 @@ module.exports = {
   buildConnectionContext,
   buildRunProfile,
   chat,
+  chatCompleter,
+  chatMenu,
   chatTierCommand,
   codeFastWorkspaceNotice,
+  creditsFromState,
   codeFastBaseUrl,
   codeFastUrl,
   createRunLogger,

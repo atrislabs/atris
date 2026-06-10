@@ -12,8 +12,8 @@ sources:
   - lib/task-db.js
   - atris/TODO.md
   - package.json
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.88
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -32,7 +32,7 @@ tags:
 ---
 # Atris CLI Overview
 
-`atris` is a Node.js CLI that turns any repository into an AI workspace with shared context, durable task state, project memory, and a `plan -> do -> review` loop. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and package metadata currently reports version `3.15.22`. The repo protocol agents read is `atris/atris.md`; the root `atris.md` explains the generic workspace rules.
+`atris` is a Node.js CLI that turns any repository into an AI workspace with shared context, durable task state, project memory, and a `plan -> do -> review` loop. The package entrypoint is `bin/atris.js`, the installed binary is `atris`, and package metadata currently reports version `3.15.57`. The repo protocol agents read is `atris/atris.md`; the root `atris.md` explains the generic workspace rules.
 
 ## Owner/computer model
 
@@ -69,7 +69,7 @@ The base move is still `plan -> do -> review`: plan the work, execute it, then v
 
 The team-member surface is now part of the usefulness loop. `atris member` keeps `MEMBER.md` as the role contract, `MISSION.md` as the durable purpose, `goals.json` as machine-readable goal/experiment state, `goals.md` as the human readout, and `logs/YYYY-MM-DD.md` as proof history. `goal`, `wake`, `tick`, `block`, `status`, and `review --value 1..5` are the member loop for testing whether a role is producing useful progress or needs operator input.
 
-The verifiable feedback rail is broader than the original endgame-only path. Tasks can carry `Verify:` commands, plan/do/review use the Confidence Gate, autopilot can run checks after review, and scorecard helpers still exist for closed horizons when that rail is active. Current task truth lives in `atris task`; `atris/TODO.md` can be rebuilt with `atris task render`.
+The verifiable feedback rail is broader than the original endgame-only path. Tasks can carry `Verify:` commands, plan/do/review use the Confidence Gate, autopilot can run checks after review, and scorecard helpers still exist for closed horizons when that rail is active. Current task truth lives in `atris task`; `atris/TODO.md` can be rebuilt with `atris task render`. AgentXP sits on top of this rail: `atris play`, `atris gm`, and `atris xp` run the proof-backed game loop, where `atris task done --proof` records review/RL context but only human `atris task accept` mints Career XP for the local card or hosted leaderboard. `ax` is the local Atris 2 coding-agent CLI (Fast/Pro/Max lanes against a local AtrisOS backend) for chat-driven workspace work.
 
 The self-improvement rail is `atris/features/endstate/` and the `experiments/` packs beside it: `atris experiments run <slug>` drives focused benchmark tracks (baseline vs. stack) through the same autopilot primitives that ship real work, emitting receipts and `results.tsv` rows so improvements can be measured instead of claimed. The wiki loop (`atris wiki ingest` / `query` / `lint`, checked by `atris loop`) keeps durable knowledge fresh by detecting stale sources and orphan pages, which is how this brief got recompiled in the first place.
 

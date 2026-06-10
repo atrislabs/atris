@@ -9,9 +9,9 @@ sources:
   - README.md
   - atris/MAP.md
 created: 2026-04-07
-updated: 2026-05-10
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+updated: 2026-06-09
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.87
 dependencies:
   - atris/wiki/concepts/owner-computer-model.md
@@ -66,7 +66,7 @@ Default target:
     reports/
 ```
 
-`createCanonicalBusinessWorkspace()` writes `.atris/business.json` and then calls `syncBusinessCanonical()` so the starter business workspace comes from `templates/business-starter/` without clobbering custom files.
+`createCanonicalBusinessWorkspace()` writes `.atris/business.json`, calls `syncBusinessCanonical()` so the starter business workspace comes from `templates/business-starter/` without clobbering custom files, ensures root agent adapters, and writes a runtime receipt via `writeRuntimeReceipt()`.
 
 ## Primary Flows
 
@@ -77,6 +77,8 @@ Default target:
 - `atris business list --local` / `fleet`: local fleet scan for `~/arena/atris-business/*`.
 - `atris business doctor [--fix]`: compares cloud-active businesses with `~/.atris/businesses.json` and local `.atris/business.json` bindings.
 - `atris business team|status|health|audit`: cloud inspection commands.
+- `atris business start|check|ready`: renders an operating-state start card (tasks, missions, team goals, XP) from local workspace state.
+- `atris business share|handoff [--role <r>] [--write|--out <path>]`: renders a collaborator handoff; optionally writes it to `atris/reports/`.
 - `atris business connect <service>` and `notify <digest|silent|push>`: integration and proactive-notification controls.
 - `atris business deploy <slug>`: legacy push path for `atris/business/<slug>/` content.
 

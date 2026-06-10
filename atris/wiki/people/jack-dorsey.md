@@ -2,8 +2,8 @@
 type: entity
 slug: jack-dorsey
 title: Jack Dorsey
-last_compiled: 2026-05-10
-last_verified: 2026-05-10
+last_compiled: 2026-06-09
+last_verified: 2026-06-09
 confidence: 0.86
 dependencies:
   - atris/wiki/concepts/intent-capability-composition.md

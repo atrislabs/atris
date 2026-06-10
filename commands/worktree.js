@@ -209,29 +209,16 @@ function printStatus() {
   }
 }
 
-function startWorktree(args) {
-  const root = repoRoot();
-  const member = readFlag(args, '--member');
-  const agent = readFlag(args, '--agent');
+// Programmatic core shared by `atris worktree start` and `atris mission start
+// --worktree`: creates the branch + isolated checkout + identity sidecar and
+// returns the facts. Throws on failure; callers own messaging and next steps.
+function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
   const owner = member || agent;
-  const task = readFlag(args, '--task');
-  if (!owner || !task) {
-    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim]');
-    return 2;
-  }
-  const now = new Date();
-  const branch = readFlag(args, '--branch') || branchName(owner, task, now);
-  const target = path.resolve(readFlag(args, '--path') || defaultWorktreePath(root, owner, task, now));
-  const base = normalizeTargetRef(root, readFlag(args, '--base') || readFlag(args, '--target') || defaultStartBase(root));
-  const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
-
-  if (fs.existsSync(target)) {
-    console.error(`refusing: worktree path already exists: ${target}`);
-    return 2;
-  }
-  if (memberFile && !fs.existsSync(memberFile)) {
-    console.error(`warning: no member persona at ${path.relative(root, memberFile)}`);
-  }
+  if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
+  const branch = branchOverride || branchName(owner, task, now);
+  const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  const base = normalizeTargetRef(root, baseOverride || defaultStartBase(root));
+  if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   refreshRemoteRef(root, base);
   runGit(['worktree', 'add', '-b', branch, target, base], { cwd: root });
@@ -253,6 +240,39 @@ function startWorktree(args) {
     }, null, 2) + '\n',
     'utf8'
   );
+  return { path: target, branch, base, owner };
+}
+
+function startWorktree(args) {
+  const root = repoRoot();
+  const member = readFlag(args, '--member');
+  const agent = readFlag(args, '--agent');
+  const owner = member || agent;
+  const task = readFlag(args, '--task');
+  if (!owner || !task) {
+    console.error('Usage: atris worktree start --member <member>|--agent <name> --task "<short task>" [--claim]');
+    return 2;
+  }
+  const memberFile = member ? path.join(root, 'atris', 'team', member, 'MEMBER.md') : '';
+  if (memberFile && !fs.existsSync(memberFile)) {
+    console.error(`warning: no member persona at ${path.relative(root, memberFile)}`);
+  }
+  let created;
+  try {
+    created = createAgentWorktree({
+      root,
+      member,
+      agent,
+      task,
+      branch: readFlag(args, '--branch'),
+      path: readFlag(args, '--path'),
+      base: readFlag(args, '--base') || readFlag(args, '--target'),
+    });
+  } catch (e) {
+    console.error(`refusing: ${e.message}`);
+    return 2;
+  }
+  const { path: target, branch, base } = created;
 
   const counts = statusCounts(root);
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
@@ -489,6 +509,7 @@ function worktreeCommand(args = []) {
 
 module.exports = {
   branchName,
+  createAgentWorktree,
   defaultShipTarget,
   defaultStartBase,
   defaultWorktreePath,
