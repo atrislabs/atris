@@ -449,7 +449,7 @@ function showHelp() {
   console.log('  version    - Show Atris version');
   console.log('  help       - Show this help');
   console.log('');
-  console.log('💡 Tip: If you are unsure, run "atris 0-shot"');
+  console.log('💡 Tip: If you are unsure, run "atris 0-shot --all"');
   console.log('');
 }
 
@@ -1178,7 +1178,7 @@ function showWelcomeVisualization() {
       } = require('../commands/zero-shot');
       console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris 0-shot --prompt' or 'atris 0-shot --model <tier> --prompt' to choose the next move.`);
+    console.log(`    Ready. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }

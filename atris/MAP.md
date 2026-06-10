@@ -124,7 +124,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files
 - **Natural aliases:** `bin/atris.js` normalizes `0shot`, `0 shot`, `zeroshot`, and `zero shot` to `0-shot` before dispatch
-- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot` and refreshes the ambient latest files
+- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot --all` and refreshes the ambient latest files
 - **Implementation:** `commands/zero-shot.js`
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route plus all-route menu/global/model/horizon prompt commands, and refreshes the ambient latest files
 - **Member activation:** `commands/member.js` prints the current 0-shot route plus all-route menu/global/model/horizon prompt commands and refreshes the ambient latest files when waking a named member
@@ -138,7 +138,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Freshness check:** `atris 0-shot --check` and no-request `atris next --check` compare durable latest files, global prompt content, per-model prompt content, per-horizon prompt content, and current source fingerprints, then report fresh, stale, or missing
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route, horizon/model bucket counts, and durable prompt freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
 - **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route and first command so ordinary health checks show the next safe move
-- **Now front door:** generated `atris/now.md` includes the current 0-shot route, bucket counts, first command, and horizon handoff hint so agents loading the first context file can start from the selected lane
+- **Now front door:** generated `atris/now.md` includes the current 0-shot route, `atris 0-shot --all` menu command, bucket counts, first command, and horizon handoff hint so agents loading the first context file can inspect all visible lanes before acting
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work

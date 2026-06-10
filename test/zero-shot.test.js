@@ -938,7 +938,7 @@ test('top-level help advertises zero-shot for uncertain starts', () => {
     assert.match(res.stdout, /member activate <n>\s+- Activate a member and show the zero-shot route/);
     assert.match(res.stdout, /next\s+- Alias for zero-shot when no request is provided/);
     assert.match(res.stdout, /do not know what to prompt/);
-    assert.match(res.stdout, /If you are unsure, run "atris 0-shot"/);
+    assert.match(res.stdout, /If you are unsure, run "atris 0-shot --all"/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -996,7 +996,7 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
-    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --prompt' or 'atris 0-shot --model <tier> --prompt' to choose the next move\./);
+    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);

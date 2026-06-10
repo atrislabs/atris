@@ -212,6 +212,7 @@ function zeroShotNowSummary(root = process.cwd()) {
     return {
       route: `${decision.lane || 'unknown'}${focus}`,
       command,
+      menu: packet.commands?.zero_shot_all || 'atris 0-shot --all',
       prompt: packet.commands?.zero_shot_prompt || 'atris 0-shot --prompt',
       json: packet.commands?.zero_shot_json || 'atris 0-shot --json',
       buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
@@ -220,6 +221,7 @@ function zeroShotNowSummary(root = process.cwd()) {
     return {
       route: 'unavailable',
       command: 'atris 0-shot --prompt',
+      menu: 'atris 0-shot --all',
       prompt: 'atris 0-shot --prompt',
       json: 'atris 0-shot --json',
       buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
@@ -257,6 +259,7 @@ Last updated: ${generated}
 
 - Decide the next useful move before opening more context.
 - 0-shot route: ${zeroShot.route} -> \`${zeroShot.command}\`
+- 0-shot menu: \`${zeroShot.menu}\`
 - 0-shot buckets: ${zeroShot.buckets}
 
 ## Current Priority
@@ -278,7 +281,8 @@ Last updated: ${generated}
 
 ## Next Move
 
-- Run \`${zeroShot.command}\` for the current 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
+- Run \`${zeroShot.menu}\` to inspect every visible 0-shot route before choosing work.
+- Run \`${zeroShot.command}\` only when you are already following the selected 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
 - Use \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.
 - Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
 
