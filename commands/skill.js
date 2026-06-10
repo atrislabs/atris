@@ -183,8 +183,12 @@ function runAuditChecks(skill) {
   });
 
   // 7. no XML tags in content (skip placeholders like <name>, <keyword>, code blocks)
-  const xmlMatches = skill.content.match(/<[a-zA-Z][^>]*>/g) || [];
-  const placeholders = /^<(name|keyword|placeholder|value|type|path|file|dir|id|url|tag|description|your-|user-|project-|skill-)/i;
+  const proseContent = skill.content
+    .replace(/```[\s\S]*?```/g, '')   // fenced code blocks
+    .replace(/`[^`\n]*`/g, '');        // inline code spans
+  const xmlMatches = proseContent.match(/<[a-zA-Z][^>]*>/g) || [];
+  // Single-letter tags like <X>/<N> are prose placeholders, not real XML.
+  const placeholders = /^<(name|keyword|placeholder|value|type|path|file|dir|id|url|tag|description|your-|user-|project-|skill-|[a-zA-Z]>)/i;
   const realXml = xmlMatches.filter(t =>
     !t.startsWith('<!--') && !t.startsWith('<!') && !placeholders.test(t)
   );
