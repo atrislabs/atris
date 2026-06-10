@@ -43,6 +43,44 @@ const SCORECARD_SCHEMA = 'atris.improve_tick.v1';
 const DEFAULT_TIMEOUT_MS = 300000;
 const VALID_MODES = new Set(['full', 'plan', 'delegate']);
 
+function buildImproveZeroShotPacket(workspace, buildPacketFn = null) {
+  const packetFn = buildPacketFn || (() => require('./zero-shot').buildPacket());
+  const target = expandHome(workspace || process.cwd());
+  const cwd = process.cwd();
+  try {
+    if (target && fs.existsSync(target)) process.chdir(target);
+    return packetFn();
+  } catch {
+    return null;
+  } finally {
+    try { process.chdir(cwd); } catch {}
+  }
+}
+
+function improveZeroShotLines(packet) {
+  if (!packet || !packet.decision || !packet.commands) return [];
+  const decision = packet.decision;
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none';
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown';
+  const firstCommand = packet.commands.first_command || packet.commands.next_command || 'atris 0-shot --prompt';
+  const lines = [
+    `route: ${route}`,
+    `focus: ${focus}`,
+    `first command: ${firstCommand}`,
+    `menu: ${packet.commands.zero_shot_all || 'atris 0-shot --all'}`,
+    `prompt: ${packet.commands.zero_shot_prompt || 'atris 0-shot --prompt'}`,
+  ];
+  if (decision.reason) lines.splice(2, 0, `why: ${decision.reason}`);
+  if (decision.owner_action) lines.push(`owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) lines.push(`agent-safe action: ${decision.safe_agent_action}`);
+  return lines;
+}
+
+function isImproveOwnerGatedZeroShot(packet) {
+  const decision = packet && packet.decision ? packet.decision : {};
+  return decision.lane === 'owner_gate' || Boolean(decision.owner_action);
+}
+
 /**
  * Resolve the improve endpoint path relative to the configured API base.
  * The backend mounts the router at /api/improve. The CLI's default base
@@ -325,10 +363,35 @@ async function runImprove(opts = {}, deps = {}) {
   const baseFn = deps.getApiBaseUrl || getApiBaseUrl;
   const now = deps.now || (() => new Date().toISOString());
   const log = deps.log || (() => {});
+  const zeroShotFn = deps.buildZeroShotPacket || null;
 
   const workspace = opts.workspace || process.cwd();
   const timeoutSec = Math.round((opts.timeoutMs || DEFAULT_TIMEOUT_MS) / 1000);
   const startedAt = now();
+  const zeroShot = buildImproveZeroShotPacket(workspace, zeroShotFn);
+  if (isImproveOwnerGatedZeroShot(zeroShot)) {
+    const commands = zeroShot.commands || {};
+    return {
+      ok: true,
+      source: 'zero_shot',
+      reason: 'owner_gate',
+      zeroShot: {
+        lane: zeroShot.decision?.lane || null,
+        horizon: zeroShot.decision?.horizon || null,
+        model_tier: zeroShot.decision?.model_tier || null,
+        selected_ref: zeroShot.decision?.selected_ref || null,
+        selected_title: zeroShot.decision?.selected_title || null,
+        first_command: commands.first_command || commands.next_command || 'atris 0-shot --prompt',
+        menu_command: commands.zero_shot_all || 'atris 0-shot --all',
+        prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
+        owner_action: zeroShot.decision?.owner_action || null,
+        safe_agent_action: zeroShot.decision?.safe_agent_action || null,
+        lines: improveZeroShotLines(zeroShot),
+      },
+      startedAt,
+      finishedAt: now(),
+    };
+  }
   const creds = loadCreds();
 
   // No auth → local fallback (or report if fallback disabled).
@@ -421,6 +484,16 @@ function formatImproveReport(result = {}) {
     if (result.local && !result.ok && result.local.stderr) {
       lines.push(`  error:   ${result.local.stderr.trim().split('\n').slice(-1)[0]}`);
     }
+    return lines.join('\n');
+  }
+  if (result.source === 'zero_shot') {
+    const z = result.zeroShot || {};
+    lines.push('improve tick did not run.');
+    lines.push('  reason:  0-shot owner gate');
+    lines.push(`  route:   ${[z.lane, z.horizon, z.model_tier].filter(Boolean).join(' | ') || 'unknown'}`);
+    if (z.selected_ref || z.selected_title) lines.push(`  focus:   ${[z.selected_ref, z.selected_title].filter(Boolean).join(' - ')}`);
+    lines.push(`  run:     ${z.first_command || 'atris 0-shot --prompt'}`);
+    lines.push(`  menu:    ${z.menu_command || 'atris 0-shot --all'}`);
     return lines.join('\n');
   }
   lines.push('improve tick did not run.');

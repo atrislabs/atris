@@ -143,6 +143,7 @@ function fakeDeps(over = {}) {
       runLocalFallback: over.runLocalFallback || ((o) => { calls.local.push(o); return { ok: true, status: 0, stdout: '', stderr: '' }; }),
       appendScorecardRow: over.appendScorecardRow || ((ws, row) => { calls.rows.push({ ws, row }); return '/ws/.atris/state/scorecards.jsonl'; }),
       appendTickToJournal: over.appendTickToJournal || ((ws, summary, o) => { calls.journal.push({ ws, summary, o }); return '/ws/atris/logs/2026/2026-06-08.md'; }),
+      buildZeroShotPacket: over.buildZeroShotPacket || (() => null),
       log: () => {},
     },
   };
@@ -202,6 +203,38 @@ test('runImprove: no auth falls back to local without calling the API', async ()
   assert.equal(res.ok, true);
   assert.equal(calls.api.length, 0); // did not attempt a paid call without auth
   assert.equal(calls.local.length, 1);
+});
+
+test('runImprove: owner-gated zero-shot route stops before API or local fallback', async () => {
+  const { calls, deps } = fakeDeps();
+  const res = await runImprove({ workspace: '/ws', fallback: true }, {
+    ...deps,
+    buildZeroShotPacket: () => ({
+      decision: {
+        lane: 'owner_gate',
+        horizon: 'blocked',
+        model_tier: 'human',
+        selected_ref: 'CZS-1',
+        selected_title: 'Add atris zero-shot CLI command',
+        owner_action: 'human-only: atris task accept CZS-1',
+        safe_agent_action: 'read-only: atris task page CZS-1 --json',
+      },
+      commands: {
+        first_command: 'atris task page CZS-1 --json',
+        next_command: 'atris task page CZS-1 --json',
+        zero_shot_all: 'atris 0-shot --all',
+        zero_shot_prompt: 'atris 0-shot --prompt',
+      },
+    }),
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, 'zero_shot');
+  assert.equal(res.reason, 'owner_gate');
+  assert.equal(res.zeroShot.first_command, 'atris task page CZS-1 --json');
+  assert.equal(calls.api.length, 0);
+  assert.equal(calls.local.length, 0);
+  assert.equal(calls.rows.length, 0);
+  assert.equal(calls.journal.length, 0);
 });
 
 test('runImprove: unreachable backend falls back to local', async () => {
