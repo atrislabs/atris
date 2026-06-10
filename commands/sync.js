@@ -187,7 +187,7 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     '',
     '```bash',
     'atris',
-    'atris 0-shot --prompt',
+    'atris 0-shot --all',
     'atris 0-shot --horizon long --prompt',
     'atris business start',
     'atris radar',
@@ -195,7 +195,7 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     'atris member activate operator',
     '```',
     '',
-    'Ambient agents may read `.atris/state/zero-shot.prompt.txt`, a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`), or a horizon prompt (`.atris/state/zero-shot.now.prompt.txt`, `.atris/state/zero-shot.review.prompt.txt`, `.atris/state/zero-shot.long.prompt.txt`, `.atris/state/zero-shot.blocked.prompt.txt`, `.atris/state/zero-shot.orient.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.',
+    'Ambient agents may read `.atris/state/zero-shot.prompt.txt`, a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`), or a horizon prompt (`.atris/state/zero-shot.now.prompt.txt`, `.atris/state/zero-shot.review.prompt.txt`, `.atris/state/zero-shot.long.prompt.txt`, `.atris/state/zero-shot.blocked.prompt.txt`, `.atris/state/zero-shot.orient.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --all`.',
     '',
     'If no active mission exists, start the first bounded business loop:',
     '',
@@ -591,8 +591,8 @@ You are now running inside Atris, an AI workspace operating system.
 
 **ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
-If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff; if you know your tier or horizon, run \`atris 0-shot --model fast|pro|validator|human --prompt\` or \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
-Ambient agents may read \`.atris/state/zero-shot.prompt.txt\`, a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`), or a horizon prompt (\`.atris/state/zero-shot.now.prompt.txt\`, \`.atris/state/zero-shot.review.prompt.txt\`, \`.atris/state/zero-shot.long.prompt.txt\`, \`.atris/state/zero-shot.blocked.prompt.txt\`, \`.atris/state/zero-shot.orient.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --prompt\`.
+If the user did not provide a concrete task, run \`atris 0-shot --all\` to inspect the route menu before choosing work; use \`atris 0-shot --prompt\` for a copy-paste handoff. If you know your tier or horizon, run \`atris 0-shot --model fast|pro|validator|human --prompt\` or \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
+Ambient agents may read \`.atris/state/zero-shot.prompt.txt\`, a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`), or a horizon prompt (\`.atris/state/zero-shot.now.prompt.txt\`, \`.atris/state/zero-shot.review.prompt.txt\`, \`.atris/state/zero-shot.long.prompt.txt\`, \`.atris/state/zero-shot.blocked.prompt.txt\`, \`.atris/state/zero-shot.orient.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --all\`.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->

@@ -13096,6 +13096,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(agents, /`atris\/atris\.md` \| Protocol\/backbone/);
     assert.match(agents, /`atris task ready <id> --proof/);
     assert.match(agents, /Human accept\s+-> task Done \+ AgentXP awarded/);
+    assert.match(agents, /atris 0-shot --all/);
     assert.match(agents, /atris 0-shot --prompt/);
     assert.match(agents, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(agents, /atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
@@ -13108,6 +13109,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.doesNotMatch(agents, /task finish <id> --proof/);
     const claudeCommand = fs.readFileSync(path.join(dir, '.claude', 'commands', 'atris.md'), 'utf8');
     assert.match(claudeCommand, /atris\/atris\.md/);
+    assert.match(claudeCommand, /atris 0-shot --all/);
     assert.match(claudeCommand, /atris 0-shot --prompt/);
     assert.match(claudeCommand, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(claudeCommand, /atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
@@ -13116,6 +13118,7 @@ test('init scaffolds atris/wiki/briefs instead of syntheses', () => {
     assert.match(claudeCommand, /\.atris\/state\/zero-shot\.review\.prompt\.txt/);
     assert.match(claudeCommand, /AGENTS\.md is only a tool adapter/);
     const rootClaude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(rootClaude, /atris 0-shot --all/);
     assert.match(rootClaude, /atris 0-shot --prompt/);
     assert.match(rootClaude, /atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(rootClaude, /atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
@@ -13993,7 +13996,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     const rootAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
     assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
     assert.match(rootAgents, /atris business start/);
-    assert.match(rootAgents, /atris 0-shot --prompt/);
+    assert.match(rootAgents, /atris 0-shot --all/);
     assert.match(rootAgents, /atris 0-shot --horizon long --prompt/);
     assert.match(rootAgents, /0-shot --check` reports `fresh`/);
     assert.match(rootAgents, /\.atris\/state\/zero-shot\.prompt\.txt/);
@@ -14067,7 +14070,7 @@ test('business workspace scaffold preserves existing root agent adapter files', 
     assert.deepEqual(result.agentAdapters, ['CLAUDE.md', 'GEMINI.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), '# Custom Agent Rules\n');
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Preserve Co Atris Workspace/);
-    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --prompt/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --all/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --horizon long --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /0-shot --check` reports `fresh`/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.validator\.prompt\.txt/);
@@ -14101,7 +14104,7 @@ test('business sync repairs missing root agent adapters without overwriting cust
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.equal(fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8'), beforeCustom);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /Repair Co Atris Workspace/);
-    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --prompt/);
+    assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --all/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /atris 0-shot --horizon long --prompt/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /0-shot --check` reports `fresh`/);
     assert.match(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8'), /\.atris\/state\/zero-shot\.fast\.prompt\.txt/);

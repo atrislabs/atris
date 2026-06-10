@@ -22,8 +22,8 @@ This workspace has a compiled agent brain.
 On session start, activate it first:
 `atris brain activate --root /Users/keshavrao/arena/atris-cli --verify`
 
-If the prompt is vague or empty, run `atris 0-shot --prompt` and follow the handoff before choosing work; if you know your tier or horizon, run `atris 0-shot --model fast|pro|validator|human --prompt` or `atris 0-shot --horizon now|review|long|blocked|orient --prompt`. Use `atris 0-shot --json` when you need structured route metadata.
-Ambient agents may read `.atris/state/zero-shot.prompt.txt`, a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`), or a horizon prompt (`.atris/state/zero-shot.now.prompt.txt`, `.atris/state/zero-shot.review.prompt.txt`, `.atris/state/zero-shot.long.prompt.txt`, `.atris/state/zero-shot.blocked.prompt.txt`, `.atris/state/zero-shot.orient.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.
+If the prompt is vague or empty, run `atris 0-shot --all` to inspect the route menu before choosing work; use `atris 0-shot --prompt` for a copy-paste handoff. If you know your tier or horizon, run `atris 0-shot --model fast|pro|validator|human --prompt` or `atris 0-shot --horizon now|review|long|blocked|orient --prompt`. Use `atris 0-shot --json` when you need structured route metadata.
+Ambient agents may read `.atris/state/zero-shot.prompt.txt`, a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`), or a horizon prompt (`.atris/state/zero-shot.now.prompt.txt`, `.atris/state/zero-shot.review.prompt.txt`, `.atris/state/zero-shot.long.prompt.txt`, `.atris/state/zero-shot.blocked.prompt.txt`, `.atris/state/zero-shot.orient.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --all`.
 
 Load these first:
 - `atris/now.md`
