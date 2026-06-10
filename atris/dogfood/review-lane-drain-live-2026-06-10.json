@@ -1,0 +1,155 @@
+{
+  "schema": "atris.task_review_lane_run.v1",
+  "generated_at": "2026-06-10T08:42:34.564Z",
+  "ok": true,
+  "action": "review_lane_run",
+  "owner": "keshavrao",
+  "reviewer": "codex-review",
+  "scope": {
+    "goal_id": null,
+    "tag": null,
+    "status": null,
+    "review_state": null
+  },
+  "dry_run": false,
+  "max_runs": 3,
+  "max_steps": 3,
+  "run_count": 1,
+  "total_acted_count": 1,
+  "stopped_reason": "auto_review_no_green_evidence",
+  "stopped_on": "none",
+  "runs": [
+    {
+      "index": 1,
+      "ok": true,
+      "dry_run": false,
+      "max_steps": 3,
+      "acted_count": 1,
+      "stopped_reason": "auto_review_no_green_evidence",
+      "stopped_on": "none",
+      "status": 200,
+      "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json",
+      "final_decision": {
+        "ok": false,
+        "step_action": "none",
+        "reason": "no_review_lane_action"
+      },
+      "final_drain": {
+        "next_action": "none",
+        "review_state": null,
+        "safe_for_agent": false,
+        "task": null,
+        "reason": "no_review_lane_action",
+        "command": null,
+        "api": null
+      },
+      "steps": [
+        {
+          "index": 1,
+          "phase": "act",
+          "ok": true,
+          "acted": true,
+          "dry_run": false,
+          "selected_action": "auto_review",
+          "reason": null,
+          "decision": {
+            "ok": true,
+            "step_action": "auto_review",
+            "task_id": "01KTR3XWCK4KV8JGRZFR4KV8JG",
+            "command": null,
+            "api": null
+          },
+          "drain": {
+            "next_action": "pending_review_chat",
+            "review_state": "pending-review-chat",
+            "safe_for_agent": false,
+            "task": {
+              "id": "01KTR3XWCK4KV8JGRZFR4KV8JG",
+              "ref": "CLI-213",
+              "title": "Review lane self-drain cadence: wire review-lane-run into always-on loop; receipt proves queue drains agent-side to cer…",
+              "next_action": "pending_review_chat"
+            },
+            "reason": "pending_review_chat_waiting_for_agent_review",
+            "command": null,
+            "api": null
+          },
+          "result": {
+            "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json"
+          }
+        },
+        {
+          "index": 2,
+          "phase": "act",
+          "ok": true,
+          "acted": false,
+          "dry_run": false,
+          "selected_action": "auto_review",
+          "reason": "auto_review_no_green_evidence",
+          "decision": {
+            "ok": true,
+            "step_action": "auto_review",
+            "task_id": "01KTR1EG2V52NVG9V6JR52NVG9",
+            "command": null,
+            "api": null
+          },
+          "drain": {
+            "next_action": "pending_review_chat",
+            "review_state": "pending-review-chat",
+            "safe_for_agent": false,
+            "task": {
+              "id": "01KTR1EG2V52NVG9V6JR52NVG9",
+              "ref": "CLI-212",
+              "title": "Dogfood two parallel mission start --worktree loops; fix cross-worktree mission status rollup friction",
+              "next_action": "pending_review_chat"
+            },
+            "reason": "pending_review_chat_waiting_for_agent_review",
+            "command": null,
+            "api": null
+          },
+          "result": {}
+        },
+        {
+          "index": 3,
+          "phase": "preview",
+          "ok": false,
+          "acted": false,
+          "dry_run": true,
+          "selected_action": null,
+          "reason": "no_review_lane_action",
+          "decision": {
+            "ok": false,
+            "step_action": "none",
+            "reason": "no_review_lane_action"
+          },
+          "drain": {
+            "next_action": "none",
+            "review_state": null,
+            "safe_for_agent": false,
+            "task": null,
+            "reason": "no_review_lane_action",
+            "command": null,
+            "api": null
+          },
+          "result": null
+        }
+      ]
+    }
+  ],
+  "status": 200,
+  "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json",
+  "receipt_path": "/Users/keshavrao/arena/atris-cli/.atris/state/review-lane-runs.jsonl",
+  "latest_receipt_path": "/Users/keshavrao/arena/atris-cli/.atris/state/review-lane-run.latest.json",
+  "would_write_receipt_path": null,
+  "receipt_written": true,
+  "safety": {
+    "read_only": false,
+    "mutates_task_db": "conditional",
+    "writes_projection": true,
+    "writes_receipt": true,
+    "human_accept": false,
+    "xp_after_human_accept": true,
+    "max_runs_cap": 20,
+    "max_steps_cap": 10,
+    "orchestrates": "review_lane_loop"
+  }
+}

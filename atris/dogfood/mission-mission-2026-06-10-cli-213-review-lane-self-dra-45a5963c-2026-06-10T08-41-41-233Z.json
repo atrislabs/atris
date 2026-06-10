@@ -1,0 +1,111 @@
+{
+  "schema": "atris.mission_receipt.v1",
+  "mission_id": "mission-2026-06-10-cli-213-review-lane-self-dra-45a5963c",
+  "objective": "CLI-213: review lane self-drains on cadence — wire review-lane-run into always-on loop, receipt proves agent-side drain to certified with zero human turns",
+  "owner": "devin",
+  "at": "2026-06-10T08:41:41.233Z",
+  "verifier": "npm test",
+  "result": {
+    "kind": "mission_tick",
+    "tick": {
+      "status": "ran",
+      "reason": "tick-recorded",
+      "tick_index": 2,
+      "ran": true,
+      "started_at": "2026-06-10T08:40:38.215Z",
+      "claude": {
+        "skipped": true,
+        "reason": "orchestrator-is-caller-session"
+      },
+      "summary": "updated legacy review-lane-run contract test to auto-review semantics; head-block skip propagates across inner loops",
+      "verifier_passed": true,
+      "finished_at": "2026-06-10T08:41:41.233Z",
+      "worktree": {
+        "available": true,
+        "before_dirty_count": 8,
+        "after_dirty_count": 8,
+        "changed": false,
+        "baseline_source": "mission_start",
+        "baseline_dirty_count": 2,
+        "new_since_baseline_count": 6,
+        "new_since_baseline_sample": [
+          "atris/MAP.md",
+          "commands/mission.js",
+          "commands/task.js",
+          "test/commands.test.js",
+          "test/mission-run-review-drain.test.js",
+          "test/review-lane-auto-review.test.js"
+        ],
+        "unverified_dirty": false,
+        "unverified_change": false,
+        "new_dirty_count": 0,
+        "cleared_dirty_count": 0,
+        "dirty_sample_after": [
+          " M .devin/config.local.json",
+          " M atris/MAP.md",
+          " M atris/wiki/STATUS.md",
+          " M commands/mission.js",
+          " M commands/task.js",
+          " M test/commands.test.js",
+          "?? test/mission-run-review-drain.test.js",
+          "?? test/review-lane-auto-review.test.js"
+        ],
+        "new_dirty_sample": [],
+        "cleared_dirty_sample": [],
+        "before_dirty_hash": "27cf281298fde33bab5f1e0bfb36c196dafb9566",
+        "after_dirty_hash": "27cf281298fde33bab5f1e0bfb36c196dafb9566"
+      }
+    },
+    "frozen": {
+      "verifier": "npm test",
+      "lane": "code",
+      "started_at": "2026-06-10T08:40:38.215Z"
+    },
+    "verifier_result": {
+      "command": "npm test",
+      "resolved_command": null,
+      "status": 0,
+      "signal": null,
+      "passed": true,
+      "stdout": " proof (5.104083ms)\n✔ task proof helper accepts commands, verifier results, receipts, and human approval (0.244125ms)\n✔ task CLI blocks weak ready proof, positive reviews without proof, and bare done (487.621708ms)\n✔ review queue surfaces validated receipt evidence from proof text (483.221084ms)\n✔ review queue flags missing and failing receipts named in proof (415.917541ms)\n✔ task accept surfaces receipt evidence without blocking the human (416.962583ms)\n✔ proofs without receipt paths carry no evidence block (326.555084ms)\n✔ review queue puts green-evidence items first and counts them (603.428917ms)\n✔ accept-group spot-check targets the weakest evidence first (717.145416ms)\n✔ review groups report how many tasks carry passing evidence (566.304291ms)\n✔ loadLessonMetadata returns empty object when sidecar absent (2.512875ms)\n✔ loadLessonMetadata returns parsed object when sidecar valid (0.784166ms)\n✔ loadLessonMetadata returns empty object on malformed JSON (no crash) (0.542792ms)\n✔ parseLessons returns empty when lessons.md missing (1.150333ms)\n✔ parseLessons extracts id/date/verdict/body from prose lines (0.79925ms)\n✔ parseLessons joins sidecar metadata by slug (0.668875ms)\n✔ runLessonDetector returns true on exit 0, false on non-zero (14.563291ms)\n✔ isLessonResolved uses detector when sidecar provides one (exit 0 → resolved) (10.6275ms)\n✔ isLessonResolved uses detector when sidecar provides one (exit 1 → not resolved) (7.875208ms)\n✔ isLessonResolved falls back to legacy grep when no sidecar detector (27.456917ms)\n✔ pickUnresolvedFailLesson prefers typed+detector over legacy (25.326291ms)\n✔ pickUnresolvedFailLesson respects status:resolved sidecar tag (0.991958ms)\n✔ pickUnresolvedFailLesson skips status:observed (process rules, not code bugs) (1.0625ms)\n✔ pickUnresolvedFailLesson still picks status:open even with detector showing non-zero (7.253333ms)\n✔ install git state is quiet outside git repos (11.266792ms)\n✔ install git state warns on dirty install checkout (62.702917ms)\n✔ install git state warns on detached install checkout (118.998666ms)\n✔ xp status --all aggregates verified local workspace ledgers (915.190583ms)\n✔ xp sync dry-run builds a path-private AgentXP packet (84.865375ms)\n✔ xp sync dry-run keeps earned AgentXP uncapped while form stays capped (83.353333ms)\n✔ xp sync dry-run carries local business binding for org attribution (86.020625ms)\n✔ xp sync dry-run allows public AgentXP opt-in for a business workspace (85.226167ms)\n✔ xp sync all avoids top-level org attribution across multiple businesses (156.228542ms)\n✔ xp sync infers player from accepted local proof before OS user (112.901333ms)\n✔ xp sync infers player from logged-in account profile when present (95.501792ms)\n✔ xp local activity detects assistant surfaces without inflating receipt XP (248.209083ms)\n✔ xp sync posts the packet with the AgentXP sync token (50.424166ms)\n✔ xp sync falls back to logged-in Atris auth when no sync token is set (43.788ms)\n✔ xp sync without login points public players to login-first sync (28.709333ms)\n✔ xp sync dry-run render points players to login-first publish (2.2755ms)\n✔ xp sync render shows server public identity mapping (0.14675ms)\n✔ xp status --all excludes tampered local ledgers from totals (130.424333ms)\n✔ xp status fails closed when receipt chain metadata is tampered (154.64825ms)\n✔ xp session writes a local capsule for the current proof-backed work window (90.250542ms)\n✔ xp session --no-write previews receipts without mutating the local ledger (76.30975ms)\n✔ xp session skips a partial trailing task episode without advancing the cursor (76.98925ms)\n✔ xp status cursor stays byte-aligned after newline-terminated JSONL append (152.643083ms)\n✔ xp status replays accepted episodes when the receipt ledger is missing (236.93975ms)\n✔ xp session reports an unreadable task projection without blocking verified XP (80.977375ms)\nℹ tests 830\nℹ suites 16\nℹ pass 830\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 62826.12625\n",
+      "stderr": ""
+    },
+    "rate_limit_info": null,
+    "worktree": {
+      "available": true,
+      "before_dirty_count": 8,
+      "after_dirty_count": 8,
+      "changed": false,
+      "baseline_source": "mission_start",
+      "baseline_dirty_count": 2,
+      "new_since_baseline_count": 6,
+      "new_since_baseline_sample": [
+        "atris/MAP.md",
+        "commands/mission.js",
+        "commands/task.js",
+        "test/commands.test.js",
+        "test/mission-run-review-drain.test.js",
+        "test/review-lane-auto-review.test.js"
+      ],
+      "unverified_dirty": false,
+      "unverified_change": false,
+      "new_dirty_count": 0,
+      "cleared_dirty_count": 0,
+      "dirty_sample_after": [
+        " M .devin/config.local.json",
+        " M atris/MAP.md",
+        " M atris/wiki/STATUS.md",
+        " M commands/mission.js",
+        " M commands/task.js",
+        " M test/commands.test.js",
+        "?? test/mission-run-review-drain.test.js",
+        "?? test/review-lane-auto-review.test.js"
+      ],
+      "new_dirty_sample": [],
+      "cleared_dirty_sample": [],
+      "before_dirty_hash": "27cf281298fde33bab5f1e0bfb36c196dafb9566",
+      "after_dirty_hash": "27cf281298fde33bab5f1e0bfb36c196dafb9566"
+    },
+    "passed": true
+  }
+}
