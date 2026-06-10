@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo, getTeamActivity } = require('../lib/todo');
-const { buildPacket } = require('./zero-shot');
+const { buildLatestCheck, buildPacket } = require('./zero-shot');
 
 const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
 const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
@@ -83,6 +83,7 @@ function readEndgameMeta(todoFile) {
 function zeroShotStatus(root = process.cwd()) {
   try {
     const packet = buildPacket({ cwd: root });
+    const check = buildLatestCheck({ cwd: root });
     const decision = packet.decision || {};
     const commands = packet.commands || {};
     const routes = packet.routes || {};
@@ -95,6 +96,17 @@ function zeroShotStatus(root = process.cwd()) {
       menu_command: commands.zero_shot_all || 'atris 0-shot --all',
       prompt_command: commands.zero_shot_prompt || 'atris 0-shot --prompt',
       json_command: commands.zero_shot_json || 'atris 0-shot --json',
+      check_command: check.check_command || 'atris 0-shot --check',
+      refresh_command: check.refresh_command || 'atris 0-shot --write',
+      durable_status: check.status || 'unknown',
+      prompt_exists: check.prompt_exists,
+      prompt_fresh: check.prompt_fresh,
+      menu_exists: check.menu_exists,
+      menu_fresh: check.menu_fresh,
+      model_prompts_fresh: check.model_prompts_fresh,
+      horizon_prompts_fresh: check.horizon_prompts_fresh,
+      menu_txt: check.menu_txt || '.atris/state/zero-shot.menu.txt',
+      prompt_txt: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
       horizon_counts: normalizeHorizonCounts(routes.horizons || {}),
       model_counts: normalizeModelCounts(routes.models || {}),
     };
@@ -108,6 +120,17 @@ function zeroShotStatus(root = process.cwd()) {
       menu_command: 'atris 0-shot --all',
       prompt_command: 'atris 0-shot --prompt',
       json_command: 'atris 0-shot --json',
+      check_command: 'atris 0-shot --check',
+      refresh_command: 'atris 0-shot --write',
+      durable_status: 'unavailable',
+      prompt_exists: false,
+      prompt_fresh: null,
+      menu_exists: false,
+      menu_fresh: null,
+      model_prompts_fresh: null,
+      horizon_prompts_fresh: null,
+      menu_txt: '.atris/state/zero-shot.menu.txt',
+      prompt_txt: '.atris/state/zero-shot.prompt.txt',
       horizon_counts: normalizeHorizonCounts({}),
       model_counts: normalizeModelCounts({}),
     };
@@ -134,6 +157,29 @@ function zeroShotBucketText(zeroShot) {
   const horizons = zeroShot.horizon_counts || normalizeHorizonCounts({});
   const models = zeroShot.model_counts || normalizeModelCounts({});
   return `horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
+}
+
+function zeroShotFreshnessLabel(exists, fresh) {
+  if (fresh) return 'fresh';
+  if (exists) return 'stale';
+  if (fresh === null || fresh === undefined) return 'unknown';
+  return 'missing';
+}
+
+function zeroShotGroupFreshnessLabel(fresh) {
+  if (fresh === true) return 'fresh';
+  if (fresh === false) return 'stale_or_missing';
+  return 'unknown';
+}
+
+function zeroShotDurableText(zeroShot) {
+  return [
+    `status=${zeroShot.durable_status || 'unknown'}`,
+    `prompt=${zeroShotFreshnessLabel(zeroShot.prompt_exists, zeroShot.prompt_fresh)}`,
+    `menu=${zeroShotFreshnessLabel(zeroShot.menu_exists, zeroShot.menu_fresh)}`,
+    `model=${zeroShotGroupFreshnessLabel(zeroShot.model_prompts_fresh)}`,
+    `horizon=${zeroShotGroupFreshnessLabel(zeroShot.horizon_prompts_fresh)}`,
+  ].join(' ');
 }
 
 function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
@@ -237,7 +283,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
 
   // Quick mode
   if (isQuick) {
-    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'} | ${zeroShotBucketText(zeroShot)}`);
+    console.log(`📋 ${todo.backlog.length} | 🔨 ${todo.inProgress.length} | ✅ ${todo.completed.length} | 📥 ${inboxItems.length} | 📚 ${lessonsCount} | 0-shot ${zeroShot.lane}${zeroShot.selected_ref ? ` ${zeroShot.selected_ref}` : ''} | menu ${zeroShot.menu_command || 'atris 0-shot --all'} | durable ${zeroShotDurableText(zeroShot)} | ${zeroShotBucketText(zeroShot)}`);
     return;
   }
 
@@ -262,6 +308,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
     const queueParts = [];
     queueParts.push(`0-shot: ${zeroShotStatusText(zeroShot)}.`);
     queueParts.push(`0-shot menu: ${zeroShot.menu_command || 'atris 0-shot --all'}.`);
+    queueParts.push(`0-shot durable: ${zeroShotDurableText(zeroShot)}; check with ${zeroShot.check_command || 'atris 0-shot --check'}.`);
     queueParts.push(`0-shot buckets: ${zeroShotBucketText(zeroShot)}.`);
     if (todo.inProgress[0]) {
       queueParts.push(...compactWrappedText(`In progress: ${todo.inProgress[0].title}.`, 74, 2));
@@ -403,6 +450,7 @@ function statusAtris(isQuick = false, jsonMode = false, verbose = false) {
   o('  plan → do → review    (or: atris log to add ideas)');
   o(`  0-shot → ${zeroShotStatusText(zeroShot)}`);
   o(`  0-shot menu → ${zeroShot.menu_command || 'atris 0-shot --all'}`);
+  o(`  0-shot durable → ${zeroShotDurableText(zeroShot)}`);
   o(`  0-shot buckets → ${zeroShotBucketText(zeroShot)}`);
   o('');
 }
