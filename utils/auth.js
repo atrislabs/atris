@@ -324,7 +324,15 @@ function saveCredentials(token, refreshToken, email, userId, provider) {
 }
 
 function loadCredentials() {
-  // Priority: ATRIS_PROFILE env var → per-terminal session file → global credentials.json
+  // Priority: ATRIS_TOKEN env var → ATRIS_PROFILE env var → per-terminal session file → global credentials.json
+
+  // 0. Raw token injection. Headless boxes (cloud business computers) have no
+  //    browser for `atris login`; the runner injects a scoped token as env
+  //    instead, so no credentials file ever lands on disk.
+  const envToken = process.env.ATRIS_TOKEN;
+  if (envToken && envToken.trim()) {
+    return { token: envToken.trim(), provider: null, source: 'env' };
+  }
 
   // 1. Explicit env var override
   const profileOverride = process.env.ATRIS_PROFILE;
@@ -481,9 +489,10 @@ async function ensureValidCredentials(apiRequestJson, options = {}) {
     const updatedUserId = user?.id || credentials.user_id;
 
     if (
-      updatedEmail !== credentials.email ||
-      updatedProvider !== credentials.provider ||
-      updatedUserId !== credentials.user_id
+      credentials.source !== 'env' &&
+      (updatedEmail !== credentials.email ||
+        updatedProvider !== credentials.provider ||
+        updatedUserId !== credentials.user_id)
     ) {
       saveCredentials(
         credentials.token,
