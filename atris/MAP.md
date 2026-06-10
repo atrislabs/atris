@@ -143,6 +143,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes `routes.options[]` with ref, lane, horizon, work size, model tier, first command, and directive for active work
 - **Route summary:** JSON includes `routes.horizons` counts plus `routes.models` grouped by fast/pro/validator/human, with count and first route for each tier
+- **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON
 - **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
 - **Any-model handoff:** JSON includes `handoff.prompt`, and `atris 0-shot --prompt` / no-request `atris next --prompt` print the selected prompt directly
 - **Long-horizon route:** active missions with an unpassed verifier use `mission_tick` before unrelated task work

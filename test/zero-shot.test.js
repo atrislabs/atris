@@ -125,6 +125,8 @@ test('zero-shot falls back to radar when no current task exists', () => {
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /route: no_current_task/);
     assert.match(res.stdout, /run: atris radar --json/);
+    assert.match(res.stdout, /horizons: now=0 immediate_review=0 long_term=0 blocked=0 orient=0/);
+    assert.match(res.stdout, /models: fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /prompt: atris 0-shot --prompt/);
   } finally {
     cleanupTempDir(dir);
@@ -767,6 +769,26 @@ test('zero-shot --json includes a typed route index for mixed work', () => {
     assert.equal(missingValidatorPacket.commands.first_command, 'atris radar --json');
     assert.equal(missingValidatorPacket.routes.models.validator.count, 0);
     assert.match(missingValidatorPacket.handoff.prompt, /No validator model route is available/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('zero-shot human output summarizes work by horizon and model tier', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'FAST-1', title: 'Fix CLI help copy', status: 'claimed', tag: 'cli' },
+      { display_id: 'ARC-1', title: 'Plan architecture migration roadmap', status: 'claimed', tag: 'architecture' },
+      { display_id: 'OWN-2', title: 'Publish release after human approval', status: 'claimed', tag: 'release' },
+      { display_id: 'FAIL-1', title: 'Fix failing release gate', status: 'failed', tag: 'release' },
+    ]);
+
+    const res = runCli(['zero-shot'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /routes: OWN-2:owner_gate\/human, FAIL-1:recovery_lane\/pro, FAST-1:fast_model_task\/fast/);
+    assert.match(res.stdout, /horizons: now=2 immediate_review=0 long_term=1 blocked=1 orient=0/);
+    assert.match(res.stdout, /models: fast=1 pro=2 validator=0 human=1/);
   } finally {
     cleanupTempDir(dir);
   }

@@ -97,6 +97,7 @@ atris next
 `atris 0-shot`, `atris zero-shot`, and no-request `atris next` are the defaults when you do not know what to prompt next.
 The 0-shot command also accepts natural spellings like `atris 0 shot`, `atris 0shot`, `atris zero shot`, and `atris zeroshot`.
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
+The plain output shows horizon and model-tier counts so you can see quick, long-term, validator, and human-gated work at a glance.
 Use `--model fast`, `--model pro`, `--model validator`, or `--model human` to pick the first route suitable for that model tier instead of the global first route.
 If the task projection is missing, 0-shot reads `atris/TODO.md` as a read-only fallback so fresh workspaces still get a lane.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.

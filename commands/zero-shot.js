@@ -38,6 +38,7 @@ const LANE_PRIORITY = {
   no_current_task: 8,
 };
 const MODEL_TIERS = ['fast', 'pro', 'validator', 'human'];
+const HORIZON_ORDER = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
 
 function modelPromptRelativePath(tier) {
   return `.atris/state/zero-shot.${tier}.prompt.txt`;
@@ -916,6 +917,26 @@ function renderRouteSummary(routes) {
   return `routes: ${summary}${suffix}`;
 }
 
+function renderCountSummary(label, summary, orderedKeys) {
+  const counts = summary && typeof summary === 'object' ? summary : {};
+  const seen = new Set(orderedKeys);
+  const parts = orderedKeys.map(key => `${key}=${Number(counts[key] || 0)}`);
+  Object.keys(counts)
+    .filter(key => !seen.has(key))
+    .sort()
+    .forEach(key => parts.push(`${key}=${Number(counts[key] || 0)}`));
+  return `${label}: ${parts.join(' ')}`;
+}
+
+function renderModelSummary(models) {
+  const counts = {};
+  for (const tier of MODEL_TIERS) counts[tier] = models && models[tier] ? models[tier].count || 0 : 0;
+  for (const [tier, value] of Object.entries(models || {})) {
+    if (!Object.prototype.hasOwnProperty.call(counts, tier)) counts[tier] = value && value.count || 0;
+  }
+  return renderCountSummary('models', counts, MODEL_TIERS);
+}
+
 function renderPacket(packet) {
   const selected = packet.decision.selected_ref
     ? `${packet.decision.selected_ref} - ${packet.decision.selected_title}`
@@ -928,6 +949,8 @@ function renderPacket(packet) {
     `run: ${packet.commands.next_command}`,
     `queue: ${packet.queue.claimed} claimed, ${packet.queue.review} review, ${packet.queue.open} open, ${packet.queue.blocked} blocked, ${packet.queue.failed} failed`,
     renderRouteSummary(packet.routes),
+    renderCountSummary('horizons', packet.routes && packet.routes.horizons, HORIZON_ORDER),
+    renderModelSummary(packet.routes && packet.routes.models),
     `prompt: ${packet.commands.zero_shot_prompt}`,
     `write: ${packet.commands.zero_shot_write} -> ${packet.durable.latest_json}`,
     `check: ${packet.freshness.check_command}`,
