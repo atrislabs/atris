@@ -182,6 +182,8 @@ test('renderDefaultNow includes the current zero-shot route', () => {
     assert.match(content, /0-shot files: `\.atris\/state\/zero-shot\.menu\.txt`, `\.atris\/state\/zero-shot\.prompt\.txt`/);
     assert.match(content, /0-shot inventory: routes total=1 compact=1 hidden=0 full=routes\.all_options/);
     assert.match(content, /0-shot buckets: horizons now=1 review=0 long=0 blocked=0; models fast=1 pro=0 validator=0 human=0/);
+    assert.match(content, /0-shot first by horizon: now=CZS-1\/fast review=none long=none blocked=none orient=none/);
+    assert.match(content, /0-shot first by model: fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(content, /Run `atris 0-shot --all` to inspect every 0-shot route before choosing work/);
     assert.match(content, /Trust `\.atris\/state\/zero-shot\.menu\.txt` and prompt files only when `atris 0-shot --check` reports fresh; otherwise run `atris 0-shot --write`/);
     assert.match(content, /Run `atris task current-step --tag cli --json` only when you are already following the selected 0-shot lane/);
