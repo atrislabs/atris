@@ -9,11 +9,13 @@ sources:
   - commands/autopilot.js
   - lib/scorecard.js
   - commands/task.js
+  - commands/lesson.js
+  - lib/policy-lessons.js
   - lib/task-db.js
 created: 2026-04-09
-updated: 2026-05-10
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+updated: 2026-06-10
+last_compiled: 2026-06-10
+last_verified: 2026-06-10
 confidence: 0.84
 dependencies:
   - atris/wiki/concepts/plan-do-review-loop.md
@@ -36,7 +38,8 @@ Atris can close work on deterministic checks, record reward from those checks, a
 - **Action surface** — `plan`, `do`, `review`, and `autopilot` act on real repo state.
 - **Truth substrate** — tasks and feature rubrics can carry `Verify:` commands that exit cleanly or fail mechanically.
 - **Confidence substrate** — plan, do, and review run the Confidence Gate so loopholes are patched or named before advancing.
-- **Task reward substrate** — `atris task review` and `done --proof` can record proof, reward, lessons, lineage, and next tasks in local state.
+- **Task reward substrate** — `atris task ready --proof` puts agent work in Review (cited receipts must exist and pass on disk), `atris task review` records reward/lessons/lineage, and `review-lane-run` drains the queue to certified agent-side.
+- **Policy lesson substrate** — `atris lesson mine` turns accepted receipts, review episodes, and scorecards into policy lessons that coach the next `ready` submission (evidence-backed hints, not vibes).
 - **AgentXP substrate** — `atris play`, `atris gm`, and `atris xp` run the proof-backed game loop; no proof means no AgentXP, and only human `atris task accept` mints Career XP for the local card or hosted leaderboard.
 - **Autopilot reward substrate** — autopilot tick summaries can write reward into the journal from observable signals.
 - **Scorecard memory** — closed endgame horizons can append `.atris/presidio/scorecards.md` when that rail is active.
@@ -46,9 +49,10 @@ Atris can close work on deterministic checks, record reward from those checks, a
 
 1. Work enters `atris task` with an owner, context, exit condition, and proof target.
 2. The agent executes plan -> do -> review and runs the declared verification.
-3. The task is finished only with proof; `atris task done --proof` records review/RL context, but only human `atris task accept` closes the task and mints Career XP. Review can add reward, lesson, and next task linkage.
+3. The agent moves work to Review with `atris task ready --proof`; the lane checks cited receipts against disk and policy hints coach evidence-less proofs. Agent review passes certify the work, but only human `atris task accept` closes the task and mints Career XP. Review can add reward, lesson, and next task linkage.
 4. Autopilot/endgame runs add a second rail: tick reward, verify pass/fail, commit registry, and optional closed-horizon scorecards.
-5. Future routing can use recent task/reward history and scorecards, but the system stays local-first.
+5. Accepted receipts feed back into the loop: `atris lesson mine` distills them into policy lessons that change live submission behavior, so the gate teaches the agents it gates.
+6. Future routing can use recent task/reward history and scorecards, but the system stays local-first.
 
 ## Privacy boundary
 

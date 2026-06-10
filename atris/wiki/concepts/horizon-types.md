@@ -8,8 +8,8 @@ sources:
   - atris/MAP.md
 created: 2026-04-09
 updated: 2026-05-10
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+last_compiled: 2026-06-10
+last_verified: 2026-06-10
 confidence: 0.86
 dependencies:
   - atris/wiki/concepts/verifiable-reward-loop.md

@@ -2,9 +2,9 @@
 title: Recursive self-improvement — capability position
 type: concept
 status: living
-last_reviewed: 2026-06-08
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+last_reviewed: 2026-06-10
+last_compiled: 2026-06-10
+last_verified: 2026-06-10
 sources:
   - commands/improve.js
   - atris/experiments/policy-optimize/README.md
@@ -36,6 +36,13 @@ machinery** for 5 verified ticks — each shipped a real feature with tests, two
 the bugs found by running it live. That is real capability the system did not have
 before. It is **leverage-axis**: it makes a fixed-intelligence agent more effective
 and reliable; it does not change model weights.
+
+The lesson-mining rail extends this: `atris lesson mine` distilled 147 accepted
+receipts, 326 review episodes, and 12 scorecards into policy lessons that coach
+agents at `ready` time, with a live before/after receipt showing the hints changed
+a real submission with zero human turns
+(`atris/dogfood/policy-lessons-before-after-2026-06-10.json`). Same axis — the
+system now teaches its agents from its own accepted history.
 
 ## The mechanism, demonstrated at three levels
 
