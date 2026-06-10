@@ -374,7 +374,11 @@ function firstUsefulLine(text) {
 
 function compactSentence(text, max = 120) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim();
-  return clean.length > max ? `${clean.slice(0, Math.max(0, max - 1)).trim()}...` : clean;
+  if (clean.length <= max) return clean;
+  // Cut at a word boundary so titles never end mid-word ("rollb...").
+  const cut = clean.slice(0, Math.max(0, max - 1));
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trim()}...`;
 }
 
 function activeRuntimeMissionFromNow(nowText) {
@@ -2016,13 +2020,37 @@ function listFilesBounded(rootDir, { maxFiles = 220, extensions = ['.md', '.txt'
   return files;
 }
 
+function stripAutoImproverTitleNoise(text) {
+  let clean = String(text || '').replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < 6; i += 1) {
+    const next = clean
+      .replace(/^auto[- ]improver:\s*/i, '')
+      .replace(/^recurring log pattern:\s*/i, '')
+      .replace(/^candidate:\s*/i, '')
+      .trim();
+    if (next === clean) break;
+    clean = next;
+  }
+  return compactSentence(clean, 180);
+}
+
+function isAutoImproverGeneratedLogLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return false;
+  if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
+  if (/\bauto_improver\b/i.test(text)) return true;
+  if (/^-\s*candidate:\s*recurring log pattern:/i.test(text)) return true;
+  if (/recurring log pattern:\s*(candidate:|recurring log pattern:)/i.test(text)) return true;
+  return false;
+}
+
 function normalizeFailurePattern(line) {
-  return compactSentence(String(line || '')
+  return stripAutoImproverTitleNoise(String(line || '')
     .replace(/^\s*[-*]\s*/, '')
     .replace(/\b\d{4}-\d{2}-\d{2}[T ][^\s]+/g, '<timestamp>')
     .replace(/[0-9a-f]{10,}/gi, '<hash>')
     .replace(/\b\d+\b/g, '#')
-    .trim(), 180);
+    .trim());
 }
 
 function collectAutoImproverLogSignals(root) {
@@ -2052,6 +2080,7 @@ function collectAutoImproverLogSignals(root) {
       linesScanned += lines.length;
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
+        if (isAutoImproverGeneratedLogLine(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
         if (unclearRegex.test(line)) unclearNextActions += 1;
         if (!failureRegex.test(line)) continue;
@@ -2297,7 +2326,7 @@ function collectAutoImproverScan(root = process.cwd()) {
     findings.push({
       source: 'repeated_failure',
       severity: failure.count >= 5 ? 'high' : 'medium',
-      title: `Recurring log pattern: ${failure.pattern}`,
+      title: `Recurring log pattern: ${stripAutoImproverTitleNoise(failure.pattern)}`,
       problem: `The same failure-like line appeared ${failure.count} times.`,
       recommendation: 'Create a bounded fix task before this pattern turns into a larger support/debug loop.',
       evidence: failure.evidence,
@@ -2395,7 +2424,8 @@ function findExistingAutoImproverTask(title) {
 }
 
 function createAutoImproverTask(candidate, receiptPath) {
-  const title = `Auto-improver: ${compactSentence(candidate?.title || 'Prevent top dogfood failure', 92)}`;
+  const core = stripAutoImproverTitleNoise(candidate?.title || 'Prevent top dogfood failure');
+  const title = `Auto-improver: ${compactSentence(core, 92)}`;
   const existing = findExistingAutoImproverTask(title);
   if (existing) {
     return {
@@ -2544,7 +2574,7 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
     prevented: payload.proof.prevented_suffering,
     pain_before: payload.pain.before,
     pain_after: payload.pain.after,
-    candidate: candidate?.title || '',
+    candidate: candidate ? stripAutoImproverTitleNoise(candidate.title) : '',
     task: payload.created_task?.task_ref || '',
     receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
   });
@@ -3476,7 +3506,43 @@ function memberGoalFromMission(name, ...args) {
   const state = loadMemberGoals(name, paths);
   const runtime = purpose.runtimeMission;
   const runtimeFocus = runtime.heading || purpose.northStar;
-  const title = `Prove one bounded step toward: ${compactSentence(runtimeFocus, 88)}`;
+  if (lowerCompact(runtime.status || '') === 'blocked') {
+    const ask = runtime.next
+      ? `${compactSentence(runtimeFocus, 120)} is blocked. ${compactSentence(runtime.next, 180)}`
+      : `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is blocked. Human should unblock or revise before this member reuses its goal.`;
+    const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-mission blocked', {
+      ask,
+      mission_id: runtime.id || '',
+      mission_status: runtime.status || 'blocked',
+      next: runtime.next || '',
+    });
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'needs_user',
+        member: name,
+        needs_user: true,
+        ask,
+        mission: {
+          north_star: purpose.northStar,
+          runtime_id: runtime.id || null,
+          runtime_status: runtime.status || null,
+          runtime_next: runtime.next || null,
+        },
+        mission_file: paths.missionFile,
+        log_path: logPath,
+      },
+      [
+        `Blocked for ${name}: active mission is blocked.`,
+        `Ask: ${ask}`,
+      ],
+      asJson,
+    );
+    return;
+  }
+  // The title IS the mission focus — no boilerplate prefix; the acceptance list already
+  // says "one bounded step" and the why carries the full sentence.
+  const title = compactSentence(runtimeFocus, 96);
   const existing = state.goals.find((goal) => (
     goal.source === 'mission'
     && goal.status === 'active'
@@ -3510,6 +3576,8 @@ function memberGoalFromMission(name, ...args) {
     history: [],
   };
   goal.status = 'active';
+  // Refresh the title on reuse so older bloated/truncated titles self-heal on the next tick.
+  goal.title = title;
   goal.cadence = cadence || goal.cadence || 'manual';
   goal.source = 'mission';
   goal.why = goal.why || compactSentence(purpose.northStar, 240);
@@ -3692,22 +3760,18 @@ function fallbackProposalForGoal(goal, context = {}) {
   const drill = scoreEvidence?.drill || null;
   const fileEvidence = context?.evidence?.goal_files || context?.goal_files || null;
   const primaryFile = (fileEvidence?.files || []).find((file) => file.exists && file.excerpt) || null;
-  const fileInstruction = primaryFile
-    ? `Use ${primaryFile.path} evidence to produce one receipt-backed bounded proof step for: ${goal.title}`
-    : '';
+  // Don't restate the goal title inside the experiment — the experiment lives under the goal.
   const title = drill && target
     ? `Run ${target.label || target.slug} drill: ${compactSentence(drill, 96)}`
     : drill
       ? `Run score drill: ${compactSentence(drill, 108)}`
-      : primaryFile
-        ? `Use ${primaryFile.path}: ${compactSentence(goal.title, 88)}`
-        : `Run next proof step for ${goal.title}`;
+      : `Next proof step: ${compactSentence(goal.title, 96)}`;
   const nextStep = drill
     ? drill
-    : fileInstruction
-      ? fileInstruction
+    : primaryFile
+      ? `Read ${primaryFile.path} and take one receipt-backed step toward the goal.`
     : goal.source === 'mission'
-      ? `Use ${goal.mission_file || 'MISSION.md'} to produce one receipt-backed bounded proof step for: ${goal.title}`
+      ? `Read ${goal.mission_file || 'MISSION.md'} and take one receipt-backed step toward the goal.`
       : criteria;
   return {
     id: makeExperimentId(goal.id, title),
@@ -6589,6 +6653,9 @@ async function memberLoop(name, ...args) {
   const force = hasFlag(args, '--force');
   const stop = hasFlag(args, '--stop');
   const status = hasFlag(args, '--status');
+  const agentFlag = String(readFlag(args, '--agent', '') || '').trim().toLowerCase();
+  const agent = agentFlag === 'claude' ? 'claude' : agentFlag === 'codex' ? 'codex' : undefined;
+  const model = String(readFlag(args, '--model', '') || '').trim() || undefined;
   const operateMaxWall = Math.max(60, Math.min(1800, Number(readNumberFlag(args, '--operate-max-wall', readNumberFlag(args, '--max-wall', 900)))));
   const autoAcceptLimit = Math.max(1, Math.floor(Number(readNumberFlag(args, '--auto-accept-limit', 8))));
   const paths = memberLoopPaths(name);
@@ -6731,6 +6798,12 @@ async function memberLoop(name, ...args) {
   const decisions = {};
   let stopped = false;
   let failed = false;
+  // Stop spinning: if the member can do no real work for this many ticks in a row (waiting on a
+  // human review, blocked, or no goal), break early and surface a clear handoff instead of
+  // burning every remaining tick on the same no-op decision.
+  let earlyExit = null;
+  let consecutiveIdle = 0;
+  const idleBreakThreshold = 2;
 
   try {
     for (let index = 0; index < ticks; index += 1) {
@@ -6746,6 +6819,8 @@ async function memberLoop(name, ...args) {
             execute,
             confirmed,
             force,
+            agent,
+            model,
             maxWallSeconds: operateMaxWall,
             autoAcceptLimit,
             noPrime: index > 0,
@@ -6765,6 +6840,8 @@ async function memberLoop(name, ...args) {
             has_mission: alive.has_mission === true,
             has_goal: alive.has_goal === true,
             has_steering: false,
+            productive: alive.status === 'completed',
+            blocked_on_human: alive.blocked_on_human === true,
             operate_ok: alive.operate?.ok,
             auto_accept_accepted: alive.auto_accept?.json?.summary?.accepted ?? alive.auto_accept?.json?.summary?.would_accept,
             receipt_path: alive.receipt_path || alive.operate?.receipt_path || null,
@@ -6789,6 +6866,10 @@ async function memberLoop(name, ...args) {
           has_mission: wake.checks?.has_mission === true,
           has_goal: wake.checks?.has_goal === true,
           has_steering: wake.checks?.has_steering === true,
+          productive: wake.executed === true
+            || /executed/.test(wake.reason || '')
+            || ['tick', 'close_loop', 'report_proof', 'create_missing_task', 'create_task', 'set_objective'].includes(wake.decision),
+          blocked_on_human: wake.needs_user === true || /^open_experiment_/.test(wake.reason || ''),
           current_experiment: wake.current_experiment?.id || null,
           receipt_path: wake.receipt_path,
         };
@@ -6808,6 +6889,25 @@ async function memberLoop(name, ...args) {
         fs.appendFileSync(tickLogPath, JSON.stringify(tick) + '\n', 'utf8');
         break;
       }
+      if (execute) {
+        const last = tickResults[tickResults.length - 1];
+        if (last && last.productive) {
+          consecutiveIdle = 0;
+        } else if (last) {
+          consecutiveIdle += 1;
+          if (consecutiveIdle >= idleBreakThreshold) {
+            earlyExit = {
+              after_tick: last.tick,
+              decision: last.decision || null,
+              reason: last.reason || 'idle',
+              needs_user: last.needs_user === true,
+              blocked_on_human: last.blocked_on_human === true || last.needs_user === true,
+              next_command: last.next_command || null,
+            };
+            break;
+          }
+        }
+      }
       if (index < ticks - 1 && intervalMs > 0) sleepSync(intervalMs);
     }
   } finally {
@@ -6821,7 +6921,7 @@ async function memberLoop(name, ...args) {
     schema: aliveMode ? 'atris.member_alive.v1' : 'atris.member_loop.v1',
     member: name,
     alive: aliveMode,
-    status: failed ? 'failed' : stopped ? 'stopped' : 'completed',
+    status: failed ? 'failed' : stopped ? 'stopped' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
     mode: execute ? 'execute' : 'dry_run',
     run_id: runId,
     ticks_requested: ticks,
@@ -6830,6 +6930,10 @@ async function memberLoop(name, ...args) {
     duration_ms_requested: durationMs,
     duration_ms_actual: Date.parse(finishedAt) - Date.parse(startedAt),
     decisions,
+    early_exit: earlyExit,
+    blocked_on_human: earlyExit?.blocked_on_human === true,
+    needs_user: earlyExit?.needs_user === true,
+    next_command: earlyExit?.next_command || null,
     has_mission_all_ticks: tickResults.length > 0 && tickResults.every((tick) => tick.has_mission === true),
     has_goal_all_ticks: tickResults.length > 0 && tickResults.every((tick) => tick.has_goal === true),
     has_steering_all_ticks: tickResults.length > 0 && tickResults.every((tick) => tick.has_steering === true),
