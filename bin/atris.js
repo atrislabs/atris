@@ -990,6 +990,7 @@ async function interactiveEntry(userInput) {
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);
+    console.log('Routes: atris 0-shot --all | model: atris 0-shot --model fast|pro|validator|human --prompt | horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt');
   } catch {}
 
   // Surface live missions so the operator sees durable goals alongside dev WIP.
@@ -1178,7 +1179,7 @@ function showWelcomeVisualization() {
       } = require('../commands/zero-shot');
       console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff.`);
+    console.log(`    Ready. Run 'atris 0-shot --all' to inspect the route menu, 'atris 0-shot --model fast|pro|validator|human --prompt' for a model lane, or 'atris 0-shot --horizon now|review|long|blocked|orient --prompt' for a time horizon.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }

@@ -1286,6 +1286,7 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
     assert.match(res.stdout, /horizon first now=none review=none long=none blocked=none orient=none/);
+    assert.match(res.stdout, /Routes: atris 0-shot --all \| model: atris 0-shot --model fast\|pro\|validator\|human --prompt \| horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
@@ -1309,7 +1310,7 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.match(res.stdout, /routes total=1 hidden=0 \| horizons now=1 review=0 long=0 blocked=0 orient=0 \| models fast=1 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=CZS-1\/fast pro=none validator=none human=none/);
     assert.match(res.stdout, /horizon first now=CZS-1\/fast review=none long=none blocked=none orient=none/);
-    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, or 'atris 0-shot --prompt' for a copy-paste handoff\./);
+    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --all' to inspect the route menu, 'atris 0-shot --model fast\|pro\|validator\|human --prompt' for a model lane, or 'atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt' for a time horizon\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);

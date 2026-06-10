@@ -124,7 +124,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js` routes `0-shot` and `zero-shot`, prints a 0-shot hint on bare `atris`, and refreshes the ambient latest files
 - **Natural aliases:** `bin/atris.js` normalizes `0shot`, `0 shot`, `zeroshot`, and `zero shot` to `0-shot` before dispatch
-- **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot --all` and refreshes the ambient latest files
+- **First-message boot:** `bin/atris.js` `interactiveEntry()` and `showWelcomeVisualization()` point initialized workspaces at `atris 0-shot --all`, direct model-tier prompts, direct horizon prompts, and refresh the ambient latest files
 - **Implementation:** `commands/zero-shot.js`
 - **Activation surface:** `commands/activate.js` prints the current 0-shot route plus owner-gate context, route inventory, horizon/model buckets, first-by-model and first-by-horizon picks, durable prompt/menu/model/horizon freshness, all-route menu/global/model/horizon prompt commands, and refreshes the ambient latest files
 - **Member activation:** `commands/member.js` prints the current 0-shot route plus owner-gate context, route inventory, horizon/model buckets, first-by-model and first-by-horizon picks, durable prompt/menu/model/horizon freshness, all-route menu/global/model/horizon prompt commands, and refreshes the ambient latest files when waking a named member
