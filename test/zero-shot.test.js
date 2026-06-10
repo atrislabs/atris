@@ -791,8 +791,10 @@ test('activate surfaces the zero-shot next route', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
     assert.match(res.stdout, /Next: atris 0-shot --prompt/);
+    assert.match(res.stdout, /atris 0-shot --model <tier> --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
     assert.equal(latest.durable.wrote, true);
     assert.equal(latest.decision.selected_ref, 'CZS-1');
@@ -828,9 +830,10 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /WORKSPACE DETECTED/);
     assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
-    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --prompt' to choose the next move\./);
+    assert.match(res.stdout, /Ready\. Run 'atris 0-shot --prompt' or 'atris 0-shot --model <tier> --prompt' to choose the next move\./);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt')), true);
     const latest = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json'), 'utf8'));
     assert.equal(latest.decision.selected_ref, 'CZS-1');
   } finally {

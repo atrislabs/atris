@@ -126,10 +126,10 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Natural aliases:** `bin/atris.js` normalizes `0shot`, `0 shot`, `zeroshot`, and `zero shot` to `0-shot` before dispatch
 - **First-message boot:** `bin/atris.js` `showWelcomeVisualization()` points initialized workspaces at `atris 0-shot` and refreshes the ambient latest files
 - **Implementation:** `commands/zero-shot.js`
-- **Activation surface:** `commands/activate.js` prints the current 0-shot route plus `atris 0-shot --prompt`, and refreshes the ambient latest files
+- **Activation surface:** `commands/activate.js` prints the current 0-shot route plus global and model-tier prompt commands, and refreshes the ambient latest files
 - **Member activation:** `commands/member.js` prints the current 0-shot route and refreshes the ambient latest files when waking a named member
 - **Brain activation:** `commands/brain.js` includes the 0-shot route/direct prompt command in `atris brain activate`, and refreshes the ambient latest files
-- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris 0-shot --prompt` and tell ambient agents to trust `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports fresh
+- **Agent adapters:** `commands/init.js`, `commands/sync.js`, root `AGENTS.md`, `.cursorrules`, `CLAUDE.md`, `GEMINI.md`, `atris/CLAUDE.md`, and `atris/GEMINI.md` point vague/empty prompts at `atris 0-shot --prompt` or `atris 0-shot --model fast|pro|validator|human --prompt`, and tell ambient agents to trust global/tier prompt files only after `atris 0-shot --check` reports fresh
 - **Regression:** `test/zero-shot.test.js`
 - **Reads:** `atris/brain/STATUS.md`, `.atris/state/tasks.projection.json`, `atris/TODO.md`, `.atris/state/missions.jsonl`, `.atris/state/codex_goal.json`
 - **TODO fallback:** If `.atris/state/tasks.projection.json` is missing or empty, `commands/zero-shot.js` parses `atris/TODO.md`, emits `kind: todo`, preserves read-only boundaries, and points the first command at `atris status --json`

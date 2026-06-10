@@ -194,7 +194,7 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     'atris member activate operator',
     '```',
     '',
-    'Ambient agents may read `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.',
+    'Ambient agents may read `.atris/state/zero-shot.prompt.txt` or a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.',
     '',
     'If no active mission exists, start the first bounded business loop:',
     '',
@@ -590,8 +590,8 @@ You are now running inside Atris, an AI workspace operating system.
 
 **ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
-If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff. Use \`atris 0-shot --json\` when you need structured route metadata.
-Ambient agents may read \`.atris/state/zero-shot.prompt.txt\` only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --prompt\`.
+If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff; if you know your tier, run \`atris 0-shot --model fast|pro|validator|human --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
+Ambient agents may read \`.atris/state/zero-shot.prompt.txt\` or a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --prompt\`.
 
 After displaying the boot output, respond to the user naturally.
 <!-- ATRIS:END -->

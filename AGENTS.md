@@ -11,8 +11,8 @@ atris task claim <id> --as <agent>
 ```
 
 Run `atris` first. It prints repo state, the files to read, and the next command.
-If the prompt is vague or empty, run `atris 0-shot --prompt` and follow the handoff before choosing work. Use `atris 0-shot --json` when you need structured route metadata.
-Ambient agents may read `.atris/state/zero-shot.prompt.txt` only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.
+If the prompt is vague or empty, run `atris 0-shot --prompt` and follow the handoff before choosing work; if you know your tier, run `atris 0-shot --model fast|pro|validator|human --prompt`. Use `atris 0-shot --json` when you need structured route metadata.
+Ambient agents may read `.atris/state/zero-shot.prompt.txt` or a tier prompt (`.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, `.atris/state/zero-shot.human.prompt.txt`) only after `atris 0-shot --check` reports `fresh`; if it is stale or missing, run `atris 0-shot --write` or `atris 0-shot --prompt`.
 
 If there is no existing task, create one before editing:
 

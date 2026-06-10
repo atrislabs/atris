@@ -555,7 +555,7 @@ function showNextHelp(commandName = 'next') {
   console.log('Options:');
   console.log('  --json       Print the zero-shot machine-readable packet when no request is provided.');
   console.log('  --prompt     Print the copy-pasteable zero-shot prompt when no request is provided.');
-  console.log('  --write      Refresh .atris/state/zero-shot.latest.json and zero-shot.prompt.txt.');
+  console.log('  --write      Refresh .atris/state/zero-shot.latest.json, zero-shot.prompt.txt, and per-model prompts.');
   console.log('  --check      Check whether durable zero-shot files are fresh.');
   console.log('  --help, -h   Show this help.');
   console.log('');
@@ -1178,7 +1178,7 @@ function showWelcomeVisualization() {
       } = require('../commands/zero-shot');
       console.log(`    ${renderZeroShotHint(writeLatestZeroShotPacket(buildZeroShotPacket({ cwd })))}`);
     } catch {}
-    console.log(`    Ready. Run 'atris 0-shot --prompt' to choose the next move.`);
+    console.log(`    Ready. Run 'atris 0-shot --prompt' or 'atris 0-shot --model <tier> --prompt' to choose the next move.`);
   } else {
     console.log(`    Ready. Run 'atris init' to create the workspace.`);
   }
