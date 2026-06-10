@@ -13,6 +13,13 @@
 
 ## Review
 
+- **[CLI-224]** task day header: review count inflated by failed+unreviewed-done; show lane truth [tasks]
+- **[CLI-223]** skill audit: no-xml-tags flags placeholders inside code blocks (9 skills false-FAIL) [cli-ux]
+- **[CLI-222]** Revalidate 8 stale feature packs: heal drifted line refs, rerun rubric checks, bump last_compiled [wiki]
+- **[CLI-221]** Recompile stale wiki pages that feed agent boot (systems/atris-cli, overview brief, concepts) [wiki]
+- **[CLI-220]** Heal workspace drift: 82 stale MAP.md refs + archive 33 old journals via atris clean [maintenance]
+- **[CLI-219]** task day: collapse failed tasks older than 7 days into one summary line [tasks]
+- **[CLI-218]** Boot panel reads task projection truth (backlog/active/review) instead of stale TODO.md parse [cli-ux]
 - **[CLI-217]** Policy hint false positive: VERIFY_COMMAND_PATTERN misses grep/diff-style verifiers [rsi]
 - **[CLI-215]** Mine 139 career XP receipts + 317 episodes + 12 scorecards into policy lessons; prove one before/after agent behavior change with receipts [rsi]
 - **[CLI-214]** Refresh business goals source of truth: live MRR/customer snapshot into wiki goals page, replacing historical 0.6-confidence numbers [business]
