@@ -841,17 +841,31 @@ function buildLatestCheck(options = {}) {
   const currentFingerprint = current.freshness.source_fingerprint;
   const latestFingerprint = latest && latest.freshness ? latest.freshness.source_fingerprint : null;
   const promptExists = fs.existsSync(promptPath);
+  const expectedPromptText = `${current.handoff.prompt}\n`;
+  const actualPromptText = promptExists ? readText(promptPath) : '';
+  const promptFresh = Boolean(promptExists && actualPromptText === expectedPromptText);
+  const expectedModelPromptRecords = buildModelPromptRecords(current, root);
   const modelPrompts = Object.fromEntries(MODEL_TIERS.map(tier => {
-    const relativePath = modelPromptRelativePath(tier);
-    const promptPathForTier = path.join(root, relativePath);
+    const expectedRecord = expectedModelPromptRecords[tier];
+    const relativePath = expectedRecord.prompt_txt;
+    const promptPathForTier = expectedRecord.prompt_txt_abs;
+    const existsForTier = fs.existsSync(promptPathForTier);
+    const expectedText = `${expectedRecord.prompt}\n`;
+    const actualText = existsForTier ? readText(promptPathForTier) : '';
     return [tier, {
       prompt_txt: relativePath,
-      exists: fs.existsSync(promptPathForTier),
+      exists: existsForTier,
+      matches_expected: Boolean(existsForTier && actualText === expectedText),
+      actual_sha1: existsForTier ? sha1(actualText) : null,
+      expected_sha1: sha1(expectedText),
+      selected_ref: expectedRecord.selected_ref,
+      lane: expectedRecord.lane,
+      first_command: expectedRecord.first_command,
     }];
   }));
-  const modelPromptsFresh = Object.values(modelPrompts).every(record => record.exists);
+  const modelPromptsFresh = Object.values(modelPrompts).every(record => record.matches_expected);
   const exists = Boolean(latest);
-  const fresh = Boolean(exists && promptExists && modelPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
+  const fresh = Boolean(exists && promptFresh && modelPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
   return {
     schema: 'atris.zero_shot_latest_check.v1',
     ok: fresh,
@@ -862,6 +876,9 @@ function buildLatestCheck(options = {}) {
     model_prompt_txt: modelPromptRelativePaths(),
     latest_exists: exists,
     prompt_exists: promptExists,
+    prompt_fresh: promptFresh,
+    prompt_actual_sha1: promptExists ? sha1(actualPromptText) : null,
+    prompt_expected_sha1: sha1(expectedPromptText),
     model_prompts: modelPrompts,
     model_prompts_fresh: modelPromptsFresh,
     latest_generated_at: latest ? latest.generated_at || null : null,
@@ -881,8 +898,8 @@ function renderLatestCheck(check) {
     '0-shot latest check',
     `status: ${check.status}`,
     `latest: ${check.latest_json}`,
-    `prompt: ${check.prompt_txt}`,
-    `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'missing'}`,
+    `prompt: ${check.prompt_fresh ? 'fresh' : (check.prompt_exists ? 'stale' : 'missing')} (${check.prompt_txt})`,
+    `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'stale_or_missing'}`,
     `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
     `refresh: ${check.refresh_command}`,
   ].join('\n');

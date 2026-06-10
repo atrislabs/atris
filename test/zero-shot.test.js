@@ -350,12 +350,46 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(fresh.schema, 'atris.zero_shot_latest_check.v1');
     assert.equal(fresh.status, 'fresh');
     assert.equal(fresh.ok, true);
+    assert.equal(fresh.prompt_fresh, true);
+    assert.equal(typeof fresh.prompt_actual_sha1, 'string');
+    assert.equal(fresh.prompt_actual_sha1, fresh.prompt_expected_sha1);
     assert.equal(fresh.model_prompts_fresh, true);
     assert.equal(fresh.model_prompts.fast.exists, true);
+    assert.equal(fresh.model_prompts.fast.matches_expected, true);
+    assert.equal(fresh.model_prompts.fast.actual_sha1, fresh.model_prompts.fast.expected_sha1);
     assert.equal(fresh.model_prompts.pro.exists, true);
+    assert.equal(fresh.model_prompts.pro.matches_expected, true);
     assert.equal(fresh.latest_selected_ref, 'CZS-1');
     assert.equal(fresh.current_selected_ref, 'CZS-1');
     assert.equal(fresh.latest_source_fingerprint, fresh.current_source_fingerprint);
+
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt'), 'stale global prompt\n', 'utf8');
+    const staleGlobalPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(staleGlobalPromptRes.status, 0, staleGlobalPromptRes.stderr || staleGlobalPromptRes.stdout);
+    const staleGlobalPrompt = JSON.parse(staleGlobalPromptRes.stdout);
+    assert.equal(staleGlobalPrompt.status, 'stale');
+    assert.equal(staleGlobalPrompt.ok, false);
+    assert.equal(staleGlobalPrompt.prompt_exists, true);
+    assert.equal(staleGlobalPrompt.prompt_fresh, false);
+    assert.notEqual(staleGlobalPrompt.prompt_actual_sha1, staleGlobalPrompt.prompt_expected_sha1);
+
+    const rewriteAfterGlobalDrift = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(rewriteAfterGlobalDrift.status, 0, rewriteAfterGlobalDrift.stderr || rewriteAfterGlobalDrift.stdout);
+
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'zero-shot.pro.prompt.txt'), 'stale pro prompt\n', 'utf8');
+    const staleModelPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(staleModelPromptRes.status, 0, staleModelPromptRes.stderr || staleModelPromptRes.stdout);
+    const staleModelPrompt = JSON.parse(staleModelPromptRes.stdout);
+    assert.equal(staleModelPrompt.status, 'stale');
+    assert.equal(staleModelPrompt.ok, false);
+    assert.equal(staleModelPrompt.prompt_fresh, true);
+    assert.equal(staleModelPrompt.model_prompts_fresh, false);
+    assert.equal(staleModelPrompt.model_prompts.pro.exists, true);
+    assert.equal(staleModelPrompt.model_prompts.pro.matches_expected, false);
+    assert.notEqual(staleModelPrompt.model_prompts.pro.actual_sha1, staleModelPrompt.model_prompts.pro.expected_sha1);
+
+    const rewriteAfterModelDrift = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(rewriteAfterModelDrift.status, 0, rewriteAfterModelDrift.stderr || rewriteAfterModelDrift.stdout);
 
     fs.rmSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt'));
     const missingModelPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
@@ -365,6 +399,7 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(missingModelPrompt.ok, false);
     assert.equal(missingModelPrompt.model_prompts_fresh, false);
     assert.equal(missingModelPrompt.model_prompts.fast.exists, false);
+    assert.equal(missingModelPrompt.model_prompts.fast.matches_expected, false);
 
     const rewrite = runCli(['zero-shot', '--write'], { cwd: dir });
     assert.equal(rewrite.status, 0, rewrite.stderr || rewrite.stdout);
@@ -391,6 +426,8 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(text.status, 0, text.stderr || text.stdout);
     assert.match(text.stdout, /0-shot latest check/);
     assert.match(text.stdout, /status: stale/);
+    assert.match(text.stdout, /prompt: stale/);
+    assert.match(text.stdout, /model prompts: stale_or_missing/);
     assert.match(text.stdout, /selected: CZS-1 -> current REV-1/);
   } finally {
     cleanupTempDir(dir);

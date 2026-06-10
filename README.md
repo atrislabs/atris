@@ -101,7 +101,7 @@ Use `--model fast`, `--model pro`, `--model validator`, or `--model human` to pi
 If the task projection is missing, 0-shot reads `atris/TODO.md` as a read-only fallback so fresh workspaces still get a lane.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris 0-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`; it also writes `.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, and `.atris/state/zero-shot.human.prompt.txt`.
-Use `atris 0-shot --check` when an ambient agent needs to know whether the latest packet, global prompt, and per-model prompts are fresh, stale, or missing.
+Use `atris 0-shot --check` when an ambient agent needs to know whether the latest packet, global prompt, and per-model prompt contents are fresh, stale, or missing.
 `atris`, `atris atris.md`, `atris activate`, `atris member activate <name>`, and `atris brain activate` refresh that latest 0-shot state automatically.
 Task commands that refresh `.atris/state/tasks.projection.json` also refresh the latest 0-shot state, so the route follows task queue changes.
 Mission and Codex goal commands refresh it too, so long-running work can take over the next move when it becomes due.
