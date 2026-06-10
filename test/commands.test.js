@@ -519,14 +519,59 @@ test('member activate surfaces zero-shot route for agent boot', () => {
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
-    assert.match(res.stdout, /Next route JSON: atris 0-shot --json/);
-    assert.match(res.stdout, /Next route menu: atris 0-shot --all/);
-    assert.match(res.stdout, /Next route prompt: atris 0-shot --prompt/);
-    assert.match(res.stdout, /atris 0-shot --horizon <horizon> --prompt/);
+    assert.match(res.stdout, /Next: run first: atris radar --json/);
+    assert.match(res.stdout, /Routes: atris 0-shot --json \| atris 0-shot --all \| atris 0-shot --prompt \| atris 0-shot --model <tier> --prompt \| atris 0-shot --horizon <horizon> --prompt/);
+    assert.doesNotMatch(res.stdout, /Next route menu/);
     assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member activate shows owner-gate first command for agent boot', () => {
+  const dir = makeTempDir();
+  try {
+    const memberDir = path.join(dir, 'atris', 'team', 'navigator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), [
+      '---',
+      'name: Navigator',
+      'role: Planning Agent',
+      '---',
+      '',
+      '# Navigator',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [{
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      }],
+    }, null, 2), 'utf8');
+
+    const res = runCli(['member', 'activate', 'navigator'], {
+      cwd: dir,
+      env: { HOME: path.join(dir, 'home') },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /0-shot: owner_gate -> atris task page CZS-1 --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /owner human-only: atris task accept CZS-1/);
+    assert.match(res.stdout, /Next: run first: atris task page CZS-1 --json/);
+    assert.match(res.stdout, /Boundary: read-only first command; stop at owner gate; human accept is human-only\./);
+    assert.match(res.stdout, /Tell your agent: "You are the Planning Agent\. Read team\/navigator\/MEMBER\.md\."/);
   } finally {
     cleanupTempDir(dir);
   }

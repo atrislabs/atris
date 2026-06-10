@@ -3133,9 +3133,12 @@ function memberActivate(name) {
     const zeroShot = writeLatestZeroShotPacket(buildZeroShotPacket({ cwd: process.cwd() }));
     console.log(renderZeroShotHint(zeroShot));
     console.log(renderZeroShotDurableSummary(buildZeroShotCheck({ cwd: process.cwd() })));
-    console.log(`Next route JSON: atris 0-shot --json`);
-    console.log(`Next route menu: atris 0-shot --all`);
-    console.log(`Next route prompt: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --horizon <horizon> --prompt)`);
+    const firstCommand = zeroShot.commands?.first_command || zeroShot.handoff?.first_command || 'atris 0-shot --prompt';
+    console.log(`Next: run first: ${firstCommand}`);
+    if (zeroShot.decision?.lane === 'owner_gate') {
+      console.log('Boundary: read-only first command; stop at owner gate; human accept is human-only.');
+    }
+    console.log(`Routes: atris 0-shot --json | atris 0-shot --all | atris 0-shot --prompt | atris 0-shot --model <tier> --prompt | atris 0-shot --horizon <horizon> --prompt`);
   } catch {}
   console.log(`Tell your agent: "You are the ${fm.role || name}. Read team/${name}/MEMBER.md."`);
 }
