@@ -727,6 +727,38 @@ function runVerifier(command, root = process.cwd()) {
   };
 }
 
+const REVIEW_LANE_DRAIN_TIMEOUT_MS = 120000;
+
+// Bounded agent-side review sweep, recorded on the tick. Failures never break
+// the mission loop; they surface in the tick record instead.
+function runReviewLaneDrain(root = process.cwd()) {
+  const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const res = spawnSync(process.execPath, [cliPath, 'task', 'review-lane-run', '--json'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: REVIEW_LANE_DRAIN_TIMEOUT_MS,
+  });
+  let receipt = null;
+  try {
+    receipt = JSON.parse(res.stdout);
+  } catch { /* fall through to error shape */ }
+  if (!receipt) {
+    return {
+      ok: false,
+      error: 'review_lane_run_unparseable',
+      status: res.status ?? null,
+      stderr: String(res.stderr || '').slice(-400),
+    };
+  }
+  return {
+    ok: receipt.ok === true,
+    run_count: receipt.run_count ?? null,
+    total_acted_count: receipt.total_acted_count ?? 0,
+    stopped_reason: receipt.stopped_reason || null,
+    receipt_path: receipt.receipt_path || null,
+  };
+}
+
 function gitWorktreeSnapshot(root = process.cwd()) {
   const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
     cwd: root,
@@ -1408,11 +1440,12 @@ async function runMission(args) {
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
+  const skipDrain = hasFlag(args, '--no-drain');
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
   const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
-  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass'])[0] || '';
+  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass', '--no-drain'])[0] || '';
 
   let mission = dueMode && !ref ? selectDueMission() : resolveMission(ref);
   if (!mission && dueMode && !ref) {
@@ -1615,6 +1648,15 @@ async function runMission(args) {
       if (result.status === 'ran' && verifyEach && frozen.verifier) {
         verifierResult = runVerifier(frozen.verifier);
         result.verifier_passed = verifierResult.passed;
+      }
+
+      // Review-lane drain: always-on loops sweep the agent-safe review actions
+      // each tick so proof-backed work reaches certified on cadence with zero
+      // human turns. Human accept stays the only path to Done; --no-drain opts out.
+      if (mission.always_on && result.status === 'ran') {
+        result.review_lane = skipDrain
+          ? { skipped: true, reason: 'no-drain-flag' }
+          : runReviewLaneDrain(cwd);
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
 
@@ -2104,7 +2146,8 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
   atris mission run <id|--due> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
-                                [--no-claude] [--no-verify] [--complete-on-pass] [--json]
+                                [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
+                       (always-on runs drain the review lane each tick; --no-drain skips)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
 

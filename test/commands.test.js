@@ -6268,10 +6268,13 @@ test('task review-lane-run does not repeat the same review_chat task across inne
     assert.equal(secondRun.status, 0, secondRun.stderr);
     const secondPayload = JSON.parse(secondRun.stdout);
     assert.equal(secondPayload.ok, true);
-    assert.equal(secondPayload.run_count, 1);
+    // The pending chat is auto-review territory now: the lane attempts the
+    // evidence-gated pass, refuses prose-only proof, and excludes the task
+    // instead of re-selecting it. No mutation, no repeated chat packets.
+    assert.equal(secondPayload.run_count, 2);
     assert.equal(secondPayload.total_acted_count, 0);
-    assert.equal(secondPayload.stopped_reason, 'pending_review_chat_waiting_for_agent_review');
-    assert.equal(secondPayload.runs[0].final_drain.next_action, 'pending_review_chat');
+    assert.equal(secondPayload.stopped_reason, 'auto_review_no_green_evidence');
+    assert.equal(secondPayload.runs[0].steps[0].reason, 'auto_review_no_green_evidence');
     const afterSecondRun = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
     const afterSecondRunReviewChats = (afterSecondRun.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
     assert.equal(afterSecondRun.current_version, after.current_version);
