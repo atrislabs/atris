@@ -1589,6 +1589,42 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
   }
 });
 
+test('auto-improver wake ignores declared check verification lines (CLI-199)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    // Wiki upkeep sweeps log one verification receipt per recompiled page.
+    // These are success records — even when they contain failure-adjacent
+    // words — and must never become recurring-failure candidates.
+    const wikiDir = path.join(dir, 'atris', 'wiki');
+    fs.mkdirSync(wikiDir, { recursive: true });
+    const checkLine = '- check: `node bin/atris.js loop --dry-run --json` reports 0 failed pages instead of 13';
+    fs.writeFileSync(path.join(wikiDir, 'log.md'), [
+      '# wiki log',
+      checkLine,
+      checkLine,
+      checkLine,
+      checkLine,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const repeated = payload.auto_improver.scan.log_signals.repeated_failures || [];
+    assert.deepEqual(
+      repeated.filter((failure) => /loop --dry-run/.test(failure.pattern)),
+      [],
+      'check: verification lines must not count as repeated failures',
+    );
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('simple member alias reuses legacy problem-finding runtime', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
