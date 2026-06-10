@@ -4328,6 +4328,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
     assert.match(res.stdout, /menu: atris 0-shot --all/);
+    assert.match(res.stdout, /model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(res.stdout, /NEXT MOVE: Run first: atris radar --json/);
@@ -4353,6 +4354,7 @@ test('brain activate prints a mission card from the compiled brain', () => {
     assert.match(body.card, /model first fast=none pro=none validator=none human=none/);
     assert.match(body.card, /horizon first now=none review=none long=none blocked=none orient=none/);
     assert.match(body.card, /menu: atris 0-shot --all/);
+    assert.match(body.card, /model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(body.card, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(body.card, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh \| files: \.atris\/state\/zero-shot\.menu\.txt, \.atris\/state\/zero-shot\.prompt\.txt \| check: atris 0-shot --check/);
     assert.match(body.card, /NEXT MOVE: Run first: atris radar --json/);
@@ -4408,6 +4410,7 @@ test('brain activate can target a member and print their next work block', () =>
     assert.match(res.stdout, /OPERATOR: Justin McDonald/);
     assert.match(res.stdout, /ZERO SHOT: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
     assert.match(res.stdout, /menu: atris 0-shot --all/);
+    assert.match(res.stdout, /model: atris 0-shot --model fast\|pro\|validator\|human --prompt/);
     assert.match(res.stdout, /horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.match(res.stdout, /NEXT MOVE: Justin McDonald: run one customer-moving GTM rep/);
     assert.match(res.stdout, /FEEDBACK: yes \/ edit \/ no/);

@@ -885,14 +885,15 @@ function activationZeroShotPacket(state) {
 
 function activationZeroShotLine(state) {
   const packet = activationZeroShotPacket(state);
+  const modelHint = 'model: atris 0-shot --model fast|pro|validator|human --prompt';
   const horizonHint = 'horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt';
   const menuHint = 'menu: atris 0-shot --all';
-  if (!packet) return `ZERO SHOT: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --json) | ${menuHint} | ${horizonHint}`;
+  if (!packet) return `ZERO SHOT: atris 0-shot --prompt (or atris 0-shot --model <tier> --prompt / atris 0-shot --json) | ${menuHint} | ${modelHint} | ${horizonHint}`;
   let durableHint = '';
   try {
     durableHint = ` | ${renderZeroShotDurableSummary(buildZeroShotCheck({ cwd: state.root }))}`;
   } catch {}
-  return `${renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:')} | ${menuHint} | ${horizonHint}${durableHint}`;
+  return `${renderZeroShotHint(packet).replace(/^0-shot:/, 'ZERO SHOT:')} | ${menuHint} | ${modelHint} | ${horizonHint}${durableHint}`;
 }
 
 function activationZeroShotFirstMove(state) {
