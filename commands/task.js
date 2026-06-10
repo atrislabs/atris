@@ -6195,7 +6195,7 @@ function cmdReady(args) {
   // time: evidence patterns that historically certify get suggested before
   // the task stalls in the review lane. Advisory only — never blocks ready.
   const { readPolicyLessons, policyHintsForProof } = require('../lib/policy-lessons');
-  const policyHints = policyHintsForProof(String(proof), readPolicyLessons(taskDb.workspaceRoot()));
+  const policyHints = policyHintsForProof(String(proof), readPolicyLessons(taskDb.workspaceRoot()), taskDb.workspaceRoot());
   if (policyHints.length) handoff.policy_hints = policyHints;
   if (wantsJson(args)) {
     printJson({
