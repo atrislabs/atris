@@ -755,10 +755,11 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Auto-chain plan → do → review cycles autonomously using `claude -p` subprocesses
 
-- **Entry point:** `commands/run.js:204-367` (runAtris function)
-- **Prompt builder:** `commands/run.js:25-103` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
+- **Entry point:** `commands/run.js` (`runAtris`) with a read-only 0-shot preflight before Claude CLI checks or phase execution
+- **Prompt builder:** `commands/run.js` (`buildRunPrompt`) — generates phase-specific prompts (plan/do/review) with full context file paths and current 0-shot route/owner-gate context
 - **Phase executor:** `commands/run.js:108-140` (executePhase function) — runs `claude -p` with prompt, handles timeout and output
 - **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
+- **Owner-gate stop:** `commands/run.js` refuses to start automation when the selected 0-shot route is owner-gated; it prints the first read-only command and `atris 0-shot --all` instead
 - **Journal logger:** `commands/run.js:171-199` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
 - **Summary table:** `commands/run.js:263` (cycleTimings forEach) — per-cycle phase duration table

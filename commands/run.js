@@ -19,11 +19,58 @@ const pkg = require('../package.json');
 const DEFAULT_MAX_CYCLES = 5;
 const PHASE_TIMEOUT = 600000; // 10 min per phase
 
+function buildRunZeroShotPacket() {
+  try {
+    const { buildPacket } = require('./zero-shot');
+    return buildPacket();
+  } catch {
+    return null;
+  }
+}
+
+function runZeroShotLines(packet) {
+  if (!packet || !packet.decision || !packet.commands) return [];
+  const decision = packet.decision;
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none';
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown';
+  const firstCommand = packet.commands.first_command || packet.commands.next_command || 'atris 0-shot --prompt';
+  const lines = [
+    `route: ${route}`,
+    `focus: ${focus}`,
+    `first command: ${firstCommand}`,
+    `menu: ${packet.commands.zero_shot_all || 'atris 0-shot --all'}`,
+    `prompt: ${packet.commands.zero_shot_prompt || 'atris 0-shot --prompt'}`,
+  ];
+  if (decision.reason) lines.splice(2, 0, `why: ${decision.reason}`);
+  if (decision.owner_action) lines.push(`owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) lines.push(`agent-safe action: ${decision.safe_agent_action}`);
+  return lines;
+}
+
+function printRunZeroShotPreflight(packet) {
+  const lines = runZeroShotLines(packet);
+  if (!lines.length) return;
+  console.log('0-shot preflight:');
+  for (const line of lines) console.log(`  ${line}`);
+  console.log('');
+}
+
+function zeroShotPromptBlock(packet) {
+  const lines = runZeroShotLines(packet);
+  if (!lines.length) return '';
+  return `Current 0-shot state:\n${lines.map((line) => `- ${line}`).join('\n')}\n\n`;
+}
+
+function isOwnerGatedZeroShot(packet) {
+  const decision = packet && packet.decision ? packet.decision : {};
+  return decision.lane === 'owner_gate' || Boolean(decision.owner_action);
+}
+
 /**
  * Build prompt for each phase with full context
  */
 function buildRunPrompt(phase, context) {
-  const { mapPath, todoPath, personaPath, lessonsPath, journalPath } = context;
+  const { mapPath, todoPath, personaPath, lessonsPath, journalPath, zeroShotPrompt } = context;
 
   const readFiles = [
     personaPath && `- ${personaPath}`,
@@ -38,6 +85,8 @@ function buildRunPrompt(phase, context) {
 
 Read these files first:
 ${readFiles}
+
+${zeroShotPrompt || ''}Respect the 0-shot first command and owner-gate boundary before planning.
 
 Workflow:
 1. Read the journal's ## Inbox section for ideas/tasks
@@ -60,6 +109,8 @@ Reply [PLAN_COMPLETE] when done.`;
 Read these files first:
 ${readFiles}
 
+${zeroShotPrompt || ''}Respect the 0-shot first command and owner-gate boundary before claiming or editing.
+
 Workflow:
 1. Read TODO.md — pick the first task from ## Backlog
 2. Move it to ## In Progress with: **Claimed by:** Executor at ${new Date().toISOString()}
@@ -79,6 +130,8 @@ Reply [DO_COMPLETE] when the task is built and committed.`;
 
 Read these files first:
 ${readFiles}
+
+${zeroShotPrompt || ''}Respect the 0-shot first command and owner-gate boundary before validating or completing.
 
 Workflow:
 1. Read TODO.md — find the task in ## In Progress
@@ -219,14 +272,6 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check claude CLI is available
-  try {
-    execSync('which claude', { stdio: 'pipe' });
-  } catch {
-    console.error('claude CLI not found. Install Claude Code first.');
-    process.exit(1);
-  }
-
   console.log('');
   if (verbose) {
     console.log('┌─────────────────────────────────────────────────────────────┐');
@@ -243,6 +288,9 @@ async function runAtris(options = {}) {
     console.log('');
   }
 
+  const zeroShotPacket = buildRunZeroShotPacket();
+  printRunZeroShotPreflight(zeroShotPacket);
+
   // Build context paths
   const context = {
     mapPath: fs.existsSync(path.join(atrisDir, 'MAP.md')) ? 'atris/MAP.md' : null,
@@ -250,13 +298,34 @@ async function runAtris(options = {}) {
     personaPath: fs.existsSync(path.join(atrisDir, 'PERSONA.md')) ? 'atris/PERSONA.md' : null,
     lessonsPath: fs.existsSync(path.join(atrisDir, 'lessons.md')) ? 'atris/lessons.md' : null,
     journalPath: (() => { const { logFile } = getLogPath(); return fs.existsSync(logFile) ? path.relative(process.cwd(), logFile) : null; })(),
+    zeroShotPrompt: zeroShotPromptBlock(zeroShotPacket),
   };
 
   if (dryRun) {
     console.log('[DRY RUN] Would execute:');
     console.log(`  ${cycles} cycles of plan → do → review`);
+    if (isOwnerGatedZeroShot(zeroShotPacket)) {
+      console.log('  owner gate: real run would stop before launching automation');
+    }
     console.log('  Context:', JSON.stringify(context, null, 2));
     return;
+  }
+
+  if (isOwnerGatedZeroShot(zeroShotPacket)) {
+    const firstCommand = zeroShotPacket.commands?.first_command || zeroShotPacket.commands?.next_command || 'atris 0-shot --prompt';
+    console.log(`owner-gated 0-shot route detected. not starting autonomous run.`);
+    console.log(`run first: ${firstCommand}`);
+    console.log(`inspect all routes: ${zeroShotPacket.commands?.zero_shot_all || 'atris 0-shot --all'}`);
+    return;
+  }
+
+  // Check claude CLI is available after the 0-shot preflight, so blocked
+  // routes still produce a useful next move on machines without automation.
+  try {
+    execSync('which claude', { stdio: 'pipe' });
+  } catch {
+    console.error('claude CLI not found. Install Claude Code first.');
+    process.exit(1);
   }
 
   const startTime = Date.now();

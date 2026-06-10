@@ -689,6 +689,24 @@ test('plan and do surface the current zero-shot route before workflow instructio
   }
 });
 
+test('run stops at owner-gated zero-shot route before automation', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    seedOwnerGatedZeroShotProjection(dir);
+
+    const res = runCli(['run', '--once', '--no-push'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
+    assert.match(res.stdout, /owner-gated 0-shot route detected\. not starting autonomous run\./);
+    assert.match(res.stdout, /run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /planning/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('do prints concise executor prompt by default', () => {
   const dir = makeTempDir();
   try {
