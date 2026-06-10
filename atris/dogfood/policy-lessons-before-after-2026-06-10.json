@@ -1,0 +1,57 @@
+{
+  "schema": "atris.policy_lessons_dogfood.v1",
+  "generated_at": "2026-06-10T09:11:42.166Z",
+  "task": "CLI-215",
+  "task_id": "01KTR3XWH6TW458CF942TW458C",
+  "claim": "mined policy lessons changed agent submission behavior on the live queue: same agent, same task, evidence-less proof drew hints, the next submission followed them and certified agent-side with zero human turns",
+  "mined": {
+    "state_path": ".atris/state/policy_lessons.json",
+    "mined_at": "2026-06-10T09:05:02.859Z",
+    "sources": {
+      "career_xp_receipts": 147,
+      "task_episodes": 326,
+      "scorecards": 12,
+      "human_reviewed_episodes": 157
+    },
+    "lesson_ids": [
+      "proof-verify-command",
+      "proof-live-receipt",
+      "bounce-causes-routing"
+    ]
+  },
+  "before": {
+    "action": "task ready (turn 1)",
+    "proof": "Policy miner shipped in commit 64369c2; mined lessons validated against episode history and reviewed by hand",
+    "agent_certified": false,
+    "policy_hints": [
+      {
+        "id": "proof-verify-command",
+        "hint": "Name a runnable verify command in every proof: 90/90 proofs with one were accepted at the human gate, while 7/7 human bounces named none."
+      },
+      {
+        "id": "proof-live-receipt",
+        "hint": "Cite a live receipt path (atris/runs/...) whose verifier passed: receipt-backed proofs are 4/4 at the human gate and auto-review certifies them agent-side with zero human turns, while evidence-less proofs stall in the review lane (95 agent revise turns recorded)."
+      }
+    ],
+    "note": "meaningful proof (passes weak-proof floor) but names no runnable verify command and no receipt path — the historical stall pattern (95 agent revise turns mined)"
+  },
+  "after": {
+    "action": "task ready (turn 2, following both hints)",
+    "proof_excerpt": "commit 64369c2; npm test 836/836 green via mission verifier, receipt atris/runs/mission-mission-2026-06-10-cli-215-mine-career-xp-recei-7c3a39de-2026-06-10T09-10-31-950Z.json; ...",
+    "agent_certified": true,
+    "review_pass_count": 2,
+    "policy_hints": null,
+    "mission_receipt": "atris/runs/mission-mission-2026-06-10-cli-215-mine-career-xp-recei-7c3a39de-2026-06-10T09-10-31-950Z.json",
+    "mission_receipt_verifier_passed": true
+  },
+  "live_lane_after": {
+    "stopped_reason": "human_accept_waiting_is_human_only",
+    "honest_refusal": "auto_review declined task 01KTR1EG2V52NVG9V6JR52NVG9 (no live green receipt in proof) — gate stays evidence-only",
+    "review_state_counts": {
+      "needs_agent": 1,
+      "human_accept_waiting": 2,
+      "certified": 2
+    }
+  },
+  "human_gate": "Done + AgentXP still require atris task accept by the operator"
+}
