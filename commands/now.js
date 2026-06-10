@@ -1,12 +1,24 @@
 const fs = require('fs');
 const path = require('path');
-const { buildPacket } = require('./zero-shot');
+const { buildLatestCheck, buildPacket } = require('./zero-shot');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
 const CAREER_XP_RECEIPTS_PATH = path.join('.atris', 'state', 'career_xp_receipts.jsonl');
 const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
 const TASK_RECEIPT_EVENTS = new Set(['proof_ready', 'reviewed', 'completed']);
+
+function zeroShotFreshnessLabel(exists, fresh) {
+  if (fresh) return 'fresh';
+  if (exists) return 'stale';
+  return 'missing';
+}
+
+function zeroShotGroupFreshnessLabel(fresh) {
+  if (fresh === true) return 'fresh';
+  if (fresh === false) return 'stale_or_missing';
+  return 'unknown';
+}
 
 function formatLocalDate(date = new Date()) {
   const year = String(date.getFullYear());
@@ -203,6 +215,7 @@ function countTaskReceiptsToday(root = process.cwd(), date = new Date()) {
 function zeroShotNowSummary(root = process.cwd()) {
   try {
     const packet = buildPacket({ cwd: root });
+    const check = buildLatestCheck({ cwd: root });
     const decision = packet.decision || {};
     const routes = packet.routes || {};
     const horizons = routes.horizons || {};
@@ -215,6 +228,11 @@ function zeroShotNowSummary(root = process.cwd()) {
       menu: packet.commands?.zero_shot_all || 'atris 0-shot --all',
       prompt: packet.commands?.zero_shot_prompt || 'atris 0-shot --prompt',
       json: packet.commands?.zero_shot_json || 'atris 0-shot --json',
+      check: check.check_command || 'atris 0-shot --check',
+      write: check.refresh_command || 'atris 0-shot --write',
+      menuFile: check.menu_txt || '.atris/state/zero-shot.menu.txt',
+      promptFile: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
+      durable: `status=${check.status} prompt=${zeroShotFreshnessLabel(check.prompt_exists, check.prompt_fresh)} menu=${zeroShotFreshnessLabel(check.menu_exists, check.menu_fresh)} model=${zeroShotGroupFreshnessLabel(check.model_prompts_fresh)} horizon=${zeroShotGroupFreshnessLabel(check.horizon_prompts_fresh)}`,
       buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     };
   } catch {
@@ -224,6 +242,11 @@ function zeroShotNowSummary(root = process.cwd()) {
       menu: 'atris 0-shot --all',
       prompt: 'atris 0-shot --prompt',
       json: 'atris 0-shot --json',
+      check: 'atris 0-shot --check',
+      write: 'atris 0-shot --write',
+      menuFile: '.atris/state/zero-shot.menu.txt',
+      promptFile: '.atris/state/zero-shot.prompt.txt',
+      durable: 'status=unavailable prompt=unknown menu=unknown model=unknown horizon=unknown',
       buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
     };
   }
@@ -260,6 +283,8 @@ Last updated: ${generated}
 - Decide the next useful move before opening more context.
 - 0-shot route: ${zeroShot.route} -> \`${zeroShot.command}\`
 - 0-shot menu: \`${zeroShot.menu}\`
+- 0-shot durable: ${zeroShot.durable}
+- 0-shot files: \`${zeroShot.menuFile}\`, \`${zeroShot.promptFile}\`
 - 0-shot buckets: ${zeroShot.buckets}
 
 ## Current Priority
@@ -282,6 +307,7 @@ Last updated: ${generated}
 ## Next Move
 
 - Run \`${zeroShot.menu}\` to inspect every visible 0-shot route before choosing work.
+- Trust \`${zeroShot.menuFile}\` and prompt files only when \`${zeroShot.check}\` reports fresh; otherwise run \`${zeroShot.write}\`.
 - Run \`${zeroShot.command}\` only when you are already following the selected 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
 - Use \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.
 - Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
