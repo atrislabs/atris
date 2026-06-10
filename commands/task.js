@@ -4425,15 +4425,26 @@ function cmdDelegate(args) {
   if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
 }
 
-function taskDayGroups(tasks) {
+// Failed tasks older than this stop earning a daily owner-group row;
+// they collapse into one stale summary line instead (target state = clean day view).
+const DAY_STALE_FAILED_MS = 7 * 24 * 60 * 60 * 1000;
+
+function taskDayGroups(tasks, { now = Date.now() } = {}) {
   const active = tasks.filter(task => task.status !== 'done');
-  const groups = new Map();
+  const staleFailed = [];
+  const visible = [];
   for (const task of active) {
+    const isStaleFailed = task.status === 'failed' && (now - (task.updated_at || 0)) > DAY_STALE_FAILED_MS;
+    if (isStaleFailed) staleFailed.push(task);
+    else visible.push(task);
+  }
+  const groups = new Map();
+  for (const task of visible) {
     const owner = taskAssignee(task) || 'unassigned';
     if (!groups.has(owner)) groups.set(owner, []);
     groups.get(owner).push(task);
   }
-  return Array.from(groups.entries())
+  const grouped = Array.from(groups.entries())
     .sort((a, b) => {
       if (a[0] === 'unassigned') return 1;
       if (b[0] === 'unassigned') return -1;
@@ -4446,6 +4457,7 @@ function taskDayGroups(tasks) {
         return (statusOrder[a.status] - statusOrder[b.status]) || (b.updated_at - a.updated_at);
       }),
     }));
+  return { groups: grouped, staleFailed };
 }
 
 function cmdDay(args) {
@@ -4453,13 +4465,14 @@ function cmdDay(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const { projection, outPath } = writeDefaultProjection(taskDb, db, { all });
-  const groups = taskDayGroups(projection.tasks || []);
+  const { groups, staleFailed } = taskDayGroups(projection.tasks || []);
   const counts = {
     active: groups.reduce((sum, group) => sum + group.tasks.length, 0),
     owners: groups.length,
     open: (projection.tasks || []).filter(task => task.status === 'open').length,
     claimed: (projection.tasks || []).filter(task => task.status === 'claimed').length,
     review: (projection.tasks || []).filter(task => task.status === 'review' || task.status === 'failed' || (task.status === 'done' && task.review && task.review.reward === null)).length,
+    stale_failed: staleFailed.length,
   };
   const date = new Date().toISOString().slice(0, 10);
   if (wantsJson(args)) {
@@ -4470,6 +4483,10 @@ function cmdDay(args) {
       projection_path: outPath,
       counts,
       groups,
+      stale_failed: {
+        count: staleFailed.length,
+        refs: staleFailed.map(task => taskRef(task)),
+      },
     });
     return;
   }
@@ -4486,6 +4503,10 @@ function cmdDay(args) {
       const claim = task.claimed_by ? ` @${task.claimed_by}` : '';
       console.log(`  ${task.status.padEnd(7)} ${taskRef(task)}${claim}${tag} ${task.title}`);
     }
+  }
+  if (staleFailed.length) {
+    console.log('');
+    console.log(`stale   ${staleFailed.length} failed >7d hidden — atris task list --status failed`);
   }
   console.log('');
   console.log('add: atris task delegate "..." --to codex --tag tasks');
@@ -7920,4 +7941,4 @@ async function run(args) {
   }
 }
 
-module.exports = { run };
+module.exports = { run, taskDayGroups };
