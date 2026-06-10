@@ -357,6 +357,13 @@ function showHelp() {
   console.log('  experiments run <slug>      - Execute a pack or record an Endstate receipt');
   console.log('  experiments benchmark [m]   - Run validate/runtime experiment benchmarks');
   console.log('');
+  console.log('Compile loop (learn like AI, run like code):');
+  console.log('  compile record <name>       - Append an execution record (--input/--output)');
+  console.log('  compile build <name>        - Compile records into a deterministic run.js');
+  console.log('  compile backtest <name>     - Replay all records, score accuracy vs gate');
+  console.log('  compile promote <name>      - Activate (gate: accuracy >= threshold)');
+  console.log('  compile exec <name>         - Run the compiled process token-free');
+  console.log('');
   console.log('Quick commands:');
   console.log('  atris      - Load context and start (natural language)');
   console.log('  next       - Auto-advance to next step');
@@ -768,7 +775,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analyti
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -1758,6 +1765,12 @@ if (command === 'init') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   require('../commands/experiments').experimentsCommand(subcommand, ...args);
+} else if (command === 'compile') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  Promise.resolve(require('../commands/compile').compileCommand(subcommand, ...args))
+    .then(() => process.exit(process.exitCode || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'receipt' || command === 'proof' || command === 'openclaw') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
