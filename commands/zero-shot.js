@@ -580,6 +580,7 @@ function routeContextPromptLines(routes = {}) {
     `Horizon buckets: now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
     `First routes by horizon: ${firstRoutesByHorizonText(horizonFirst)}`,
     `Model buckets: fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
+    `First routes by model: ${firstRoutesByModelText(models)}`,
     'Inspect all routes before switching lanes: atris 0-shot --all; machine-readable full list: run atris 0-shot --json and read routes.all_options.',
     'Selection prompts: atris 0-shot --model fast|pro|validator|human --prompt; atris 0-shot --horizon now|review|long|blocked|orient --prompt.',
   ];
@@ -1174,6 +1175,12 @@ function firstRoutesByHorizonText(firstRoutes = {}) {
   ].join(' ');
 }
 
+function firstRoutesByModelText(models = {}) {
+  return MODEL_TIERS
+    .map(tier => `${tier}=${firstRouteText(models[tier] && models[tier].first)}`)
+    .join(' ');
+}
+
 function renderModelSummary(models) {
   const counts = {};
   for (const tier of MODEL_TIERS) counts[tier] = models && models[tier] ? models[tier].count || 0 : 0;
@@ -1189,6 +1196,7 @@ function renderRouteMenu(packet) {
   const options = allPublicRouteOptions(packet);
   const lines = ['route menu:'];
   lines.push(`first by horizon: ${firstRoutesByHorizonText(routes.horizon_first || {})}`);
+  lines.push(`first by model: ${firstRoutesByModelText(routes.models || {})}`);
   if (!options.length) {
     lines.push('  none | run: atris radar --json');
   } else {
@@ -1253,6 +1261,7 @@ function renderHint(packet) {
     `routes total=${routes.total || 0} hidden=${routes.hidden_count || 0}`,
     `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
     `models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
+    `model first ${firstRoutesByModelText(models)}`,
   ].join(' | ');
 }
 
