@@ -1269,6 +1269,16 @@ function renderModelSummary(models) {
   return renderCountSummary('models', counts, MODEL_TIERS);
 }
 
+function modelPromptCommandSummary(commands = {}) {
+  const prompts = commands.model_prompt || {};
+  return MODEL_TIERS.map(tier => prompts[tier] || `atris 0-shot --model ${tier} --prompt`).join(' | ');
+}
+
+function horizonPromptCommandSummary(commands = {}) {
+  const prompts = commands.horizon_prompt || {};
+  return HORIZON_PROMPTS.map(([key]) => prompts[key] || `atris 0-shot --horizon ${key} --prompt`).join(' | ');
+}
+
 function renderRouteMenu(packet) {
   const routes = packet.routes || {};
   const hasFullOptions = Array.isArray(routes.all_options);
@@ -1320,6 +1330,8 @@ function renderPacket(packet, options = {}) {
     ...(options.all ? [renderRouteMenu(packet)] : []),
     `prompt: ${packet.commands.zero_shot_prompt}`,
     `all: ${packet.commands.zero_shot_all}`,
+    `select model: ${modelPromptCommandSummary(packet.commands)}`,
+    `select horizon: ${horizonPromptCommandSummary(packet.commands)}`,
     `write: ${packet.commands.zero_shot_write} -> ${packet.durable.latest_json}`,
     `check: ${packet.freshness.check_command}`,
     `missions: ${packet.missions.active} active, ${packet.missions.needs_tick} need verifier tick`,

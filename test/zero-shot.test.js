@@ -146,6 +146,8 @@ test('zero-shot falls back to radar when no current task exists', () => {
     assert.match(res.stdout, /horizons: now=0 immediate_review=0 long_term=0 blocked=0 orient=0/);
     assert.match(res.stdout, /models: fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /select model: atris 0-shot --model fast --prompt \| atris 0-shot --model pro --prompt \| atris 0-shot --model validator --prompt \| atris 0-shot --model human --prompt/);
+    assert.match(res.stdout, /select horizon: atris 0-shot --horizon now --prompt \| atris 0-shot --horizon review --prompt \| atris 0-shot --horizon long --prompt \| atris 0-shot --horizon blocked --prompt \| atris 0-shot --horizon orient --prompt/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -158,6 +160,8 @@ test('next without a request is a zero-shot shortcut', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /0-shot next move/);
     assert.match(res.stdout, /run: atris radar --json/);
+    assert.match(res.stdout, /select model: atris 0-shot --model fast --prompt \| atris 0-shot --model pro --prompt \| atris 0-shot --model validator --prompt \| atris 0-shot --model human --prompt/);
+    assert.match(res.stdout, /select horizon: atris 0-shot --horizon now --prompt \| atris 0-shot --horizon review --prompt \| atris 0-shot --horizon long --prompt \| atris 0-shot --horizon blocked --prompt \| atris 0-shot --horizon orient --prompt/);
     assert.doesNotMatch(res.stdout, /What do you want to build/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), false);
     assert.deepEqual(fs.readdirSync(dir), []);
