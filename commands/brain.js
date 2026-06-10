@@ -578,7 +578,17 @@ function isActionableScorecardNextMove(value) {
 }
 
 function operatorActivationNextMove(state) {
-  return `Run \`atris brain activate --member <name> --root ${state.root} --verify\` to bind the operator and get a concrete work block.`;
+  const memberRoute = `atris brain activate --member <name> --root ${state.root} --verify`;
+  try {
+    const packet = buildZeroShotPacket({ cwd: state.root });
+    const firstCommand = packet?.commands?.first_command || packet?.handoff?.first_command;
+    if (firstCommand) {
+      const ownerGate = packet?.decision?.lane === 'owner_gate';
+      const boundary = ownerGate ? '; stop at owner gate' : '';
+      return `Run \`${firstCommand}\` from 0-shot${boundary}. Operator binding: ${memberRoute}.`;
+    }
+  } catch {}
+  return `Run \`${memberRoute}\` to bind the operator and get a concrete work block.`;
 }
 
 function nextMove(state) {

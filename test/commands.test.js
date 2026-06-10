@@ -4111,6 +4111,48 @@ test('brain compile rejects meta scorecard next suggestions', () => {
   }
 });
 
+test('brain compile fallback uses the zero-shot first command', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'episodes.jsonl'), JSON.stringify({
+      type: 'episode',
+      ts: '2026-05-10T00:00:00.000Z',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'scorecards.jsonl'), JSON.stringify({
+      type: 'scorecard',
+      ts: '2026-05-10T00:01:00.000Z',
+      reward: 5,
+      next_task_suggestion: 'Run the compiled business reward next task instead of repeating the completed business loop.',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [{
+        display_id: 'CZS-1',
+        title: 'Add zero-shot CLI command',
+        status: 'review',
+        tag: 'cli',
+        review: {
+          approval_status: 'pending',
+          agent_certified: true,
+          handoff: { next_action: 'human_accept_waiting' },
+        },
+      }],
+    }, null, 2), 'utf8');
+
+    const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(compile.status, 0, compile.stderr);
+    assert.match(compile.stdout, /Next: Run `atris task page CZS-1 --json` from 0-shot; stop at owner gate\./);
+    assert.match(compile.stdout, /Operator binding: atris brain activate --member <name>/);
+    const status = fs.readFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /## Next Move[\s\S]*Run `atris task page CZS-1 --json` from 0-shot; stop at owner gate\./);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile rejects brain housekeeping next suggestions', () => {
   const dir = makeTempDir();
   try {
