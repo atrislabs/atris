@@ -4,10 +4,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { buildPacket, collectFreshness } = require('./zero-shot');
+const { buildLatestCheck, buildPacket, collectFreshness } = require('./zero-shot');
 
 const ZERO_SHOT_LATEST_RELATIVE_PATH = '.atris/state/zero-shot.latest.json';
 const ZERO_SHOT_PROMPT_RELATIVE_PATH = '.atris/state/zero-shot.prompt.txt';
+const ZERO_SHOT_MENU_RELATIVE_PATH = '.atris/state/zero-shot.menu.txt';
 const ZERO_SHOT_HORIZONS = ['now', 'immediate_review', 'long_term', 'blocked', 'orient'];
 const ZERO_SHOT_MODELS = ['fast', 'pro', 'validator', 'human'];
 
@@ -448,9 +449,38 @@ function zeroShotBucketLine(zeroShot = {}) {
   return `0-shot buckets: horizons now=${horizons.now} review=${horizons.immediate_review} long=${horizons.long_term} blocked=${horizons.blocked}; models fast=${models.fast} pro=${models.pro} validator=${models.validator} human=${models.human}`;
 }
 
+function zeroShotFreshnessLabel(exists, fresh) {
+  if (fresh) return 'fresh';
+  if (exists) return 'stale';
+  return 'missing';
+}
+
+function zeroShotGroupFreshnessLabel(fresh) {
+  if (fresh === true) return 'fresh';
+  if (fresh === false) return 'stale_or_missing';
+  return 'unknown';
+}
+
+function zeroShotDurableLine(zeroShot = {}) {
+  return [
+    `prompt=${zeroShotFreshnessLabel(zeroShot.prompt_exists, zeroShot.prompt_fresh)}`,
+    `menu=${zeroShotFreshnessLabel(zeroShot.menu_exists, zeroShot.menu_fresh)}`,
+    `model=${zeroShotGroupFreshnessLabel(zeroShot.model_prompts_fresh)}`,
+    `horizon=${zeroShotGroupFreshnessLabel(zeroShot.horizon_prompts_fresh)}`,
+    `check: ${zeroShot.check_command || 'atris 0-shot --check'}`,
+  ].join(' ');
+}
+
+function loadZeroShotCheck(root, options = {}) {
+  if (typeof options.buildZeroShotCheck === 'function') return options.buildZeroShotCheck(root);
+  if (options.existsSync || options.readFileSync) return null;
+  return buildLatestCheck({ cwd: root });
+}
+
 function loadZeroShot(root, deps, options = {}) {
   const latest = readJsonFile(path.join(root, ZERO_SHOT_LATEST_RELATIVE_PATH), deps, null);
   const promptExists = deps.exists(path.join(root, ZERO_SHOT_PROMPT_RELATIVE_PATH));
+  const menuExists = deps.exists(path.join(root, ZERO_SHOT_MENU_RELATIVE_PATH));
   const currentFreshness = collectFreshness(root, {
     existsSync: deps.exists,
     readFileSync: deps.readFile,
@@ -465,17 +495,27 @@ function loadZeroShot(root, deps, options = {}) {
       ? options.buildZeroShotPacket(root)
       : buildPacket({ cwd: root });
   } catch {}
+  let latestCheck = null;
+  try {
+    latestCheck = loadZeroShotCheck(root, options);
+  } catch {}
   const currentRoute = zeroShotRouteFromPacket(currentPacket);
   const latestRoute = zeroShotRouteFromPacket(latest);
   const selectedPacket = currentPacket || latest;
   const selectedRoute = currentPacket ? currentRoute : latestRoute;
   const selectedBuckets = zeroShotBucketsFromPacket(currentPacket || latest);
+  const status = latestCheck ? latestCheck.status : (fresh ? 'fresh' : (latestExists ? 'stale' : 'missing'));
   return {
     schema: 'atris.radar_zero_shot.v1',
-    status: fresh ? 'fresh' : (latestExists ? 'stale' : 'missing'),
-    ok: fresh,
-    latest_exists: latestExists,
-    prompt_exists: promptExists,
+    status,
+    ok: latestCheck ? latestCheck.ok : fresh,
+    latest_exists: latestCheck ? latestCheck.latest_exists : latestExists,
+    prompt_exists: latestCheck ? latestCheck.prompt_exists : promptExists,
+    prompt_fresh: latestCheck ? latestCheck.prompt_fresh : promptExists,
+    menu_exists: latestCheck ? latestCheck.menu_exists : menuExists,
+    menu_fresh: latestCheck ? latestCheck.menu_fresh : (menuExists ? null : false),
+    model_prompts_fresh: latestCheck ? latestCheck.model_prompts_fresh : null,
+    horizon_prompts_fresh: latestCheck ? latestCheck.horizon_prompts_fresh : null,
     route_source: currentPacket ? 'current' : 'latest',
     lane: selectedRoute.lane,
     selected_ref: selectedRoute.selected_ref,
@@ -489,14 +529,15 @@ function loadZeroShot(root, deps, options = {}) {
     latest: latest ? latestRoute : null,
     latest_json: ZERO_SHOT_LATEST_RELATIVE_PATH,
     prompt_txt: ZERO_SHOT_PROMPT_RELATIVE_PATH,
+    menu_txt: ZERO_SHOT_MENU_RELATIVE_PATH,
     check_command: 'atris 0-shot --check',
     refresh_command: 'atris 0-shot --write',
     prompt_command: 'atris 0-shot --prompt',
     legacy_check_command: 'atris zero-shot --check',
     legacy_refresh_command: 'atris zero-shot --write',
     legacy_prompt_command: 'atris zero-shot --prompt',
-    latest_source_fingerprint: latestFingerprint,
-    current_source_fingerprint: currentFingerprint,
+    latest_source_fingerprint: latestCheck ? latestCheck.latest_source_fingerprint : latestFingerprint,
+    current_source_fingerprint: latestCheck ? latestCheck.current_source_fingerprint : currentFingerprint,
   };
 }
 
@@ -696,6 +737,7 @@ function renderRadar(data) {
     const focus = [zs.lane, zs.selected_ref].filter(Boolean).join(' ') || 'none';
     lines.push(`0-shot: ${zs.status} ${focus} -> ${zs.first_command || zs.refresh_command}`);
     lines.push(`0-shot menu: ${zs.menu_command || 'atris 0-shot --all'}`);
+    lines.push(`0-shot durable: ${zeroShotDurableLine(zs)}`);
     lines.push(zeroShotBucketLine(zs));
   }
   if (data.os) {

@@ -55,6 +55,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   const codexGoalFile = path.join(root, '.atris', 'state', 'codex_goal.json');
   const zeroShotLatestFile = path.join(root, '.atris', 'state', 'zero-shot.latest.json');
   const zeroShotPromptFile = path.join(root, '.atris', 'state', 'zero-shot.prompt.txt');
+  const zeroShotMenuFile = path.join(root, '.atris', 'state', 'zero-shot.menu.txt');
   const businessFile = path.join(root, '.atris', 'business.json');
   const runtimeFile = path.join(root, '.atris', 'state', 'runtime.json');
   const syncFile = path.join(root, '.atris', 'state', '_sync.json');
@@ -136,6 +137,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
     freshness: zeroShotFreshness,
   }));
   files.set(zeroShotPromptFile, 'Atris 0-shot selected the next move.\n');
+  files.set(zeroShotMenuFile, 'route menu:\n1. review/validator/review_lane | CLI-95 - Add live operator radar command\n');
   const psOutput = '110 1 0.1 0.2 S Mon May 18 12:00:00 2026 node /opt/homebrew/bin/codex\n'
     + '111 110 0.1 0.2 S Mon May 18 12:00:00 2026 /opt/codex/codex exec\n'
     + '222 1 2.5 0.2 S Mon May 18 12:01:00 2026 claude -p run\n'
@@ -201,6 +203,19 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
         },
       },
     }),
+    buildZeroShotCheck: () => ({
+      status: 'fresh',
+      ok: true,
+      latest_exists: true,
+      prompt_exists: true,
+      prompt_fresh: true,
+      menu_exists: true,
+      menu_fresh: true,
+      model_prompts_fresh: true,
+      horizon_prompts_fresh: true,
+      latest_source_fingerprint: zeroShotFreshness.source_fingerprint,
+      current_source_fingerprint: zeroShotFreshness.source_fingerprint,
+    }),
   });
 
   assert.equal(data.summary.agents.total, 4);
@@ -217,6 +232,10 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.equal(data.os.loop.ticks, 1);
   assert.equal(data.os.loop.codex_goal, 'Advance the mission loop');
   assert.equal(data.os.zero_shot.status, 'fresh');
+  assert.equal(data.os.zero_shot.prompt_fresh, true);
+  assert.equal(data.os.zero_shot.menu_fresh, true);
+  assert.equal(data.os.zero_shot.model_prompts_fresh, true);
+  assert.equal(data.os.zero_shot.horizon_prompts_fresh, true);
   assert.equal(data.os.zero_shot.route_source, 'current');
   assert.equal(data.os.zero_shot.lane, 'review_lane');
   assert.equal(data.os.zero_shot.selected_ref, 'CLI-95');
@@ -259,6 +278,7 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(renderRadar(data), /Operator radar/);
   assert.match(renderRadar(data), /0-shot: fresh review_lane CLI-95 -> atris task review-chat CLI-95 --as codex-review/);
   assert.match(renderRadar(data), /0-shot menu: atris 0-shot --all/);
+  assert.match(renderRadar(data), /0-shot durable: prompt=fresh menu=fresh model=fresh horizon=fresh check: atris 0-shot --check/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=2 review=1 long=1 blocked=0; models fast=2 pro=1 validator=1 human=0/);
   assert.match(renderRadar(data), /CLI-95/);
   assert.match(renderRadar(data), /Stale mission candidates/);
@@ -304,6 +324,7 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
   const taskFile = path.join(root, '.atris', 'state', 'tasks.projection.json');
   const latestFile = path.join(root, '.atris', 'state', 'zero-shot.latest.json');
   const promptFile = path.join(root, '.atris', 'state', 'zero-shot.prompt.txt');
+  const menuFile = path.join(root, '.atris', 'state', 'zero-shot.menu.txt');
   const files = new Map([
     [taskFile, JSON.stringify({
       tasks: [
@@ -324,6 +345,7 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
       freshness: { source_fingerprint: 'old-fingerprint' },
     })],
     [promptFile, 'old prompt\n'],
+    [menuFile, 'old route menu\n'],
   ]);
   function execFileSync(cmd, args) {
     if (cmd === 'ps') return '';
@@ -355,9 +377,24 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
         models: { fast: { count: 1 } },
       },
     }),
+    buildZeroShotCheck: () => ({
+      status: 'stale',
+      ok: false,
+      latest_exists: true,
+      prompt_exists: true,
+      prompt_fresh: true,
+      menu_exists: true,
+      menu_fresh: false,
+      model_prompts_fresh: true,
+      horizon_prompts_fresh: true,
+      latest_source_fingerprint: 'old-fingerprint',
+      current_source_fingerprint: 'new-fingerprint',
+    }),
   });
 
   assert.equal(data.os.zero_shot.status, 'stale');
+  assert.equal(data.os.zero_shot.prompt_fresh, true);
+  assert.equal(data.os.zero_shot.menu_fresh, false);
   assert.equal(data.os.zero_shot.route_source, 'current');
   assert.equal(data.os.zero_shot.selected_ref, 'NOW-1');
   assert.equal(data.os.zero_shot.menu_command, 'atris 0-shot --all');
@@ -368,6 +405,7 @@ test('collectRadar keeps current zero-shot route visible when durable latest is 
   assert.notEqual(data.os.zero_shot.latest_source_fingerprint, data.os.zero_shot.current_source_fingerprint);
   assert.match(renderRadar(data), /0-shot: stale fast_model_task NOW-1 -> atris task current-step --json/);
   assert.match(renderRadar(data), /0-shot menu: atris 0-shot --all/);
+  assert.match(renderRadar(data), /0-shot durable: prompt=fresh menu=stale model=fresh horizon=fresh check: atris 0-shot --check/);
   assert.match(renderRadar(data), /0-shot buckets: horizons now=1 review=0 long=0 blocked=0; models fast=1 pro=0 validator=0 human=0/);
 });
 
