@@ -800,6 +800,17 @@ function isSpecFile(cmd) {
   return cmd === 'atris.md' || cmd.endsWith('/atris.md') || cmd.endsWith('\\atris.md');
 }
 
+function findAtrisWorkspaceRoot(start = process.cwd()) {
+  let dir = path.resolve(start);
+  for (let i = 0; i < 32; i += 1) {
+    if (fs.existsSync(path.join(dir, 'atris')) || fs.existsSync(path.join(dir, '.atris'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(start);
+}
+
 if (isSpecFile(command)) {
   showWelcomeVisualization();
   process.exit(0);
@@ -1079,7 +1090,7 @@ async function interactiveEntry(userInput) {
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
   const { getBacklogTasks, getInProgressTasks } = require('../lib/state-detection');
-  const cwd = process.cwd();
+  const cwd = findAtrisWorkspaceRoot(process.cwd());
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
 

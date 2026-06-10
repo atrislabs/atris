@@ -1351,3 +1351,25 @@ test('atris.md boot visualization points initialized workspaces at zero-shot', (
     cleanupTempDir(dir);
   }
 });
+
+test('atris.md boot visualization finds the workspace from a subdirectory', () => {
+  const dir = makeTempDir();
+  try {
+    seedWorkspace(dir, [
+      { display_id: 'CZS-1', title: 'Add zero-shot CLI command', status: 'claimed', tag: 'cli' },
+    ]);
+    const subdir = path.join(dir, 'commands');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const res = runCli(['atris.md'], { cwd: subdir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /WORKSPACE DETECTED/);
+    assert.match(res.stdout, /Project: atris-zero-shot-/);
+    assert.match(res.stdout, /0-shot: fast_model_task -> atris task current-step --tag cli --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /Next: run first: atris task current-step --tag cli --json/);
+    assert.doesNotMatch(res.stdout, /No workspace found/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
