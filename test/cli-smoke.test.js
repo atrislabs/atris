@@ -762,6 +762,14 @@ test('workflow agents stop at owner-gated zero-shot route before instructions or
     assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting review\./);
     assert.doesNotMatch(res.stdout, /AGENT MODE: Executing via backend API/);
     assert.doesNotMatch(res.stderr, /Not logged in|Authentication failed/);
+
+    res = runCli(['x', 'echo hello'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting x\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /Executing: echo hello/);
+    assert.doesNotMatch(res.stderr, /Request timeout|ECONNREFUSED|backend is running/);
   } finally {
     cleanupTempDir(dir);
   }

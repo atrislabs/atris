@@ -1500,6 +1500,11 @@ async function reviewAtris() {
  */
 async function executeAgentSDKFast(userInput) {
   const http = require('http');
+  const zeroShotPacket = buildWorkflowZeroShotPacket();
+  if (isWorkflowOwnerGatedZeroShot(zeroShotPacket)) {
+    printWorkflowOwnerGateStop(zeroShotPacket, 'x');
+    return;
+  }
 
   console.log(`⚡ Executing: ${userInput}`);
   console.log('');
