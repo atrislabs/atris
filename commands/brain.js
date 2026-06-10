@@ -1410,6 +1410,15 @@ function writeBrain(state) {
   return { statusPath, ledgerPath, jsonPath };
 }
 
+function refreshCompiledZeroShot(root) {
+  try {
+    const cwd = fs.realpathSync(root);
+    return writeLatestZeroShotPacket(buildZeroShotPacket({ cwd }));
+  } catch {
+    return null;
+  }
+}
+
 function verifyBrain(root) {
   const required = [
     'atris/brain/STATUS.md',
@@ -1607,10 +1616,11 @@ function brainCommand(args = process.argv.slice(3)) {
 
   const state = prepareBrainState(options.root);
   const written = writeBrain(state);
+  const zeroShot = refreshCompiledZeroShot(options.root);
   if (options.verify) verifyBrain(options.root);
 
   if (options.json) {
-    console.log(JSON.stringify({ ok: true, state, written }, null, 2));
+    console.log(JSON.stringify({ ok: true, state, written, zero_shot: zeroShot }, null, 2));
     return;
   }
 

@@ -3631,7 +3631,7 @@ test('brain compile writes loadable status and ledger artifacts', () => {
     const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris brain compiled/);
-    assert.match(res.stdout, /State rows: 1 raw \/ 1 valid/);
+    assert.match(res.stdout, /State rows: 2 raw \/ 2 valid/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'STATUS.md')), true);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'brain', 'self_improvement_ledger.md')), true);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'now.md')), true);
@@ -3647,9 +3647,18 @@ test('brain compile writes loadable status and ledger artifacts', () => {
     assert.doesNotMatch(agents, /sync-language\.md|activation\/SKILL\.md/);
     assertAdvertisedAtrisPathsExist(dir, agents);
     const state = collectState(dir);
-    assert.equal(state.totalRows, 1);
-    assert.equal(state.validRows, 1);
+    assert.equal(state.totalRows, 2);
+    assert.equal(state.validRows, 2);
     assert.equal(state.hasNow, true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
+    const zeroShotCheck = runCli(['0-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(zeroShotCheck.status, 0, zeroShotCheck.stderr || zeroShotCheck.stdout);
+    const zeroShotCheckPayload = JSON.parse(zeroShotCheck.stdout);
+    assert.equal(zeroShotCheckPayload.status, 'fresh');
+    assert.equal(zeroShotCheckPayload.prompt_fresh, true);
+    assert.equal(zeroShotCheckPayload.menu_fresh, true);
   } finally {
     cleanupTempDir(dir);
   }
