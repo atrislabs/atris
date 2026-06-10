@@ -574,9 +574,11 @@ function routePrompt(route, root) {
 function routeContextPromptLines(routes = {}) {
   const horizons = routes.horizons || {};
   const models = routes.models || {};
+  const horizonFirst = routes.horizon_first || {};
   return [
     `Route inventory: total=${routes.total || 0} compact=${routes.shown || 0} hidden=${routes.hidden_count || 0} full_field=routes.all_options`,
     `Horizon buckets: now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`,
+    `First routes by horizon: ${firstRoutesByHorizonText(horizonFirst)}`,
     `Model buckets: fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     'Inspect all routes before switching lanes: atris 0-shot --all; machine-readable full list: run atris 0-shot --json and read routes.all_options.',
     'Selection prompts: atris 0-shot --model fast|pro|validator|human --prompt; atris 0-shot --horizon now|review|long|blocked|orient --prompt.',
@@ -778,6 +780,16 @@ function summarizeRouteHorizons(routes) {
   }, summary);
 }
 
+function summarizeHorizonFirstRoutes(routes) {
+  const summary = Object.fromEntries(HORIZON_ORDER.map(horizon => [horizon, null]));
+  for (const route of routes) {
+    const horizon = route.horizon || 'unknown';
+    if (!Object.prototype.hasOwnProperty.call(summary, horizon)) summary[horizon] = null;
+    if (!summary[horizon]) summary[horizon] = compactRouteChoice(route);
+  }
+  return summary;
+}
+
 function selectRoute(routes, requestedModelTier = null, requestedHorizon = null) {
   if (!requestedModelTier && !requestedHorizon) return routes[0] || null;
   return routes.find(route => {
@@ -849,6 +861,7 @@ function buildRouteIndex({ missionState, goalState, taskState }) {
     shown: Math.min(routes.length, ROUTE_LIMIT),
     lanes: summarizeRouteLanes(routes),
     horizons: summarizeRouteHorizons(routes),
+    horizon_first: summarizeHorizonFirstRoutes(routes),
     models: summarizeRouteModels(routes),
     options: routes.slice(0, ROUTE_LIMIT),
     all_options: routes,
@@ -1145,6 +1158,22 @@ function renderCountSummary(label, summary, orderedKeys) {
   return `${label}: ${parts.join(' ')}`;
 }
 
+function firstRouteText(route) {
+  if (!route) return 'none';
+  const ref = route.ref || route.lane || 'workspace';
+  return `${ref}/${route.model_tier || 'unknown'}`;
+}
+
+function firstRoutesByHorizonText(firstRoutes = {}) {
+  return [
+    `now=${firstRouteText(firstRoutes.now)}`,
+    `review=${firstRouteText(firstRoutes.immediate_review)}`,
+    `long=${firstRouteText(firstRoutes.long_term)}`,
+    `blocked=${firstRouteText(firstRoutes.blocked)}`,
+    `orient=${firstRouteText(firstRoutes.orient)}`,
+  ].join(' ');
+}
+
 function renderModelSummary(models) {
   const counts = {};
   for (const tier of MODEL_TIERS) counts[tier] = models && models[tier] ? models[tier].count || 0 : 0;
@@ -1159,6 +1188,7 @@ function renderRouteMenu(packet) {
   const hasFullOptions = Array.isArray(routes.all_options);
   const options = allPublicRouteOptions(packet);
   const lines = ['route menu:'];
+  lines.push(`first by horizon: ${firstRoutesByHorizonText(routes.horizon_first || {})}`);
   if (!options.length) {
     lines.push('  none | run: atris radar --json');
   } else {

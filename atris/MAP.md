@@ -142,7 +142,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes bounded `routes.options[]` and full `routes.all_options[]` with ref, lane, horizon, work size, model tier, first command, prompt, and directive for active work; both lists are sanitized and omit raw task source payloads
-- **Route summary:** JSON includes zero-filled `routes.horizons` counts plus `routes.models` grouped by fast/pro/validator/human, with count and first route for each tier
+- **Route summary:** JSON includes zero-filled `routes.horizons` counts, `routes.horizon_first` first picks from the full route inventory, plus `routes.models` grouped by fast/pro/validator/human with count and first route for each tier
 - **Human card summary:** plain `atris 0-shot` prints horizon and model-tier count lines so quick/long-term/validator/human work is visible without JSON; `atris 0-shot --all` expands the full route menu with each route's horizon, model tier, lane, first command, and reason
 - **Model-tier selection:** `atris 0-shot --model fast|pro|validator|human` and `--fast`/`--pro`/`--validator`/`--human` select the first route suited to that model tier
 - **Horizon selection:** `atris 0-shot --horizon now|review|long|blocked|orient` and `--quick`/`--review`/`--long`/`--blocked`/`--orient` select the first route in that quick/review/long-term/blocked/context bucket
