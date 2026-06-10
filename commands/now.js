@@ -233,6 +233,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       menuFile: check.menu_txt || '.atris/state/zero-shot.menu.txt',
       promptFile: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
       durable: `status=${check.status} prompt=${zeroShotFreshnessLabel(check.prompt_exists, check.prompt_fresh)} menu=${zeroShotFreshnessLabel(check.menu_exists, check.menu_fresh)} model=${zeroShotGroupFreshnessLabel(check.model_prompts_fresh)} horizon=${zeroShotGroupFreshnessLabel(check.horizon_prompts_fresh)}`,
+      inventory: `routes total=${routes.total || 0} compact=${routes.shown || 0} hidden=${routes.hidden_count || 0} full=routes.all_options`,
       buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
     };
   } catch {
@@ -247,6 +248,7 @@ function zeroShotNowSummary(root = process.cwd()) {
       menuFile: '.atris/state/zero-shot.menu.txt',
       promptFile: '.atris/state/zero-shot.prompt.txt',
       durable: 'status=unavailable prompt=unknown menu=unknown model=unknown horizon=unknown',
+      inventory: 'routes total=0 compact=0 hidden=0 full=routes.all_options',
       buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
     };
   }
@@ -285,6 +287,7 @@ Last updated: ${generated}
 - 0-shot menu: \`${zeroShot.menu}\`
 - 0-shot durable: ${zeroShot.durable}
 - 0-shot files: \`${zeroShot.menuFile}\`, \`${zeroShot.promptFile}\`
+- 0-shot inventory: ${zeroShot.inventory}
 - 0-shot buckets: ${zeroShot.buckets}
 
 ## Current Priority
@@ -306,7 +309,7 @@ Last updated: ${generated}
 
 ## Next Move
 
-- Run \`${zeroShot.menu}\` to inspect every visible 0-shot route before choosing work.
+- Run \`${zeroShot.menu}\` to inspect every 0-shot route before choosing work.
 - Trust \`${zeroShot.menuFile}\` and prompt files only when \`${zeroShot.check}\` reports fresh; otherwise run \`${zeroShot.write}\`.
 - Run \`${zeroShot.command}\` only when you are already following the selected 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
 - Use \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.

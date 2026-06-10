@@ -138,7 +138,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Freshness check:** `atris 0-shot --check` and no-request `atris next --check` compare durable latest files, global prompt content, route menu content, per-model prompt content, per-horizon prompt content, and current source fingerprints, then report fresh, stale, or missing
 - **Radar surface:** `atris radar` / `atris radar --json` includes the current computed 0-shot route, `atris 0-shot --all` menu command, horizon/model bucket counts, and durable prompt/menu/model/horizon freshness status so the command-center view shows what any newly activated model should do next even if the latest file is stale
 - **Status surface:** `atris status`, `atris status --quick`, and `atris status --json` include the current computed 0-shot route, first command, `atris 0-shot --all` menu command, and durable prompt/menu/model/horizon freshness so ordinary health checks show the next safe move plus whether persisted 0-shot context is safe to trust
-- **Now front door:** generated `atris/now.md` includes the current 0-shot route, `atris 0-shot --all` menu command, durable menu/prompt file freshness, bucket counts, first command, and horizon handoff hint so agents loading the first context file can inspect all lanes before acting
+- **Now front door:** generated `atris/now.md` includes the current 0-shot route, `atris 0-shot --all` menu command, durable menu/prompt file freshness, route inventory counts with `routes.all_options`, bucket counts, first command, and horizon handoff hint so agents loading the first context file can inspect all lanes before acting
 - **Task freshness hook:** `commands/task.js` `writeDefaultProjection()` refreshes the ambient latest files whenever task commands refresh `.atris/state/tasks.projection.json`
 - **Mission freshness hook:** `commands/mission.js` refreshes the ambient latest files after `missions.jsonl`, mission task projection, and `codex_goal.json` writes
 - **Route index:** JSON includes bounded `routes.options[]` and full `routes.all_options[]` with ref, lane, horizon, work size, model tier, first command, prompt, and directive for active work; both lists are sanitized and omit raw task source payloads
@@ -158,7 +158,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris zero-shot` -> compatible human next-move card
 - `atris 0-shot --json` -> machine-readable packet
 - `atris 0-shot --prompt` -> copy-pasteable prompt for any model
-- `atris 0-shot --all` -> readable route menu for the selected next move plus visible quick/review/long/blocked/orient options
+- `atris 0-shot --all` -> readable full route menu for the selected next move plus quick/review/long/blocked/orient options
 - `atris 0-shot --write` -> refresh durable latest packet, route menu, and prompt files
 - `atris 0-shot --check` -> verify whether durable latest files are fresh
 
