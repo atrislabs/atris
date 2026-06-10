@@ -286,9 +286,19 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     const packet = JSON.parse(res.stdout);
     const latestJsonPath = path.join(dir, '.atris', 'state', 'zero-shot.latest.json');
     const promptTxtPath = path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt');
+    const fastPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt');
+    const proPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.pro.prompt.txt');
+    const validatorPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.validator.prompt.txt');
+    const humanPromptPath = path.join(dir, '.atris', 'state', 'zero-shot.human.prompt.txt');
     assert.equal(packet.durable.wrote, true);
     assert.equal(packet.durable.latest_json, '.atris/state/zero-shot.latest.json');
     assert.equal(packet.durable.prompt_txt, '.atris/state/zero-shot.prompt.txt');
+    assert.deepEqual(packet.durable.model_prompt_txt, {
+      fast: '.atris/state/zero-shot.fast.prompt.txt',
+      pro: '.atris/state/zero-shot.pro.prompt.txt',
+      validator: '.atris/state/zero-shot.validator.prompt.txt',
+      human: '.atris/state/zero-shot.human.prompt.txt',
+    });
     assert.equal(packet.boundaries.no_file_writes, false);
     assert.equal(packet.commands.zero_shot_write, 'atris 0-shot --write');
     assert.equal(packet.commands.legacy_zero_shot_write, 'atris zero-shot --write');
@@ -299,12 +309,26 @@ test('zero-shot --write refreshes durable latest packet and prompt files', () =>
     assert.equal(packet.durable.source_fingerprint, packet.freshness.source_fingerprint);
     assert.equal(fs.existsSync(latestJsonPath), true);
     assert.equal(fs.existsSync(promptTxtPath), true);
+    assert.equal(fs.existsSync(fastPromptPath), true);
+    assert.equal(fs.existsSync(proPromptPath), true);
+    assert.equal(fs.existsSync(validatorPromptPath), true);
+    assert.equal(fs.existsSync(humanPromptPath), true);
     const latest = JSON.parse(fs.readFileSync(latestJsonPath, 'utf8'));
     assert.equal(latest.schema, 'atris.zero_shot_next_move.v1');
     assert.equal(latest.generated_at, packet.generated_at);
     assert.equal(latest.handoff.prompt, packet.handoff.prompt);
     assert.equal(latest.durable.source_fingerprint, packet.freshness.source_fingerprint);
+    assert.equal(latest.durable.model_prompts.fast.model_tier_match, true);
+    assert.equal(latest.durable.model_prompts.fast.selected_ref, 'CZS-1');
+    assert.equal(latest.durable.model_prompts.fast.first_command, 'atris task current-step --tag cli --json');
+    assert.equal(latest.durable.model_prompts.pro.model_tier_match, false);
+    assert.equal(latest.durable.model_prompts.pro.first_command, 'atris radar --json');
     assert.equal(fs.readFileSync(promptTxtPath, 'utf8'), `${packet.handoff.prompt}\n`);
+    assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Route: fast_model_task/);
+    assert.match(fs.readFileSync(fastPromptPath, 'utf8'), /Focus: CZS-1 - Add zero-shot CLI command/);
+    assert.match(fs.readFileSync(proPromptPath, 'utf8'), /No pro model route is available/);
+    assert.match(fs.readFileSync(validatorPromptPath, 'utf8'), /No validator model route is available/);
+    assert.match(fs.readFileSync(humanPromptPath, 'utf8'), /No human model route is available/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -326,9 +350,24 @@ test('zero-shot --check reports fresh and stale durable latest files', () => {
     assert.equal(fresh.schema, 'atris.zero_shot_latest_check.v1');
     assert.equal(fresh.status, 'fresh');
     assert.equal(fresh.ok, true);
+    assert.equal(fresh.model_prompts_fresh, true);
+    assert.equal(fresh.model_prompts.fast.exists, true);
+    assert.equal(fresh.model_prompts.pro.exists, true);
     assert.equal(fresh.latest_selected_ref, 'CZS-1');
     assert.equal(fresh.current_selected_ref, 'CZS-1');
     assert.equal(fresh.latest_source_fingerprint, fresh.current_source_fingerprint);
+
+    fs.rmSync(path.join(dir, '.atris', 'state', 'zero-shot.fast.prompt.txt'));
+    const missingModelPromptRes = runCli(['zero-shot', '--check', '--json'], { cwd: dir });
+    assert.equal(missingModelPromptRes.status, 0, missingModelPromptRes.stderr || missingModelPromptRes.stdout);
+    const missingModelPrompt = JSON.parse(missingModelPromptRes.stdout);
+    assert.equal(missingModelPrompt.status, 'stale');
+    assert.equal(missingModelPrompt.ok, false);
+    assert.equal(missingModelPrompt.model_prompts_fresh, false);
+    assert.equal(missingModelPrompt.model_prompts.fast.exists, false);
+
+    const rewrite = runCli(['zero-shot', '--write'], { cwd: dir });
+    assert.equal(rewrite.status, 0, rewrite.stderr || rewrite.stdout);
 
     fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
       schema: 'atris.task_projection.v1',

@@ -39,6 +39,14 @@ const LANE_PRIORITY = {
 };
 const MODEL_TIERS = ['fast', 'pro', 'validator', 'human'];
 
+function modelPromptRelativePath(tier) {
+  return `.atris/state/zero-shot.${tier}.prompt.txt`;
+}
+
+function modelPromptRelativePaths() {
+  return Object.fromEntries(MODEL_TIERS.map(tier => [tier, modelPromptRelativePath(tier)]));
+}
+
 function normalizeModelTier(value) {
   const tier = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
   if (!tier) return null;
@@ -560,6 +568,40 @@ function buildHandoff(route, root) {
   };
 }
 
+function routeForModelPrompt(packet, tier) {
+  const models = packet && packet.routes && packet.routes.models ? packet.routes.models : {};
+  const entry = models[tier] || {};
+  return entry.first || noRouteForModel(tier);
+}
+
+function buildModelPromptRecords(packet, root) {
+  return Object.fromEntries(MODEL_TIERS.map(tier => {
+    const route = routeForModelPrompt(packet, tier);
+    const relativePath = modelPromptRelativePath(tier);
+    return [tier, {
+      tier,
+      prompt_txt: relativePath,
+      prompt_txt_abs: path.join(root, relativePath),
+      model_tier_match: Boolean(packet.routes && packet.routes.models && packet.routes.models[tier] && packet.routes.models[tier].first),
+      selected_ref: route.ref || null,
+      lane: route.lane || null,
+      first_command: route.first_command || null,
+      prompt: routePrompt(route, root),
+    }];
+  }));
+}
+
+function publicModelPromptRecords(records) {
+  return Object.fromEntries(Object.entries(records).map(([tier, record]) => [tier, {
+    prompt_txt: record.prompt_txt,
+    prompt_txt_abs: record.prompt_txt_abs,
+    model_tier_match: record.model_tier_match,
+    selected_ref: record.selected_ref,
+    lane: record.lane,
+    first_command: record.first_command,
+  }]));
+}
+
 function summarizeRouteLanes(routes) {
   return routes.reduce((summary, route) => {
     summary[route.lane] = (summary[route.lane] || 0) + 1;
@@ -719,6 +761,7 @@ function buildPacket(options = {}) {
       write_command: ZERO_SHOT_WRITE_COMMAND,
       latest_json: LATEST_PACKET_RELATIVE_PATH,
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+      model_prompt_txt: modelPromptRelativePaths(),
     },
     missions: {
       active: missionState.active_count,
@@ -761,6 +804,7 @@ function writeLatestPacket(packet) {
   const root = packet.workspace_root || findWorkspaceRoot(process.cwd());
   const latestJsonPath = path.join(root, LATEST_PACKET_RELATIVE_PATH);
   const promptTxtPath = path.join(root, LATEST_PROMPT_RELATIVE_PATH);
+  const modelPromptRecords = buildModelPromptRecords(packet, root);
   const packetToWrite = {
     ...packet,
     boundaries: {
@@ -774,12 +818,17 @@ function writeLatestPacket(packet) {
       prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
       latest_json_abs: latestJsonPath,
       prompt_txt_abs: promptTxtPath,
+      model_prompt_txt: modelPromptRelativePaths(),
+      model_prompts: publicModelPromptRecords(modelPromptRecords),
       source_fingerprint: packet.freshness ? packet.freshness.source_fingerprint : null,
     },
   };
   fs.mkdirSync(path.dirname(latestJsonPath), { recursive: true });
   fs.writeFileSync(latestJsonPath, `${JSON.stringify(packetToWrite, null, 2)}\n`, 'utf8');
   fs.writeFileSync(promptTxtPath, `${packetToWrite.handoff.prompt}\n`, 'utf8');
+  for (const record of Object.values(modelPromptRecords)) {
+    fs.writeFileSync(record.prompt_txt_abs, `${record.prompt}\n`, 'utf8');
+  }
   return packetToWrite;
 }
 
@@ -792,8 +841,17 @@ function buildLatestCheck(options = {}) {
   const currentFingerprint = current.freshness.source_fingerprint;
   const latestFingerprint = latest && latest.freshness ? latest.freshness.source_fingerprint : null;
   const promptExists = fs.existsSync(promptPath);
+  const modelPrompts = Object.fromEntries(MODEL_TIERS.map(tier => {
+    const relativePath = modelPromptRelativePath(tier);
+    const promptPathForTier = path.join(root, relativePath);
+    return [tier, {
+      prompt_txt: relativePath,
+      exists: fs.existsSync(promptPathForTier),
+    }];
+  }));
+  const modelPromptsFresh = Object.values(modelPrompts).every(record => record.exists);
   const exists = Boolean(latest);
-  const fresh = Boolean(exists && promptExists && latestFingerprint && latestFingerprint === currentFingerprint);
+  const fresh = Boolean(exists && promptExists && modelPromptsFresh && latestFingerprint && latestFingerprint === currentFingerprint);
   return {
     schema: 'atris.zero_shot_latest_check.v1',
     ok: fresh,
@@ -801,8 +859,11 @@ function buildLatestCheck(options = {}) {
     workspace_root: root,
     latest_json: LATEST_PACKET_RELATIVE_PATH,
     prompt_txt: LATEST_PROMPT_RELATIVE_PATH,
+    model_prompt_txt: modelPromptRelativePaths(),
     latest_exists: exists,
     prompt_exists: promptExists,
+    model_prompts: modelPrompts,
+    model_prompts_fresh: modelPromptsFresh,
     latest_generated_at: latest ? latest.generated_at || null : null,
     latest_selected_ref: latest ? latest.decision && latest.decision.selected_ref || null : null,
     current_selected_ref: current.decision.selected_ref || null,
@@ -821,6 +882,7 @@ function renderLatestCheck(check) {
     `status: ${check.status}`,
     `latest: ${check.latest_json}`,
     `prompt: ${check.prompt_txt}`,
+    `model prompts: ${check.model_prompts_fresh ? 'fresh' : 'missing'}`,
     `selected: ${check.latest_selected_ref || 'none'} -> current ${check.current_selected_ref || 'none'}`,
     `refresh: ${check.refresh_command}`,
   ].join('\n');
@@ -880,8 +942,8 @@ function renderHelp() {
     'Human output shows the first command to run.',
     '--json includes lane, horizon, work_size, model_tier, agent_directive, first_command, routes.options, routes.models, handoff.prompt, and safety boundaries.',
     '--prompt prints only the copy-pasteable handoff.prompt for any model.',
-    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH} and ${LATEST_PROMPT_RELATIVE_PATH} for ambient agents; it does not mutate tasks or call external systems.`,
-    '--check compares the durable latest packet with current source fingerprints and reports fresh, stale, or missing.',
+    `--write refreshes ${LATEST_PACKET_RELATIVE_PATH}, ${LATEST_PROMPT_RELATIVE_PATH}, and per-model prompt files for ambient agents; it does not mutate tasks or call external systems.`,
+    '--check compares the durable latest packet, global prompt, per-model prompts, and current source fingerprints, then reports fresh, stale, or missing.',
     'Reads atris/brain/STATUS.md, .atris/state/tasks.projection.json, .atris/state/missions.jsonl, and .atris/state/codex_goal.json without accepting tasks or calling external systems.',
   ].join('\n');
 }
