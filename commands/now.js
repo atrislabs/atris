@@ -256,6 +256,8 @@ function zeroShotNowSummary(root = process.cwd()) {
       json: packet.commands?.zero_shot_json || 'atris 0-shot --json',
       check: check.check_command || 'atris 0-shot --check',
       write: check.refresh_command || 'atris 0-shot --write',
+      modelPrompt: 'atris 0-shot --model fast|pro|validator|human --prompt',
+      horizonPrompt: 'atris 0-shot --horizon now|review|long|blocked|orient --prompt',
       menuFile: check.menu_txt || '.atris/state/zero-shot.menu.txt',
       promptFile: check.prompt_txt || '.atris/state/zero-shot.prompt.txt',
       durable: `status=${check.status} prompt=${zeroShotFreshnessLabel(check.prompt_exists, check.prompt_fresh)} menu=${zeroShotFreshnessLabel(check.menu_exists, check.menu_fresh)} model=${zeroShotGroupFreshnessLabel(check.model_prompts_fresh)} horizon=${zeroShotGroupFreshnessLabel(check.horizon_prompts_fresh)}`,
@@ -276,6 +278,8 @@ function zeroShotNowSummary(root = process.cwd()) {
       json: 'atris 0-shot --json',
       check: 'atris 0-shot --check',
       write: 'atris 0-shot --write',
+      modelPrompt: 'atris 0-shot --model fast|pro|validator|human --prompt',
+      horizonPrompt: 'atris 0-shot --horizon now|review|long|blocked|orient --prompt',
       menuFile: '.atris/state/zero-shot.menu.txt',
       promptFile: '.atris/state/zero-shot.prompt.txt',
       durable: 'status=unavailable prompt=unknown menu=unknown model=unknown horizon=unknown',
@@ -365,7 +369,8 @@ ${zeroShotGateLines ? `${zeroShotGateLines}` : ''}
 - Run \`${zeroShot.menu}\` to inspect every 0-shot route before choosing work.
 - Trust \`${zeroShot.menuFile}\` and prompt files only when \`${zeroShot.check}\` reports fresh; otherwise run \`${zeroShot.write}\`.
 - Run \`${zeroShot.command}\` only when you are already following the selected 0-shot lane, or \`${zeroShot.prompt}\` for a copy-paste handoff.
-- Use \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.
+- Use \`${zeroShot.modelPrompt}\`, or fresh \`.atris/state/zero-shot.<fast|pro|validator|human>.prompt.txt\`, for a model-tier handoff.
+- Use \`${zeroShot.horizonPrompt}\`, or fresh \`.atris/state/zero-shot.<now|review|long|blocked|orient>.prompt.txt\`, for a horizon-specific handoff.
 - Read \`atris/MAP.md\`, \`atris/TODO.md\`, and today's journal only as needed for the task in front of you.
 
 ## Receipts
