@@ -115,22 +115,40 @@ test('mineProofPolicy stays silent below the human-data threshold', () => {
 
 test('policyHintsForProof fires only on missing evidence and never without mined lessons', () => {
   const mined = mineProofPolicy(fixtureHistory());
+  const dir = makeTempDir();
+  try {
+    const writeReceipt = (rel, passed) => {
+      const file = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ schema: 'atris.mission_receipt.v1', result: { passed } }) + '\n', 'utf8');
+    };
+    writeReceipt('atris/runs/run.json', true);
+    writeReceipt('atris/runs/failing.json', false);
 
-  const bare = policyHintsForProof('refactored the loop, looks good to me', mined);
-  assert.deepEqual(bare.map((h) => h.id), ['proof-verify-command', 'proof-live-receipt']);
+    const bare = policyHintsForProof('refactored the loop, looks good to me', mined, dir);
+    assert.deepEqual(bare.map((h) => h.id), ['proof-verify-command', 'proof-live-receipt']);
 
-  const partial = policyHintsForProof('npm test 10/10 green', mined);
-  assert.deepEqual(partial.map((h) => h.id), ['proof-live-receipt']);
+    const partial = policyHintsForProof('npm test 10/10 green', mined, dir);
+    assert.deepEqual(partial.map((h) => h.id), ['proof-live-receipt']);
 
-  const full = policyHintsForProof('npm test green; receipt atris/runs/run.json', mined);
-  assert.deepEqual(full, []);
+    const full = policyHintsForProof('npm test green; receipt atris/runs/run.json', mined, dir);
+    assert.deepEqual(full, []);
 
-  // grep/diff-style verifiers are runnable commands too (CLI-217 false positive).
-  const grepStyle = policyHintsForProof("verify: grep -q 'last_verified: 2026-06-10' page.md passed; receipt atris/runs/r.json", mined);
-  assert.deepEqual(grepStyle, []);
+    // grep/diff-style verifiers are runnable commands too (CLI-217 false positive).
+    const grepStyle = policyHintsForProof("verify: grep -q 'last_verified' page.md passed; receipt atris/runs/run.json", mined, dir);
+    assert.deepEqual(grepStyle, []);
 
-  assert.deepEqual(policyHintsForProof('anything', null), []);
-  assert.deepEqual(policyHintsForProof('anything', { lessons: [] }), []);
+    // The hint mirrors the lane gate: receipts must exist and pass on disk.
+    const ghost = policyHintsForProof('npm test green; receipt atris/runs/ghost.json', mined, dir);
+    assert.deepEqual(ghost.map((h) => h.id), ['proof-live-receipt']);
+    const failing = policyHintsForProof('npm test green; receipt atris/runs/failing.json', mined, dir);
+    assert.deepEqual(failing.map((h) => h.id), ['proof-live-receipt']);
+
+    assert.deepEqual(policyHintsForProof('anything', null, dir), []);
+    assert.deepEqual(policyHintsForProof('anything', { lessons: [] }, dir), []);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
 
 test('syncLessonsMd appends policy lines once and refreshes them on re-mine', () => {
