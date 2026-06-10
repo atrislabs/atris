@@ -427,10 +427,6 @@ function executePhaseDetailed(phase, context, options = {}) {
   }
 }
 
-function executePhase(phase, context, options = {}) {
-  return executePhaseDetailed(phase, context, options).output;
-}
-
 /**
  * Build context-aware file list for prompts.
  */
