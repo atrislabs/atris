@@ -493,6 +493,66 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(ttyState.output, 'streaming');
 });
 
+test('ax prepends zero-shot handoff context for fast/pro/code-fast turns', () => {
+  const ax = require('../ax');
+  const zeroShotPacket = {
+    decision: {
+      lane: 'owner_gate',
+      horizon: 'blocked',
+      model_tier: 'human',
+      selected_ref: 'CZS-1',
+      selected_title: 'Add atris zero-shot CLI command',
+      reason: 'CZS-1 is agent-certified and waiting for human accept.',
+      owner_action: 'human-only: atris task accept CZS-1',
+      safe_agent_action: 'read-only: atris task page CZS-1 --json',
+    },
+    commands: {
+      first_command: 'atris task page CZS-1 --json',
+      zero_shot_all: 'atris 0-shot --all',
+      zero_shot_prompt: 'atris 0-shot --prompt',
+      model_prompt: {
+        fast: 'atris 0-shot --model fast --prompt',
+        pro: 'atris 0-shot --model pro --prompt',
+        validator: 'atris 0-shot --model validator --prompt',
+        human: 'atris 0-shot --model human --prompt',
+      },
+      horizon_prompt: {
+        now: 'atris 0-shot --horizon now --prompt',
+        review: 'atris 0-shot --horizon review --prompt',
+        long: 'atris 0-shot --horizon long --prompt',
+        blocked: 'atris 0-shot --horizon blocked --prompt',
+        orient: 'atris 0-shot --horizon orient --prompt',
+      },
+    },
+    routes: {
+      models: { fast: { count: 2 }, pro: { count: 1 }, validator: { count: 1 }, human: { count: 1 } },
+      horizons: { now: 2, immediate_review: 1, long_term: 1, blocked: 1, orient: 0 },
+    },
+  };
+
+  const fastPayload = ax.buildPayload('what next?', {
+    cwd: '/workspace/demo',
+    mode: 'fast',
+    zeroShotPacket,
+  });
+  assert.match(fastPayload.message, /^0-shot context for this ax turn:/);
+  assert.match(fastPayload.message, /ax mode: fast/);
+  assert.match(fastPayload.message, /route: owner_gate \| blocked \| human/);
+  assert.match(fastPayload.message, /run first: atris task page CZS-1 --json/);
+  assert.match(fastPayload.message, /model buckets: fast=2 pro=1 validator=1 human=1/);
+  assert.match(fastPayload.message, /horizon buckets: now=2 review=1 long=1 blocked=1 orient=0/);
+  assert.match(fastPayload.message, /owner gate: human-only: atris task accept CZS-1/);
+  assert.match(fastPayload.message, /do only the agent-safe action/);
+  assert.match(fastPayload.message, /User request:\nwhat next\?/);
+
+  const codeFastPayload = ax.buildCodeFastPayload('inspect quickly', {
+    cwd: '/workspace/demo',
+    zeroShotPacket,
+  });
+  assert.match(codeFastPayload.message, /ax mode: code-fast/);
+  assert.match(codeFastPayload.message, /prompt: atris 0-shot --prompt/);
+});
+
 test('default entry auto-advances to plan when inbox has items', () => {
   const dir = makeTempDir();
   try {

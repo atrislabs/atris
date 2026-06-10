@@ -821,10 +821,67 @@ function compactHistory(history, limit = 8) {
     .join('\n');
 }
 
-function buildMessage(message, history = []) {
+function findAtrisWorkspaceRoot(start = process.cwd()) {
+  let dir = path.resolve(start);
+  while (true) {
+    if (fs.existsSync(path.join(dir, 'atris')) || fs.existsSync(path.join(dir, '.atris'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function buildAxZeroShotPacket(options = {}) {
+  if (Object.prototype.hasOwnProperty.call(options, 'zeroShotPacket')) return options.zeroShotPacket;
+  if (options.zeroShot === false) return null;
+  const root = findAtrisWorkspaceRoot(options.cwd || process.cwd());
+  if (!root) return null;
+  try {
+    const { buildPacket } = require('./commands/zero-shot');
+    return buildPacket({ cwd: root });
+  } catch (_) {
+    return null;
+  }
+}
+
+function formatZeroShotMessage(packet, options = {}) {
+  if (!packet || !packet.decision || !packet.commands) return '';
+  const decision = packet.decision;
+  const commands = packet.commands;
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown';
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'the current workspace';
+  const models = packet.routes && packet.routes.models ? packet.routes.models : {};
+  const horizons = packet.routes && packet.routes.horizons ? packet.routes.horizons : {};
+  const modelCommands = commands.model_prompt || {};
+  const horizonCommands = commands.horizon_prompt || {};
+  const firstCommand = commands.first_command || commands.next_command || 'atris 0-shot --prompt';
+  const lines = [
+    '0-shot context for this ax turn:',
+    `- ax mode: ${normalizeMode(options.mode)}`,
+    `- route: ${route}`,
+    `- focus: ${focus}`,
+  ];
+  if (decision.reason) lines.push(`- why: ${decision.reason}`);
+  lines.push(`- run first: ${firstCommand}`);
+  lines.push(`- menu: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  lines.push(`- prompt: ${commands.zero_shot_prompt || 'atris 0-shot --prompt'}`);
+  lines.push(`- model buckets: fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`);
+  lines.push(`- horizon buckets: now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0} orient=${horizons.orient || 0}`);
+  if (modelCommands.fast || modelCommands.pro || modelCommands.validator || modelCommands.human) {
+    lines.push(`- model prompts: fast=${modelCommands.fast || 'atris 0-shot --model fast --prompt'}; pro=${modelCommands.pro || 'atris 0-shot --model pro --prompt'}; validator=${modelCommands.validator || 'atris 0-shot --model validator --prompt'}; human=${modelCommands.human || 'atris 0-shot --model human --prompt'}`);
+  }
+  if (horizonCommands.now || horizonCommands.review || horizonCommands.long || horizonCommands.blocked || horizonCommands.orient) {
+    lines.push(`- horizon prompts: now=${horizonCommands.now || 'atris 0-shot --horizon now --prompt'}; review=${horizonCommands.review || 'atris 0-shot --horizon review --prompt'}; long=${horizonCommands.long || 'atris 0-shot --horizon long --prompt'}; blocked=${horizonCommands.blocked || 'atris 0-shot --horizon blocked --prompt'}; orient=${horizonCommands.orient || 'atris 0-shot --horizon orient --prompt'}`);
+  }
+  if (decision.owner_action) lines.push(`- owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) lines.push(`- agent-safe action: ${decision.safe_agent_action}`);
+  lines.push('- boundary: if owner-gated, do only the agent-safe action; do not mutate tasks, accept human gates, send externally, merge, or publish from this prompt.');
+  return lines.join('\n');
+}
+
+function buildMessage(message, history = [], options = {}) {
   const trimmed = String(message || '').trim();
-  if (!history.length) return trimmed;
-  return [
+  const body = !history.length ? trimmed : [
     'Continue this terminal coding-agent conversation in the same workspace.',
     'Use local tools when the user asks about files, code, tests, or edits.',
     '',
@@ -833,14 +890,17 @@ function buildMessage(message, history = []) {
     '',
     `Current user message: ${trimmed}`,
   ].join('\n');
+  const zeroShot = formatZeroShotMessage(options.zeroShotPacket, { mode: options.mode });
+  return zeroShot ? `${zeroShot}\n\nUser request:\n${body}` : body;
 }
 
 function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
   const route = resolveRoute(message, options);
   const local = route !== 'cloud';
+  const zeroShotPacket = buildAxZeroShotPacket({ ...options, mode });
   const payload = {
-    message: buildMessage(message, options.history || []),
+    message: buildMessage(message, options.history || [], { mode, zeroShotPacket }),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'pro' ? 14 : 8) : 1,
     verify_command: 'true'
@@ -863,8 +923,9 @@ function buildPayload(message, options = {}) {
 }
 
 function buildCodeFastPayload(message, options = {}) {
+  const zeroShotPacket = buildAxZeroShotPacket({ ...options, mode: 'code-fast' });
   const payload = {
-    message: buildMessage(message, options.history || []),
+    message: buildMessage(message, options.history || [], { mode: 'code-fast', zeroShotPacket }),
     model: CODE_FAST.model,
     timeout_seconds: Number(options.timeoutSeconds || 180)
   };
