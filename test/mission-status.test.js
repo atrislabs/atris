@@ -957,7 +957,8 @@ test('mission help documents status filters', () => {
   try {
     const help = runCli(['mission', '--help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--json\]/);
+    assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(help.stdout, /rolls up sibling git-worktree missions/);
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
     assert.match(help.stdout, /Autonomy recipe:/);

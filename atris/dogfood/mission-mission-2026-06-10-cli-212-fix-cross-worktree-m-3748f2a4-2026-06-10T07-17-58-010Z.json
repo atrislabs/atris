@@ -1,0 +1,123 @@
+{
+  "schema": "atris.mission_receipt.v1",
+  "mission_id": "mission-2026-06-10-cli-212-fix-cross-worktree-m-3748f2a4",
+  "objective": "CLI-212: fix cross-worktree mission status rollup, dogfood 2 parallel worktree missions",
+  "owner": "devin",
+  "at": "2026-06-10T07:17:58.010Z",
+  "verifier": "npm test",
+  "result": {
+    "kind": "mission_tick",
+    "tick": {
+      "status": "ran",
+      "reason": "tick-recorded",
+      "tick_index": 2,
+      "ran": true,
+      "started_at": "2026-06-10T07:16:57.060Z",
+      "claude": {
+        "skipped": true,
+        "reason": "orchestrator-is-caller-session"
+      },
+      "summary": "fixed mission help regression test to assert new status usage line (--local + rollup note); suite rerun",
+      "verifier_passed": true,
+      "finished_at": "2026-06-10T07:17:58.010Z",
+      "worktree": {
+        "available": true,
+        "before_dirty_count": 11,
+        "after_dirty_count": 11,
+        "changed": false,
+        "baseline_source": "mission_start",
+        "baseline_dirty_count": 2,
+        "new_since_baseline_count": 9,
+        "new_since_baseline_sample": [
+          "atris/MAP.md",
+          "commands/mission.js",
+          "commands/worktree.js",
+          "test/mission-status.test.js",
+          "atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-a-capture-p-fd3fa92f-2026-06-10T07-12-46-443Z.json",
+          "atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-b-capture-p-1b9e2169-2026-06-10T07-12-46-564Z.json",
+          "atris/dogfood/worktree-a-friction.md",
+          "atris/dogfood/worktree-b-friction.md",
+          "test/mission-status-rollup.test.js"
+        ],
+        "unverified_dirty": false,
+        "unverified_change": false,
+        "new_dirty_count": 0,
+        "cleared_dirty_count": 0,
+        "dirty_sample_after": [
+          " M .devin/config.local.json",
+          " M atris/MAP.md",
+          " M atris/wiki/STATUS.md",
+          " M commands/mission.js",
+          " M commands/worktree.js",
+          " M test/mission-status.test.js",
+          "?? atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-a-capture-p-fd3fa92f-2026-06-10T07-12-46-443Z.json",
+          "?? atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-b-capture-p-1b9e2169-2026-06-10T07-12-46-564Z.json",
+          "?? atris/dogfood/worktree-a-friction.md",
+          "?? atris/dogfood/worktree-b-friction.md",
+          "?? test/mission-status-rollup.test.js"
+        ],
+        "new_dirty_sample": [],
+        "cleared_dirty_sample": [],
+        "before_dirty_hash": "1f271a4b22da4740e34a4597622c9129ca890d35",
+        "after_dirty_hash": "1f271a4b22da4740e34a4597622c9129ca890d35"
+      }
+    },
+    "frozen": {
+      "verifier": "npm test",
+      "lane": "code",
+      "started_at": "2026-06-10T07:16:57.060Z"
+    },
+    "verifier_result": {
+      "command": "npm test",
+      "resolved_command": null,
+      "status": 0,
+      "signal": null,
+      "passed": true,
+      "stdout": "etion proof (4.609459ms)\n✔ task proof helper accepts commands, verifier results, receipts, and human approval (0.213166ms)\n✔ task CLI blocks weak ready proof, positive reviews without proof, and bare done (515.477042ms)\n✔ review queue surfaces validated receipt evidence from proof text (569.3735ms)\n✔ review queue flags missing and failing receipts named in proof (472.885417ms)\n✔ task accept surfaces receipt evidence without blocking the human (364.6435ms)\n✔ proofs without receipt paths carry no evidence block (327.795459ms)\n✔ review queue puts green-evidence items first and counts them (623.33ms)\n✔ accept-group spot-check targets the weakest evidence first (808.914958ms)\n✔ review groups report how many tasks carry passing evidence (494.025ms)\n✔ loadLessonMetadata returns empty object when sidecar absent (2.740042ms)\n✔ loadLessonMetadata returns parsed object when sidecar valid (2.014125ms)\n✔ loadLessonMetadata returns empty object on malformed JSON (no crash) (0.6465ms)\n✔ parseLessons returns empty when lessons.md missing (1.6715ms)\n✔ parseLessons extracts id/date/verdict/body from prose lines (2.660542ms)\n✔ parseLessons joins sidecar metadata by slug (1.405458ms)\n✔ runLessonDetector returns true on exit 0, false on non-zero (16.209292ms)\n✔ isLessonResolved uses detector when sidecar provides one (exit 0 → resolved) (6.839042ms)\n✔ isLessonResolved uses detector when sidecar provides one (exit 1 → not resolved) (7.373584ms)\n✔ isLessonResolved falls back to legacy grep when no sidecar detector (30.384708ms)\n✔ pickUnresolvedFailLesson prefers typed+detector over legacy (32.767417ms)\n✔ pickUnresolvedFailLesson respects status:resolved sidecar tag (1.091875ms)\n✔ pickUnresolvedFailLesson skips status:observed (process rules, not code bugs) (0.921375ms)\n✔ pickUnresolvedFailLesson still picks status:open even with detector showing non-zero (6.952292ms)\n✔ install git state is quiet outside git repos (10.162541ms)\n✔ install git state warns on dirty install checkout (72.8535ms)\n✔ install git state warns on detached install checkout (207.349709ms)\n✔ xp status --all aggregates verified local workspace ledgers (910.791292ms)\n✔ xp sync dry-run builds a path-private AgentXP packet (89.576458ms)\n✔ xp sync dry-run keeps earned AgentXP uncapped while form stays capped (93.758709ms)\n✔ xp sync dry-run carries local business binding for org attribution (94.224333ms)\n✔ xp sync dry-run allows public AgentXP opt-in for a business workspace (97.102625ms)\n✔ xp sync all avoids top-level org attribution across multiple businesses (156.542291ms)\n✔ xp sync infers player from accepted local proof before OS user (107.579958ms)\n✔ xp sync infers player from logged-in account profile when present (105.974875ms)\n✔ xp local activity detects assistant surfaces without inflating receipt XP (263.079958ms)\n✔ xp sync posts the packet with the AgentXP sync token (59.459709ms)\n✔ xp sync falls back to logged-in Atris auth when no sync token is set (47.939083ms)\n✔ xp sync without login points public players to login-first sync (36.167333ms)\n✔ xp sync dry-run render points players to login-first publish (3.268125ms)\n✔ xp sync render shows server public identity mapping (0.468583ms)\n✔ xp status --all excludes tampered local ledgers from totals (146.704625ms)\n✔ xp status fails closed when receipt chain metadata is tampered (194.159166ms)\n✔ xp session writes a local capsule for the current proof-backed work window (107.380208ms)\n✔ xp session --no-write previews receipts without mutating the local ledger (76.98575ms)\n✔ xp session skips a partial trailing task episode without advancing the cursor (77.462ms)\n✔ xp status cursor stays byte-aligned after newline-terminated JSONL append (156.956125ms)\n✔ xp status replays accepted episodes when the receipt ledger is missing (156.86725ms)\n✔ xp session reports an unreadable task projection without blocking verified XP (79.034459ms)\nℹ tests 823\nℹ suites 16\nℹ pass 823\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 60811.875625\n",
+      "stderr": ""
+    },
+    "rate_limit_info": null,
+    "worktree": {
+      "available": true,
+      "before_dirty_count": 11,
+      "after_dirty_count": 11,
+      "changed": false,
+      "baseline_source": "mission_start",
+      "baseline_dirty_count": 2,
+      "new_since_baseline_count": 9,
+      "new_since_baseline_sample": [
+        "atris/MAP.md",
+        "commands/mission.js",
+        "commands/worktree.js",
+        "test/mission-status.test.js",
+        "atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-a-capture-p-fd3fa92f-2026-06-10T07-12-46-443Z.json",
+        "atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-b-capture-p-1b9e2169-2026-06-10T07-12-46-564Z.json",
+        "atris/dogfood/worktree-a-friction.md",
+        "atris/dogfood/worktree-b-friction.md",
+        "test/mission-status-rollup.test.js"
+      ],
+      "unverified_dirty": false,
+      "unverified_change": false,
+      "new_dirty_count": 0,
+      "cleared_dirty_count": 0,
+      "dirty_sample_after": [
+        " M .devin/config.local.json",
+        " M atris/MAP.md",
+        " M atris/wiki/STATUS.md",
+        " M commands/mission.js",
+        " M commands/worktree.js",
+        " M test/mission-status.test.js",
+        "?? atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-a-capture-p-fd3fa92f-2026-06-10T07-12-46-443Z.json",
+        "?? atris/dogfood/mission-mission-2026-06-10-worktree-dogfood-b-capture-p-1b9e2169-2026-06-10T07-12-46-564Z.json",
+        "?? atris/dogfood/worktree-a-friction.md",
+        "?? atris/dogfood/worktree-b-friction.md",
+        "?? test/mission-status-rollup.test.js"
+      ],
+      "new_dirty_sample": [],
+      "cleared_dirty_sample": [],
+      "before_dirty_hash": "1f271a4b22da4740e34a4597622c9129ca890d35",
+      "after_dirty_hash": "1f271a4b22da4740e34a4597622c9129ca890d35"
+    },
+    "passed": true
+  }
+}
