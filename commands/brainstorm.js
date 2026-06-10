@@ -31,6 +31,9 @@ async function brainstormAtris() {
     throw new Error('atris/ folder not found. Run "atris init" first.');
   }
 
+  const zeroShot = brainstormZeroShotPreflight();
+  if (zeroShot.ownerGated) return;
+
   ensureLogDirectory();
   const { logFile, dateFormatted } = getLogPath();
   if (!fs.existsSync(logFile)) {
@@ -349,6 +352,38 @@ function brainstormAbortError() {
   const error = new Error('Brainstorm cancelled by user.');
   error.__brainstormAbort = true;
   return error;
+}
+
+function brainstormZeroShotPreflight() {
+  let packet = null;
+  try {
+    const { buildPacket } = require('./zero-shot');
+    packet = buildPacket();
+  } catch {
+    return { ownerGated: false };
+  }
+  if (!packet || !packet.decision || !packet.commands) return { ownerGated: false };
+  const decision = packet.decision;
+  const commands = packet.commands;
+  const ownerGated = decision.lane === 'owner_gate' || Boolean(decision.owner_action);
+  if (!ownerGated) return { ownerGated: false };
+
+  console.log('');
+  console.log('0-shot preflight:');
+  console.log(`  route: ${[decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown'}`);
+  console.log(`  focus: ${[decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none'}`);
+  if (decision.reason) console.log(`  why: ${decision.reason}`);
+  console.log(`  first command: ${commands.first_command || commands.next_command || 'atris 0-shot --prompt'}`);
+  console.log(`  menu: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log(`  prompt: ${commands.zero_shot_prompt || 'atris 0-shot --prompt'}`);
+  if (decision.owner_action) console.log(`  owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) console.log(`  agent-safe action: ${decision.safe_agent_action}`);
+  console.log('');
+  console.log('Owner-gated 0-shot route detected. I am not starting brainstorm.');
+  console.log(`Run first: ${commands.first_command || commands.next_command || 'atris 0-shot --prompt'}`);
+  console.log(`Inspect all routes: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log('');
+  return { ownerGated: true };
 }
 
 function generateWorkflowFile(workflowFile, metadata) {

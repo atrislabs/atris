@@ -30,7 +30,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 # Core CLI logic
 rg "async function interactiveEntry|async function atrisDevEntry" bin/atris.js    # Main entry points: cold-start dispatcher + legacy natural-language mode
 rg "modelForMode|buildPayload|formatUsage|async function chat|postTurn" ax test/cli-smoke.test.js  # ax Atris2 local coding-agent CLI: Fast/Pro modes, SSE streaming, workspace_path, chat history, doctor/help
-rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
+rg "brainstormAtris|brainstormZeroShotPreflight|Usage: atris brainstorm|brainstorm help|brainstorm stops" commands/brainstorm.js test/commands.test.js test/cli-smoke.test.js  # Brainstorm command, workspace-free help, and 0-shot owner-gate preflight
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)
 rg "function reviewAtris" commands/workflow.js  # Review command: default certified queue, --verbose legacy validator prompt
@@ -493,8 +493,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 **Purpose:** Conversational exploration before planning - supportive, one question at a time
 
 - **Entry point:** `bin/atris.js:100` (command routing)
-- **Handler:** `commands/brainstorm.js:12-1323` (brainstormAtris function)
+- **Handler:** `commands/brainstorm.js` (`brainstormAtris` function)
 - **Help:** `commands/brainstorm.js:14-30` short-circuits before workspace/log setup; regression: `test/commands.test.js:4321-4335`
+- **0-shot preflight:** `brainstormZeroShotPreflight` stops owner-gated routes before workspace log setup, Inbox writes, cloud journal writes, or auth refresh; regression: `test/cli-smoke.test.js`
 - **How it works:**
 - Interactive session with supportive questioning
 - 3-4 sentences max per response

@@ -744,6 +744,25 @@ test('chat stops at owner-gated zero-shot route before remote agent auth', () =>
   }
 });
 
+test('brainstorm stops at owner-gated zero-shot route before inbox writes', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    seedOwnerGatedZeroShotProjection(dir);
+
+    const res = runCli(['brainstorm', 'new idea'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting brainstorm\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /Added I\d+ to today's Inbox/);
+    assert.doesNotMatch(res.stderr, /Not logged in|Authentication failed/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('do prints concise executor prompt by default', () => {
   const dir = makeTempDir();
   try {
