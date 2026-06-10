@@ -1,41 +1,41 @@
 ---
-last_compiled: 2026-05-10
-validated_by: codex
-validation_notes: Re-verified 2026-05-10. Help still keeps setup, core workflow, context/tracking, optional helpers, and experiments separated. plan/do/review still read TODO.md with TASK_CONTEXTS fallback. Current task system regenerates TODO.md from durable task state, so the file is a readable board, not ownership truth.
+last_compiled: 2026-06-10
+validated_by: devin
+validation_notes: Re-verified 2026-06-10. Help still keeps setup, core workflow, context/tracking, optional helpers, and experiments separated. plan/do/review still read TODO.md with TASK_CONTEXTS fallback. Current task system regenerates TODO.md from durable task state, so the file is a readable board, not ownership truth. Line refs healed after showHelp/workflow/task-db growth.
 sources:
-  - bin/atris.js:264-340 (showHelp function — quick start, core workflow, context/tracking, sync)
+  - bin/atris.js:284-451 (showHelp function — quick start, core workflow, context/tracking, sync)
   - commands/init.js:408-434 (TODO.md placeholder creation via fs.writeFileSync)
-  - commands/workflow.js:106-115 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - commands/workflow.js:309-310 (planAtris — include TODO.md in user prompt)
-  - commands/workflow.js:459-473 (doAtris — load TODO.md or legacy TASK_CONTEXTS.md)
-  - commands/workflow.js:789-798 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - lib/task-db.js:651-687 (renderTodoMarkdown — regenerated TODO.md board)
+  - commands/workflow.js:411-413 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:619-633 (planAtris — include TODO.md in user prompt)
+  - commands/workflow.js:768-779 (doAtris — load TODO.md or legacy TASK_CONTEXTS.md)
+  - commands/workflow.js:1118-1121 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
+  - lib/task-db.js:1397-1429 (renderTodoMarkdown — regenerated TODO.md board)
 ---
 
 # CLI UX Simplification — Validation
 
-> **Status:** v2 — re-verified 2026-05-10
+> **Status:** v2 — re-verified 2026-06-10
 > **Exit Condition:** Help output clearly sections core workflow (plan/do/review) separate from optional helpers and cloud commands. TODO.md is created and read by init/plan/do/review, while `atris task render` keeps it aligned with durable task state. Legacy TASK_CONTEXTS.md is still supported for backwards compatibility.
 
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` keeps Setup, Core workflow, Context & tracking, Optional helpers, Experiments, and Sync separated (`bin/atris.js:292-340`)
-- [x] Core workflow grouped: plan, do, review, run (`bin/atris.js:298-302`)
-- [x] task, mission, brain, ingest/query/lint, and loop live in Context & tracking (`bin/atris.js:304-321`)
-- [x] brainstorm, autopilot, and visualize stay in Optional helpers (`bin/atris.js:323-326`)
+- [x] `atris help` keeps Setup, Core workflow, Context & tracking, Optional helpers, Experiments, and Sync separated (`bin/atris.js:312-364`)
+- [x] Core workflow grouped: plan, do, review, run (`bin/atris.js:318-322`)
+- [x] log, now, activate, radar, ctop, status live in Context & tracking (`bin/atris.js:324-346`)
+- [x] brainstorm, autopilot, and visualize stay in Optional helpers (`bin/atris.js:347-353`)
 
 ### 2. TODO.md Creation & Usage
 - [x] `atris init` creates atris/TODO.md with placeholder content (`commands/init.js:408-434`)
 - [x] TODO.md template includes Backlog, In Progress, Completed sections (`commands/init.js:416-430`)
 - [x] init calls console.log summary after creation (`commands/init.js:434`)
-- [x] `atris task render` marks TODO.md as regenerated from durable task state (`lib/task-db.js:651-687`)
+- [x] `atris task render` marks TODO.md as regenerated from durable task state (`lib/task-db.js:1397-1429`)
 
 ### 3. Commands Read TODO.md
-- [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:106-115`)
-- [x] **plan**: Includes TODO.md in user prompt when present (`commands/workflow.js:309-310`)
-- [x] **do**: Reads TODO.md to find tasks to execute (`commands/workflow.js:459-473`)
-- [x] **review**: Reads TODO.md for task context (`commands/workflow.js:789-798`)
+- [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:411-413`)
+- [x] **plan**: Includes TODO.md in user prompt when present (`commands/workflow.js:619-633`)
+- [x] **do**: Reads TODO.md to find tasks to execute (`commands/workflow.js:768-779`)
+- [x] **review**: Reads TODO.md for task context (`commands/workflow.js:1118-1121`)
 - [x] **status**: Reads TODO.md Backlog/In Progress sections (status.js with parseTodo)
 
 ### 4. Backwards Compatibility
