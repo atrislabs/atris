@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Exec(atris)"
+      "Exec(atris)",
+      "Exec(mkdir)",
+      "Exec(sed)",
+      "Exec(readlink)",
+      "Exec(rg)",
+      "Exec(node)",
+      "Exec(ls)",
+      "Exec(head)",
+      "Exec(npm test)",
+      "Exec(git status)"
     ]
   }
 }

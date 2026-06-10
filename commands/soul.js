@@ -26,10 +26,6 @@ function readFile(filePath) {
   try { return fs.readFileSync(filePath, 'utf8'); } catch { return null; }
 }
 
-function readJson(filePath) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
-}
-
 function countFiles(dir) {
   try { return fs.readdirSync(dir, { recursive: true }).filter(f => !f.startsWith('.')).length; } catch { return 0; }
 }
