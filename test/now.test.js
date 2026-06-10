@@ -196,6 +196,40 @@ test('renderDefaultNow includes the current zero-shot route', () => {
   }
 });
 
+test('renderDefaultNow includes owner-gate zero-shot context', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Demo Map\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        {
+          display_id: 'CZS-1',
+          title: 'Add zero-shot CLI command',
+          status: 'review',
+          tag: 'cli',
+          review: {
+            approval_status: 'pending',
+            agent_certified: true,
+            human_accept: { command: 'atris task accept CZS-1' },
+          },
+        },
+      ],
+    }), 'utf8');
+
+    const content = renderDefaultNow(dir);
+
+    assert.match(content, /0-shot route: owner_gate CZS-1 -> `atris task page CZS-1 --json`/);
+    assert.match(content, /0-shot owner action: human-only: atris task accept CZS-1/);
+    assert.match(content, /0-shot agent-safe action: read-only: atris task page CZS-1 --json; then wait or pick a non-blocked route from atris 0-shot --all/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('countJournalCompletedReceipts counts proof receipts before legacy completed markers', () => {
   const dir = makeTempDir();
   try {

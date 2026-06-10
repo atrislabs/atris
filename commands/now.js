@@ -264,6 +264,8 @@ function zeroShotNowSummary(root = process.cwd()) {
       buckets: `horizons now=${horizons.now || 0} review=${horizons.immediate_review || 0} long=${horizons.long_term || 0} blocked=${horizons.blocked || 0}; models fast=${models.fast?.count || 0} pro=${models.pro?.count || 0} validator=${models.validator?.count || 0} human=${models.human?.count || 0}`,
       firstByHorizon: zeroShotFirstByHorizonText(routes.horizon_first || {}),
       firstByModel: zeroShotFirstByModelText(models),
+      ownerAction: decision.owner_action || null,
+      safeAgentAction: decision.safe_agent_action || null,
     };
   } catch {
     return {
@@ -282,6 +284,8 @@ function zeroShotNowSummary(root = process.cwd()) {
       buckets: 'horizons now=0 review=0 long=0 blocked=0; models fast=0 pro=0 validator=0 human=0',
       firstByHorizon: 'now=none review=none long=none blocked=none orient=none',
       firstByModel: 'fast=none pro=none validator=none human=none',
+      ownerAction: null,
+      safeAgentAction: null,
     };
   }
 }
@@ -313,6 +317,10 @@ function renderDefaultNow(root = process.cwd()) {
   const completedCount = taskReceiptCount || countJournalCompletedReceipts(journalPath);
   const zeroShot = zeroShotNowSummary(root);
   const generated = todayIso();
+  const zeroShotGateLines = [
+    zeroShot.ownerAction ? `- 0-shot owner action: ${zeroShot.ownerAction}` : null,
+    zeroShot.safeAgentAction ? `- 0-shot agent-safe action: ${zeroShot.safeAgentAction}` : null,
+  ].filter(Boolean).join('\n');
 
   return `# now
 
@@ -333,6 +341,7 @@ Last updated: ${generated}
 - 0-shot buckets: ${zeroShot.buckets}
 - 0-shot first by horizon: ${zeroShot.firstByHorizon}
 - 0-shot first by model: ${zeroShot.firstByModel}
+${zeroShotGateLines ? `${zeroShotGateLines}` : ''}
 
 ## Current Priority
 
