@@ -726,6 +726,24 @@ test('autopilot stops at owner-gated zero-shot route before selecting work', () 
   }
 });
 
+test('chat stops at owner-gated zero-shot route before remote agent auth', () => {
+  const dir = makeTempDir();
+  try {
+    runCli(['init'], { cwd: dir, input: '\n' });
+    seedOwnerGatedZeroShotProjection(dir);
+
+    const res = runCli(['chat', 'what now?'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not opening remote chat\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stderr, /No agent selected|Not logged in/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('do prints concise executor prompt by default', () => {
   const dir = makeTempDir();
   try {

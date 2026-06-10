@@ -2183,6 +2183,9 @@ async function chatAtris() {
     process.exit(1);
   }
 
+  const zeroShot = chatZeroShotPreflight();
+  if (zeroShot.ownerGated) return;
+
   // Check agent selected
   const config = loadConfig();
   if (!config.agent_id) {
@@ -2210,6 +2213,38 @@ async function chatAtris() {
 
   // Otherwise, interactive mode
   await chatInteractive(config, credentials);
+}
+
+function chatZeroShotPreflight() {
+  let packet = null;
+  try {
+    const { buildPacket } = require('../commands/zero-shot');
+    packet = buildPacket();
+  } catch {
+    return { ownerGated: false };
+  }
+  if (!packet || !packet.decision || !packet.commands) return { ownerGated: false };
+  const decision = packet.decision;
+  const commands = packet.commands;
+  const ownerGated = decision.lane === 'owner_gate' || Boolean(decision.owner_action);
+  if (!ownerGated) return { ownerGated: false };
+
+  console.log('');
+  console.log('0-shot preflight:');
+  console.log(`  route: ${[decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown'}`);
+  console.log(`  focus: ${[decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none'}`);
+  if (decision.reason) console.log(`  why: ${decision.reason}`);
+  console.log(`  first command: ${commands.first_command || commands.next_command || 'atris 0-shot --prompt'}`);
+  console.log(`  menu: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log(`  prompt: ${commands.zero_shot_prompt || 'atris 0-shot --prompt'}`);
+  if (decision.owner_action) console.log(`  owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) console.log(`  agent-safe action: ${decision.safe_agent_action}`);
+  console.log('');
+  console.log('Owner-gated 0-shot route detected. I am not opening remote chat.');
+  console.log(`Run first: ${commands.first_command || commands.next_command || 'atris 0-shot --prompt'}`);
+  console.log(`Inspect all routes: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log('');
+  return { ownerGated: true };
 }
 
 async function chatOnce(config, credentials, message) {

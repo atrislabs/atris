@@ -930,7 +930,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:1893-1943` (chatAtris function)
+- **Entry point:** `bin/atris.js` (`chatAtris`) with a read-only 0-shot owner-gate preflight before selected-agent checks, auth refresh, or remote pro-chat
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -938,7 +938,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Uses:** `utils/claude_sdk.js` for API communication
 - **Value:** Quick questions without context switching
 
-**Search:** `rg "chatAtris" bin/atris.js`
+**Search:** `rg "chatAtris|chatZeroShotPreflight" bin/atris.js test/cli-smoke.test.js`
 
 ### Feature: Context Activation (`atris activate`)
 
