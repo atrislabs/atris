@@ -35,6 +35,7 @@ test('public docs advertise zero-shot for uncertain starts', () => {
     assert.match(text, /atris next/);
     assert.match(text, /mission verifier ticks/);
     assert.match(text, /visible goal context/);
+    assert.match(text, /horizon/i);
     assert.match(text, /what to prompt|do not know what to prompt|don't know what to prompt/i);
   }
 });

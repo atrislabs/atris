@@ -51,7 +51,7 @@ atris zero-shot --check
 atris next --check
 ```
 
-It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, recovery work, owner-gated work, or context gathering. Use `--prompt` for a copy-pasteable handoff prompt, `--write` to refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` for ambient agents, and `--check` to report fresh, stale, or missing latest files.
+It routes quick work, fast-model work, review work, mission verifier ticks, visible goal context, long-term planning, recovery work, owner-gated work, or context gathering. Use `--horizon now|review|long|blocked|orient` when an agent should select by work horizon, `--prompt` for a copy-pasteable handoff prompt, `--write` to refresh `.atris/state/zero-shot.latest.json` plus `.atris/state/zero-shot.prompt.txt` for ambient agents, and `--check` to report fresh, stale, or missing latest files.
 
 If you already know what you want, tell atris what to build:
 

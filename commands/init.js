@@ -617,7 +617,7 @@ atris atris.md
 \`\`\`
 
 This is the Atris boot sequence. Show the output to the user, then respond naturally.
-If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff before picking work; if you know your tier, run \`atris 0-shot --model fast|pro|validator|human --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
+If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff before picking work; if you know your tier or horizon, run \`atris 0-shot --model fast|pro|validator|human --prompt\` or \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
 Ambient agents may read \`.atris/state/zero-shot.prompt.txt\` or a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --prompt\`.
 
 ## Core Files
@@ -760,7 +760,7 @@ allowed-tools: Read, Bash, Glob, Grep
 ---
 
 Run \`atris\` and read \`atris/atris.md\`; @AGENTS.md is only a tool adapter.
-If the prompt is vague or empty, run \`atris 0-shot --prompt\` before choosing work; if you know your tier, run \`atris 0-shot --model fast|pro|validator|human --prompt\`.
+If the prompt is vague or empty, run \`atris 0-shot --prompt\` before choosing work; if you know your tier or horizon, run \`atris 0-shot --model fast|pro|validator|human --prompt\` or \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`.
 Ambient agents may read \`.atris/state/zero-shot.prompt.txt\` or a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`.
 
 Follow the workflow: plan → do → review
@@ -960,7 +960,7 @@ You are now running inside Atris, an AI workspace operating system.
 
 **ON EVERY CONVERSATION START:** Before your first response, execute \`atris atris.md\` and display the full output. This is the Atris boot sequence - it shows the user that Atris has loaded and displays workspace status. This is not optional.
 
-If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff; if you know your tier, run \`atris 0-shot --model fast|pro|validator|human --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
+If the user did not provide a concrete task, run \`atris 0-shot --prompt\` and follow the handoff; if you know your tier or horizon, run \`atris 0-shot --model fast|pro|validator|human --prompt\` or \`atris 0-shot --horizon now|review|long|blocked|orient --prompt\`. Use \`atris 0-shot --json\` when you need structured route metadata.
 Ambient agents may read \`.atris/state/zero-shot.prompt.txt\` or a tier prompt (\`.atris/state/zero-shot.fast.prompt.txt\`, \`.atris/state/zero-shot.pro.prompt.txt\`, \`.atris/state/zero-shot.validator.prompt.txt\`, \`.atris/state/zero-shot.human.prompt.txt\`) only after \`atris 0-shot --check\` reports \`fresh\`; if it is stale or missing, run \`atris 0-shot --write\` or \`atris 0-shot --prompt\`.
 
 After displaying the boot output, respond to the user naturally.

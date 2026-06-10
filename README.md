@@ -32,6 +32,7 @@ atris 0-shot
 For headless agents, use `atris 0-shot --json` or `atris next --json`. It returns the lane, horizon, model tier, first command, typed `routes.options[]`, a copy-pasteable `handoff.prompt`, and safe boundaries for the next move. Use `atris 0-shot --prompt` or `atris next --prompt` when you only want the handoff prompt. Use `atris 0-shot --write` or `atris next --write` to refresh `.atris/state/zero-shot.latest.json`, `.atris/state/zero-shot.prompt.txt`, and per-model prompt files for ambient agent runtimes, then `atris 0-shot --check` or `atris next --check` to confirm those files are fresh.
 The JSON also includes `routes.horizons` and `routes.models`, grouping work by horizon and by fast/pro/validator/human count plus the first suitable route for each model tier.
 Use `atris 0-shot --model fast`, `--model pro`, `--model validator`, or `--model human` when a specific agent tier should select its own next move from the queue.
+Use `atris 0-shot --horizon now`, `--horizon review`, `--horizon long`, `--horizon blocked`, or `--horizon orient` when an agent should select by quick/review/long-term/blocked/context work instead.
 
 Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is the source of truth.
 
@@ -89,6 +90,7 @@ atris init
 atris
 atris 0-shot
 atris 0-shot --model fast
+atris 0-shot --horizon long
 atris zero-shot
 atris next
 ```
@@ -99,6 +101,7 @@ The 0-shot command also accepts natural spellings like `atris 0 shot`, `atris 0s
 They route quick tasks, fast-model tasks, review work, mission verifier ticks, visible goal context, long-horizon planning, recovery work, owner-gated work, or no-current-task context checks.
 The plain output shows horizon and model-tier counts so you can see quick, long-term, validator, and human-gated work at a glance.
 Use `--model fast`, `--model pro`, `--model validator`, or `--model human` to pick the first route suitable for that model tier instead of the global first route.
+Use `--horizon now`, `--horizon review`, `--horizon long`, `--horizon blocked`, or `--horizon orient` to pick the first route in that work horizon instead of the global first route.
 If the task projection is missing, 0-shot reads `atris/TODO.md` as a read-only fallback so fresh workspaces still get a lane.
 Use `atris 0-shot --prompt` when you want a plain prompt to paste into another model.
 Use `atris 0-shot --write` when a launcher or always-on agent should read the latest next move from `.atris/state/zero-shot.latest.json`; it also writes `.atris/state/zero-shot.fast.prompt.txt`, `.atris/state/zero-shot.pro.prompt.txt`, `.atris/state/zero-shot.validator.prompt.txt`, and `.atris/state/zero-shot.human.prompt.txt`.
