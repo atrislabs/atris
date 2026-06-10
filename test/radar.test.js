@@ -316,6 +316,8 @@ test('collectRadar joins live agents with task, mission, and worktree state', ()
   assert.match(renderRadar(data), /0-shot buckets: horizons now=2 review=1 long=1 blocked=0; models fast=2 pro=1 validator=1 human=0/);
   assert.match(renderRadar(data), /0-shot first model: fast=FAST-1\/fast pro=ARC-1\/pro validator=CLI-95\/validator human=none/);
   assert.match(renderRadar(data), /0-shot first horizon: now=FAST-1\/fast review=CLI-95\/validator long=ARC-1\/pro blocked=none orient=none/);
+  assert.match(renderRadar(data), /0-shot model selectors: fast=atris 0-shot --model fast --prompt pro=atris 0-shot --model pro --prompt validator=atris 0-shot --model validator --prompt human=atris 0-shot --model human --prompt/);
+  assert.match(renderRadar(data), /0-shot horizon selectors: now=atris 0-shot --horizon now --prompt review=atris 0-shot --horizon review --prompt long=atris 0-shot --horizon long --prompt blocked=atris 0-shot --horizon blocked --prompt orient=atris 0-shot --horizon orient --prompt/);
   assert.match(renderRadar(data), /CLI-95/);
   assert.match(renderRadar(data), /Stale mission candidates/);
   assert.match(renderRadar(data), /Review queue/);

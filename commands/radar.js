@@ -505,6 +505,16 @@ function zeroShotHorizonFirstLine(zeroShot = {}) {
   return `0-shot first horizon: now=${zeroShotFirstRouteText(first.now)} review=${zeroShotFirstRouteText(first.immediate_review)} long=${zeroShotFirstRouteText(first.long_term)} blocked=${zeroShotFirstRouteText(first.blocked)} orient=${zeroShotFirstRouteText(first.orient)}`;
 }
 
+function zeroShotModelSelectorLine(zeroShot = {}) {
+  const commands = zeroShot.model_prompt_commands || defaultZeroShotModelPromptCommands();
+  return `0-shot model selectors: fast=${commands.fast} pro=${commands.pro} validator=${commands.validator} human=${commands.human}`;
+}
+
+function zeroShotHorizonSelectorLine(zeroShot = {}) {
+  const commands = zeroShot.horizon_prompt_commands || defaultZeroShotHorizonPromptCommands();
+  return `0-shot horizon selectors: now=${commands.now} review=${commands.review} long=${commands.long} blocked=${commands.blocked} orient=${commands.orient}`;
+}
+
 function zeroShotFreshnessLabel(exists, fresh) {
   if (fresh) return 'fresh';
   if (exists) return 'stale';
@@ -813,6 +823,8 @@ function renderRadar(data) {
     lines.push(zeroShotBucketLine(zs));
     lines.push(zeroShotModelFirstLine(zs));
     lines.push(zeroShotHorizonFirstLine(zs));
+    lines.push(zeroShotModelSelectorLine(zs));
+    lines.push(zeroShotHorizonSelectorLine(zs));
   }
   if (data.os) {
     const xp = data.os.xp || {};
