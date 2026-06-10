@@ -665,7 +665,7 @@ test('plan suggests brainstorm when uncertainty detected', () => {
   }
 });
 
-test('plan and do stop at owner-gated zero-shot route before workflow instructions', () => {
+test('workflow agents stop at owner-gated zero-shot route before instructions or execution', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
@@ -688,6 +688,20 @@ test('plan and do stop at owner-gated zero-shot route before workflow instructio
     assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
     assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT/);
     assert.doesNotMatch(res.stdout, /You are the Executor/);
+
+    res = runCli(['review', '--verbose'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting review\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT/);
+    assert.doesNotMatch(res.stdout, /You are the Validator/);
+
+    res = runCli(['review', '--execute'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting review\./);
+    assert.doesNotMatch(res.stdout, /AGENT MODE: Executing via backend API/);
+    assert.doesNotMatch(res.stderr, /Not logged in|Authentication failed/);
   } finally {
     cleanupTempDir(dir);
   }

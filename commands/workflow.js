@@ -1039,6 +1039,12 @@ async function reviewAtris() {
     process.exit(1);
   }
 
+  const zeroShotPacket = buildWorkflowZeroShotPacket();
+  if (isWorkflowOwnerGatedZeroShot(zeroShotPacket)) {
+    printWorkflowOwnerGateStop(zeroShotPacket, 'review');
+    return;
+  }
+
   // Read validator.md
   const validatorSpec = fs.readFileSync(validatorFile, 'utf8');
 
