@@ -665,7 +665,7 @@ test('plan suggests brainstorm when uncertainty detected', () => {
   }
 });
 
-test('plan and do surface the current zero-shot route before workflow instructions', () => {
+test('plan and do stop at owner-gated zero-shot route before workflow instructions', () => {
   const dir = makeTempDir();
   try {
     runCli(['init'], { cwd: dir, input: '\n' });
@@ -673,17 +673,21 @@ test('plan and do surface the current zero-shot route before workflow instructio
 
     let res = runCli(['plan'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /CURRENT 0-SHOT ROUTE/);
+    assert.match(res.stdout, /0-shot preflight:/);
     assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
-    assert.match(res.stdout, /first command: atris task page CZS-1 --json/);
-    assert.match(res.stdout, /do only the agent-safe action and do not write tasks or accept/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting plan\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT/);
+    assert.doesNotMatch(res.stdout, /You are the Navigator/);
 
     res = runCli(['do'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /CURRENT 0-SHOT ROUTE/);
-    assert.match(res.stdout, /first command: atris task page CZS-1 --json/);
-    assert.match(res.stdout, /do only the agent-safe action and do not claim, mutate, or accept/);
-    assert.match(res.stdout, /Start with the 0-shot first command above/);
+    assert.match(res.stdout, /0-shot preflight:/);
+    assert.match(res.stdout, /route: owner_gate \| blocked \| human/);
+    assert.match(res.stdout, /Owner-gated 0-shot route detected\. I am not starting do\./);
+    assert.match(res.stdout, /Run first: atris task page CZS-1 --json/);
+    assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT FOR YOUR CODING AGENT/);
+    assert.doesNotMatch(res.stdout, /You are the Executor/);
   } finally {
     cleanupTempDir(dir);
   }

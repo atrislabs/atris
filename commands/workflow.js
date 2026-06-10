@@ -90,6 +90,36 @@ function printWorkflowZeroShot(packet) {
   console.log('');
 }
 
+function isWorkflowOwnerGatedZeroShot(packet) {
+  const decision = packet && packet.decision;
+  return Boolean(decision && (decision.lane === 'owner_gate' || decision.owner_action));
+}
+
+function printWorkflowOwnerGateStop(packet, commandName) {
+  if (!packet || !packet.decision || !packet.commands) return;
+  const decision = packet.decision;
+  const commands = packet.commands;
+  const route = [decision.lane, decision.horizon, decision.model_tier].filter(Boolean).join(' | ') || 'unknown';
+  const focus = [decision.selected_ref, decision.selected_title].filter(Boolean).join(' - ') || 'none';
+  const firstCommand = commands.first_command || commands.next_command || 'atris 0-shot --prompt';
+
+  console.log('');
+  console.log('0-shot preflight:');
+  console.log(`  route: ${route}`);
+  console.log(`  focus: ${focus}`);
+  if (decision.reason) console.log(`  why: ${decision.reason}`);
+  console.log(`  first command: ${firstCommand}`);
+  console.log(`  menu: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log(`  prompt: ${commands.zero_shot_prompt || 'atris 0-shot --prompt'}`);
+  if (decision.owner_action) console.log(`  owner gate: ${decision.owner_action}`);
+  if (decision.safe_agent_action) console.log(`  agent-safe action: ${decision.safe_agent_action}`);
+  console.log('');
+  console.log(`Owner-gated 0-shot route detected. I am not starting ${commandName}.`);
+  console.log(`Run first: ${firstCommand}`);
+  console.log(`Inspect all routes: ${commands.zero_shot_all || 'atris 0-shot --all'}`);
+  console.log('');
+}
+
 function confidenceGatePrompt(stage) {
   return [
     `Confidence Gate (${stage}):`,
@@ -337,6 +367,10 @@ async function planAtris(userInput = null) {
         .length
     : 0;
   const zeroShotPacket = buildWorkflowZeroShotPacket();
+  if (isWorkflowOwnerGatedZeroShot(zeroShotPacket)) {
+    printWorkflowOwnerGateStop(zeroShotPacket, 'plan');
+    return;
+  }
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────────────┐');
@@ -716,6 +750,10 @@ async function doAtris() {
     workspaceSummary = null;
   }
   const zeroShotPacket = buildWorkflowZeroShotPacket();
+  if (isWorkflowOwnerGatedZeroShot(zeroShotPacket)) {
+    printWorkflowOwnerGateStop(zeroShotPacket, 'do');
+    return;
+  }
 
   // Prompt-mode output (keep concise by default)
   console.log('');
