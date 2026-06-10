@@ -893,7 +893,10 @@ if (!command || !knownCommands.includes(command)) {
 }
 
 async function interactiveEntry(userInput) {
-  const workspaceDir = process.cwd();
+  const workspaceDir = findAtrisWorkspaceRoot(process.cwd());
+  if (workspaceDir !== process.cwd()) {
+    process.chdir(workspaceDir);
+  }
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
 
@@ -996,7 +999,9 @@ async function interactiveEntry(userInput) {
 
   try {
     const {
+      buildLatestCheck: buildZeroShotCheck,
       buildPacket: buildZeroShotPacket,
+      renderDurableSummary: renderZeroShotDurableSummary,
       renderHint: renderZeroShotHint,
       writeLatestPacket: writeLatestZeroShotPacket,
     } = require('../commands/zero-shot');
@@ -1004,7 +1009,13 @@ async function interactiveEntry(userInput) {
     console.log('');
     console.log(renderZeroShotHint(zeroShot));
     console.log(`   ${zeroShot.decision.reason}`);
-    console.log('Routes: atris 0-shot --all | model: atris 0-shot --model fast|pro|validator|human --prompt | horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt');
+    console.log(renderZeroShotDurableSummary(buildZeroShotCheck({ cwd: workspaceDir })));
+    const firstCommand = zeroShot.commands?.first_command || zeroShot.handoff?.first_command || 'atris 0-shot --prompt';
+    console.log(`Next: run first: ${firstCommand}`);
+    if (zeroShot.decision?.lane === 'owner_gate') {
+      console.log('Boundary: read-only first command; stop at owner gate; human accept is human-only.');
+    }
+    console.log('Routes: atris 0-shot --all | prompt: atris 0-shot --prompt | model: atris 0-shot --model fast|pro|validator|human --prompt | horizon: atris 0-shot --horizon now|review|long|blocked|orient --prompt');
   } catch {}
 
   // Surface live missions so the operator sees durable goals alongside dev WIP.

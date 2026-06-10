@@ -1313,10 +1313,35 @@ test('bare atris cold start surfaces zero-shot before prompting', () => {
     assert.match(res.stdout, /routes total=0 hidden=0 \| horizons now=0 review=0 long=0 blocked=0 orient=0 \| models fast=0 pro=0 validator=0 human=0/);
     assert.match(res.stdout, /model first fast=none pro=none validator=none human=none/);
     assert.match(res.stdout, /horizon first now=none review=none long=none blocked=none orient=none/);
-    assert.match(res.stdout, /Routes: atris 0-shot --all \| model: atris 0-shot --model fast\|pro\|validator\|human --prompt \| horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh/);
+    assert.match(res.stdout, /Next: run first: atris radar --json/);
+    assert.match(res.stdout, /Routes: atris 0-shot --all \| prompt: atris 0-shot --prompt \| model: atris 0-shot --model fast\|pro\|validator\|human --prompt \| horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.prompt.txt')), true);
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.menu.txt')), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare atris cold start finds the workspace from a subdirectory', () => {
+  const dir = makeTempDir();
+  try {
+    seedMinimalAtrisWorkspace(dir);
+    const subdir = path.join(dir, 'commands');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const res = runCli([], { cwd: subdir, input: '\n' });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /CONTEXT LOADED/);
+    assert.match(res.stdout, /0-shot: no_current_task -> atris radar --json \| prompt: atris 0-shot --prompt/);
+    assert.match(res.stdout, /0-shot durable: status=fresh prompt=fresh menu=fresh model=fresh horizon=fresh/);
+    assert.match(res.stdout, /Next: run first: atris radar --json/);
+    assert.match(res.stdout, /Routes: atris 0-shot --all \| prompt: atris 0-shot --prompt \| model: atris 0-shot --model fast\|pro\|validator\|human --prompt \| horizon: atris 0-shot --horizon now\|review\|long\|blocked\|orient --prompt/);
+    assert.doesNotMatch(res.stdout, /No atris\/ folder found/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'zero-shot.latest.json')), true);
+    assert.equal(fs.existsSync(path.join(subdir, '.atris')), false);
+    assert.equal(fs.existsSync(path.join(subdir, 'atris')), false);
   } finally {
     cleanupTempDir(dir);
   }
