@@ -393,12 +393,23 @@ function askHuman(taskTitle) {
 }
 
 /**
- * Type-check a child_process error as a timeout/kill. Node's execSync attaches
- * `code: 'ETIMEDOUT'` and `signal` on timeout — it does NOT set `killed`, so a
- * `killed`-only guard is dead code on the exact error it was written for
- * (lesson: etimedout-error-shape, 2026-06-10).
+ * Type-check a child_process error as a real wall-clock timeout. Node's
+ * execSync attaches `code: 'ETIMEDOUT'` (plus `signal`) on timeout — it does
+ * NOT set `killed`, so a `killed`-only guard is dead code on the exact error
+ * it was written for (lesson: etimedout-error-shape, 2026-06-10). A bare
+ * `signal` without ETIMEDOUT is NOT a timeout: it's an OOM SIGKILL or an
+ * external SIGTERM, and calling it a timeout misdiagnoses the cause.
  */
 function isPhaseTimeoutError(err) {
+  return Boolean(err && err.code === 'ETIMEDOUT');
+}
+
+/**
+ * Any abnormal child death — timeout or signal kill. The group sweep in
+ * execPhaseCommandSync uses this wider net (orphans need sweeping either
+ * way); the thrown message uses the narrow predicate to name the cause.
+ */
+function isPhaseKillError(err) {
   return Boolean(err && (err.killed || err.code === 'ETIMEDOUT' || err.signal));
 }
 
@@ -416,7 +427,7 @@ function execPhaseCommandSync(cmd, opts = {}) {
   try {
     return execSync(cmd, { ...opts, detached: true });
   } catch (err) {
-    if (isPhaseTimeoutError(err) && err.pid) {
+    if (isPhaseKillError(err) && err.pid) {
       try {
         process.kill(-err.pid, 'SIGKILL');
       } catch (sweepErr) {
@@ -457,6 +468,9 @@ function executePhaseDetailed(phase, context, options = {}) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
       throw new Error(`${phase} phase timed out after ${timeout / 1000}s (claude -p hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
+    }
+    if (isPhaseKillError(err)) {
+      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
     }
     if (err.stdout) {
       return { prompt, output: err.stdout };
@@ -2897,6 +2911,9 @@ Reply with the JSON array and nothing else.`;
     if (isPhaseTimeoutError(err)) {
       throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
     }
+    if (isPhaseKillError(err)) {
+      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall — not a timeout`);
+    }
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -3653,6 +3670,7 @@ module.exports = {
   shouldSkipAutoHumanGate,
   writeLesson,
   isPhaseTimeoutError,
+  isPhaseKillError,
   execPhaseCommandSync,
   executePhaseDetailed,
   lessonSlug
