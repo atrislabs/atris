@@ -5,6 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
 const { taskProofLooksMeaningful, taskProofState } = require('../lib/task-proof');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
@@ -20,7 +21,7 @@ function runCli(args, { cwd, env = {} } = {}) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd,
     env: {
-      ...process.env,
+      ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
