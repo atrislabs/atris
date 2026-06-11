@@ -63,7 +63,10 @@ function readManifest(root, name) {
 
 function writeManifest(root, name, manifest) {
   fs.mkdirSync(processDir(root, name), { recursive: true });
-  fs.writeFileSync(manifestPath(root, name), JSON.stringify(manifest, null, 2) + '\n');
+  const target = manifestPath(root, name);
+  const tmp = `${target}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n');
+  fs.renameSync(tmp, target);
   return manifest;
 }
 
@@ -199,9 +202,9 @@ async function runBacktest(root, name, options = {}) {
   };
 
   manifest.backtest = result;
-  manifest.threshold = threshold;
-  // drift detection: an active process falling below its threshold is drifted
-  if (manifest.status === 'active' && accuracy < threshold) {
+  // a one-off --threshold applies to this run only; the promote gate stays as set
+  // drift detection: an active process falling below its standing gate is drifted
+  if (manifest.status === 'active' && accuracy < manifest.threshold) {
     manifest.status = 'drifted';
   }
   writeManifest(root, name, manifest);
@@ -211,10 +214,14 @@ async function runBacktest(root, name, options = {}) {
 
 // ── promote gate ───────────────────────────────────────────────────
 
-function promoteProcess(root, name) {
+function promoteProcess(root, name, options = {}) {
   const manifest = readManifest(root, name);
   if (!manifest) {
     throw new Error(`no manifest for "${name}" — compile and backtest it first`);
+  }
+  if (options.threshold !== undefined) {
+    // the only way to change the standing gate: deliberate, at promote time
+    manifest.threshold = options.threshold;
   }
   const bt = manifest.backtest;
   if (!bt) {
@@ -260,16 +267,18 @@ Reply [COMPILE_COMPLETE] when ${runRel} is written.`;
 }
 
 function executeBuild(root, name, options = {}) {
-  const { verbose = false, timeout = 600000, notes = '' } = options;
+  const { verbose = false, timeout = 600000, notes = '', cmdOverride } = options;
   const records = readRecords(root, name);
   if (records.length === 0) {
     throw new Error(`no execution records for "${name}" — record real runs first, then compile`);
   }
 
-  try {
-    execSync('which claude', { stdio: 'pipe' });
-  } catch {
-    throw new Error('claude CLI not found. Install Claude Code first.');
+  if (!cmdOverride) {
+    try {
+      execSync('which claude', { stdio: 'pipe' });
+    } catch {
+      throw new Error('claude CLI not found. Install Claude Code first.');
+    }
   }
 
   fs.mkdirSync(processDir(root, name), { recursive: true });
@@ -278,7 +287,7 @@ function executeBuild(root, name, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Read,Write,Edit,Glob,Grep"`;
+    const cmd = cmdOverride || `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Read,Write,Edit,Glob,Grep"`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
     execSync(cmd, {
@@ -301,7 +310,7 @@ function executeBuild(root, name, options = {}) {
   const manifest = readManifest(root, name) || defaultManifest(name);
   manifest.version += 1;
   manifest.compiledAt = new Date().toISOString();
-  if (manifest.status !== 'active') manifest.status = 'draft';
+  manifest.status = 'draft'; // every rebuild must re-earn promotion through the gate
   manifest.backtest = null; // new version must re-earn its backtest
   writeManifest(root, name, manifest);
   return manifest;
@@ -374,7 +383,10 @@ function showCompileHelp() {
   console.log('                            compile records + spec into atris/processes/<name>/run.js');
   console.log('  backtest <name> [--threshold 0.99] [--json]');
   console.log('                            replay every record through run.js, score accuracy');
-  console.log('  promote <name>            mark active (gate: backtest accuracy >= threshold)');
+  console.log('                            (--threshold judges this run only; the gate is unchanged)');
+  console.log('  promote <name> [--gate 0.99]');
+  console.log('                            mark active (gate: backtest accuracy >= threshold);');
+  console.log('                            --gate is the only way to change the standing threshold');
   console.log('  exec <name> --input <json|@file> [--record]');
   console.log('                            run the compiled process on new input');
   console.log('  status [<name>] [--json]  list processes, versions, accuracy, drift');
@@ -497,7 +509,17 @@ async function compileCommand(subcommand, ...rawArgs) {
   }
 
   if (cmd === 'promote') {
-    const manifest = promoteProcess(root, name);
+    const options = {};
+    if (flags.gate !== undefined) {
+      const t = Number(flags.gate);
+      if (!(t > 0 && t <= 1)) {
+        console.error('--gate must be between 0 and 1 (e.g. 0.99)');
+        process.exitCode = 1;
+        return;
+      }
+      options.threshold = t;
+    }
+    const manifest = promoteProcess(root, name, options);
     console.log(`${name} v${manifest.version} promoted to active (${formatAccuracy(manifest.backtest.accuracy)} over ${manifest.backtest.total} records, gate ${formatAccuracy(manifest.threshold)})`);
     console.log(`run it token-free: atris compile exec ${name} --input '<json>' --record`);
     return;
@@ -535,6 +557,7 @@ module.exports = {
   deepEqual,
   runBacktest,
   promoteProcess,
+  executeBuild,
   buildCompilePrompt,
   parseValueArg,
   parseFlags,
