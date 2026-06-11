@@ -490,6 +490,16 @@ function getContextFiles(phase, options = {}) {
   return [...new Set(files.filter(Boolean))].map((f) => `- ${f}`).join('\n');
 }
 
+// T35a (endgame loop-self-repair): shared-checkout git-safety contract.
+// Lesson 39: a concurrent tick's `git reset` destroyed a sibling repo's
+// uncommitted work. Sibling-repo edits ride per-tick worktrees (the same
+// ../repo siblings snapshotRepoHeads tracks); destructive git on the shared
+// checkout is forbidden (COORDINATION.md Rule 4). Interpolated into the
+// default and self-heal do prompts — never the benchmark prompt (it never
+// commits).
+const SHARED_CHECKOUT_GIT_CONTRACT = `- Shared-checkout git safety (COORDINATION.md Rule 4): edits to any repo OTHER than this tick's cwd (../atrisos-backend-style sibling repos) go through a per-tick worktree — start with \`atris worktree start --member <member> --task "<task>"\`, land with \`atris worktree ship --message "<msg>" --verify "<cmd>"\`. Never edit a sibling repo's shared checkout directly.
+- On a shared checkout, \`git reset\`, \`git checkout --\`, \`git clean\`, and stashing other agents' work are FORBIDDEN — concurrent ticks' uncommitted work lives there.`;
+
 /**
  * Build the right prompt for each phase, adapting to the kind of work.
  */
@@ -686,6 +696,7 @@ Rules:
 - Execute ONE step at a time. Verify each step before moving on.
 - Check MAP.md for file locations before grepping.
 - Stay in scope. Only fix the bug described in the lesson — no side quests.
+${SHARED_CHECKOUT_GIT_CONTRACT}
 
 Read these files first:
 ${readFiles}
@@ -710,6 +721,7 @@ Rules:
 - Check MAP.md for file locations before grepping.
 - If you hit two errors on the same step, stop and flag for re-scope.
 - Stay in scope. Don't touch files outside the task boundary.
+${SHARED_CHECKOUT_GIT_CONTRACT}
 
 Read these files first:
 ${readFiles}
