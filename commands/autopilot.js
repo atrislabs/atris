@@ -1328,6 +1328,216 @@ function appendPlanRejection(cwd, context, review) {
   }
 }
 
+// ── Timeout reconciliation (T33, endgame loop-self-repair) ─────────────────
+// A do-phase wall-clock timeout kills the reporter, not the work: 12 of 13
+// ETIMEDOUT halts in the 2026-06-10 RSI audit had real commits landed with no
+// receipt, no checked bullet, and a human halt (lessons: executor-timeout-wall,
+// tick-must-mark-own-bullet). These helpers let the tick reconcile from
+// pre-tick HEADs instead of halting when work provably landed.
+
+function todayJournalPath(cwd) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return {
+    logFile: path.join(cwd, 'atris', 'logs', String(yyyy), `${yyyy}-${mm}-${dd}.md`),
+    dateFormatted: `${yyyy}-${mm}-${dd}`,
+  };
+}
+
+/**
+ * Normalize text for fuzzy task-title matching: lowercase, strip code spans,
+ * tags, and markdown punctuation down to single-spaced words.
+ */
+function normalizeForMatch(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/\[[\w-]+\]/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * A word-boundary-truncated normalized prefix of the task title, used to find
+ * the task's TODO bullet and journal receipts without exact-string fragility.
+ */
+function taskMatchNeedle(taskTitle, maxLen = 60) {
+  const norm = normalizeForMatch(taskTitle);
+  if (!norm) return '';
+  if (norm.length <= maxLen) return norm;
+  return norm.slice(0, maxLen).replace(/\s+\S*$/, '');
+}
+
+function gitHeadAt(dir) {
+  try {
+    return execSync('git rev-parse HEAD', { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Snapshot HEAD of the workspace repo plus any sibling repos named in the
+ * task text — both explicit `../atris-cli`-style refs (the journal convention)
+ * and bare sibling-directory names like `atris-cli` that resolve to a git
+ * repo next to cwd. Returns [{ label, dir, head }].
+ */
+function snapshotRepoHeads(cwd, taskText = '') {
+  const root = path.resolve(cwd);
+  const repos = new Map([[root, '.']]);
+  const text = String(taskText || '');
+  for (const ref of text.match(/\.\.\/[A-Za-z0-9._-]+/g) || []) {
+    const dir = path.resolve(cwd, ref);
+    if (dir !== root && fs.existsSync(path.join(dir, '.git'))) repos.set(dir, ref);
+  }
+  for (const tok of text.match(/[A-Za-z][A-Za-z0-9._-]{2,}/g) || []) {
+    const dir = path.resolve(cwd, '..', tok);
+    if (dir !== root && !repos.has(dir) && fs.existsSync(path.join(dir, '.git'))) {
+      repos.set(dir, `../${tok}`);
+    }
+  }
+  return [...repos].map(([dir, label]) => ({ label, dir, head: gitHeadAt(dir) }));
+}
+
+/**
+ * Re-read HEADs for a prior snapshot; return the repos whose HEAD advanced
+ * as [{ label, dir, before, after }].
+ */
+function diffAdvancedRepoHeads(snapshot) {
+  const advanced = [];
+  for (const repo of snapshot || []) {
+    if (!repo || !repo.head) continue;
+    const after = gitHeadAt(repo.dir);
+    if (after && after !== repo.head) {
+      advanced.push({ label: repo.label, dir: repo.dir, before: repo.head, after });
+    }
+  }
+  return advanced;
+}
+
+/**
+ * The T31-typed do-phase timeout message thrown by executePhaseDetailed.
+ * Plan/review timeouts stay human halts — only the do phase commits work
+ * worth reconciling.
+ */
+function isDoPhaseTimeoutMessage(message) {
+  return /\bdo phase timed out after\b/.test(String(message || ''));
+}
+
+/**
+ * Mark the task's TODO bullet `[x]`. Matches the first un-checked,
+ * un-struck bullet whose normalized text contains the normalized title
+ * prefix; `- **T33:** …` becomes `- [x] **T33:** …`, `- [ ]` becomes `- [x]`.
+ * Returns true if a bullet was marked.
+ */
+function markTodoBulletDone(cwd, taskTitle) {
+  const needle = taskMatchNeedle(taskTitle);
+  if (!needle) return false;
+  for (const name of ['TODO.md', 'todo.md']) {
+    const todoPath = path.join(cwd, 'atris', name);
+    if (!fs.existsSync(todoPath)) continue;
+    const lines = fs.readFileSync(todoPath, 'utf8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const bullet = lines[i].match(/^(\s*)- (?:\[( |x)\]\s+)?(.*)$/);
+      if (!bullet) continue;
+      if (bullet[2] === 'x') continue;
+      if (bullet[3].startsWith('~~')) continue;
+      if (!normalizeForMatch(lines[i]).includes(needle)) continue;
+      lines[i] = `${bullet[1]}- [x] ${bullet[3]}`;
+      fs.writeFileSync(todoPath, lines.join('\n'));
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Append a block under today's journal `## Notes`, creating the journal file
+ * if the tick dies before any other writer got to it. Never throws.
+ */
+function appendUnderNotes(cwd, block) {
+  try {
+    const { logFile, dateFormatted } = todayJournalPath(cwd);
+    if (!fs.existsSync(logFile)) {
+      const dir = path.dirname(logFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      createLogFile(logFile, dateFormatted);
+    }
+    let content = fs.readFileSync(logFile, 'utf8');
+    const notesIdx = content.indexOf('## Notes');
+    if (notesIdx === -1) {
+      content = content.replace(/\s*$/, '') + `\n\n## Notes\n${block}\n`;
+    } else {
+      const eol = content.indexOf('\n', notesIdx);
+      content = content.slice(0, eol + 1) + block + content.slice(eol + 1);
+    }
+    fs.writeFileSync(logFile, content);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function appendTimeoutReconciliation(cwd, { task, advanced }) {
+  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const repoLines = (advanced || [])
+    .map((r) => `- ${r.label}: ${String(r.before).slice(0, 7)} → ${String(r.after).slice(0, 7)}`)
+    .join('\n');
+  const block =
+    `\n### Timeout reconciliation — ${now} — work-landed-receipt-died\n\n` +
+    `**Task:** ${task}\n` +
+    `**What happened:** the do-phase wall killed the reporter, but commits landed:\n` +
+    `${repoLines}\n` +
+    `Receipt auto-written and the TODO bullet marked; no human halt required.\n`;
+  return appendUnderNotes(cwd, block);
+}
+
+function appendCheckAndAdvance(cwd, task, receiptLine) {
+  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const block =
+    `\n### Check-and-advance — ${now} — advanced-already-done\n\n` +
+    `**Task:** ${task}\n` +
+    `**What happened:** verify passed before work started AND today's journal already carries a completion receipt — the work shipped on a prior tick whose reporter died before bookkeeping. Bullet marked, picker advanced.\n` +
+    `**Receipt:** ${receiptLine}\n`;
+  return appendUnderNotes(cwd, block);
+}
+
+/**
+ * Scan today's journal for a completion receipt naming the task: a `C#`
+ * completed line, a timeout-reconciliation entry, or a `**Task:**` line.
+ * Returns the matching line, or null.
+ */
+function findCompletionReceipt(cwd, taskTitle) {
+  const { logFile } = todayJournalPath(cwd);
+  if (!fs.existsSync(logFile)) return null;
+  const needle = taskMatchNeedle(taskTitle);
+  if (!needle) return null;
+  for (const line of fs.readFileSync(logFile, 'utf8').split('\n')) {
+    const receiptShaped =
+      /\*\*C\d+:\*\*/.test(line) || /\*\*Task:\*\*/.test(line) || /reconciliation/i.test(line);
+    if (receiptShaped && normalizeForMatch(line).includes(needle)) return line.trim();
+  }
+  return null;
+}
+
+/**
+ * After a do-phase timeout: diff the pre-tick HEAD snapshot. If commits
+ * landed, write the journal reconciliation receipt, mark the TODO bullet, and
+ * report outcome `work-landed-receipt-died`. If nothing landed, the caller
+ * halts exactly as before.
+ */
+function reconcileTimedOutTick(cwd, snapshot, taskTitle) {
+  const advanced = diffAdvancedRepoHeads(snapshot);
+  if (advanced.length === 0) return { reconciled: false, advanced: [] };
+  appendTimeoutReconciliation(cwd, { task: taskTitle, advanced });
+  const bulletMarked = markTodoBulletDone(cwd, taskTitle);
+  return { reconciled: true, outcome: 'work-landed-receipt-died', advanced, bulletMarked };
+}
+
 function runTaskOnce(context, options = {}) {
   const { verbose = false, cwd = process.cwd() } = options;
 
@@ -1388,6 +1598,25 @@ function runTaskOnce(context, options = {}) {
   if (!skipFalsifiability && verifyResult.explicit && context.kind === 'endgame' && verifyCmd) {
     try {
       execSync(verifyCmd, { cwd, stdio: 'pipe', timeout: 300000 });
+      // T33b (lesson: tick-must-mark-own-bullet): a pre-work verify pass WITH
+      // a completion receipt already in today's journal means the work shipped
+      // but the reporter died before bookkeeping. Check the bullet and advance
+      // instead of wedging the picker on verify-not-falsifiable.
+      const receipt = findCompletionReceipt(cwd, context.task);
+      if (receipt) {
+        const bulletMarked = markTodoBulletDone(cwd, context.task);
+        appendCheckAndAdvance(cwd, context.task, receipt);
+        return {
+          outcome: 'advanced-already-done',
+          reason: 'advanced-already-done',
+          receipt,
+          bulletMarked,
+          phaseResults: {},
+          elapsedSeconds: 0,
+          verifyRan: true,
+          verifyPass: true,
+        };
+      }
       writeLesson(cwd, 'verify-not-falsifiable', 'fail',
         `Verify \`${verifyCmd}\` passed before work started on "${context.task}". Either the rubric is trivial or the task is already done. Tick halted.`);
       return {
@@ -2910,6 +3139,17 @@ async function autopilotAtris(description, options = {}) {
     };
     const startingEndgame = readEndgameState(cwd);
 
+    // T33a: snapshot pre-tick HEADs (cwd + sibling repos named in the task)
+    // so a do-phase timeout can be reconciled against what actually landed.
+    let preTickHeads = null;
+    try {
+      const verifyHint = getVerifyCommand(cwd, suggestion.task).cmd || '';
+      preTickHeads = snapshotRepoHeads(
+        cwd,
+        [suggestion.task, ...(suggestion.files || []), verifyHint].join(' ')
+      );
+    } catch { /* snapshot failure must not block the tick */ }
+
     try {
       if (verbose) {
         console.log('');
@@ -2941,6 +3181,26 @@ async function autopilotAtris(description, options = {}) {
           ].join('\n'));
         }
         break;
+      }
+
+      // T33b: the falsifiability gate found a completion receipt — the work
+      // already shipped, the bullet is checked, move straight to the next pick.
+      if (execution.outcome === 'advanced-already-done') {
+        completed++;
+        tickOutcome = 'built';
+        tickOutcomeText = `"${lastTaskTitle}" was already done — verify passed pre-work and today's journal carries its completion receipt, so I checked the bullet and advanced.`;
+        tickNextStep = 'pick the next endgame task';
+        if (verbose) {
+          console.log('  already done (journal receipt found). bullet checked, advancing.');
+        } else {
+          printPlainBlock([
+            'That task was already done — verify passed before work and a completion receipt exists in today\'s journal.',
+            'I checked the bullet and advanced.',
+            '',
+            'Next I will look for the next task.'
+          ].join('\n'));
+        }
+        continue;
       }
 
       const planTime = execution.phaseResults.plan.elapsedSeconds;
@@ -3051,6 +3311,36 @@ async function autopilotAtris(description, options = {}) {
       }
 
     } catch (err) {
+      // T33a: a do-phase timeout with commits landed is a dead reporter, not
+      // dead work — write the reconciliation receipt, mark the bullet, and
+      // record work-landed-receipt-died instead of halting for a human.
+      let reconciliation = null;
+      if (isDoPhaseTimeoutMessage(err.message)) {
+        try {
+          reconciliation = reconcileTimedOutTick(cwd, preTickHeads, lastTaskTitle || suggestion.task);
+        } catch { reconciliation = null; }
+      }
+      if (reconciliation && reconciliation.reconciled) {
+        completed++;
+        const landed = reconciliation.advanced
+          .map((r) => `${r.label} ${String(r.before).slice(0, 7)} → ${String(r.after).slice(0, 7)}`)
+          .join(', ');
+        tickOutcome = 'work-landed-receipt-died';
+        tickOutcomeText = `"${lastTaskTitle}" hit the do-phase wall but commits landed (${landed}). I wrote the reconciliation receipt and marked the bullet — work-landed-receipt-died, no human halt.`;
+        tickNextStep = 'pick the next task';
+        if (verbose) {
+          console.log(`  do phase timed out, but work landed (${landed}). reconciled — no human halt.`);
+        } else {
+          printPlainBlock([
+            'The do phase timed out, but commits landed before the wall.',
+            `Landed: ${landed}.`,
+            'I wrote the reconciliation receipt and marked the task bullet.',
+            '',
+            'Next tick will pick the next task.'
+          ].join('\n'));
+        }
+        break;
+      }
       tickOutcome = 'halted';
       tickOutcomeText = `I hit an error while running "${lastTaskTitle || 'a task'}": ${err.message}`;
       tickNextStep = 'stop until a human looks at the error';
@@ -3267,6 +3557,12 @@ async function autopilotFromTodo(options = {}) {
 
 module.exports = {
   appendTickSummary,
+  snapshotRepoHeads,
+  diffAdvancedRepoHeads,
+  reconcileTimedOutTick,
+  markTodoBulletDone,
+  findCompletionReceipt,
+  isDoPhaseTimeoutMessage,
   askHuman,
   askModel,
   autopilotAtris,
