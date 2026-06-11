@@ -15,6 +15,7 @@ const {
   deepEqual,
   runBacktest,
   promoteProcess,
+  executeBuild,
   buildCompilePrompt,
   parseValueArg,
   parseFlags,
@@ -137,10 +138,35 @@ test('promote: gate blocks below threshold, passes at threshold', async () => {
   await runBacktest(root, 'demo');
   assert.throws(() => promoteProcess(root, 'demo'), /below the/);
 
-  await runBacktest(root, 'demo', { threshold: 0.9 });
-  const promoted = promoteProcess(root, 'demo');
+  const promoted = promoteProcess(root, 'demo', { threshold: 0.9 });
   assert.equal(promoted.status, 'active');
   assert.ok(promoted.promotedAt);
+  assert.equal(readManifest(root, 'demo').threshold, 0.9);
+});
+
+test('backtest: one-off --threshold does not rewrite the standing gate', async () => {
+  const root = makeRoot();
+  seedRecords(root, 'demo', 10, { badFrom: 9 }); // 9/10 = 90%
+  writeRunner(root, 'demo', DOUBLER);
+  writeManifest(root, 'demo', defaultManifest('demo'));
+
+  const { result } = await runBacktest(root, 'demo', { threshold: 0.5 });
+  assert.equal(result.threshold, 0.5); // this run was judged against the override
+  assert.equal(readManifest(root, 'demo').threshold, DEFAULT_THRESHOLD); // gate untouched
+  assert.throws(() => promoteProcess(root, 'demo'), /below the/); // promote still uses the gate
+});
+
+test('drift: one-off backtest threshold does not change the drift verdict', async () => {
+  const root = makeRoot();
+  seedRecords(root, 'demo', 5);
+  writeRunner(root, 'demo', DOUBLER);
+  writeManifest(root, 'demo', defaultManifest('demo'));
+  await runBacktest(root, 'demo');
+  promoteProcess(root, 'demo');
+
+  seedRecords(root, 'demo', 10, { badFrom: 5 }); // accuracy drops to 10/15
+  const { manifest } = await runBacktest(root, 'demo', { threshold: 0.1 }); // lax one-off
+  assert.equal(manifest.status, 'drifted'); // still judged drifted against the standing gate
 });
 
 test('promote: refuses stale backtest from an older version', async () => {
@@ -179,6 +205,33 @@ test('drift: active process falling below gate is marked drifted', async () => {
   seedRecords(root, 'demo', 10, { badFrom: 5 });
   const { manifest: after } = await runBacktest(root, 'demo');
   assert.equal(after.status, 'drifted');
+});
+
+test('rebuild: an active process drops to draft and must re-earn the gate', async () => {
+  const root = makeRoot();
+  seedRecords(root, 'demo', 5);
+  writeRunner(root, 'demo', DOUBLER);
+  const manifest = defaultManifest('demo');
+  manifest.version = 1;
+  writeManifest(root, 'demo', manifest);
+  await runBacktest(root, 'demo');
+  promoteProcess(root, 'demo');
+  assert.equal(readManifest(root, 'demo').status, 'active');
+
+  // recompile: cmdOverride seam stands in for the claude build (runner already on disk)
+  const rebuilt = executeBuild(root, 'demo', { cmdOverride: 'true' });
+  assert.equal(rebuilt.status, 'draft'); // active badge does not survive unverified code
+  assert.equal(rebuilt.backtest, null);
+  assert.equal(rebuilt.version, 2);
+  assert.throws(() => promoteProcess(root, 'demo'), /no backtest/);
+});
+
+test('writeManifest: leaves no partial tmp file behind', () => {
+  const root = makeRoot();
+  writeManifest(root, 'demo', defaultManifest('demo'));
+  const dir = path.dirname(require('../commands/compile').manifestPath(root, 'demo'));
+  assert.ok(!fs.readdirSync(dir).some((f) => f.endsWith('.tmp')));
+  assert.equal(readManifest(root, 'demo').status, 'draft');
 });
 
 test('backtest: supports async run()', async () => {
