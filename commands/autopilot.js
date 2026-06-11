@@ -403,6 +403,31 @@ function isPhaseTimeoutError(err) {
 }
 
 /**
+ * execSync with the phase-timeout orphan fix. Node's sync-exec timeout signals
+ * only the direct child pid — the `/bin/sh -c` wrapper — so the `claude` it
+ * spawned kept committing 160–296s past the 600s wall (lesson:
+ * etimedout-error-shape, 2026-06-10). `detached: true` makes the wrapper a
+ * process-group leader; on timeout we sweep the whole group via
+ * `process.kill(-pid, 'SIGKILL')`. ESRCH on the sweep means the group already
+ * died — fine. The original error is rethrown untouched so every call site
+ * keeps its existing catch contract (err.stdout passthrough included).
+ */
+function execPhaseCommandSync(cmd, opts = {}) {
+  try {
+    return execSync(cmd, { ...opts, detached: true });
+  } catch (err) {
+    if (isPhaseTimeoutError(err) && err.pid) {
+      try {
+        process.kill(-err.pid, 'SIGKILL');
+      } catch (sweepErr) {
+        if (sweepErr.code !== 'ESRCH') throw sweepErr;
+      }
+    }
+    throw err;
+  }
+}
+
+/**
  * Run a phase via claude -p subprocess.
  */
 function executePhaseDetailed(phase, context, options = {}) {
@@ -417,7 +442,7 @@ function executePhaseDetailed(phase, context, options = {}) {
       || `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const output = execSync(cmd, {
+    const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
       timeout,
@@ -1117,7 +1142,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Grep,Glob"`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const output = execSync(cmd, {
+    const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
       timeout,
@@ -1146,7 +1171,18 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     timeout,
     stdio: 'pipe',
     maxBuffer: 10 * 1024 * 1024,
+    detached: true,
   });
+  // No sh wrapper here, but codex spawns its own children — sweep the group
+  // on timeout so they cannot outlive the wall (same orphan class as the
+  // claude sites; ESRCH means the tree is already dead).
+  if (proc.pid && ((proc.error && proc.error.code === 'ETIMEDOUT') || proc.signal)) {
+    try {
+      process.kill(-proc.pid, 'SIGKILL');
+    } catch (sweepErr) {
+      if (sweepErr.code !== 'ESRCH') throw sweepErr;
+    }
+  }
   if (proc.status !== 0 && !proc.stdout) {
     throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
   }
@@ -2574,7 +2610,7 @@ Reply with the JSON array and nothing else.`;
     const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')"`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    output = execSync(cmd, {
+    output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
       timeout: PHASE_TIMEOUT,
@@ -3198,7 +3234,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Glob,Grep"`;
-    const output = execSync(cmd, {
+    const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
       timeout: 60000,
@@ -3274,6 +3310,7 @@ module.exports = {
   shouldSkipAutoHumanGate,
   writeLesson,
   isPhaseTimeoutError,
+  execPhaseCommandSync,
   executePhaseDetailed,
   lessonSlug
 };
