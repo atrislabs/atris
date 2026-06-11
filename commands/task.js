@@ -7943,4 +7943,4 @@ async function run(args) {
   }
 }
 
-module.exports = { run, taskDayGroups };
+module.exports = { run, taskDayGroups, AGENT_ENV_MARKERS };

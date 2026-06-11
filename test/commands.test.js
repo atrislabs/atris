@@ -71,6 +71,7 @@ const {
   writeLesson
 } = require('../commands/autopilot');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -131,7 +132,7 @@ function runCli(args, { cwd, input, env } = {}) {
     encoding: 'utf8',
     timeout: 15000,
     env: {
-      ...process.env,
+      ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ...(env || {}),
     },
@@ -1584,6 +1585,90 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
 
     const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
     assert.doesNotMatch(receipt.scan.prevented_fire_candidate.title, /candidate: Recurring log pattern: candidate:/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const first = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+    assert.equal(firstPayload.decision, 'task_created');
+    const firstRef = firstPayload.created_task.task_ref;
+    assert.ok(firstRef);
+
+    // Cross the lifecycle boundary: the wake target is now done. Pre-fix the next wake
+    // re-selected it forever (the OBL-1433 no-op spiral).
+    const done = runCli(['task', 'done', firstRef, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr || done.stdout);
+
+    const second = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.notEqual(secondPayload.created_task?.task_ref, firstRef, 'wake must not re-select a done task');
+    assert.equal(secondPayload.decision, 'task_created');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake skips journal append on identical no-op repeat', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wakeOnce = () => {
+      const wake = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+      assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+      return JSON.parse(wake.stdout);
+    };
+
+    const first = wakeOnce();   // creates the task → journaled
+    assert.equal(first.decision, 'task_created');
+    const second = wakeOnce();  // existing actionable task, prevented 0 → journaled (state changed)
+    const third = wakeOnce();   // identical no-op repeat → receipt yes, journal no
+    assert.equal(third.decision, second.decision);
+    assert.equal(third.journal_skipped, 'duplicate_noop');
+    assert.equal(third.log_path, null);
+    assert.ok(fs.existsSync(third.receipt_path), 'receipt must still be written on skipped journal');
+
+    const projectLogs = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md') && f !== '2026-06-07.md');
+    const journalText = projectLogs
+      .map((f) => fs.readFileSync(path.join(logsDir, f), 'utf8'))
+      .join('\n');
+    const entryCount = (journalText.match(/## .* · Auto-improver dogfood scan/g) || []).length;
+    assert.equal(entryCount, 2, `expected 2 journal entries (got ${entryCount}):\n${journalText}`);
   } finally {
     cleanupTempDir(dir);
   }

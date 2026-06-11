@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-xp-test-'));
@@ -22,7 +23,7 @@ function runCli(args, { cwd, env = {} } = {}) {
     encoding: 'utf8',
     timeout: 15000,
     env: {
-      ...process.env,
+      ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
