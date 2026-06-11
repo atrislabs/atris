@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execSync } = require('node:child_process');
 
-const { isPhaseTimeoutError, executePhaseDetailed, lessonSlug } = require('../commands/autopilot');
+const { isPhaseTimeoutError, isPhaseKillError, executePhaseDetailed, lessonSlug } = require('../commands/autopilot');
 
 // T31 (RSI audit, endgame atris2-chat-reliable-everywhere): execSync timeout
 // errors carry `code: 'ETIMEDOUT'` / `signal`, never `killed` — the old
@@ -14,11 +14,38 @@ const { isPhaseTimeoutError, executePhaseDetailed, lessonSlug } = require('../co
 
 test('isPhaseTimeoutError types the real execSync ETIMEDOUT shape', () => {
   assert.strictEqual(isPhaseTimeoutError({ code: 'ETIMEDOUT' }), true);
-  assert.strictEqual(isPhaseTimeoutError({ signal: 'SIGTERM' }), true);
-  assert.strictEqual(isPhaseTimeoutError({ killed: true }), true);
+  assert.strictEqual(isPhaseTimeoutError({ code: 'ETIMEDOUT', signal: 'SIGTERM' }), true);
+  // a bare signal is an OOM/external kill, not the timeout wall (CLI-231)
+  assert.strictEqual(isPhaseTimeoutError({ signal: 'SIGKILL' }), false);
+  assert.strictEqual(isPhaseTimeoutError({ killed: true }), false);
   assert.strictEqual(isPhaseTimeoutError(new Error('Command failed: exit 1')), false);
   assert.strictEqual(isPhaseTimeoutError({ code: 1 }), false);
   assert.strictEqual(isPhaseTimeoutError(null), false);
+});
+
+test('isPhaseKillError casts the wider net for the group sweep', () => {
+  assert.strictEqual(isPhaseKillError({ code: 'ETIMEDOUT' }), true);
+  assert.strictEqual(isPhaseKillError({ signal: 'SIGKILL' }), true);
+  assert.strictEqual(isPhaseKillError({ killed: true }), true);
+  assert.strictEqual(isPhaseKillError({ code: 1 }), false);
+  assert.strictEqual(isPhaseKillError(null), false);
+});
+
+test('a signal kill throws a kill message, never "timed out"', () => {
+  // sh kills its own child with SIGKILL before the 5s wall: signal, no ETIMEDOUT
+  let thrown;
+  try {
+    executePhaseDetailed(
+      'do',
+      { task: 'fixture', kind: 'endgame' },
+      { verbose: false, timeout: 5000, cmdOverride: 'sh -c "kill -KILL $$"' }
+    );
+  } catch (err) {
+    thrown = err;
+  }
+  assert.ok(thrown, 'expected the signal kill to throw');
+  assert.match(thrown.message, /^do phase killed by SIGKILL/);
+  assert.doesNotMatch(thrown.message, /timed out/);
 });
 
 test('forced phase timeout throws the named phase message, not raw spawnSync', () => {
