@@ -393,6 +393,16 @@ function askHuman(taskTitle) {
 }
 
 /**
+ * Type-check a child_process error as a timeout/kill. Node's execSync attaches
+ * `code: 'ETIMEDOUT'` and `signal` on timeout — it does NOT set `killed`, so a
+ * `killed`-only guard is dead code on the exact error it was written for
+ * (lesson: etimedout-error-shape, 2026-06-10).
+ */
+function isPhaseTimeoutError(err) {
+  return Boolean(err && (err.killed || err.code === 'ETIMEDOUT' || err.signal));
+}
+
+/**
  * Run a phase via claude -p subprocess.
  */
 function executePhaseDetailed(phase, context, options = {}) {
@@ -403,7 +413,8 @@ function executePhaseDetailed(phase, context, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
+    const cmd = options.cmdOverride
+      || `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execSync(cmd, {
@@ -419,7 +430,9 @@ function executePhaseDetailed(phase, context, options = {}) {
     return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
-    if (err.killed) throw new Error(`${phase} timed out after ${timeout / 1000}s`);
+    if (isPhaseTimeoutError(err)) {
+      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (claude -p hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
+    }
     if (err.stdout) {
       return { prompt, output: err.stdout };
     }
@@ -740,6 +753,27 @@ If broken beyond quick fix, reply: failed — [reason].`;
   }
 
   return '';
+}
+
+/**
+ * Build a clean kebab-case lesson slug from free text. Strips non-alphanumerics
+ * (em-dashes were leaking into slugs verbatim) and truncates at a word boundary
+ * instead of mid-word (e.g. the old `.slice(0, 40)` produced
+ * `verify-fail-per-member-model-selection-—-the-member-`).
+ */
+function lessonSlug(text, maxLen = 40) {
+  const base = String(text || 'unknown')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!base) return 'unknown';
+  if (base.length <= maxLen) return base;
+  const cut = base.slice(0, maxLen);
+  const lastDash = cut.lastIndexOf('-');
+  // base[maxLen] continues a word — back up to the last full word.
+  const atBoundary = base[maxLen] === '-';
+  const trimmed = atBoundary ? cut : (lastDash > 0 ? cut.slice(0, lastDash) : cut);
+  return trimmed.replace(/-+$/g, '') || 'unknown';
 }
 
 /**
@@ -1436,7 +1470,7 @@ function runTaskOnce(context, options = {}) {
         elapsedSeconds: verifyTime,
       };
       try {
-        const slug = (context.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+        const slug = lessonSlug(context.task);
         writeLesson(cwd, `verify-fail-${slug}`, 'fail', `Verify command \`${verifyCmd}\` failed: ${e.message.split('\n')[0]}`);
       } catch { /* lesson write must not crash the tick */ }
     }
@@ -2548,6 +2582,11 @@ Reply with the JSON array and nothing else.`;
       maxBuffer: 10 * 1024 * 1024,
       env
     }).toString();
+  } catch (err) {
+    if (isPhaseTimeoutError(err)) {
+      throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
+    }
+    throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }
@@ -2929,7 +2968,7 @@ async function autopilotAtris(description, options = {}) {
       // Record commit hash + verify command for retroactive regression checks
       try {
         const commitHash = execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
-        const taskSlug = (suggestion.task || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40);
+        const taskSlug = lessonSlug(suggestion.task);
         recordTickCommit(cwd, commitHash, execution.verifyCmd || '', taskSlug);
 
         // Every 10th tick, run retroactive regression check
@@ -3233,5 +3272,8 @@ module.exports = {
   scoreEndgameCandidates,
   suggestNextTask,
   shouldSkipAutoHumanGate,
-  writeLesson
+  writeLesson,
+  isPhaseTimeoutError,
+  executePhaseDetailed,
+  lessonSlug
 };
