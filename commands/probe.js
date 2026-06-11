@@ -57,7 +57,10 @@ function normalizeBash(cmd, label) {
   return cmd.split(l + '/').join('').split(l).join('.');
 }
 
-// Probe is read-only: no write/edit file ops.
+// No write/edit file ops, and the `..` guard only covers args.path. The
+// `bash` op still executes whatever command the model sends, verbatim, on
+// the remote ai-computer — that is the production relay contract and the
+// table must stay in lockstep with it, so this probe is NOT read-only.
 function fileOpCommand(args, label) {
   const op = String(args.type || '').toLowerCase();
   const raw = normalizePath(String(args.path || '') || '.', label);
@@ -235,7 +238,11 @@ async function probeCommand(argv) {
           Accept: 'text/event-stream',
           Authorization: `Bearer ${token}`,
         },
+        // connect/first-byte guard; cleared once headers arrive so the
+        // 180s idle timer below is the only judge of a flowing stream
+        timeout: 60000,
       }, (res) => {
+        req.setTimeout(0);
         if (res.statusCode < 200 || res.statusCode >= 300) {
           let data = '';
           res.on('data', (c) => data += c);
@@ -321,6 +328,7 @@ async function probeCommand(argv) {
         });
         res.on('error', (e) => { if (idleTimer) clearTimeout(idleTimer); reject(e); });
       });
+      req.on('timeout', () => { req.destroy(new Error('no response headers within 60s')); });
       req.on('error', reject);
       req.write(postData);
       req.end();
