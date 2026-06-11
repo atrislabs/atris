@@ -328,6 +328,7 @@ function showHelp() {
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
+  console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
@@ -773,7 +774,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x',
+                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile'];
 
@@ -1258,6 +1259,8 @@ if (command === 'init') {
     process.exit(0);
   }
   require('../commands/now').nowAtris(args);
+} else if (command === 'recap') {
+  require('../commands/recap').recapAtris(process.argv.slice(3));
 } else if (command === 'activate') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

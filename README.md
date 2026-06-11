@@ -32,6 +32,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 - A strict `plan -> do -> review` loop
 - Daily logs, task tracking, feature packs, and project memory
 - Skills, team members, integrations, and cloud sync when you need them
+- A plain-English answer to "what did my AI actually do?" — run `atris recap` (add `--share` for a paste-ready summary backed by receipts)
 
 ## Critical Files
 
