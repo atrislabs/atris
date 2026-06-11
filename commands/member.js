@@ -2416,12 +2416,26 @@ function collectAutoImproverScan(root = process.cwd()) {
   };
 }
 
+// Lifecycle filter for wake dedupe: a task that already crossed the review boundary
+// (done/failed/archived, or human-accepted) must never be re-selected as the wake target —
+// that loop produced an endless "existing_task_found OBL-1433" no-op spiral (OBL-1469).
+const AUTO_IMPROVER_INACTIVE_STATUSES = new Set(['done', 'failed', 'archived']);
+
+function autoImproverTaskIsActionable(task) {
+  const status = String(task?.status || '').toLowerCase();
+  if (AUTO_IMPROVER_INACTIVE_STATUSES.has(status)) return false;
+  const approval = String(task?.metadata?.approval_status || task?.approval_status || '').toLowerCase();
+  if (approval === 'accepted') return false;
+  return true;
+}
+
 function findExistingAutoImproverTask(title) {
   const projection = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json'));
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
   const key = lowerCompact(title);
   if (!key) return null;
   return tasks.find((task) => {
+    if (!autoImproverTaskIsActionable(task)) return false;
     const taskTitle = lowerCompact(task.title || '');
     if (!taskTitle) return false;
     return taskTitle.includes(key) || key.includes(taskTitle);
@@ -2571,27 +2585,42 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
         : 'No bounded prevented-fire task was created yet.',
     },
   };
+  const previousLatest = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'auto-improver-dogfood-latest.json'));
   const finalWrite = writeAutoImproverReceipt(name, payload, plannedReceiptPath);
-  const logPath = appendProjectLog('Auto-improver dogfood scan', {
-    member: name,
-    mode,
-    found: payload.proof.found_problems,
-    prevented: payload.proof.prevented_suffering,
-    pain_before: payload.pain.before,
-    pain_after: payload.pain.after,
-    candidate: candidate ? stripAutoImproverTitleNoise(candidate.title) : '',
-    task: payload.created_task?.task_ref || '',
-    receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
-  });
-  const memberLogPath = appendMemberGoalLog(paths.memberDir, name, 'Auto-improver dogfood scan', {
-    mode,
-    found: payload.proof.found_problems,
-    prevented: payload.proof.prevented_suffering,
-    pain_before: payload.pain.before,
-    pain_after: payload.pain.after,
-    receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
-    next: nextCommand,
-  });
+  // A no-op scan identical to the previous tick earns a receipt but not a journal entry —
+  // the cadence loop was appending the same "found: N, prevented: 0" row every ~4 minutes
+  // and flooding the daily log (2026-06-10 had 100+ identical entries).
+  const createdNewTask = Boolean(payload.created_task) && payload.created_task.existing === false;
+  const duplicateNoop = Boolean(previousLatest)
+    && !createdNewTask
+    && previousLatest.decision === decision
+    && previousLatest.proof?.found_problems === payload.proof.found_problems
+    && previousLatest.pain?.before === payload.pain.before
+    && (previousLatest.created_task?.task_ref || null) === (payload.created_task?.task_ref || null);
+  let logPath = null;
+  let memberLogPath = null;
+  if (!duplicateNoop) {
+    logPath = appendProjectLog('Auto-improver dogfood scan', {
+      member: name,
+      mode,
+      found: payload.proof.found_problems,
+      prevented: payload.proof.prevented_suffering,
+      pain_before: payload.pain.before,
+      pain_after: payload.pain.after,
+      candidate: candidate ? stripAutoImproverTitleNoise(candidate.title) : '',
+      task: payload.created_task?.task_ref || '',
+      receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
+    });
+    memberLogPath = appendMemberGoalLog(paths.memberDir, name, 'Auto-improver dogfood scan', {
+      mode,
+      found: payload.proof.found_problems,
+      prevented: payload.proof.prevented_suffering,
+      pain_before: payload.pain.before,
+      pain_after: payload.pain.after,
+      receipt: repoRelative(process.cwd(), finalWrite.receiptPath),
+      next: nextCommand,
+    });
+  }
 
   return {
     ok: true,
@@ -2610,6 +2639,7 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
     latest_path: finalWrite.latestPath,
     log_path: logPath,
     member_log_path: memberLogPath,
+    journal_skipped: duplicateNoop ? 'duplicate_noop' : null,
     created_task: payload.created_task,
   };
 }
