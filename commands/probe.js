@@ -119,7 +119,9 @@ function atrisCliCommand(args) {
 }
 
 function atrisCliResult(command, term) {
-  const code = term.exit_code || 0;
+  // a terminal response without a numeric exit_code is a broken endpoint,
+  // not a success — never let it masquerade as ok with empty stdout
+  const code = typeof term.exit_code === 'number' ? term.exit_code : -1;
   const out = {
     schema: 'atris.local_cli_result.v1',
     status: code === 0 ? 'ok' : 'error',
@@ -127,7 +129,11 @@ function atrisCliResult(command, term) {
     stdout: String(term.stdout || '').slice(0, 12000),
     exit_code: code,
   };
-  if (code !== 0) out.error = String(term.stderr || term.stdout || 'command failed').slice(0, 2000);
+  if (code !== 0) {
+    out.error = typeof term.exit_code === 'number'
+      ? String(term.stderr || term.stdout || 'command failed').slice(0, 2000)
+      : 'terminal endpoint returned no exit_code';
+  }
   return out;
 }
 
@@ -157,7 +163,10 @@ function postJson(urlString, token, payload, timeoutMs) {
           reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
           return;
         }
-        try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }
+        if (!data) { resolve({}); return; }
+        try { resolve(JSON.parse(data)); } catch (e) {
+          reject(new Error(`invalid JSON from ${url.pathname}: ${data.slice(0, 120)}`));
+        }
       });
     });
     req.on('timeout', () => { req.destroy(new Error('request timeout')); });
@@ -281,10 +290,15 @@ async function probeCommand(argv) {
                   unsupported.push(`file_op:${op}`);
                 } else {
                   const term = await runTerminal(base, token, cmd, a.business);
-                  const ok = (term.exit_code || 0) === 0;
+                  const ok = term.exit_code === 0;
                   out = ok
                     ? { status: 'ok', stdout: String(term.stdout || '').slice(0, 12000) }
-                    : { status: 'error', error: String(term.stderr || 'command failed').slice(0, 2000) };
+                    : {
+                        status: 'error',
+                        error: typeof term.exit_code === 'number'
+                          ? String(term.stderr || 'command failed').slice(0, 2000)
+                          : 'terminal endpoint returned no exit_code',
+                      };
                 }
               } else if (name === 'local_atris_cli_op') {
                 const cmd = atrisCliCommand(args);
@@ -371,4 +385,12 @@ async function probeCommand(argv) {
   return ok ? 0 : 1;
 }
 
-module.exports = { probeCommand };
+module.exports = {
+  probeCommand,
+  // exported for tests
+  normalizePath,
+  normalizeBash,
+  fileOpCommand,
+  atrisCliCommand,
+  atrisCliResult,
+};
