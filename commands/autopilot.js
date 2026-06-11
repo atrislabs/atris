@@ -943,6 +943,38 @@ function shouldAdoptPlannedVerify(kind) {
   return ['staleness', 'docs', 'review', 'inbox', 'cleanup', 'feature', 'lessons', 'imagined'].includes(kind);
 }
 
+// Task-plane status vocabulary lint. `atris task list/queue/current --status <s>`
+// only matches raw stored statuses (commands/task.js); `ready` is a TRANSITION
+// (`atris task ready` moves a task to review), so `--status ready` always
+// returns "(no tasks)" — a verify built on it is an unreachable gate; the
+// matching listable form is --status review (lessons.md
+// verify-status-vocabulary, 3rd occurrence 2026-06-10).
+const LISTABLE_TASK_STATUSES = ['open', 'claimed', 'review', 'done', 'failed'];
+const STATUS_CORRECTIONS = { ready: 'review' };
+
+function lintVerifyTaskStatusVocabulary(text) {
+  // Scan every `atris task list|queue|current` segment (compound verifies
+  // chain with && / || / ;), then pull its --status value if present.
+  const segmentRe = /\batris\s+task\s+(?:list|queue|current)\b([^|&;]*)/g;
+  let segment;
+  while ((segment = segmentRe.exec(text)) !== null) {
+    const statusMatch = /--status[=\s]+["']?([A-Za-z0-9_-]+)["']?/.exec(segment[1]);
+    if (!statusMatch) continue;
+    const status = statusMatch[1];
+    if (LISTABLE_TASK_STATUSES.includes(status)) continue;
+    const vocabulary = LISTABLE_TASK_STATUSES.join('|');
+    const corrected = STATUS_CORRECTIONS[status];
+    const suggestion = corrected
+      ? `use --status ${corrected} instead (atris task ${status} is a transition that lands tasks in ${corrected}, so --status ${status} never matches)`
+      : `use one of --status ${vocabulary}`;
+    return {
+      ok: false,
+      reason: `Verify uses unlistable task status "--status ${status}" — the listable vocabulary is ${vocabulary}; ${suggestion}`,
+    };
+  }
+  return null;
+}
+
 function validateVerifyCommandShape(cmd) {
   const text = String(cmd || '').trim();
   if (!text) return { ok: true };
@@ -952,6 +984,8 @@ function validateVerifyCommandShape(cmd) {
   if (/\b(returns?|shows?|equals?|should|must)\b/i.test(text)) {
     return { ok: false, reason: 'Verify contains prose expectations instead of shell operators/assertions' };
   }
+  const statusLint = lintVerifyTaskStatusVocabulary(text);
+  if (statusLint) return statusLint;
   return { ok: true };
 }
 
@@ -3563,6 +3597,7 @@ module.exports = {
   markTodoBulletDone,
   findCompletionReceipt,
   isDoPhaseTimeoutMessage,
+  validateVerifyCommandShape,
   askHuman,
   askModel,
   autopilotAtris,
