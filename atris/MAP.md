@@ -670,6 +670,20 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Search:** `rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js`
 
+### Feature: Recap (`atris recap`)
+
+**Purpose:** Plain-English report of what the AI team did — for the operator, or paste-ready for a customer. Receipts made legible; zero internal jargon in output.
+
+- **Entry point:** `commands/recap.js` (`recapAtris`, `buildRecapData`, `renderRecap`, `renderShare`)
+- **Routing:** `bin/atris.js` (`command === 'recap'` branch, `knownCommands` list, Context & tracking help line)
+- **Data sources:** task DB via `lib/task-db` (`listTasks` + `taskDisplayRefMap`), fallback `.atris/state/tasks.projection.json`, graceful empty state
+- **Buckets:** shipped = `done` within `--days` window (default 7); waiting = `review` (proven, needs human accept); in progress = `open`/`claimed`
+- **Proof line:** `metadata.latest_agent_proof` (or certified marker), compressed to one line per item
+- **Modes:** default report, `--share` (paste-ready for Slack/email/customer), `--json` (agents/dashboards), `--days N`
+- **Regression:** `test/recap.test.js` (buckets, jargon ban, share format, projection fallback, empty workspace)
+
+**Search:** `rg "recapAtris|buildRecapData|renderShare" commands/recap.js bin/atris.js test/recap.test.js`
+
 ### Feature: Visualize Artifacts (`atris visualize`)
 
 **Purpose:** Generate Slack/deck-ready business visuals from a prompt, using workspace context and backend `gpt-image-2`.
