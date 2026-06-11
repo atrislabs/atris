@@ -1615,9 +1615,10 @@ test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
     const firstRef = firstPayload.created_task.task_ref;
     assert.ok(firstRef);
 
-    // Cross the lifecycle boundary: the wake target is now done. Pre-fix the next wake
-    // re-selected it forever (the OBL-1433 no-op spiral).
-    const done = runCli(['task', 'done', firstRef, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    // Cross the lifecycle boundary as the human: the wake target is now done. Pre-fix the
+    // next wake re-selected it forever (the OBL-1433 no-op spiral). Human done
+    // still requires meaningful proof (the agent-env scrub made that visible).
+    const done = runCli(['task', 'done', firstRef, '--as', 'keshavrao', '--proof', 'verified: rsi route mismatch fixed, curl /api/rsi/improve returns 200', '--json'], { cwd: dir, env: { ...env, ATRIS_AGENT_PROOF_ONLY: '0' } });
     assert.equal(done.status, 0, done.stderr || done.stdout);
 
     const second = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
