@@ -200,35 +200,46 @@ function parseArgs(argv) {
   return a;
 }
 
-async function probeCommand(argv) {
-  const a = parseArgs(argv || []);
+// Core /atris2/turn client: one streamed turn over the full local tool relay.
+// Shared by `atris probe` (the instrument) and `atris mission run --runner atris2`
+// (the worker). Transport-level outcome only — callers apply their own
+// pass/fail policy on top of the returned fields.
+async function runAtris2Turn(opts = {}) {
+  const {
+    prompt,
+    model = 'atris:fast',
+    business = null,
+    memberId = null,
+    memberSlug = null,
+    maxTurns = 8,
+    idleMs = 180000,
+    connectTimeoutMs = 60000,
+    signal = null,
+  } = opts;
+  const t0 = Date.now();
+  const out = { ok: false, text: '', engine: null, tools_run: 0, cli_ops: [], unsupported: [], error: null, duration_ms: 0 };
   const creds = loadCredentials();
   if (!creds || !creds.token) {
-    console.error('✗ Not logged in. Run: atris login');
-    return 1;
+    out.error = 'not-logged-in';
+    out.duration_ms = Date.now() - t0;
+    return out;
   }
   const token = creds.token;
   const base = getApiBaseUrl();
-  const label = workspaceLabel(a.business);
-  const where = a.business ? `business ${String(a.business).slice(0, 8)}` : 'personal';
-  const member = a.memberSlug || a.memberId;
-  const prompt = a.message || (a.calendar
-    ? "What's on my calendar today? Use your tools."
-    : 'Read the first 5 lines of any markdown file in this workspace and quote one real line from it. Use your file tools.');
+  const label = workspaceLabel(business);
 
   const body = {
-    message: prompt, model: a.model, max_turns: 8,
+    message: prompt, model, max_turns: maxTurns,
     verify_command: 'true', local_executor: true, workspace_path: label,
   };
-  if (a.memberId) body.member_id = a.memberId;
-  if (a.memberSlug) body.member_slug = a.memberSlug;
+  if (memberId) body.member_id = memberId;
+  if (memberSlug) body.member_slug = memberSlug;
 
-  const t0 = Date.now();
   let toolsRun = 0;
-  let cliCalendarOps = 0;
   let resultText = '';
   let err = null;
   let engine = null;
+  const cliOps = [];
   const unsupported = [];
 
   try {
@@ -248,8 +259,8 @@ async function probeCommand(argv) {
           Authorization: `Bearer ${token}`,
         },
         // connect/first-byte guard; cleared once headers arrive so the
-        // 180s idle timer below is the only judge of a flowing stream
-        timeout: 60000,
+        // idle timer below is the only judge of a flowing stream
+        timeout: connectTimeoutMs,
       }, (res) => {
         req.setTimeout(0);
         if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -260,10 +271,9 @@ async function probeCommand(argv) {
         }
         let buffer = '';
         let idleTimer = null;
-        const IDLE_MS = 180000;
         const resetIdle = () => {
           if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => { req.destroy(); reject(new Error(`stream stalled: no events for ${IDLE_MS / 1000}s`)); }, IDLE_MS);
+          idleTimer = setTimeout(() => { req.destroy(); reject(new Error(`stream stalled: no events for ${idleMs / 1000}s`)); }, idleMs);
         };
         resetIdle();
 
@@ -289,7 +299,7 @@ async function probeCommand(argv) {
                   out = { status: 'error', error: 'unsupported op or unsafe path' };
                   unsupported.push(`file_op:${op}`);
                 } else {
-                  const term = await runTerminal(base, token, cmd, a.business);
+                  const term = await runTerminal(base, token, cmd, business);
                   const ok = term.exit_code === 0;
                   out = ok
                     ? { status: 'ok', stdout: String(term.stdout || '').slice(0, 12000) }
@@ -306,9 +316,9 @@ async function probeCommand(argv) {
                   out = { status: 'error', error: `unsupported atris cli op: ${op || '?'}` };
                   unsupported.push(`cli_op:${op || '?'}`);
                 } else {
-                  const term = await runTerminal(base, token, cmd, a.business);
+                  const term = await runTerminal(base, token, cmd, business);
                   out = atrisCliResult(cmd, term);
-                  if (op.startsWith('calendar')) cliCalendarOps += 1;
+                  cliOps.push(op || '?');
                 }
               } else {
                 out = { status: 'error', error: `unsupported relayed tool: ${name || '?'}` };
@@ -342,14 +352,51 @@ async function probeCommand(argv) {
         });
         res.on('error', (e) => { if (idleTimer) clearTimeout(idleTimer); reject(e); });
       });
-      req.on('timeout', () => { req.destroy(new Error('no response headers within 60s')); });
+      req.on('timeout', () => { req.destroy(new Error(`no response headers within ${Math.round(connectTimeoutMs / 1000)}s`)); });
       req.on('error', reject);
+      if (signal) signal.addEventListener('abort', () => { req.destroy(new Error('aborted')); }, { once: true });
       req.write(postData);
       req.end();
     });
   } catch (e) {
     if (!err) err = `${e.name || 'Error'}: ${e.message || e}`;
   }
+
+  out.text = resultText;
+  out.engine = engine;
+  out.tools_run = toolsRun;
+  out.cli_ops = cliOps;
+  out.unsupported = unsupported;
+  out.error = err;
+  out.ok = err === null;
+  out.duration_ms = Date.now() - t0;
+  return out;
+}
+
+async function probeCommand(argv) {
+  const a = parseArgs(argv || []);
+  const creds = loadCredentials();
+  if (!creds || !creds.token) {
+    console.error('✗ Not logged in. Run: atris login');
+    return 1;
+  }
+  const where = a.business ? `business ${String(a.business).slice(0, 8)}` : 'personal';
+  const member = a.memberSlug || a.memberId;
+  const prompt = a.message || (a.calendar
+    ? "What's on my calendar today? Use your tools."
+    : 'Read the first 5 lines of any markdown file in this workspace and quote one real line from it. Use your file tools.');
+
+  const t0 = Date.now();
+  const turn = await runAtris2Turn({
+    prompt, model: a.model, business: a.business,
+    memberId: a.memberId, memberSlug: a.memberSlug, maxTurns: 8,
+  });
+  const toolsRun = turn.tools_run;
+  const cliCalendarOps = turn.cli_ops.filter((op) => String(op).startsWith('calendar')).length;
+  const resultText = turn.text;
+  const err = turn.error;
+  const engine = turn.engine;
+  const unsupported = turn.unsupported;
 
   // Name the dead-end (first match wins); null = converged.
   let deadEnd = null;
@@ -387,6 +434,7 @@ async function probeCommand(argv) {
 
 module.exports = {
   probeCommand,
+  runAtris2Turn,
   // exported for tests
   normalizePath,
   normalizeBash,
