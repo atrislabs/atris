@@ -71,7 +71,7 @@ rg "computerCreate|computerActivate|computerDelete|parseComputerCreateArgs|parse
 rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdReviews|cmdDone|getTaskDb" commands/task.js  # Local agent task plane, proof-ready review, human accept, and compact certified review queue
 rg "taskReviewEvidenceCommands|taskReviewVerificationFocus|commands_to_verify" commands/task.js test/commands.test.js  # Task review-chat verifier packet: extracts proof commands/files and regression coverage
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
-rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|missionIsRunnable|codex_goal.json|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters, runnable mission selection that skips human-gated missions, and terminal next-action normalization
+rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|missionIsRunnable|codex_goal.json|runMission|tickMission|watchMission|missionHeartbeatLines" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js test/mission-heartbeat.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters, runnable mission selection that skips human-gated missions, and terminal next-action normalization
 rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features/codex-goal-replacement commands/mission.js test/mission-status.test.js  # Contract for Atris mission -> visible Codex /goal replacement
 rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
 rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
@@ -271,7 +271,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js` dispatch for `mission`
 - **Handler:** `commands/mission.js`
-- **Core flows:** `start` creates `.atris/state/missions.jsonl`; `status` renders `atris/status/now.md`; `goal` writes `.atris/state/codex_goal.json`; `goal-loop` runs the bounded overnight controller; `tick --verify` runs the verifier command and writes a receipt; `run --due` selects one runnable (`planning`/`running`/`ready`) verifier mission for heartbeats and skips paused/blocked work; `run` executes bounded Claude ticks behind a mission lock; `complete`/`stop` close the mission.
+- **Core flows:** `start` creates `.atris/state/missions.jsonl`; `status` renders `atris/status/now.md`; `goal` writes `.atris/state/codex_goal.json`; `goal-loop` runs the bounded overnight controller; `tick --verify` runs the verifier command and writes a receipt; `run --due` selects one runnable (`planning`/`running`/`ready`) verifier mission for heartbeats and skips paused/blocked work; `run` executes bounded Claude ticks behind a mission lock; `watch` is a read-only live heartbeat that prints a line per tick as it lands (`watchMission()` in `commands/mission.js`; returns a never-resolving promise so the bin router doesn't exit it); `complete`/`stop` close the mission.
+- **Liveness surface:** `status` text output includes `missionHeartbeatLines()` — `last tick: <age> ago (#n, status, verifier outcome)` plus `due: now|in <t>` for cadence missions; `buildTickPrompt()` injects member identity (read `atris/team/<owner>/MEMBER.md` + `SOUL.md`, log lessons to the member's dated log). Regression: `test/mission-heartbeat.test.js`
+- **Runners & models:** `mission start --runner manual|claude|atris2|codex_goal [--model <id>]`. `claude` spawns local `claude -p` per tick (`spawnClaudeTick()`; `mission.model` passes through as `--model`). `atris2` runs each tick as one `/atris2/turn` on the AtrisOS backend via `runAtris2Turn()` (exported from `commands/probe.js`; default model `atris:fast`, stateless per tick — continuity lives on disk; no creds → mission pauses `auth-required`; receipt carries `result.atris2` with engine/tools_run/receipt_text). `codex_goal` publishes the goal for a live Codex session to pull. Regression: `test/mission-atris2-runner.test.js`
 - **Worktree evidence:** receipts include capped git dirty counts/samples; `mission start` captures a write-once baseline sidecar (`.atris/state/mission-baselines/<id>.json`, `captureMissionWorktreeBaseline()` in `commands/mission.js`) and `worktreeReceipt()` subtracts those paths so `unverified_dirty` flags only `new_since_baseline` dirt, not pre-existing workspace noise (legacy missions without a sidecar fall back to `baseline_source: tick_start`).
 - **Baseline lifecycle:** closing a mission (`complete`/`stop`, not `pause`) prunes the sidecar via `pruneMissionWorktreeBaseline()` and folds a `{captured_at, dirty_count, dirty_hash, path_count}` audit summary into `mission.worktree_baseline`; paused missions keep theirs so resume ticks still subtract it. Regression: `test/mission-baseline-lifecycle.test.js`
 - **Loop exhaust filter:** `new_since_baseline` excludes paths under `.atris/`, `atris/runs/`, `atris/status/` (`isLoopExhaustPath()`) so multi-tick missions never flag their own receipts/state/status writes as unverified dirt; raw `new_dirty_*` fields stay unfiltered.
@@ -420,6 +422,16 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Value:** Tests whether a member is actually creating useful progress, not just activity, while keeping the operator able to chime in at any point.
 
 **Search:** `rg "memberGoal|memberTick|memberStatus|memberBlock|memberReview" commands/member.js test/commands.test.js`
+
+### Feature: Loop-Proof Instruments (2026-06-12)
+
+**Purpose:** Make self-improvement measurable: lineage from vision to commit, identity history, belief hygiene, repeated impression at boot, per-layer tick receipts.
+
+- `atris task lineage <id> [--json]` — endgame → parents → target → children chain + commits grepped by display refs (`cmdLineage` in `commands/task.js`; test: `test/commands.test.js` 'task lineage')
+- `atris member history <name> [--limit N] [--json]` — git log per identity file (MEMBER.md/SOUL.md) (`memberHistory` in `commands/member.js`; test: `test/member-history.test.js`)
+- `atris lesson sweep [--dry-run] [--json]` — contradiction detection (opposite outcomes, dead file refs) → idempotent dissolve tasks (`lib/lesson-contradiction.js`, `commands/lesson.js`; test: `test/lesson-sweep.test.js`)
+- Boot impression: welcome panel renders active endgame slug+horizon verbatim (`bin/atris.js` showWelcomeVisualization); `listTasks` ranks `tag='endgame'` first within status (`lib/task-db.js`; test: `test/boot-impression.test.js`)
+- Layer receipts: every mission tick stores `layer`/`layer_source` (explicit `layer: x` receipt line or path-class fallback) + `last_tick_layer` on the mission; heartbeat shows it (`extractLayerFromReceiptText`/`classifyPathsByLayer` in `commands/mission.js`; test: `test/mission-layer-receipts.test.js`)
 
 ### Feature: Task Production Readiness
 
