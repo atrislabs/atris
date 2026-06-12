@@ -1,6 +1,76 @@
 const fs = require('fs');
 const path = require('path');
 const { writeLesson } = require('./autopilot');
+const { detectLessonContradictions } = require('../lib/lesson-contradiction');
+const taskDb = require('../lib/task-db');
+
+function sweepLessons(args) {
+  const cwd = process.cwd();
+  const json = args.includes('--json');
+  const dryRun = args.includes('--dry-run');
+
+  const contradictions = detectLessonContradictions(cwd);
+
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      action: 'lesson_sweep',
+      dry_run: dryRun,
+      contradictions_found: contradictions.length,
+      tasks_created: dryRun ? 0 : contradictions.length,
+      contradictions: contradictions.map(c => ({
+        type: c.type,
+        slug: c.slug,
+        evidence: c.evidence,
+      })),
+    }, null, 2));
+    return;
+  }
+
+  if (dryRun) {
+    console.log(`found ${contradictions.length} lesson contradiction(s):`);
+    for (const c of contradictions) {
+      console.log(`- [${c.type}] ${c.slug}: ${c.evidence}`);
+    }
+    console.log('(dry-run: no tasks created)');
+    return;
+  }
+
+  // Create idempotent dissolve tasks for each contradiction
+  let created = 0;
+  const db = taskDb.open();
+  try {
+    const workspaceRoot = taskDb.workspaceRoot(cwd);
+    for (const contradiction of contradictions) {
+      const sourceKey = `lesson-contradiction-${contradiction.slug}`;
+      const title = `dissolve lesson: ${contradiction.slug} (${contradiction.type})`;
+
+      const result = db.prepare(
+        'SELECT id FROM tasks WHERE workspace_root = ? AND source_key = ?'
+      ).get(workspaceRoot, sourceKey);
+
+      if (!result) {
+        taskDb.addTask(db, {
+          title,
+          tag: 'lesson-contradiction',
+          workspaceRoot,
+          sourceKey,
+          metadata: {
+            lesson_slug: contradiction.slug,
+            contradiction_type: contradiction.type,
+            evidence: contradiction.evidence,
+          },
+          status: 'open',
+        });
+        created++;
+      }
+    }
+  } finally {
+    db.close();
+  }
+
+  console.log(`created ${created} idempotent dissolve task(s) from ${contradictions.length} contradiction(s)`);
+}
 
 function mineLessons(args) {
   const { loadHistory, mineProofPolicy, writePolicyLessons, syncLessonsMd } = require('../lib/policy-lessons');
@@ -52,10 +122,16 @@ function lessonAtris(subcommand, ...args) {
     return;
   }
 
+  if (subcommand === 'sweep') {
+    sweepLessons(args);
+    return;
+  }
+
   if (subcommand !== 'add') {
     console.log('');
     console.log('  Usage: atris lesson add <slug> <pass|fail> "<text>"');
     console.log('         atris lesson mine [--json] [--dry-run]');
+    console.log('         atris lesson sweep [--json] [--dry-run]');
     console.log('');
     process.exit(subcommand ? 1 : 0);
   }
