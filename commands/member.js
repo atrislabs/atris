@@ -7235,6 +7235,94 @@ function memberStatus(name, ...args) {
   );
 }
 
+function memberHistory(name, ...args) {
+  const { spawnSync } = require('child_process');
+
+  const paths = requireMemberDir(name);
+  const asJson = hasFlag(args, '--json');
+  const limitArg = readNumberFlag(args, '--limit', null);
+  const limit = limitArg !== null ? Math.max(1, limitArg) : null;
+
+  // resolve files to track: MEMBER.md + SOUL.md if present
+  const filesToTrack = [];
+  if (fs.existsSync(paths.memberFile)) {
+    filesToTrack.push(paths.memberFile);
+  }
+  const soulPath = path.join(paths.memberDir, 'SOUL.md');
+  if (fs.existsSync(soulPath)) {
+    filesToTrack.push(soulPath);
+  }
+
+  if (filesToTrack.length === 0) {
+    // no files exist yet (unborn member); empty history ok
+    const payload = {
+      ok: true,
+      action: 'history',
+      member: name,
+      files: [],
+    };
+    printJsonOrText(payload, [`identity history: ${name}`, '(no files found)'], asJson);
+    return;
+  }
+
+  // run git log for each file
+  const cwd = process.cwd();
+  const fileHistories = [];
+
+  for (const filePath of filesToTrack) {
+    const relativePath = path.relative(cwd, filePath);
+    const result = spawnSync('git', ['log', '--follow', '--pretty=format:%h|%ai|%s', '--', relativePath], {
+      cwd,
+      encoding: 'utf8',
+    });
+
+    let commits = [];
+    if (result.status === 0 && result.stdout) {
+      const lines = result.stdout.trim().split('\n').filter(Boolean);
+      commits = lines.map((line) => {
+        const [hash, date, subject] = line.split('|');
+        return { hash: hash || '', date: date || '', subject: subject || '' };
+      });
+
+      // apply limit if specified
+      if (limit !== null) {
+        commits = commits.slice(0, limit);
+      }
+    }
+
+    fileHistories.push({
+      path: relativePath,
+      commits,
+    });
+  }
+
+  // render output
+  if (asJson) {
+    const payload = {
+      ok: true,
+      action: 'history',
+      member: name,
+      files: fileHistories,
+    };
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.log('');
+    console.log(`identity history: ${name}`);
+    console.log('');
+    for (const fileHist of fileHistories) {
+      console.log(`${fileHist.path}:`);
+      if (fileHist.commits.length === 0) {
+        console.log('  (no git history)');
+      } else {
+        for (const commit of fileHist.commits) {
+          console.log(`  ${commit.hash} ${commit.date} ${commit.subject}`);
+        }
+      }
+      console.log('');
+    }
+  }
+}
+
 // --- Command Dispatcher ---
 
 async function memberCommand(subcommand, ...args) {
@@ -7284,6 +7372,8 @@ async function memberCommand(subcommand, ...args) {
       return memberBlock(args[0], args[1], ...args.slice(2));
     case 'status':
       return memberStatus(args[0], ...args.slice(1));
+    case 'history':
+      return memberHistory(args[0], ...args.slice(1));
     case 'supervisor':
       return memberSupervisorCommand(args[0], ...args.slice(1));
     case 'objective-generator':
@@ -7315,6 +7405,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
       console.log('  block <name> <id>   Mark an experiment blocked with a human/orchestrator ask');
       console.log('  status <name>       Show goal, open experiment, value, ask, and recent log');
+      console.log('  history <name>      Show git history of member identity files (MEMBER.md, SOUL.md)');
       console.log('  supervisor recommendations  Show advisory supervisor recommendations');
       console.log('  objective-generator proposals  Show autonomous objective proposal');
       console.log('  generalist proof    Show latest cross-domain generalist proof');
