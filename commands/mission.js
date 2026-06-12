@@ -425,7 +425,7 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- id: ${mission.id}`);
     lines.push(`- status: ${mission.status}`);
     lines.push(`- cadence: ${mission.cadence}`);
-    lines.push(`- runner: ${mission.runner}`);
+    lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
@@ -515,6 +515,7 @@ function missionFromArgs(args) {
     '--stop',
     '--task',
     '--ask',
+    '--model',
   ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
@@ -522,6 +523,7 @@ function missionFromArgs(args) {
   const owner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
+  const model = readFlag(args, '--model', '') || (String(runner).toLowerCase() === 'atris2' ? 'atris:fast' : '');
   const lane = readFlag(args, '--lane', 'workspace');
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
@@ -540,6 +542,7 @@ function missionFromArgs(args) {
     status: 'planning',
     cadence,
     runner,
+    ...(model ? { model } : {}),
     lane,
     verifier,
     always_on: alwaysOn,
@@ -661,6 +664,7 @@ function statusMission(args) {
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
         `  state: ${mission.status}`,
+        ...missionHeartbeatLines(mission),
         ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
         `  next: ${mission.next_action || 'tick or verify'}`,
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
@@ -669,6 +673,68 @@ function statusMission(args) {
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
     asJson,
   );
+}
+
+// `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
+// lands so a human (or any terminal) can see the loop is alive without rerunning status.
+function watchMission(args) {
+  const ref = stripKnownFlags(args, ['--interval'], [])[0] || '';
+  const intervalSeconds = Math.max(1, parseInt(readFlag(args, '--interval', '2'), 10) || 2);
+  const idleEverySeconds = 30;
+  const loadTargets = () => {
+    if (ref) {
+      const mission = resolveMission(ref);
+      return mission ? [mission] : [];
+    }
+    return listMissions().filter((mission) => !HEARTBEAT_TERMINAL_STATUSES.has(mission.status));
+  };
+  if (ref && !loadTargets().length) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, false);
+  }
+  const stamp = () => new Date().toTimeString().slice(0, 8);
+  const shortId = (mission) => mission.id.length > 20 ? `…${mission.id.slice(-8)}` : mission.id;
+  const emit = (mission, note) => console.log(`[${stamp()}] ${mission.owner} ${shortId(mission)} — ${note}`);
+  const fingerprint = (mission) => [mission.status, mission.last_tick_at, mission.last_tick_index, mission.receipt_path].join('|');
+  const tickNote = (mission) => {
+    const heartbeat = missionHeartbeatLines(mission).map((line) => line.trim()).join(', ');
+    return `${heartbeat || `state: ${mission.status}`}${mission.receipt_path ? ` — proof: ${mission.receipt_path}` : ''}`;
+  };
+  const seen = new Map();
+  let lastIdleAt = Date.now();
+  console.log(`watching ${ref || 'active missions'} every ${intervalSeconds}s — ctrl+c to stop`);
+  const poll = () => {
+    const targets = loadTargets();
+    if (!targets.length && !seen.size) {
+      emitOnce('no active missions yet — waiting');
+    }
+    let changed = false;
+    for (const mission of targets) {
+      const fp = fingerprint(mission);
+      if (seen.get(mission.id) !== fp) {
+        seen.set(mission.id, fp);
+        emit(mission, tickNote(mission));
+        changed = true;
+      }
+    }
+    if (changed) {
+      lastIdleAt = Date.now();
+    } else if (Date.now() - lastIdleAt >= idleEverySeconds * 1000) {
+      lastIdleAt = Date.now();
+      for (const mission of targets) {
+        emit(mission, `alive, ${missionHeartbeatLines(mission).map((line) => line.trim()).join(', ') || `state: ${mission.status}`}`);
+      }
+    }
+  };
+  let warnedEmpty = false;
+  const emitOnce = (message) => {
+    if (warnedEmpty) return;
+    warnedEmpty = true;
+    console.log(`[${stamp()}] ${message}`);
+  };
+  poll();
+  setInterval(poll, intervalSeconds * 1000);
+  // The bin router exits when the command's promise settles; watch runs until ctrl+c.
+  return new Promise(() => {});
 }
 
 function writeReceipt(mission, result, root = process.cwd()) {
@@ -955,6 +1021,37 @@ function secondsUntilMissionDue(mission, now = new Date()) {
   if (!Number.isFinite(lastTickAt)) return 0;
   const dueAt = lastTickAt + cadenceSeconds * 1000;
   return Math.max(0, Math.ceil((dueAt - now.getTime()) / 1000));
+}
+
+function formatDurationShort(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
+const HEARTBEAT_TERMINAL_STATUSES = new Set(['complete', 'stopped', 'paused']);
+
+function missionHeartbeatLines(mission, now = new Date()) {
+  const lines = [];
+  const lastTickAt = mission.last_tick_at ? Date.parse(mission.last_tick_at) : NaN;
+  if (Number.isFinite(lastTickAt)) {
+    const age = formatDurationShort((now.getTime() - lastTickAt) / 1000);
+    const verifier = mission.verifier
+      ? (mission.verifier_result ? (mission.verifier_result.passed ? 'verifier passed' : 'verifier failed') : 'verifier not run')
+      : 'no verifier';
+    const tickIdx = mission.last_tick_index != null ? `#${mission.last_tick_index}, ` : '';
+    const layerSuffix = mission.last_tick_layer ? `, layer: ${mission.last_tick_layer}` : '';
+    lines.push(`  last tick: ${age} ago (${tickIdx}${mission.last_tick_status || 'unknown'}, ${verifier}${layerSuffix})`);
+  } else if (!HEARTBEAT_TERMINAL_STATUSES.has(mission.status)) {
+    lines.push('  last tick: never');
+  }
+  if (parseCadenceSeconds(mission.cadence) > 0 && !HEARTBEAT_TERMINAL_STATUSES.has(mission.status)) {
+    const dueIn = secondsUntilMissionDue(mission, now);
+    lines.push(dueIn === 0 ? '  due: now' : `  due: in ${formatDurationShort(dueIn)}`);
+  }
+  return lines;
 }
 
 function missionHasHumanAsks(mission) {
@@ -1279,6 +1376,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
+    `- You are the member "${mission.owner}". Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting — work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Edit / run / research as needed for the lane.`,
@@ -1303,7 +1401,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
 }
 
 function spawnClaudeTick(mission, opts) {
-  const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt } = opts;
+  const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
   return new Promise((resolve) => {
     const args = [
       '-p', prompt,
@@ -1312,6 +1410,7 @@ function spawnClaudeTick(mission, opts) {
       '--permission-mode', 'bypassPermissions',
       '--include-partial-messages',
     ];
+    if (model) args.push('--model', model);
     if (sessionMode === 'set') args.push('--session-id', sessionId);
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
@@ -1523,6 +1622,7 @@ async function runMission(args) {
     sessionId = mission.claude_session_id || null;
     pendingSessionId = mission.pending_session_id || null;
     const callerSessionRunner = runnerUsesCallerSession(mission.runner);
+    const atris2Runner = String(mission.runner || '').trim().toLowerCase() === 'atris2';
     const skipWorker = skipClaude || callerSessionRunner;
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
@@ -1539,7 +1639,8 @@ async function runMission(args) {
     const effectiveMaxTicks = (cadenceSeconds === 0 && !maxTicksFlag) ? 1 : maxTicks;
 
     // Session setup: only Claude-backed workers need a persisted session id.
-    if (!skipWorker && !sessionId && !pendingSessionId) {
+    // atris2 turns are stateless per tick — continuity lives on disk (logs, receipts, now.md).
+    if (!skipWorker && !atris2Runner && !sessionId && !pendingSessionId) {
       pendingSessionId = crypto.randomUUID();
       mission = saveMission({ ...mission, pending_session_id: pendingSessionId }, cwd, 'mission_session_pending', { session_id: pendingSessionId }).mission;
     }
@@ -1548,7 +1649,11 @@ async function runMission(args) {
     let backoffAttempt = 0;
     let lastRateLimit = null;
 
-    const sessionLabel = skipWorker ? 'caller-session' : (sessionId || `pending=${pendingSessionId}`);
+    const sessionLabel = skipWorker
+      ? 'caller-session'
+      : atris2Runner
+        ? `atris2 (${mission.model || 'atris:fast'})`
+        : (sessionId || `pending=${pendingSessionId}`);
     console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
 
     while (ticks.length < effectiveMaxTicks) {
@@ -1587,6 +1692,32 @@ async function runMission(args) {
           ran: true,
           claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
         };
+      } else if (atris2Runner) {
+        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
+        const { runAtris2Turn } = require('./probe');
+        const turn = await runAtris2Turn({
+          prompt,
+          model: mission.model || 'atris:fast',
+          maxTurns: 16,
+          signal: controller.signal,
+        });
+        result.atris2 = {
+          ok: turn.ok,
+          engine: turn.engine,
+          model: mission.model || 'atris:fast',
+          tools_run: turn.tools_run,
+          unsupported: turn.unsupported,
+          duration_ms: turn.duration_ms,
+          error: turn.error,
+          receipt_text: String(turn.text || '').slice(0, 4000),
+        };
+        if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
+        if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
+        if (!turn.ok || !String(turn.text || '').trim()) {
+          result = { ...result, status: 'errored', reason: 'atris2-error' };
+        } else {
+          result = { ...result, status: 'ran', reason: 'tick-ok', ran: true };
+        }
       } else {
         const sessionMode = sessionId ? 'resume' : 'set';
         const useId = sessionId || pendingSessionId;
@@ -1594,6 +1725,7 @@ async function runMission(args) {
         const claudeResult = await spawnClaudeTick(mission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
+          model: mission.model || null,
         });
         result.claude = {
           ok: claudeResult.ok,
@@ -1660,6 +1792,13 @@ async function runMission(args) {
       }
       const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
 
+      // Layer classification needs the receipt text AND the worktree receipt, so it
+      // runs here — after both exist — covering the claude and atris2 branches alike.
+      const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || '';
+      const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
+      result.layer = layerInfo.layer;
+      result.layer_source = layerInfo.source;
+
       // Persist tick to mission state + write structured receipt
       const finishedAt = stampIso();
       const tickRecord = { ...result, started_at: tickStart, finished_at: finishedAt, worktree: tickWorktree };
@@ -1699,17 +1838,20 @@ async function runMission(args) {
         last_tick_status: result.status,
         last_tick_reason: result.reason,
         last_tick_index: tickIdx,
+        last_tick_layer: result.layer,
+        last_tick_layer_source: result.layer_source,
         verifier_result: verifierResult || mission.verifier_result || null,
         receipt_path: receiptPath,
         next_action: nextAction,
       }, cwd, 'mission_tick', {
-        tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath,
+        tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath, layer: result.layer,
       }).mission;
       appendMemberLog(mission.owner, `Mission run tick ${tickIdx}`, {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
         reason: result.reason,
+        layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         receipt: receiptPath,
       });
@@ -2140,7 +2282,13 @@ function help() {
 atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree]
+                      [--runner manual|claude|atris2|codex_goal] [--model <id>]
+                      (runner claude spawns local claude -p per tick, --model passes through;
+                       runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
+                       default model atris:fast; runner codex_goal publishes the goal for a live
+                       Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission watch [id] [--interval <s>]   Live heartbeat: prints a line per tick as it lands
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -2189,6 +2337,81 @@ State:
 `.trim());
 }
 
+// Extract layer classification from receipt text. Last non-empty line matching
+// /^\s*layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i
+function extractLayerFromReceiptText(text, fallbackPaths = []) {
+  const text_str = String(text || '').trim();
+
+  // Parse explicit layer from last non-empty line (only if text is present)
+  if (text_str) {
+    const lines = text_str.split(/\r?\n/).reverse();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/^layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i);
+      if (match) {
+        return { layer: match[1].toLowerCase(), source: 'explicit' };
+      }
+      break; // Only check the last non-empty line
+    }
+  }
+
+  // Fallback to path classification
+  if (Array.isArray(fallbackPaths) && fallbackPaths.length > 0) {
+    const classified = classifyPathsByLayer(fallbackPaths);
+    if (classified && classified.layer) {
+      return { layer: classified.layer, source: classified.source };
+    }
+  }
+
+  return { layer: null, source: 'unknown' };
+}
+
+// Classify paths into layers. Returns { layer: string, source: string, confidence: number }
+// Rules: atris/team/ => identity, atris/lessons.md|atris/wiki/ => beliefs,
+// test/|skills/ => capabilities, commands/|bin/ => behaviors, else environment
+function classifyPathsByLayer(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return { layer: null, source: 'unknown' };
+  }
+
+  const counts = {
+    identity: 0,
+    beliefs: 0,
+    capabilities: 0,
+    behaviors: 0,
+    environment: 0,
+  };
+
+  for (const pathStr of paths) {
+    const p = String(pathStr || '');
+    if (p.includes('atris/team/')) {
+      counts.identity++;
+    } else if (p.includes('atris/lessons.md') || p.includes('atris/wiki/')) {
+      counts.beliefs++;
+    } else if (p.includes('test/') || p.includes('skills/')) {
+      counts.capabilities++;
+    } else if (p.includes('commands/') || p.includes('bin/')) {
+      counts.behaviors++;
+    } else {
+      counts.environment++;
+    }
+  }
+
+  // Find max with tie-break: identity > beliefs > capabilities > behaviors > environment
+  const tieBreakOrder = ['identity', 'beliefs', 'capabilities', 'behaviors', 'environment'];
+  let maxCount = 0;
+  let winnerLayer = null;
+  for (const layer of tieBreakOrder) {
+    if (counts[layer] > maxCount) {
+      maxCount = counts[layer];
+      winnerLayer = layer;
+    }
+  }
+
+  return winnerLayer ? { layer: winnerLayer, source: 'fallback' } : { layer: null, source: 'unknown' };
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -2201,6 +2424,8 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'watch':
+      return watchMission(rest);
     case 'goal':
     case 'codex-goal':
       return goalMission(rest);
@@ -2228,6 +2453,7 @@ function missionCommand(args) {
 
 module.exports = {
   missionCommand,
+  missionHeartbeatLines,
   listMissions,
   loadMissionMap,
   renderMissionStatus,
@@ -2235,4 +2461,6 @@ module.exports = {
   selectCodexGoalMission,
   usefulClaudeReceiptSummary,
   cappedClaudeReceiptText,
+  extractLayerFromReceiptText,
+  classifyPathsByLayer,
 };
