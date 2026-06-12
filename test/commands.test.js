@@ -16074,3 +16074,48 @@ test('writeLesson creates lessons.md if it does not exist', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('task lineage', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const parent = runCli(['task', 'new', 'Parent endgame task', '--json'], { cwd: dir, env });
+    assert.equal(parent.status, 0, parent.stderr);
+    const parentPayload = JSON.parse(parent.stdout);
+    const parentRef = parentPayload.task.display_id;
+
+    const child = runCli(['task', 'add', 'Child task under parent', '--goal-id', parentPayload.task_id, '--json'], { cwd: dir, env });
+    assert.equal(child.status, 0, child.stderr);
+    const childPayload = JSON.parse(child.stdout);
+    const childRef = childPayload.task.display_id;
+
+    const text = runCli(['task', 'lineage', childRef], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, new RegExp(parentRef));
+    assert.match(text.stdout, new RegExp(childRef));
+
+    const parentLine = text.stdout.split('\n').findIndex(l => l.includes(parentRef));
+    const childLine = text.stdout.split('\n').findIndex(l => l.includes(childRef));
+    assert.ok(parentLine < childLine, 'parent appears before child in text output');
+
+    const json = runCli(['task', 'lineage', childRef, '--json'], { cwd: dir, env });
+    assert.equal(json.status, 0, json.stderr);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'lineage');
+    assert.ok(payload.chain, 'chain present');
+    assert.ok(payload.chain.target, 'target present');
+    assert.equal(payload.chain.target.display_id, childRef);
+    assert.ok(Array.isArray(payload.chain.commits), 'commits is an array');
+
+    const noGitEnv = { ...env, HOME: dir };
+    const noGit = runCli(['task', 'lineage', childRef], { cwd: dir, env: noGitEnv });
+    assert.equal(noGit.status, 0, 'no crash without git');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
