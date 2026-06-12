@@ -1050,6 +1050,7 @@ async function interactiveEntry(userInput) {
 // ASCII Welcome Visualization
 function showWelcomeVisualization() {
   const { getTaskCounts } = require('../lib/state-detection');
+  const { readEndgameState } = require('../commands/autopilot');
   const cwd = process.cwd();
   const atrisDir = path.join(cwd, 'atris');
   const projectName = path.basename(cwd);
@@ -1063,6 +1064,7 @@ function showWelcomeVisualization() {
   let journalEntries = 0;
   let hasMap = false;
   let isInitialized = fs.existsSync(atrisDir);
+  let endgameState = { slug: 'unset', horizon: '' };
 
   if (isInitialized) {
     // Check MAP.md
@@ -1084,6 +1086,13 @@ function showWelcomeVisualization() {
       tasksCertified = counts.reviewCertified;
     } catch {
       // Silently fail - show 0 tasks if reading fails
+    }
+
+    // Read endgame state
+    try {
+      endgameState = readEndgameState(cwd);
+    } catch {
+      // Silently fail - show unset if reading fails
     }
 
     // Count journal entries today
@@ -1139,6 +1148,11 @@ function showWelcomeVisualization() {
       console.log(`    │   ⏳ Review:  ${reviewText.padEnd(26)}│`);
     }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
+    if (endgameState.slug !== 'unset' && endgameState.horizon) {
+      const endgameLine = endgameState.slug + ' — ' + endgameState.horizon;
+      const paddedEndgame = endgameLine.padEnd(26);
+      console.log(`    │   🎯 Endgame: ${paddedEndgame}│`);
+    }
     console.log('    │                                          │');
     console.log('    │   ┌──────────────────────────────────┐   │');
     console.log('    │   │  MAP.md ←──── YOU ARE HERE       │   │');
