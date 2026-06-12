@@ -3653,6 +3653,7 @@ module.exports = {
   scanAnomalies,
   verifyJudgeIntegrity,
   maybeWriteCompletedEndgameScorecard,
+  readEndgameState,
   renderHumanSuggestion,
   renderHumanTickIntro,
   proposeCandidateHorizons,
