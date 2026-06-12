@@ -678,9 +678,9 @@ function statusMission(args) {
 // `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
 // lands so a human (or any terminal) can see the loop is alive without rerunning status.
 function watchMission(args) {
-  const ref = stripKnownFlags(args, ['--interval'], [])[0] || '';
+  const ref = stripKnownFlags(args, ['--interval', '--idle-every'], [])[0] || '';
   const intervalSeconds = Math.max(1, parseInt(readFlag(args, '--interval', '2'), 10) || 2);
-  const idleEverySeconds = 30;
+  const idleEverySeconds = Math.max(1, parseInt(readFlag(args, '--idle-every', '30'), 10) || 30);
   const loadTargets = () => {
     if (ref) {
       const mission = resolveMission(ref);
@@ -2288,7 +2288,7 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
-  atris mission watch [id] [--interval <s>]   Live heartbeat: prints a line per tick as it lands
+  atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]

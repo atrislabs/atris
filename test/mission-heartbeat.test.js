@@ -143,6 +143,33 @@ test('mission watch prints an initial heartbeat line for a live mission', () => 
   }
 });
 
+test('mission watch emits an idle alive line when nothing changes', () => {
+  const dir = makeTempDir();
+  try {
+    const mission = startMission(dir, 'watch idle mission');
+    appendMissionState(dir, {
+      id: mission.id,
+      objective: mission.objective,
+      status: 'running',
+      cadence: '15m',
+      last_tick_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      last_tick_index: 1,
+      last_tick_status: 'ran',
+      verifier: 'npm test',
+      verifier_result: { passed: true },
+      updated_at: new Date().toISOString(),
+    });
+    // first poll emits the change line; with --idle-every 1 the next quiet poll emits "alive"
+    const res = runCli(
+      ['mission', 'watch', mission.id, '--interval', '1', '--idle-every', '1'],
+      { cwd: dir, timeout: 4000, allowTimeout: true }
+    );
+    assert.match(res.stdout, /alive, last tick: 5m ago/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission watch exits with an error for unknown missions', () => {
   const dir = makeTempDir();
   try {
