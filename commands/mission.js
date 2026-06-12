@@ -1389,7 +1389,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
     `- Do NOT start new missions, modify other missions, or expand scope.`,
     `- Do NOT run destructive commands without strong evidence they're correct.`,
     ``,
-    `When done, output a short receipt: (1) the exact files edited / commands run / artifacts produced — name them, (2) the metric of progress, (3) what the next tick should pick up.`,
+    `When done, output a short receipt: (1) the exact files edited / commands run / artifacts produced — name them, (2) the metric of progress, (3) what the next tick should pick up. End the receipt with one line naming the layer this tick touched: \`layer: identity|beliefs|capabilities|behaviors|environment\` (final line — the harness parses it).`,
   ];
   if (mission.task_ids?.length) {
     lines.push('', `## Task ids`, mission.task_ids.map((t) => `- ${t}`).join('\n'));
