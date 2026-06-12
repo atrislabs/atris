@@ -143,6 +143,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task serve [--port <n>]            Open local task factory board
   atris task sync --dry-run                Plan cloud/Swarlo task sync writes
   atris task import <file>                 One-shot import from TODO.md
+  atris task lineage <id> [--json]          Show endgame -> tasks -> commits chain
   atris task events [id] [--limit <n>]     Print recent task events
   atris task events --all                  Print the full append-only ledger
   atris task export [--out <file>]         Write web/desktop JSON projection
@@ -6736,6 +6737,91 @@ function cmdEvents(args) {
   }
 }
 
+function cmdLineage(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task lineage', 'missing_id', 'id required');
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task lineage');
+  const enriched = enrichTaskProjection(taskDb.taskProjection(db, { workspaceRoot: taskDb.workspaceRoot(), limit: 1000 }));
+  const byId = new Map();
+  for (const t of enriched.tasks) byId.set(t.id, t);
+  const target = byId.get(taskId);
+  if (!target) {
+    console.error(`task not found: ${id}`);
+    process.exit(1);
+  }
+
+  const parents = [];
+  let cursor = target;
+  const seen = new Set();
+  while (cursor) {
+    const parentId = cursor.lineage && cursor.lineage.parent_task_id;
+    if (!parentId || seen.has(parentId)) break;
+    seen.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    parents.unshift(parent);
+    cursor = parent;
+  }
+
+  const childIds = target.lineage && target.lineage.child_task_ids || [];
+  const children = childIds.map(cid => byId.get(cid)).filter(Boolean);
+
+  const chain = [...parents, target, ...children];
+
+  let commits = [];
+  try {
+    const { spawnSync: sp } = require('child_process');
+    const displayRefs = chain.map(t => taskRef(t)).filter(Boolean);
+    const pattern = displayRefs.join('\\|');
+    const result = sp('git', ['log', '--oneline', '--all', `--grep=${pattern}`], {
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    if (result.status === 0 && result.stdout) {
+      commits = result.stdout.trim().split('\n').filter(Boolean);
+    }
+  } catch (_) {
+    commits = [];
+  }
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'lineage',
+      chain: {
+        endgame: parents.length ? parents[0] : null,
+        parents: parents.slice(1),
+        target,
+        children,
+        commits,
+      },
+    });
+    return;
+  }
+
+  if (parents.length) {
+    for (let i = 0; i < parents.length; i += 1) {
+      const p = parents[i];
+      console.log(`${'  '.repeat(i)}${taskRef(p)} ${p.title} [${p.status}]`);
+    }
+  }
+  const indent = '  '.repeat(parents.length);
+  console.log(`${indent}${taskRef(target)} ${target.title} [${target.status}]`);
+  for (const child of children) {
+    console.log(`${'  '.repeat(parents.length + 1)}${taskRef(child)} ${child.title} [${child.status}]`);
+  }
+  if (commits.length) {
+    console.log('');
+    console.log('commits:');
+    for (const c of commits) console.log(`  ${c}`);
+  }
+}
+
 function cmdExport(args) {
   const out = flag(args, '--out') || path.join('.atris', 'state', 'tasks.projection.json');
   const all = hasFlag(args, '--all');
@@ -7919,6 +8005,7 @@ async function run(args) {
     case 'setup':  return cmdSetup(rest);
     case 'serve':  return cmdServe(rest);
     case 'import': return cmdImport(rest);
+    case 'lineage': return cmdLineage(rest);
     case 'events': return cmdEvents(rest);
     case 'export': return cmdExport(rest);
     case 'render': return cmdRender(rest);
