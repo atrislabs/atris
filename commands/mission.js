@@ -2337,22 +2337,26 @@ State:
 `.trim());
 }
 
-// Extract layer classification from receipt text. Last non-empty line matching
-// /^\s*layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i
+// Extract layer classification from receipt text.
+// Priority: layer tag on the last non-empty line (source: explicit) >
+// last strictly-matching layer line anywhere in the text (source: explicit-inline) >
+// changed-path classification (source: fallback). The single-token regex keeps the
+// enum docs line ("layer: identity|beliefs|...") from ever matching.
 function extractLayerFromReceiptText(text, fallbackPaths = []) {
   const text_str = String(text || '').trim();
 
-  // Parse explicit layer from last non-empty line (only if text is present)
   if (text_str) {
+    const layerPattern = /^layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i;
     const lines = text_str.split(/\r?\n/).reverse();
+    let isLastNonEmpty = true;
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const match = trimmed.match(/^layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i);
+      const match = trimmed.match(layerPattern);
       if (match) {
-        return { layer: match[1].toLowerCase(), source: 'explicit' };
+        return { layer: match[1].toLowerCase(), source: isLastNonEmpty ? 'explicit' : 'explicit-inline' };
       }
-      break; // Only check the last non-empty line
+      isLastNonEmpty = false;
     }
   }
 
