@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
+const escapeRegExp = require('../lib/escape-regexp');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
@@ -622,13 +623,6 @@ function readMemberContext(root, memberSlug) {
     startHere: readText(path.join(memberDir, 'START_HERE.md')),
     goals: readText(path.join(memberDir, 'goals.md')),
   };
-}
-
-// Escape regex metacharacters so a member name can be embedded in a RegExp
-// literally — a name whose first word contains e.g. "+" ("c++") otherwise throws
-// "Nothing to repeat" and crashes the contribution-card parse.
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function parseContributionCard(text, member) {
