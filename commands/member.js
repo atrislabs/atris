@@ -2089,6 +2089,7 @@ function collectAutoImproverLogSignals(root) {
         // (CLI-199 came from 13 such lines in atris/wiki/log.md).
         if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+        if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
         if (unclearRegex.test(line)) {
           unclearNextActions += 1;
           if (unclearActions.length < 5) {
