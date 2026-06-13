@@ -152,7 +152,7 @@ function hasWork(atrisDir) {
   const { logFile } = getLogPath();
   if (fs.existsSync(logFile)) {
     const content = fs.readFileSync(logFile, 'utf8');
-    const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|$)/);
+    const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
       const items = inboxMatch[1].trim().split('\n').filter(l => {
         const t = l.trim();

@@ -51,7 +51,7 @@ function analyticsAtris() {
       todayCompletions = completionCount;
 
       // Count today's inbox
-      const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|---|$)/);
+      const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|---|$)/);
       if (inboxMatch && inboxMatch[1].trim()) {
         const inboxMatches = inboxMatch[1].match(/- \*\*I\d+:/g);
         todayInbox = inboxMatches ? inboxMatches.length : 0;
@@ -60,7 +60,7 @@ function analyticsAtris() {
 
     if (index === 6) {
       // Count oldest day's inbox for trend
-      const inboxMatch = content.match(/## Inbox\n([\s\S]*?)(?=\n##|---|$)/);
+      const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|---|$)/);
       if (inboxMatch && inboxMatch[1].trim()) {
         const inboxMatches = inboxMatch[1].match(/- \*\*I\d+:/g);
         oldestInbox = inboxMatches ? inboxMatches.length : 0;
