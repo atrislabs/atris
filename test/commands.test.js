@@ -1912,6 +1912,44 @@ test('auto-improver unclear log evidence favors recent dated logs', () => {
   }
 });
 
+test('auto-improver repeated failure evidence favors recent dated logs', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const oldLogsDir = path.join(dir, 'atris', 'team', 'mission-lead', 'logs');
+    fs.mkdirSync(oldLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(oldLogsDir, '2026-05-07.md'), [
+      '# old log',
+      ...Array.from({ length: 5 }, () => 'ERROR recurring sync failure'),
+      '',
+    ].join('\n'), 'utf8');
+
+    const recentLogsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(recentLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+      '# recent log',
+      'ERROR recurring sync failure',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const scan = payload.auto_improver.scan;
+    assert.equal(scan.log_signals.repeated_failure_count, 1);
+    assert.equal(scan.log_signals.repeated_failures[0].count, 6);
+    assert.equal(scan.log_signals.repeated_failures[0].evidence.length, 5);
+    assert.equal(scan.prevented_fire_candidate.source, 'repeated_failure');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-12.md');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-12');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake ignores its own summary log residue', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
