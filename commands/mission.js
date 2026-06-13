@@ -1311,6 +1311,22 @@ function consecutiveVerifierFails(ticks) {
   return n;
 }
 
+// Count the trailing run of errored ticks that all share the most-recent error's
+// reason. Backoff caps at 10min, so an error that recurs identically (claude-timeout,
+// atris2-error, a dead model) otherwise retries forever until max-ticks/max-wall.
+// Two identical failures in a row is the MEMBER.md "same approach failed twice" signal.
+function consecutiveSameReasonErrors(ticks) {
+  const last = ticks[ticks.length - 1];
+  if (!last || last.status !== 'errored' || !last.reason) return { reason: null, count: 0 };
+  let count = 0;
+  for (let i = ticks.length - 1; i >= 0; i--) {
+    const t = ticks[i];
+    if (t.status === 'errored' && t.reason === last.reason) count++;
+    else break;
+  }
+  return { reason: last.reason, count };
+}
+
 function isWithinActiveHours(activeHours, now = new Date()) {
   if (!activeHours || !activeHours.start || !activeHours.end) return true;
   const tz = activeHours.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -1433,6 +1449,10 @@ function detectUnavailableModel(text) {
 function missionPauseNextAction(pauseReason, missionId, deadModel = null) {
   if (pauseReason === 'model-unavailable' && deadModel) {
     return `model "${deadModel}" is unavailable — set a live model (mission.model or ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+  }
+  if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
+    const reason = pauseReason.slice('repeated-error:'.length);
+    return `tick kept failing with "${reason}" — inspect the last receipt, fix the cause, then: atris mission run ${missionId}`;
   }
   return `resume with: atris mission run ${missionId}`;
 }
@@ -1913,6 +1933,11 @@ async function runMission(args) {
       // only slows the bleeding. Stop on first detection and surface the dead id —
       // CLI-245 named this failure; this stops the loop from grinding on it forever.
       if (result.status === 'errored' && result.reason === 'model-unavailable') { pauseReason = 'model-unavailable'; break; }
+      // Any OTHER error that recurs identically (claude-timeout, atris2-error, claude-error)
+      // is the same trap one step less deterministic: keep retrying and the loop burns every
+      // tick + cron firing on it. Halt at two-in-a-row and surface the reason for a human.
+      const errStreak = consecutiveSameReasonErrors(ticks);
+      if (errStreak.count >= 2) { pauseReason = `repeated-error:${errStreak.reason}`; break; }
 
       // Sleep until next tick
       let sleepMs = 0;
@@ -2581,4 +2606,5 @@ module.exports = {
   resolveClaudeRunnerModel,
   detectUnavailableModel,
   missionPauseNextAction,
+  consecutiveSameReasonErrors,
 };

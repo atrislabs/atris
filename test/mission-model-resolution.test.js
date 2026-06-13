@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { resolveClaudeRunnerModel, detectUnavailableModel, missionPauseNextAction } = require('../commands/mission');
+const { resolveClaudeRunnerModel, detectUnavailableModel, missionPauseNextAction, consecutiveSameReasonErrors } = require('../commands/mission');
 
 // --- resolveClaudeRunnerModel: precedence explicit > env > default alias ---
 
@@ -77,4 +77,44 @@ test('missionPauseNextAction falls back to a bare resume for ordinary pauses', (
     missionPauseNextAction('model-unavailable', 'mission-abc', null),
     'resume with: atris mission run mission-abc'
   );
+});
+
+test('missionPauseNextAction names the failing reason for a repeated-error pause', () => {
+  const action = missionPauseNextAction('repeated-error:claude-timeout', 'mission-abc');
+  assert.match(action, /claude-timeout/);
+  assert.match(action, /inspect the last receipt/);
+  assert.match(action, /atris mission run mission-abc/);
+});
+
+// --- consecutiveSameReasonErrors: two identical failures in a row halts the loop ---
+
+test('consecutiveSameReasonErrors counts the trailing run of identical error reasons', () => {
+  const ticks = [
+    { status: 'ran' },
+    { status: 'errored', reason: 'claude-timeout' },
+    { status: 'errored', reason: 'claude-timeout' },
+  ];
+  assert.deepEqual(consecutiveSameReasonErrors(ticks), { reason: 'claude-timeout', count: 2 });
+});
+
+test('consecutiveSameReasonErrors resets when the latest error reason differs', () => {
+  const ticks = [
+    { status: 'errored', reason: 'claude-timeout' },
+    { status: 'errored', reason: 'atris2-error' },
+  ];
+  assert.deepEqual(consecutiveSameReasonErrors(ticks), { reason: 'atris2-error', count: 1 });
+});
+
+test('consecutiveSameReasonErrors breaks the streak on an intervening ran tick', () => {
+  const ticks = [
+    { status: 'errored', reason: 'claude-timeout' },
+    { status: 'ran' },
+    { status: 'errored', reason: 'claude-timeout' },
+  ];
+  assert.deepEqual(consecutiveSameReasonErrors(ticks), { reason: 'claude-timeout', count: 1 });
+});
+
+test('consecutiveSameReasonErrors returns zero when the last tick is not an error', () => {
+  assert.deepEqual(consecutiveSameReasonErrors([{ status: 'errored', reason: 'x' }, { status: 'ran' }]), { reason: null, count: 0 });
+  assert.deepEqual(consecutiveSameReasonErrors([]), { reason: null, count: 0 });
 });
