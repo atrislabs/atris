@@ -70,5 +70,13 @@
     "applies_to": ["commands/autopilot.js", "commands/status.js", "commands/workflow.js"],
     "status": "observed",
     "notes": "Output-budget rule. Needs a real end-to-end runner to turn into a detector; deferring to v3.9."
+  },
+
+  "escape-regexp-single-home": {
+    "scope": "atris-cli",
+    "applies_to": ["lib/escape-regexp.js", "commands/verify.js", "commands/task.js", "commands/brain.js", "commands/clean.js", "lib/state-detection.js", "lib/file-ops.js", "lib/journal.js", "lib/todo-fallback.js", "lib/policy-lessons.js"],
+    "detector": "! grep -R -F 'replace(/[.*+?^${}()|[\\]\\\\]/g' commands lib --include='*.js' | grep -v 'lib/escape-regexp.js' && grep -q 'function escapeRegExp' lib/escape-regexp.js",
+    "status": "resolved",
+    "last_detected": "2026-06-13"
   }
 }
