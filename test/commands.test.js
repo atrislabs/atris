@@ -1815,6 +1815,36 @@ test('auto-improver wake does not treat closed tasks as unclear work', () => {
   }
 });
 
+test('auto-improver unclear log finding carries line evidence', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(path.join(logsDir, '2026-06-11.md'), [
+      '# test log',
+      ...Array.from({ length: 11 }, (_, index) => `needs owner for follow-up ${index + 1}`),
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const scan = payload.auto_improver.scan;
+    assert.equal(scan.log_signals.unclear_next_action_count, 11);
+    assert.equal(scan.log_signals.unclear_next_actions.length, 5);
+    assert.equal(scan.prevented_fire_candidate.source, 'unclear_next_actions');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-11.md');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].line, 2);
+    assert.match(scan.prevented_fire_candidate.evidence[0].text, /needs owner for follow-up 1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake skips journal append on identical no-op repeat', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };

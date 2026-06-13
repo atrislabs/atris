@@ -2062,6 +2062,7 @@ function collectAutoImproverLogSignals(root) {
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
   const counts = new Map();
+  const unclearActions = [];
   let filesScanned = 0;
   let linesScanned = 0;
   let unclearNextActions = 0;
@@ -2088,7 +2089,16 @@ function collectAutoImproverLogSignals(root) {
         // (CLI-199 came from 13 such lines in atris/wiki/log.md).
         if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
-        if (unclearRegex.test(line)) unclearNextActions += 1;
+        if (unclearRegex.test(line)) {
+          unclearNextActions += 1;
+          if (unclearActions.length < 5) {
+            unclearActions.push({
+              path: relative,
+              line: index + 1,
+              text: compactSentence(line, 180),
+            });
+          }
+        }
         if (!failureRegex.test(line)) continue;
         const pattern = normalizeFailurePattern(line);
         if (!pattern) continue;
@@ -2115,6 +2125,7 @@ function collectAutoImproverLogSignals(root) {
     repeated_failures: repeated,
     repeated_failure_count: repeated.length,
     unclear_next_action_count: unclearNextActions,
+    unclear_next_actions: unclearActions,
   };
 }
 
@@ -2377,7 +2388,9 @@ function collectAutoImproverScan(root = process.cwd()) {
       title: 'Unclear next-action language is accumulating',
       problem: 'Several logs or tasks mention blocked/unclear/proof-needed states without a crisp next move.',
       recommendation: 'Convert the highest-value unclear item into one task with owner, proof, and stop rule.',
-      evidence: taskSignals.unclear_tasks.length ? taskSignals.unclear_tasks : logSignals.repeated_failures.slice(0, 3),
+      evidence: taskSignals.unclear_tasks.length
+        ? taskSignals.unclear_tasks
+        : (logSignals.unclear_next_actions.length ? logSignals.unclear_next_actions : logSignals.repeated_failures.slice(0, 3)),
       score: 18,
     });
   }
