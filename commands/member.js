@@ -1999,6 +1999,15 @@ function dateFromLogPath(relativePath) {
   return match ? match[1] : null;
 }
 
+function compareLogEvidenceRecentFirst(a, b) {
+  const dateA = a?.date || '';
+  const dateB = b?.date || '';
+  if (dateA !== dateB) return dateB.localeCompare(dateA);
+  const pathCompare = String(a?.path || '').localeCompare(String(b?.path || ''));
+  if (pathCompare !== 0) return pathCompare;
+  return Number(a?.line || 0) - Number(b?.line || 0);
+}
+
 function listFilesBounded(rootDir, { maxFiles = 220, extensions = ['.md', '.txt', '.json', '.jsonl'] } = {}) {
   const files = [];
   const stack = [rootDir];
@@ -2039,9 +2048,10 @@ function stripAutoImproverTitleNoise(text) {
   return compactSentence(clean, 180);
 }
 
-function isAutoImproverGeneratedLogLine(line) {
+function isAutoImproverGeneratedLogLine(line, relativePath = '') {
   const text = String(line || '').trim();
   if (!text) return false;
+  if (String(relativePath || '').startsWith('atris/team/auto-improver/logs/') && /^-\s*summary:\s*/i.test(text)) return true;
   if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
   if (/\bauto_improver\b/i.test(text)) return true;
   if (/^-\s*candidate:\s*/i.test(text)) return true;
@@ -2088,7 +2098,7 @@ function collectAutoImproverLogSignals(root) {
       linesScanned += lines.length;
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
-        if (isAutoImproverGeneratedLogLine(line)) continue;
+        if (isAutoImproverGeneratedLogLine(line, relative)) continue;
         // Declared verification receipts ("check: <command> ...") describe what
         // was verified, not what broke. Wiki upkeep sweeps write one per page,
         // so counting them as failures spawns bogus recurring-pattern tasks
@@ -2098,14 +2108,12 @@ function collectAutoImproverLogSignals(root) {
         if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
         if (unclearRegex.test(line)) {
           unclearNextActions += 1;
-          if (unclearActions.length < 5) {
-            unclearActions.push({
-              path: relative,
-              date: logDate,
-              line: index + 1,
-              text: compactSentence(line, 180),
-            });
-          }
+          unclearActions.push({
+            path: relative,
+            date: logDate,
+            line: index + 1,
+            text: compactSentence(line, 180),
+          });
         }
         if (!failureRegex.test(line)) continue;
         const pattern = normalizeFailurePattern(line);
@@ -2134,7 +2142,7 @@ function collectAutoImproverLogSignals(root) {
     repeated_failures: repeated,
     repeated_failure_count: repeated.length,
     unclear_next_action_count: unclearNextActions,
-    unclear_next_actions: unclearActions,
+    unclear_next_actions: unclearActions.sort(compareLogEvidenceRecentFirst).slice(0, 5),
   };
 }
 
