@@ -86,6 +86,22 @@ test('missionPauseNextAction names the failing reason for a repeated-error pause
   assert.match(action, /atris mission run mission-abc/);
 });
 
+test('missionPauseNextAction points at the cause when max-ticks is hit on an errored tick', () => {
+  // single-tick cron runs pause as max-ticks-reached on the first errored tick
+  const action = missionPauseNextAction('max-ticks-reached', 'mission-abc', null, 'claude-error');
+  assert.match(action, /claude-error/);
+  assert.match(action, /inspect the last receipt before resuming/);
+  assert.match(action, /atris mission run mission-abc/);
+});
+
+test('missionPauseNextAction is a bare resume when max-ticks is hit without an error reason', () => {
+  // budget exhausted after clean ticks → a plain resume is the right advice
+  assert.equal(
+    missionPauseNextAction('max-ticks-reached', 'mission-abc', null, null),
+    'resume with: atris mission run mission-abc'
+  );
+});
+
 // --- consecutiveSameReasonErrors: two identical failures in a row halts the loop ---
 
 test('consecutiveSameReasonErrors counts the trailing run of identical error reasons', () => {
