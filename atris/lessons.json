@@ -10,6 +10,13 @@
     "note": "If a lesson has no detector, self-heal falls back to keyword grep and never auto-promotes status. Observation-only lessons (process rules, not fixable bugs) should carry status:observed and no detector."
   },
 
+  "diminishing-returns-cluster": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/member.js"],
+    "status": "observed",
+    "notes": "Process rule, not a code-detectable state. CLI-275..279 were 5 consecutive micro-tweaks to one scanner function (near-zero marginal value). At orient time, if the last 3 task titles share a prefix and the same file is in every recent diff, stop the cluster and diversify."
+  },
+
   "staleness-shell-injection-guard": {
     "scope": "atris-cli",
     "applies_to": ["commands/autopilot.js"],
