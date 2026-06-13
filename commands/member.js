@@ -2145,10 +2145,11 @@ function collectAutoImproverTaskSignals(root) {
       status: status || null,
       owner: task.claimed_by || task.assigned_to || task.owner || task.metadata?.assigned_to || null,
     };
+    const waitingForHuman = autoImproverTaskWaitingForHuman(task, status);
     if (status === 'blocked') blockedTasks.push(sample);
     if (status === 'review') reviewTasks.push(sample);
-    if (openStatuses.has(status) && !autoImproverTaskWaitingForHuman(task, status)) staleTasks.push(sample);
-    if (/\b(tbd|unclear|unknown|needs proof|needs owner|blocked|stale|no next)\b/i.test(`${title} ${task.notes || ''}`)) {
+    if (openStatuses.has(status) && !waitingForHuman) staleTasks.push(sample);
+    if (!waitingForHuman && /\b(tbd|unclear|unknown|needs proof|needs owner|blocked|stale|no next)\b/i.test(`${title} ${task.notes || ''}`)) {
       unclearTasks.push(sample);
     }
   }

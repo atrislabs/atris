@@ -1744,7 +1744,7 @@ test('auto-improver dry-run matches legacy recurring-pattern task title', () => 
   }
 });
 
-test('auto-improver wake does not treat certified review as stale work', () => {
+test('auto-improver wake does not treat certified review as stale or unclear work', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
   try {
@@ -1756,7 +1756,7 @@ test('auto-improver wake does not treat certified review as stale work', () => {
     fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
       tasks: Array.from({ length: 13 }, (_, index) => ({
         display_id: `CLI-${index + 1}`,
-        title: `Certified review ${index + 1}`,
+        title: `Certified review needs proof for stale item ${index + 1}`,
         status: 'review',
         claimed_by: 'builder',
         metadata: {
@@ -1776,7 +1776,9 @@ test('auto-improver wake does not treat certified review as stale work', () => {
     const taskSignals = payload.auto_improver.scan.task_signals;
     assert.equal(taskSignals.review_task_count, 13);
     assert.equal(taskSignals.stale_task_count, 0);
+    assert.equal(taskSignals.unclear_task_count, 0);
     assert.deepEqual(payload.auto_improver.scan.findings.filter((finding) => finding.source === 'task_truth'), []);
+    assert.deepEqual(payload.auto_improver.scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
     assert.equal(payload.decision, 'scan_clean');
   } finally {
     cleanupTempDir(dir);
