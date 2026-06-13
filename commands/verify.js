@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const escapeRegExp = require('../lib/escape-regexp');
 
 /**
  * atris verify [task] - Validate work is actually done
@@ -352,13 +353,6 @@ function checkDocsVsChanges(cwd, atrisDir) {
 /**
  * Find task in TODO.md content
  */
-// Escape regex metacharacters so a taskId/slug can be embedded in a RegExp
-// literally. Without this, an id like "(" throws an uncaught SyntaxError (crash)
-// and an id like "a.b" silently matches "aXb".
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function findTaskInContent(content, taskId) {
   // Try exact ID match (T1, T2, etc.)
   const safeId = escapeRegExp(taskId);
