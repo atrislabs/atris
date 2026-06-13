@@ -20,7 +20,7 @@ One contract, three engines. The orchestrator (you, Claude) writes a bounded tas
 |--------|---------|-------|
 | Codex | `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task --background [--write] "<prompt>"` (via codex plugin / codex:codex-rescue agent) | Poll with `status`, fetch with `result <job-id>` |
 | Cursor | `cursor-agent --trust -p "<prompt>"` (run from the target repo) | Headless print mode; `--trust` required for non-interactive |
-| Devin | `devin -p -- "<prompt>"` (run from the target repo) | Also `devin cloud` for sessions that outlive this machine |
+| Devin | `devin -p --permission-mode dangerous -- "<prompt>"` (run from the target repo) | Default permission mode is read-only for writes — build work NEEDS `--permission-mode dangerous`, so only run it in an isolated worktree. Also `devin cloud` for sessions that outlive this machine |
 
 ## Picking an engine
 
