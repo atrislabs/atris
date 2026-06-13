@@ -2039,7 +2039,7 @@ function isAutoImproverGeneratedLogLine(line) {
   if (!text) return false;
   if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
   if (/\bauto_improver\b/i.test(text)) return true;
-  if (/^-\s*candidate:\s*recurring log pattern:/i.test(text)) return true;
+  if (/^-\s*candidate:\s*/i.test(text)) return true;
   if (/recurring log pattern:\s*(candidate:|recurring log pattern:)/i.test(text)) return true;
   return false;
 }
