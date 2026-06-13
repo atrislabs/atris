@@ -1427,6 +1427,16 @@ function detectUnavailableModel(text) {
   return null;
 }
 
+// Human-facing guidance written to a paused mission's next_action. Most pauses just
+// need a resume; a model-unavailable pause is a config error a bare resume won't fix,
+// so name the dead id and the two knobs that change it.
+function missionPauseNextAction(pauseReason, missionId, deadModel = null) {
+  if (pauseReason === 'model-unavailable' && deadModel) {
+    return `model "${deadModel}" is unavailable — set a live model (mission.model or ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+  }
+  return `resume with: atris mission run ${missionId}`;
+}
+
 function spawnClaudeTick(mission, opts) {
   const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
   return new Promise((resolve) => {
@@ -1898,6 +1908,11 @@ async function runMission(args) {
 
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on)) break;
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+      // A retired/inaccessible model is deterministic: the id is fixed for the run, so
+      // every remaining tick (and every future cron firing) fails identically. Backoff
+      // only slows the bleeding. Stop on first detection and surface the dead id —
+      // CLI-245 named this failure; this stops the loop from grinding on it forever.
+      if (result.status === 'errored' && result.reason === 'model-unavailable') { pauseReason = 'model-unavailable'; break; }
 
       // Sleep until next tick
       let sleepMs = 0;
@@ -1924,13 +1939,15 @@ async function runMission(args) {
     }
 
     if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
+      const lastTick = ticks[ticks.length - 1];
+      const deadModel = pauseReason === 'model-unavailable' ? (lastTick && lastTick.model_unavailable) || null : null;
       mission = saveMission({
         ...mission,
         status: 'paused',
         paused_at: stampIso(),
         stop_reason: pauseReason,
-        next_action: `resume with: atris mission run ${mission.id}`,
-      }, cwd, 'mission_run_paused', { reason: pauseReason }).mission;
+        next_action: missionPauseNextAction(pauseReason, mission.id, deadModel),
+      }, cwd, 'mission_run_paused', { reason: pauseReason, ...(deadModel ? { model_unavailable: deadModel } : {}) }).mission;
     }
 
     const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
@@ -2563,4 +2580,5 @@ module.exports = {
   classifyPathsByLayer,
   resolveClaudeRunnerModel,
   detectUnavailableModel,
+  missionPauseNextAction,
 };
