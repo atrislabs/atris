@@ -61,6 +61,15 @@ function tickMission(dir, missionId, extraArgs = []) {
   return JSON.parse(res.stdout);
 }
 
+function appendMissionState(dir, mission) {
+  const stateDir = path.join(dir, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.appendFileSync(path.join(stateDir, 'missions.jsonl'), JSON.stringify({
+    schema: 'atris.mission.v1',
+    ...mission,
+  }) + '\n', 'utf8');
+}
+
 test('mission stop writes a stop receipt with worktree-vs-baseline evidence', () => {
   const dir = makeTempDir();
   try {
@@ -127,6 +136,27 @@ test('mission tick clears stale pause metadata after verifier passes', () => {
     assert.equal(tick.mission.stop_reason, null);
     assert.equal(tick.mission.paused_at, null);
     assert.ok(tick.mission.resumed_at, 'manual recovery tick should record a resumed timestamp');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission tick clears stale pause metadata from a ready mission row', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const mission = startMission(dir, 'stale ready pause mission', ['--verify', PASSING_VERIFIER]);
+    appendMissionState(dir, {
+      ...mission,
+      status: 'ready',
+      paused_at: '2026-06-13T12:00:00.000Z',
+      stop_reason: 'rate-limit-exceeded-wall',
+    });
+
+    const tick = tickMission(dir, mission.id, ['--verify']);
+    assert.equal(tick.mission.status, 'ready');
+    assert.equal(tick.mission.stop_reason, null);
+    assert.equal(tick.mission.paused_at, null);
   } finally {
     cleanupTempDir(dir);
   }
