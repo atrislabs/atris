@@ -2117,6 +2117,15 @@ function collectAutoImproverLogSignals(root) {
   };
 }
 
+function autoImproverTaskWaitingForHuman(task, status) {
+  if (status !== 'review') return false;
+  const metadata = task?.metadata || {};
+  const review = task?.review || {};
+  const certified = metadata.agent_certified === true || review.agent_certified === true;
+  const approval = lowerCompact(review.approval_status || metadata.approval_status || task?.approval_status || '');
+  return certified && (!approval || approval === 'pending' || approval === 'agent_certified');
+}
+
 function collectAutoImproverTaskSignals(root) {
   const projectionPath = path.join(root, '.atris', 'state', 'tasks.projection.json');
   const projection = safeReadJson(projectionPath);
@@ -2137,7 +2146,7 @@ function collectAutoImproverTaskSignals(root) {
     };
     if (status === 'blocked') blockedTasks.push(sample);
     if (status === 'review') reviewTasks.push(sample);
-    if (openStatuses.has(status)) staleTasks.push(sample);
+    if (openStatuses.has(status) && !autoImproverTaskWaitingForHuman(task, status)) staleTasks.push(sample);
     if (/\b(tbd|unclear|unknown|needs proof|needs owner|blocked|stale|no next)\b/i.test(`${title} ${task.notes || ''}`)) {
       unclearTasks.push(sample);
     }
