@@ -2068,6 +2068,7 @@ function collectAutoImproverLogSignals(root) {
   for (const scanRoot of roots) {
     for (const filePath of listFilesBounded(scanRoot)) {
       const relative = repoRelative(root, filePath);
+      if (relative.startsWith('atris/logs/archive/')) continue;
       const isRuntimeLog = relative.startsWith('atris/logs/')
         || /^atris\/team\/[^/]+\/logs\//.test(relative)
         || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
