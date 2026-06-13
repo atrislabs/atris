@@ -1446,13 +1446,18 @@ function detectUnavailableModel(text) {
 // Human-facing guidance written to a paused mission's next_action. Most pauses just
 // need a resume; a model-unavailable pause is a config error a bare resume won't fix,
 // so name the dead id and the two knobs that change it.
-function missionPauseNextAction(pauseReason, missionId, deadModel = null) {
+function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
   if (pauseReason === 'model-unavailable' && deadModel) {
     return `model "${deadModel}" is unavailable — set a live model (mission.model or ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
   }
   if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
     const reason = pauseReason.slice('repeated-error:'.length);
     return `tick kept failing with "${reason}" — inspect the last receipt, fix the cause, then: atris mission run ${missionId}`;
+  }
+  // Single-tick cron runs pause via max-ticks-reached on the very first errored tick.
+  // A bare "resume" there just re-errors; point the operator at the cause instead.
+  if (pauseReason === 'max-ticks-reached' && lastErrorReason) {
+    return `hit the tick budget while erroring ("${lastErrorReason}") — inspect the last receipt before resuming: atris mission run ${missionId}`;
   }
   return `resume with: atris mission run ${missionId}`;
 }
@@ -1966,12 +1971,13 @@ async function runMission(args) {
     if (pauseReason && !['complete', 'ready', 'max-wall-reached'].includes(pauseReason)) {
       const lastTick = ticks[ticks.length - 1];
       const deadModel = pauseReason === 'model-unavailable' ? (lastTick && lastTick.model_unavailable) || null : null;
+      const lastErrorReason = lastTick && lastTick.status === 'errored' ? lastTick.reason : null;
       mission = saveMission({
         ...mission,
         status: 'paused',
         paused_at: stampIso(),
         stop_reason: pauseReason,
-        next_action: missionPauseNextAction(pauseReason, mission.id, deadModel),
+        next_action: missionPauseNextAction(pauseReason, mission.id, deadModel, lastErrorReason),
       }, cwd, 'mission_run_paused', { reason: pauseReason, ...(deadModel ? { model_unavailable: deadModel } : {}) }).mission;
     }
 
