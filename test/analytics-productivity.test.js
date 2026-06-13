@@ -129,6 +129,19 @@ test('analytics inbox trend grows when today has more inbox items than 6 days ag
   }
 });
 
+test('analytics counts inbox items in a CRLF-line-ending journal', () => {
+  const dir = makeWorkspace();
+  try {
+    // a Windows-edited / round-tripped journal uses \r\n; the section regex must tolerate it
+    const body = ['## Inbox', '- **I1:** alpha', '- **I2:** beta', '', '## Notes', ''].join('\r\n');
+    writeLog(dir, 0, body);
+    const out = runCli(['analytics'], dir);
+    assert.match(out.stdout, /Inbox items: 2/, 'CRLF inbox must count like LF, not 0');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('analytics inbox trend is stable when today and 6 days ago match', () => {
   const dir = makeWorkspace();
   try {
