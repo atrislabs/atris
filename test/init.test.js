@@ -103,6 +103,41 @@ describe('detectProjectContext', () => {
     cleanup(tempDir);
   });
 
+  test('detects Django from pyproject.toml (no requirements.txt)', () => {
+    tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'pyproject.toml'), '[project]\nname = "x"\ndependencies = ["django>=5.0"]\n');
+
+    const result = detectProjectContext(tempDir);
+
+    assert.strictEqual(result.type, 'python');
+    assert.strictEqual(result.framework, 'django');
+
+    cleanup(tempDir);
+  });
+
+  test('detects FastAPI from pyproject.toml (no requirements.txt)', () => {
+    tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'pyproject.toml'), '[project]\ndependencies = ["fastapi"]\n');
+
+    const result = detectProjectContext(tempDir);
+
+    assert.strictEqual(result.framework, 'fastapi');
+
+    cleanup(tempDir);
+  });
+
+  test('detects a framework declared only in pyproject when requirements.txt has no framework', () => {
+    tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'gunicorn\n');
+    fs.writeFileSync(path.join(tempDir, 'pyproject.toml'), 'dependencies = ["django"]\n');
+
+    const result = detectProjectContext(tempDir);
+
+    assert.strictEqual(result.framework, 'django');
+
+    cleanup(tempDir);
+  });
+
   test('detects Go project', () => {
     tempDir = createTempDir();
     fs.writeFileSync(path.join(tempDir, 'go.mod'), 'module example.com/test\n\ngo 1.21\n');
