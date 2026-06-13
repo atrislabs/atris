@@ -2008,6 +2008,14 @@ function compareLogEvidenceRecentFirst(a, b) {
   return Number(a?.line || 0) - Number(b?.line || 0);
 }
 
+function compareRepeatedFailureSignals(a, b) {
+  const countCompare = Number(b?.count || 0) - Number(a?.count || 0);
+  if (countCompare !== 0) return countCompare;
+  const evidenceCompare = compareLogEvidenceRecentFirst(a?.evidence?.[0], b?.evidence?.[0]);
+  if (evidenceCompare !== 0) return evidenceCompare;
+  return String(a?.pattern || '').localeCompare(String(b?.pattern || ''));
+}
+
 function listFilesBounded(rootDir, { maxFiles = 220, extensions = ['.md', '.txt', '.json', '.jsonl'] } = {}) {
   const files = [];
   const stack = [rootDir];
@@ -2139,7 +2147,7 @@ function collectAutoImproverLogSignals(root) {
       ...item,
       evidence: item.evidence.sort(compareLogEvidenceRecentFirst).slice(0, 5),
     }))
-    .sort((a, b) => b.count - a.count)
+    .sort(compareRepeatedFailureSignals)
     .slice(0, 8);
   return {
     files_scanned: filesScanned,
