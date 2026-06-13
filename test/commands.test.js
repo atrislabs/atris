@@ -1599,6 +1599,35 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
   }
 });
 
+test('auto-improver wake ignores archived log failures', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const archiveDir = path.join(dir, 'atris', 'logs', 'archive', '2026');
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const oldPattern = 'ERROR old April loop stopped until a human looked at the error';
+    fs.writeFileSync(path.join(archiveDir, '2026-04-09.md'), [
+      '# old archived log',
+      oldPattern,
+      oldPattern,
+      oldPattern,
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    assert.equal(payload.decision, 'scan_clean');
+    assert.deepEqual(payload.auto_improver.scan.log_signals.repeated_failures, []);
+    assert.equal(payload.auto_improver.scan.prevented_fire_candidate, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
