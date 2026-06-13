@@ -140,3 +140,34 @@ test('analytics inbox trend is stable when today and 6 days ago match', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('analytics renders one bar glyph per completion below the cap', () => {
+  const dir = makeWorkspace();
+  try {
+    const lines = ['## Completed ✅'];
+    for (let i = 1; i <= 3; i++) lines.push(`- **C${i}: shipped ${i}**`);
+    writeLog(dir, 0, lines.concat('').join('\n'));
+    const out = runCli(['analytics'], dir);
+    // today's daily-breakdown line: exactly 3 bars then the count
+    assert.match(out.stdout, /███ 3 \(today\)/);
+    assert.doesNotMatch(out.stdout, /████ 3/, 'no extra bar glyph');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('analytics caps the daily-breakdown bar at 40 glyphs but prints the true count', () => {
+  const dir = makeWorkspace();
+  try {
+    const lines = ['## Completed ✅'];
+    for (let i = 1; i <= 45; i++) lines.push(`- **C${i}: shipped ${i}**`);
+    writeLog(dir, 0, lines.concat('').join('\n'));
+    const out = runCli(['analytics'], dir);
+    // 45 completions → bar capped at 40 glyphs, true count 45 still shown
+    assert.match(out.stdout, /█{40} 45 \(today\)/);
+    assert.doesNotMatch(out.stdout, /█{41}/, 'bar must not exceed the 40-glyph cap');
+    assert.match(out.stdout, /Total completions: 45/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
