@@ -2094,9 +2094,12 @@ function collectAutoImproverLogSignals(root) {
       const text = safeReadText(filePath);
       if (!text) continue;
       filesScanned += 1;
-      const lines = text.split(/\r?\n/).slice(-500);
+      const allLines = text.split(/\r?\n/);
+      const lineOffset = Math.max(0, allLines.length - 500);
+      const lines = allLines.slice(-500);
       linesScanned += lines.length;
       for (let index = 0; index < lines.length; index += 1) {
+        const sourceLine = lineOffset + index + 1;
         const line = lines[index];
         if (isAutoImproverGeneratedLogLine(line, relative)) continue;
         // Declared verification receipts ("check: <command> ...") describe what
@@ -2111,7 +2114,7 @@ function collectAutoImproverLogSignals(root) {
           unclearActions.push({
             path: relative,
             date: logDate,
-            line: index + 1,
+            line: sourceLine,
             text: compactSentence(line, 180),
           });
         }
@@ -2124,7 +2127,7 @@ function collectAutoImproverLogSignals(root) {
           existing.evidence.push({
             path: relative,
             date: logDate,
-            line: index + 1,
+            line: sourceLine,
             text: compactSentence(line, 180),
           });
         }
