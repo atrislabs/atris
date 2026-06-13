@@ -2369,7 +2369,7 @@ atris mission - durable goal + loop + owner + proof state
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
-  atris mission layers [--mission <id-substr>] [--json]   Per-layer growth curve across tick receipts
+  atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -2505,6 +2505,13 @@ function classifyPathsByLayer(paths) {
 function layersMission(args) {
   const asJson = args.includes('--json');
   const missionFilter = readFlag(args, '--mission', '');
+  const sinceRaw = readFlag(args, '--since', '');
+  // --since accepts a date (2026-06-13) or full ISO; filters on the receipt's `at`
+  // stamp so the curve can be read over a window (e.g. "what did today's ticks touch?").
+  const sinceMs = sinceRaw ? Date.parse(sinceRaw) : null;
+  if (sinceRaw && Number.isNaN(sinceMs)) {
+    exitMissionError(`--since "${sinceRaw}" is not a parseable date (try 2026-06-13 or an ISO timestamp).`, 1, asJson);
+  }
   const paths = statePaths(process.cwd());
   const LAYERS = ['identity', 'beliefs', 'capabilities', 'behaviors', 'environment'];
   const byLayer = Object.fromEntries(LAYERS.map((l) => [l, 0]));
@@ -2525,6 +2532,10 @@ function layersMission(args) {
     } catch {
       continue;
     }
+    if (sinceMs != null) {
+      const atMs = Date.parse(receipt && receipt.at);
+      if (Number.isNaN(atMs) || atMs < sinceMs) continue;
+    }
     const tick = receipt?.result?.tick;
     if (!tick) continue; // summaries, stop receipts, legacy shapes
     total++;
@@ -2540,14 +2551,18 @@ function layersMission(args) {
   const tagged = total - untagged;
   const dominant = LAYERS.reduce((a, b) => (byLayer[b] > byLayer[a] ? b : a), LAYERS[0]);
   const skewed = tagged >= 5 && byLayer[dominant] / tagged >= 0.8;
+  const scopeBits = [
+    missionFilter ? `mission filter: ${missionFilter}` : null,
+    sinceRaw ? `since: ${sinceRaw}` : null,
+  ].filter(Boolean);
   const lines = [
-    `Layer growth curve${missionFilter ? ` (mission filter: ${missionFilter})` : ''}: ${tagged} tagged / ${total} tick receipts`,
+    `Layer growth curve${scopeBits.length ? ` (${scopeBits.join(', ')})` : ''}: ${tagged} tagged / ${total} tick receipts`,
     ...LAYERS.map((l) => `  ${l.padEnd(12)} ${String(byLayer[l]).padStart(3)}${byLayer[l] ? ' ' + '█'.repeat(Math.min(byLayer[l], 40)) : ''}`),
     ...(untagged ? [`  untagged     ${String(untagged).padStart(3)} (pre-layer receipts or missing tag)`] : []),
     `  provenance: explicit ${bySource.explicit}, explicit-inline ${bySource['explicit-inline']}, fallback ${bySource.fallback}`,
     ...(skewed ? [`  rebalance: ${Math.round((byLayer[dominant] / tagged) * 100)}% of tagged ticks are "${dominant}" — the proof standard wants the other layers moving too`] : []),
   ];
-  printJsonOrText({ ok: true, total, tagged, untagged, by_layer: byLayer, by_source: bySource, dominant: tagged ? dominant : null, skewed }, lines, asJson);
+  printJsonOrText({ ok: true, since: sinceRaw || null, total, tagged, untagged, by_layer: byLayer, by_source: bySource, dominant: tagged ? dominant : null, skewed }, lines, asJson);
 }
 
 function missionCommand(args) {

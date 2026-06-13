@@ -284,3 +284,50 @@ test('mission layers handles a missing runs directory', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('mission layers --since filters tick receipts by the receipt at-stamp', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layers-since-test-'));
+  try {
+    const runsDir = path.join(dir, 'atris', 'runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    const writeReceiptFile = (name, at, layer) => {
+      fs.writeFileSync(path.join(runsDir, name), JSON.stringify({
+        schema: 'atris.mission_receipt.v1',
+        mission_id: 'mission-s',
+        at,
+        result: { kind: 'mission_run_tick', tick: { layer, layer_source: 'explicit' } },
+      }) + '\n', 'utf8');
+    };
+    writeReceiptFile('mission-s-old1.json', '2026-06-10T08:00:00.000Z', 'behaviors');
+    writeReceiptFile('mission-s-old2.json', '2026-06-11T08:00:00.000Z', 'behaviors');
+    writeReceiptFile('mission-s-new1.json', '2026-06-13T08:00:00.000Z', 'beliefs');
+    writeReceiptFile('mission-s-new2.json', '2026-06-13T20:00:00.000Z', 'capabilities');
+
+    const all = JSON.parse(runCli(['mission', 'layers', '--json'], dir).stdout);
+    assert.equal(all.tagged, 4, 'no filter counts every receipt');
+
+    const since = JSON.parse(runCli(['mission', 'layers', '--since', '2026-06-13', '--json'], dir).stdout);
+    assert.equal(since.since, '2026-06-13');
+    assert.equal(since.tagged, 2, 'only the two 06-13 receipts survive the window');
+    assert.equal(since.by_layer.beliefs, 1);
+    assert.equal(since.by_layer.capabilities, 1);
+    assert.equal(since.by_layer.behaviors, 0);
+
+    // a window past every receipt yields an empty curve, not an error
+    const none = JSON.parse(runCli(['mission', 'layers', '--since', '2026-12-31', '--json'], dir).stdout);
+    assert.equal(none.tagged, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mission layers --since rejects an unparseable date with a nonzero exit', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layers-since-bad-test-'));
+  try {
+    const out = runCli(['mission', 'layers', '--since', 'notadate'], dir);
+    assert.equal(out.status, 1, out.stdout);
+    assert.match(out.stderr + out.stdout, /not a parseable date/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
