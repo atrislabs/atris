@@ -10,6 +10,7 @@ const os = require('os');
 const { taskProofState } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
+const escapeRegExp = require('../lib/escape-regexp');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -6883,7 +6884,7 @@ function cmdSetup(args) {
 }
 
 function extractTodoSectionMarkdown(content, sectionName) {
-  const escaped = String(sectionName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegExp(sectionName || '');
   const match = String(content || '').match(new RegExp(`(?:^|\\n)(##\\s+${escaped}[^\\n]*\\n[\\s\\S]*?)(?=\\n##(?!#)\\s+|$)`, 'i'));
   return match ? match[1].trimEnd() : null;
 }
