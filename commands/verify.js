@@ -508,7 +508,7 @@ function verifyRubric(slug, section, opts = {}) {
   const content = fs.readFileSync(validateFile, 'utf8');
   // Match "## <section>" (case-insensitive, anchored), skipping optional
   // prose until the first ```bash or ```sh fence. Extract until the closing ```.
-  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = escapeRegExp(section);
   const pattern = new RegExp(
     `^##\\s+${escaped}\\s*$[\\s\\S]*?\\n\`\`\`(?:bash|sh)?\\s*\\n([\\s\\S]*?)\\n\`\`\``,
     'mi'
