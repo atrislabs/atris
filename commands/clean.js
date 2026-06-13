@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const escapeRegExp = require('../lib/escape-regexp');
 
 /**
  * atris clean - Workspace housekeeping with auto-heal
@@ -394,10 +395,6 @@ function findSymbolLine(fileContent, symbol) {
   }
 
   return null;
-}
-
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
