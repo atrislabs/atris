@@ -2123,20 +2123,22 @@ function collectAutoImproverLogSignals(root) {
         if (!pattern) continue;
         const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
         existing.count += 1;
-        if (existing.evidence.length < 5) {
-          existing.evidence.push({
-            path: relative,
-            date: logDate,
-            line: sourceLine,
-            text: compactSentence(line, 180),
-          });
-        }
+        existing.evidence.push({
+          path: relative,
+          date: logDate,
+          line: sourceLine,
+          text: compactSentence(line, 180),
+        });
         counts.set(pattern, existing);
       }
     }
   }
   const repeated = [...counts.values()]
     .filter((item) => item.count >= 2)
+    .map((item) => ({
+      ...item,
+      evidence: item.evidence.sort(compareLogEvidenceRecentFirst).slice(0, 5),
+    }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
   return {
