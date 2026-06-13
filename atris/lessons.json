@@ -10,6 +10,14 @@
     "note": "If a lesson has no detector, self-heal falls back to keyword grep and never auto-promotes status. Observation-only lessons (process rules, not fixable bugs) should carry status:observed and no detector."
   },
 
+  "staleness-shell-injection-guard": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/autopilot.js"],
+    "detector": "! grep -qE 'grep \"\\$\\{|--grep=\"\\$\\{' commands/autopilot.js && grep -q \"execFileSync('grep'\" commands/autopilot.js",
+    "status": "resolved",
+    "last_detected": "2026-06-13"
+  },
+
   "parallel-paths-drift": {
     "scope": "atris-cli",
     "applies_to": ["commands/mission.js"],
