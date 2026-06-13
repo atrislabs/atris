@@ -2432,19 +2432,27 @@ function autoImproverTaskIsActionable(task) {
 function findExistingAutoImproverTask(title) {
   const projection = safeReadJson(path.join(process.cwd(), '.atris', 'state', 'tasks.projection.json'));
   const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
-  const key = lowerCompact(title);
+  const key = lowerCompact(stripAutoImproverTitleNoise(title));
   if (!key) return null;
   return tasks.find((task) => {
     if (!autoImproverTaskIsActionable(task)) return false;
-    const taskTitle = lowerCompact(task.title || '');
+    const taskTitle = lowerCompact(stripAutoImproverTitleNoise(task.title || ''));
     if (!taskTitle) return false;
     return taskTitle.includes(key) || key.includes(taskTitle);
   }) || null;
 }
 
-function createAutoImproverTask(candidate, receiptPath) {
+function autoImproverTaskTitle(candidate) {
   const core = stripAutoImproverTitleNoise(candidate?.title || 'Prevent top dogfood failure');
-  const title = `Auto-improver: ${compactSentence(core, 92)}`;
+  return `Auto-improver: ${compactSentence(core, 92)}`;
+}
+
+function existingAutoImproverTaskForCandidate(candidate) {
+  return findExistingAutoImproverTask(autoImproverTaskTitle(candidate));
+}
+
+function createAutoImproverTask(candidate, receiptPath) {
+  const title = autoImproverTaskTitle(candidate);
   const existing = findExistingAutoImproverTask(title);
   if (existing) {
     return {
@@ -2510,11 +2518,18 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
   const scan = collectAutoImproverScan(process.cwd());
   const mode = execute ? 'execute' : 'dry_run';
   const candidate = scan.prevented_fire_candidate;
-  let createdTask = null;
-  let decision = candidate ? 'scan_found_problem' : 'scan_clean';
-  let reason = candidate ? `top_candidate:${candidate.source}` : 'no_prevented_fire_candidate';
+  const existingTask = candidate ? existingAutoImproverTaskForCandidate(candidate) : null;
+  let createdTask = existingTask ? {
+    ok: true,
+    existing: true,
+    task_ref: taskRef(existingTask),
+    task: existingTask,
+    command: `atris task show ${taskRef(existingTask)} --json`,
+  } : null;
+  let decision = candidate ? (existingTask ? 'existing_task_found' : 'scan_found_problem') : 'scan_clean';
+  let reason = candidate ? (existingTask ? 'auto_improver_task_already_exists' : `top_candidate:${candidate.source}`) : 'no_prevented_fire_candidate';
   let nextCommand = candidate
-    ? `atris member wake ${name} --execute --confirm-autonomy-policy --json`
+    ? (existingTask ? createdTask.command : `atris member wake ${name} --execute --confirm-autonomy-policy --json`)
     : `atris member wake ${name} --json`;
 
   let payload = {

@@ -1631,6 +1631,81 @@ test('auto-improver wake selector skips done/accepted tasks (OBL-1469)', () => {
   }
 });
 
+test('auto-improver dry-run surfaces existing actionable task', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const first = runCli(['member', 'wake', 'auto-improver', '--execute', '--confirm-autonomy-policy', '--json'], { cwd: dir, env });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+    assert.equal(firstPayload.decision, 'task_created');
+    const firstRef = firstPayload.created_task.task_ref;
+    assert.ok(firstRef);
+
+    const dryRun = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+    const dryRunPayload = JSON.parse(dryRun.stdout);
+    assert.equal(dryRunPayload.mode, 'dry_run');
+    assert.equal(dryRunPayload.decision, 'existing_task_found');
+    assert.equal(dryRunPayload.created_task.existing, true);
+    assert.equal(dryRunPayload.created_task.task_ref, firstRef);
+    assert.equal(dryRunPayload.next_command, `atris task show ${firstRef} --json`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver dry-run matches legacy recurring-pattern task title', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const pattern = 'ERROR rsi client expected /api/rsi/improve but backend exposed /api/rsi/tick';
+    fs.writeFileSync(path.join(logsDir, '2026-06-07.md'), [
+      '# test log',
+      `- ${pattern}`,
+      `- ${pattern}`,
+      `- ${pattern}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const legacyTitle = `Auto-improver: Recurring log pattern: ${pattern}`;
+    const task = runCli(['task', 'new', legacyTitle, '--tag', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(task.status, 0, task.stderr || task.stdout);
+    const taskPayload = JSON.parse(task.stdout);
+    const taskRef = taskPayload.task?.display_id || taskPayload.task_id;
+    assert.ok(taskRef);
+
+    const dryRun = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+    const dryRunPayload = JSON.parse(dryRun.stdout);
+    assert.equal(dryRunPayload.decision, 'existing_task_found');
+    assert.equal(dryRunPayload.created_task.existing, true);
+    assert.equal(dryRunPayload.created_task.task_ref, taskRef);
+    assert.equal(dryRunPayload.next_command, `atris task show ${taskRef} --json`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake skips journal append on identical no-op repeat', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
