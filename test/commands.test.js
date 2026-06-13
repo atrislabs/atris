@@ -1950,6 +1950,45 @@ test('auto-improver repeated failure evidence favors recent dated logs', () => {
   }
 });
 
+test('auto-improver repeated failure ties favor newest evidence', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const oldLogsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(oldLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(oldLogsDir, '2026-05-07.md'), [
+      '# old log',
+      'ERROR recurring alpha failure',
+      'ERROR recurring alpha failure',
+      '',
+    ].join('\n'), 'utf8');
+
+    const recentLogsDir = path.join(dir, 'atris', 'team', 'mission-lead', 'logs');
+    fs.mkdirSync(recentLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+      '# recent log',
+      'ERROR recurring beta failure',
+      'ERROR recurring beta failure',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const failures = payload.auto_improver.scan.log_signals.repeated_failures;
+    assert.equal(failures.length, 2);
+    assert.match(failures[0].pattern, /beta/);
+    assert.equal(failures[0].count, 2);
+    assert.equal(failures[0].evidence[0].date, '2026-06-12');
+    assert.match(failures[1].pattern, /alpha/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake ignores its own summary log residue', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
