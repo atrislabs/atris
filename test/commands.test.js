@@ -1785,6 +1785,36 @@ test('auto-improver wake does not treat certified review as stale or unclear wor
   }
 });
 
+test('auto-improver wake does not treat closed tasks as unclear work', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const stateDir = path.join(dir, '.atris', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({
+      tasks: Array.from({ length: 13 }, (_, index) => ({
+        display_id: `CLI-${index + 1}`,
+        title: `Closed stale task needs proof ${index + 1}`,
+        status: 'done',
+        claimed_by: 'builder',
+      })),
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const taskSignals = payload.auto_improver.scan.task_signals;
+    assert.equal(taskSignals.unclear_task_count, 0);
+    assert.deepEqual(payload.auto_improver.scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
+    assert.equal(payload.decision, 'scan_clean');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake skips journal append on identical no-op repeat', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
