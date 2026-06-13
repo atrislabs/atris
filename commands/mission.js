@@ -2297,6 +2297,7 @@ atris mission - durable goal + loop + owner + proof state
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
+  atris mission layers [--mission <id-substr>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -2426,6 +2427,57 @@ function classifyPathsByLayer(paths) {
   return winnerLayer ? { layer: winnerLayer, source: 'fallback' } : { layer: null, source: 'unknown' };
 }
 
+// `atris mission layers` — per-layer growth curve across tick receipts. The member
+// proof standard says: if every tick is one layer and none touch the others, the
+// loop is doing work but not getting smarter. This makes that check one command.
+function layersMission(args) {
+  const asJson = args.includes('--json');
+  const missionFilter = readFlag(args, '--mission', '');
+  const paths = statePaths(process.cwd());
+  const LAYERS = ['identity', 'beliefs', 'capabilities', 'behaviors', 'environment'];
+  const byLayer = Object.fromEntries(LAYERS.map((l) => [l, 0]));
+  const bySource = { explicit: 0, 'explicit-inline': 0, fallback: 0, unknown: 0 };
+  let total = 0;
+  let untagged = 0;
+  let files = [];
+  try {
+    files = fs.readdirSync(paths.runsDir).filter((f) => f.startsWith('mission-') && f.endsWith('.json'));
+  } catch {
+    files = [];
+  }
+  for (const file of files) {
+    if (missionFilter && !file.includes(missionFilter)) continue;
+    let receipt;
+    try {
+      receipt = JSON.parse(fs.readFileSync(path.join(paths.runsDir, file), 'utf8'));
+    } catch {
+      continue;
+    }
+    const tick = receipt?.result?.tick;
+    if (!tick) continue; // summaries, stop receipts, legacy shapes
+    total++;
+    const layer = String(tick.layer || '').toLowerCase();
+    const source = String(tick.layer_source || 'unknown');
+    if (LAYERS.includes(layer)) {
+      byLayer[layer]++;
+      bySource[source in bySource ? source : 'unknown']++;
+    } else {
+      untagged++;
+    }
+  }
+  const tagged = total - untagged;
+  const dominant = LAYERS.reduce((a, b) => (byLayer[b] > byLayer[a] ? b : a), LAYERS[0]);
+  const skewed = tagged >= 5 && byLayer[dominant] / tagged >= 0.8;
+  const lines = [
+    `Layer growth curve${missionFilter ? ` (mission filter: ${missionFilter})` : ''}: ${tagged} tagged / ${total} tick receipts`,
+    ...LAYERS.map((l) => `  ${l.padEnd(12)} ${String(byLayer[l]).padStart(3)}${byLayer[l] ? ' ' + '█'.repeat(Math.min(byLayer[l], 40)) : ''}`),
+    ...(untagged ? [`  untagged     ${String(untagged).padStart(3)} (pre-layer receipts or missing tag)`] : []),
+    `  provenance: explicit ${bySource.explicit}, explicit-inline ${bySource['explicit-inline']}, fallback ${bySource.fallback}`,
+    ...(skewed ? [`  rebalance: ${Math.round((byLayer[dominant] / tagged) * 100)}% of tagged ticks are "${dominant}" — the proof standard wants the other layers moving too`] : []),
+  ];
+  printJsonOrText({ ok: true, total, tagged, untagged, by_layer: byLayer, by_source: bySource, dominant: tagged ? dominant : null, skewed }, lines, asJson);
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -2440,6 +2492,8 @@ function missionCommand(args) {
       return statusMission(rest);
     case 'watch':
       return watchMission(rest);
+    case 'layers':
+      return layersMission(rest);
     case 'goal':
     case 'codex-goal':
       return goalMission(rest);
