@@ -352,9 +352,17 @@ function checkDocsVsChanges(cwd, atrisDir) {
 /**
  * Find task in TODO.md content
  */
+// Escape regex metacharacters so a taskId/slug can be embedded in a RegExp
+// literally. Without this, an id like "(" throws an uncaught SyntaxError (crash)
+// and an id like "a.b" silently matches "aXb".
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function findTaskInContent(content, taskId) {
   // Try exact ID match (T1, T2, etc.)
-  const idPattern = new RegExp(`### (T${taskId}|Task ${taskId})[:\\s]([\\s\\S]*?)(?=\\n###|\\n##|$)`, 'i');
+  const safeId = escapeRegExp(taskId);
+  const idPattern = new RegExp(`### (T${safeId}|Task ${safeId})[:\\s]([\\s\\S]*?)(?=\\n###|\\n##|$)`, 'i');
   let match = content.match(idPattern);
 
   if (match) {
@@ -531,5 +539,7 @@ function verifyRubric(slug, section, opts = {}) {
 
 module.exports = {
   verifyAtris,
-  verifyRubric
+  verifyRubric,
+  findTaskInContent,
+  escapeRegExp
 };
