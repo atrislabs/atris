@@ -202,3 +202,85 @@ test('manual mission tick records layer from --summary in receipt and mission st
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('mission layers rolls up tick receipts by layer with provenance and skew flag', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layers-test-'));
+  try {
+    const runsDir = path.join(dir, 'atris', 'runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    const writeReceiptFile = (name, tick) => {
+      fs.writeFileSync(path.join(runsDir, name), JSON.stringify({
+        schema: 'atris.mission_receipt.v1',
+        mission_id: 'mission-x',
+        result: { kind: 'mission_run_tick', tick },
+      }) + '\n', 'utf8');
+    };
+    for (let i = 0; i < 5; i++) {
+      writeReceiptFile(`mission-x-${i}.json`, { layer: 'behaviors', layer_source: 'explicit' });
+    }
+    writeReceiptFile('mission-x-cap.json', { layer: 'capabilities', layer_source: 'explicit-inline' });
+    writeReceiptFile('mission-x-untagged.json', { summary: 'no tag' });
+    writeReceiptFile('mission-y-other.json', { layer: 'beliefs', layer_source: 'fallback' });
+    // summary receipts (no result.tick) are ignored
+    fs.writeFileSync(path.join(runsDir, 'mission-x-summary.json'), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      result: { kind: 'mission_run_summary' },
+    }) + '\n', 'utf8');
+
+    const all = runCli(['mission', 'layers', '--json'], dir);
+    assert.equal(all.status, 0, all.stderr || all.stdout);
+    const rollup = JSON.parse(all.stdout);
+    assert.equal(rollup.total, 8);
+    assert.equal(rollup.tagged, 7);
+    assert.equal(rollup.untagged, 1);
+    assert.equal(rollup.by_layer.behaviors, 5);
+    assert.equal(rollup.by_layer.capabilities, 1);
+    assert.equal(rollup.by_layer.beliefs, 1);
+    assert.equal(rollup.by_source.explicit, 5);
+    assert.equal(rollup.by_source['explicit-inline'], 1);
+    assert.equal(rollup.by_source.fallback, 1);
+    assert.equal(rollup.dominant, 'behaviors');
+    assert.equal(rollup.skewed, false);
+
+    // filtered to mission-y, behaviors drops out
+    const filtered = JSON.parse(runCli(['mission', 'layers', '--mission', 'mission-y', '--json'], dir).stdout);
+    assert.equal(filtered.total, 1);
+    assert.equal(filtered.by_layer.beliefs, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mission layers flags skew when one layer dominates tagged ticks', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layers-skew-test-'));
+  try {
+    const runsDir = path.join(dir, 'atris', 'runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    for (let i = 0; i < 5; i++) {
+      fs.writeFileSync(path.join(runsDir, `mission-z-${i}.json`), JSON.stringify({
+        schema: 'atris.mission_receipt.v1',
+        result: { kind: 'mission_tick', tick: { layer: 'environment', layer_source: 'explicit' } },
+      }) + '\n', 'utf8');
+    }
+    const out = runCli(['mission', 'layers'], dir);
+    assert.equal(out.status, 0, out.stderr || out.stdout);
+    assert.match(out.stdout, /rebalance: 100% of tagged ticks are "environment"/);
+    const json = JSON.parse(runCli(['mission', 'layers', '--json'], dir).stdout);
+    assert.equal(json.skewed, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mission layers handles a missing runs directory', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layers-empty-test-'));
+  try {
+    const out = runCli(['mission', 'layers', '--json'], dir);
+    assert.equal(out.status, 0, out.stderr || out.stdout);
+    const json = JSON.parse(out.stdout);
+    assert.equal(json.total, 0);
+    assert.equal(json.skewed, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
