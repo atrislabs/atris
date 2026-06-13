@@ -1986,6 +1986,9 @@ function tickMission(args) {
     }
     const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: mission.verifier, baseline: worktreeBaseline });
 
+    // Same layer classification as the run-tick path; manual ticks carry their
+    // receipt text in --summary.
+    const layerInfo = extractLayerFromReceiptText(summary || '', tickWorktree?.new_since_baseline_sample);
     const tickRecord = {
       status: 'ran',
       reason: 'tick-recorded',
@@ -1994,6 +1997,8 @@ function tickMission(args) {
       started_at: tickStart,
       claude: { skipped: true, reason: 'orchestrator-is-caller-session' },
       summary: summary || null,
+      layer: layerInfo.layer,
+      layer_source: layerInfo.source,
       verifier_passed: verifierResult ? !!verifierResult.passed : null,
       finished_at: stampIso(),
       worktree: tickWorktree,
@@ -2030,16 +2035,19 @@ function tickMission(args) {
       last_tick_status: tickRecord.status,
       last_tick_reason: tickRecord.reason,
       last_tick_index: tickIdx,
+      last_tick_layer: tickRecord.layer,
+      last_tick_layer_source: tickRecord.layer_source,
       verifier_result: verifierResult || mission.verifier_result || null,
       next_action: nextAction,
     };
     const { mission: saved } = saveMission(nextMission, cwd, 'mission_tick', {
-      tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath,
+      tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath, layer: tickRecord.layer,
     });
     const logPath = appendMemberLog(saved.owner, 'Mission tick', {
       mission: saved.objective,
       state: saved.status,
       tick_index: tickIdx,
+      layer: tickRecord.layer || undefined,
       verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
       receipt: receiptPath,
       summary: summary || undefined,
@@ -2346,7 +2354,9 @@ function extractLayerFromReceiptText(text, fallbackPaths = []) {
   const text_str = String(text || '').trim();
 
   if (text_str) {
-    const layerPattern = /^layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i;
+    // Matches a standalone "layer: x" line, or a one-line summary ending in
+    // "...; layer: x". Quoted bullets ("- layer: x") and the enum-doc line stay inert.
+    const layerPattern = /^(?:.*;\s*)?layer:\s*(identity|beliefs|capabilities|behaviors|environment)\s*$/i;
     const lines = text_str.split(/\r?\n/).reverse();
     let isLastNonEmpty = true;
     for (const line of lines) {

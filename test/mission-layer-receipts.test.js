@@ -1,6 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { extractLayerFromReceiptText, classifyPathsByLayer } = require('../commands/mission');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+function runCli(args, cwd) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.error) throw result.error;
+  return result;
+}
 
 test('extractLayerFromReceiptText: explicit parse finds layer in last non-empty line', () => {
   const text = `some work done
@@ -37,6 +55,13 @@ closing note for the human`;
   const result = extractLayerFromReceiptText(text);
   assert.equal(result.layer, 'behaviors');
   assert.equal(result.source, 'explicit-inline');
+});
+
+test('extractLayerFromReceiptText: one-line summary with trailing "; layer: x" matches', () => {
+  const text = 'pipeline tick: 5 features built; suite 917->950; layer: capabilities';
+  const result = extractLayerFromReceiptText(text);
+  assert.equal(result.layer, 'capabilities');
+  assert.equal(result.source, 'explicit');
 });
 
 test('extractLayerFromReceiptText: enum docs and quoted log lines never match', () => {
@@ -157,4 +182,23 @@ test('classifyPathsByLayer: non-array returns unknown', () => {
   const result = classifyPathsByLayer(null);
   assert.equal(result.layer, null);
   assert.equal(result.source, 'unknown');
+});
+
+test('manual mission tick records layer from --summary in receipt and mission state', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-layer-tick-test-'));
+  try {
+    const started = runCli(['mission', 'start', 'layer tick mission', '--owner', 'mission-lead', '--json'], dir);
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const ticked = runCli(['mission', 'tick', mission.id, '--summary', 'wrote the lesson down; layer: beliefs', '--json'], dir);
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+    const out = JSON.parse(ticked.stdout);
+    assert.equal(out.tick.layer, 'beliefs');
+    assert.equal(out.tick.layer_source, 'explicit');
+    assert.equal(out.mission.last_tick_layer, 'beliefs');
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, out.receipt_path), 'utf8'));
+    assert.equal(receipt.result.tick.layer, 'beliefs');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
