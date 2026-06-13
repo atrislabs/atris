@@ -20,13 +20,33 @@ LAYER: BELIEFS`;
   assert.equal(result.source, 'explicit');
 });
 
-test('extractLayerFromReceiptText: ignores non-last lines with layer:', () => {
+test('extractLayerFromReceiptText: recovers mid-text tag as explicit-inline', () => {
   const text = `layer: capabilities
 some work
 other changes`;
   const result = extractLayerFromReceiptText(text);
-  assert.equal(result.layer, null);
-  assert.equal(result.source, 'unknown');
+  assert.equal(result.layer, 'capabilities');
+  assert.equal(result.source, 'explicit-inline');
+});
+
+test('extractLayerFromReceiptText: inline scan takes the last matching line', () => {
+  const text = `layer: beliefs
+more work
+layer: behaviors
+closing note for the human`;
+  const result = extractLayerFromReceiptText(text);
+  assert.equal(result.layer, 'behaviors');
+  assert.equal(result.source, 'explicit-inline');
+});
+
+test('extractLayerFromReceiptText: enum docs and quoted log lines never match', () => {
+  const text = `the contract says: layer: identity|beliefs|capabilities|behaviors|environment
+- layer: capabilities
+done`;
+  const paths = ['commands/mission.js'];
+  const result = extractLayerFromReceiptText(text, paths);
+  assert.equal(result.layer, 'behaviors');
+  assert.equal(result.source, 'fallback');
 });
 
 test('extractLayerFromReceiptText: all five layers recognized', () => {
