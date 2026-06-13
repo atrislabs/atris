@@ -2,6 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
+// Inbox helpers live canonically (and CRLF-tolerant) in lib/file-ops; brainstorm
+// used to carry byte-identical local copies that silently missed CRLF journals.
+const {
+  parseInboxItems,
+  replaceInboxSection,
+  addInboxItemToContent,
+  getNextInboxId,
+  addInboxIdea,
+} = require('../lib/file-ops');
 const { loadConfig } = require('../utils/config');
 const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -351,67 +360,9 @@ function brainstormAbortError() {
   return error;
 }
 
-function addInboxIdea(logFile, summary) {
-  const content = fs.readFileSync(logFile, 'utf8');
-  const nextId = getNextInboxId(content);
-  const updated = addInboxItemToContent(content, nextId, summary);
-  fs.writeFileSync(logFile, updated);
-  return nextId;
-}
-
-function parseInboxItems(content) {
-  const match = content.match(/## Inbox\n([\s\S]*?)(?=\n##|\n---|$)/);
-  if (!match) {
-    return [];
-  }
-  const body = match[1];
-  const lines = body.split('\n');
-  const items = [];
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    if (trimmed.startsWith('(Empty')) return;
-    const parsed = trimmed.match(/^- \*\*I(\d+):\*\*\s*(.+)$|^- \*\*I(\d+):\s+(.+)$/);
-    if (parsed) {
-      const id = parseInt(parsed[1] || parsed[3], 10);
-      const text = parsed[2] || parsed[4];
-      items.push({ id, text, line: trimmed });
-    }
-  });
-  return items;
-}
-
-function replaceInboxSection(content, items) {
-  const regex = /(## Inbox\n)([\s\S]*?)(\n---|\n##|$)/;
-  if (!regex.test(content)) {
-    const lines = items.length ? items.map((item) => item.line).join('\n') : '(Empty - inbox zero achieved)';
-    return `${content}\n\n## Inbox\n\n${lines}\n`;
-  }
-
-  return content.replace(regex, (match, header, body, suffix) => {
-    const inner = items.length
-      ? `\n${items.map((item) => item.line).join('\n')}\n`
-      : '\n(Empty - inbox zero achieved)\n';
-    return `${header}${inner}${suffix}`;
-  });
-}
-
-function addInboxItemToContent(content, id, summary) {
-  const items = parseInboxItems(content).filter((item) => item.id !== id);
-  const newItem = { id, text: summary, line: `- **I${id}:** ${summary}` };
-  const updatedItems = [newItem, ...items];
-  return replaceInboxSection(content, updatedItems);
-}
-
 function removeInboxItemFromContent(content, id) {
   const items = parseInboxItems(content).filter((item) => item.id !== id);
   return replaceInboxSection(content, items);
-}
-
-function getNextInboxId(content) {
-  const items = parseInboxItems(content);
-  if (items.length === 0) return 1;
-  return items.reduce((max, item) => (item.id > max ? item.id : max), 0) + 1;
 }
 
 function insertIntoNotesSection(content, block) {
