@@ -18,6 +18,14 @@
     "last_detected": "2026-06-13"
   },
 
+  "inbox-parser-hr-guard": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/run.js", "commands/autopilot.js", "commands/workflow.js"],
+    "detector": "grep -q \"startsWith('- ') && t.length > 2\" commands/run.js && grep -q \"startsWith('- ') && t.length > 2\" commands/autopilot.js && grep -q \"startsWith('- ') && t.length > 2\" commands/workflow.js",
+    "status": "resolved",
+    "last_detected": "2026-06-13"
+  },
+
   "parallel-paths-drift": {
     "scope": "atris-cli",
     "applies_to": ["commands/mission.js"],
