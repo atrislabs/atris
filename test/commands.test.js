@@ -1838,6 +1838,7 @@ test('auto-improver unclear log finding carries line evidence', () => {
     assert.equal(scan.log_signals.unclear_next_actions.length, 5);
     assert.equal(scan.prevented_fire_candidate.source, 'unclear_next_actions');
     assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-11.md');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-11');
     assert.equal(scan.prevented_fire_candidate.evidence[0].line, 2);
     assert.match(scan.prevented_fire_candidate.evidence[0].text, /needs owner for follow-up 1/);
   } finally {
@@ -1867,6 +1868,7 @@ test('auto-improver wake ignores blocked-to-ready receipt text', () => {
     const scan = payload.auto_improver.scan;
     assert.equal(scan.log_signals.unclear_next_action_count, 1);
     assert.equal(scan.log_signals.unclear_next_actions.length, 1);
+    assert.equal(scan.log_signals.unclear_next_actions[0].date, '2026-06-12');
     assert.match(scan.log_signals.unclear_next_actions[0].text, /blocked until owner/);
     assert.deepEqual(scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
     assert.equal(payload.decision, 'scan_clean');
