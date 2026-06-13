@@ -624,11 +624,18 @@ function readMemberContext(root, memberSlug) {
   };
 }
 
+// Escape regex metacharacters so a member name can be embedded in a RegExp
+// literally — a name whose first word contains e.g. "+" ("c++") otherwise throws
+// "Nothing to repeat" and crashes the contribution-card parse.
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseContributionCard(text, member) {
   if (!text || !member) return null;
   const firstName = String(member.name || member.slug || '').split(/\s+/)[0].toLowerCase();
   const sections = String(text).split(/\n(?=##\s+)/);
-  const memberSections = sections.filter(section => new RegExp(`^##\\s+${firstName}\\b`, 'i').test(section.trim()));
+  const memberSections = sections.filter(section => new RegExp(`^##\\s+${escapeRegExp(firstName)}\\b`, 'i').test(section.trim()));
   const section = (
     memberSections.find(candidate => /current_score_signal\s*:/i.test(candidate))
     || memberSections[0]
@@ -1571,4 +1578,6 @@ module.exports = {
   verifyActivationCard,
   verifyActivationGallery,
   verifyBrain,
+  parseContributionCard,
+  escapeRegExp,
 };
