@@ -1845,6 +1845,36 @@ test('auto-improver unclear log finding carries line evidence', () => {
   }
 });
 
+test('auto-improver wake ignores blocked-to-ready receipt text', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(path.join(logsDir, '2026-06-12.md'), [
+      '# test log',
+      ...Array.from({ length: 11 }, (_, index) => `inspected blocked→ready receipt pair ${index + 1}`),
+      'blocked until owner chooses next step',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const scan = payload.auto_improver.scan;
+    assert.equal(scan.log_signals.unclear_next_action_count, 1);
+    assert.equal(scan.log_signals.unclear_next_actions.length, 1);
+    assert.match(scan.log_signals.unclear_next_actions[0].text, /blocked until owner/);
+    assert.deepEqual(scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
+    assert.equal(payload.decision, 'scan_clean');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake skips journal append on identical no-op repeat', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
