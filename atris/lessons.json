@@ -18,6 +18,14 @@
     "last_detected": "2026-06-13"
   },
 
+  "error-grind-guards-compose": {
+    "scope": "atris-cli",
+    "applies_to": ["commands/mission.js"],
+    "detector": "grep -q \"pauseReason = 'model-unavailable'\" commands/mission.js && grep -q 'consecutiveSameReasonErrors(ticks)' commands/mission.js && grep -q 'max-ticks-reached' commands/mission.js && grep -q 'missionSelectableForLoop' commands/mission.js",
+    "status": "resolved",
+    "last_detected": "2026-06-13"
+  },
+
   "clean-absolute-source-paths": {
     "scope": "atris-cli",
     "applies_to": ["commands/clean.js"],
