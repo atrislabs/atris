@@ -1846,6 +1846,72 @@ test('auto-improver unclear log finding carries line evidence', () => {
   }
 });
 
+test('auto-improver unclear log evidence favors recent dated logs', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const oldLogsDir = path.join(dir, 'atris', 'team', 'mission-lead', 'logs');
+    fs.mkdirSync(oldLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(oldLogsDir, '2026-05-07.md'), [
+      '# old log',
+      ...Array.from({ length: 10 }, (_, index) => `needs owner stale follow-up ${index + 1}`),
+      '',
+    ].join('\n'), 'utf8');
+
+    const recentLogsDir = path.join(dir, 'atris', 'logs', '2026');
+    fs.mkdirSync(recentLogsDir, { recursive: true });
+    fs.writeFileSync(path.join(recentLogsDir, '2026-06-12.md'), [
+      '# recent log',
+      'needs owner for current follow-up',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const scan = payload.auto_improver.scan;
+    assert.equal(scan.log_signals.unclear_next_action_count, 11);
+    assert.equal(scan.log_signals.unclear_next_actions.length, 5);
+    assert.equal(scan.log_signals.unclear_next_actions[0].path, 'atris/logs/2026/2026-06-12.md');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].path, 'atris/logs/2026/2026-06-12.md');
+    assert.equal(scan.prevented_fire_candidate.evidence[0].date, '2026-06-12');
+    assert.match(scan.prevented_fire_candidate.evidence[0].text, /current follow-up/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto-improver wake ignores its own summary log residue', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], { cwd: dir, env }).status, 0);
+
+    const logsDir = path.join(dir, 'atris', 'team', 'auto-improver', 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(path.join(logsDir, '2026-06-13.md'), [
+      '# auto-improver log',
+      ...Array.from({ length: 11 }, (_, index) => `- summary: CLI-275 adds auto-improver unclear log evidence ${index + 1}`),
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const payload = JSON.parse(wake.stdout);
+    const scan = payload.auto_improver.scan;
+    assert.equal(scan.log_signals.unclear_next_action_count, 0);
+    assert.deepEqual(scan.log_signals.unclear_next_actions, []);
+    assert.deepEqual(scan.findings.filter((finding) => finding.source === 'unclear_next_actions'), []);
+    assert.equal(payload.decision, 'scan_clean');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('auto-improver wake ignores blocked-to-ready receipt text', () => {
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
