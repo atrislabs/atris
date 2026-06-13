@@ -1565,11 +1565,14 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
     const logsDir = path.join(dir, 'atris', 'logs', '2026');
     fs.mkdirSync(logsDir, { recursive: true });
     const nestedNoise = '- candidate: Recurring log pattern: candidate: Recurring log pattern: "mission_status": "blocked"';
+    const strippedNoise = '- candidate: Next tick will stop until a human looks at the error.';
     const realPattern = 'ERROR team hub mission_status blocked waiting for owner';
     fs.writeFileSync(path.join(logsDir, '2026-06-09.md'), [
       '# test log',
       `- ${nestedNoise}`,
       `- ${nestedNoise}`,
+      strippedNoise,
+      strippedNoise,
       `- ${realPattern}`,
       `- ${realPattern}`,
       `- ${realPattern}`,
@@ -1585,6 +1588,12 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
 
     const receipt = JSON.parse(fs.readFileSync(payload.receipt_path, 'utf8'));
     assert.doesNotMatch(receipt.scan.prevented_fire_candidate.title, /candidate: Recurring log pattern: candidate:/);
+    const repeated = receipt.scan.log_signals.repeated_failures || [];
+    assert.deepEqual(
+      repeated.filter((failure) => /Next tick will stop until a human looks at the error/.test(failure.pattern)),
+      [],
+      'generated candidate fields must not feed the recurring-failure scanner',
+    );
   } finally {
     cleanupTempDir(dir);
   }
