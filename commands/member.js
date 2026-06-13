@@ -1994,6 +1994,11 @@ function repoRelative(root, filePath) {
   return path.relative(root, filePath).replace(/\\/g, '/');
 }
 
+function dateFromLogPath(relativePath) {
+  const match = String(relativePath || '').match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  return match ? match[1] : null;
+}
+
 function listFilesBounded(rootDir, { maxFiles = 220, extensions = ['.md', '.txt', '.json', '.jsonl'] } = {}) {
   const files = [];
   const stack = [rootDir];
@@ -2069,6 +2074,7 @@ function collectAutoImproverLogSignals(root) {
   for (const scanRoot of roots) {
     for (const filePath of listFilesBounded(scanRoot)) {
       const relative = repoRelative(root, filePath);
+      const logDate = dateFromLogPath(relative);
       if (relative.startsWith('atris/logs/archive/')) continue;
       const isRuntimeLog = relative.startsWith('atris/logs/')
         || /^atris\/team\/[^/]+\/logs\//.test(relative)
@@ -2095,6 +2101,7 @@ function collectAutoImproverLogSignals(root) {
           if (unclearActions.length < 5) {
             unclearActions.push({
               path: relative,
+              date: logDate,
               line: index + 1,
               text: compactSentence(line, 180),
             });
@@ -2107,7 +2114,8 @@ function collectAutoImproverLogSignals(root) {
         existing.count += 1;
         if (existing.evidence.length < 5) {
           existing.evidence.push({
-            path: repoRelative(root, filePath),
+            path: relative,
+            date: logDate,
             line: index + 1,
             text: compactSentence(line, 180),
           });
