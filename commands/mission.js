@@ -1400,6 +1400,33 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
   return lines.join('\n');
 }
 
+// Autonomous claude-runner ticks must target a LIVE model. Inheriting the CLI's
+// persisted selection is fragile: a *versioned* id (e.g. claude-fable-5) silently
+// dies when that version is retired, and every tick then errors as a generic
+// 'claude-error' with no clue why. Precedence: explicit mission.model →
+// ATRIS_CLAUDE_MODEL env → 'opus' alias. The CLI resolves aliases to the latest
+// live model, so an alias never retires out from under the loop.
+const DEFAULT_CLAUDE_RUNNER_MODEL = 'opus';
+function resolveClaudeRunnerModel(mission) {
+  const explicit = mission && mission.model != null ? String(mission.model).trim() : '';
+  if (explicit) return explicit;
+  const env = String(process.env.ATRIS_CLAUDE_MODEL || '').trim();
+  if (env) return env;
+  return DEFAULT_CLAUDE_RUNNER_MODEL;
+}
+
+// The claude CLI prints "...issue with the selected model (<id>). It may not exist
+// or you may not have access to it." when a model id is retired or inaccessible.
+// Detect it so the tick reason becomes the actionable 'model-unavailable' (+the id)
+// instead of a generic 'claude-error' that buries the root cause.
+function detectUnavailableModel(text) {
+  const s = String(text || '');
+  const m = s.match(/issue with the selected model \(([^)]+)\)/i);
+  if (m) return m[1].trim();
+  if (/selected model/i.test(s) && /may not (?:exist|have access)/i.test(s)) return 'unknown';
+  return null;
+}
+
 function spawnClaudeTick(mission, opts) {
   const { sessionMode, sessionId, cwd, signal, timeoutMs, prompt, model } = opts;
   return new Promise((resolve) => {
@@ -1725,7 +1752,7 @@ async function runMission(args) {
         const claudeResult = await spawnClaudeTick(mission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
-          model: mission.model || null,
+          model: resolveClaudeRunnerModel(mission),
         });
         result.claude = {
           ok: claudeResult.ok,
@@ -1751,7 +1778,10 @@ async function runMission(args) {
         if (claudeResult.authExpired) { pauseReason = 'auth-required'; break; }
 
         if (!claudeResult.ok) {
-          result = { ...result, status: 'errored', reason: claudeResult.timedOut ? 'claude-timeout' : 'claude-error' };
+          const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
+          let reason = claudeResult.timedOut ? 'claude-timeout' : 'claude-error';
+          if (deadModel) { reason = 'model-unavailable'; result.model_unavailable = deadModel; }
+          result = { ...result, status: 'errored', reason };
         } else {
           // Promote pending session id ONLY if claude confirmed the exact UUID we requested.
           // Mismatch is an invariant failure (we sent --session-id X, got Y) → pause, don't rotate.
@@ -2531,4 +2561,6 @@ module.exports = {
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,
   classifyPathsByLayer,
+  resolveClaudeRunnerModel,
+  detectUnavailableModel,
 };
