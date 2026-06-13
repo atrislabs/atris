@@ -4,6 +4,8 @@
 
 ---
 
+- **[2026-06-13] parallel-paths-drift** — fail — When the same behavior must run in two parallel code paths (mission run-loop tick at commands/mission.js:1828 vs manual tick at :2021), shipping it in one branch silently skips the other. CLI-243: only the run-loop classified receipt layers, so every manual 'atris mission tick' recorded no layer and the growth-curve metric undercounted. Rule: when you add logic to one of N sibling dispatch branches, grep the others for the same call and assume they need it too — verify with a detector that counts callsites, not just the definition.
+
 - **[2026-04-13] no-verify-field** — fail — [resolved] Task "Break down inbox idea: "demo"" has no explicit **Verify:** field in TODO.md. Tick halted — now only endgame tasks require verify, reactive tasks use npm test as default (fixed in v3.3.0).
 
 - **[2026-04-09] reward-checksum-layered-guards** — pass — Judge immutability enforced at two layers: git pre-commit hook blocks staging, runtime test + judge integrity guard catch bypass. Hook alone isn't enough (—no-verify can bypass it); test + runtime check are the failsafe. For critical constants, combine git-level + runtime verification.
