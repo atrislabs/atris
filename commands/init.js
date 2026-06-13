@@ -42,6 +42,26 @@ function detectProjectContext(projectRoot = process.cwd()) {
     }
   }
 
+  // Python frameworks may be declared in requirements.txt OR pyproject.toml
+  // (the modern standard). Read whichever exist so a pyproject-only Django/FastAPI
+  // project isn't mislabeled as plain "python".
+  const detectPythonFramework = () => {
+    try {
+      let text = '';
+      for (const f of ['requirements.txt', 'pyproject.toml']) {
+        const p = path.join(projectRoot, f);
+        if (fs.existsSync(p)) text += fs.readFileSync(p, 'utf8') + '\n';
+      }
+      const lower = text.toLowerCase();
+      if (lower.includes('django')) return 'django';
+      if (lower.includes('flask')) return 'flask';
+      if (lower.includes('fastapi')) return 'fastapi';
+      return 'python';
+    } catch (e) {
+      return 'python';
+    }
+  };
+
   // Check for framework indicators
   const frameworks = {
     'package.json': () => {
@@ -62,17 +82,8 @@ function detectProjectContext(projectRoot = process.cwd()) {
         return 'nodejs';
       }
     },
-    'requirements.txt': () => {
-      try {
-        const req = fs.readFileSync(path.join(projectRoot, 'requirements.txt'), 'utf8');
-        if (req.includes('django')) return 'django';
-        if (req.includes('flask')) return 'flask';
-        if (req.includes('fastapi')) return 'fastapi';
-        return 'python';
-      } catch (e) {
-        return 'python';
-      }
-    },
+    'requirements.txt': detectPythonFramework,
+    'pyproject.toml': detectPythonFramework,
     'Gemfile': () => {
       try {
         const gemfile = fs.readFileSync(path.join(projectRoot, 'Gemfile'), 'utf8');
