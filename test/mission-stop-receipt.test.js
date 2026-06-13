@@ -109,6 +109,29 @@ test('mission pause does not write a stop receipt', () => {
   }
 });
 
+test('mission tick clears stale pause metadata after verifier passes', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const mission = startMission(dir, 'pause recovery mission', ['--verify', PASSING_VERIFIER]);
+
+    const paused = runCli(['mission', 'stop', mission.id, '--pause', '--reason', 'rate-limit-exceeded-wall', '--json'], { cwd: dir });
+    assert.equal(paused.status, 0, paused.stderr || paused.stdout);
+    const pausedPayload = JSON.parse(paused.stdout);
+    assert.equal(pausedPayload.mission.status, 'paused');
+    assert.equal(pausedPayload.mission.stop_reason, 'rate-limit-exceeded-wall');
+    assert.ok(pausedPayload.mission.paused_at);
+
+    const tick = tickMission(dir, mission.id, ['--verify']);
+    assert.equal(tick.mission.status, 'ready');
+    assert.equal(tick.mission.stop_reason, null);
+    assert.equal(tick.mission.paused_at, null);
+    assert.ok(tick.mission.resumed_at, 'manual recovery tick should record a resumed timestamp');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission status surfaces the completion gate for completed missions', () => {
   const dir = makeTempDir();
   try {

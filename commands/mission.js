@@ -2105,9 +2105,13 @@ function tickMission(args) {
       status = 'blocked';
       nextAction = 'fix verifier failure or revise mission';
     }
+    const clearsPauseState = !['paused', 'stopped'].includes(status);
     const nextMission = {
       ...mission,
       status,
+      paused_at: clearsPauseState ? null : mission.paused_at || null,
+      stop_reason: clearsPauseState ? null : mission.stop_reason || null,
+      resumed_at: clearsPauseState && mission.status === 'paused' ? tickRecord.finished_at : mission.resumed_at || null,
       receipt_path: receiptPath,
       last_tick_at: tickRecord.finished_at,
       last_tick_status: tickRecord.status,
