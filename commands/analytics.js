@@ -136,9 +136,12 @@ function analyticsAtris() {
   // Daily breakdown
   console.log(`📅 Daily Breakdown`);
   const sortedDates = Object.keys(completionsByDay).sort().reverse();
+  // Cap the bar so a high-count day can't overflow the 63-char box; the exact
+  // count is still printed numerically after it. Mirrors `mission layers`.
+  const BAR_MAX = 40;
   sortedDates.forEach((date, index) => {
     const count = completionsByDay[date];
-    const bar = '█'.repeat(count);
+    const bar = '█'.repeat(Math.min(count, BAR_MAX));
     const label = index === 0 ? ' (today)' : '';
     console.log(`   ${date}: ${bar} ${count}${label}`);
   });
