@@ -71,7 +71,13 @@ function countMatches(filePath, pattern) {
 function countOpenTodoItems(filePath) {
   if (!fs.existsSync(filePath)) return 0;
   const content = fs.readFileSync(filePath, 'utf8');
-  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\s*$/m.test(content);
+  // \b (not \s*$) so emoji-decorated headings like "## In Progress 🔄" / "## Completed ✅"
+  // — the documented journal/TODO format — still register as rendered sections.
+  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\b/m.test(content);
+  const OPEN_SECTIONS = ['Backlog', 'In Progress'];
+  // Match the section by name prefix so a trailing emoji/decoration ("In Progress 🔄")
+  // counts the same as the bare "In Progress"; previously such items were silently dropped.
+  const isOpenSection = (name) => OPEN_SECTIONS.some((s) => name === s || String(name || '').startsWith(`${s} `));
   let section = null;
   let count = 0;
 
@@ -83,7 +89,7 @@ function countOpenTodoItems(filePath) {
     }
     const isTaskBullet = /^-\s+(?:\[[ ]\]\s+)?\*\*.+?\*\*/.test(line);
     if (!isTaskBullet) continue;
-    if (!hasRenderedSections || ['Backlog', 'In Progress'].includes(section)) {
+    if (!hasRenderedSections || isOpenSection(section)) {
       count += 1;
     }
   }
