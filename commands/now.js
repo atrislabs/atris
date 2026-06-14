@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { hasRenderedSections, isOpenSection } = require('../lib/todo-sections');
 
 const NOW_PATH = path.join('atris', 'now.md');
 const TASK_EPISODES_PATH = path.join('.atris', 'state', 'task_episodes.jsonl');
@@ -71,13 +72,8 @@ function countMatches(filePath, pattern) {
 function countOpenTodoItems(filePath) {
   if (!fs.existsSync(filePath)) return 0;
   const content = fs.readFileSync(filePath, 'utf8');
-  // \b (not \s*$) so emoji-decorated headings like "## In Progress 🔄" / "## Completed ✅"
-  // — the documented journal/TODO format — still register as rendered sections.
-  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\b/m.test(content);
-  const OPEN_SECTIONS = ['Backlog', 'In Progress'];
-  // Match the section by name prefix so a trailing emoji/decoration ("In Progress 🔄")
-  // counts the same as the bare "In Progress"; previously such items were silently dropped.
-  const isOpenSection = (name) => OPEN_SECTIONS.some((s) => name === s || String(name || '').startsWith(`${s} `));
+  // Emoji-decorated headings ("## In Progress 🔄") handled by lib/todo-sections.
+  const rendered = hasRenderedSections(content);
   let section = null;
   let count = 0;
 
@@ -89,7 +85,7 @@ function countOpenTodoItems(filePath) {
     }
     const isTaskBullet = /^-\s+(?:\[[ ]\]\s+)?\*\*.+?\*\*/.test(line);
     if (!isTaskBullet) continue;
-    if (!hasRenderedSections || isOpenSection(section)) {
+    if (!rendered || isOpenSection(section)) {
       count += 1;
     }
   }
