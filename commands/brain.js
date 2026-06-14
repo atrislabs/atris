@@ -297,7 +297,10 @@ function resolveStateRoot(root) {
 
 function countTodoItems(todoText) {
   const text = String(todoText || '');
-  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\s*$/m.test(text);
+  // \b (not \s*$) + prefix matching so emoji-decorated headings like "## In Progress 🔄"
+  // / "## Completed ✅" still register — matches countOpenTodoItems in commands/now.js (CLI-287).
+  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\b/m.test(text);
+  const sectionIs = (name, target) => name === target || String(name || '').startsWith(`${target} `);
   let section = null;
   let unchecked = 0;
   let checked = 0;
@@ -322,8 +325,8 @@ function countTodoItems(todoText) {
     if (!isTitled) continue;
 
     titled += 1;
-    if (hasRenderedSections && ['Backlog', 'In Progress'].includes(section)) renderedOpen += 1;
-    if (hasRenderedSections && section === 'Completed') renderedDone += 1;
+    if (hasRenderedSections && (sectionIs(section, 'Backlog') || sectionIs(section, 'In Progress'))) renderedOpen += 1;
+    if (hasRenderedSections && sectionIs(section, 'Completed')) renderedDone += 1;
   }
 
   return {
@@ -1574,4 +1577,5 @@ module.exports = {
   verifyBrain,
   parseContributionCard,
   escapeRegExp,
+  countTodoItems,
 };
