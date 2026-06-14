@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { refreshNowFile } = require('./now');
 const escapeRegExp = require('../lib/escape-regexp');
+const { hasRenderedSections, isOpenSection, isDoneSection } = require('../lib/todo-sections');
 
 const GENERATED_START = '<!-- ATRIS_BRAIN_COMPILE:START -->';
 const GENERATED_END = '<!-- ATRIS_BRAIN_COMPILE:END -->';
@@ -297,10 +298,8 @@ function resolveStateRoot(root) {
 
 function countTodoItems(todoText) {
   const text = String(todoText || '');
-  // \b (not \s*$) + prefix matching so emoji-decorated headings like "## In Progress 🔄"
-  // / "## Completed ✅" still register — matches countOpenTodoItems in commands/now.js (CLI-287).
-  const hasRenderedSections = /^##\s+(Backlog|In Progress|Blocked|Completed)\b/m.test(text);
-  const sectionIs = (name, target) => name === target || String(name || '').startsWith(`${target} `);
+  // Section classification (incl. emoji-decorated headings) lives in lib/todo-sections.
+  const rendered = hasRenderedSections(text);
   let section = null;
   let unchecked = 0;
   let checked = 0;
@@ -321,19 +320,19 @@ function countTodoItems(todoText) {
     const isTitled = /^\s*-\s+(?:\[[ xX]\]\s+)?\*\*[^*]+:?\*\*/.test(line);
     if (isUnchecked) unchecked += 1;
     if (isChecked) checked += 1;
-    if (!hasRenderedSections && (isUnchecked || (isTitled && !isChecked))) legacyOpen += 1;
+    if (!rendered && (isUnchecked || (isTitled && !isChecked))) legacyOpen += 1;
     if (!isTitled) continue;
 
     titled += 1;
-    if (hasRenderedSections && (sectionIs(section, 'Backlog') || sectionIs(section, 'In Progress'))) renderedOpen += 1;
-    if (hasRenderedSections && sectionIs(section, 'Completed')) renderedDone += 1;
+    if (rendered && isOpenSection(section)) renderedOpen += 1;
+    if (rendered && isDoneSection(section)) renderedDone += 1;
   }
 
   return {
-    open: hasRenderedSections ? renderedOpen : legacyOpen,
+    open: rendered ? renderedOpen : legacyOpen,
     checked,
     titled,
-    done: hasRenderedSections ? renderedDone : checked + (text.match(/~~|DONE|✅/g) || []).length,
+    done: rendered ? renderedDone : checked + (text.match(/~~|DONE|✅/g) || []).length,
   };
 }
 
