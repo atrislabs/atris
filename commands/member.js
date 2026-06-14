@@ -2851,14 +2851,17 @@ function appendProjectLog(title, fields = {}) {
 // --- YAML Frontmatter Parser (shared with skill.js) ---
 
 function parseFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  // \r?\n so a CRLF-line-ending MEMBER.md (Windows-edited) still parses; otherwise
+  // the delimiter never matched (and trailing \r broke the per-line key matchers),
+  // silently dropping the member's entire frontmatter — role, skills, permissions, tools.
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
 
   const yaml = match[1];
   const result = {};
   let currentKey = null;
 
-  for (const line of yaml.split('\n')) {
+  for (const line of yaml.split(/\r?\n/)) {
     const listMatch = line.match(/^\s+-\s+(.+)$/);
     if (listMatch && currentKey) {
       if (!Array.isArray(result[currentKey])) result[currentKey] = [];
