@@ -17,6 +17,13 @@
     "notes": "Process rule, not a code-detectable state. CLI-275..279 were 5 consecutive micro-tweaks to one scanner function (near-zero marginal value). At orient time, if the last 3 task titles share a prefix and the same file is in every recent diff, stop the cluster and diversify."
   },
 
+  "gate-saturation-regime": {
+    "scope": "atris-cli",
+    "applies_to": ["atris/team/auto-improver"],
+    "status": "observed",
+    "notes": "Whole-loop regime rule (broader than diminishing-returns-cluster). When the codebase has hardened (rising suite, surfaces verify clean) AND the human accept gate has saturated (verified work piling certified-but-unaccepted, growing ~1/tick), shipping another change is ~0 marginal value — the bottleneck is downstream. Priority: (1) depth/consolidation that deletes bug-classes over breadth of new pins; (2) surface the gate as THE bottleneck, prefer fewer higher-impact changes; (3) never manufacture pins to keep tick-count up. Proposals outpacing acceptance by ~30+ means throughput is not the constraint."
+  },
+
   "staleness-shell-injection-guard": {
     "scope": "atris-cli",
     "applies_to": ["commands/autopilot.js"],
