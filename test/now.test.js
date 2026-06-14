@@ -120,6 +120,33 @@ test('countOpenTodoItems ignores rendered blocked and completed task rows', () =
   }
 });
 
+test('countOpenTodoItems counts emoji-decorated headings (## In Progress 🔄, ## Completed ✅)', () => {
+  const dir = makeTempDir();
+  try {
+    const todoPath = path.join(dir, 'TODO.md');
+    fs.writeFileSync(todoPath, [
+      '# TODO.md',
+      '',
+      '## Backlog',
+      '- **[CLI-1]** Backlog task [brain]',
+      '',
+      '## In Progress 🔄',
+      '- **[CLI-2]** Active one [brain]',
+      '- **[CLI-3]** Active two [brain]',
+      '',
+      '## Completed ✅',
+      '- **[CLI-4]** Done task [brain]',
+      '',
+    ].join('\n'), 'utf8');
+
+    // Backlog(1) + In Progress(2) open; Completed excluded. Emoji suffixes must not
+    // make the section-name match fail (previously this returned 1).
+    assert.equal(countOpenTodoItems(todoPath), 3);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('countOpenWorkItems prefers task projection over rendered TODO fallbacks', () => {
   const dir = makeTempDir();
   try {
