@@ -77,7 +77,7 @@ test('buildRecapData buckets shipped, waiting, and in-progress with proof counts
   }
 });
 
-test('renderRecap speaks plain English with proof lines and no internal jargon', () => {
+test('renderRecap speaks plain English with checks and no internal jargon', () => {
   const dir = makeTempDir();
   try {
     seedDb(dir, [
@@ -85,12 +85,14 @@ test('renderRecap speaks plain English with proof lines and no internal jargon',
       { title: 'Speed up the dashboard', status: 'claimed', claimedBy: 'agent-a', proof: 'bench: 2.1s -> 0.4s' },
     ]);
     const out = renderRecap(buildRecapData(dir, { days: 7 }));
-    assert.match(out, /SHIPPED \(accepted by a human\)/);
+    assert.match(out, /Plain English: what changed, how it was checked, and what still needs you/);
+    assert.match(out, /DONE — 1/);
     assert.match(out, /Fix the login crash/);
-    assert.match(out, /proof: node --test/);
-    assert.match(out, /WAITING FOR YOUR SIGN-OFF/);
-    assert.match(out, /atris task reviews/);
-    for (const jargon of [/\blane\b/i, /certified/i, /projection/i, /\brung\b/i]) {
+    assert.match(out, /checked: tests passed/);
+    assert.match(out, /NEEDS YOU — 1/);
+    assert.match(out, /checked: measured improvement/);
+    assert.match(out, /next: run atris task reviews/);
+    for (const jargon of [/\bproof\b/i, /receipt/i, /sign-off/i, /\blane\b/i, /certified/i, /projection/i, /\brung\b/i, /AgentXP/i]) {
       assert.doesNotMatch(out, jargon);
     }
   } finally {
@@ -106,10 +108,44 @@ test('renderShare produces a paste-ready summary with highlights', () => {
       { title: 'Fix the login crash', status: 'done', proof: 'node --test test/login.test.js -> pass', doneAt: Date.now() - 1000 },
     ]);
     const out = renderShare(buildRecapData(dir, { days: 7 }));
-    assert.match(out, /What the AI team did on/);
-    assert.match(out, /1 change shipped, each verified before a human accepted it/);
+    assert.match(out, /What got done on/);
+    assert.match(out, /1 done and accepted/);
     assert.match(out, /Highlights:/);
-    assert.match(out, /backed by a receipt/);
+    assert.match(out, /tests passed/);
+    assert.match(out, /actual checks that ran/);
+    for (const jargon of [/\bproof\b/i, /receipt/i, /sign-off/i]) {
+      assert.doesNotMatch(out, jargon);
+    }
+  } finally {
+    resetDbEnv();
+    cleanup(dir);
+  }
+});
+
+test('renderRecap turns self-improvement receipts into a readable check summary', () => {
+  const dir = makeTempDir();
+  try {
+    seedDb(dir, [
+      {
+        title: 'Make self-improvement recap readable for nonengineers',
+        status: 'done',
+        proof: [
+          'Human approved XP after PR merge.',
+          'Receipt atris/runs/cli-293-self-improvement-proof.json verifies this self-improvement tick.',
+          'PR https://github.com/atrislabs/atris/pull/98 is MERGED.',
+          'Verified before merge: node --test test/task-proof.test.js test/policy-lessons.test.js passed 9/9;',
+          'node --check lib/task-proof.js && node --check lib/policy-lessons.js passed;',
+          'git diff --check clean.',
+        ].join(' '),
+        doneAt: Date.now() - 1000,
+      },
+    ]);
+    const out = renderRecap(buildRecapData(dir, { days: 7 }));
+    assert.match(out, /Make self-improvement recap readable for nonengineers/);
+    assert.match(out, /checked: merged, tests passed, code check passed, record saved, human accepted/);
+    for (const jargon of [/\bproof\b/i, /\bpolicy\b/i, /AgentXP/i, /merge commit/i, /receipt/i]) {
+      assert.doesNotMatch(out, jargon);
+    }
   } finally {
     resetDbEnv();
     cleanup(dir);
