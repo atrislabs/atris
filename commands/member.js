@@ -3694,12 +3694,23 @@ function memberGoalFromMission(name, ...args) {
   goal.mission_id = runtime.id || goal.mission_id || null;
   goal.mission_north_star = purpose.northStar;
   goal.history = Array.isArray(goal.history) ? goal.history : [];
-  goal.history.push({
+  const historyEntry = {
     at: stampIso(),
     event: existing ? 'goal_from_mission_reused' : 'goal_from_mission_created',
     mission_id: runtime.id || null,
     mission_status: runtime.status || null,
-  });
+  };
+  // Collapse repeated no-op reuse ticks (same mission state) instead of recording an identical entry
+  // every cadence — that grew one member's goals.json to 2,200+ duplicate entries / 13K lines. Real
+  // transitions (created, changed mission id/status) are still kept; only consecutive dupes are dropped.
+  const lastEntry = goal.history[goal.history.length - 1];
+  const isDuplicateReuse = existing && lastEntry
+    && lastEntry.event === historyEntry.event
+    && lastEntry.mission_id === historyEntry.mission_id
+    && lastEntry.mission_status === historyEntry.mission_status;
+  if (!isDuplicateReuse) goal.history.push(historyEntry);
+  // Backstop cap so no event type can grow the file without bound (bloated files self-heal on write).
+  if (goal.history.length > 50) goal.history = goal.history.slice(-50);
   if (!existing) state.goals.push(goal);
   state.goals = [goal, ...state.goals.filter((item) => item !== goal)];
   writeMemberGoals(paths, state);
