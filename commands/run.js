@@ -12,6 +12,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
+const { buildRunnerCommand } = require('../lib/runner-command');
 const { cleanAtris } = require('./clean');
 
 const pkg = require('../package.json');
@@ -113,7 +114,7 @@ function executePhase(phase, context, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
+    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
     // Strip CLAUDECODE env var to allow spawning from within a Claude Code session
     const env = { ...process.env };
     delete env.CLAUDECODE;

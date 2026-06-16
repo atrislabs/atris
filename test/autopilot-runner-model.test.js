@@ -1,0 +1,57 @@
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const { buildRunnerCommand } = require('../lib/runner-command');
+
+const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
+const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
+
+// --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
+// (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
+// model resolution and inherit the CLI's mutable selection — retired-model-kills-loop-silently)
+
+test('autopilot.js and run.js contain no raw claude -p spawn literal', () => {
+  const raw = /claude -p "\$\(cat/;
+  assert.doesNotMatch(AUTOPILOT_SRC, raw, 'autopilot.js still has a hardcoded claude -p literal');
+  assert.doesNotMatch(RUN_SRC, raw, 'run.js still has a hardcoded claude -p literal');
+});
+
+test('autopilot.js and run.js build their spawn command via buildRunnerCommand', () => {
+  assert.match(AUTOPILOT_SRC, /buildRunnerCommand\(/);
+  assert.match(RUN_SRC, /buildRunnerCommand\(/);
+  assert.match(AUTOPILOT_SRC, /require\('\.\.\/lib\/runner-command'\)/);
+  assert.match(RUN_SRC, /require\('\.\.\/lib\/runner-command'\)/);
+});
+
+// --- T3: every spawn injects a resolved --model alias by default ---
+
+test('default heartbeat spawn carries --model opus (alias, not a versioned id)', () => {
+  const prev = process.env.ATRIS_CLAUDE_MODEL;
+  delete process.env.ATRIS_CLAUDE_MODEL;
+  try {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
+    assert.match(cmd, /--model opus\b/);
+    assert.doesNotMatch(cmd, /--model claude-/);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
+    else process.env.ATRIS_CLAUDE_MODEL = prev;
+  }
+});
+
+// --- T4: a future claude -p change is a one-line config switch (env) ---
+
+test('ATRIS_CLAUDE_MODEL flips the spawned model without touching code', () => {
+  const prev = process.env.ATRIS_CLAUDE_MODEL;
+  process.env.ATRIS_CLAUDE_MODEL = 'sonnet';
+  try {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
+    assert.match(cmd, /--model sonnet\b/);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
+    else process.env.ATRIS_CLAUDE_MODEL = prev;
+  }
+});

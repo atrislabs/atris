@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
+const { resolveClaudeRunnerModel } = require('../lib/runner-command');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -1416,20 +1417,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
   return lines.join('\n');
 }
 
-// Autonomous claude-runner ticks must target a LIVE model. Inheriting the CLI's
-// persisted selection is fragile: a *versioned* id (e.g. claude-fable-5) silently
-// dies when that version is retired, and every tick then errors as a generic
-// 'claude-error' with no clue why. Precedence: explicit mission.model →
-// ATRIS_CLAUDE_MODEL env → 'opus' alias. The CLI resolves aliases to the latest
-// live model, so an alias never retires out from under the loop.
-const DEFAULT_CLAUDE_RUNNER_MODEL = 'opus';
-function resolveClaudeRunnerModel(mission) {
-  const explicit = mission && mission.model != null ? String(mission.model).trim() : '';
-  if (explicit) return explicit;
-  const env = String(process.env.ATRIS_CLAUDE_MODEL || '').trim();
-  if (env) return env;
-  return DEFAULT_CLAUDE_RUNNER_MODEL;
-}
+// resolveClaudeRunnerModel + the model-resolution rationale now live in
+// lib/runner-command.js so missions, autopilot, and run share one resolver
+// (imported at the top, re-exported below for test/mission-model-resolution.test.js).
 
 // The claude CLI prints "...issue with the selected model (<id>). It may not exist
 // or you may not have access to it." when a model id is retired or inaccessible.
