@@ -4124,7 +4124,14 @@ function cmdAcceptGroup(args) {
     const isVerified = verifiedIds.has(task.id);
     const proof = String(task.review?.proof || task.metadata?.latest_agent_proof || '').trim()
       || `Accepted via group spot-check (${groupLabel}); human ${actor} verified ${verifiedIds.size}/${group.length}.`;
-    const done = taskDb.doneTask(db, { id: task.id, status: 'done', actor, allowReview: true });
+    const done = taskDb.doneTask(db, {
+      id: task.id,
+      status: 'done',
+      actor,
+      allowReview: true,
+      action: 'accepted',
+      proof,
+    });
     if (!done.updated) { accepted.push({ id: task.id, ok: false, reason: 'not_review' }); continue; }
     taskDb.reviewTask(db, {
       id: task.id,
@@ -6022,7 +6029,13 @@ function cmdDone(args) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task done', proof);
     else if (proof) requireMeaningfulTaskProof('atris task done', proof);
   }
-  const result = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
+  const result = taskDb.doneTask(db, {
+    id: taskId,
+    status: failed ? 'failed' : 'done',
+    actor,
+    action: failed ? 'failed' : 'done',
+    proof,
+  });
   if (result.updated) {
     const review = hasReview ? taskDb.reviewTask(db, {
       id: taskId,
@@ -6097,7 +6110,13 @@ function cmdFinish(args) {
     if (!failed || hasReview) requireMeaningfulTaskProof('atris task finish', proof);
     else if (proof) requireMeaningfulTaskProof('atris task finish', proof);
   }
-  const done = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done', actor });
+  const done = taskDb.doneTask(db, {
+    id: taskId,
+    status: failed ? 'failed' : 'done',
+    actor,
+    action: failed ? 'failed' : 'finished',
+    proof,
+  });
   if (!done.updated) {
     const detail = `finish failed: ${taskId} not in open|claimed`;
     if (wantsJson(args)) {
@@ -6298,7 +6317,14 @@ function cmdAccept(args) {
     console.error('atris task accept: reward must be a positive number');
     process.exit(2);
   }
-  const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor, allowReview: true });
+  const done = taskDb.doneTask(db, {
+    id: taskId,
+    status: 'done',
+    actor,
+    allowReview: true,
+    action: 'accepted',
+    proof,
+  });
   if (!done.updated) {
     console.error(`accept failed: ${taskId} not open|claimed|review`);
     process.exit(1);
@@ -6360,7 +6386,14 @@ function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
 }
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '' }) {
-  const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor, allowReview: true });
+  const done = taskDb.doneTask(db, {
+    id: taskId,
+    status: 'done',
+    actor,
+    allowReview: true,
+    action: 'accepted',
+    proof,
+  });
   if (!done.updated) {
     return { ok: false, reason: 'not_open_claimed_or_review' };
   }
@@ -7088,22 +7121,54 @@ function taskBoardHtml() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atris Task Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: dark; --bg:#101113; --panel:#17191d; --line:#292d34; --text:#f0f2f5; --muted:#9299a6; --accent:#68d391; --warn:#f6c177; --bad:#f38ba8; }
+    /* aesthetic: machine-room telemetry — warm-tinted dark, mono data, calm signals (no neon) */
+    :root {
+      color-scheme: dark;
+      --bg: oklch(18% 0.012 160);
+      --panel: oklch(22% 0.014 160);
+      --panel-2: oklch(25% 0.016 160);
+      --line: oklch(32% 0.015 160);
+      --text: oklch(93% 0.012 150);
+      --muted: oklch(70% 0.018 160);
+      --accent: oklch(74% 0.115 158);
+      --warn: oklch(81% 0.11 80);
+      --bad: oklch(69% 0.14 25);
+      --info: oklch(75% 0.10 240);
+      --violet: oklch(73% 0.10 300);
+      --sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     * { box-sizing: border-box; }
-    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
-    header { height:56px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; border-bottom:1px solid var(--line); background:#121418; }
-    h1 { font-size:15px; margin:0; font-weight:650; letter-spacing:0; }
+    body {
+      margin:0; color:var(--text);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+      background:
+        radial-gradient(1100px 520px at 82% -12%, oklch(30% 0.04 160 / 0.55), transparent 62%),
+        repeating-linear-gradient(0deg, oklch(32% 0.015 160 / 0.16) 0 1px, transparent 1px 34px),
+        var(--bg);
+      background-attachment: fixed;
+    }
+    header { height:60px; display:flex; align-items:center; justify-content:space-between; padding:0 22px; border-bottom:1px solid var(--line); background:linear-gradient(180deg, var(--panel-2), var(--panel)); }
+    h1 { font-size:17px; margin:0; font-weight:700; letter-spacing:-0.01em; }
     .sub { color:var(--muted); font-size:12px; }
-    main { display:grid; grid-template-columns: 320px 1fr; height:calc(100vh - 56px); }
-    aside { border-right:1px solid var(--line); padding:14px; overflow:auto; background:#121418; }
-    section { min-width:0; overflow:auto; padding:14px; }
-    label { display:block; color:var(--muted); font-size:11px; margin:10px 0 5px; }
-    input, textarea, select { width:100%; border:1px solid var(--line); background:#0d0f12; color:var(--text); border-radius:7px; padding:9px 10px; font:inherit; font-size:13px; }
-    textarea { min-height:82px; resize:vertical; }
-    button { border:1px solid var(--line); background:#20242a; color:var(--text); border-radius:7px; padding:8px 10px; font:inherit; font-size:12px; cursor:pointer; }
-    button:hover { border-color:#3b414b; background:#252a32; }
-    .primary { background:#214b35; border-color:#2f684a; }
+    main { display:grid; grid-template-columns: 320px 1fr; height:calc(100vh - 60px); }
+    aside { border-right:1px solid var(--line); padding:16px; overflow:auto; background:var(--panel); }
+    section { min-width:0; overflow:auto; padding:16px; }
+    label { display:block; color:var(--muted); font-size:12px; margin:10px 0 5px; }
+    input, textarea, select { width:100%; border:1px solid var(--line); background:oklch(15% 0.012 160); color:var(--text); border-radius:8px; padding:9px 11px; font:inherit; font-size:13px; transition:border-color .18s cubic-bezier(0.25,1,0.5,1); }
+    input:focus, textarea:focus, select:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+    textarea { min-height:82px; resize:vertical; font-family:var(--mono); font-size:12px; }
+    button { border:1px solid var(--line); background:var(--panel-2); color:var(--text); border-radius:8px; padding:8px 12px; font:inherit; font-size:12px; cursor:pointer; transition:background .18s cubic-bezier(0.25,1,0.5,1), border-color .18s; }
+    button:hover { border-color:var(--muted); background:oklch(29% 0.018 160); }
+    button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    button:active { transform:translateY(1px); }
+    .primary { background:oklch(38% 0.07 158); border-color:oklch(48% 0.09 158); color:oklch(96% 0.02 158); }
+    .primary:hover { background:oklch(43% 0.085 158); border-color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(var(--board-columns, 6), minmax(160px, 1fr)); gap:12px; align-items:start; }
     .overview { display:grid; grid-template-columns: minmax(260px, 1.4fr) minmax(260px, 1fr); gap:12px; margin-bottom:12px; }
     .goalbox, .chainbox { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px; min-height:88px; }
@@ -7112,35 +7177,62 @@ function taskBoardHtml() {
     .chainitem { display:grid; grid-template-columns:72px 1fr; gap:8px; font-size:12px; line-height:1.3; margin:5px 0; color:var(--muted); }
     .chainitem strong { color:var(--text); font-weight:600; }
     .streams { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-bottom:12px; }
-    .stream { background:#12161b; border:1px solid var(--line); border-radius:8px; padding:10px; min-height:126px; }
-    .stream h2 { margin:0 0 8px; font-size:12px; color:var(--text); line-height:1.25; }
-    .streambar { display:flex; height:7px; overflow:hidden; border-radius:999px; background:#0d0f12; border:1px solid var(--line); margin:8px 0; }
+    .stream { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px; min-height:126px; }
+    .stream h2 { margin:0 0 8px; font-size:12px; color:var(--text); line-height:1.25; font-weight:500; }
+    .streambar { display:flex; height:7px; overflow:hidden; border-radius:999px; background:oklch(15% 0.012 160); border:1px solid var(--line); margin:8px 0; }
     .streambar span { display:block; min-width:2px; }
-    .seg-open { background:#667085; }
-    .seg-doing { background:#68d391; }
-    .seg-review { background:#f6c177; }
-    .seg-blocked { background:#f38ba8; }
+    .seg-open { background:var(--muted); }
+    .seg-doing { background:var(--accent); }
+    .seg-review { background:var(--warn); }
+    .seg-blocked { background:var(--bad); }
     .streamtask { display:grid; grid-template-columns:64px 1fr; gap:8px; color:var(--muted); font-size:11px; line-height:1.25; margin-top:6px; }
     .streamtask strong { color:var(--text); font-weight:550; }
     .col { background:var(--panel); border:1px solid var(--line); border-radius:8px; min-height:160px; overflow:hidden; }
     .col h2 { margin:0; padding:10px 11px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
     .cards { padding:8px; display:flex; flex-direction:column; gap:8px; }
-    .card { text-align:left; width:100%; background:#111419; border:1px solid #252a31; border-radius:8px; padding:9px; }
-    .card.active { border-color:#4c7a61; box-shadow:0 0 0 1px rgba(104,211,145,.2); }
+    .card { text-align:left; width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:9px; transition:transform .18s cubic-bezier(0.25,1,0.5,1), border-color .18s, background .18s; }
+    .card:hover { transform:scale(1.02); border-color:var(--muted); background:oklch(28% 0.018 160); }
+    .card.active { border-color:var(--accent); box-shadow:0 0 0 1px oklch(74% 0.115 158 / 0.3); }
     .title { font-size:13px; line-height:1.25; }
-    .meta { margin-top:6px; color:var(--muted); font-size:11px; display:flex; gap:6px; flex-wrap:wrap; }
+    .meta { margin-top:6px; color:var(--muted); font-size:11px; display:flex; gap:6px; flex-wrap:wrap; font-family:var(--mono); }
     .pill { border:1px solid var(--line); border-radius:999px; padding:1px 6px; }
     .why { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.25; }
-    .fact { margin:10px 0; background:#0d0f12; border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; line-height:1.35; }
+    .fact { margin:10px 0; background:oklch(15% 0.012 160); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; line-height:1.35; }
     .fact b { color:var(--muted); font-size:11px; display:block; margin-bottom:3px; }
     .room { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
     .room h3 { margin:0 0 4px; font-size:14px; }
     .thread { margin:10px 0; display:flex; flex-direction:column; gap:7px; }
-    .msg { background:#0d0f12; border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; }
+    .msg { background:oklch(15% 0.012 160); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; }
     .msg .who { color:var(--muted); font-size:11px; margin-bottom:3px; }
     .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
     .full { grid-column:1 / -1; }
     .empty { color:var(--muted); font-size:12px; padding:10px; }
+    /* heartbeat strip */
+    .beat { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); font-family:var(--mono); }
+    .beat .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
+    .beat.alive .dot { background:var(--accent); box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0.6); animation:beat 2s cubic-bezier(0.25,1,0.5,1) infinite; }
+    .beat.stale .dot { background:var(--bad); }
+    .beat b { color:var(--accent); font-weight:600; }
+    .beat .warn { color:var(--warn); }
+    @keyframes beat { 0%{box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0.5)} 70%{box-shadow:0 0 0 8px oklch(74% 0.115 158 / 0)} 100%{box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0)} }
+    @media (prefers-reduced-motion: reduce) { .beat.alive .dot { animation:none; } *, *::before, *::after { transition:none !important; } }
+    /* activity feed */
+    .activity { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:0; margin-bottom:12px; max-height:46vh; overflow:auto; }
+    .activity h2 { margin:0; position:sticky; top:0; background:var(--panel); padding:11px; font-size:12px; color:var(--muted); font-weight:650; border-bottom:1px solid var(--line); z-index:1; }
+    .ev { display:grid; grid-template-columns:52px 64px 1fr auto; gap:10px; align-items:baseline; padding:7px 11px; border-bottom:1px solid oklch(28% 0.013 160); font-size:12px; line-height:1.3; font-family:var(--mono); transition:background .15s ease; }
+    .ev:last-child { border-bottom:0; }
+    .ev:hover { background:oklch(25% 0.016 160); }
+    .ev .t { color:var(--muted); font-variant-numeric:tabular-nums; font-size:11px; }
+    .ev .src { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 7px; color:var(--muted); text-align:center; }
+    .ev .src.pulse { color:var(--accent); border-color:oklch(74% 0.115 158 / 0.45); }
+    .ev .src.reward { color:var(--warn); border-color:oklch(81% 0.11 80 / 0.45); }
+    .ev .src.xp { color:var(--info); border-color:oklch(75% 0.10 240 / 0.45); }
+    .ev .src.mission { color:var(--violet); border-color:oklch(73% 0.10 300 / 0.45); }
+    .ev .msg { color:var(--text); min-width:0; }
+    .ev .msg .d { color:var(--muted); font-size:11px; }
+    .ev.bad .msg { color:var(--bad); }
+    .ev .rw { font-variant-numeric:tabular-nums; font-size:11px; color:var(--muted); }
+    .ev .rw.pos { color:var(--accent); } .ev .rw.neg { color:var(--bad); }
     @media (max-width: 980px) { main { grid-template-columns:1fr; height:auto; } aside { border-right:0; border-bottom:1px solid var(--line); } .grid, .overview { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -7148,7 +7240,7 @@ function taskBoardHtml() {
   <header>
     <div>
       <h1>Atris Task Factory</h1>
-      <div class="sub" data-smoke="hello-from-ui">hello from UI</div>
+      <div class="beat" id="heartbeat"><span class="dot"></span><span>heartbeat: loading…</span></div>
     </div>
     <button id="refresh">Refresh</button>
   </header>
@@ -7167,6 +7259,7 @@ function taskBoardHtml() {
     </aside>
     <section>
       <div class="overview" id="overview"></div>
+      <div class="activity" id="activity"><h2>Live Stream</h2><div class="empty">waiting for the agent…</div></div>
       <div class="streams" id="streams"></div>
       <div class="grid" id="board"></div>
     </section>
@@ -7212,10 +7305,61 @@ function taskBoardHtml() {
       return 'done';
     }
 
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    function fmtTime(ms) {
+      try { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+      catch (e) { return ''; }
+    }
+
+    function renderHeartbeat(hb) {
+      const el = $('heartbeat');
+      el.className = 'beat ' + (hb.state || 'idle');
+      if (hb.state === 'stale') {
+        el.innerHTML = '<span class="dot"></span><span class="warn">stale</span><span>· ' + esc(hb.stale_reason || '') + ' · ' + (hb.total_ticks || 0) + ' ticks</span>';
+        return;
+      }
+      if (!hb.total_ticks) {
+        el.innerHTML = '<span class="dot"></span><span>idle · no ticks yet · run: atris pulse tick</span>';
+        return;
+      }
+      const age = hb.last_tick_age_min == null ? '' : (hb.last_tick_age_min === 0 ? 'just now' : hb.last_tick_age_min + 'm ago');
+      el.innerHTML = '<span class="dot"></span><b>alive</b>'
+        + '<span>· last tick ' + age + '</span>'
+        + (hb.last_what ? '<span>· ' + esc(hb.last_what) + '</span>' : '')
+        + '<span>· ' + hb.total_ticks + ' ticks, reward ' + (hb.reward_sum || 0) + '</span>';
+    }
+
+    function renderActivity(events) {
+      const el = $('activity');
+      if (!events.length) { el.innerHTML = '<h2>Live Stream</h2><div class="empty">no activity yet — fire a tick: atris pulse tick</div>'; return; }
+      let html = '<h2>Live Stream · ' + events.length + ' events</h2>';
+      for (const e of events) {
+        const rwCls = e.reward == null ? '' : (e.reward > 0 ? 'pos' : (e.reward < 0 ? 'neg' : ''));
+        const rw = e.reward == null ? '' : (e.reward > 0 ? '+' + e.reward : '' + e.reward);
+        html += '<div class="ev ' + (e.status === 'bad' ? 'bad' : '') + '">'
+          + '<span class="t">' + (e.ms ? fmtTime(e.ms) : '') + '</span>'
+          + '<span class="src ' + esc(e.source) + '">' + esc(e.source) + '</span>'
+          + '<span class="msg">' + esc(e.title) + (e.detail ? ' <span class="d">' + esc(e.detail) + '</span>' : '') + '</span>'
+          + '<span class="rw ' + rwCls + '">' + rw + '</span>'
+          + '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    async function loadStream() {
+      const data = await api('/api/stream');
+      renderHeartbeat(data.heartbeat || {});
+      renderActivity(data.events || []);
+    }
+
     async function load() {
       const data = await api('/api/tasks');
       state = data.projection;
       render();
+      loadStream().catch(() => {});
     }
 
     function render() {
@@ -7429,6 +7573,24 @@ async function handleTaskApi(req, res, taskDb, db) {
   if (req.method === 'GET' && url.pathname === '/api/tasks') {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     return sendJson(res, 200, { ok: true, projection_path: outPath, projection });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/stream') {
+    // Time-ordered feed of what the agent actually did + heartbeat liveness.
+    const { projection } = writeDefaultProjection(taskDb, db);
+    const root = projection.workspace_root || process.cwd();
+    const stateDir = path.join(root, '.atris', 'state');
+    const activity = require('../lib/activity-stream');
+    const { readJsonl } = require('../lib/pulse');
+    const rd = (f) => readJsonl(path.join(stateDir, f));
+    const pulseReceipts = rd('pulse_agi_loop_receipts.jsonl');
+    const events = activity.buildActivityStream({
+      pulseReceipts,
+      scorecards: rd('scorecards.jsonl'),
+      taskEpisodes: rd('task_episodes.jsonl').slice(-200),
+      xpReceipts: rd('career_xp_receipts.jsonl').slice(-200),
+      missionEvents: rd('mission_events.jsonl').slice(-200),
+    }, { limit: 60 });
+    return sendJson(res, 200, { ok: true, heartbeat: activity.buildHeartbeat(pulseReceipts), events });
   }
   if (req.method === 'GET' && url.pathname === '/api/tasks/capabilities') {
     return sendJson(res, 200, {
@@ -7746,7 +7908,13 @@ async function handleTaskApi(req, res, taskDb, db) {
     const shouldReview = Boolean(body.proof || body.lesson || body.next || body.reward !== undefined);
     const proofIssue = meaningfulTaskProofIssue(proof, { required: !failed || shouldReview });
     if (proofIssue) return sendProofIssue(res, proof, proofIssue);
-    const done = taskDb.doneTask(db, { id: taskId, status: failed ? 'failed' : 'done' });
+    const done = taskDb.doneTask(db, {
+      id: taskId,
+      status: failed ? 'failed' : 'done',
+      actor: String(body.actor || DEFAULT_OWNER),
+      action: failed ? 'failed' : 'finished',
+      proof,
+    });
     if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_or_claimed' });
     let episode = null;
     let nextCreated = null;
@@ -7816,7 +7984,14 @@ async function handleTaskApi(req, res, taskDb, db) {
     if (hasExplicitNext && !nextTask.trim()) clearedFields.push('next_task');
     const parsedReward = parseAcceptReward(body.reward);
     if (!parsedReward.ok) return sendJson(res, 400, { ok: false, reason: 'invalid_reward', detail: 'reward must be a positive number' });
-    const done = taskDb.doneTask(db, { id: taskId, status: 'done', actor: String(body.actor || DEFAULT_OWNER), allowReview: true });
+    const done = taskDb.doneTask(db, {
+      id: taskId,
+      status: 'done',
+      actor: String(body.actor || DEFAULT_OWNER),
+      allowReview: true,
+      action: 'accepted',
+      proof,
+    });
     if (!done.updated) return sendJson(res, 409, { ok: false, reason: 'not_open_claimed_or_review' });
     const reviewed = taskDb.reviewTask(db, {
       id: taskId,

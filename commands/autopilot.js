@@ -12,6 +12,7 @@ const { execSync, execFileSync, spawnSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
+const { buildRunnerCommand } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 const {
   buildScorecardData,
@@ -450,7 +451,7 @@ function executePhaseDetailed(phase, context, options = {}) {
 
   try {
     const cmd = options.cmdOverride
-      || `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Write,Edit,Glob,Grep"`;
+      || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -1199,7 +1200,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   const tmpFile = path.join(cwd, '.autopilot-plan-review.tmp');
   fs.writeFileSync(tmpFile, prompt);
   try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Grep,Glob"`;
+    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Grep,Glob' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -2896,7 +2897,7 @@ Reply with the JSON array and nothing else.`;
 
   let output = '';
   try {
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')"`;
+    const cmd = buildRunnerCommand({ promptFile: tmpFile });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     output = execPhaseCommandSync(cmd, {
@@ -3586,7 +3587,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   try {
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const cmd = `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Bash,Read,Glob,Grep"`;
+    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Glob,Grep' });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',

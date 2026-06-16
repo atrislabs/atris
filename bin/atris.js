@@ -36,6 +36,12 @@ const {
 
 // State detection for smart default
 const { detectWorkspaceState, loadContext } = require('../lib/state-detection');
+const {
+  saveContextProfile,
+  createStarterTask,
+  shouldGatherContext,
+  renderPrompt: renderContextGathererPrompt,
+} = require('../lib/context-gatherer');
 
 // Journal & config utilities (canonical modules)
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
@@ -320,6 +326,7 @@ function showHelp() {
   console.log('  do         - Execute tasks');
   console.log('  review     - Validate work (tests, safety checks, docs)');
   console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
+  console.log('  pulse      - Durable overnight self-improvement heartbeat (OS cron, install/status/tick)');
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
@@ -774,7 +781,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
-                       'ingest', 'query', 'lint', 'loop', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile'];
 
@@ -935,28 +942,42 @@ async function interactiveEntry(userInput) {
   console.log('└─────────────────────────────────────────────────────────────┘');
 
   const mapStatus = context.mapStatus || (context.mapExists ? 'ready' : 'missing');
-  if (mapStatus !== 'ready') {
-    console.log('');
-    console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ BOOTSTRAP REQUIRED                                          │');
-    console.log('└─────────────────────────────────────────────────────────────┘');
-    console.log('');
-    console.log('🗺️  Atris needs a real `atris/MAP.md` (navigation index with file:line refs).');
-    console.log('');
-    console.log('Copy/paste into your coding agent:');
-    console.log('─────────────────────────────────────────────────────────────');
-    console.log('Read `atris/atris.md`, then generate a complete `atris/MAP.md` for this repo.');
-    console.log('Rules: include file:line refs, keep it grep-friendly, do NOT change code.');
-    if (userInput) {
+  if (shouldGatherContext({
+    root: workspaceDir,
+    userInput,
+    mapStatus,
+    liveMissionsCount,
+    wipCount,
+    backlogCount,
+    inboxCount,
+  })) {
+    const answer = String(userInput || '').trim() || await askContextGatherer(workspaceDir);
+    if (!answer.trim()) {
       console.log('');
-      console.log('After MAP is generated, run:');
-      console.log(`- atris ${userInput}`);
-    } else {
-      console.log('');
-      console.log('Then rerun: atris');
+      console.log('No problem. When you are ready, answer in normal words.');
+      console.log('Example: "help me organize college applications" or "help me build a small website".');
+      return;
     }
-    console.log('─────────────────────────────────────────────────────────────');
+    const profile = saveContextProfile(workspaceDir, answer, { source: userInput ? 'hot_start' : 'cold_start' });
+    const starter = createStarterTask(workspaceDir, answer);
     console.log('');
+    console.log('Got it. I saved your first direction.');
+    console.log(`Focus: ${profile.first_answer}`);
+    if (starter && starter.display_id) {
+      console.log(`First task: ${starter.display_id} — ${starter.title}`);
+    } else if (starter && starter.title) {
+      console.log(`First task: ${starter.title}`);
+    }
+    if (mapStatus !== 'ready') {
+      printMapBootstrap({ userInput: answer, prefix: 'Next setup step' });
+      return;
+    }
+    await planCmd(answer);
+    return;
+  }
+
+  if (mapStatus !== 'ready') {
+    printMapBootstrap({ userInput });
     return;
   }
 
@@ -1045,6 +1066,41 @@ async function interactiveEntry(userInput) {
   }
 
   await planCmd(request);
+}
+
+async function askContextGatherer(workspaceDir) {
+  console.log(renderContextGathererPrompt({ projectName: path.basename(workspaceDir) }));
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  const answer = await new Promise(r => rl.question('> ', r));
+  rl.close();
+  return answer;
+}
+
+function printMapBootstrap({ userInput, prefix = 'Bootstrap required' } = {}) {
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log(`│ ${String(prefix).toUpperCase().padEnd(60)}│`);
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log('Atris needs a real `atris/MAP.md` so future steps are grounded in the workspace.');
+  console.log('');
+  console.log('For an agent:');
+  console.log('─────────────────────────────────────────────────────────────');
+  console.log('Read `atris/atris.md`, then generate a complete `atris/MAP.md` for this repo.');
+  console.log('Rules: include file:line refs, keep it grep-friendly, do NOT change code.');
+  if (userInput) {
+    console.log('');
+    console.log('After MAP is generated, continue with:');
+    console.log(`- ${userInput}`);
+  } else {
+    console.log('');
+    console.log('Then rerun: atris');
+  }
+  console.log('─────────────────────────────────────────────────────────────');
+  console.log('');
 }
 
 // ASCII Welcome Visualization
@@ -1198,6 +1254,11 @@ if (command === 'init') {
 } else if (command === 'mission') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
     .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'pulse') {
+  // Pulse: durable overnight self-improvement heartbeat (OS cron) for atris-cli.
+  Promise.resolve(require('../commands/pulse').pulseCommand(process.argv.slice(3)))
+    .then((res) => process.exit(res && res.ok === false ? 1 : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'probe') {
   // Chat-lane probe (TRR-22): one real /atris2/turn over the full tool relay.
