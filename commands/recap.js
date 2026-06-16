@@ -73,7 +73,15 @@ function plainCheck(proof, width = 70) {
 }
 
 function shortTitle(title, width = 64) {
-  const flat = String(title || '').replace(/\s+/g, ' ').trim();
+  const flat = String(title || '')
+    .replace(/\bproof\b/gi, 'checks')
+    .replace(/\breceipts?\b/gi, 'records')
+    .replace(/\bsign[- ]off\b/gi, 'approval')
+    .replace(/\bpolicy\b/gi, 'rules')
+    .replace(/\bAgentXP\b/g, 'reward')
+    .replace(/\bcertified\b/gi, 'checked')
+    .replace(/\s+/g, ' ')
+    .trim();
   return flat.length <= width ? flat : `${flat.slice(0, width - 1)}…`;
 }
 

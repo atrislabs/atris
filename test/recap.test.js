@@ -127,7 +127,7 @@ test('renderRecap turns self-improvement receipts into a readable check summary'
   try {
     seedDb(dir, [
       {
-        title: 'Make self-improvement recap readable for nonengineers',
+        title: 'Make self-improvement proof readable for nonengineers',
         status: 'done',
         proof: [
           'Human approved XP after PR merge.',
@@ -141,7 +141,7 @@ test('renderRecap turns self-improvement receipts into a readable check summary'
       },
     ]);
     const out = renderRecap(buildRecapData(dir, { days: 7 }));
-    assert.match(out, /Make self-improvement recap readable for nonengineers/);
+    assert.match(out, /Make self-improvement checks readable for nonengineers/);
     assert.match(out, /checked: merged, tests passed, code check passed, record saved, human accepted/);
     for (const jargon of [/\bproof\b/i, /\bpolicy\b/i, /AgentXP/i, /merge commit/i, /receipt/i]) {
       assert.doesNotMatch(out, jargon);
