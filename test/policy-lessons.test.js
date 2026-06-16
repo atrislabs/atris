@@ -137,6 +137,18 @@ test('policyHintsForProof fires only on missing evidence and never without mined
     // grep/diff-style verifiers are runnable commands too (CLI-217 false positive).
     const grepStyle = policyHintsForProof("verify: grep -q 'last_verified' page.md passed; receipt atris/runs/run.json", mined, dir);
     assert.deepEqual(grepStyle, []);
+    const grepExtendedStyle = policyHintsForProof("grep -qE 'pass|ok' atris/runs/run.json passed; receipt atris/runs/run.json", mined, dir);
+    assert.deepEqual(grepExtendedStyle, []);
+    const rgStyle = policyHintsForProof("rg -n 'VERIFY_COMMAND_PATTERN' lib/policy-lessons.js passed; receipt atris/runs/run.json", mined, dir);
+    assert.deepEqual(rgStyle, []);
+    const rgQuietStyle = policyHintsForProof("rg -q 'VERIFY_COMMAND_PATTERN' lib/policy-lessons.js passed; receipt atris/runs/run.json", mined, dir);
+    assert.deepEqual(rgQuietStyle, []);
+    const diffExitStyle = policyHintsForProof('git diff --exit-code -- lib/policy-lessons.js passed; receipt atris/runs/run.json', mined, dir);
+    assert.deepEqual(diffExitStyle, []);
+    const diffBriefStyle = policyHintsForProof('diff --brief expected.txt actual.txt passed; receipt atris/runs/run.json', mined, dir);
+    assert.deepEqual(diffBriefStyle, []);
+    const cmpStyle = policyHintsForProof('cmp -s expected.txt actual.txt passed; receipt atris/runs/run.json', mined, dir);
+    assert.deepEqual(cmpStyle, []);
 
     // The hint mirrors the lane gate: receipts must exist and pass on disk.
     const ghost = policyHintsForProof('npm test green; receipt atris/runs/ghost.json', mined, dir);
