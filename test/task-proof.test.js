@@ -42,6 +42,12 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
     'npm run test passed',
     'node --test test/commands.test.js passed',
     'typecheck passed and git diff --check passed',
+    "grep -qE 'pass|ok' atris/runs/run.json passed",
+    "rg -n 'taskProofState' lib/task-proof.js passed",
+    "rg -q 'taskProofState' lib/task-proof.js passed",
+    'git diff --exit-code -- lib/task-proof.js passed',
+    'diff --brief expected.txt actual.txt passed',
+    'cmp -s expected.txt actual.txt passed',
     'Receipt saved at atris/runs/proof.json',
     'Human approved: reviewed by keshavrao',
   ]) {
