@@ -722,6 +722,32 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   }
 });
 
+test('member goal-from-mission does not append a duplicate history entry on every reuse tick', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['mission', 'start', 'Make Missions change the world', '--owner', 'mission-lead', '--json'], { cwd: dir }).status, 0);
+
+    const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
+    const historyLen = () => JSON.parse(fs.readFileSync(goalsPath, 'utf8')).goals[0].history.length;
+    const afterCreate = historyLen();
+
+    // The cadence loop reuses the same goal every tick. Before the fix each tick appended an identical
+    // no-op `goal_from_mission_reused` entry, growing goals.json without bound (2,200+ entries live).
+    for (let i = 0; i < 30; i += 1) {
+      assert.equal(runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir }).status, 0);
+    }
+    const afterReuse = historyLen();
+    assert.ok(afterReuse <= afterCreate + 1, `reuse ticks must not append duplicate history (was ${afterCreate}, now ${afterReuse} after 30 identical reuses)`);
+    assert.ok(afterReuse <= 50, `history must stay capped, got ${afterReuse}`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('member goal-from-mission stops when active mission is blocked', () => {
   const dir = makeTempDir();
   try {
