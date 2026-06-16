@@ -34,6 +34,7 @@ function appsUsageLines() {
     '  owner <slug> [--json]        Show owner view: launch, usage, learning, next actions',
     '  status [--json]              Show local app health',
     '  queue                        Show app improvement queue',
+    '  apply [--target s] [--llm]   Fix lowest-quality app; keep only if quality improves',
     '  rate <slug> <up|down> [note] Record output feedback',
     '  smoke                        Run fresh-checkout smoke test',
     '  doctor [--strict]            Audit pack health, smoke, and source cleanliness',
@@ -302,6 +303,16 @@ async function appsCommand(subcommand, ...rawArgs) {
   }
   if (subcommand === 'status') runPackScript(packRoot, 'scripts/app_status.py', json ? ['--json'] : []);
   if (subcommand === 'queue') runPackScript(packRoot, 'scripts/app_improvement_queue.py', []);
+  if (subcommand === 'apply') {
+    const target = popOption(args, '--target', null);
+    const command = ['--workspace', workspace];
+    if (target) command.push('--target', target);
+    else command.push('--auto');
+    if (args.includes('--llm')) command.push('--llm');       // else app_apply defaults to dry-run
+    if (args.includes('--dry-run')) command.push('--dry-run');
+    if (json) command.push('--json');
+    runPackScript(packRoot, 'scripts/app_apply.py', command);
+  }
   if (subcommand === 'smoke') runPackScript(packRoot, 'scripts/install_smoke.py', []);
   if (subcommand === 'doctor') runPackScript(packRoot, 'scripts/install_smoke.py', []);
   if (subcommand === 'handoff') {
