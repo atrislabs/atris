@@ -1,0 +1,9 @@
+timestamp	trial	status	old_score	new_score	proposal	description
+2026-06-16T11:36:07.185554+00:00	1	reverted	0.2799	0.0857	gut_spine.py	applied gut kernel: lean but spine deleted (should revert)
+2026-06-16T11:36:07.218826+00:00	2	kept	0.2799	1.0000	spine_kernel.py	applied spine kernel: compressed, spine preserved + precedence added
+2026-06-16T19:22:27.971854+00:00	1	reverted	0.2799	0.0857	gut_spine.py	applied gut kernel: lean but spine deleted (should revert)
+2026-06-16T19:22:28.009301+00:00	2	reverted	0.2799	0.2000	keyword_stuffer.py	applied keyword stuffer: all markers, no substance (should revert post-gate)
+2026-06-16T19:22:28.046915+00:00	3	kept	0.2799	1.0000	spine_kernel.py	applied spine kernel: compressed, spine preserved + precedence added
+2026-06-16T19:30:06.515808+00:00	1	reverted	0.2799	0.0857	gut_spine.py	applied gut kernel: lean but spine deleted (should revert)
+2026-06-16T19:30:06.552278+00:00	2	reverted	0.2799	0.2000	keyword_stuffer.py	applied keyword stuffer: all markers, no substance (should revert post-gate)
+2026-06-16T19:30:06.589341+00:00	3	kept	0.2799	1.0000	spine_kernel.py	applied spine kernel: compressed, spine preserved + precedence added

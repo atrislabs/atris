@@ -12115,13 +12115,22 @@ test('task serve exposes a local task factory API', async () => {
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
-	    assert.match(html, /data-smoke="hello-from-ui">hello from UI/);
+	    // heartbeat strip + live activity stream (replaced the old smoke placeholder)
+	    assert.match(html, /class="beat" id="heartbeat"/);
+	    assert.match(html, /class="activity" id="activity"/);
+	    assert.match(html, /async function loadStream\(\)/);
 	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/ready/);
 	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/accept/);
 	    assert.match(html, /if \(lesson\) payload\.lesson = lesson/);
 	    assert.match(html, /if \(nextTask\) payload\.next = nextTask/);
 	    assert.match(html, /task\.review && task\.review\.next_task/);
 	    assert.doesNotMatch(html, /\/api\/tasks\/' \+ task\.id \+ '\/finish/);
+
+    // the activity stream endpoint returns a heartbeat + an events array
+    const stream = await fetch(`${base}/api/stream`).then(r => r.json());
+    assert.equal(stream.ok, true);
+    assert.ok(stream.heartbeat && typeof stream.heartbeat.state === 'string');
+    assert.ok(Array.isArray(stream.events));
 
     const created = await fetch(`${base}/api/tasks`, {
       method: 'POST',
@@ -13612,6 +13621,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['clean', '--help'],
     ['verify', '--help'],
     ['loop', '--help'],
+    ['pulse', '--help'],
     ['serve', '--help'],
     ['agent', '--help'],
     ['update', '--help'],
