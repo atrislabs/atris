@@ -502,15 +502,24 @@ test('default entry auto-advances to plan when inbox has items', () => {
   }
 });
 
-test('default entry prompts for MAP bootstrap when MAP.md is placeholder', () => {
+test('default entry gathers first-contact context before MAP bootstrap', () => {
   const dir = makeTempDir();
   try {
-    runCli(['init'], { cwd: dir, input: '\n' });
+    const env = {
+      ATRIS_TASKS_DB: path.join(dir, 'tasks.db'),
+      NODE_NO_WARNINGS: '1',
+    };
+    runCli(['init'], { cwd: dir, input: '\n', env });
 
-    const res = runCli([], { cwd: dir });
+    const res = runCli([], { cwd: dir, input: 'help me organize college applications\n', env });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /BOOTSTRAP/i);
+    assert.match(res.stdout, /Context gatherer/);
+    assert.match(res.stdout, /Got it\. I saved your first direction/);
+    assert.match(res.stdout, /First task:/);
+    assert.match(res.stdout, /NEXT SETUP STEP/i);
     assert.match(res.stdout, /MAP\.md/i);
+    assert.match(fs.readFileSync(path.join(dir, '.atris', 'state', 'context_profile.json'), 'utf8'), /college applications/);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), /First useful step: help me organize college applications/);
   } finally {
     cleanupTempDir(dir);
   }

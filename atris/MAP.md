@@ -28,7 +28,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 
 ```bash
 # Core CLI logic
-rg "async function interactiveEntry|async function atrisDevEntry" bin/atris.js    # Main entry points: cold-start dispatcher + legacy natural-language mode
+rg "async function interactiveEntry|async function atrisDevEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
 rg "modelForMode|buildPayload|formatUsage|async function chat|postTurn" ax test/cli-smoke.test.js  # ax Atris2 local coding-agent CLI: Fast/Pro modes, SSE streaming, workspace_path, chat history, doctor/help
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
@@ -73,7 +73,7 @@ rg "taskReviewEvidenceCommands|taskReviewVerificationFocus|commands_to_verify" c
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|missionIsRunnable|codex_goal.json|runMission|tickMission|watchMission|missionHeartbeatLines" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js test/mission-heartbeat.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters, runnable mission selection that skips human-gated missions, and terminal next-action normalization
 rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features/codex-goal-replacement commands/mission.js test/mission-status.test.js  # Contract for Atris mission -> visible Codex /goal replacement
-rg "addTask|claimTask|doneTask|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store
+rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store + completion autolog to project/member logs
 rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
 rg "gmailCommand|integrationsStatus|showIntegrationsHelp|integrations --help" bin/atris.js commands/integrations.js test/commands.test.js # Integration commands + non-mutating status help
 rg "memberCommand|memberGoal|memberTick|collectWakeEvidence|collectProblemDiscoveryEvidence|configuredProblemSignalSources|seedAutonomousProblemGoal|scoredWakeCandidates|proposalForGoal|memberStatus|memberBlock|memberReview|memberPush|memberPull" commands/member.js  # Team member identity, autonomous problem discovery, configurable external signal roots/files, adaptive wake evidence/scoring, optional Atris2 proposal generation, status/block/review, and cloud sync
@@ -792,6 +792,26 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Search:** `rg "runAtris" commands/run.js`
 
+### Feature: Pulse Heartbeat (`atris pulse`)
+
+**Purpose:** The durable overnight self-improvement heartbeat for atris-cli itself. Unlike `/loop` (Claude Code CronCreate — dies when Claude Code closes) this installs an OS cron that fires regardless, runs the existing mission engine, verifies, and writes a pulse receipt + reward scorecard so the loop compounds without a human turning the crank.
+
+- **Pure core:** `lib/pulse.js` — receipts (`buildPulseReceipt`), reward gating (`scoreTick`, `shouldWriteScorecard`), ghost/stale detection (`findOrphanStarts`, `detectStaleTick`), summary (`summarizePulse`), cron-script generation (`buildTickScript`, `buildCrontabLine`), IO (`appendPulseReceipt`, `nextTickIndex`, `acquireLock`)
+- **Command:** `commands/pulse.js` (`pulseCommand`) — subcommands `tick|status|install|uninstall|run`
+  - `tickCommand` — lock → 'started' receipt → `runMissionEngine` (`atris mission run --due --max-ticks 1 --complete-on-pass`) → `runVerify` → 'finished' receipt + gated scorecard → release lock
+  - `statusCommand` — liveness, reward sum, ghost-tick detection, cron-installed check
+  - `installCommand` / `uninstallCommand` — write `~/.atris/overnight/atris-cli-self-improve/tick.sh` + manage the `ATRIS_PULSE_SELF_IMPROVE` crontab line (idempotent, preserves other entries, 7-day auto-expiry deadline)
+- **Channels written:**
+  - `.atris/state/pulse_agi_loop_receipts.jsonl` (schema `atris.pulse_tick.v1`) — revives the **Pulse AGI** loop-health channel `commands/brain.js:43` watches
+  - `.atris/state/scorecards.jsonl` (schema `atris.improve_tick.v1`, `source:'pulse'`) — revives the reward signal `lib/policy-lessons.js` mines
+- **Routing:** `bin/atris.js` (`command === 'pulse'` dispatch) + `knownCommands` array + `showHelp`
+- **Tests:** `test/pulse.test.js` (23 tests — scoring, ghost detection, lock, cron-script generation)
+- **Cron template lineage:** modeled on the proven `~/.atris/overnight/commander-obelisk-swarlo/tick.sh` (deadline self-removal + lock + run + proof), but all real logic lives in JS (`atris pulse tick`), not duplicated shell
+- **Flags:** `pulse install [--cadence "11,40 * * * *"] [--days 7] [--verify "npm test"] [--model opus]`; `pulse tick [--no-claude] [--no-verify] [--verify "<cmd>"]`; `pulse run [--max-ticks N]`
+- **Value:** Closes the open self-improvement loop — durable ignition (was: `/loop` dies with the session), real executor (was: auto-improver stuck dry-run), reward feedback (was: scorecards flatlined). Does NOT auto-push; work lands in review behind the human gate.
+
+**Search:** `rg "pulseCommand" commands/pulse.js` · `rg "buildTickScript" lib/pulse.js`
+
 ### Feature: Agent Activation Commands
 
 **Purpose:** Direct activation of navigator/executor/validator modes
@@ -1052,6 +1072,18 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Value:** Adaptive context loading
 
 **Search:** `rg "detectWorkspaceState|loadContext" lib/state-detection.js`
+
+---
+
+### Feature: First-Contact Context Gatherer
+
+**Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
+
+- **Entry point:** `bin/atris.js:869` (`interactiveEntry`)
+- **Helper:** `lib/context-gatherer.js`
+- **State:** `.atris/state/context_profile.json`
+- **Regression:** `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
+- **Search:** `rg "shouldGatherContext|saveContextProfile|createStarterTask|Context gatherer" bin/atris.js lib/context-gatherer.js test`
 
 ---
 

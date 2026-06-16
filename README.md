@@ -186,9 +186,14 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris review` | Validate work and capture learnings |
 | `atris run` | Auto-chain `plan -> do -> review` |
 | `atris autopilot` | Guided loop with approvals |
+| `atris pulse` | Install or run the durable overnight heartbeat |
 | `atris log` | Add inbox items to today's journal |
+| `atris now` | Show the current operating truth |
+| `atris radar` | Show live agents joined with tasks, missions, and worktrees |
+| `atris ctop` | Show process-first live agent CPU and memory |
 | `atris status` | Show active work and completions |
 | `atris task` | Durable local task state and the agent work loop |
+| `atris mission` | Durable goal, owner, verifier, tick receipts, and loop state |
 | `atris play` | Enter the AgentXP player loop for one proof-backed mission |
 | `atris gm` | Enter AgentXP General Manager mode for player missions and review queues |
 | `atris xp` | Show the local AgentXP card and sync eligible proof to the hosted leaderboard |
@@ -200,6 +205,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris receipt` | Save evidence from an agent run |
 | `atris experiments` | Run small experiments and compare results |
 | `atris computer card` | Show or write the local owner/computer card |
+| `atris release` | Draft or publish a version bump, tag, GitHub release, and launch post |
 
 ## Built-In Systems
 
@@ -211,7 +217,9 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris activate` loads the current wiki status so the next session starts with project memory, not just tasks
 - `atris member` keeps team-member identity and learning local-first: `MEMBER.md` is the role contract, `goals.json` is the machine-readable goal/experiment state, `goals.md` is the human readout, and `logs/YYYY-MM-DD.md` records what happened. Use `atris member goal`, `tick`, `status`, `block`, and `review --value 1..5` to test whether a member is making useful progress or needs the operator/orchestrator.
 - `atris codex-goal` is the guarded bridge for native Codex `/goal`: `status` reads `~/.codex/state_5.sqlite`, while `reset --thread <id> --confirm-complete-goal-reset` backs up the DB, dumps the exact completed `thread_goals` row, deletes only that completed row, and writes a receipt. The next native goal must still be created by the live Codex thread; Atris Mission/member goals remain the durable loop state.
-- `atris task` keeps durable local task state and append-only events for agents; `atris/TODO.md` is just a regenerated readable board. Run the loop with `atris task new`, `delegate "..." --to <owner>`, `next`, `say`, and `ready <id> --proof "..."`; human approval is `atris task accept <id>` (moves to Done, awards Career XP) or `revise <id> --note "..."`. Add `--json` for headless agents, `atris task serve` for the local board, and `atris task show <ref>` / `events --all` for the full ledger. Commands accept semantic refs (`OBL-18`), full IDs, or any unique prefix. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo the live claim layer.
+- `atris task` keeps durable local task state and append-only events for agents; `atris/TODO.md` is just a regenerated readable board. Run the loop with `atris task new`, `delegate "..." --to <owner>`, `next`, `say`, and `ready <id> --proof "..."`; human approval is `atris task accept <id>` (moves to Done, awards Career XP) or `revise <id> --note "..."`. Final task transitions also append the general daily log and, when a real `atris/team/<member>/MEMBER.md` matches the task owner, that member's daily log. Add `--json` for headless agents, `atris task serve` for the local board, and `atris task show <ref>` / `events --all` for the full ledger. Commands accept semantic refs (`OBL-18`), full IDs, or any unique prefix. In cloud business workspaces, Supabase `tasks` is the source of truth and Swarlo the live claim layer.
+- `atris mission` is the durable autonomy layer: start with an owner, verifier, runner, and stop condition; record bounded work with `mission tick`; close with `mission complete` only after proof. Runners include `manual`, `claude`, `atris2`, and `codex_goal`.
+- `atris pulse` is the OS-cron heartbeat for overnight self-improvement. Use `atris pulse status`, `tick`, `run`, `install --cadence "<cron>" --days 7 --verify "npm test" --model opus`, and `uninstall`.
 - `atris experiments` runs small test packs in `atris/experiments/`
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
@@ -279,13 +287,24 @@ atris skill link [--all]
 
 For Codex, copy any skill folder into `~/.codex/skills/`.
 
-## Recent changes
+## Before a New Version
 
-- **Staleness gate** — tasks tagged `[unverified]` are skipped at the moment of use, not pruned eagerly. Three-state model: actionable / unverified / deleted.
-- **Lesson gate** — `isLessonResolved` checks whether a lesson already shipped before proposing new work from it. Prevents the loop from re-solving solved problems.
-- **`atris release`** — new command: tags the version, bumps package.json, creates a GitHub release, and drafts a `/launch` post in one shot.
-- **Shell injection fix** — `checkStaleness` switched from `execSync` string interpolation to `execFileSync` with args arrays. Markdown-derived content (task titles, inbox items) no longer reaches a shell.
-- **Codex hardening** — `atris activate` and `atris` entry point detect Codex environments and write `AGENTS.md` so Codex sessions start with workspace context.
+Run the release-facing checks before bumping:
+
+```bash
+node bin/atris.js --help
+node bin/atris.js pulse --help
+node bin/atris.js release --help
+node --test
+```
+
+Then dry-run the release:
+
+```bash
+atris release --dry-run
+```
+
+`atris release` drafts or publishes from local git history. `--dry-run` prints the planned bump without committing, tagging, or pushing.
 
 ## Update
 
