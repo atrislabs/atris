@@ -53,6 +53,25 @@ function shortProof(proof, width = 70) {
   return flat.length <= width ? flat : `${flat.slice(0, width - 1)}…`;
 }
 
+function plainCheck(proof, width = 70) {
+  if (!proof) return null;
+  const flat = proof.replace(/\s+/g, ' ').trim();
+  const checks = [];
+  const add = label => { if (!checks.includes(label)) checks.push(label); };
+
+  if (/\b(PR|pull request)\b.*\b(merged|MERGED)\b|\bmerged\b.*\b(PR|pull request)\b/i.test(flat)) add('merged');
+  if (/\b(node --test|npm test|npm run test|pytest|go test|cargo test|test\/|tests?)\b/i.test(flat)
+    && /\b(pass|passed|green|ok|0 failures?|9\/9|12\/12)\b/i.test(flat)) add('tests passed');
+  if (/\b(node --check|git diff --check|git diff --exit-code|git diff --quiet|rg\b|grep\b|diff --brief|cmp -s)\b/i.test(flat)) add('code check passed');
+  if (/\b(bench|benchmark|measured|latency|speed)\b/i.test(flat)) add('measured improvement');
+  if (/\brepeated agent review\b|\bagent review\b/i.test(flat)) add('reviewed repeatedly');
+  if (/\batris\/runs\/[^\s]+\.json\b|receipt\b/i.test(flat)) add('record saved');
+  if (/\b(human approved|accepted by|accepted_at|reward)\b/i.test(flat)) add('human accepted');
+
+  if (checks.length) return checks.join(', ');
+  return shortProof(proof, width);
+}
+
 function shortTitle(title, width = 64) {
   const flat = String(title || '').replace(/\s+/g, ' ').trim();
   return flat.length <= width ? flat : `${flat.slice(0, width - 1)}…`;
@@ -103,85 +122,88 @@ function renderRecap(data) {
       `RECAP — ${data.workspace}`,
       '',
       'No task history yet.',
-      'Run "atris init", then let an agent work — every finished task lands here with proof.',
+      'Run "atris init", then let Atris do one small job. Finished work will show up here with the checks that passed.',
     ].join('\n');
   }
   const lines = [];
   lines.push(`RECAP — ${data.workspace} — last ${data.days} day${data.days === 1 ? '' : 's'}`);
   lines.push('');
+  lines.push('Plain English: what changed, how it was checked, and what still needs you.');
   const headline = [];
-  if (data.shipped.length) headline.push(`${data.shipped.length} change${data.shipped.length === 1 ? '' : 's'} shipped`);
-  if (data.waiting.length) headline.push(`${data.waiting.length} finished and waiting for your sign-off`);
-  if (data.inProgress.length) headline.push(`${data.inProgress.length} in progress`);
-  lines.push(headline.length ? `Your AI team: ${headline.join(' · ')}.` : 'Quiet window — no movement in this period.');
-  lines.push('Every finished line below carries proof: the commands run and their results.');
+  if (data.shipped.length) headline.push(`${data.shipped.length} done`);
+  if (data.waiting.length) headline.push(`${data.waiting.length} needs you`);
+  if (data.inProgress.length) headline.push(`${data.inProgress.length} still working`);
+  lines.push(headline.length ? headline.join(' · ') : 'Quiet window — no movement in this period.');
 
   if (data.shipped.length) {
     lines.push('');
-    lines.push(`SHIPPED (accepted by a human) — ${data.shipped.length}`);
+    lines.push(`DONE — ${data.shipped.length}`);
     for (const t of data.shipped.slice(0, 12)) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
-      if (t.proof) lines.push(`          proof: ${shortProof(t.proof)}`);
+      const check = plainCheck(t.proof);
+      if (check) lines.push(`          checked: ${check}`);
     }
-    if (data.shipped.length > 12) lines.push(`  … and ${data.shipped.length - 12} more, all with proof on file`);
+    if (data.shipped.length > 12) lines.push(`  … and ${data.shipped.length - 12} more`);
   }
 
   if (data.waiting.length) {
     lines.push('');
-    lines.push(`FINISHED, WAITING FOR YOUR SIGN-OFF — ${data.waiting.length}`);
+    lines.push(`NEEDS YOU — ${data.waiting.length}`);
     for (const t of data.waiting.slice(0, 10)) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}`);
+      const check = plainCheck(t.proof);
+      if (check) lines.push(`          checked: ${check}`);
     }
     if (data.waiting.length > 10) lines.push(`  … and ${data.waiting.length - 10} more`);
-    lines.push('  approve or send back: atris task reviews');
+    lines.push('  next: run atris task reviews');
   }
 
   if (data.inProgress.length) {
     lines.push('');
-    lines.push(`IN PROGRESS — ${data.inProgress.length}`);
+    lines.push(`STILL WORKING — ${data.inProgress.length}`);
     for (const t of data.inProgress) {
       lines.push(`  ${t.id}  ${shortTitle(t.title)}${t.owner ? `  @${t.owner}` : ''}`);
     }
   }
 
   lines.push('');
-  lines.push(`Proof attached: ${data.proof_attached}/${data.proof_total} finished items.`);
-  lines.push('Paste-ready summary for Slack or email: atris recap --share');
+  lines.push(`Checked: ${data.proof_attached}/${data.proof_total} finished items.`);
+  lines.push('Share this: atris recap --share');
   return lines.join('\n');
 }
 
 function renderShare(data) {
   if (data.empty) return `Nothing to share yet on ${data.workspace} — no finished tasks on record.`;
   const lines = [];
-  lines.push(`What the AI team did on ${data.workspace} in the last ${data.days} day${data.days === 1 ? '' : 's'}:`);
+  lines.push(`What got done on ${data.workspace} in the last ${data.days} day${data.days === 1 ? '' : 's'}:`);
   lines.push('');
-  if (data.shipped.length) lines.push(`- ${data.shipped.length} change${data.shipped.length === 1 ? '' : 's'} shipped, each verified before a human accepted it`);
-  if (data.waiting.length) lines.push(`- ${data.waiting.length} more finished with proof attached, waiting for human sign-off`);
-  if (data.inProgress.length) lines.push(`- ${data.inProgress.length} task${data.inProgress.length === 1 ? '' : 's'} in progress`);
+  if (data.shipped.length) lines.push(`- ${data.shipped.length} done and accepted`);
+  if (data.waiting.length) lines.push(`- ${data.waiting.length} ready for you to approve or send back`);
+  if (data.inProgress.length) lines.push(`- ${data.inProgress.length} still being worked on`);
   const highlights = [...data.shipped, ...data.waiting].filter(t => t.proof).slice(0, 5);
   if (highlights.length) {
     lines.push('');
     lines.push('Highlights:');
     for (const t of highlights) {
-      lines.push(`- ${shortTitle(t.title, 80)} (proof: ${shortProof(t.proof, 60)})`);
+      lines.push(`- ${shortTitle(t.title, 80)} (${plainCheck(t.proof, 60)})`);
     }
   }
   lines.push('');
-  lines.push('Every item above is backed by a receipt — the exact commands run and their results — not a status update someone typed.');
+  lines.push('The finished items are backed by actual checks that ran, not a status update someone typed.');
   return lines.join('\n');
 }
 
 function printRecapHelp() {
   console.log(`
-atris recap - what your AI team actually did, in plain English
+atris recap - what got done, in plain English
 
-  atris recap              Last 7 days: shipped, waiting on you, in progress
+  atris recap              Last 7 days: done, needs you, still working
   atris recap --days 30    Widen the window
   atris recap --share      Paste-ready summary for Slack, email, or a customer
   atris recap --json       Structured output for agents and dashboards
 
-Reads the workspace task records and their proof. No jargon, no guesses:
-if it is listed as finished, the receipt is on file.
+Looks at Atris' saved work and explains it without internal jargon:
+what changed, how it was checked, and what still needs you.
 `);
 }
 
