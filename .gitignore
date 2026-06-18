@@ -67,6 +67,8 @@ atris/features/*
 !atris/features/forge-loop/**
 !atris/features/codex-goal-replacement/
 !atris/features/codex-goal-replacement/**
+!atris/features/spaceship/
+!atris/features/spaceship/**
 # Legacy location (deprecated)
 docs/features/
 
