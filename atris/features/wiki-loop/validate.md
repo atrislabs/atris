@@ -1,20 +1,20 @@
 ---
-last_compiled: 2026-06-10
+last_compiled: 2026-06-18
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)
   - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
   - lib/wiki.js:620-704 (suggested sources, STATUS, log)
-  - bin/atris.js:686-700 (showLoopHelp)
-  - bin/atris.js:1739-1742 (top-level loop route)
-  - test/commands.test.js:13891 (loop help coverage)
-  - test/commands.test.js:15443-15499 (loop stale/suggest coverage)
+  - bin/atris.js:702-715 (showLoopHelp)
+  - bin/atris.js:1835-1843 (top-level loop route)
+  - test/commands.test.js:14430 (loop help coverage)
+  - test/commands.test.js:15982-16051 (loop stale/suggest coverage)
 ---
 
 # Wiki Upkeep Loop — Validation
 
 > **Status:** shipped local upkeep command
-> **Validated:** 2026-05-10
+> **Validated:** 2026-06-18
 > **Exit condition:** `atris loop` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
 
 ## Checks
