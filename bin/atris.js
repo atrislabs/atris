@@ -783,7 +783,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analyti
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -1810,6 +1810,11 @@ if (command === 'init') {
 } else if (command === 'fleet') {
   const args = process.argv.slice(3);
   require('../commands/fleet').fleet(args)
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'spaceship') {
+  const args = process.argv.slice(3);
+  require('../commands/spaceship').spaceship(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'code-review' || command === 'cr') {
