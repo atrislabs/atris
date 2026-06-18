@@ -15,7 +15,13 @@
 
 ## In Progress
 
-(Empty)
+- **T1:** Resync `atris/features/brainstorm/validate.md` — every file:line ref drifted and the body contradicts the Notes [execute]
+  - **Claimed by:** Executor at 2026-06-18T08:17:38.616Z
+  - Drift: `brainstormAtris` is at `commands/brainstorm.js:21` (page says `:12`); the `"ready"`/`"plan"` exit line is at `commands/brainstorm.js:306` (page says `:297`, used in two checks); help text is at `bin/atris.js:357` (page says `:348`); brainstorm dispatch is at `bin/atris.js:1546` (page body says `:1455`, Notes say `:944-945` — both wrong and mutually contradictory).
+  - **Files:** `atris/features/brainstorm/validate.md` (edit); sources read to confirm — `commands/brainstorm.js`, `bin/atris.js`, `atris/features/brainstorm/idea.md`
+  - **Exit:** validate.md cites `commands/brainstorm.js:21`, `commands/brainstorm.js:306`, `bin/atris.js:357`, `bin/atris.js:1546`; the stale `:12` / `:297` / `:944-945` / `:1455` references are gone; the Notes line no longer contradicts the body; `last_compiled` bumped to `2026-06-18` and `bin/atris.js` added to the `sources:` frontmatter.
+  - **Verify:** test "$(grep -n 'async function brainstormAtris' commands/brainstorm.js | head -1 | cut -d: -f1)" = "21" && test "$(grep -n 'exit brainstorm' commands/brainstorm.js | head -1 | cut -d: -f1)" = "306" && test "$(grep -n 'brainstorm - Explore ideas conversationally' bin/atris.js | head -1 | cut -d: -f1)" = "357" && test "$(grep -n "command === 'brainstorm'" bin/atris.js | head -1 | cut -d: -f1)" = "1546" && grep -q 'commands/brainstorm.js:21' atris/features/brainstorm/validate.md && grep -q 'commands/brainstorm.js:306' atris/features/brainstorm/validate.md && grep -q 'bin/atris.js:357' atris/features/brainstorm/validate.md && grep -q 'bin/atris.js:1546' atris/features/brainstorm/validate.md && grep -q 'last_compiled: 2026-06-18' atris/features/brainstorm/validate.md && ! grep -q 'brainstorm.js:12' atris/features/brainstorm/validate.md && ! grep -q 'brainstorm.js:297' atris/features/brainstorm/validate.md && ! grep -q '944-945' atris/features/brainstorm/validate.md && ! grep -q 'atris.js:1455' atris/features/brainstorm/validate.md
+  - **Rollback:** git checkout -- atris/features/brainstorm/validate.md before commit, or git revert HEAD --no-edit after commit
 
 ## Review
 
