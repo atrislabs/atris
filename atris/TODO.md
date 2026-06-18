@@ -11,18 +11,8 @@
 
 ## Backlog
 
-- **T1a:** Create `lib/runner-command.js` — move `DEFAULT_CLAUDE_RUNNER_MODEL = 'opus'` (alias) + `resolveClaudeRunnerModel({model})` verbatim from commands/mission.js:1425-1432 (precedence: explicit model > ATRIS_CLAUDE_MODEL env > 'opus' alias), add `buildRunnerCommand({promptFile, allowedTools, model})` returning the shell-string form with `--model <resolved>` always injected; export all three. New `test/runner-command.test.js` asserts default resolves to the `opus` alias and never a versioned `claude-*` id (regression guard for retired-model-kills-loop-silently), env/explicit precedence, and that buildRunnerCommand always emits `--model`. Exit: lib + test exist, suite green. [execute]
-  **Verify:** node --test test/runner-command.test.js
-- **T1b:** Rewire `commands/mission.js` to consume the lib — delete the inline `DEFAULT_CLAUDE_RUNNER_MODEL` + `resolveClaudeRunnerModel` (1425-1432), import from `../lib/runner-command.js`, and KEEP `resolveClaudeRunnerModel` in `module.exports` (commands/mission.js:2631) so test/mission-model-resolution.test.js:6 stays green. No behavior change to spawnClaudeTick. Exit: mission.js holds no copy of the resolver; both test files pass. [execute]
-  **Verify:** node --test test/mission-model-resolution.test.js test/runner-command.test.js
-- **T2:** Replace the 5 hardcoded `claude -p "$(cat ...)"` literals in commands/autopilot.js (453, 1202, 2899, 3589) + commands/run.js (116) with `buildRunnerCommand(...)` — eliminate the raw string invocations [endgame]
-  **Verify:** test -z "$(grep -nE 'claude -p \"\$\(cat' commands/autopilot.js commands/run.js)"
-- **T3:** Every autopilot/run tick now spawns with a resolved `--model` alias, closing the latent retired-model-kills-loop-silently instance in the autopilot path (these spawns currently inherit the CLI's persisted selection) [endgame]
-  **Verify:** node --test test/autopilot-runner-model.test.js
-- **T4:** Make runner+model selectable on the autopilot/run surface (ATRIS_CLAUDE_MODEL env + optional flag) so a future claude -p change is a one-line switch, proving the engine-agnostic claim [endgame]
-  **Verify:** node --test test/autopilot-runner-model.test.js
-- **T5:** RSI audit: read this endgame's halts, verify failures, and lessons. If the loop itself broke during this endgame (parser, reward, scorecard, verify wiring), fix it. If nothing broke, no-op. [endgame]
-  **Verify:** npm test
+- **T7:** Decide the safe policy for out-of-band endgame ships. Today `endgameTaskIsUnpickable` / `hasRecentVerifyPrePass` (commands/autopilot.js:2760-2793) only SUPPRESS a confirmed-shipped endgame task from the picker — they never reconcile it out of `## Backlog`, so a fully-shipped endgame stays open until a human cleans up (the exact stall this audit found, recurring on any multi-runner/human-in-the-loop ship). Decide whether the picker should auto-reconcile (mark done) an endgame task whose Verify has pre-passed for ≥N consecutive ticks with no intervening source change, weighed against the falsifiability keystone — a trivial/wrong rubric also pre-passes (the validator caught exactly one this endgame). Output: a written decision in this task plus either a tightly-scoped [execute] follow-up with a named detector test, or an explicit "keep manual reconciliation" with reasoning. [explore]
+  **Verify:** decision recorded in this task; if it proposes code, a follow-up [execute] task with a named detector test exists under `## Backlog`
 
 ## In Progress
 
@@ -85,6 +75,18 @@
 
 ## Completed
 
+- **T1a:** Create `lib/runner-command.js` (DEFAULT_CLAUDE_RUNNER_MODEL alias + resolveClaudeRunnerModel + buildRunnerCommand). Shipped out-of-band Jun 13-15; verified by T5 audit (lib exists, 28/28 tests green). [execute]
+  **Verify:** node --test test/runner-command.test.js
+- **T1b:** Rewire `commands/mission.js` to import the resolver from `lib/runner-command.js`. Shipped out-of-band; verified (mission.js:7 imports it, resolver still exported). [execute]
+  **Verify:** node --test test/mission-model-resolution.test.js test/runner-command.test.js
+- **T2:** Replace the hardcoded `claude -p "$(cat ...)"` literals with `buildRunnerCommand(...)`. Shipped; verified (grep exit 1, no raw literals remain). [endgame]
+  **Verify:** test -z "$(grep -nE 'claude -p \"\$\(cat' commands/autopilot.js commands/run.js)"
+- **T3:** Every autopilot/run tick spawns with a resolved `--model` alias (closes the retired-model-kills-loop-silently flank). Shipped; verified. [endgame]
+  **Verify:** node --test test/autopilot-runner-model.test.js
+- **T4:** Runner+model selectable on the autopilot/run surface (ATRIS_CLAUDE_MODEL env + flag). Shipped; verified. [endgame]
+  **Verify:** node --test test/autopilot-runner-model.test.js
+- **T5:** RSI audit of the endgame — confirmed the loop machinery did not break; the only residual was the open-but-shipped reconciliation gap (filed as T6/T7). No-op code fix per the no-op clause. [endgame]
+  **Verify:** npm test
 - **[CLI-211]** mission start --worktree: isolated checkout with clean baseline [mission]
   **Verify:** node --test test/mission-worktree-start.test.js
 - **[CLI-210]** Evidence-aware review queue and risky-first accept-group spot-check [task-plane]
