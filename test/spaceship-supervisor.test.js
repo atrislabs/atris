@@ -80,3 +80,66 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// Tonight's real failure: the live pulse loop committed inside a linked worktree
+// on its own branch, so the checked-out HEAD of the main repo never moved. A
+// supervisor that only watches `HEAD` would report that productive night as
+// "idle — backlog looks empty," which is the exact lie the spaceship exists to
+// prevent. A tick that lands a commit anywhere in the repo's object store (any
+// branch / any worktree) must count as SHIPPED, not idle.
+test('spaceship counts a commit on another branch/worktree as shipped, not idle', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'spaceship-wt-'));
+  try {
+    const git = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+    git(['init', '-q']);
+    git(['config', 'user.email', 't@t.com']);
+    git(['config', 'user.name', 't']);
+    fs.writeFileSync(path.join(repo, 'seed.txt'), 'seed');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'seed']);
+
+    const counter = path.join(repo, '.tick_count');
+    const stub = path.join(repo, 'stub_tick.sh');
+    // Tick 1 commits on a SIDE branch and returns to the original branch, so the
+    // checked-out HEAD is unchanged but a new commit exists in the object store —
+    // exactly what a worktree-resident loop looks like from the main repo. Other
+    // ticks are clean no-ops.
+    fs.writeFileSync(stub, [
+      '#!/usr/bin/env bash',
+      `C="${counter}"`,
+      'n=$(( $(cat "$C" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$C"',
+      `cd "${repo}"`,
+      'case "$n" in',
+      '  1) orig=$(git rev-parse --abbrev-ref HEAD);',
+      '     git checkout -q -b sidelane;',
+      // add ONLY w.txt — never -A — so the harness files (.tick_count, the stub
+      // itself) stay untracked and survive the checkout back to the orig branch.
+      '     echo work > w.txt; git add w.txt; git commit -qm "worktree-style ship";',
+      '     git checkout -q "$orig";',
+      '     echo "committed on a side lane"; exit 0;;',
+      '  *) echo "nothing to do, clean"; exit 0;;',
+      'esac',
+    ].join('\n'));
+    fs.chmodSync(stub, 0o755);
+
+    const out = execFileSync('bash', [
+      SCRIPT,
+      '--repo', repo,
+      '--hours', '0.003',
+      '--interval', '1',
+      '--tick-timeout', '20',
+      '--idle-alert', '2',
+      '--halt-alert', '2',
+      '--tick-cmd', stub,
+      '--no-email',
+    ], { encoding: 'utf8', timeout: 60000 });
+
+    // The fix: a commit anywhere in the object store is SHIPPED.
+    assert.match(out, /tick 1 SHIPPED/,
+      'a commit on another branch/worktree must be detected as shipped');
+    // And it must NOT be miscounted as idle (the lie we are preventing).
+    assert.doesNotMatch(out, /tick 1 IDLE/, 'the committing tick must not be classified idle');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
