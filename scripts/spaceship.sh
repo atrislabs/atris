@@ -87,6 +87,12 @@ send_email() {
 
 git_head() { git -C "$REPO" rev-parse HEAD 2>/dev/null || echo "nogit"; }
 git_last_subject() { git -C "$REPO" log -1 --pretty=%s 2>/dev/null || echo ""; }
+# Count commits reachable from ANY ref, not just the checked-out HEAD. The live
+# loop often commits on its own branch inside a linked worktree (that is exactly
+# how the pulse loop ran on 2026-06-17), so HEAD never moves even though real
+# work landed. Watching all refs keeps the supervisor from reporting that as idle.
+all_commit_count() { git -C "$REPO" rev-list --all --count 2>/dev/null || echo 0; }
+git_last_subject_any() { git -C "$REPO" log --all -1 --pretty=%s 2>/dev/null || echo ""; }
 
 # run one tick with a hard timeout; returns exit code, writes output to $1
 run_tick() {
@@ -121,18 +127,24 @@ while true; do
 
   ticks=$((ticks+1))
   head_before="$(git_head)"
+  refs_before="$(all_commit_count)"
   tick_out="$STATE_DIR/tick.$ticks.out"
   logline "tick $ticks start (remaining ~$(( remaining/60 ))m)"
 
   run_tick "$tick_out"; code=$?
   head_after="$(git_head)"
+  refs_after="$(all_commit_count)"
   tail_out="$(tail -c 1200 "$tick_out" 2>/dev/null)"
 
   # ---- classify outcome by what actually happened ----
-  if [ "$head_before" != "$head_after" ] && [ "$head_after" != "nogit" ]; then
-    # real work landed: HEAD moved
+  head_moved=0
+  if [ "$head_before" != "$head_after" ] && [ "$head_after" != "nogit" ]; then head_moved=1; fi
+  refs_grew=0
+  if [ "${refs_after:-0}" -gt "${refs_before:-0}" ] 2>/dev/null; then refs_grew=1; fi
+  if [ "$head_moved" -eq 1 ] || [ "$refs_grew" -eq 1 ]; then
+    # real work landed: a new commit exists — on HEAD, another branch, or a worktree
     shipped=$((shipped+1)); idle_streak=0; halt_streak=0; idle_alerted=0
-    subj="$(git_last_subject)"
+    if [ "$head_moved" -eq 1 ]; then subj="$(git_last_subject)"; else subj="$(git_last_subject_any)"; fi
     shipped_subjects+=("$subj")
     logline "tick $ticks SHIPPED: $subj"
     send_email "${LABEL}: shipped — $subj" \
