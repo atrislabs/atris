@@ -55,10 +55,15 @@ sources:
 | `wake <name>` | `memberWake` | Decide `tick`, `wait`, `ask`, or `stop` from mission, goals, steering, task evidence, and workspace state |
 | `run <name>` | `memberRun` | Run the member's active Mission Runtime through `atris mission run` |
 | `loop <name>` | `memberLoop` | Repeat wake on a bounded cadence with a no-overlap lease, stop file, latest status, and receipts |
+| `alive <name>` | `memberAlive` | Run `loop` in always-on liveness mode (forces the `--alive` flag) |
 | `tick <name>` | `memberTick` | Propose or reuse the next bounded experiment for the active goal |
 | `review <name> <id>` | `memberReview` | Accept or discard an experiment with proof, optional value, lesson, and next experiment |
 | `block <name> <id>` | `memberBlock` | Mark an experiment blocked with a concrete human/orchestrator ask |
 | `status <name>` | `memberStatus` | Show goal, open experiment, value, ask, recent log, and next command |
+| `history <name>` | `memberHistory` | Show dated change history of the member's `MEMBER.md`/`SOUL.md` (git-backed, `--limit N`) |
+| `supervisor <cmd>` | `memberSupervisorCommand` | Supervisor sub-namespace (`recommendations [--json]`) |
+| `objective-generator <cmd>` | `memberObjectiveGeneratorCommand` | Objective-generator sub-namespace (`proposals [--json]`) |
+| `generalist <cmd>` | `memberGeneralistCommand` | Generalist sub-namespace (`proof` / `patterns` `[--json]`) |
 | `archive <name>` | `memberArchive` | Move a member to `atris/team/_archived/` |
 | `purge-archived` | `memberPurgeArchived` | Delete old archived members with explicit confirmation |
 
