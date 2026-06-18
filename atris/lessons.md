@@ -4,6 +4,10 @@
 
 ---
 
+- **[2026-06-18] result-line-verify-runs-the-script** — pass — `scripts/spaceship.sh` now prints `RESULT shipped=N halted=N idle=N ticks=N` via `printf ... | tee -a "$LOG_FILE"` after the human summary (commit 793bb92), giving overnight-run parsers an anchorable line. It shipped only on the third try: v1/v2 were plan-rejected because the Verify grepped the *source string* (not behavior) and v3 named no Rollback. The gate was right — a "must-print-X" task is verified only by RUNNING the script and grep-anchoring `^RESULT ...$` on stdout AND the log, and the line must bypass the `logline` timestamp prefix so the `^RESULT` anchor holds. Live-confirmed both channels match.
+
+- **[2026-06-18] verify-not-falsifiable** — fail — Verify `node --test test/autopilot-runner-model.test.js` passed before work started on "Make runner+model selectable on the autopilot/run surface (ATRIS_CLAUDE_MODEL env + optional flag) so a future claude -p change is a one-line switch, proving the engine-agnostic claim". Either the rubric is trivial or the task is already done. Tick halted.
+
 - **[2026-06-16] verify-not-falsifiable** — fail — Verify `node --test test/autopilot-runner-model.test.js` passed before work started on "Every autopilot/run tick now spawns with a resolved `--model` alias, closing the latent retired-model-kills-loop-silently instance in the autopilot path (these spawns currently inherit the CLI's persisted selection)". Either the rubric is trivial or the task is already done. Tick halted.
 
 - **[2026-06-16] verify-not-falsifiable** — fail — Verify `test -z "$(grep -nE 'claude -p \"\$\(cat' commands/autopilot.js commands/run.js)"` passed before work started on "Replace the 5 hardcoded `claude -p "$(cat ...)"` literals in commands/autopilot.js (453, 1202, 2899, 3589) + commands/run.js (116) with `buildRunnerCommand(...)` — eliminate the raw string invocations". Either the rubric is trivial or the task is already done. Tick halted.
