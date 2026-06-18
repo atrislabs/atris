@@ -485,7 +485,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js:113` (command routing)
 - **Handler:** `commands/brainstorm.js:21-355` (brainstormAtris function)
-- **Help:** `commands/brainstorm.js:14-30` short-circuits before workspace/log setup; regression: `test/commands.test.js:4321-4335`
+- **Help:** `commands/brainstorm.js:23-36` short-circuits before workspace/log setup; regression: `test/commands.test.js:14321-14331`
 - **How it works:**
 - Interactive session with supportive questioning
 - 3-4 sentences max per response
@@ -865,11 +865,11 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami) — uses modular `utils/auth.js`
-  - `commands/workflow.js` (plan/do/review --execute) — `loadCredentials()` only, no refresh
-  - `commands/brainstorm.js` (brainstorm/autopilot --execute) — `loadCredentials()` only
+  - `commands/workflow.js` (plan/do/review --execute) — `ensureValidCredentials()` (full refresh flow, `:580/:950/:1338`)
+  - `commands/brainstorm.js` (brainstorm/autopilot --execute) — `ensureValidCredentials()` (full refresh flow, `:70`)
   - `commands/log-sync.js` — `ensureValidCredentials()` (full refresh flow)
-  - `commands/integrations.js` (gmail/calendar/twitter/slack) — `loadCredentials()` only, no refresh
-  - `bin/atris.js` agent/chat — uses inline `loadCredentials()`, no refresh
+  - `commands/integrations.js` (gmail/calendar/twitter/slack) — `ensureValidCredentials()` (full refresh flow, `:28`)
+  - `bin/atris.js` agent/chat — `ensureValidCredentials()` (full refresh flow, `:2093/:2202`)
 - **Value:** Enables cloud sync, chat, agent selection
 
 **Search:** `rg "showAuthHelp|loginAtris|logoutAtris|whoamiAtris|switchAccount|useAccount|accountsCmd|auth --help|account and integrations --help" bin/atris.js commands/auth.js test/commands.test.js`
