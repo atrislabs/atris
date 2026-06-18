@@ -37,7 +37,7 @@ EMAIL=1
 LABEL="spaceship"
 
 # Default email channel: the verified SES helper in atrisos-backend.
-BACKEND_DEFAULT="/Users/keshavrao/arena/atrisos-backend"
+BACKEND_DEFAULT="${SPACESHIP_BACKEND:-/Users/keshavrao/arena/atrisos-backend}"
 DEFAULT_EMAIL_CMD="${BACKEND_DEFAULT}/venv/bin/python ${BACKEND_DEFAULT}/backend/scripts/spaceship_update.py"
 EMAIL_CMD="${SPACESHIP_EMAIL_CMD:-$DEFAULT_EMAIL_CMD}"
 
