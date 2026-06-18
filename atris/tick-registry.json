@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "hash": "793bb9225ea4a5b059c2bd221146e8860d55ecde",
+    "verifyCmd": "out=\"$(bash scripts/spaceship.sh --no-email --hours 0)\"; printf '%s\\n' \"$out\" | grep -qxE 'RESULT shipped=[0-9]+ halted=[0-9]+ idle=[0-9]+ ticks=[0-9]+' && grep -qxE 'RESULT shipped=[0-9]+ halted=[0-9]+ idle=[0-9]+ ticks=[0-9]+' atris/.spaceship/run.log",
+    "slug": "add-one-machine-readable-summary-line-to",
+    "timestamp": "2026-06-18T04:42:24.562Z"
+  }
+]
