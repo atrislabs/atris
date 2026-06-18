@@ -26,6 +26,11 @@
 
 ## In Progress
 
+- **E1:** Add one machine-readable summary line to `scripts/spaceship.sh`, emitted right after the existing final summary block — after the `send_email "${LABEL}: run finished …"` call, before `exit 0`. Use the `shipped`/`halted`/`idle`/`ticks` counters already in scope. Print the EXACT form `RESULT shipped=N halted=N idle=N ticks=N` to BOTH stdout and the run log via `tee -a "$LOG_FILE"` (not `logline`). [endgame]
+  **Claimed by:** Executor at 2026-06-18T04:35:11.280Z
+  **Stage:** DO
+  **Verify:** out="$(bash scripts/spaceship.sh --no-email --hours 0)"; printf '%s\n' "$out" | grep -qxE 'RESULT shipped=[0-9]+ halted=[0-9]+ idle=[0-9]+ ticks=[0-9]+' && grep -qxE 'RESULT shipped=[0-9]+ halted=[0-9]+ idle=[0-9]+ ticks=[0-9]+' atris/.spaceship/run.log
+  **Files:** scripts/spaceship.sh
 - **[CLI-237]** Mission XP: get better every tick: research one thing, improve the code, ship one verified change to review, write the lesson down [agent-xp]
   **Claimed by:** auto-improver
   **Verify:** npm test
