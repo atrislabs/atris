@@ -16,5 +16,29 @@
     "verifyCmd": "! grep -qE \"284-451|312-364|318-322|324-346|347-353|408-434|416-430|1397-1429|481-509|workflow\\.js:83|commands/state-detection\\.js|init\\.js:434|init\\.js:486|MAP\\.md line 90|TASK RULES|2026-06-10\" atris/features/cli-ux-simplification/validate.md && grep -q \"last_compiled: 2026-06-18\" atris/features/cli-ux-simplification/validate.md && grep -q \"bin/atris.js:290-467\" atris/features/cli-ux-simplification/validate.md && grep -q \"commands/init.js:419-446\" atris/features/cli-ux-simplification/validate.md && grep -q \"lib/task-db.js:1494-1527\" atris/features/cli-ux-simplification/validate.md && grep -q \"lib/state-detection.js\" atris/features/cli-ux-simplification/validate.md && sed -n '290p' bin/atris.js | grep -q \"function showHelp\" && sed -n '1494p' lib/task-db.js | grep -q \"function renderTodoMarkdown\" && sed -n '420p' commands/init.js | grep -q \"writeFileSync(todoFile\"",
     "slug": "re-read-sources-and-update-atris",
     "timestamp": "2026-06-18T08:56:30.874Z"
+  },
+  {
+    "hash": "62cbb8c96ba65f33335b532cd4489947c6889293",
+    "verifyCmd": "grep -q \"last_compiled: 2026-06-18\" atris/features/team-member-standard/build.md && ! grep -q \"2026-06-10\" atris/features/team-member-standard/build.md && ! grep -qE \"member\\.js:(2886|2941|3438|6452|6652|6966|7210)|mission\\.js:411|atris\\.js:(1648|1242)\" atris/features/team-member-standard/build.md && grep -q \"member.js:2988\" atris/features/team-member-standard/build.md && grep -q \"member.js:3043\" atris/features/team-member-standard/build.md && grep -q \"member.js:3540\" atris/features/team-member-standard/build.md && grep -q \"member.js:6734\" atris/features/team-member-standard/build.md && grep -q \"member.js:6765\" atris/features/team-member-standard/build.md && grep -q \"member.js:7079\" atris/features/team-member-standard/build.md && grep -q \"member.js:7411\" atris/features/team-member-standard/build.md && grep -q \"mission.js:412\" atris/features/team-member-standard/build.md && grep -q \"atris.js:1742\" atris/features/team-member-standard/build.md",
+    "slug": "re-read-sources-and-update-atris",
+    "timestamp": "2026-06-18T09:36:00.460Z"
+  },
+  {
+    "hash": "a53ad921721a6751714d5e319d847f494f374a08",
+    "verifyCmd": "grep -q 'commands/init.js:371-374' atris/features/wiki/validate.md && grep -q 'bin/atris.js:349-354' atris/features/wiki/validate.md && grep -q 'bin/atris.js:1824-1844' atris/features/wiki/validate.md && grep -q 'test/commands.test.js:13666' atris/features/wiki/validate.md && grep -q 'test/commands.test.js:15982-16043' atris/features/wiki/validate.md && grep -q 'lib/wiki.js:15-25' atris/features/wiki/validate.md && grep -q 'last_compiled: 2026-06-18' atris/features/wiki/validate.md && grep -q 'Validated:.*2026-06-18' atris/features/wiki/validate.md && ! grep -qE 'init.js:360-364|bin/atris.js:340-345|bin/atris.js:1728-1742|test/commands.test.js:13127|test/commands.test.js:15443-15499|lib/wiki.js:15-27|2026-06-10|2026-05-10' atris/features/wiki/validate.md && sed -n '373p' commands/init.js | grep -q ensureWikiScaffold && sed -n '1824p' bin/atris.js | grep -q \"command === 'wiki'\" && sed -n '351p' bin/atris.js | grep -q ingest && sed -n '354p' bin/atris.js | grep -q loop && sed -n '13666p' test/commands.test.js | grep -q \"init scaffolds atris/wiki\" && sed -n '15982p' test/commands.test.js | grep -q \"loop flags stale wiki pages\"",
+    "slug": "re-read-sources-and-update-atris",
+    "timestamp": "2026-06-18T10:38:09.721Z"
+  },
+  {
+    "hash": "2d356611d634eb87b041d107aa18d143200c58f3",
+    "verifyCmd": "sed -n '702p' bin/atris.js | grep -q 'function showLoopHelp' && sed -n '1835p' bin/atris.js | grep -q \"command === 'loop'\" && sed -n '14430p' test/commands.test.js | grep -q 'loop --help prints usage' && sed -n '15982p' test/commands.test.js | grep -q 'loop flags stale wiki pages' && grep -q 'last_compiled: 2026-06-18' atris/features/wiki-loop/validate.md && grep -q '702-715' atris/features/wiki-loop/validate.md && grep -q '1835-1843' atris/features/wiki-loop/validate.md && grep -q '14430' atris/features/wiki-loop/validate.md && grep -q '15982-16051' atris/features/wiki-loop/validate.md && ! grep -qE '686-700|1739-1742|:13891|15443-15499|2026-06-10' atris/features/wiki-loop/validate.md",
+    "slug": "re-read-sources-and-update-atris",
+    "timestamp": "2026-06-18T10:59:57.745Z"
+  },
+  {
+    "hash": "2d356611d634eb87b041d107aa18d143200c58f3",
+    "verifyCmd": "sed -n '702p' bin/atris.js | grep -q 'function showLoopHelp' && sed -n '1835p' bin/atris.js | grep -q \"command === 'loop'\" && sed -n '14430p' test/commands.test.js | grep -q 'loop --help prints usage' && sed -n '15982p' test/commands.test.js | grep -q 'loop flags stale wiki pages' && grep -q 'last_compiled: 2026-06-18' atris/features/wiki-loop/validate.md && grep -q '702-715' atris/features/wiki-loop/validate.md && grep -q '1835-1843' atris/features/wiki-loop/validate.md && grep -q '14430' atris/features/wiki-loop/validate.md && grep -q '15982-16051' atris/features/wiki-loop/validate.md && ! grep -qE '686-700|1739-1742|:13891|15443-15499|2026-06-10' atris/features/wiki-loop/validate.md",
+    "slug": "reconcile-the-4-drifted-frontmatter",
+    "timestamp": "2026-06-18T11:07:42.448Z"
   }
 ]

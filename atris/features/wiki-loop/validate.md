@@ -46,9 +46,11 @@ node bin/atris.js wiki loop --dry-run
 
 ## Current Repo Report
 
-- `node bin/atris.js loop --dry-run` reports 15 pages, 13 stale pages, 2 orphans, and 3 next-ingest candidates.
-- First remediation is `atris/wiki/people/jack-dorsey.md` from `https://www.youtube.com/watch?v=YTVSwOY19Qs`.
-- Orphans currently reported: `atris/wiki/briefs/atrisos-generative-ui-product-surface.md` and `atris/wiki/briefs/launch-post.md`.
+_Point-in-time snapshot from `node bin/atris.js loop --dry-run` on 2026-06-18 — recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
+
+- Reports 20 pages, 10 stale pages, 0 orphans, and 0 next-ingest candidates.
+- First remediation is `atris/wiki/systems/atris-business.md` from `README.md`.
+- No orphan pages currently reported.
 
 ## Notes
 

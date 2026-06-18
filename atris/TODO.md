@@ -15,14 +15,7 @@
 
 ## In Progress
 
-- **T1:** Reconcile the 4 drifted frontmatter source refs + bump dates in `atris/features/wiki-loop/validate.md` [execute]
-  **Claimed by:** Executor at 2026-06-18T10:43:04.208Z
-  **Stage:** DO
-  Re-read confirmed 4 of 8 refs accurate (`commands/loop.js:1-114`, `commands/wiki.js:549-557`, `lib/wiki.js:436-619`, `lib/wiki.js:620-704`) — leave those untouched. The other 4 drifted because bin/atris.js + test/commands.test.js grew past 10k lines. Fix only these in the frontmatter `sources:` block: `bin/atris.js:686-700 (showLoopHelp)` → `bin/atris.js:702-715 (showLoopHelp)` (686-700 is now showServeHelp); `bin/atris.js:1739-1742 (top-level loop route)` → `bin/atris.js:1835-1843 (top-level loop route)`; `test/commands.test.js:13891 (loop help coverage)` → `test/commands.test.js:14430 (loop help coverage)`; `test/commands.test.js:15443-15499 (loop stale/suggest coverage)` → `test/commands.test.js:15982-16051 (loop stale/suggest coverage)`. Bump `last_compiled: 2026-06-10` → `2026-06-18` and `> **Validated:** 2026-05-10` → `2026-06-18`. Out of scope: the "Current Repo Report" snapshot numbers (15 pages/13 stale/2 orphans/3 candidates) — that is live `atris loop --dry-run` output, a different drift class, not a source ref.
-  - **Files:** `atris/features/wiki-loop/validate.md` (edit); read-only sources to verify against: `bin/atris.js`, `test/commands.test.js`
-  - **Exit:** the 4 drifted refs in validate.md resolve to live line numbers, `last_compiled` and `Validated` both read 2026-06-18, zero stale tokens (686-700, 1739-1742, :13891, 15443-15499, 2026-06-10) remain, and the 4 already-accurate refs are unchanged
-  - **Verify:** sed -n '702p' bin/atris.js | grep -q 'function showLoopHelp' && sed -n '1835p' bin/atris.js | grep -q "command === 'loop'" && sed -n '14430p' test/commands.test.js | grep -q 'loop --help prints usage' && sed -n '15982p' test/commands.test.js | grep -q 'loop flags stale wiki pages' && grep -q 'last_compiled: 2026-06-18' atris/features/wiki-loop/validate.md && grep -q '702-715' atris/features/wiki-loop/validate.md && grep -q '1835-1843' atris/features/wiki-loop/validate.md && grep -q '14430' atris/features/wiki-loop/validate.md && grep -q '15982-16051' atris/features/wiki-loop/validate.md && ! grep -qE '686-700|1739-1742|:13891|15443-15499|2026-06-10' atris/features/wiki-loop/validate.md
-  - **Rollback:** git checkout -- atris/features/wiki-loop/validate.md before commit, or git revert HEAD --no-edit after commit
+(Empty)
 
 ## Review
 
