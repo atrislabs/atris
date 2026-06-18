@@ -1,7 +1,7 @@
 ---
-last_compiled: 2026-06-10
+last_compiled: 2026-06-18
 sources:
-  - lib/wiki.js:15-27 (public/private wiki roots)
+  - lib/wiki.js:15-25 (public/private wiki root getters)
   - lib/wiki.js:192-217 (wiki and context scaffold)
   - lib/wiki.js:246-326 (staged ingest packs and manifests)
   - lib/wiki.js:436-619 (stale, orphan, and agent-readable checks)
@@ -10,21 +10,21 @@ sources:
   - commands/wiki.js:511-560 (lint, search, log, verify)
   - commands/wiki.js:484-583 (wiki dispatch and help)
   - commands/loop.js:1-114 (local wiki upkeep loop)
-  - commands/init.js:360-364 (wiki scaffold during init)
+  - commands/init.js:371-374 (wiki scaffold during init)
   - commands/activate.js:141-158 (session-start wiki status)
   - commands/pull.js:225 (wiki prefix normalization)
   - commands/push.js:307 (wiki prefix normalization)
-  - bin/atris.js:340-345 (top-level wiki help — brain/ingest/query/lint/loop lines)
-  - bin/atris.js:1728-1742 (wiki, ingest, query, lint, loop routes)
-  - test/commands.test.js:13127 (wiki scaffold coverage)
-  - test/commands.test.js:15443-15499 (wiki loop stale/suggest coverage)
+  - bin/atris.js:349-354 (top-level wiki help — ingest/query/lint/loop lines)
+  - bin/atris.js:1824-1844 (wiki, ingest, query, lint, loop routes)
+  - test/commands.test.js:13666 (wiki scaffold coverage)
+  - test/commands.test.js:15982-16043 (wiki loop stale/suggest coverage)
   - atris/skills/wiki/SKILL.md
 ---
 
 # Wiki — Validation
 
 > **Status:** v2 — local-first wiki plus upkeep loop
-> **Validated:** 2026-05-10
+> **Validated:** 2026-06-18
 > **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
 
 ## Checks
