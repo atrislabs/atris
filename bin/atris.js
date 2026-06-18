@@ -327,6 +327,7 @@ function showHelp() {
   console.log('  review     - Validate work (tests, safety checks, docs)');
   console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
   console.log('  pulse      - Durable overnight self-improvement heartbeat (OS cron, install/status/tick)');
+  console.log('  spaceship  - Bounded overnight runner that survives bad ticks and emails updates');
   console.log('');
   console.log('Context & tracking:');
   console.log('  log        - Add ideas to inbox');
