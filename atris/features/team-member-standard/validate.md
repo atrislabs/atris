@@ -1,9 +1,9 @@
 ---
-last_compiled: 2026-06-10
+last_compiled: 2026-06-18
 sources:
-  - commands/member.js:2886-7329 (member command handlers)
-  - commands/mission.js:411-442 (member now.md rendering)
-  - test/commands.test.js:143 (member create, goal, wake, loop, status coverage starts here)
+  - commands/member.js:7411-7531 (member command dispatch and help)
+  - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
+  - test/commands.test.js:144 (member create, goal, wake, loop, status coverage starts here)
 ---
 
 # Team Member Standard — Validation
