@@ -218,4 +218,7 @@ What shipped:
 ${summary_list}
 Full log: ${LOG_FILE}"
 
+# machine-readable summary for parsers (stdout + run log, exact form, no logline prefix)
+printf 'RESULT shipped=%d halted=%d idle=%d ticks=%d\n' "$shipped" "$halted" "$idle" "$ticks" | tee -a "$LOG_FILE"
+
 exit 0
