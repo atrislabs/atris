@@ -56,13 +56,37 @@ Font alternatives: instead of Inter → Instrument Sans, Plus Jakarta Sans, Outf
 
 **Labels:** never use all-caps UI labels, tracked-uppercase labels, faux small-caps, or eyebrow-style microcopy for ordinary product surfaces. Keshav strongly dislikes this style. Prefer natural title case or sentence case for labels like "Threads", "Active tasks", and "Team"; do not write them as `THREADS`, `ACTIVE TASKS`, or letter-spaced metadata.
 
-**Visual anti-patterns:** no glassmorphism, no gradient text, no sparklines as decoration, no rounded-rect-with-colored-border, no large icons with rounded corners above headings, no hero metric layout (big number + small label), no modals unless truly necessary.
+**Visual anti-patterns:** no glassmorphism, no gradient text, no sparklines as decoration, no rounded-rect-with-colored-border, no large icons with rounded corners above headings, no hero metric layout (big number + small label), no modals unless truly necessary. no "claude beige" off-white backgrounds, no instrument serif overuse (the new AI tell), no generic flat tinted backgrounds.
+
+## Vocabulary is the Lever
+
+Designers beat engineers at AI prompting because they own craft language. Name the move precisely: "tighten vertical rhythm," "increase negative space," "make hierarchy bolder here, quieter there." Vague prompts = vague output. Core terms: vertical rhythm, negative space, bolder/quieter, affordances, meta-design, conviction.
+
+## Raising Floor vs Ceiling
+
+Use AI to raise the floor (automate the mechanical 80% — scaffolding, grids, state matrices). Spend human attention on the ceiling (last 10-20% — taste, instinct, the unexpected choice). Cognitive delegation, not surrender. AI routes you there; you make the final call.
+
+## AX — Agentic Experience
+
+Design for AI agents as users, not just humans. Agents can't see your buttons. They need: speed, clarity, structured output, verbose errors with next steps, edge case coverage, agentic affordances (`llms.txt`, clear `--help`, stable exit codes).
+
+## Conviction Over Local Maxima
+
+Iterating toward "slightly better" = local maximum (safe, forgettable). Great design is a bet on a global maximum. AI makes the local-max trap worse — you converge on average faster. Subtraction over addition: the strongest move is often deleting something.
+
+## Anti-Attractors
+
+Models have gravity wells (purple gradients, instrument serif, claude beige). Escape them deliberately: name what you don't want, seed with a specific reference, inject a constraint (monochrome, one font weight), rotate your defaults between projects.
+
+## The Scarcity Principle
+
+Taste emerges from constraints. Pick constraints before starting: one font, two colors, three spacing values. Infinite options produce the distribution center.
 
 ## The AI Slop Test
 
 > "if you showed this to someone and said 'AI made this,' would they believe you immediately? if yes, that's the problem."
 
-Fingerprints: inter/roboto, purple-to-blue gradients, cyan-on-dark, glassmorphism, gradient text, hero metrics, identical card grids, bounce easing, dark mode with neon, sparklines as decoration, rounded rectangles with drop shadows.
+Fingerprints: inter/roboto, purple-to-blue gradients, cyan-on-dark, glassmorphism, gradient text, hero metrics, identical card grids, bounce easing, dark mode with neon, sparklines as decoration, rounded rectangles with drop shadows, "claude beige" off-white backgrounds, instrument serif overuse, generic flat tinted backgrounds.
 
 ## Before Shipping Checklist
 
@@ -79,6 +103,9 @@ Run through `atris/policies/atris-design.md` "before shipping" section:
 - WCAG AA contrast (4.5:1 text, 3:1 UI)?
 - works on mobile (44px touch targets, no horizontal scroll, readable text)?
 - respects `prefers-reduced-motion`?
+- did you name the moves in craft vocabulary (vertical rhythm, negative space, bolder/quieter)?
+- did you use anti-attractors (named what to avoid, seeded a reference, set a constraint)?
+- if agent-facing: does it have agentic affordances (clear errors, structured output, stable exit codes)?
 - would a designer clock this as ai-generated?
 
 ## Atris Commands
