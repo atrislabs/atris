@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -323,6 +323,81 @@ test('listRunLogs --json with no logs returns empty array', () => {
     assert.ok(parsed.ok, 'JSON has ok: true');
     assert.equal(parsed.count, 0, 'count is 0');
     assert.deepEqual(parsed.logs, [], 'logs is empty array');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// --- pruneRunLogs ---
+
+test('pruneRunLogs does nothing when under keep limit', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create 3 logs
+    for (let i = 0; i < 3; i++) {
+      writePhaseToRunLog(getRunLogPath(`10000${i}`, 1), 1, 'plan', `reasoning ${i}`, 1000);
+    }
+
+    pruneRunLogs(['--keep', '10']);
+    assert.ok(output.includes('No pruning needed'), 'reports no pruning needed');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('pruneRunLogs --dry-run shows what would be deleted', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create 5 logs
+    for (let i = 0; i < 5; i++) {
+      writePhaseToRunLog(getRunLogPath(`20000${i}`, 1), 1, 'plan', `reasoning ${i}`, 1000);
+    }
+
+    pruneRunLogs(['--keep', '2', '--dry-run']);
+    assert.ok(output.includes('[DRY RUN]'), 'dry-run mode');
+    assert.ok(output.includes('Would delete'), 'shows what would be deleted');
+    assert.ok(!fs.readdirSync(getRunLogDir()).every(f => f.endsWith('.md')) || fs.readdirSync(getRunLogDir()).filter(f => f.endsWith('.md')).length === 5, 'no files actually deleted');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('pruneRunLogs deletes old logs keeping only N', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create 5 logs
+    for (let i = 0; i < 5; i++) {
+      writePhaseToRunLog(getRunLogPath(`30000${i}`, 1), 1, 'plan', `reasoning ${i}`, 1000);
+    }
+
+    pruneRunLogs(['--keep', '2']);
+    const remaining = fs.readdirSync(getRunLogDir()).filter(f => f.endsWith('.md'));
+    assert.equal(remaining.length, 2, 'only 2 logs remain');
+    assert.ok(output.includes('Pruned 3'), 'reports 3 pruned');
   } finally {
     console.log = origLog;
     process.chdir(origCwd);
