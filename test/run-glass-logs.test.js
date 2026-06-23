@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -588,6 +588,60 @@ test('exportRunLogs reports no logs gracefully', () => {
 
     exportRunLogs([]);
     assert.ok(output.includes('No run logs found'), 'reports no logs');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// --- diffRunLogs ---
+
+test('diffRunLogs compares two logs and shows differences', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create two logs with different content
+    const log1 = getRunLogPath('700001', 1);
+    writePhaseToRunLog(log1, 1, 'plan', 'Plan A reasoning', 3000);
+    writePhaseToRunLog(log1, 1, 'do', 'Build A reasoning', 12000);
+
+    const log2 = getRunLogPath('700002', 1);
+    writePhaseToRunLog(log2, 1, 'plan', 'Plan B reasoning', 3000);
+    writePhaseToRunLog(log2, 1, 'do', 'Build A reasoning', 12000);
+
+    const file1 = path.basename(log1);
+    const file2 = path.basename(log2);
+    diffRunLogs([file1, file2]);
+
+    assert.ok(output.includes('Diff:'), 'shows diff header');
+    assert.ok(output.includes('different'), 'shows different phases');
+    assert.ok(output.includes('identical'), 'shows identical phases');
+    assert.ok(output.includes('- Plan A reasoning'), 'shows removed line');
+    assert.ok(output.includes('+ Plan B reasoning'), 'shows added line');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('diffRunLogs shows usage when not enough args', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    diffRunLogs(['only-one-file']);
+    assert.ok(output.includes('Usage:'), 'shows usage');
   } finally {
     console.log = origLog;
     process.chdir(origCwd);
