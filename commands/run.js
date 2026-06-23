@@ -679,4 +679,100 @@ function pruneRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs };
+/**
+ * Search run logs for a keyword across all phases.
+ * Options:
+ *   <keyword>    Search term (positional arg)
+ *   --phase P    Limit search to a specific phase (plan, do, review, error)
+ *   --limit N    Max results to show (default: 20)
+ */
+function searchRunLogs(args = []) {
+  const runsDir = getRunLogDir();
+
+  // Extract keyword (first non-flag arg)
+  const keyword = args.find(a => !a.startsWith('-'));
+  if (!keyword) {
+    console.log('Usage: atris run search <keyword> [--phase P] [--limit N]');
+    return;
+  }
+
+  // Parse flags
+  let phaseFilter = null;
+  const phaseIdx = args.indexOf('--phase');
+  if (phaseIdx !== -1 && args[phaseIdx + 1]) {
+    phaseFilter = args[phaseIdx + 1].toUpperCase();
+  }
+
+  let limit = 20;
+  const limitIdx = args.indexOf('--limit');
+  if (limitIdx !== -1 && args[limitIdx + 1]) {
+    limit = parseInt(args[limitIdx + 1]) || 20;
+  }
+
+  const files = fs.existsSync(runsDir)
+    ? fs.readdirSync(runsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+    : [];
+
+  if (files.length === 0) {
+    console.log('No run logs found. Run "atris run" to generate them.');
+    return;
+  }
+
+  const results = [];
+  const lowerKeyword = keyword.toLowerCase();
+
+  for (const file of files) {
+    const filePath = path.join(runsDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+
+    // Split into phase sections
+    const phaseRegex = /## (\w+)[^\n]*\n([\s\S]*?)(?=\n## |\n$|$)/g;
+    let match;
+    while ((match = phaseRegex.exec(content)) !== null) {
+      const phase = match[1];
+      const body = match[2];
+
+      if (phaseFilter && phase !== phaseFilter) continue;
+
+      if (body.toLowerCase().includes(lowerKeyword)) {
+        // Find the matching line
+        const lines = body.split('\n');
+        const matchLine = lines.find(l => l.toLowerCase().includes(lowerKeyword));
+        const snippet = matchLine
+          ? matchLine.trim().substring(0, 100)
+          : body.trim().substring(0, 100);
+
+        results.push({
+          file,
+          phase,
+          snippet,
+        });
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    console.log(`No matches for "${keyword}" in ${files.length} run log${files.length === 1 ? '' : 's'}.`);
+    return;
+  }
+
+  console.log('');
+  console.log(`Search: "${keyword}" — ${results.length} match${results.length === 1 ? '' : 'es'} in ${files.length} run log${files.length === 1 ? '' : 's'}:`);
+  console.log('');
+
+  const shown = results.slice(0, limit);
+  for (const r of shown) {
+    console.log(`  ${r.file} [${r.phase}]`);
+    console.log(`    ${r.snippet}`);
+    console.log('');
+  }
+
+  if (results.length > limit) {
+    console.log(`  ...and ${results.length - limit} more (use --limit to see more)`);
+  }
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs };
