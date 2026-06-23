@@ -156,3 +156,29 @@ test('writePhaseToRunLog handles null output gracefully', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('writePhaseToRunLog can log error sections for failed phases', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  try {
+    process.chdir(tmpRoot);
+    const logPath = getRunLogPath('999995', 1);
+
+    // Simulate a plan phase followed by a failed do phase
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+    writePhaseToRunLog(logPath, 1, 'error', 'Error: DO phase timed out after 600s\n\nStack: Error: ...', 0);
+
+    const content = fs.readFileSync(logPath, 'utf8');
+    assert.ok(content.includes('## PLAN'), 'plan section present');
+    assert.ok(content.includes('## ERROR'), 'error section present');
+    assert.ok(content.includes('DO phase timed out'), 'error message present');
+  } finally {
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run.js logs failed phases to run log for forensic value', () => {
+  assert.match(RUN_SRC, /writePhaseToRunLog\(runLogPath, cycle, 'error'/);
+  assert.match(RUN_SRC, /err\.message/);
+});
