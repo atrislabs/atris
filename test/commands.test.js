@@ -9986,6 +9986,28 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.match(text.stdout, /Claim: atris task claim <id> --as codex-executor/);
     assert.match(text.stdout, /Verify: node --test test\/autopilot-runner-model\.test\.js/);
     assert.doesNotMatch(text.stdout, /No concrete next agent task is attached/);
+
+    const createNext = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
+    assert.equal(createNext.status, 0, createNext.stderr);
+    const createdPayload = JSON.parse(createNext.stdout);
+    assert.equal(createdPayload.action, 'created_next');
+    assert.equal(createdPayload.task.status, 'claimed');
+    assert.equal(createdPayload.task.claimed_by, 'codex-executor');
+    assert.equal(createdPayload.task.tag, 'runner');
+    assert.match(createdPayload.task.title, /runner-agnostic heartbeat gap/);
+    assert.equal(createdPayload.review_task.display_id, ref);
+
+    const after = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    assert.equal(after.status, 0, after.stderr);
+    const afterPayload = JSON.parse(after.stdout);
+    assert.equal(afterPayload.action, 'current');
+    assert.equal(afterPayload.task_id, createdPayload.task_id);
+
+    const show = runCli(['task', 'show', createdPayload.task.display_id, '--json'], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    const shown = JSON.parse(show.stdout);
+    assert.match(shown.messages[0].content, /Goal: Find and close one remaining runner-agnostic heartbeat gap/);
+    assert.match(shown.messages[0].content, /Check: node --test test\/autopilot-runner-model\.test\.js/);
   } finally {
     cleanupTempDir(dir);
   }
