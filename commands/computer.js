@@ -539,6 +539,13 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
     console.log('Recruiting next step');
     console.log('  atris computer recruiting push');
   }
+
+  if (action === 'review') {
+    console.log('');
+    console.log('Review note');
+    console.log('  If pull --dry-run reported conflicts but no packet appears:');
+    console.log('  atris computer recruiting pull --apply');
+  }
 }
 
 async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {}) {

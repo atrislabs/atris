@@ -481,6 +481,37 @@ test('computer recruiting pull blocks dirty workspace writes without apply', asy
   }
 });
 
+test('computer recruiting review explains pull apply when no packet exists', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'review'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /No sync conflicts need review/);
+    assert.match(res.stdout, /Review note/);
+    assert.match(res.stdout, /pull --dry-run reported conflicts/);
+    assert.match(res.stdout, /atris computer recruiting pull --apply/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
 test('computer recruiting sync auto-detects the canonical business workspace without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
