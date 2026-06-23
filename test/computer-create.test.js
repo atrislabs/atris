@@ -310,6 +310,17 @@ test('computer recruiting pull dry-run outcome explains that real pull writes re
   assert.match(output, /atris computer recruiting push --dry-run/);
 });
 
+test('computer recruiting push failure names reviewed broad publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('push', 1, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /If the output says review before publish/);
+  assert.match(output, /atris computer recruiting push --dry-run --allow-broad-workspace/);
+  assert.match(output, /atris computer recruiting push --allow-broad-workspace/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting pull --dry-run/);
+});
+
 test('computer help surfaces the recruiting shortcut without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
@@ -351,6 +362,8 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.equal(pushHelp.status, 0, pushHelp.stderr || pushHelp.stdout);
     assert.match(pushHelp.stdout, /Usage: atris computer recruiting push/);
     assert.match(pushHelp.stdout, /atris push atris-labs --dry-run/);
+    assert.match(pushHelp.stdout, /atris computer recruiting push --dry-run --allow-broad-workspace/);
+    assert.match(pushHelp.stdout, /atris computer recruiting push --allow-broad-workspace/);
 
     const watchHelp = await runCliAsync(['computer', 'recruiting', 'watch', '--help'], { cwd, env });
     assert.equal(watchHelp.status, 0, watchHelp.stderr || watchHelp.stdout);

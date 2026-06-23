@@ -465,10 +465,18 @@ function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_
   console.log('Runs from the current or canonical Atris Labs recruiting workspace.');
   if (action === 'pull') {
     console.log('Use --dry-run first; use --apply to write into a dirty local workspace.');
+  } else if (action === 'push') {
+    console.log('Use --dry-run first; after reviewing a broad publish, add --allow-broad-workspace.');
   }
   console.log('');
   console.log('Underlying command:');
   console.log(`  atris ${command.join(' ')}`);
+  if (action === 'push') {
+    console.log('');
+    console.log('Reviewed broad publish:');
+    console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
+    console.log('  atris computer recruiting push --allow-broad-workspace');
+  }
 }
 
 function withoutRecruitingWrapperFlags(action, args = []) {
@@ -694,6 +702,10 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
   if (action === 'push' && status !== 0) {
     console.log('');
     console.log('Recruiting next step');
+    console.log('  If the output says review before publish:');
+    console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
+    console.log('  atris computer recruiting push --allow-broad-workspace');
+    console.log('  Otherwise:');
     console.log('  atris computer recruiting pull --dry-run');
     console.log('  atris computer recruiting review   # if conflicts were reported');
     return;
