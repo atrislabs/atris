@@ -738,19 +738,19 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Single-task runner:** `commands/autopilot.js:1602` (`runTaskOnce`) — guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, and `verifyPass`
 - **Verify executor helper:** `commands/autopilot.js:935-947` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:835-859` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
-- **Phase executor:** `commands/autopilot.js:445` (executePhaseDetailed function) — runs `claude -p`
+- **Phase executor:** `commands/autopilot.js:445` (executePhaseDetailed function) — runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with runner flags/env)
 - **Approval gate:** `commands/autopilot.js:366` (askApproval function) — enter/skip/quit
 - **Human freshness check:** `commands/autopilot.js:384` (`askHuman`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
 - **Idle-tick helper:** `commands/autopilot.js:2186` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:2221` (`getRecentSignals`) — pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
 - **Lesson-resolved checker:** `commands/autopilot.js:2646` (`isLessonResolved`) — parses a lesson line for file paths and slug keywords, greps named files via `execFileSync`; returns true if bug pattern is gone (no keyword matches in any named file)
-- **Candidate-horizons helper:** `commands/autopilot.js:2852` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, spawns `claude -p` with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
+- **Candidate-horizons helper:** `commands/autopilot.js:2852` (`proposeCandidateHorizons`) — async; combines `getIdleTickCount` + `getRecentSignals`, uses the shared runner command with a strict-JSON prompt, returns `[{ title, confidence, rationale }]` (at least 1 valid entry after filtering shipped/resolved lessons); tags resolved fail lessons `[resolved]` in lessons.md and drops matching pass lessons as already shipped
 - **Scoring helper:** `commands/autopilot.js:2271` (`scoreEndgameCandidates`) — reads last 10 scorecards, infers horizon type from slug prefix, calculates mean reward per type, scores candidates by expected value; adaptive explore rate (20%-50%) based on last-5 type diversity, difficulty floor filters easy-win types (>80% success + mean reward >5); called during horizon picking (line 244) to weight candidates by historical reward
 - **Task age helper:** `commands/autopilot.js:3475` (`getTaskAgeDays`) — computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
 - **Staleness gate:** `commands/autopilot.js:3504` (`isStillTrue`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
-- **Model freshness check:** `commands/autopilot.js:3573` (`askModel`) — called when `isStillTrue` returns `unverified`; spawns `claude -p` with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
+- **Model freshness check:** `commands/autopilot.js:3573` (`askModel`) — called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
 - **Staleness wiring:** `commands/autopilot.js:72` (suggestNextTask staleness gate) — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
-- **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`
+- **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-bin PATH`, `--runner-template CMD`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
 **Search:** `rg "autopilotAtris|suggestNextTask" commands/autopilot.js`
@@ -774,14 +774,16 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
   - `--once` — Single plan→do→review cycle
-  - `--verbose` / `-v` — Show claude -p output (stdio: inherit)
+  - `--verbose` / `-v` — Show configured runner output (stdio: inherit)
   - `--dry-run` — Preview context without executing
   - `--cycles=N` — Max cycles (default: 5)
   - `--timeout=N` — Phase timeout in seconds (default: 600)
+  - `--runner-bin PATH` — Runner binary for this run
+  - `--runner-template CMD` — Runner command template for this run
   - `--push` — Auto-push after each cycle (default: true)
   - `--no-push` — Skip auto-push after each cycle
 - **Flow:**
-  1. Validate atris/ folder + claude CLI exist
+  1. Validate atris/ folder + configured runner binary exist
   2. Build context paths (MAP, TODO, PERSONA, lessons, journal)
   3. Loop up to N cycles:
      - Check `hasWork()` — stop if inbox + backlog empty
