@@ -291,16 +291,35 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.match(help.stdout, /recruiting\s+Open the Atris Labs recruiting computer/);
     assert.match(help.stdout, /atris computer recruiting status/);
     assert.match(help.stdout, /atris computer recruiting sync/);
+    assert.match(help.stdout, /atris computer recruiting pull/);
+    assert.match(help.stdout, /atris computer recruiting push --dry-run/);
 
     const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
     assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
     assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
     assert.match(shortcutHelp.stdout, /sync/);
+    assert.match(shortcutHelp.stdout, /pull/);
+    assert.match(shortcutHelp.stdout, /push --dry-run/);
 
     const syncHelp = await runCliAsync(['computer', 'recruiting', 'sync', '--help'], { cwd, env });
     assert.equal(syncHelp.status, 0, syncHelp.stderr || syncHelp.stdout);
     assert.match(syncHelp.stdout, /Usage: atris computer recruiting sync/);
     assert.match(syncHelp.stdout, /atris sync --watch/);
+
+    const pullHelp = await runCliAsync(['computer', 'recruiting', 'pull', '--help'], { cwd, env });
+    assert.equal(pullHelp.status, 0, pullHelp.stderr || pullHelp.stdout);
+    assert.match(pullHelp.stdout, /Usage: atris computer recruiting pull/);
+    assert.match(pullHelp.stdout, /atris pull atris-labs --keep-local --fail-on-conflict/);
+
+    const pushHelp = await runCliAsync(['computer', 'recruiting', 'push', '--help'], { cwd, env });
+    assert.equal(pushHelp.status, 0, pushHelp.stderr || pushHelp.stdout);
+    assert.match(pushHelp.stdout, /Usage: atris computer recruiting push/);
+    assert.match(pushHelp.stdout, /atris push atris-labs --dry-run/);
+
+    const watchHelp = await runCliAsync(['computer', 'recruiting', 'watch', '--help'], { cwd, env });
+    assert.equal(watchHelp.status, 0, watchHelp.stderr || watchHelp.stdout);
+    assert.match(watchHelp.stdout, /Usage: atris computer recruiting watch/);
+    assert.match(watchHelp.stdout, /atris sync --watch/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
@@ -324,6 +343,35 @@ test('computer recruiting sync prints local sync commands outside a business wor
     assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
     assert.match(res.stdout, /atris sync --dry-run/);
     assert.match(res.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting pull and push explain canonical commands without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const pull = await runCliAsync(['computer', 'recruiting', 'pull'], { cwd, env });
+    assert.equal(pull.status, 0, pull.stderr || pull.stdout);
+    assert.match(pull.stdout, /Recruiting local pull/);
+    assert.match(pull.stdout, /local workspace: not detected/);
+    assert.match(pull.stdout, /atris pull atris-labs --keep-local --fail-on-conflict/);
+    assert.match(pull.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+
+    const push = await runCliAsync(['computer', 'recruiting', 'push'], { cwd, env });
+    assert.equal(push.status, 0, push.stderr || push.stdout);
+    assert.match(push.stdout, /Recruiting local push/);
+    assert.match(push.stdout, /local workspace: not detected/);
+    assert.match(push.stdout, /atris push atris-labs --dry-run/);
+    assert.match(push.stdout, /atris computer recruiting push --dry-run/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
