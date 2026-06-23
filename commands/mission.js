@@ -1372,8 +1372,9 @@ function releaseMissionLock(lock) {
 }
 
 function probeClaudeBinary() {
-  const help = spawnSync('claude', ['--help'], { encoding: 'utf8', timeout: 8000 });
-  if (help.status !== 0) return { ok: false, error: 'claude --help failed' };
+  const runnerBin = resolveClaudeRunnerBin();
+  const help = spawnSync(runnerBin, ['--help'], { encoding: 'utf8', timeout: 8000 });
+  if (help.status !== 0) return { ok: false, error: `${runnerBin} --help failed` };
   const text = String(help.stdout || '');
   const required = ['--output-format', '--permission-mode', '--resume', '--session-id', '--include-partial-messages'];
   const missing = required.filter((flag) => !text.includes(flag));
