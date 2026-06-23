@@ -2266,13 +2266,12 @@ async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent [doctor|dogfood|spawn|spawns|spawn-status]');
+    console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
-    console.log('  Run `atris agent dogfood --live` to smoke-test Devin/Droid with GLM 5.2.');
     console.log('  Requires `atris login` first.');
     console.log('');
     console.log('  After selecting, use: atris chat ["message"]');
@@ -2283,6 +2282,11 @@ async function agentAtris() {
     agentDoctor();
   }
   if (firstArg === 'dogfood') {
+    if (process.env.ATRIS_INTERNAL_AGENT_DOGFOOD !== '1') {
+      console.error('✗ Error: agent dogfood is an internal diagnostic, not a public command.');
+      console.error('Use `atris agent doctor` for public CLI wiring checks.');
+      process.exit(1);
+    }
     const result = require('../commands/agent-spawn').agentDogfoodCommand(process.argv.slice(4));
     process.exit(result.ok ? 0 : 1);
   }
