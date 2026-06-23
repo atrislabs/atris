@@ -1638,6 +1638,24 @@ if (command === 'init') {
     exportRunLogs(exportArgs);
     process.exit(0);
   }
+  if (args[0] === 'diff') {
+    // Subcommand: atris run diff <file1> <file2>
+    const { diffRunLogs } = require('../commands/run');
+    const diffArgs = args.slice(1);
+    if (diffArgs.includes('--help') || diffArgs.includes('-h') || diffArgs.length === 0) {
+      console.log('');
+      console.log('Usage: atris run diff <file1> <file2>');
+      console.log('');
+      console.log('Compare two run logs side by side, showing phase-level differences.');
+      console.log('');
+      console.log('Options:');
+      console.log('  --help        Show this help');
+      console.log('');
+      process.exit(0);
+    }
+    diffRunLogs(diffArgs);
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
@@ -1664,6 +1682,7 @@ if (command === 'init') {
     console.log('  atris run search <keyword> [--phase P] [--limit N]  Search run logs');
     console.log('  atris run stats                                  Show run log stats');
     console.log('  atris run export [--out FILE]                    Export logs as JSON');
+    console.log('  atris run diff <file1> <file2>                   Compare two run logs');
     console.log('');
     process.exit(0);
   }
