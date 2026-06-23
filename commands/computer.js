@@ -13,6 +13,7 @@
  *   atris computer ls [path]        — List files
  *   atris computer cat <path>       — Read a file
  *   atris computer exec <prompt>    — Run with LLM (Claude Code)
+ *   atris computer recruiting       — Open Atris Labs recruiting computer
  */
 
 const fs = require('fs');
@@ -42,6 +43,18 @@ function sleep(ms) {
 
 const VALID_CLOUD_WORKERS = new Set(['claude', 'openai']);
 const LOCAL_BRIDGE_RECONNECT_MS = 2000;
+const VALID_COMPUTER_TYPES = new Set([
+  'general',
+  'business_ops',
+  'codeops',
+  'research',
+  'crm',
+  'reporting',
+  'recruiting',
+  'event_ops',
+  'support',
+]);
+const RECRUITING_BUSINESS_SLUG = 'atris-labs';
 const KNOWN_CHAT_COMMANDS = new Set([
   '/audit',
   '/exit',
@@ -88,6 +101,21 @@ planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, mer
 
 Never hide failures.
 A blocked check or missing permission is evidence, not success.
+`.trim();
+
+const RECRUITING_WORKFLOW_PROMPT = `
+## Atris Recruiting Workflow
+
+You are running inside the recruiting computer.
+Optimize for recruiter throughput: pipeline clarity, candidate follow-up, role context, interview loops, and decision notes.
+Do not send outreach, DMs, emails, or calendar invites without explicit operator approval.
+
+For each work block, report:
+- role or pipeline touched
+- candidates or sources reviewed
+- artifact changed
+- follow-up owner
+- sync/proof status
 `.trim();
 
 function color(code, value) {
@@ -266,7 +294,8 @@ function printCloudStartPanel(ctx, worker, model, billingLabel, authSummary = nu
 
 function appendSystemPrompt(basePrompt, extraPrompt) {
   if (!extraPrompt) return basePrompt || null;
-  if (basePrompt && basePrompt.includes('## Atris CodeOps Workflow')) return basePrompt;
+  const marker = String(extraPrompt).split('\n', 1)[0];
+  if (basePrompt && marker && basePrompt.includes(marker)) return basePrompt;
   if (!basePrompt) return extraPrompt;
   return `${String(basePrompt).trim()}\n\n${extraPrompt}`;
 }
@@ -277,6 +306,15 @@ function codeOpsCloudOptions(options = {}) {
     worker: options.worker || 'claude',
     mode: 'codeops',
     systemPrompt: appendSystemPrompt(options.systemPrompt, CODEOPS_WORKFLOW_PROMPT),
+  };
+}
+
+function recruitingCloudOptions(options = {}) {
+  return {
+    ...options,
+    worker: options.worker || 'claude',
+    mode: 'recruiting',
+    systemPrompt: appendSystemPrompt(options.systemPrompt, RECRUITING_WORKFLOW_PROMPT),
   };
 }
 
@@ -304,6 +342,26 @@ function printCodeOpsWorkflowContract() {
   console.log('  Required final evidence: edited_files, commands_run, validation_result, pr_url, pr_state, merge_state, next_task.');
   console.log('  Allowed states: planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, merge_blocked_policy, merged, failed, needs_human.');
   console.log('  Full permissions stay on; the workflow contract controls how the computer uses them.');
+}
+
+function printRecruitingWorkflowContract() {
+  console.log('');
+  console.log(ui.bold('Recruiting workflow'));
+  console.log('  pipeline -> candidates -> next touch -> owner -> proof -> sync');
+  console.log('');
+  console.log('  No external outreach, DMs, emails, or calendar invites without explicit operator approval.');
+  console.log('  Required final evidence: pipeline touched, candidates reviewed, artifact changed, follow-up owner, sync/proof status.');
+}
+
+function printRecruitingComputerHelp() {
+  console.log('Usage: atris computer recruiting [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
+  console.log('');
+  console.log('Examples:');
+  console.log('  atris computer recruiting');
+  console.log('  atris computer recruiting status');
+  console.log('  atris computer recruiting run "pwd && find . -maxdepth 2 -type f | head"');
+  console.log("  atris computer recruiting exec \"Summarize today's candidate follow-ups\"");
+  console.log('  atris computer recruiting create');
 }
 
 function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
@@ -589,6 +647,7 @@ function parseComputerCreateArgs(argv = []) {
   let businessSlug = null;
   let help = false;
   let setDefault = false;
+  let computerType = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -605,6 +664,15 @@ function parseComputerCreateArgs(argv = []) {
       businessSlug = arg.split('=', 2)[1] || null;
       continue;
     }
+    if ((arg === '--type' || arg === '-t') && argv[i + 1] && !argv[i + 1].startsWith('-')) {
+      computerType = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--type=')) {
+      computerType = arg.split('=', 2)[1] || null;
+      continue;
+    }
     if (arg === '--set-default') {
       setDefault = true;
       continue;
@@ -615,9 +683,39 @@ function parseComputerCreateArgs(argv = []) {
   return {
     name: nameParts.join(' ').trim(),
     businessSlug: businessSlug ? String(businessSlug).trim() : null,
+    computerType: computerType ? normalizeComputerType(computerType) : null,
     help,
     setDefault,
   };
+}
+
+function computerCreateArgsHaveName(argv = []) {
+  const flagsWithValues = new Set(['--business', '-b', '--type', '-t']);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (flagsWithValues.has(arg)) {
+      i++;
+      continue;
+    }
+    if (!arg || arg.startsWith('-') || arg === 'help') continue;
+    return true;
+  }
+  return false;
+}
+
+function normalizeComputerType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (normalized === 'business') return 'business_ops';
+  if (normalized === 'event') return 'event_ops';
+  return normalized || 'general';
+}
+
+function formatComputerTypeList() {
+  return [...VALID_COMPUTER_TYPES].join(', ');
 }
 
 function parseComputerDeleteArgs(argv = []) {
@@ -1078,6 +1176,41 @@ async function resolveComputerCommandContext(token, options = {}) {
   return resolveBusinessContext(token);
 }
 
+async function resolveTypedBusinessComputerContext(token, options = {}, defaults = {}) {
+  const businessSlug = options.businessSlug || defaults.businessSlug;
+  const computerType = normalizeComputerType(defaults.computerType);
+  if (options.workspaceId) {
+    return resolveComputerCommandContext(token, { ...options, businessSlug });
+  }
+
+  const ctx = await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
+  if (!ctx?.businessId) return null;
+  const workspaces = await listBusinessWorkspaces(token, ctx);
+  const workspace = resolveWorkspaceByComputerType(workspaces, computerType);
+  if (!workspace?.id) {
+    return {
+      ...ctx,
+      workspaceId: null,
+      missingComputerType: computerType,
+    };
+  }
+  return {
+    ...ctx,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name || null,
+    computerType,
+  };
+}
+
+function printMissingTypedComputer(ctx, computerType, options = {}) {
+  const label = options.label || computerType;
+  const businessSlug = options.businessSlug || ctx?.slug || RECRUITING_BUSINESS_SLUG;
+  console.error(`No ${label} computer found for ${ctx?.businessName || businessSlug}.`);
+  console.error(`Create it: atris computer ${label} create`);
+  console.error(`Or explicitly create one: atris computer create "${label[0].toUpperCase()}${label.slice(1)} Computer" --business ${businessSlug} --type ${computerType}`);
+  process.exitCode = 1;
+}
+
 function looksLikeWorkspaceId(input) {
   const value = String(input || '').trim();
   if (!value) return false;
@@ -1177,6 +1310,7 @@ function rememberCreatedComputer(ctx, workspace, endpoint = null, options = {}) 
     name: ctx.businessName,
     slug,
     computer_name: shouldSetDefault ? workspace.name : existing.computer_name,
+    computer_type: shouldSetDefault ? (options.computerType || existing.computer_type) : existing.computer_type,
     endpoint: shouldSetDefault ? (endpoint || existing.endpoint) : existing.endpoint,
     added_at: existing.added_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -1230,6 +1364,23 @@ function workspaceMatchesInput(workspace, input) {
 
 function resolveWorkspaceFromList(workspaces, input) {
   return (workspaces || []).find((workspace) => workspaceMatchesInput(workspace, input)) || null;
+}
+
+function workspaceComputerType(workspace) {
+  return normalizeComputerType(workspace?.type || workspace?.computer_type || workspace?.workspace_type || '');
+}
+
+function workspaceMatchesComputerType(workspace, type) {
+  if (!workspace || !type) return false;
+  const wanted = normalizeComputerType(type);
+  if (workspaceComputerType(workspace) === wanted) return true;
+  const compactWanted = wanted.replace(/_/g, '');
+  const name = String(workspace.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return Boolean(compactWanted && name.includes(compactWanted));
+}
+
+function resolveWorkspaceByComputerType(workspaces, type) {
+  return (workspaces || []).find((workspace) => workspaceMatchesComputerType(workspace, type)) || null;
 }
 
 function formatLeaseAge(seconds) {
@@ -1596,15 +1747,27 @@ async function computerCreate(token, args = [], defaults = {}) {
   if (!options.businessSlug && defaults.businessSlug) {
     options.businessSlug = defaults.businessSlug;
   }
+  if (!options.computerType && defaults.computerType) {
+    options.computerType = normalizeComputerType(defaults.computerType);
+  }
+  const computerType = options.computerType || 'general';
   if (options.help || !options.name) {
-    console.log('Usage: atris computer create <name> --business <slug> [--set-default]');
+    console.log('Usage: atris computer create <name> --business <slug> [--type <type>] [--set-default]');
     console.log('');
     console.log('Create a business computer, activate it, and wake it in one command.');
+    console.log(`Types: ${formatComputerTypeList()}`);
     console.log('');
     console.log('Examples:');
     console.log('  atris computer create "My Business Computer" --business atris-labs');
-    console.log('  atris computer create "Recruiting Computer"');
+    console.log('  atris computer create "Recruiting Computer" --business atris-labs --type recruiting');
     if (!options.name && !options.help) process.exitCode = 1;
+    return;
+  }
+
+  if (!VALID_COMPUTER_TYPES.has(computerType)) {
+    console.error(`Invalid computer type: ${computerType}`);
+    console.error(`Expected one of: ${formatComputerTypeList()}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -1620,7 +1783,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   const created = await apiRequestJson(`/business/${ctx.businessId}/workspaces`, {
     method: 'POST',
     token,
-    body: { name: options.name, type: 'general' },
+    body: { name: options.name, type: computerType },
   });
   if (!created.ok) {
     console.error(`Failed to create workspace: ${created.errorMessage || created.error || created.status}`);
@@ -1664,6 +1827,7 @@ async function computerCreate(token, args = [], defaults = {}) {
     : (wake.data?.status || (activate.ok ? 'activated' : 'warming_up'));
   rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint, {
     setDefault: options.setDefault,
+    computerType,
   });
   await bootstrapBusinessComputerRuntime(token, { ...ctx, workspaceId }, 'computer-create');
 
@@ -1671,6 +1835,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log('');
   console.log(`Computer created: ${workspaceId}`);
   console.log(`  Name:      ${workspace.name || options.name}`);
+  console.log(`  Type:      ${computerType}`);
   console.log(`  Business:  ${ctx.businessName}`);
   console.log(`  Status:    ${status}`);
   if (endpoint) console.log(`  Endpoint:  ${endpoint}`);
@@ -2615,9 +2780,12 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const isRecruiting = initialOptions.mode === 'recruiting';
   const oneShotMessage = initialOptions.message != null;
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
+    : isRecruiting
+    ? appendSystemPrompt(initialOptions.systemPrompt, RECRUITING_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
@@ -2642,6 +2810,9 @@ async function computerChat(token, ctx, initialOptions = {}) {
   if (!oneShotMessage) {
     if (isCodeOps) {
       printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+    } else if (isRecruiting) {
+      printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+      printRecruitingWorkflowContract();
     } else {
       printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
     }
@@ -2688,7 +2859,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: isCodeOps ? 'codeops> ' : 'cloud> ',
+    prompt: isCodeOps ? 'codeops> ' : (isRecruiting ? 'recruiting> ' : 'cloud> '),
   });
 
   rl.prompt();
@@ -2709,6 +2880,9 @@ async function computerChat(token, ctx, initialOptions = {}) {
         authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
         if (isCodeOps) {
           printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+        } else if (isRecruiting) {
+          printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+          printRecruitingWorkflowContract();
         } else {
           printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
         }
@@ -2726,7 +2900,8 @@ async function computerChat(token, ctx, initialOptions = {}) {
         continue;
       }
       if (line === '/workflow') {
-        printCodeOpsWorkflowContract();
+        if (isRecruiting) printRecruitingWorkflowContract();
+        else printCodeOpsWorkflowContract();
         rl.prompt();
         continue;
       }
@@ -3204,6 +3379,71 @@ async function computerProof(token, ctx, initialOptions = {}) {
   }
 }
 
+async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
+  const recruitingOptions = recruitingCloudOptions(cloudOptions);
+  const sub = args[1];
+  const rest = args.slice(2).join(' ');
+
+  if (sub === '--help' || sub === 'help') {
+    printRecruitingComputerHelp();
+    return;
+  }
+
+  if (sub === 'create') {
+    const createArgs = args.slice(2);
+    const finalArgs = computerCreateArgsHaveName(createArgs)
+      ? createArgs
+      : ['Recruiting Computer', ...createArgs];
+    return computerCreate(token, finalArgs, {
+      businessSlug: cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG,
+      computerType: 'recruiting',
+    });
+  }
+
+  const ctx = await resolveTypedBusinessComputerContext(token, recruitingOptions, {
+    businessSlug: RECRUITING_BUSINESS_SLUG,
+    computerType: 'recruiting',
+  });
+  if (!ctx?.businessId) {
+    console.error('Atris Recruiting is not available for this account.');
+    console.error('Ask an Atris Labs admin to add you, or pass --business <slug>.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!ctx.workspaceId) {
+    printMissingTypedComputer(ctx, 'recruiting', {
+      label: 'recruiting',
+      businessSlug: recruitingOptions.businessSlug || RECRUITING_BUSINESS_SLUG,
+    });
+    return;
+  }
+
+  if (!sub || sub === 'chat') return computerChat(token, ctx, recruitingOptions);
+
+  switch (sub) {
+    case 'status': return computerStatus(token, ctx);
+    case 'up':
+    case 'wake': return computerWake(token, ctx);
+    case 'sleep': return computerSleep(token, ctx);
+    case 'run': return computerRun(token, rest, ctx);
+    case 'grep': return computerGrep(token, rest, ctx);
+    case 'ls': return computerLs(token, rest || undefined, ctx);
+    case 'cat': return computerCat(token, rest, ctx);
+    case 'exec': return computerExec(token, rest, ctx, recruitingOptions);
+    case 'audit': {
+      const limit = rest ? Number.parseInt(rest, 10) : 10;
+      return computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
+    }
+    case 'workflow':
+      printRecruitingWorkflowContract();
+      return;
+    default:
+      console.error(`Unknown recruiting subcommand: ${sub}`);
+      console.log('Run: atris computer recruiting help');
+      process.exitCode = 1;
+  }
+}
+
 async function runComputer() {
   const parsed = parseComputerOptions(process.argv.slice(3));
   const args = parsed.positional;
@@ -3283,6 +3523,11 @@ async function runComputer() {
     }
   }
 
+  if (sub === 'recruiting' && (args[1] === '--help' || args[1] === 'help')) {
+    printRecruitingComputerHelp();
+    return;
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -3309,6 +3554,7 @@ async function runComputer() {
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
     console.log('  codeops         Open Atris CodeOps workflow computer if your account has access');
+    console.log('  recruiting      Open the Atris Labs recruiting computer');
     console.log('  --business      Select a business by slug');
     console.log('  --workspace     Select a specific workspace/computer id');
     console.log('  --worker        Cloud worker override: claude | openai');
@@ -3317,7 +3563,7 @@ async function runComputer() {
     console.log('  claude|codex    Legacy local console backends');
     console.log('');
     console.log('Cloud commands:');
-    console.log('  create <name>    Create and wake an extra business computer');
+    console.log('  create <name>    Create and wake an extra business computer; add --type recruiting|codeops|research|crm');
     console.log('  activate         Attach EC2 to --workspace and remember it as the default');
     console.log('  chat            Interactive cloud workspace chat');
     console.log('  chat --message  Send one non-interactive message and print the reply');
@@ -3343,7 +3589,7 @@ async function runComputer() {
     console.log('  atris computer');
     console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # first/default computer with Atris + operator');
-    console.log('  atris computer create "Recruiting Computer" --business atris-labs');
+    console.log('  atris computer create "Recruiting Computer" --business atris-labs --type recruiting');
     console.log('  atris computer --business atris-labs --workspace <workspace-id>');
     console.log('  atris computer sleep --business atris-labs --workspace <workspace-id>');
     console.log('  atris computer delete --business atris-labs --workspace <workspace-id>');
@@ -3357,6 +3603,10 @@ async function runComputer() {
     console.log('  atris computer codeops status');
     console.log('  atris computer codeops run "pwd"');
     console.log('  atris computer codeops exec "Plan a safe repo fix"');
+    console.log('  atris computer recruiting');
+    console.log('  atris computer recruiting status');
+    console.log('  atris computer recruiting run "pwd"');
+    console.log('  atris computer recruiting exec "Summarize candidate follow-ups"');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');
@@ -3369,6 +3619,9 @@ async function runComputer() {
   const token = getToken();
   if (sub === 'create') {
     return computerCreate(token, args.slice(1), cloudOptions);
+  }
+  if (sub === 'recruiting') {
+    return runRecruitingComputerShortcut(token, args, cloudOptions);
   }
 
   const ctx = await resolveComputerCommandContext(token, cloudOptions);

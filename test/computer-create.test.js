@@ -60,6 +60,7 @@ function startApiServer(requests) {
         send(200, [
           { id: 'ws-old', business_id: 'biz-1', name: 'Main', type: 'general', status: 'active', is_default: true },
           { id: 'ws-new', business_id: 'biz-1', name: 'My Business Computer', type: 'general', status: 'active', is_default: false },
+          { id: 'ws-recruiting', business_id: 'biz-1', name: 'Recruiting Computer', type: 'recruiting', status: 'active', is_default: false },
           { id: 'ws-mismatch', business_id: 'biz-1', name: 'Mismatch', type: 'general', status: 'active', is_default: false },
         ]);
         return;
@@ -156,6 +157,7 @@ function startApiServer(requests) {
         (
           req.url === '/api/business/biz-1/workspaces/ws-new/terminal' ||
           req.url === '/api/business/biz-1/workspaces/ws-old/terminal' ||
+          req.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal' ||
           req.url === '/api/business/biz-1/workspaces/ws-mismatch/terminal'
         )
       ) {
@@ -272,6 +274,30 @@ test('computer proof can retry against attached workspace context', () => {
     workspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
   });
   assert.equal(contextForAttachedWorkspaceMismatch(ctx, { fallback: { error: 'other' } }), null);
+});
+
+test('computer help surfaces the recruiting shortcut without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const help = await runCliAsync(['computer', '--help'], { cwd, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /recruiting\s+Open the Atris Labs recruiting computer/);
+    assert.match(help.stdout, /atris computer recruiting status/);
+
+    const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
+    assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
+    assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
 });
 
 test('top-level wake and sleep use business computer lifecycle for business slugs', async () => {
@@ -452,6 +478,120 @@ test('computer create --set-default updates the cached workspace', async () => {
     const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
     assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
     assert.equal(cache['atris-labs'].computer_name, 'My Business Computer');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting create seeds a typed recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'create',
+      '--set-default',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Computer created: ws-new/);
+    assert.match(res.stdout, /Name:\s+Recruiting Computer/);
+    assert.match(res.stdout, /Type:\s+recruiting/);
+    assert.match(res.stdout, /Default:\s+now ws-new/);
+    const createRequest = requests.find((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces');
+    assert.deepEqual(createRequest.body, { name: 'Recruiting Computer', type: 'recruiting' });
+    const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
+    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
+    assert.equal(cache['atris-labs'].computer_type, 'recruiting');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting status targets the recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'status',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Business:\s+Atris Labs/);
+    assert.match(res.stdout, /Target workspace:\s+Recruiting Computer \(ws-recruiting\)/);
+    assert.match(res.stdout, /Health:\s+ready/);
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal'));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting run routes shell commands to the recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'run',
+      'echo RECRUITING_OK',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.ok(requests.some((request) => (
+      request.method === 'POST' &&
+      request.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal' &&
+      request.body?.command === 'echo RECRUITING_OK'
+    )));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
