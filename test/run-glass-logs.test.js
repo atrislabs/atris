@@ -479,3 +479,20 @@ test('searchRunLogs reports no matches gracefully', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+// --- spawnSync error handling ---
+
+test('run.js uses spawnSync instead of execSync for phase execution', () => {
+  assert.match(RUN_SRC, /spawnSync/);
+  assert.match(RUN_SRC, /const \{ execSync, spawnSync \}/);
+});
+
+test('run.js execPhaseCommandSync handles non-zero exit codes', () => {
+  assert.match(RUN_SRC, /result\.status !== 0/);
+  assert.match(RUN_SRC, /err\.stdout = result\.stdout/);
+  assert.match(RUN_SRC, /err\.signal = result\.signal/);
+});
+
+test('run.js execPhaseCommandSync handles spawn errors', () => {
+  assert.match(RUN_SRC, /if \(result\.error\) throw result\.error/);
+});
