@@ -771,6 +771,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Run log search:** `commands/run.js:682-776` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
 - **Run log stats:** `commands/run.js:778-832` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
 - **Run log export:** `commands/run.js:834-883` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
+- **Run log diff:** `commands/run.js:885-964` (diffRunLogs function) — `atris run diff <file1> <file2>` subcommand for comparing two run logs
 - **Work detector:** `commands/run.js:220-241` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:246-274` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
