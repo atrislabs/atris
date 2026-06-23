@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
 const {
@@ -71,7 +71,33 @@ function isPhaseKillError(err) {
 
 function execPhaseCommandSync(cmd, opts = {}) {
   try {
-    return execSync(cmd, { ...opts, detached: true });
+    // Use spawnSync for better stdio control. In verbose mode, stdout inherits
+    // for live streaming while stderr also inherits. In non-verbose mode,
+    // stdout is piped for capture. stdout is always available in result.stdout
+    // when piped.
+    const spawnOpts = {
+      cwd: opts.cwd,
+      encoding: opts.encoding,
+      timeout: opts.timeout,
+      maxBuffer: opts.maxBuffer,
+      env: opts.env,
+      detached: true,
+      stdio: opts.stdio,
+      shell: true,
+    };
+    const result = spawnSync(cmd, [], spawnOpts);
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      const err = new Error(`${cmd} exited with code ${result.status}`);
+      err.status = result.status;
+      err.stdout = result.stdout;
+      err.stderr = result.stderr;
+      err.signal = result.signal;
+      err.killed = result.killed;
+      err.pid = result.pid;
+      throw err;
+    }
+    return result.stdout || '';
   } catch (err) {
     if (isPhaseKillError(err) && err.pid) {
       try {
@@ -186,17 +212,12 @@ function executePhase(phase, context, options = {}) {
       cwd: process.cwd(),
       encoding: 'utf8',
       timeout,
-      // Always pipe stdout so reasoning is captured as material for run logs.
-      // In verbose mode, inherit stderr so progress streams live; stdout is
-      // printed after capture below.
-      stdio: verbose ? ['pipe', 'pipe', 'inherit'] : 'pipe',
+      // In verbose mode: inherit stdout+stderr for live streaming.
+      // In non-verbose mode: pipe stdout for capture (run logs), inherit stderr.
+      stdio: verbose ? 'inherit' : ['pipe', 'pipe', 'inherit'],
       maxBuffer: 10 * 1024 * 1024,
       env
     });
-
-    if (verbose && output) {
-      process.stdout.write(output);
-    }
 
     try { fs.unlinkSync(tmpFile); } catch {}
     return output || '';
