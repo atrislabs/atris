@@ -714,6 +714,10 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
   if (action === 'push' && args.includes('--dry-run')) {
     console.log('');
     console.log('Recruiting next step');
+    if (args.includes('--allow-broad-workspace')) {
+      console.log('  atris computer recruiting push --allow-broad-workspace');
+      return;
+    }
     console.log('  If the dry-run showed review before publish:');
     console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
     console.log('  atris computer recruiting push --allow-broad-workspace');
