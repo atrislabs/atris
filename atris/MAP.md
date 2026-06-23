@@ -766,7 +766,8 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **Prompt builder:** `commands/run.js:90-168` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:173-215` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
 - **Glass run logs:** `commands/run.js:27-62` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
-- **Run log browser:** `commands/run.js:520-588` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE]` subcommand for browsing glass run logs
+- **Run log browser:** `commands/run.js:520-613` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
+- **Run log pruning:** `commands/run.js:615-665` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
 - **Work detector:** `commands/run.js:220-241` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:246-274` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
