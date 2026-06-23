@@ -4613,6 +4613,25 @@ function cmdClaim(args) {
   }
 }
 
+function readEndgameAgentAction(root, owner) {
+  const todoPath = path.join(root || process.cwd(), 'atris', 'TODO.md');
+  if (!fs.existsSync(todoPath)) return null;
+  const content = fs.readFileSync(todoPath, 'utf8');
+  const section = extractTodoSectionMarkdown(content, 'Endgame');
+  if (!section) return null;
+  const slug = (section.match(/\*\*Slug:\*\*\s*([^\n]+)/i)?.[1] || '').trim();
+  const horizon = (section.match(/\*\*Horizon:\*\*\s*([^\n]+)/i)?.[1] || '').trim();
+  if (!slug && !horizon) return null;
+  const member = String(owner || DEFAULT_OWNER);
+  return {
+    kind: 'create_bounded_endgame_task',
+    endgame_slug: slug || null,
+    horizon: horizon || null,
+    command: `atris brain activate --member ${member} --root . --verify`,
+    message: `Create the next bounded task from Endgame${slug ? ` ${slug}` : ''}${horizon ? `: ${horizon}` : ''}. Do not accept XP.`,
+  };
+}
+
 function cmdNext(args) {
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
@@ -4659,6 +4678,9 @@ function cmdNext(args) {
       const continueWorkCommand = handoff.next_action === 'continue_work'
         ? continueWorkCommandForTask(reviewTask, { owner })
         : null;
+      const nextAgentAction = handoff.next_action === 'human_accept_waiting'
+        ? readEndgameAgentAction(taskDb.workspaceRoot(), owner)
+        : null;
       if (wantsJson(args)) {
         printJson({
           ok: true,
@@ -4667,6 +4689,7 @@ function cmdNext(args) {
           owner: String(owner),
           projection_path: outPath,
           handoff,
+          next_agent_action: nextAgentAction,
           continue_work_command: continueWorkCommand,
           continue_work_api: continueWorkCommand ? { method: 'POST', path: `/api/tasks/${encodeURIComponent(reviewTask.id)}/continue-work` } : null,
           review_task: reviewTask,
@@ -4680,8 +4703,9 @@ function cmdNext(args) {
       console.log(handoff.next_action === 'continue_work'
         ? 'Continue work elsewhere; AgentXP waits for human accept.'
         : handoff.next_action === 'human_accept_waiting'
-        ? 'No concrete next agent task is attached; AgentXP waits for human accept.'
+        ? (nextAgentAction ? nextAgentAction.message : 'No concrete next agent task is attached; AgentXP waits for human accept.')
         : 'Review this task again before continuing.');
+      if (nextAgentAction) console.log(`Command: ${nextAgentAction.command}`);
       if (continueWorkCommand) console.log(`Command: ${continueWorkCommand}`);
       return;
     }
