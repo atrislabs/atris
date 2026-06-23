@@ -24,6 +24,29 @@ const pkg = require('../package.json');
 const DEFAULT_MAX_CYCLES = 5;
 const PHASE_TIMEOUT = 600000; // 10 min per phase
 
+function isPhaseTimeoutError(err) {
+  return Boolean(err && err.code === 'ETIMEDOUT');
+}
+
+function isPhaseKillError(err) {
+  return Boolean(err && (err.killed || err.code === 'ETIMEDOUT' || err.signal));
+}
+
+function execPhaseCommandSync(cmd, opts = {}) {
+  try {
+    return execSync(cmd, { ...opts, detached: true });
+  } catch (err) {
+    if (isPhaseKillError(err) && err.pid) {
+      try {
+        process.kill(-err.pid, 'SIGKILL');
+      } catch (sweepErr) {
+        if (sweepErr.code !== 'ESRCH') throw sweepErr;
+      }
+    }
+    throw err;
+  }
+}
+
 /**
  * Build prompt for each phase with full context
  */
@@ -122,7 +145,7 @@ function executePhase(phase, context, options = {}) {
     // Strip CLAUDECODE env var to allow spawning from within a Claude Code session
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const output = execSync(cmd, {
+    const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
       timeout,
@@ -135,8 +158,11 @@ function executePhase(phase, context, options = {}) {
     return output || '';
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
-    if (err.killed) {
+    if (isPhaseTimeoutError(err)) {
       throw new Error(`${phase} timed out after ${timeout / 1000}s`);
+    }
+    if (isPhaseKillError(err)) {
+      throw new Error(`${phase} killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall`);
     }
     // execSync throws on non-zero exit but may still have output
     if (err.stdout) return err.stdout;
