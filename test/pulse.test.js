@@ -237,8 +237,11 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   // deadline self-removal (the commander tick.sh pattern) must be present
   assert.match(script, /crontab -l .* grep -v "\$MARKER" .* crontab -/);
   // runner-agnostic model default so a retired model can't silently kill the loop
-  assert.match(script, /ATRIS_CLAUDE_MODEL="opus"/);
+  assert.match(script, /export ATRIS_RUNNER_MODEL='opus'/);
+  assert.match(script, /export ATRIS_CLAUDE_MODEL="\$\{ATRIS_RUNNER_MODEL\}"/);
+  assert.doesNotMatch(script, /ATRIS_RUNNER_BIN=/);
   assert.doesNotMatch(script, /ATRIS_CLAUDE_BIN=/);
+  assert.doesNotMatch(script, /ATRIS_RUNNER_COMMAND_TEMPLATE=/);
   assert.doesNotMatch(script, /ATRIS_CLAUDE_COMMAND_TEMPLATE=/);
 });
 
@@ -262,7 +265,9 @@ test('buildTickScript preserves configured runner command for cron', () => {
     runnerBin: '/opt/atris/bin/claude-nightly',
     runnerCommandTemplate: "{bin} --prompt-file {promptFile} --literal $HOME --name 'nightly'",
   });
-  assert.ok(script.includes("export ATRIS_CLAUDE_BIN='/opt/atris/bin/claude-nightly'"));
+  assert.ok(script.includes("export ATRIS_RUNNER_BIN='/opt/atris/bin/claude-nightly'"));
+  assert.ok(script.includes('export ATRIS_CLAUDE_BIN="${ATRIS_RUNNER_BIN}"'));
+  assert.ok(script.includes('export ATRIS_RUNNER_COMMAND_TEMPLATE='));
   assert.ok(script.includes('export ATRIS_CLAUDE_COMMAND_TEMPLATE='));
   assert.ok(script.includes('--literal $HOME'));
   assert.ok(script.includes("'\\''nightly'\\'''"));
