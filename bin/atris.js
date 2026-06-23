@@ -130,11 +130,20 @@ function isOptionValue(args, index, optionNames) {
 
 function applyRunnerFlags(args) {
   const runnerBin = readOptionArg(args, '--runner-bin');
-  if (runnerBin) process.env.ATRIS_CLAUDE_BIN = runnerBin;
+  if (runnerBin) {
+    process.env.ATRIS_RUNNER_BIN = runnerBin;
+    process.env.ATRIS_CLAUDE_BIN = runnerBin;
+  }
   const runnerTemplate = readOptionArg(args, '--runner-template');
-  if (runnerTemplate) process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
+  if (runnerTemplate) {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = runnerTemplate;
+    process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
+  }
   const runnerModel = readOptionArg(args, '--runner-model');
-  if (runnerModel) process.env.ATRIS_CLAUDE_MODEL = runnerModel;
+  if (runnerModel) {
+    process.env.ATRIS_RUNNER_MODEL = runnerModel;
+    process.env.ATRIS_CLAUDE_MODEL = runnerModel;
+  }
 }
 
 const isBusinessSyncSafetyCommand = command === 'sync'

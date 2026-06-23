@@ -13,40 +13,42 @@ const {
   buildRunnerCommand,
 } = require('../lib/runner-command');
 
-function withEnv(value, fn) {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  if (value === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
-  else process.env.ATRIS_CLAUDE_MODEL = value;
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL',
+  'ATRIS_CLAUDE_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+];
+
+function withRunnerEnv(values, fn) {
+  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
   try {
     fn();
   } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
-    else process.env.ATRIS_CLAUDE_MODEL = prev;
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
+}
+
+function withEnv(value, fn) {
+  withRunnerEnv({ ATRIS_CLAUDE_MODEL: value }, fn);
 }
 
 function withBinEnv(value, fn) {
-  const prev = process.env.ATRIS_CLAUDE_BIN;
-  if (value === undefined) delete process.env.ATRIS_CLAUDE_BIN;
-  else process.env.ATRIS_CLAUDE_BIN = value;
-  try {
-    fn();
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_BIN;
-    else process.env.ATRIS_CLAUDE_BIN = prev;
-  }
+  withRunnerEnv({ ATRIS_CLAUDE_BIN: value }, fn);
 }
 
 function withTemplateEnv(value, fn) {
-  const prev = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
-  if (value === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
-  else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = value;
-  try {
-    fn();
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
-    else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = prev;
-  }
+  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: value }, fn);
 }
 
 // --- resolveClaudeRunnerModel: precedence explicit > env > default alias ---
@@ -61,6 +63,12 @@ test('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env', () => {
   withEnv('sonnet', () => {
     assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
     assert.equal(resolveClaudeRunnerModel(null), 'sonnet');
+  });
+});
+
+test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () => {
+  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
   });
 });
 
@@ -86,12 +94,27 @@ test('resolveClaudeRunnerBin honors ATRIS_CLAUDE_BIN', () => {
   });
 });
 
+test('resolveClaudeRunnerBin prefers ATRIS_RUNNER_BIN over legacy env', () => {
+  withRunnerEnv({ ATRIS_RUNNER_BIN: '/opt/glm/runner', ATRIS_CLAUDE_BIN: '/opt/claude' }, () => {
+    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
+  });
+});
+
 test('resolveClaudeRunnerCommandTemplate honors ATRIS_CLAUDE_COMMAND_TEMPLATE', () => {
   withTemplateEnv('{bin} --print-file {promptFile} {modelFlag}', () => {
     assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --print-file {promptFile} {modelFlag}');
   });
   withTemplateEnv(undefined, () => {
     assert.equal(resolveClaudeRunnerCommandTemplate(), '');
+  });
+});
+
+test('resolveClaudeRunnerCommandTemplate prefers ATRIS_RUNNER_COMMAND_TEMPLATE over legacy env', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}',
+  }, () => {
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --model {model} --prompt-file {promptFile}');
   });
 });
 
@@ -148,11 +171,26 @@ test('buildRunnerCommand shell-quotes allowedTools in the default command shape'
 });
 
 test('buildRunnerCommand can replace the claude -p command shape by template', () => {
-  withBinEnv('/opt/atris/bin/claude-nightly', () => {
-    withTemplateEnv('{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}', () => {
-      const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet', allowedTools: 'Bash,Read' });
-      assert.equal(cmd, "/opt/atris/bin/claude-nightly --print-file /tmp/p.tmp --model sonnet --allowedTools 'Bash,Read'");
-    });
+  withRunnerEnv({
+    ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}',
+  }, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet', allowedTools: 'Bash,Read' });
+    assert.equal(cmd, "/opt/atris/bin/claude-nightly --print-file /tmp/p.tmp --model sonnet --allowedTools 'Bash,Read'");
+  });
+});
+
+test('buildRunnerCommand can target a GLM-style runner through ATRIS_RUNNER_*', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_BIN: '/opt/glm/runner',
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile} {allowedToolsFlag}',
+    ATRIS_CLAUDE_BIN: '/opt/claude',
+    ATRIS_CLAUDE_MODEL: 'opus',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}',
+  }, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
+    assert.equal(cmd, "/opt/glm/runner --model glm-5.2 --prompt-file /tmp/p.tmp --allowedTools 'Bash,Read'");
   });
 });
 
@@ -164,11 +202,12 @@ test('buildRunnerCommand template supports prompt substitution and optional tool
 });
 
 test('buildRunnerCommand template shell-quotes substituted values', () => {
-  withBinEnv('/Applications/Claude Nightly/bin/claude', () => {
-    withTemplateEnv('{bin} --file {promptFile} {modelFlag}', () => {
-      const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
-      assert.equal(cmd, "'/Applications/Claude Nightly/bin/claude' --file '/tmp/it'\\''s.tmp' --model opus");
-    });
+  withRunnerEnv({
+    ATRIS_CLAUDE_BIN: '/Applications/Claude Nightly/bin/claude',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --file {promptFile} {modelFlag}',
+  }, () => {
+    const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
+    assert.equal(cmd, "'/Applications/Claude Nightly/bin/claude' --file '/tmp/it'\\''s.tmp' --model opus");
   });
 });
 
