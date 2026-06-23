@@ -483,6 +483,12 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
   if (action === 'pull') {
     console.log('');
     console.log('Recruiting next step');
+    if (args.includes('--dry-run')) {
+      console.log('  atris computer recruiting pull     # writes review packet if conflicts were reported');
+      console.log('  atris computer recruiting review');
+      console.log('  atris computer recruiting push --dry-run');
+      return;
+    }
     console.log('  atris computer recruiting review   # if conflicts were reported');
     console.log('  atris computer recruiting push --dry-run');
     return;
@@ -3938,4 +3944,5 @@ module.exports = {
   renderComputerCardMarkdown,
   extractAttachedWorkspaceMismatch,
   contextForAttachedWorkspaceMismatch,
+  printRecruitingLocalSyncOutcome,
 };
