@@ -3023,7 +3023,7 @@ async function autopilotAtris(description, options = {}) {
   }
 
   try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install the configured runner first.`);
+    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
     process.exit(1);
   }
 

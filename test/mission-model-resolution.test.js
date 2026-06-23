@@ -11,49 +11,69 @@ const {
   consecutiveSameReasonErrors,
 } = require('../commands/mission');
 
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_CLAUDE_MODEL',
+  'ATRIS_CLAUDE_BIN',
+];
+
+function withRunnerEnv(values, fn) {
+  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  try {
+    fn();
+  } finally {
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 // --- resolveClaudeRunnerModel: precedence explicit > env > default alias ---
 
 test('resolveClaudeRunnerModel honors explicit mission.model first', () => {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  process.env.ATRIS_CLAUDE_MODEL = 'sonnet';
-  try {
+  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-4-8' }), 'claude-opus-4-8');
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL; else process.env.ATRIS_CLAUDE_MODEL = prev;
-  }
+  });
 });
 
 test('resolveClaudeRunnerModel falls back to ATRIS_CLAUDE_MODEL env when no mission.model', () => {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  process.env.ATRIS_CLAUDE_MODEL = 'sonnet';
-  try {
+  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
     assert.equal(resolveClaudeRunnerModel({ model: null }), 'sonnet');
     assert.equal(resolveClaudeRunnerModel({}), 'sonnet');
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL; else process.env.ATRIS_CLAUDE_MODEL = prev;
-  }
+  });
+});
+
+test('resolveClaudeRunnerModel prefers ATRIS_RUNNER_MODEL over legacy env', () => {
+  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
+  });
 });
 
 test('resolveClaudeRunnerModel defaults to the opus alias (never a retired versioned id)', () => {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  delete process.env.ATRIS_CLAUDE_MODEL;
-  try {
+  withRunnerEnv({}, () => {
     assert.equal(resolveClaudeRunnerModel({ model: null }), 'opus');
     assert.equal(resolveClaudeRunnerModel({}), 'opus');
     assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'opus');
-  } finally {
-    if (prev !== undefined) process.env.ATRIS_CLAUDE_MODEL = prev;
-  }
+  });
 });
 
 test('resolveClaudeRunnerBin lets missions swap the Claude binary by env', () => {
-  const prev = process.env.ATRIS_CLAUDE_BIN;
-  process.env.ATRIS_CLAUDE_BIN = '/opt/atris/bin/claude-nightly';
-  try {
+  withRunnerEnv({ ATRIS_CLAUDE_BIN: '/opt/atris/bin/claude-nightly' }, () => {
     assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_BIN; else process.env.ATRIS_CLAUDE_BIN = prev;
-  }
+  });
+});
+
+test('resolveClaudeRunnerBin prefers ATRIS_RUNNER_BIN over legacy env', () => {
+  withRunnerEnv({ ATRIS_RUNNER_BIN: '/opt/glm/runner', ATRIS_CLAUDE_BIN: '/opt/claude' }, () => {
+    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
+  });
 });
 
 // --- detectUnavailableModel: turn a buried claude-error into an actionable signal ---
@@ -79,7 +99,7 @@ test('detectUnavailableModel returns null for ordinary tick output', () => {
 test('missionPauseNextAction names the dead model and the knobs that change it', () => {
   const action = missionPauseNextAction('model-unavailable', 'mission-abc', 'claude-fable-5');
   assert.match(action, /claude-fable-5/);
-  assert.match(action, /mission\.model or ATRIS_CLAUDE_MODEL/);
+  assert.match(action, /mission\.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL/);
   assert.match(action, /atris mission run mission-abc/);
 });
 

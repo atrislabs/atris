@@ -1442,7 +1442,7 @@ function detectUnavailableModel(text) {
 // so name the dead id and the two knobs that change it.
 function missionPauseNextAction(pauseReason, missionId, deadModel = null, lastErrorReason = null) {
   if (pauseReason === 'model-unavailable' && deadModel) {
-    return `model "${deadModel}" is unavailable — set a live model (mission.model or ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
+    return `model "${deadModel}" is unavailable — set a live model (mission.model, ATRIS_RUNNER_MODEL, or legacy ATRIS_CLAUDE_MODEL), then: atris mission run ${missionId}`;
   }
   if (typeof pauseReason === 'string' && pauseReason.startsWith('repeated-error:')) {
     const reason = pauseReason.slice('repeated-error:'.length);

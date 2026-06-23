@@ -13,6 +13,32 @@ const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'miss
 const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
 
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL',
+  'ATRIS_CLAUDE_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+];
+
+function withRunnerEnv(values, fn) {
+  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  try {
+    fn();
+  } finally {
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
 // model resolution and inherit the CLI's mutable selection — retired-model-kills-loop-silently)
@@ -56,8 +82,11 @@ test('run and autopilot sweep configured runner process groups on timeout', () =
 
 test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /function applyRunnerFlags\(args\)/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_BIN = runnerBin/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_BIN = runnerBin/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_COMMAND_TEMPLATE = runnerTemplate/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_MODEL = runnerModel/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_MODEL = runnerModel/);
   assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(args\)[\s\S]*runAtris/);
   assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(args\)[\s\S]*autopilotAtris/);
@@ -84,41 +113,45 @@ test('console claude launcher uses the configured runner binary', () => {
 // --- T3: every spawn injects a resolved --model alias by default ---
 
 test('default heartbeat spawn carries --model opus (alias, not a versioned id)', () => {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  delete process.env.ATRIS_CLAUDE_MODEL;
-  try {
+  withRunnerEnv({}, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
     assert.match(cmd, /--model opus\b/);
     assert.doesNotMatch(cmd, /--model claude-/);
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
-    else process.env.ATRIS_CLAUDE_MODEL = prev;
-  }
+  });
 });
 
 // --- T4: a future claude -p change is a one-line config switch (env) ---
 
 test('ATRIS_CLAUDE_MODEL flips the spawned model without touching code', () => {
-  const prev = process.env.ATRIS_CLAUDE_MODEL;
-  process.env.ATRIS_CLAUDE_MODEL = 'sonnet';
-  try {
+  withRunnerEnv({ ATRIS_CLAUDE_MODEL: 'sonnet' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
     assert.match(cmd, /--model sonnet\b/);
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
-    else process.env.ATRIS_CLAUDE_MODEL = prev;
-  }
+  });
+});
+
+test('ATRIS_RUNNER_MODEL flips the spawned model without touching code', () => {
+  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
+    assert.match(cmd, /--model glm-5\.2\b/);
+  });
 });
 
 test('ATRIS_CLAUDE_COMMAND_TEMPLATE flips the command shape without touching code', () => {
-  const prev = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
-  process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}';
-  try {
+  withRunnerEnv({ ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}' }, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus', allowedTools: 'Bash,Read' });
     assert.equal(cmd, "claude --print-file /tmp/p.tmp --model opus --allowedTools 'Bash,Read'");
     assert.doesNotMatch(cmd, / -p /);
-  } finally {
-    if (prev === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
-    else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = prev;
-  }
+  });
+});
+
+test('ATRIS_RUNNER_COMMAND_TEMPLATE flips the command shape without touching code', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}',
+  }, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp' });
+    assert.equal(cmd, 'claude --model glm-5.2 --prompt-file /tmp/p.tmp');
+    assert.doesNotMatch(cmd, / -p /);
+  });
 });
