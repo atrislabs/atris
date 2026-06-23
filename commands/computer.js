@@ -55,7 +55,7 @@ const VALID_COMPUTER_TYPES = new Set([
   'support',
 ]);
 const RECRUITING_BUSINESS_SLUG = 'atris-labs';
-const RECRUITING_LOCAL_SYNC_COMMANDS = new Set(['pull', 'push', 'watch', 'review', 'doctor']);
+const RECRUITING_LOCAL_SYNC_COMMANDS = new Set(['pull', 'push', 'publish', 'watch', 'review', 'doctor']);
 const KNOWN_CHAT_COMMANDS = new Set([
   '/audit',
   '/exit',
@@ -355,7 +355,7 @@ function printRecruitingWorkflowContract() {
 }
 
 function printRecruitingComputerHelp() {
-  console.log('Usage: atris computer recruiting [chat|status|sync|doctor|pull|push|watch|review|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
+  console.log('Usage: atris computer recruiting [chat|status|sync|doctor|pull|push|publish|watch|review|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
   console.log('');
   console.log('Examples:');
   console.log('  atris computer recruiting');
@@ -364,6 +364,7 @@ function printRecruitingComputerHelp() {
   console.log('  atris computer recruiting sync');
   console.log('  atris computer recruiting pull');
   console.log('  atris computer recruiting push --dry-run');
+  console.log('  atris computer recruiting publish --dry-run');
   console.log('  atris computer recruiting watch');
   console.log('  atris computer recruiting run "pwd && find . -maxdepth 2 -type f | head"');
   console.log("  atris computer recruiting exec \"Summarize today's candidate follow-ups\"");
@@ -435,6 +436,7 @@ function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG, workspace
   console.log('  atris computer recruiting doctor');
   console.log('  atris computer recruiting pull');
   console.log('  atris computer recruiting push --dry-run');
+  console.log('  atris computer recruiting publish --dry-run');
   console.log('  atris sync --status');
   console.log('  atris sync --dry-run');
   console.log('  atris sync');
@@ -442,11 +444,14 @@ function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG, workspace
 }
 
 function recruitingLocalSyncCommand(action, slug = RECRUITING_BUSINESS_SLUG, args = []) {
+  const withFlag = (items, flag) => items.includes(flag) ? items : [...items, flag];
   switch (action) {
     case 'pull':
       return ['pull', slug, '--keep-local', '--fail-on-conflict', ...args];
     case 'push':
       return ['push', slug, ...args];
+    case 'publish':
+      return ['push', slug, ...withFlag(args, '--allow-broad-workspace')];
     case 'watch':
       return ['sync', '--watch', ...args];
     case 'review':
@@ -459,7 +464,7 @@ function recruitingLocalSyncCommand(action, slug = RECRUITING_BUSINESS_SLUG, arg
 }
 
 function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_SLUG) {
-  const command = recruitingLocalSyncCommand(action, slug, action === 'push' ? ['--dry-run'] : []);
+  const command = recruitingLocalSyncCommand(action, slug, (action === 'push' || action === 'publish') ? ['--dry-run'] : []);
   console.log(`Usage: atris computer recruiting ${action} [flags]`);
   console.log('');
   console.log('Runs from the current or canonical Atris Labs recruiting workspace.');
@@ -467,6 +472,8 @@ function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_
     console.log('Use --dry-run first; use --apply to write into a dirty local workspace.');
   } else if (action === 'push') {
     console.log('Use --dry-run first; after reviewing a broad publish, add --allow-broad-workspace.');
+  } else if (action === 'publish') {
+    console.log('Reviewed publish shortcut. Use --dry-run first, then run without --dry-run.');
   }
   console.log('');
   console.log('Underlying command:');
@@ -476,6 +483,11 @@ function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_
     console.log('Reviewed broad publish:');
     console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
     console.log('  atris computer recruiting push --allow-broad-workspace');
+  } else if (action === 'publish') {
+    console.log('');
+    console.log('Reviewed publish:');
+    console.log('  atris computer recruiting publish --dry-run');
+    console.log('  atris computer recruiting publish');
   }
 }
 
@@ -685,6 +697,8 @@ function runAtrisCliCommand(cliArgs, cwd) {
 }
 
 function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
+  const isPublishLike = action === 'push' || action === 'publish';
+
   if (action === 'pull') {
     console.log('');
     console.log('Recruiting next step');
@@ -699,15 +713,22 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
     return;
   }
 
-  if (action === 'push' && status !== 0) {
+  if (isPublishLike && status !== 0) {
     console.log('');
     console.log('Recruiting next step');
     console.log('  If the output says review before publish:');
-    console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
-    console.log('  atris computer recruiting push --allow-broad-workspace');
+    console.log('  atris computer recruiting publish --dry-run');
+    console.log('  atris computer recruiting publish');
     console.log('  Otherwise:');
     console.log('  atris computer recruiting pull --dry-run');
     console.log('  atris computer recruiting review   # if conflicts were reported');
+    return;
+  }
+
+  if (action === 'publish' && args.includes('--dry-run')) {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  atris computer recruiting publish');
     return;
   }
 
@@ -4081,6 +4102,7 @@ async function runComputer() {
     console.log('  atris computer recruiting sync');
     console.log('  atris computer recruiting pull');
     console.log('  atris computer recruiting push --dry-run');
+    console.log('  atris computer recruiting publish --dry-run');
     console.log('  atris computer recruiting watch');
     console.log('  atris computer recruiting run "pwd"');
     console.log('  atris computer recruiting exec "Summarize candidate follow-ups"');
