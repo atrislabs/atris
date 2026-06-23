@@ -4,7 +4,7 @@
  * The ignition switch. Reads inbox/backlog, loops autonomously
  * until work is done or max cycles reached.
  *
- * Uses claude -p (subprocess) — no auth required.
+ * Uses the shared runner command (default Claude-compatible subprocess).
  */
 
 const fs = require('fs');
@@ -108,7 +108,7 @@ Reply [REVIEW_FAILED] reason if something is broken.`;
 }
 
 /**
- * Execute a phase using claude -p
+ * Execute a phase using the configured runner command.
  */
 function executePhase(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT } = options;
@@ -224,7 +224,7 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check configured Claude runner CLI is available
+  // Check configured runner CLI is available.
   try {
     execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
   } catch {
