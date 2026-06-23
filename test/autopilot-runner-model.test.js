@@ -39,7 +39,8 @@ test('runner availability checks use the shared configured binary', () => {
 
 test('runtime runner wording is config-neutral', () => {
   assert.doesNotMatch(AUTOPILOT_SRC, /claude -p (hit the wall|returned no JSON|subprocess|call|to inspect)/);
-  assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI/);
+  assert.doesNotMatch(AUTOPILOT_SRC, /install Claude Code first/);
+  assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|install Claude Code first/);
   assert.match(AUTOPILOT_SRC, /configured runner/);
   assert.match(RUN_SRC, /configured runner command/);
 });

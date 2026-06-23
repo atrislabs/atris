@@ -76,6 +76,7 @@ test('parseFlags: --k v, --k=v, boolean flags, positionals', () => {
 test('compile build uses the shared runner command instead of raw claude', () => {
   assert.doesNotMatch(COMPILE_SRC, /which claude/);
   assert.doesNotMatch(COMPILE_SRC, /claude -p "\$\(cat/);
+  assert.doesNotMatch(COMPILE_SRC, /install Claude Code first/);
   assert.match(COMPILE_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(COMPILE_SRC, /buildRunnerCommand\(/);
 });
