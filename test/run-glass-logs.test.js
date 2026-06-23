@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -181,4 +181,72 @@ test('writePhaseToRunLog can log error sections for failed phases', () => {
 test('run.js logs failed phases to run log for forensic value', () => {
   assert.match(RUN_SRC, /writePhaseToRunLog\(runLogPath, cycle, 'error'/);
   assert.match(RUN_SRC, /err\.message/);
+});
+
+// --- listRunLogs command ---
+
+test('listRunLogs shows no-logs message when runs dir is empty', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+    listRunLogs([]);
+    assert.ok(output.includes('No run logs found'), 'shows no-logs message');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('listRunLogs lists run logs with cycle and phase info', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create a run log
+    const logPath = getRunLogPath('123456', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+    writePhaseToRunLog(logPath, 1, 'do', 'Build reasoning', 12000);
+
+    listRunLogs([]);
+    assert.ok(output.includes('Run logs (1 file)'), 'shows file count');
+    assert.ok(output.includes('Cycle: 1'), 'shows cycle number');
+    assert.ok(output.includes('PLAN'), 'shows PLAN phase');
+    assert.ok(output.includes('DO'), 'shows DO phase');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('listRunLogs --cat prints full contents of a specific log', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('123456', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Full plan reasoning here', 3000);
+
+    const fileName = path.basename(logPath);
+    listRunLogs(['--cat', fileName]);
+    assert.ok(output.includes('# Run Log — Cycle 1'), 'shows full header');
+    assert.ok(output.includes('Full plan reasoning here'), 'shows full content');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });

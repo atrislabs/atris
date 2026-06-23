@@ -517,4 +517,74 @@ async function runAtris(options = {}) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog };
+/**
+ * List and display run logs from atris/logs/runs/.
+ * Options:
+ *   --tail N    Show last N lines of each log (default: 5)
+ *   --cat FILE  Print full contents of a specific log file
+ */
+function listRunLogs(args = []) {
+  const runsDir = getRunLogDir();
+
+  // --cat FILE: print full contents
+  const catIdx = args.indexOf('--cat');
+  if (catIdx !== -1 && args[catIdx + 1]) {
+    const file = args[catIdx + 1];
+    const filePath = path.isAbsolute(file) ? file : path.join(runsDir, file);
+    if (!fs.existsSync(filePath)) {
+      console.error(`Run log not found: ${file}`);
+      process.exit(1);
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    console.log(content);
+    return;
+  }
+
+  // --tail N: show last N lines of each log
+  let tailLines = 5;
+  const tailIdx = args.indexOf('--tail');
+  if (tailIdx !== -1 && args[tailIdx + 1]) {
+    tailLines = parseInt(args[tailIdx + 1]) || 5;
+  }
+
+  // List all run logs
+  const files = fs.existsSync(runsDir)
+    ? fs.readdirSync(runsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+    : [];
+
+  if (files.length === 0) {
+    console.log('No run logs found. Run "atris run" to generate them.');
+    return;
+  }
+
+  console.log('');
+  console.log(`Run logs (${files.length} file${files.length === 1 ? '' : 's'}):`);
+  console.log('');
+
+  for (const file of files) {
+    const filePath = path.join(runsDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+
+    // Extract cycle and phase info from headers
+    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const phases = [...content.matchAll(/## (\w+)/g)].map(m => m[1]);
+
+    console.log(`  ${file}`);
+    console.log(`    Cycle: ${cycleMatch ? cycleMatch[1] : '?'}, Phases: ${phases.join(', ')}`);
+
+    if (tailLines > 0) {
+      const tail = lines.slice(-tailLines);
+      console.log(`    ...last ${tailLines} lines:`);
+      for (const line of tail) {
+        if (line.trim()) console.log(`    ${line}`);
+      }
+    }
+    console.log('');
+  }
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs };
