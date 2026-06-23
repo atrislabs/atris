@@ -5074,6 +5074,55 @@ test('brain activate routes executor to certified review before creating work', 
   }
 });
 
+test('brain activate lets codex executor continue when review is human-only', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only, not overnight outages',
+      '',
+      '## Backlog',
+      '',
+      '(empty)',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CLI-9',
+          title: 'Certified checkpoint',
+          status: 'review',
+          metadata: {
+            approval_status: 'pending',
+            agent_certified: true,
+            agent_review_pass_count: 2,
+          },
+        },
+      ],
+    }), 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'codex-executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Codex Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'codex-executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Codex Executor — Builder: certified reviews CLI-9 are human-only/);
+    assert.match(res.stdout, /Create the next bounded Codex task from Endgame runner-swap-safe/);
+    assert.match(res.stdout, /runner swaps should be config-only/);
+    assert.match(res.stdout, /do not accept XP/);
+    assert.doesNotMatch(res.stdout, /atris task accept CLI-9/);
+    assert.doesNotMatch(res.stdout, /do not create new work until this checkpoint is clear/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain activate routes executor to agent-safe review before human accept rows', () => {
   const dir = makeTempDir();
   try {
