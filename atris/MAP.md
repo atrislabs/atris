@@ -167,15 +167,15 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js` command routing for `compile`
 - **Handler:** `commands/compile.js`
-- **Core functions:** `commands/compile.js:99` (`appendRecord`), `commands/compile.js:166` (`runBacktest`), `commands/compile.js:217` (`promoteProcess`), `commands/compile.js:244` (`buildCompilePrompt`), `commands/compile.js:269` (`executeBuild`), `commands/compile.js:400` (`compileCommand`)
+- **Core functions:** `commands/compile.js:104` (`appendRecord`), `commands/compile.js:171` (`runBacktest`), `commands/compile.js:222` (`promoteProcess`), `commands/compile.js:249` (`buildCompilePrompt`), `commands/compile.js:274` (`executeBuild`), `commands/compile.js:405` (`compileCommand`)
 - **How it works:**
 - `atris compile record <name> --input ... --output ... [--expected ...]` appends an execution record to `.atris/state/processes/<name>/records.jsonl`
-- `atris compile build <name>` spawns `claude -p` to compile records + `atris/processes/<name>/spec.md` into `atris/processes/<name>/run.js` (contract: `module.exports = { run }`, deterministic, Node built-ins only); bumps version, clears the old backtest
+- `atris compile build <name>` uses the shared runner command (`ATRIS_CLAUDE_BIN`, `ATRIS_CLAUDE_COMMAND_TEMPLATE`, default Claude-compatible `claude -p`) to compile records + `atris/processes/<name>/spec.md` into `atris/processes/<name>/run.js` (contract: `module.exports = { run }`, deterministic, Node built-ins only); bumps version, clears the old backtest
 - `atris compile backtest <name>` replays every record through `run()`, scores accuracy vs the gate (default 0.99), writes results into `atris/processes/<name>/process.json`
 - `atris compile promote <name>` activates only if the current version's backtest accuracy meets the gate
 - `atris compile exec <name> --input ... [--record]` runs the artifact token-free; `--record` feeds the run back into the ledger
 - Drift detection: an active process whose backtest falls below its gate is marked `drifted` (self-healing against process drift)
-- **Tests:** `test/compile.test.js` (14 tests: records, deep-equal, backtest, promote gate, stale-version guard, drift, async runners, prompt contract)
+- **Tests:** `test/compile.test.js` (20 tests: records, deep-equal, backtest, promote gate, stale-version guard, drift, async runners, runner command, prompt contract)
 - **Search:** `rg "runBacktest|promoteProcess|executeBuild" commands/compile.js`
 
 ### Feature: Experiments (`atris experiments`)
