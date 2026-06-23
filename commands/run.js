@@ -515,6 +515,21 @@ async function runAtris(options = {}) {
     }
     console.log('');
   }
+
+  // Auto-prune old run logs (keep last 100)
+  try {
+    const runsDir = getRunLogDir();
+    if (fs.existsSync(runsDir)) {
+      const allLogs = fs.readdirSync(runsDir).filter(f => f.endsWith('.md')).sort().reverse();
+      const keep = 100;
+      if (allLogs.length > keep) {
+        const toDelete = allLogs.slice(keep);
+        for (const file of toDelete) {
+          try { fs.unlinkSync(path.join(runsDir, file)); } catch {}
+        }
+      }
+    }
+  } catch {}
 }
 
 /**

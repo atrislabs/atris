@@ -404,3 +404,8 @@ test('pruneRunLogs deletes old logs keeping only N', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('run.js auto-prunes old run logs after run completion', () => {
+  assert.match(RUN_SRC, /Auto-prune old run logs/);
+  assert.match(RUN_SRC, /const keep = 100/);
+});
