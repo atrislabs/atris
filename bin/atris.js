@@ -1565,6 +1565,7 @@ if (command === 'init') {
       console.log('Options:');
       console.log('  --tail N      Show last N lines of each log (default: 5)');
       console.log('  --cat FILE    Print full contents of a specific log file');
+      console.log('  --json        Output machine-readable JSON');
       console.log('  --help        Show this help');
       console.log('');
       process.exit(0);
