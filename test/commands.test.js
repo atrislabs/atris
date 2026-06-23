@@ -13902,6 +13902,28 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
       ]
     );
     assert.ok(payload.binaries.some((binary) => binary.name === 'devin'));
+    assert.ok(payload.binaries.some((binary) => binary.name === 'droid'));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('agent spawn creates a durable worker request without auth', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const res = runCli(['agent', 'spawn', 'worker', '--task', 'Fix one bounded bug', '--engine', 'codex', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'spawn_created');
+    assert.equal(payload.request.role, 'worker');
+    assert.equal(payload.request.task, 'Fix one bounded bug');
+    assert.equal(payload.request.engine, 'codex');
+    assert.match(payload.request.command, /^codex exec /);
+
+    const list = runCli(['agent', 'spawns', '--json'], { cwd: dir });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    assert.equal(JSON.parse(list.stdout).requests.length, 1);
   } finally {
     cleanupTempDir(dir);
   }

@@ -2229,7 +2229,7 @@ function inspectAgentCliWiring() {
     },
   ];
 
-  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin'].map((name) => ({
+  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin', 'droid'].map((name) => ({
     name,
     path: commandOnPath(name),
   }));
@@ -2266,12 +2266,13 @@ async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
+    console.log('Usage: atris agent [doctor|dogfood|spawn|spawns|spawn-status]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
+    console.log('  Run `atris agent dogfood --live` to smoke-test Devin/Droid with GLM 5.2.');
     console.log('  Requires `atris login` first.');
     console.log('');
     console.log('  After selecting, use: atris chat ["message"]');
@@ -2280,6 +2281,10 @@ async function agentAtris() {
 
   if (firstArg === 'doctor') {
     agentDoctor();
+  }
+  if (firstArg === 'dogfood') {
+    const result = require('../commands/agent-spawn').agentDogfoodCommand(process.argv.slice(4));
+    process.exit(result.ok ? 0 : 1);
   }
   if (firstArg === 'spawn') {
     require('../commands/agent-spawn').agentSpawnCommand(process.argv.slice(4));

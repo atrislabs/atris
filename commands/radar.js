@@ -54,6 +54,7 @@ function agentTypeForCommand(command) {
   if (/(^|\s|\/)claude(\s|$)/.test(cmd) && !/Claude\.app/.test(cmd)) return 'claude';
   if (/(^|\s|\/)opencode(\s|$)/.test(cmd)) return 'opencode';
   if (/(^|\s|\/)devin(\s|$)/.test(cmd)) return 'devin';
+  if (/(^|\s|\/)droid(\s|$)/.test(cmd)) return 'droid';
   return null;
 }
 
