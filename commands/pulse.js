@@ -52,6 +52,7 @@ Options:
   --cadence "<cron>"     Cron cadence for install
   --days <n>             Auto-expire installed heartbeat after n days
   --model <id>           Runner model alias/id for installed heartbeat
+  --runner-profile <n>   Runner profile for installed heartbeat (e.g. atris-fast)
   --runner-bin <path>    Runner binary for installed heartbeat
   --runner-template <s>  Runner command template for installed heartbeat
   --max-ticks <n>        Number of foreground ticks for run
@@ -351,7 +352,7 @@ function resolveAtrisBin() {
 // can still find them. Missing tools just contribute nothing.
 function resolveEngineBinDirs(extraBins = []) {
   const dirs = new Set([path.dirname(process.execPath)]); // node
-  for (const tool of ['claude', 'git', 'atris']) {
+  for (const tool of ['ax', 'claude', 'git', 'atris']) {
     const r = spawnSync('which', [tool], { encoding: 'utf8', timeout: 8000 });
     if (r.status === 0 && r.stdout.trim()) dirs.add(path.dirname(r.stdout.trim()));
   }
@@ -373,6 +374,7 @@ function installCommand(args, root = process.cwd()) {
   const days = Math.max(1, Number(readFlag(args, '--days', '7')) || 7);
   const verifyCmd = readFlag(args, '--verify', 'npm test');
   const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus');
+  const runnerProfile = readFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
   const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + days * 86400;
@@ -388,6 +390,7 @@ function installCommand(args, root = process.cwd()) {
     stateHome: STATE_HOME,
     deadlineEpoch,
     model,
+    runnerProfile,
     runnerBin,
     runnerCommandTemplate,
     verifyCmd,
@@ -411,6 +414,7 @@ function installCommand(args, root = process.cwd()) {
     cadence: cron,
     expires_in_days: days,
     deadline_epoch: deadlineEpoch,
+    runner_profile: runnerProfile || null,
     runner_bin: runnerBin || null,
     runner_template_configured: Boolean(runnerCommandTemplate),
   };

@@ -113,7 +113,7 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
 let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
-const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model'];
+const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model', '--runner-profile'];
 
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
@@ -129,6 +129,8 @@ function isOptionValue(args, index, optionNames) {
 }
 
 function applyRunnerFlags(args) {
+  const runnerProfile = readOptionArg(args, '--runner-profile');
+  if (runnerProfile) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
   const runnerBin = readOptionArg(args, '--runner-bin');
   if (runnerBin) {
     process.env.ATRIS_RUNNER_BIN = runnerBin;
@@ -780,6 +782,7 @@ function showAutopilotHelp() {
   console.log('  --runner-bin PATH       Runner binary for this run');
   console.log('  --runner-template CMD   Runner command template for this run');
   console.log('  --runner-model MODEL    Runner model for this run');
+  console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
   console.log('');
   console.log('Examples:');
   console.log('  atris autopilot                        # Suggest from existing work');
@@ -1533,6 +1536,7 @@ if (command === 'init') {
     console.log('  --runner-bin PATH       Runner binary for this run');
     console.log('  --runner-template CMD   Runner command template for this run');
     console.log('  --runner-model MODEL    Runner model for this run');
+    console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');

@@ -250,9 +250,11 @@ test('executeBuild honors ATRIS_CLAUDE_BIN when no cmdOverride is provided', () 
   fs.chmodSync(fakeRunner, 0o755);
 
   const prevRunnerBin = process.env.ATRIS_RUNNER_BIN;
+  const prevRunnerProfile = process.env.ATRIS_RUNNER_PROFILE;
   const prevRunnerTemplate = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
   const prevBin = process.env.ATRIS_CLAUDE_BIN;
   const prevTemplate = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  delete process.env.ATRIS_RUNNER_PROFILE;
   delete process.env.ATRIS_RUNNER_BIN;
   delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
   process.env.ATRIS_CLAUDE_BIN = fakeRunner;
@@ -265,6 +267,8 @@ test('executeBuild honors ATRIS_CLAUDE_BIN when no cmdOverride is provided', () 
   } finally {
     if (prevRunnerBin === undefined) delete process.env.ATRIS_RUNNER_BIN;
     else process.env.ATRIS_RUNNER_BIN = prevRunnerBin;
+    if (prevRunnerProfile === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = prevRunnerProfile;
     if (prevRunnerTemplate === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
     else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = prevRunnerTemplate;
     if (prevBin === undefined) delete process.env.ATRIS_CLAUDE_BIN;
