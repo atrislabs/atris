@@ -202,8 +202,8 @@ test('changes list is empty when target matches source exactly', () => {
     const entry = findPlan(plan, repo);
     assert.ok(!entry.isBusiness);
     assert.ok(!entry.isCustomized);
-    // atris.md should NOT be in changes (identical); other files (atrisDev.md,
-    // PERSONA.md, etc.) ARE missing so they WILL be in changes.
+    // atris.md should NOT be in changes (identical); other files (PERSONA.md,
+    // CLAUDE.md, etc.) ARE missing so they WILL be in changes.
     assert.ok(!entry.changes.includes('atris.md'), 'identical atris.md should not be in changes');
   } finally {
     cleanup(root);
@@ -229,13 +229,12 @@ test('node_modules and .git subtrees are not scanned', () => {
 
 // --- constants ---
 
-test('SYNC_ALL_FILES covers the 5 canonical docs', () => {
+test('SYNC_ALL_FILES covers the 4 canonical docs', () => {
   const targets = SYNC_ALL_FILES.map((f) => f.target).sort();
   assert.deepStrictEqual(targets, [
     'CLAUDE.md',
     'GETTING_STARTED.md',
     'PERSONA.md',
     'atris.md',
-    'atrisDev.md',
   ]);
 });

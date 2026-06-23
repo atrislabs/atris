@@ -463,7 +463,6 @@ function syncAtris() {
 
   const filesToSync = [
     { source: 'atris.md', target: 'atris.md' },
-    { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
     { source: 'PERSONA.md', target: 'PERSONA.md' },
     { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
     { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
@@ -808,7 +807,6 @@ function _findAtrisProjects(rootDir, maxDepth = 8) {
 // Canonical files shipped from the package root. Must match syncAtris's filesToSync.
 const SYNC_ALL_FILES = [
   { source: 'atris.md', target: 'atris.md' },
-  { source: 'atris/atrisDev.md', target: 'atrisDev.md' },
   { source: 'PERSONA.md', target: 'PERSONA.md' },
   { source: 'GETTING_STARTED.md', target: 'GETTING_STARTED.md' },
   { source: 'atris/CLAUDE.md', target: 'CLAUDE.md' },
