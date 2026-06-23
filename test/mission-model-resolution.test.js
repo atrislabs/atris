@@ -12,6 +12,7 @@ const {
 } = require('../commands/mission');
 
 const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_PROFILE',
   'ATRIS_RUNNER_MODEL',
   'ATRIS_RUNNER_BIN',
   'ATRIS_CLAUDE_MODEL',

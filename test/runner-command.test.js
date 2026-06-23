@@ -6,6 +6,8 @@ const assert = require('node:assert');
 const {
   DEFAULT_CLAUDE_RUNNER_MODEL,
   DEFAULT_CLAUDE_RUNNER_BIN,
+  RUNNER_PROFILES,
+  resolveRunnerProfile,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
@@ -14,6 +16,7 @@ const {
 } = require('../lib/runner-command');
 
 const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_PROFILE',
   'ATRIS_RUNNER_MODEL',
   'ATRIS_RUNNER_BIN',
   'ATRIS_RUNNER_COMMAND_TEMPLATE',
@@ -115,6 +118,46 @@ test('resolveClaudeRunnerCommandTemplate prefers ATRIS_RUNNER_COMMAND_TEMPLATE o
     ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}',
   }, () => {
     assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --model {model} --prompt-file {promptFile}');
+  });
+});
+
+test('resolveRunnerProfile exposes the Atris Fast profile', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-fast' }, () => {
+    assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILES['atris-fast']);
+  });
+});
+
+test('Atris Fast runner profile resolves to ax --fast and atris:fast', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_CLAUDE_BIN: '/opt/claude',
+    ATRIS_CLAUDE_MODEL: 'opus',
+    ATRIS_CLAUDE_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}',
+  }, () => {
+    assert.equal(resolveClaudeRunnerBin(), 'ax');
+    assert.equal(resolveClaudeRunnerModel({}), 'atris:fast');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --fast {prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'ax --fast "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('generic runner env overrides the Atris Fast profile', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_RUNNER_BIN: '/opt/glm/runner',
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
+  }, () => {
+    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
+    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --model {model} --prompt-file {promptFile}');
+  });
+});
+
+test('unknown runner profile throws a clear config error', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-9' }, () => {
+    assert.throws(() => resolveRunnerProfile(), /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
+    assert.throws(() => buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
   });
 });
 
