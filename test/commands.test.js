@@ -9923,6 +9923,60 @@ test('task next surfaces review debt when no open work exists', () => {
   }
 });
 
+test('task next surfaces Endgame fallback for human-only certified review', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex-executor' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only, not overnight outages',
+      '',
+      '## Backlog',
+      '',
+      '(empty)',
+      '',
+    ].join('\n'), 'utf8');
+
+    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during certification',
+    ], { cwd: dir, env }).status, 0);
+
+    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    const payload = JSON.parse(next.stdout);
+    assert.equal(payload.action, 'human_accept_waiting');
+    assert.equal(payload.next_agent_action.kind, 'create_bounded_endgame_task');
+    assert.equal(payload.next_agent_action.endgame_slug, 'runner-swap-safe');
+    assert.match(payload.next_agent_action.horizon, /runner swaps should be config-only/);
+    assert.match(payload.next_agent_action.command, /atris brain activate --member codex-executor/);
+    assert.match(payload.next_agent_action.message, /Do not accept XP/);
+
+    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /Create the next bounded task from Endgame runner-swap-safe/);
+    assert.match(text.stdout, /runner swaps should be config-only/);
+    assert.match(text.stdout, /Do not accept XP/);
+    assert.doesNotMatch(text.stdout, /No concrete next agent task is attached/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review summary does not treat incidental XP wording as AgentXP work', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
