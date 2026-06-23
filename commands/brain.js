@@ -336,6 +336,30 @@ function countTodoItems(todoText) {
   };
 }
 
+function parseTodoEndgame(todoText) {
+  const text = String(todoText || '');
+  const fields = {};
+  let inEndgame = false;
+
+  for (const line of text.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      inEndgame = heading[1].trim().toLowerCase() === 'endgame';
+      continue;
+    }
+    if (!inEndgame) continue;
+
+    const field = line.match(/^\*\*(Slug|Horizon|Source):\*\*\s*(.*?)\s*$/i);
+    if (field) fields[field[1].toLowerCase()] = field[2].trim();
+  }
+
+  const slug = fields.slug || null;
+  const horizon = fields.horizon || null;
+  const source = fields.source || null;
+  if (!slug && !horizon && !source) return null;
+  return { slug, horizon, source };
+}
+
 const EXECUTABLE_TASK_STATUSES = new Set(['open', 'claimed']);
 const COMPLETED_TASK_STATUSES = new Set(['done', 'completed', 'accepted']);
 
@@ -488,6 +512,7 @@ function collectState(root) {
     slug: business.slug || path.basename(root),
     business,
     todo: countWorkItems(root, todoText),
+    endgame: parseTodoEndgame(todoText),
     taskProjection: summarizeTaskProjection(root),
     hasNow: nowText.length > 0,
     nowHeading: firstHeading(nowText, null),
@@ -736,10 +761,18 @@ function memberNextMove(member, state = null) {
       `\`atris task review-chat ${agentNeededReview.ref} --as codex-review\`, then run the verifier named in the review packet and certify or revise without accepting XP.`
     : null;
   const certifiedReview = state?.taskProjection?.certifiedReviewTasks?.[0] || null;
+  const certifiedReviewRefs = (state?.taskProjection?.certifiedReviewTasks || [])
+    .map(task => task.ref)
+    .filter(Boolean);
   const certifiedReviewMove = certifiedReview
     ? `${name}: hand off certified review ${certifiedReview.ref} to the operator: run ` +
       `\`atris task accept ${certifiedReview.ref}\` if approved or ` +
       `\`atris task revise ${certifiedReview.ref} --note "<what must change>"\` if not; do not create new work until this checkpoint is clear.`
+    : null;
+  const codexEndgameMove = certifiedReviewRefs.length > 0 && member.slug === 'codex-executor'
+    ? `${name}: certified reviews ${certifiedReviewRefs.slice(0, 3).join(', ')} are human-only; do not accept XP. ` +
+      `Create the next bounded Codex task from Endgame ${state?.endgame?.slug || 'current-horizon'}: ` +
+      `${state?.endgame?.horizon || 'the highest-leverage system gap'}; include files, verifier, and stop rule before editing.`
     : null;
   if (member.slug === 'justin' || /justin/i.test(member.name || '')) {
     return `${name}: run one customer-moving GTM rep, update the relevant workspace state within 10 minutes, and leave a scorecard.`;
@@ -765,6 +798,7 @@ function memberNextMove(member, state = null) {
   if (/executor|builder/i.test(identity)) {
     if ((state?.todo?.open || 0) === 0) {
       if (agentNeededReviewMove) return agentNeededReviewMove;
+      if (codexEndgameMove) return codexEndgameMove;
       if (certifiedReviewMove) return certifiedReviewMove;
       return `${name}: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch.`;
     }
