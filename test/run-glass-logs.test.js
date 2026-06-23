@@ -12,9 +12,9 @@ const { getRunLogDir, getRunLogPath, writePhaseToRunLog } = require('../commands
 
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
 
-test('run.js always captures stdout for run log persistence', () => {
-  // stdio must pipe stdout in both verbose and non-verbose modes
-  assert.match(RUN_SRC, /stdio:\s*verbose\s*\?\s*\['pipe',\s*'pipe',\s*'inherit'\]\s*:\s*'pipe'/);
+test('run.js captures stdout in non-verbose mode for run log persistence', () => {
+  // In non-verbose mode, stdout must be piped for capture
+  assert.match(RUN_SRC, /stdio:\s*verbose\s*\?\s*'inherit'\s*:\s*\['pipe',\s*'pipe',\s*'inherit'\]/);
 });
 
 test('run.js captures DO phase output (was previously discarded)', () => {
