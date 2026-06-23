@@ -489,6 +489,91 @@ function gitDirtySummary(cwd) {
   };
 }
 
+function gitOutput(cwd, args = []) {
+  const result = spawnSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.status !== 0) return '';
+  return String(result.stdout || '');
+}
+
+function recruitingCheckpointStamp() {
+  return (process.env.ATRIS_RECRUITING_CHECKPOINT_STAMP || new Date().toISOString())
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+}
+
+function listRecruitingUntrackedFiles(cwd) {
+  return gitOutput(cwd, ['ls-files', '--others', '--exclude-standard'])
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((filePath) => !filePath.startsWith('.atris/sync/checkpoints/'));
+}
+
+function copyRecruitingUntrackedFiles(cwd, checkpointDir, untrackedFiles = []) {
+  let copied = 0;
+  const targetRoot = path.join(checkpointDir, 'untracked');
+  for (const filePath of untrackedFiles) {
+    const source = path.join(cwd, filePath);
+    const target = path.join(targetRoot, filePath);
+    try {
+      if (!fs.statSync(source).isFile()) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(source, target);
+      copied++;
+    } catch {
+      // Some files move while tools write state; keep the checkpoint best-effort.
+    }
+  }
+  return copied;
+}
+
+function writeRecruitingPullCheckpoint(cwd, dirty) {
+  if (!dirty || dirty.count === 0) return null;
+
+  const stamp = recruitingCheckpointStamp();
+  const relDir = `.atris/sync/checkpoints/${stamp}`;
+  const checkpointDir = path.join(cwd, relDir);
+  const untrackedFiles = listRecruitingUntrackedFiles(cwd);
+  fs.mkdirSync(checkpointDir, { recursive: true });
+
+  const trackedPatch = gitOutput(cwd, ['diff', '--binary']);
+  const stagedPatch = gitOutput(cwd, ['diff', '--cached', '--binary']);
+  fs.writeFileSync(path.join(checkpointDir, 'tracked.patch'), trackedPatch, 'utf8');
+  fs.writeFileSync(path.join(checkpointDir, 'staged.patch'), stagedPatch, 'utf8');
+  fs.writeFileSync(path.join(checkpointDir, 'untracked.txt'), `${untrackedFiles.join('\n')}${untrackedFiles.length ? '\n' : ''}`, 'utf8');
+  const copiedUntracked = copyRecruitingUntrackedFiles(cwd, checkpointDir, untrackedFiles);
+
+  const summary = [
+    '# Recruiting Pull Checkpoint',
+    '',
+    `created_at: ${new Date().toISOString()}`,
+    `workspace: ${cwd}`,
+    `git_status_count: ${dirty.count}`,
+    `untracked_files_listed: ${untrackedFiles.length}`,
+    `untracked_files_copied: ${copiedUntracked}`,
+    '',
+    'Sample status:',
+    ...dirty.sample.map((line) => `- ${line}`),
+    '',
+    'Restore hints:',
+    `- git apply ${relDir}/tracked.patch`,
+    `- git apply --cached ${relDir}/staged.patch`,
+    `- cp -R ${relDir}/untracked/. .`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(checkpointDir, 'summary.md'), summary, 'utf8');
+
+  return {
+    relDir,
+    summary: `${relDir}/summary.md`,
+    untrackedFiles: untrackedFiles.length,
+    copiedUntracked,
+  };
+}
+
 function printRecruitingPullPreflight(summary) {
   console.log('');
   console.log('Recruiting pull preflight');
@@ -525,9 +610,35 @@ function latestRecruitingConflictPacket(cwd) {
   return summaries[summaries.length - 1] || null;
 }
 
+function latestRecruitingCheckpoint(cwd) {
+  const checkpointRoot = path.join(cwd, '.atris', 'sync', 'checkpoints');
+  const summaries = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name === 'summary.md') {
+        summaries.push(path.relative(cwd, full).replace(/\\/g, '/'));
+      }
+    }
+  }
+
+  walk(checkpointRoot);
+  summaries.sort();
+  return summaries[summaries.length - 1] || null;
+}
+
 function printRecruitingSyncDoctor(workspace, slug = RECRUITING_BUSINESS_SLUG) {
   const dirty = gitDirtySummary(workspace.cwd);
   const latestPacket = latestRecruitingConflictPacket(workspace.cwd);
+  const latestCheckpoint = latestRecruitingCheckpoint(workspace.cwd);
   console.log('Recruiting sync doctor');
   console.log(`  workspace: ${displayHomeRelativePath(workspace.cwd)}`);
   console.log(`  business: ${bindingBusinessLabel(workspace.binding) || slug}`);
@@ -538,6 +649,7 @@ function printRecruitingSyncDoctor(workspace, slug = RECRUITING_BUSINESS_SLUG) {
     console.log('  local git changes: unknown');
   }
   console.log(`  review packet: ${latestPacket || 'none'}`);
+  console.log(`  latest checkpoint: ${latestCheckpoint || 'none'}`);
   console.log('');
   console.log('Next command');
   if (latestPacket) {
@@ -638,6 +750,16 @@ async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {
       printRecruitingPullPreflight(dirty);
       process.exitCode = 1;
       return;
+    }
+  }
+  if (action === 'pull' && args.includes('--apply')) {
+    const dirty = gitDirtySummary(workspace.cwd);
+    const checkpoint = writeRecruitingPullCheckpoint(workspace.cwd, dirty);
+    if (checkpoint) {
+      console.log('');
+      console.log('Recruiting checkpoint');
+      console.log(`  wrote: ${checkpoint.summary}`);
+      console.log(`  untracked copied: ${checkpoint.copiedUntracked}/${checkpoint.untrackedFiles}`);
     }
   }
 
