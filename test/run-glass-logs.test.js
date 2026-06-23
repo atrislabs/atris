@@ -258,3 +258,74 @@ test('listRunLogs --cat prints full contents of a specific log', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('listRunLogs --json outputs machine-readable JSON', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('123456', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+
+    listRunLogs(['--json', '--tail', '0']);
+    const parsed = JSON.parse(output.trim());
+    assert.ok(parsed.ok, 'JSON has ok: true');
+    assert.ok(Array.isArray(parsed.logs), 'JSON has logs array');
+    assert.equal(parsed.logs.length, 1, 'one log entry');
+    assert.equal(parsed.logs[0].cycle, 1, 'cycle parsed correctly');
+    assert.ok(parsed.logs[0].phases.includes('PLAN'), 'phases parsed correctly');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('listRunLogs --json --cat outputs JSON with content', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('123456', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'JSON cat content', 3000);
+
+    const fileName = path.basename(logPath);
+    listRunLogs(['--json', '--cat', fileName]);
+    const parsed = JSON.parse(output.trim());
+    assert.ok(parsed.ok, 'JSON has ok: true');
+    assert.ok(parsed.content.includes('JSON cat content'), 'content in JSON output');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('listRunLogs --json with no logs returns empty array', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    listRunLogs(['--json']);
+    const parsed = JSON.parse(output.trim());
+    assert.ok(parsed.ok, 'JSON has ok: true');
+    assert.equal(parsed.count, 0, 'count is 0');
+    assert.deepEqual(parsed.logs, [], 'logs is empty array');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});

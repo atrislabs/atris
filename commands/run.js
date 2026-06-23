@@ -522,9 +522,11 @@ async function runAtris(options = {}) {
  * Options:
  *   --tail N    Show last N lines of each log (default: 5)
  *   --cat FILE  Print full contents of a specific log file
+ *   --json      Output machine-readable JSON
  */
 function listRunLogs(args = []) {
   const runsDir = getRunLogDir();
+  const jsonMode = args.includes('--json');
 
   // --cat FILE: print full contents
   const catIdx = args.indexOf('--cat');
@@ -532,11 +534,19 @@ function listRunLogs(args = []) {
     const file = args[catIdx + 1];
     const filePath = path.isAbsolute(file) ? file : path.join(runsDir, file);
     if (!fs.existsSync(filePath)) {
-      console.error(`Run log not found: ${file}`);
+      if (jsonMode) {
+        console.log(JSON.stringify({ ok: false, error: `Run log not found: ${file}` }));
+      } else {
+        console.error(`Run log not found: ${file}`);
+      }
       process.exit(1);
     }
     const content = fs.readFileSync(filePath, 'utf8');
-    console.log(content);
+    if (jsonMode) {
+      console.log(JSON.stringify({ ok: true, file, content }));
+    } else {
+      console.log(content);
+    }
     return;
   }
 
@@ -556,7 +566,31 @@ function listRunLogs(args = []) {
     : [];
 
   if (files.length === 0) {
-    console.log('No run logs found. Run "atris run" to generate them.');
+    if (jsonMode) {
+      console.log(JSON.stringify({ ok: true, logs: [], count: 0 }));
+    } else {
+      console.log('No run logs found. Run "atris run" to generate them.');
+    }
+    return;
+  }
+
+  // Build log entries
+  const logs = files.map(file => {
+    const filePath = path.join(runsDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const phases = [...content.matchAll(/## (\w+)/g)].map(m => m[1]);
+    return {
+      file,
+      cycle: cycleMatch ? parseInt(cycleMatch[1]) : null,
+      phases,
+      tail: tailLines > 0 ? lines.slice(-tailLines).filter(l => l.trim()) : undefined,
+    };
+  });
+
+  if (jsonMode) {
+    console.log(JSON.stringify({ ok: true, logs, count: logs.length }));
     return;
   }
 
@@ -564,23 +598,14 @@ function listRunLogs(args = []) {
   console.log(`Run logs (${files.length} file${files.length === 1 ? '' : 's'}):`);
   console.log('');
 
-  for (const file of files) {
-    const filePath = path.join(runsDir, file);
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n');
+  for (const entry of logs) {
+    console.log(`  ${entry.file}`);
+    console.log(`    Cycle: ${entry.cycle ?? '?'}, Phases: ${entry.phases.join(', ')}`);
 
-    // Extract cycle and phase info from headers
-    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
-    const phases = [...content.matchAll(/## (\w+)/g)].map(m => m[1]);
-
-    console.log(`  ${file}`);
-    console.log(`    Cycle: ${cycleMatch ? cycleMatch[1] : '?'}, Phases: ${phases.join(', ')}`);
-
-    if (tailLines > 0) {
-      const tail = lines.slice(-tailLines);
+    if (entry.tail && entry.tail.length > 0) {
       console.log(`    ...last ${tailLines} lines:`);
-      for (const line of tail) {
-        if (line.trim()) console.log(`    ${line}`);
+      for (const line of entry.tail) {
+        console.log(`    ${line}`);
       }
     }
     console.log('');
