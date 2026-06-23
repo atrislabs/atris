@@ -5,7 +5,10 @@ const assert = require('node:assert');
 
 const {
   DEFAULT_CLAUDE_RUNNER_MODEL,
+  DEFAULT_CLAUDE_RUNNER_BIN,
   resolveClaudeRunnerModel,
+  resolveClaudeRunnerBin,
+  buildRunnerAvailabilityCommand,
   buildRunnerCommand,
 } = require('../lib/runner-command');
 
@@ -18,6 +21,18 @@ function withEnv(value, fn) {
   } finally {
     if (prev === undefined) delete process.env.ATRIS_CLAUDE_MODEL;
     else process.env.ATRIS_CLAUDE_MODEL = prev;
+  }
+}
+
+function withBinEnv(value, fn) {
+  const prev = process.env.ATRIS_CLAUDE_BIN;
+  if (value === undefined) delete process.env.ATRIS_CLAUDE_BIN;
+  else process.env.ATRIS_CLAUDE_BIN = value;
+  try {
+    fn();
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_BIN;
+    else process.env.ATRIS_CLAUDE_BIN = prev;
   }
 }
 
@@ -43,6 +58,27 @@ test('resolveClaudeRunnerModel defaults to the opus alias', () => {
   });
 });
 
+// --- resolveClaudeRunnerBin: runner swap is config-only ---
+
+test('resolveClaudeRunnerBin defaults to claude', () => {
+  withBinEnv(undefined, () => {
+    assert.equal(resolveClaudeRunnerBin(), 'claude');
+    assert.equal(resolveClaudeRunnerBin(), DEFAULT_CLAUDE_RUNNER_BIN);
+  });
+});
+
+test('resolveClaudeRunnerBin honors ATRIS_CLAUDE_BIN', () => {
+  withBinEnv('/opt/atris/bin/claude-nightly', () => {
+    assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
+  });
+});
+
+test('buildRunnerAvailabilityCommand checks the configured runner binary', () => {
+  withBinEnv('/opt/atris/bin/claude-nightly', () => {
+    assert.equal(buildRunnerAvailabilityCommand(), 'command -v /opt/atris/bin/claude-nightly');
+  });
+});
+
 // Regression guard for retired-model-kills-loop-silently: the default must be a
 // bare alias, never a versioned claude-* id that can retire out from under the loop.
 test('default model is an alias, not a versioned claude-* id', () => {
@@ -59,6 +95,21 @@ test('buildRunnerCommand always emits --model', () => {
     assert.match(cmd, /--model opus\b/);
     assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
     assert.match(cmd, /--allowedTools "Bash,Read"/);
+  });
+});
+
+test('buildRunnerCommand uses ATRIS_CLAUDE_BIN without changing call sites', () => {
+  withBinEnv('/opt/atris/bin/claude-nightly', () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
+    assert.match(cmd, /^\/opt\/atris\/bin\/claude-nightly -p/);
+    assert.match(cmd, /--model opus\b/);
+  });
+});
+
+test('buildRunnerCommand shell-quotes runner binaries with spaces', () => {
+  withBinEnv('/Applications/Claude Nightly/bin/claude', () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
+    assert.match(cmd, /^'\/Applications\/Claude Nightly\/bin\/claude' -p/);
   });
 });
 

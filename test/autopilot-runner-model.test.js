@@ -9,6 +9,7 @@ const { buildRunnerCommand } = require('../lib/runner-command');
 
 const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
+const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
 
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
@@ -25,6 +26,19 @@ test('autopilot.js and run.js build their spawn command via buildRunnerCommand',
   assert.match(RUN_SRC, /buildRunnerCommand\(/);
   assert.match(AUTOPILOT_SRC, /require\('\.\.\/lib\/runner-command'\)/);
   assert.match(RUN_SRC, /require\('\.\.\/lib\/runner-command'\)/);
+});
+
+test('runner availability checks use the shared configured binary', () => {
+  assert.doesNotMatch(AUTOPILOT_SRC, /which claude/);
+  assert.doesNotMatch(RUN_SRC, /which claude/);
+  assert.match(AUTOPILOT_SRC, /buildRunnerAvailabilityCommand\(/);
+  assert.match(RUN_SRC, /buildRunnerAvailabilityCommand\(/);
+});
+
+test('mission claude ticks spawn the configured runner binary', () => {
+  assert.doesNotMatch(MISSION_SRC, /spawn\('claude'/);
+  assert.match(MISSION_SRC, /spawn\(resolveClaudeRunnerBin\(\), args/);
+  assert.match(MISSION_SRC, /resolveClaudeRunnerBin/);
 });
 
 // --- T3: every spawn injects a resolved --model alias by default ---

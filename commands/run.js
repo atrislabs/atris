@@ -12,7 +12,11 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
-const { buildRunnerCommand } = require('../lib/runner-command');
+const {
+  buildRunnerCommand,
+  buildRunnerAvailabilityCommand,
+  resolveClaudeRunnerBin,
+} = require('../lib/runner-command');
 const { cleanAtris } = require('./clean');
 
 const pkg = require('../package.json');
@@ -220,11 +224,11 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check claude CLI is available
+  // Check configured Claude runner CLI is available
   try {
-    execSync('which claude', { stdio: 'pipe' });
+    execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
   } catch {
-    console.error('claude CLI not found. Install Claude Code first.');
+    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install Claude Code first.`);
     process.exit(1);
   }
 
