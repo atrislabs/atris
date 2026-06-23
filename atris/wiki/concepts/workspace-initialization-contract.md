@@ -4,8 +4,8 @@ slug: workspace-initialization-contract
 title: Workspace Initialization Contract
 sources:
   - commands/init.js
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.86
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -13,7 +13,7 @@ dependencies:
   - atris/wiki/concepts/wiki-as-memory-substrate.md
 actionability: "Use this before changing `atris init`, workspace scaffolds, generated agent instructions, project detection, or boot hook behavior."
 created: 2026-05-10
-updated: 2026-06-09
+updated: 2026-06-23
 tags:
   - initialization
   - workspace

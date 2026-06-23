@@ -12,8 +12,8 @@ sources:
   - lib/task-db.js
   - atris/TODO.md
   - package.json
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.88
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -23,7 +23,7 @@ dependencies:
   - atris/wiki/concepts/verifiable-reward-loop.md
 actionability: "Use this as the short repo orientation before choosing between task, wiki, member, mission, or experiment work."
 created: 2026-04-07
-updated: 2026-05-10
+updated: 2026-06-23
 tags:
   - cli
   - overview

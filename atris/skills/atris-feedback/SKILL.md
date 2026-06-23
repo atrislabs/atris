@@ -12,6 +12,13 @@ tags:
 
 One skill for everything: submit feedback, view the queue, resolve/close/delete items.
 
+## Steps
+
+1. Parse the user input to determine the feedback action (list, submit, resolve, close, delete)
+2. Run the matching `atris feedback` CLI command from the reference below
+3. If `atris` CLI is unavailable, fall back to the direct API/DynamoDB path
+4. Report the result to the user
+
 ## Parse the input
 
 - `/feedback` (no args) → show the queue

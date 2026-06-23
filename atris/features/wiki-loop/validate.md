@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-18
+last_compiled: 2026-06-23
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)

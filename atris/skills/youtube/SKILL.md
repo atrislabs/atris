@@ -43,15 +43,6 @@ else
   exit 1
 fi
 
-# 4. Auth check
-STATUS=$(curl -s "https://api.atris.ai/api/me" \
-  -H "Authorization: Bearer $TOKEN")
-
-if echo "$STATUS" | grep -q "Token expired\|Not authenticated\|Unauthorized"; then
-  echo "Token expired. Run: atris login --force"
-  exit 1
-fi
-
 echo "Ready. YouTube skill active (5 credits per video)."
 export ATRIS_TOKEN="$TOKEN"
 ```
@@ -70,13 +61,8 @@ TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 
 ### Process a Video
 ```bash
-curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID",
-    "query": "What are the key takeaways?"
-  }'
+atris youtube process "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --query "What are the key takeaways?"
 ```
 
 **Parameters:**
@@ -107,15 +93,10 @@ curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
 
 ### Process + Store as Knowledge
 ```bash
-curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "youtube_url": "https://www.youtube.com/watch?v=...",
-    "query": "Extract the main arguments and evidence",
-    "agent_id": "YOUR_AGENT_ID",
-    "store_as_knowledge": true
-  }'
+atris youtube process "https://www.youtube.com/watch?v=..." \
+  --query "Extract the main arguments and evidence" \
+  --agent "YOUR_AGENT_ID" \
+  --store
 ```
 
 ---
@@ -124,12 +105,12 @@ curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
 
 ### "Learn from this YouTube video"
 1. Run bootstrap
-2. Process: `POST /api/agent/process_youtube` with `{youtube_url, query: "What are the key lessons and insights?"}`
+2. Process: `atris youtube process <url> --query "What are the key lessons and insights?"`
 3. Display the analysis to the user
 
 ### "What does this video say about X?"
 1. Run bootstrap
-2. Process with focused query: `{youtube_url, query: "What does this say about X?"}`
+2. Process with focused query: `atris youtube process <url> --query "What does this say about X?"`
 3. Show the focused analysis
 
 ### "Process multiple videos on a topic"
@@ -143,10 +124,7 @@ VIDEOS=(
 
 for url in "${VIDEOS[@]}"; do
   echo "Processing: $url"
-  curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"youtube_url\": \"$url\", \"query\": \"Key insights and takeaways\"}"
+  atris youtube process "$url" --query "Key insights and takeaways"
   echo ""
 done
 ```
@@ -154,8 +132,8 @@ done
 
 ### "Save video insights to my agent's memory"
 1. Run bootstrap
-2. Get your agent ID: `curl -s "https://api.atris.ai/api/agent/my-agents" -H "Authorization: Bearer $TOKEN"`
-3. Process with storage: `{youtube_url, agent_id: "...", store_as_knowledge: true}`
+2. Get your agent ID: `atris agent`
+3. Process with storage: `atris youtube process <url> --agent "..." --store`
 4. Agent can now reference these insights in future conversations
 
 ---
@@ -196,12 +174,8 @@ npm install -g atris && atris login
 TOKEN=$(node -e "console.log(require('$HOME/.atris/credentials.json').token)")
 
 # Process a video
-curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"youtube_url": "https://youtube.com/watch?v=...", "query": "Summarize this"}'
+atris youtube process "https://youtube.com/watch?v=..." --query "Summarize this"
 
 # Process + store to agent knowledge
-curl -s -X POST "https://api.atris.ai/api/agent/process_youtube" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"youtube_url": "https://youtube.com/watch?v=...", "agent_id": "YOUR_ID", "store_as_knowledge": true}'
+atris youtube process "https://youtube.com/watch?v=..." --agent "YOUR_ID" --store
 ```

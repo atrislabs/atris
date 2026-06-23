@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-18
+last_compiled: 2026-06-23
 sources:
   - lib/wiki.js:15-25 (public/private wiki root getters)
   - lib/wiki.js:192-217 (wiki and context scaffold)

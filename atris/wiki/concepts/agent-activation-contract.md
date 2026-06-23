@@ -5,15 +5,15 @@ title: Agent Activation Contract
 sources:
   - atris/CLAUDE.md
   - commands/activate.js
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.9
 dependencies:
   - atris/wiki/concepts/plan-do-review-loop.md
   - atris/wiki/concepts/wiki-as-memory-substrate.md
 actionability: "Use this before changing agent boot instructions, `atris activate`, MAP-first behavior, first-message requirements, or durable-memory routing."
 created: 2026-05-10
-updated: 2026-06-09
+updated: 2026-06-23
 tags:
   - agent-activation
   - protocol

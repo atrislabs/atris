@@ -9,9 +9,9 @@ sources:
   - commands/business.js
   - commands/computer.js
 created: 2026-04-27
-updated: 2026-05-10
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.88
 dependencies:
   - atris/wiki/systems/atris-cli.md

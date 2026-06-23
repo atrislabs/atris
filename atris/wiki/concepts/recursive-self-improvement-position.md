@@ -3,8 +3,8 @@ title: Recursive self-improvement — capability position
 type: concept
 status: living
 last_reviewed: 2026-06-10
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 sources:
   - commands/improve.js
   - atris/experiments/policy-optimize/README.md

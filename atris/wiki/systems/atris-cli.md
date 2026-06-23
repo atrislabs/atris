@@ -18,9 +18,9 @@ sources:
   - lib/policy-lessons.js
   - lib/task-db.js
 created: 2026-04-07
-updated: 2026-06-10
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.9
 dependencies:
   - atris/wiki/briefs/atris-cli-overview.md
@@ -34,7 +34,7 @@ tags: [project, cli, atris]
 
 # Atris CLI
 
-`atris` is a Node.js CLI, currently version `3.16.0`, that turns a repo into an AI workspace with context, task ownership, memory, verification, and optional cloud/business computers.
+`atris` is a Node.js CLI, currently version `3.16.1`, that turns a repo into an AI workspace with context, task ownership, memory, verification, and optional cloud/business computers.
 
 The public model is:
 

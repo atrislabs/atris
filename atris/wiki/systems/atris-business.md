@@ -9,9 +9,9 @@ sources:
   - README.md
   - atris/MAP.md
 created: 2026-04-07
-updated: 2026-06-09
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.87
 dependencies:
   - atris/wiki/concepts/owner-computer-model.md

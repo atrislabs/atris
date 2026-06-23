@@ -13,9 +13,9 @@ sources:
   - lib/policy-lessons.js
   - lib/task-db.js
 created: 2026-04-09
-updated: 2026-06-10
-last_compiled: 2026-06-10
-last_verified: 2026-06-10
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.84
 dependencies:
   - atris/wiki/concepts/plan-do-review-loop.md

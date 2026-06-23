@@ -6,9 +6,9 @@ sources:
   - atris/wiki/concepts/wiki-as-memory-substrate.md
   - atris/features/wiki/idea.md
 created: 2026-04-07
-updated: 2026-05-10
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.7
 dependencies:
   - atris/wiki/concepts/wiki-as-memory-substrate.md

@@ -8,9 +8,9 @@ sources:
   - commands/loop.js
   - README.md
 created: 2026-04-07
-updated: 2026-06-09
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+updated: 2026-06-23
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.9
 dependencies:
   - atris/wiki/systems/atris-cli.md
@@ -60,8 +60,8 @@ slug: short-id
 title: Human Readable
 sources:
   - path/to/local/source-or-receipt
-last_compiled: YYYY-MM-DD
-last_verified: YYYY-MM-DD
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.0
 dependencies: []
 actionability: "When to use this page."

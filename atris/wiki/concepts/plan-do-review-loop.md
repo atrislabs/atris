@@ -9,15 +9,15 @@ sources:
   - atris/team/navigator/MEMBER.md
   - atris/team/executor/MEMBER.md
   - atris/team/validator/MEMBER.md
-last_compiled: 2026-06-09
-last_verified: 2026-06-09
+last_compiled: 2026-06-23
+last_verified: 2026-06-23
 confidence: 0.89
 dependencies:
   - atris/wiki/briefs/atris-cli-overview.md
   - atris/wiki/concepts/verifiable-reward-loop.md
 actionability: "Use this to decide which Atris stage owns work, proof, member behavior, and task state before editing."
 created: 2026-04-07
-updated: 2026-05-10
+updated: 2026-06-23
 tags:
   - workflow
   - core-loop
