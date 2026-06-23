@@ -354,6 +354,8 @@ atris run prune-logs --keep 10 --dry-run  # Preview pruning to 10
 atris run search auth       # Search for "auth" across all run logs
 atris run search auth --phase do  # Search only DO phase
 atris run stats             # Show phase counts and avg durations
+atris run export            # Export all logs as JSON bundle
+atris run export --out /tmp/runs.json  # Export to specific file
 ```
 
 **Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
