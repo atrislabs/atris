@@ -113,7 +113,7 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
 let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
-const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template'];
+const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model'];
 
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
@@ -133,6 +133,8 @@ function applyRunnerFlags(args) {
   if (runnerBin) process.env.ATRIS_CLAUDE_BIN = runnerBin;
   const runnerTemplate = readOptionArg(args, '--runner-template');
   if (runnerTemplate) process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
+  const runnerModel = readOptionArg(args, '--runner-model');
+  if (runnerModel) process.env.ATRIS_CLAUDE_MODEL = runnerModel;
 }
 
 const isBusinessSyncSafetyCommand = command === 'sync'
@@ -768,6 +770,7 @@ function showAutopilotHelp() {
   console.log('  --dry-run        Show suggestions without executing');
   console.log('  --runner-bin PATH       Runner binary for this run');
   console.log('  --runner-template CMD   Runner command template for this run');
+  console.log('  --runner-model MODEL    Runner model for this run');
   console.log('');
   console.log('Examples:');
   console.log('  atris autopilot                        # Suggest from existing work');
@@ -1520,6 +1523,7 @@ if (command === 'init') {
     console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
     console.log('  --runner-bin PATH       Runner binary for this run');
     console.log('  --runner-template CMD   Runner command template for this run');
+    console.log('  --runner-model MODEL    Runner model for this run');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
