@@ -20,6 +20,7 @@
 - [[atris/wiki/concepts/owner-computer-model.md]] — Owner = User | Business; constrained entity modes, typed computers, and groups as the social/access layer
 - [[atris/wiki/concepts/agent-activation-contract.md]] — editor-facing boot contract: first message, MAP-first, setup, and durable-memory routing
 - [[atris/wiki/concepts/workspace-initialization-contract.md]] — `atris init` bootstrap contract: guards, scaffolds, team context, generated agent files, and hooks
+- [[atris/wiki/concepts/glass-interface-principle.md]] — AI tool design doctrine: make reasoning visible and inspectable, not black-boxed
 
 ## Briefs
 
