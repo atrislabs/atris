@@ -71,6 +71,7 @@ Core local work:
 - `atris run search`: search phase reasoning across all run logs by keyword, with `--phase` and `--limit` filters
 - `atris run stats`: show run log stats — total runs, phase counts, avg durations
 - `atris run export`: export all run logs as a JSON bundle for backup or transfer
+- `atris run diff`: compare two run logs side by side, showing phase-level differences
 - `atris status`, `atris log`, `atris search`: local operating view
 - `atris verify`: run deterministic completion checks
 

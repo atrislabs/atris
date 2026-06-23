@@ -356,6 +356,7 @@ atris run search auth --phase do  # Search only DO phase
 atris run stats             # Show phase counts and avg durations
 atris run export            # Export all logs as JSON bundle
 atris run export --out /tmp/runs.json  # Export to specific file
+atris run diff file1.md file2.md       # Compare two run logs
 ```
 
 **Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.

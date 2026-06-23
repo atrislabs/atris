@@ -190,6 +190,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris run search` | Search phase reasoning across all run logs by keyword |
 | `atris run stats` | Show run log stats: phase counts, avg durations |
 | `atris run export` | Export all run logs as a JSON bundle |
+| `atris run diff` | Compare two run logs side by side |
 | `atris autopilot` | Guided loop with approvals |
 | `atris pulse` | Install or run the durable overnight heartbeat |
 | `atris log` | Add inbox items to today's journal |
