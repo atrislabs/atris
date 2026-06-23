@@ -365,10 +365,48 @@ function printRecruitingComputerHelp() {
   console.log('  atris computer recruiting create');
 }
 
-function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG) {
+function displayHomeRelativePath(targetPath) {
+  const home = os.homedir();
+  if (targetPath && home && targetPath === home) return '~';
+  if (targetPath && home && targetPath.startsWith(`${home}${path.sep}`)) {
+    return `~${targetPath.slice(home.length)}`;
+  }
+  return targetPath;
+}
+
+function recruitingBusinessWorkspacePath(slug = RECRUITING_BUSINESS_SLUG) {
+  const root = process.env.ATRIS_BUSINESS_ROOT || path.join(os.homedir(), 'arena', 'atris-business');
+  return path.join(root, slug);
+}
+
+function resolveRecruitingSyncWorkspace(slug = RECRUITING_BUSINESS_SLUG) {
+  const currentBinding = readBusinessBinding();
+  if (currentBinding) {
+    return {
+      cwd: process.cwd(),
+      binding: currentBinding,
+      source: 'current',
+    };
+  }
+
+  const canonicalCwd = recruitingBusinessWorkspacePath(slug);
+  const canonicalBinding = readBusinessBinding(canonicalCwd);
+  if (canonicalBinding) {
+    return {
+      cwd: canonicalCwd,
+      binding: canonicalBinding,
+      source: 'canonical',
+    };
+  }
+
+  return null;
+}
+
+function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG, workspacePath = null) {
+  const target = workspacePath || recruitingBusinessWorkspacePath(slug);
   console.log('');
   console.log('Recruiting sync commands');
-  console.log(`  cd ~/arena/atris-business/${slug}`);
+  console.log(`  cd ${displayHomeRelativePath(target)}`);
   console.log('  atris sync --status');
   console.log('  atris sync --dry-run');
   console.log('  atris sync');
@@ -378,24 +416,28 @@ function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG) {
 async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
   const slug = cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG;
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('Usage: atris computer recruiting sync [--status]');
+    console.log('Usage: atris computer recruiting sync [--status|--dry-run|--watch|--review|--resolve local|cloud|merge]');
     console.log('');
-    console.log('Shows local recruiting workspace sync health and the exact safe sync commands.');
+    console.log('Runs local recruiting workspace sync from the current or canonical Atris Labs folder.');
     printRecruitingSyncNextSteps(slug);
     return;
   }
 
-  const binding = readBusinessBinding();
+  const workspace = resolveRecruitingSyncWorkspace(slug);
   console.log('Recruiting local sync');
-  if (!binding) {
+  if (!workspace) {
     console.log('  local workspace: not detected in this folder');
     printRecruitingSyncNextSteps(slug);
     return;
   }
 
+  if (workspace.source === 'canonical') {
+    console.log(`  folder: ${displayHomeRelativePath(workspace.cwd)} (auto-detected)`);
+  }
+
   const { businessSync } = require('./business-sync');
-  await businessSync(['--status'], process.cwd());
-  printRecruitingSyncNextSteps(binding.slug || slug);
+  await businessSync(args.length > 0 ? args : ['--status'], workspace.cwd);
+  printRecruitingSyncNextSteps(workspace.binding.slug || slug, workspace.cwd);
 }
 
 function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
