@@ -807,9 +807,9 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
   - `.atris/state/pulse_agi_loop_receipts.jsonl` (schema `atris.pulse_tick.v1`) — revives the **Pulse AGI** loop-health channel `commands/brain.js:43` watches
   - `.atris/state/scorecards.jsonl` (schema `atris.improve_tick.v1`, `source:'pulse'`) — revives the reward signal `lib/policy-lessons.js` mines
 - **Routing:** `bin/atris.js` (`command === 'pulse'` dispatch) + `knownCommands` array + `showHelp`
-- **Tests:** `test/pulse.test.js` (23 tests — scoring, ghost detection, lock, cron-script generation)
+- **Tests:** `test/pulse.test.js` (29 tests — scoring, ghost detection, lock, cron-script generation)
 - **Cron template lineage:** modeled on the proven `~/.atris/overnight/commander-obelisk-swarlo/tick.sh` (deadline self-removal + lock + run + proof), but all real logic lives in JS (`atris pulse tick`), not duplicated shell
-- **Flags:** `pulse install [--cadence "11,40 * * * *"] [--days 7] [--verify "npm test"] [--model opus]`; `pulse tick [--no-claude] [--no-verify] [--verify "<cmd>"]`; `pulse run [--max-ticks N]`
+- **Flags:** `pulse install [--cadence "11,40 * * * *"] [--days 7] [--verify "npm test"] [--model opus] [--runner-bin /path/to/runner] [--runner-template "{bin} ..."]`; `pulse tick [--no-claude] [--no-verify] [--verify "<cmd>"]`; `pulse run [--max-ticks N]`
 - **Value:** Closes the open self-improvement loop — durable ignition (was: `/loop` dies with the session), real executor (was: auto-improver stuck dry-run), reward feedback (was: scorecards flatlined). Does NOT auto-push; work lands in review behind the human gate.
 
 **Search:** `rg "pulseCommand" commands/pulse.js` · `rg "buildTickScript" lib/pulse.js`

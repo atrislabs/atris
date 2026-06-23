@@ -52,6 +52,8 @@ Options:
   --cadence "<cron>"     Cron cadence for install
   --days <n>             Auto-expire installed heartbeat after n days
   --model <id>           Claude model alias/id for installed heartbeat
+  --runner-bin <path>    Runner binary for installed heartbeat
+  --runner-template <s>  Runner command template for installed heartbeat
   --max-ticks <n>        Number of foreground ticks for run
   --help, -h             Show this help
 `.trim();
@@ -347,11 +349,19 @@ function resolveAtrisBin() {
 // The dirs holding the binaries the engine spawns by bare name (claude, node,
 // git, atris). Baked into the cron script's PATH so a minimal cron environment
 // can still find them. Missing tools just contribute nothing.
-function resolveEngineBinDirs() {
+function resolveEngineBinDirs(extraBins = []) {
   const dirs = new Set([path.dirname(process.execPath)]); // node
   for (const tool of ['claude', 'git', 'atris']) {
     const r = spawnSync('which', [tool], { encoding: 'utf8', timeout: 8000 });
     if (r.status === 0 && r.stdout.trim()) dirs.add(path.dirname(r.stdout.trim()));
+  }
+  for (const bin of [process.env.ATRIS_CLAUDE_BIN, ...extraBins]) {
+    const configured = String(bin || '').trim();
+    if (configured && configured.includes(path.sep)) dirs.add(path.dirname(configured));
+    if (configured && !configured.includes(path.sep)) {
+      const r = spawnSync('which', [configured], { encoding: 'utf8', timeout: 8000 });
+      if (r.status === 0 && r.stdout.trim()) dirs.add(path.dirname(r.stdout.trim()));
+    }
   }
   dirs.add(path.join(os.homedir(), '.local', 'bin')); // common claude location
   return Array.from(dirs);
@@ -363,19 +373,23 @@ function installCommand(args, root = process.cwd()) {
   const days = Math.max(1, Number(readFlag(args, '--days', '7')) || 7);
   const verifyCmd = readFlag(args, '--verify', 'npm test');
   const model = readFlag(args, '--model', 'opus');
+  const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_CLAUDE_BIN || '');
+  const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + days * 86400;
 
   fs.mkdirSync(STATE_HOME, { recursive: true });
   const scriptPath = path.join(STATE_HOME, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
-  const pathDirs = resolveEngineBinDirs();
+  const pathDirs = resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
     atrisBin: resolveAtrisBin(),
     stateHome: STATE_HOME,
     deadlineEpoch,
     model,
+    runnerBin,
+    runnerCommandTemplate,
     verifyCmd,
     pathDirs,
   });
@@ -397,6 +411,8 @@ function installCommand(args, root = process.cwd()) {
     cadence: cron,
     expires_in_days: days,
     deadline_epoch: deadlineEpoch,
+    runner_bin: runnerBin || null,
+    runner_template_configured: Boolean(runnerCommandTemplate),
   };
   if (!asJson) {
     if (apply.status === 0) {

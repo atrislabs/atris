@@ -238,6 +238,8 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   assert.match(script, /crontab -l .* grep -v "\$MARKER" .* crontab -/);
   // runner-agnostic model default so a retired model can't silently kill the loop
   assert.match(script, /ATRIS_CLAUDE_MODEL="opus"/);
+  assert.doesNotMatch(script, /ATRIS_CLAUDE_BIN=/);
+  assert.doesNotMatch(script, /ATRIS_CLAUDE_COMMAND_TEMPLATE=/);
 });
 
 test('buildTickScript exports a PATH so cron can find bare-name spawns (claude/node)', () => {
@@ -250,6 +252,20 @@ test('buildTickScript exports a PATH so cron can find bare-name spawns (claude/n
   assert.match(script, /export PATH="/);
   assert.match(script, /\/Users\/x\/\.local\/bin/); // claude location must be present
   assert.match(script, /:\$PATH"/); // preserves the inherited PATH
+});
+
+test('buildTickScript preserves configured runner command for cron', () => {
+  const script = pulse.buildTickScript({
+    root: '/r',
+    stateHome: '/s',
+    deadlineEpoch: 123,
+    runnerBin: '/opt/atris/bin/claude-nightly',
+    runnerCommandTemplate: "{bin} --prompt-file {promptFile} --literal $HOME --name 'nightly'",
+  });
+  assert.ok(script.includes("export ATRIS_CLAUDE_BIN='/opt/atris/bin/claude-nightly'"));
+  assert.ok(script.includes('export ATRIS_CLAUDE_COMMAND_TEMPLATE='));
+  assert.ok(script.includes('--literal $HOME'));
+  assert.ok(script.includes("'\\''nightly'\\'''"));
 });
 
 test('buildTickScript escapes single quotes in the verify command', () => {
