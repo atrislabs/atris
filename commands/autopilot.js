@@ -444,7 +444,7 @@ function execPhaseCommandSync(cmd, opts = {}) {
 }
 
 /**
- * Run a phase via claude -p subprocess.
+ * Run a phase via the configured runner subprocess.
  */
 function executePhaseDetailed(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT } = options;
@@ -472,7 +472,7 @@ function executePhaseDetailed(phase, context, options = {}) {
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
-      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (claude -p hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
+      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
     }
     if (isPhaseKillError(err)) {
       throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
@@ -1197,7 +1197,7 @@ function parseProposedBlock(lines) {
 }
 
 /**
- * Default executor for plan-review: spawn a fresh claude -p call.
+ * Default executor for plan-review: spawn a fresh configured runner call.
  * Kept thin so tests can inject a stub via options.planReviewExec.
  */
 function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
@@ -2846,7 +2846,7 @@ function getLessonVerdict(lessonLine) {
 /**
  * Propose 3 candidate next horizons for the autopilot loop. Combines
  * `getIdleTickCount` + `getRecentSignals` into a prompt asking the LLM
- * to imagine what to work on next, spawns `claude -p`, and parses the
+ * to imagine what to work on next, uses the shared runner command, and parses the
  * JSON response into `[{ title, confidence, rationale }]`.
  *
  * Filters out candidates derived from resolved lessons (bug pattern no
@@ -2927,7 +2927,7 @@ Reply with the JSON array and nothing else.`;
   const start = output.indexOf('[');
   const end = output.lastIndexOf(']');
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error('proposeCandidateHorizons: claude -p returned no JSON array');
+    throw new Error('proposeCandidateHorizons: configured runner returned no JSON array');
   }
   const jsonText = output.slice(start, end + 1);
 
@@ -3568,7 +3568,7 @@ function isStillTrue(fact, cwd) {
 /**
  * Ask a local model whether a task/fact is still relevant.
  * Called when isStillTrue returns 'unverified' — the mechanical check
- * couldn't confirm or deny, so we ask claude -p to inspect the codebase.
+ * couldn't confirm or deny, so we ask the configured runner to inspect the codebase.
  *
  * @param {{ title: string, age: number, source?: string }} fact
  * @param {string} cwd - workspace root
