@@ -113,6 +113,28 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
 let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
+const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template'];
+
+function readOptionArg(args, name) {
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = args.indexOf(name);
+  if (index !== -1 && index < args.length - 1 && !String(args[index + 1]).startsWith('--')) return args[index + 1];
+  return null;
+}
+
+function isOptionValue(args, index, optionNames) {
+  return index > 0 && optionNames.includes(args[index - 1]);
+}
+
+function applyRunnerFlags(args) {
+  const runnerBin = readOptionArg(args, '--runner-bin');
+  if (runnerBin) process.env.ATRIS_CLAUDE_BIN = runnerBin;
+  const runnerTemplate = readOptionArg(args, '--runner-template');
+  if (runnerTemplate) process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
+}
+
 const isBusinessSyncSafetyCommand = command === 'sync'
   && (
     commandArgs.includes('--status')
@@ -742,8 +764,10 @@ function showAutopilotHelp() {
   console.log('  --auto           Execute without waiting for approval');
   console.log('  --duration=TIME  Run for a time limit (e.g. 1h, 30m, 90m)');
   console.log('  --iterations=N   Max tasks before stopping');
-  console.log('  --verbose, -v    Show detailed claude output');
+  console.log('  --verbose, -v    Show detailed runner output');
   console.log('  --dry-run        Show suggestions without executing');
+  console.log('  --runner-bin PATH       Runner binary for this run');
+  console.log('  --runner-template CMD   Runner command template for this run');
   console.log('');
   console.log('Examples:');
   console.log('  atris autopilot                        # Suggest from existing work');
@@ -1491,9 +1515,11 @@ if (command === 'init') {
     console.log('Options:');
     console.log('  --cycles=N    Max cycles (default: 5)');
     console.log('  --once        Single plan→do→review cycle');
-    console.log('  --verbose     Show claude -p output');
+    console.log('  --verbose     Show configured runner output');
     console.log('  --dry-run     Preview without executing');
     console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
+    console.log('  --runner-bin PATH       Runner binary for this run');
+    console.log('  --runner-template CMD   Runner command template for this run');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
@@ -1504,6 +1530,7 @@ if (command === 'init') {
   const dryRun = args.includes('--dry-run');
   const once = args.includes('--once');
   const push = !args.includes('--no-push');
+  applyRunnerFlags(args);
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
   const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
   const timeoutArg = args.find(a => a.startsWith('--timeout='));
@@ -1526,13 +1553,14 @@ if (command === 'init') {
   const verbose = args.includes('--verbose') || args.includes('-v');
   const dryRun = args.includes('--dry-run');
   const auto = args.includes('--auto');
+  applyRunnerFlags(args);
   const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
   const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
   const durationArg = args.find(a => a.startsWith('--duration='));
   const duration = durationArg ? durationArg.split('=')[1] : null;
 
   // Get description (non-flag args)
-  const description = args.filter(a => !a.startsWith('-')).join(' ').trim() || null;
+  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;
 
   const options = {
     ...(maxIterations !== undefined && { maxIterations }),
