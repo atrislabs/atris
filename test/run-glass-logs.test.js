@@ -33,6 +33,14 @@ test('run.js prints run log paths at end of run', () => {
   assert.match(RUN_SRC, /run logs: atris\/logs\/runs/);
 });
 
+test('run.js prints run log notice at startup in non-verbose mode', () => {
+  assert.match(RUN_SRC, /phase reasoning will be saved to atris\/logs\/runs/);
+});
+
+test('run.js prints run log notice at startup in verbose mode', () => {
+  assert.match(RUN_SRC, /Run logs: atris\/logs\/runs/);
+});
+
 // --- Functional: exercise the real production helpers ---
 
 test('getRunLogDir creates atris/logs/runs/ if missing', () => {
