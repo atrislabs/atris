@@ -417,6 +417,7 @@ function showHelp() {
   console.log('  fleet      - Inspect local fleet status');
   console.log('  agent      - Select cloud agent, or run `agent doctor` for local CLI wiring');
   console.log('  chat       - Chat with the selected Atris agent');
+  console.log('  fast       - Chat with Atris2 Fast');
   console.log('  login      - Sign in or add another account');
   console.log('  logout     - Sign out of current account');
   console.log('  whoami     - Show active account');
@@ -780,7 +781,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
-                       'activate', '_activate', 'agent', 'chat', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
+                       'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
@@ -1383,6 +1384,13 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`✗ Chat failed: ${error.message || error}`);
+      process.exit(1);
+    });
+} else if (command === 'fast' || (command === 'ax' && process.argv[3] === 'fast')) {
+  atrisFastChat()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`✗ Fast chat failed: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'console') {
@@ -2321,6 +2329,65 @@ async function chatInteractive(config, credentials) {
       resolve();
     });
   });
+}
+
+function atrisFastMessageFromArgs() {
+  const offset = command === 'ax' ? 4 : 3;
+  return process.argv.slice(offset).join(' ').trim();
+}
+
+async function atrisFastChat() {
+  if (command === 'ax' && process.argv[3] !== 'fast') {
+    console.error('Usage: atris ax fast "message"');
+    process.exit(1);
+  }
+
+  const message = atrisFastMessageFromArgs();
+
+  if (message === '-h' || message === '--help' || message === 'help') {
+    console.log('Usage: atris fast ["message"]');
+    console.log('');
+    console.log('  Chat with Atris2 Fast through /api/atris2/turn.');
+    console.log('  Requires `atris login`.');
+    console.log('');
+    console.log('  atris fast "what now?"      One-shot message');
+    console.log('  atris ax fast "what now?"   Alias');
+    process.exit(0);
+  }
+
+  if (!message) {
+    console.error('Usage: atris fast "message"');
+    process.exit(1);
+  }
+
+  const ensured = await ensureValidCredentials();
+  if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
+    console.error('✗ Error: Not logged in. Run "atris login" first.');
+    process.exit(1);
+  }
+  if (ensured.error) {
+    console.error(`✗ Error: Authentication failed: ${ensured.detail || ensured.error}. Run "atris login" to re-authenticate.`);
+    process.exit(1);
+  }
+
+  const credentials = ensured.credentials;
+  await atrisFastOnce(credentials, message);
+}
+
+async function atrisFastOnce(credentials, message) {
+  console.log('\nAtris2 Fast');
+  console.log('');
+
+  const apiUrl = getApiBaseUrl().replace(/\/api$/, '');
+  const endpoint = `${apiUrl}/api/atris2/turn`;
+  const body = JSON.stringify({
+    message,
+    model: 'atris:fast',
+    max_turns: 1,
+  });
+
+  await streamProChat(endpoint, credentials.token, body);
+  console.log('\n\n✓ Complete\n');
 }
 
 async function atrisDevEntry(userInput = null) {

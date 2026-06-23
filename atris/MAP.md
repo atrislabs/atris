@@ -30,6 +30,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 # Core CLI logic
 rg "async function interactiveEntry|async function atrisDevEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
 rg "modelForMode|buildPayload|formatUsage|async function chat|postTurn" ax test/cli-smoke.test.js  # ax Atris2 local coding-agent CLI: Fast/Pro modes, SSE streaming, workspace_path, chat history, doctor/help
+rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
 rg "function doAtris" commands/workflow.js     # Do command (line 394)

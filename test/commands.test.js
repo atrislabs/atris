@@ -13649,6 +13649,8 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['brainstorm', '--help'],
     ['brainstorm', '-h'],
     ['brainstorm', 'help'],
+    ['fast', '--help'],
+    ['ax', 'fast', '--help'],
     ['search', '--help'],
     ['search', '-h'],
     ['learn', '--help'],
