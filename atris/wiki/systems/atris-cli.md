@@ -66,6 +66,7 @@ Core local work:
 - `atris brainstorm`: shape ideas before planning
 - `atris plan`, `atris do`, `atris review`: manual workflow
 - `atris run` and `atris autopilot`: guided/autonomous loop
+- `atris run logs`: browse glass run logs (phase reasoning persisted to `atris/logs/runs/`)
 - `atris status`, `atris log`, `atris search`: local operating view
 - `atris verify`: run deterministic completion checks
 
@@ -105,6 +106,7 @@ Packaging and proof:
 - Mission runtime now has verifiers, receipts, member `now.md`, and status filters.
 - Experiments now include the public Endstate dry-run benchmark harness.
 - The review lane is evidence-gated and self-draining: `ready` proofs that cite receipts are checked against disk, `review-lane-run` certifies agent-side, and mined policy lessons coach the next submission.
+- `atris run` now persists phase reasoning (plan/do/review) to `atris/logs/runs/` as glass run logs — inspectable material, not discarded output. Browse with `atris run logs`.
 
 ## Current Limits
 
