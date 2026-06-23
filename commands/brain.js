@@ -353,15 +353,33 @@ function isCertifiedReviewTask(task) {
   return Boolean(metadata.agent_certified || review.agent_certified || passCount >= 2);
 }
 
+function isAgentNeededReviewTask(task) {
+  if (String(task?.status || '').toLowerCase() !== 'review') return false;
+  if (isCertifiedReviewTask(task)) return false;
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const approvalStatus = String(metadata.approval_status || review.approval_status || 'pending').toLowerCase();
+  if (approvalStatus && approvalStatus !== 'pending') return false;
+  const passCount = Number(metadata.agent_review_pass_count || review.agent_review_pass_count || 0);
+  return passCount < 2;
+}
+
 function summarizeTaskProjection(root) {
   const tasks = readTaskProjectionTasks(root);
   if (!tasks) return null;
 
   const counts = {};
   const certifiedReviewTasks = [];
+  const agentNeededReviewTasks = [];
   for (const task of tasks) {
     const status = String(task?.status || '').toLowerCase();
     counts[status] = (counts[status] || 0) + 1;
+    if (isAgentNeededReviewTask(task)) {
+      agentNeededReviewTasks.push({
+        ref: task.display_id || task.legacy_ref || task.id,
+        title: task.title || 'Untitled task',
+      });
+    }
     if (isCertifiedReviewTask(task)) {
       certifiedReviewTasks.push({
         ref: task.display_id || task.legacy_ref || task.id,
@@ -373,6 +391,7 @@ function summarizeTaskProjection(root) {
   return {
     tasks,
     counts,
+    agentNeededReviewTasks,
     certifiedReviewTasks,
   };
 }
@@ -711,6 +730,11 @@ function memberNextMove(member, state = null) {
   const name = member.name || member.slug;
   const context = `${member.startHere}\n${member.goals}`;
   const identity = `${member.slug}\n${member.name}`;
+  const agentNeededReview = state?.taskProjection?.agentNeededReviewTasks?.[0] || null;
+  const agentNeededReviewMove = agentNeededReview
+    ? `${name}: run the agent-safe review lane for ${agentNeededReview.ref}: ` +
+      `\`atris task review-chat ${agentNeededReview.ref} --as codex-review\`, then run the verifier named in the review packet and certify or revise without accepting XP.`
+    : null;
   const certifiedReview = state?.taskProjection?.certifiedReviewTasks?.[0] || null;
   const certifiedReviewMove = certifiedReview
     ? `${name}: hand off certified review ${certifiedReview.ref} to the operator: run ` +
@@ -731,6 +755,7 @@ function memberNextMove(member, state = null) {
     return `${name}: choose or create one bounded mission step, run its verifier, and close it with proof, a scorecard, and the next move.`;
   }
   if (/validator|reviewer/i.test(identity)) {
+    if (agentNeededReviewMove) return agentNeededReviewMove;
     if (certifiedReviewMove) return certifiedReviewMove;
     if ((state?.todo?.open || 0) === 0 && (state?.todo?.done || 0) === 0) {
       return `${name}: wait for one concrete artifact or ask Navigator to create a reviewable task with verifier, proof target, and residual-risk checklist.`;
@@ -739,6 +764,7 @@ function memberNextMove(member, state = null) {
   }
   if (/executor|builder/i.test(identity)) {
     if ((state?.todo?.open || 0) === 0) {
+      if (agentNeededReviewMove) return agentNeededReviewMove;
       if (certifiedReviewMove) return certifiedReviewMove;
       return `${name}: ask Navigator to create one bounded task with files, verifier, and stop rule before making a patch.`;
     }
@@ -748,6 +774,7 @@ function memberNextMove(member, state = null) {
     return `${name}: turn one messy or unclaimed intent into a MAP-backed plan with ASCII visualization, exact files, verifier, rollback, and a review-ready task.`;
   }
   if (/launcher|closer/i.test(identity)) {
+    if (agentNeededReviewMove) return agentNeededReviewMove;
     if (certifiedReviewMove) return certifiedReviewMove;
     if ((state?.todo?.done || 0) === 0) {
       return `${name}: wait for one validated task receipt before closeout, or ask Validator to produce a review decision with proof.`;
