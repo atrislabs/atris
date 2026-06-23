@@ -351,6 +351,8 @@ atris run logs --cat FILE   # Print full contents of a specific log
 atris run logs --json       # Machine-readable JSON output
 atris run prune-logs        # Prune old logs, keep most recent 50
 atris run prune-logs --keep 10 --dry-run  # Preview pruning to 10
+atris run search auth       # Search for "auth" across all run logs
+atris run search auth --phase do  # Search only DO phase
 ```
 
 **Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
