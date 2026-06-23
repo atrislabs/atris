@@ -70,6 +70,7 @@ Core local work:
 - `atris run prune-logs`: prune old run logs, keeping the most recent N (default 50; auto-prune to 100 after each run)
 - `atris run search`: search phase reasoning across all run logs by keyword, with `--phase` and `--limit` filters
 - `atris run stats`: show run log stats — total runs, phase counts, avg durations
+- `atris run export`: export all run logs as a JSON bundle for backup or transfer
 - `atris status`, `atris log`, `atris search`: local operating view
 - `atris verify`: run deterministic completion checks
 
