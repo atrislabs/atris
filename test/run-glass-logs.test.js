@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -408,4 +408,74 @@ test('pruneRunLogs deletes old logs keeping only N', () => {
 test('run.js auto-prunes old run logs after run completion', () => {
   assert.match(RUN_SRC, /Auto-prune old run logs/);
   assert.match(RUN_SRC, /const keep = 100/);
+});
+
+// --- searchRunLogs ---
+
+test('searchRunLogs finds keyword across phases', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('400001', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Need to fix the auth module', 3000);
+    writePhaseToRunLog(logPath, 1, 'do', 'Implemented auth fix in login.js', 12000);
+
+    searchRunLogs(['auth']);
+    assert.ok(output.includes('auth'), 'search output contains keyword');
+    assert.ok(output.includes('PLAN'), 'found in PLAN phase');
+    assert.ok(output.includes('DO'), 'found in DO phase');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('searchRunLogs --phase filters to specific phase', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('400002', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Need to fix the auth module', 3000);
+    writePhaseToRunLog(logPath, 1, 'do', 'Implemented auth fix in login.js', 12000);
+
+    searchRunLogs(['auth', '--phase', 'do']);
+    assert.ok(output.includes('DO'), 'found in DO phase');
+    assert.ok(!output.includes('[PLAN]'), 'PLAN phase filtered out');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('searchRunLogs reports no matches gracefully', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('400003', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Some reasoning here', 3000);
+
+    searchRunLogs(['nonexistent']);
+    assert.ok(output.includes('No matches'), 'reports no matches');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });

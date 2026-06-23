@@ -1593,6 +1593,26 @@ if (command === 'init') {
     pruneRunLogs(pruneArgs);
     process.exit(0);
   }
+  if (args[0] === 'search') {
+    // Subcommand: atris run search <keyword> [--phase P] [--limit N]
+    const { searchRunLogs } = require('../commands/run');
+    const searchArgs = args.slice(1);
+    if (searchArgs.includes('--help') || searchArgs.includes('-h') || searchArgs.length === 0) {
+      console.log('');
+      console.log('Usage: atris run search <keyword> [options]');
+      console.log('');
+      console.log('Search phase reasoning across all run logs.');
+      console.log('');
+      console.log('Options:');
+      console.log('  --phase P     Limit search to a phase (plan, do, review, error)');
+      console.log('  --limit N     Max results to show (default: 20)');
+      console.log('  --help        Show this help');
+      console.log('');
+      process.exit(0);
+    }
+    searchRunLogs(searchArgs);
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
@@ -1616,6 +1636,7 @@ if (command === 'init') {
     console.log('Subcommands:');
     console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
     console.log('  atris run prune-logs [--keep N] [--dry-run]      Prune old run logs');
+    console.log('  atris run search <keyword> [--phase P] [--limit N]  Search run logs');
     console.log('');
     process.exit(0);
   }
