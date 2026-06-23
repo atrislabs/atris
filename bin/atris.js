@@ -1613,6 +1613,12 @@ if (command === 'init') {
     searchRunLogs(searchArgs);
     process.exit(0);
   }
+  if (args[0] === 'stats') {
+    // Subcommand: atris run stats
+    const { statsRunLogs } = require('../commands/run');
+    statsRunLogs();
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
@@ -1637,6 +1643,7 @@ if (command === 'init') {
     console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
     console.log('  atris run prune-logs [--keep N] [--dry-run]      Prune old run logs');
     console.log('  atris run search <keyword> [--phase P] [--limit N]  Search run logs');
+    console.log('  atris run stats                                  Show run log stats');
     console.log('');
     process.exit(0);
   }

@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -495,4 +495,51 @@ test('run.js execPhaseCommandSync handles non-zero exit codes', () => {
 
 test('run.js execPhaseCommandSync handles spawn errors', () => {
   assert.match(RUN_SRC, /if \(result\.error\) throw result\.error/);
+});
+
+// --- statsRunLogs ---
+
+test('statsRunLogs shows no-logs message when runs dir is empty', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+    statsRunLogs();
+    assert.ok(output.includes('No run logs found'), 'shows no-logs message');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('statsRunLogs shows phase counts and avg durations', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // Create a run log with phases
+    const logPath = getRunLogPath('500001', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+    writePhaseToRunLog(logPath, 1, 'do', 'Build reasoning', 12000);
+    writePhaseToRunLog(logPath, 1, 'review', 'Review reasoning', 5000);
+
+    statsRunLogs();
+    assert.ok(output.includes('Run Log Stats'), 'shows stats header');
+    assert.ok(output.includes('PLAN'), 'shows PLAN phase');
+    assert.ok(output.includes('DO'), 'shows DO phase');
+    assert.ok(output.includes('REVIEW'), 'shows REVIEW phase');
+    assert.ok(output.includes('3s'), 'shows plan avg duration');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });
