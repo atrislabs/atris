@@ -340,6 +340,15 @@ atris run --no-push        # Skip auto-push after each cycle
 - **Self-heal:** Runs `cleanAtris()` after each REVIEW phase to auto-fix drifted MAP.md file:line references
 - **Auto-push:** Runs `git push` after each successful cycle (disable with `--no-push`)
 - **Journal logging:** Appends run stats (cycles, duration) to today's journal `## Notes`
+- **Glass run logs:** Phase reasoning (plan/do/review) persisted to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases logged as ERROR sections
+
+**Browsing run logs:**
+
+```bash
+atris run logs              # List all run logs with cycle/phase info
+atris run logs --tail 20    # Show last 20 lines of each log
+atris run logs --cat FILE   # Print full contents of a specific log
+```
 
 **Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
 
@@ -466,6 +475,7 @@ Load these first:
 - `atris/now.md`
 - `atris/brain/STATUS.md`
 - `atris/brain/self_improvement_ledger.md`
+- `.atris/state/chat_scan.latest.json`
 - `atris/wiki/concepts/agent-activation-contract.md`
 - `atris/skills/atris/SKILL.md`
 - `atris/PERSONA.md`
