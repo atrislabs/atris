@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const {
   contextForAttachedWorkspaceMismatch,
   extractAttachedWorkspaceMismatch,
@@ -20,6 +20,16 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout;
 }
 
 function writeCredentials(home) {
@@ -295,7 +305,7 @@ test('computer recruiting pull dry-run outcome explains that real pull writes re
   const output = captureStdout(() => printRecruitingLocalSyncOutcome('pull', 0, ['--dry-run']));
 
   assert.match(output, /Recruiting next step/);
-  assert.match(output, /atris computer recruiting pull\s+# writes review packet if conflicts were reported/);
+  assert.match(output, /atris computer recruiting pull --apply\s+# writes review packet if conflicts were reported/);
   assert.match(output, /atris computer recruiting review/);
   assert.match(output, /atris computer recruiting push --dry-run/);
 });
@@ -429,6 +439,42 @@ test('computer recruiting push failure keeps recovery in the recruiting lane', a
     assert.match(res.stdout, /Recruiting next step/);
     assert.match(res.stdout, /atris computer recruiting pull --dry-run/);
     assert.match(res.stdout, /atris computer recruiting review/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting pull blocks dirty workspace writes without apply', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'pull'], { cwd, env });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local pull/);
+    assert.match(res.stdout, /Recruiting pull preflight/);
+    assert.match(res.stdout, /local git changes:/);
+    assert.match(res.stdout, /atris computer recruiting pull --dry-run/);
+    assert.match(res.stdout, /atris computer recruiting pull --apply/);
+    assert.doesNotMatch(res.stderr, /Not logged in/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);

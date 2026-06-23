@@ -459,9 +459,41 @@ function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_
   console.log(`Usage: atris computer recruiting ${action} [flags]`);
   console.log('');
   console.log('Runs from the current or canonical Atris Labs recruiting workspace.');
+  if (action === 'pull') {
+    console.log('Use --dry-run first; use --apply to write into a dirty local workspace.');
+  }
   console.log('');
   console.log('Underlying command:');
   console.log(`  atris ${command.join(' ')}`);
+}
+
+function withoutRecruitingWrapperFlags(action, args = []) {
+  if (action !== 'pull') return args;
+  return args.filter((arg) => arg !== '--apply');
+}
+
+function gitDirtySummary(cwd) {
+  const result = spawnSync('git', ['-C', cwd, 'status', '--short'], {
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.status !== 0) return null;
+  const lines = String(result.stdout || '').split(/\r?\n/).filter(Boolean);
+  return {
+    count: lines.length,
+    sample: lines.slice(0, 5),
+  };
+}
+
+function printRecruitingPullPreflight(summary) {
+  console.log('');
+  console.log('Recruiting pull preflight');
+  console.log(`  local git changes: ${summary.count}`);
+  summary.sample.forEach((line) => console.log(`  ${line}`));
+  console.log('');
+  console.log('Safe next step');
+  console.log('  atris computer recruiting pull --dry-run');
+  console.log('  atris computer recruiting pull --apply   # writes pull changes and conflict review packet');
 }
 
 function runAtrisCliCommand(cliArgs, cwd) {
@@ -484,7 +516,7 @@ function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
     console.log('');
     console.log('Recruiting next step');
     if (args.includes('--dry-run')) {
-      console.log('  atris computer recruiting pull     # writes review packet if conflicts were reported');
+      console.log('  atris computer recruiting pull --apply   # writes review packet if conflicts were reported');
       console.log('  atris computer recruiting review');
       console.log('  atris computer recruiting push --dry-run');
       return;
@@ -534,9 +566,19 @@ async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {
     console.log(`  folder: ${displayHomeRelativePath(workspace.cwd)} (auto-detected)`);
   }
 
-  const command = recruitingLocalSyncCommand(action, workspace.binding.slug || slug, args);
+  const commandArgs = withoutRecruitingWrapperFlags(action, args);
+  if (action === 'pull' && !args.includes('--dry-run') && !args.includes('--apply')) {
+    const dirty = gitDirtySummary(workspace.cwd);
+    if (dirty && dirty.count > 0) {
+      printRecruitingPullPreflight(dirty);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  const command = recruitingLocalSyncCommand(action, workspace.binding.slug || slug, commandArgs);
   const status = runAtrisCliCommand(command, workspace.cwd);
-  printRecruitingLocalSyncOutcome(action, status, args);
+  printRecruitingLocalSyncOutcome(action, status, commandArgs);
 }
 
 async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
