@@ -68,6 +68,7 @@ Core local work:
 - `atris run` and `atris autopilot`: guided/autonomous loop
 - `atris run logs`: browse glass run logs (phase reasoning persisted to `atris/logs/runs/`)
 - `atris run prune-logs`: prune old run logs, keeping the most recent N (default 50; auto-prune to 100 after each run)
+- `atris run search`: search phase reasoning across all run logs by keyword, with `--phase` and `--limit` filters
 - `atris status`, `atris log`, `atris search`: local operating view
 - `atris verify`: run deterministic completion checks
 
