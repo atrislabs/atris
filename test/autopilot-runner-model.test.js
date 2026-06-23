@@ -10,6 +10,7 @@ const { buildRunnerCommand } = require('../lib/runner-command');
 const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
+const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
 
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
@@ -33,6 +34,17 @@ test('runner availability checks use the shared configured binary', () => {
   assert.doesNotMatch(RUN_SRC, /which claude/);
   assert.match(AUTOPILOT_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(RUN_SRC, /buildRunnerAvailabilityCommand\(/);
+});
+
+test('run and autopilot expose runner flags through the bin router', () => {
+  assert.match(BIN_SRC, /function applyRunnerFlags\(args\)/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_BIN = runnerBin/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate/);
+  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(args\)[\s\S]*runAtris/);
+  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(args\)[\s\S]*autopilotAtris/);
+  assert.match(BIN_SRC, /--runner-bin/);
+  assert.match(BIN_SRC, /--runner-template/);
+  assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
 });
 
 test('mission claude ticks spawn the configured runner binary', () => {
