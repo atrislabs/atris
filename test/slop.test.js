@@ -1,0 +1,58 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { scanFile, RULES } = require('../commands/slop');
+
+function tmpFile(name, content) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-'));
+  const p = path.join(dir, name);
+  fs.writeFileSync(p, content);
+  return p;
+}
+
+test('rules are well-formed (id, severity, regex, why)', () => {
+  for (const r of RULES) {
+    assert.ok(r.id && typeof r.id === 'string');
+    assert.ok(['error', 'warn'].includes(r.sev));
+    assert.ok(r.re instanceof RegExp);
+    assert.ok(r.why && typeof r.why === 'string');
+  }
+});
+
+test('flags the canonical slop tells', () => {
+  const slop = [
+    '<div className="bg-gradient-to-r from-purple-500 text-transparent bg-clip-text">',
+    '  Supercharge your workflow ✨',
+    '</div>',
+  ].join('\n');
+  const hits = scanFile(tmpFile('Slop.tsx', slop)).map((f) => f.rule);
+  assert.ok(hits.includes('ai-gradient-text'), 'gradient text');
+  assert.ok(hits.includes('ai-purple-gradient'), 'purple gradient');
+  assert.ok(hits.includes('hype-copy'), 'hype copy');
+  assert.ok(hits.includes('decorative-emoji'), 'emoji');
+});
+
+test('flags em dash as an AI-writing tell', () => {
+  const hits = scanFile(tmpFile('Copy.tsx', '<p>Fast, reliable — and calm.</p>')).map((f) => f.rule);
+  assert.ok(hits.includes('em-dash'), 'em dash');
+  // a plain hyphen must NOT trip it
+  assert.equal(scanFile(tmpFile('Ok.tsx', '<p>On-call, half-asleep.</p>')).length, 0);
+});
+
+test('clean markup produces zero findings', () => {
+  const clean = [
+    '<section className="rounded-lg border border-stone-200 bg-stone-50 p-12">',
+    '  <h1 className="text-stone-900 font-semibold">Read your incidents in the dark</h1>',
+    '</section>',
+  ].join('\n');
+  assert.equal(scanFile(tmpFile('Clean.tsx', clean)).length, 0);
+});
+
+test('findings carry file:line + rule id for the verification gate', () => {
+  const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
+  assert.equal(f.line, 3);
+  assert.equal(f.rule, 'glassmorphism');
+  assert.ok(f.file.endsWith('X.css'));
+});

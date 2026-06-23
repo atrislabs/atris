@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.16.1",
+  "version": "3.17.0",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris.js",
@@ -19,7 +19,6 @@
     "atris.md",
     "GETTING_STARTED.md",
     "PERSONA.md",
-    "atris/atrisDev.md",
     "atris/CLAUDE.md",
     "atris/GEMINI.md",
     "atris/GETTING_STARTED.md",
