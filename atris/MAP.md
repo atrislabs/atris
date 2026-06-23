@@ -105,7 +105,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `bin/atris.js:824-835` (knownCommands dispatch)
 - **Cold-start handler:** `bin/atris.js:926` (`interactiveEntry`; active missions/work outrank completed history)
-- **Legacy handler:** `bin/atris.js:2484` (`atrisDevEntry` function)
+- **Legacy handler:** `bin/atris.js:2598` (`atrisDevEntry` function)
 - **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -525,7 +525,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:1702-1706` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:1816-1820` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
@@ -762,22 +762,22 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Auto-chain plan → do → review cycles autonomously using the shared runner command (`ATRIS_RUNNER_BIN`, `ATRIS_RUNNER_COMMAND_TEMPLATE`, `ATRIS_RUNNER_MODEL`; legacy `ATRIS_CLAUDE_*` aliases still work; default Claude-compatible command)
 
-- **Entry point:** `commands/run.js:279-490` (runAtris function)
-- **Prompt builder:** `commands/run.js:90-168` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
-- **Phase executor:** `commands/run.js:173-215` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
-- **Glass run logs:** `commands/run.js:27-62` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
-- **Run log browser:** `commands/run.js:520-613` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
-- **Run log pruning:** `commands/run.js:615-665` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
-- **Run log search:** `commands/run.js:682-776` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
-- **Run log stats:** `commands/run.js:778-832` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
-- **Run log export:** `commands/run.js:834-883` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
-- **Run log diff:** `commands/run.js:885-964` (diffRunLogs function) — `atris run diff <file1> <file2>` subcommand for comparing two run logs
-- **Work detector:** `commands/run.js:220-241` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
-- **Journal logger:** `commands/run.js:246-274` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
+- **Entry point:** `commands/run.js:301-534` (runAtris function)
+- **Prompt builder:** `commands/run.js:117-195` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
+- **Phase executor:** `commands/run.js:200-237` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
+- **Glass run logs:** `commands/run.js:31-37` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
+- **Run log browser:** `commands/run.js:543-629` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
+- **Run log pruning:** `commands/run.js:637-681` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
+- **Run log search:** `commands/run.js:690-777` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
+- **Run log stats:** `commands/run.js:782-833` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations
+- **Run log export:** `commands/run.js:840-884` (exportRunLogs function) — `atris run export [--out FILE]` subcommand for JSON bundle export
+- **Run log diff:** `commands/run.js:890-965` (diffRunLogs function) — `atris run diff <file1> <file2>` subcommand for comparing two run logs
+- **Work detector:** `commands/run.js:242-263` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
+- **Journal logger:** `commands/run.js:268-296` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
-- **Summary table:** `commands/run.js:339` (cycleTimings forEach) — per-cycle phase duration table
-- **Post-cycle clean:** `commands/run.js:427` (cleanAtris call) — self-heal MAP.md refs
-- **Post-cycle push:** `commands/run.js:299` (execSync git push) — disabled with `--no-push`
+- **Summary table:** `commands/run.js:363` (cycleTimings forEach) — per-cycle phase duration table
+- **Post-cycle clean:** `commands/run.js:451` (cleanAtris call) — self-heal MAP.md refs
+- **Post-cycle push:** `commands/run.js:321` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:326` (showHelp function)
 - **Known commands:** `bin/atris.js:824` (knownCommands array)
@@ -916,7 +916,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:1995-2047` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2109-2161` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1053-1059` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -966,7 +966,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2270-2320` (chatAtris function)
+- **Entry point:** `bin/atris.js:2384-2434` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
