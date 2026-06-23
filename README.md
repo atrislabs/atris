@@ -186,6 +186,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris review` | Validate work and capture learnings |
 | `atris run` | Auto-chain `plan -> do -> review` |
 | `atris run logs` | Browse glass run logs (phase reasoning persisted to disk) |
+| `atris run prune-logs` | Prune old run logs, keeping only the most recent N |
 | `atris autopilot` | Guided loop with approvals |
 | `atris pulse` | Install or run the durable overnight heartbeat |
 | `atris log` | Add inbox items to today's journal |

@@ -348,6 +348,9 @@ atris run --no-push        # Skip auto-push after each cycle
 atris run logs              # List all run logs with cycle/phase info
 atris run logs --tail 20    # Show last 20 lines of each log
 atris run logs --cat FILE   # Print full contents of a specific log
+atris run logs --json       # Machine-readable JSON output
+atris run prune-logs        # Prune old logs, keep most recent 50
+atris run prune-logs --keep 10 --dry-run  # Preview pruning to 10
 ```
 
 **Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
