@@ -882,4 +882,85 @@ function exportRunLogs(args = []) {
   console.log(`Exported ${files.length} run log${files.length === 1 ? '' : 's'} to ${outFile}`);
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs };
+/**
+ * Compare two run logs side by side.
+ * Usage: diffRunLogs <file1> <file2>
+ */
+function diffRunLogs(args = []) {
+  const runsDir = getRunLogDir();
+
+  const positional = args.filter(a => !a.startsWith('-'));
+  if (positional.length < 2) {
+    console.log('Usage: atris run diff <file1> <file2>');
+    console.log('Compare two run logs side by side.');
+    return;
+  }
+
+  const [file1, file2] = positional;
+  const path1 = path.isAbsolute(file1) ? file1 : path.join(runsDir, file1);
+  const path2 = path.isAbsolute(file2) ? file2 : path.join(runsDir, file2);
+
+  if (!fs.existsSync(path1)) {
+    console.error(`Run log not found: ${file1}`);
+    process.exit(1);
+  }
+  if (!fs.existsSync(path2)) {
+    console.error(`Run log not found: ${file2}`);
+    process.exit(1);
+  }
+
+  const content1 = fs.readFileSync(path1, 'utf8');
+  const content2 = fs.readFileSync(path2, 'utf8');
+
+  // Extract phases from each
+  const extractPhases = (content) => {
+    const phases = {};
+    const regex = /## (\w+)[^\n]*\n([\s\S]*?)(?=\n## |\n$|$)/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      phases[match[1]] = match[2].trim();
+    }
+    return phases;
+  };
+
+  const phases1 = extractPhases(content1);
+  const phases2 = extractPhases(content2);
+
+  const allPhases = new Set([...Object.keys(phases1), ...Object.keys(phases2)]);
+
+  console.log('');
+  console.log(`Diff: ${file1} vs ${file2}`);
+  console.log('');
+
+  for (const phase of allPhases) {
+    const p1 = phases1[phase];
+    const p2 = phases2[phase];
+
+    if (p1 && p2) {
+      if (p1 === p2) {
+        console.log(`  ## ${phase}: identical`);
+      } else {
+        console.log(`  ## ${phase}: different`);
+        // Show line-level diff
+        const lines1 = p1.split('\n');
+        const lines2 = p2.split('\n');
+        const maxLines = Math.max(lines1.length, lines2.length);
+        for (let i = 0; i < maxLines; i++) {
+          const l1 = lines1[i] || '';
+          const l2 = lines2[i] || '';
+          if (l1 !== l2) {
+            if (l1) console.log(`  - ${l1.trim()}`);
+            if (l2) console.log(`  + ${l2.trim()}`);
+          }
+        }
+      }
+    } else if (p1) {
+      console.log(`  ## ${phase}: only in ${file1}`);
+    } else {
+      console.log(`  ## ${phase}: only in ${file2}`);
+    }
+    console.log('');
+  }
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs };
