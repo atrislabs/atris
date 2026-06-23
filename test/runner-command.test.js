@@ -117,7 +117,7 @@ test('buildRunnerCommand always emits --model', () => {
       const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
       assert.match(cmd, /--model opus\b/);
       assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
-      assert.match(cmd, /--allowedTools "Bash,Read"/);
+      assert.match(cmd, /--allowedTools 'Bash,Read'/);
     });
   });
 });
@@ -140,6 +140,11 @@ test('buildRunnerCommand shell-quotes runner binaries with spaces', () => {
 test('buildRunnerCommand shell-quotes model values in the default command shape', () => {
   const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'nightly model' });
   assert.match(cmd, /--model 'nightly model'/);
+});
+
+test('buildRunnerCommand shell-quotes allowedTools in the default command shape', () => {
+  const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: "Bash,Read,O'Reilly" });
+  assert.match(cmd, /--allowedTools 'Bash,Read,O'\\''Reilly'/);
 });
 
 test('buildRunnerCommand can replace the claude -p command shape by template', () => {
