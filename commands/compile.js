@@ -6,7 +6,7 @@
  * the promoted artifact runs token-free.
  *
  *   atris compile record <name> --input <json|@file> --output <json|@file>
- *   atris compile build <name>        (uses claude -p, like atris run)
+ *   atris compile build <name>        (uses the shared runner command)
  *   atris compile backtest <name>
  *   atris compile promote <name>
  *   atris compile exec <name> --input <json|@file> [--record]
@@ -18,6 +18,11 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const {
+  buildRunnerAvailabilityCommand,
+  buildRunnerCommand,
+  resolveClaudeRunnerBin,
+} = require('../lib/runner-command');
 
 const DEFAULT_THRESHOLD = 0.99;
 const SAMPLE_RECORDS_FOR_BUILD = 25;
@@ -275,9 +280,9 @@ function executeBuild(root, name, options = {}) {
 
   if (!cmdOverride) {
     try {
-      execSync('which claude', { stdio: 'pipe' });
+      execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
     } catch {
-      throw new Error('claude CLI not found. Install Claude Code first.');
+      throw new Error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install Claude Code first.`);
     }
   }
 
@@ -287,7 +292,7 @@ function executeBuild(root, name, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   try {
-    const cmd = cmdOverride || `claude -p "$(cat '${tmpFile.replace(/'/g, "'\\''")}')" --allowedTools "Read,Write,Edit,Glob,Grep"`;
+    const cmd = cmdOverride || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Read,Write,Edit,Glob,Grep' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     execSync(cmd, {
