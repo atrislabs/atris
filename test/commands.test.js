@@ -9965,12 +9965,26 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.match(payload.next_agent_action.horizon, /runner swaps should be config-only/);
     assert.match(payload.next_agent_action.command, /atris brain activate --member codex-executor/);
     assert.match(payload.next_agent_action.message, /Do not accept XP/);
+    assert.equal(payload.next_agent_action.task_seed.tag, 'runner');
+    assert.match(payload.next_agent_action.task_seed.title, /runner-agnostic heartbeat gap/);
+    assert.deepEqual(payload.next_agent_action.task_seed.files, [
+      'commands/autopilot.js',
+      'commands/run.js',
+      'lib/runner-command.js',
+      'test/autopilot-runner-model.test.js',
+    ]);
+    assert.match(payload.next_agent_action.task_seed.verifier, /test\/autopilot-runner-model\.test\.js/);
+    assert.match(payload.next_agent_action.task_seed.create_command, /atris task new/);
+    assert.match(payload.next_agent_action.task_seed.note_command, /Files: commands\/autopilot\.js/);
 
     const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /Create the next bounded task from Endgame runner-swap-safe/);
     assert.match(text.stdout, /runner swaps should be config-only/);
     assert.match(text.stdout, /Do not accept XP/);
+    assert.match(text.stdout, /Create: atris task new/);
+    assert.match(text.stdout, /Claim: atris task claim <id> --as codex-executor/);
+    assert.match(text.stdout, /Verify: node --test test\/autopilot-runner-model\.test\.js/);
     assert.doesNotMatch(text.stdout, /No concrete next agent task is attached/);
   } finally {
     cleanupTempDir(dir);

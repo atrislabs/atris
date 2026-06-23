@@ -364,7 +364,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - **How it works:**
 - `atris task` opens the compact task desk and refreshes `.atris/state/tasks.projection.json`
 - `atris task new|next|say|finish` are the natural create/pick/talk/complete loop
-- `atris task next` claims open work first; if only human-only certified Review rows remain, it preserves the human accept gate and surfaces an Endgame-derived agent fallback (`next_agent_action`) from `atris/TODO.md`
+- `atris task next` claims open work first; if only human-only certified Review rows remain, it preserves the human accept gate and surfaces an Endgame-derived agent fallback (`next_agent_action`) from `atris/TODO.md`, including a bounded task seed with title/tag/files/verifier/stop rule plus create/claim/note commands
 - `atris task delegate "<title>" --to <owner>` creates assigned work without hand-editing TODO.md
 - `atris task delegate "<title>" --to <owner> --via swarlo` prepares a live Swarlo handoff while keeping the task DB canonical
 - `atris task day` shows the owner-grouped day list for a human or headless swarm coordinator
