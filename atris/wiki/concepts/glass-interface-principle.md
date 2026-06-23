@@ -2,8 +2,6 @@
 type: concept
 slug: glass-interface-principle
 title: Glass Interface Principle
-sources:
-  - atris/wiki/sources/ryo-lu-closer-to-the-material-2026-06-23.md
 created: 2026-06-23
 updated: 2026-06-23
 last_compiled: 2026-06-23
@@ -76,8 +74,3 @@ Craft doesn't disappear with AI — it moves to the **edges of judgment**:
 - "Wishful thinking" interfaces: prompt → finished product, no iteration.
 - Hidden reasoning: AI works invisibly, user only sees the result.
 - Output-only: no way to inspect, edit, or steer intermediate steps.
-
-## Source
-
-Ryo Lu, "Closer to the Material," Compile 26 (Cursor). See
-[[atris/wiki/sources/ryo-lu-closer-to-the-material-2026-06-23.md]].
