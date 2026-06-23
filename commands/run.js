@@ -775,4 +775,60 @@ function searchRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs };
+/**
+ * Show stats across all run logs: total runs, phase counts, avg durations.
+ */
+function statsRunLogs() {
+  const runsDir = getRunLogDir();
+
+  const files = fs.existsSync(runsDir)
+    ? fs.readdirSync(runsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+    : [];
+
+  if (files.length === 0) {
+    console.log('No run logs found. Run "atris run" to generate them.');
+    return;
+  }
+
+  let totalCycles = 0;
+  const phaseCounts = { PLAN: 0, DO: 0, REVIEW: 0, ERROR: 0 };
+  const phaseDurations = { PLAN: [], DO: [], REVIEW: [] };
+
+  for (const file of files) {
+    const filePath = path.join(runsDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+
+    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    if (cycleMatch) totalCycles++;
+
+    // Extract phase headers with durations: ## PLAN (3s)
+    const phaseRegex = /## (\w+)\s*\((\d+)s\)/g;
+    let match;
+    while ((match = phaseRegex.exec(content)) !== null) {
+      const phase = match[1];
+      const dur = parseInt(match[2]);
+      if (phaseCounts[phase] !== undefined) phaseCounts[phase]++;
+      if (phaseDurations[phase] !== undefined) phaseDurations[phase].push(dur);
+    }
+  }
+
+  console.log('');
+  console.log(`Run Log Stats (${files.length} file${files.length === 1 ? '' : 's'}, ${totalCycles} cycle${totalCycles === 1 ? '' : 's'})`);
+  console.log('');
+
+  const phases = ['PLAN', 'DO', 'REVIEW', 'ERROR'];
+  console.log('  Phase   │ Count │ Avg Duration');
+  console.log('  ────────┼───────┼─────────────');
+  for (const phase of phases) {
+    const count = phaseCounts[phase];
+    const durs = phaseDurations[phase] || [];
+    const avg = durs.length > 0 ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0;
+    console.log(`  ${phase.padEnd(7)} │ ${String(count).padStart(5)} │ ${avg > 0 ? avg + 's' : '—'}`);
+  }
+  console.log('');
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs };
