@@ -14780,6 +14780,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(rootAgents, /atris task ready <id> --proof/);
     assert.match(rootAgents, /Do not run `atris task accept` or claim XP unless a human approved the proof/);
     assert.match(rootAgents, /atris business share --write/);
+    assert.match(rootAgents, /atris sync --dry-run/);
+    assert.match(rootAgents, /atris sync --watch/);
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /BLOND:ISH/);
@@ -14794,6 +14796,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(teamStart, /atris member goal-from-mission operator/);
     assert.match(teamStart, /Execute the loop with `atris do`/);
     assert.match(teamStart, /Ask `validator` to check proof/);
+    assert.match(teamStart, /atris sync --dry-run/);
+    assert.match(teamStart, /atris sync --watch/);
 
     const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
     assert.match(persona, /BLOND:ISH/);
@@ -14960,7 +14964,8 @@ test('business quickstart includes the full first-loop operating path', () => {
     assert.match(res.stdout, /atris business record atris\/reports\/YYYY-MM-DD-your-recap\.md --outcome mixed --metric "operator speed"/);
     assert.match(res.stdout, /Write the handoff before sharing/);
     assert.match(res.stdout, /atris business share --write/);
-    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync --watch/);
     assert.match(res.stdout, /Repeat:[\s\S]*atris radar -> atris task next -> atris do -> record -> share/);
   } finally {
     cleanupTempDir(dir);
@@ -14985,7 +14990,8 @@ test('business init next steps include start task mission record share and sync'
   assert.match(rendered, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
   assert.match(rendered, /atris business record atris\/reports\/<recap>\.md --outcome mixed --metric "operator speed"/);
   assert.match(rendered, /atris business share --write/);
-  assert.match(rendered, /atris align loop-works --fix/);
+  assert.match(rendered, /atris sync --dry-run/);
+  assert.match(rendered, /atris sync/);
 });
 
 test('fresh business environment starter exposes an endgame task with explicit verify', async () => {
@@ -15283,8 +15289,8 @@ test('business share prints and writes a collaborator handoff from workspace sta
     assert.match(body, /atris mission start "Run the first useful loop for Share Co"/);
     assert.match(body, /atris member goal-from-mission operator/);
     assert.match(body, /Team start: atris\/team\/START_HERE\.md/);
-    assert.match(body, /atris pull --dry-run/);
-    assert.match(body, /atris align --fix/);
+    assert.match(body, /atris sync --dry-run/);
+    assert.match(body, /atris sync --watch/);
     assert.match(body, /atris business record atris\/reports\/<recap>\.md/);
     assert.match(body, /Starter brief: atris\/wiki\/briefs\/share-co-starter-brief\.md/);
     assert.match(body, /First loop: atris\/wiki\/concepts\/share-co-first-loop\.md/);
@@ -15339,7 +15345,7 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /Remote pull: available/);
     assert.match(res.stdout, /atris\/team\/START_HERE\.md/);
     assert.match(res.stdout, /atris\/wiki\/briefs\/start-co-starter-brief\.md/);
-    assert.match(res.stdout, /atris pull --dry-run/);
+    assert.match(res.stdout, /atris sync --dry-run/);
     assert.match(res.stdout, /atris business start/);
     assert.match(res.stdout, /atris radar/);
     assert.match(res.stdout, /atris task next/);
@@ -15347,7 +15353,7 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /atris member goal-from-mission operator/);
     assert.match(res.stdout, /atris do/);
     assert.match(res.stdout, /atris business record atris\/reports\/<recap>\.md/);
-    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /atris sync --watch/);
     assert.match(res.stdout, /OS:/);
     assert.match(res.stdout, /Tasks: 1 open, 1 claimed, 1 review \(1 certified\), 0 blocked/);
     assert.match(res.stdout, /Missions: 1 active, 1 running, 1 always-on, 0 stale\/no-verifier/);
@@ -15632,7 +15638,7 @@ test('business share is honest for local-only workspaces without cloud ids', asy
     const res = runCli(['business', 'start'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Remote pull: local-only/);
-    assert.match(res.stdout, /local-only: no cloud pull is available yet/);
+    assert.match(res.stdout, /local-only: no cloud sync is available yet/);
   } finally {
     cleanupTempDir(dir);
   }

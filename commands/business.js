@@ -867,7 +867,6 @@ function renderBusinessMissingAction(missing) {
 }
 
 function renderBusinessCreatedNextSteps(bizMeta = {}, workspaceRoot = '.') {
-  const slug = bizMeta.slug || slugifyName(bizMeta.name) || 'business';
   const lines = [
     '  Atris:     seeded local computer + operator + validator',
     '',
@@ -887,7 +886,8 @@ function renderBusinessCreatedNextSteps(bizMeta = {}, workspaceRoot = '.') {
     '    atris business share --write',
     '',
     '  Sync when ready:',
-    `    atris align ${slug} --fix`,
+    '    atris sync --dry-run',
+    '    atris sync',
   ];
   return lines.join('\n');
 }
@@ -926,6 +926,7 @@ function renderBusinessShareHandoff(state, options = {}) {
       '```bash',
       `atris pull ${bizMeta.slug}`,
       `cd ${bizMeta.slug}`,
+      'atris sync --dry-run',
       'atris business start',
       '```',
     ] : [
@@ -959,13 +960,13 @@ function renderBusinessShareHandoff(state, options = {}) {
     '',
     '```bash',
     'atris business onboard --website <url> --contact "Name" --note "what changed"',
-    'atris pull --dry-run',
+    state.remoteReady ? 'atris sync --dry-run' : '# local-only: no cloud sync is available yet',
     'atris task next',
     ...renderBusinessMissionBootstrapLines(bizMeta),
     'atris do',
     'atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
     'atris business share --write',
-    'atris align --fix',
+    state.remoteReady ? 'atris sync' : '# local-only: share the folder directly',
     '```',
     '',
     '## Proof State',
@@ -984,6 +985,8 @@ function renderBusinessShareHandoff(state, options = {}) {
     'Useful commands:',
     '',
     '```bash',
+    state.remoteReady ? 'atris sync --status' : '# local-only: no cloud sync status yet',
+    state.remoteReady ? 'atris sync --watch' : '# local-only: no cloud watcher yet',
     'atris radar',
     'atris task next',
     ...renderBusinessMissionBootstrapLines(bizMeta),
@@ -1027,7 +1030,7 @@ function renderBusinessStartCard(state, options = {}) {
     `- ${state.onePager || 'missing operator one-pager'}`,
     '',
     'Run:',
-    state.remoteReady ? '  atris pull --dry-run' : '  # local-only: no cloud pull is available yet',
+    state.remoteReady ? '  atris sync --dry-run' : '  # local-only: no cloud sync is available yet',
     '  atris',
     '  atris business start',
     '  atris radar',
@@ -1037,7 +1040,8 @@ function renderBusinessStartCard(state, options = {}) {
     '  atris do',
     '  atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
     '  atris business share --write',
-    '  atris align --fix',
+    state.remoteReady ? '  atris sync' : '  # local-only: share the folder directly',
+    state.remoteReady ? '  atris sync --watch' : '  # local-only: no cloud watcher yet',
     '',
     'Proof:',
     `- team lanes: ${state.teamMembers}`,
@@ -2833,12 +2837,14 @@ async function quickstart() {
      atris business share --write
 
   9. Push local state to cloud:
-     atris align --fix
+     atris sync --dry-run
+     atris sync
 
   Repeat:
      atris radar -> atris task next -> atris do -> record -> share
 
   Optional:
+     atris sync --watch
      atris business connect slack --business my-company
      atris business connect github --business my-company
 
