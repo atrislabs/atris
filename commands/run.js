@@ -446,6 +446,11 @@ async function runAtris(options = {}) {
 
     } catch (err) {
       console.error(`\n✗ Cycle ${cycle} failed: ${err.message}`);
+      // Log the failure to the run log for forensic value
+      try {
+        writePhaseToRunLog(runLogPath, cycle, 'error', `Error: ${err.message}\n\nStack: ${err.stack || '(no stack)'}`, 0);
+        if (!writtenRunLogs.includes(runLogPath)) writtenRunLogs.push(runLogPath);
+      } catch {}
       break;
     }
   }
