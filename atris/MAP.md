@@ -762,7 +762,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry point:** `commands/run.js:204-367` (runAtris function)
 - **Prompt builder:** `commands/run.js:25-103` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
-- **Phase executor:** `commands/run.js:108-140` (executePhase function) — runs `buildRunnerCommand()` with prompt, handles timeout and output
+- **Phase executor:** `commands/run.js:108-163` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
 - **Work detector:** `commands/run.js:145-163` (hasWork function) — checks backlog tasks and inbox items to decide if loop should continue
 - **Journal logger:** `commands/run.js:171-199` (logRunCompletion function) — appends run summary (cycles, duration, per-phase timings) to journal ## Notes
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array

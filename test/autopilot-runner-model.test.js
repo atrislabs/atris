@@ -45,6 +45,15 @@ test('runtime runner wording is config-neutral', () => {
   assert.match(RUN_SRC, /configured runner command/);
 });
 
+test('run and autopilot sweep configured runner process groups on timeout', () => {
+  for (const src of [AUTOPILOT_SRC, RUN_SRC]) {
+    assert.match(src, /function execPhaseCommandSync\(cmd, opts = \{\}\)/);
+    assert.match(src, /detached: true/);
+    assert.match(src, /process\.kill\(-err\.pid, 'SIGKILL'\)/);
+    assert.match(src, /err\.code === 'ETIMEDOUT'/);
+  }
+});
+
 test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /function applyRunnerFlags\(args\)/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_BIN = runnerBin/);
