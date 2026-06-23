@@ -91,7 +91,7 @@ atris task - durable local task state (SQLite, gitignored)
 
   atris task                              Show the task desk
   atris task new "<title>"                Create a task
-  atris task next                         Claim/show the next open task
+  atris task next [--create-next]         Claim/show next open task; optionally create the generated Endgame fallback
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
@@ -4671,6 +4671,35 @@ function buildEndgameTaskSeed({ slug, horizon, owner }) {
   };
 }
 
+function createEndgameSeedTask(taskDb, db, seed, owner) {
+  const taskOwner = String(owner || DEFAULT_OWNER);
+  const result = taskDb.addTask(db, {
+    title: seed.title,
+    tag: seed.tag,
+    workspaceRoot: taskDb.workspaceRoot(),
+    metadata: {
+      generated_from: 'task_next_endgame_seed',
+      verifier: seed.verifier,
+      files: seed.files,
+      stop_rule: seed.stop_rule,
+    },
+  });
+  const claim = taskDb.claimTask(db, { id: result.id, claimedBy: taskOwner });
+  if (!claim.claimed) {
+    return { ok: false, reason: claim.reason || 'claim_failed', task_id: result.id };
+  }
+  const note = taskDb.noteTask(db, { id: result.id, actor: taskOwner, content: seed.note });
+  if (!note.noted) {
+    return { ok: false, reason: note.reason || 'note_failed', task_id: result.id };
+  }
+  return {
+    ok: true,
+    task_id: result.id,
+    inserted: result.inserted !== false,
+    note_version: note.event.version,
+  };
+}
+
 function cmdNext(args) {
   const owner = flag(args, '--as') || DEFAULT_OWNER;
   const taskDb = getTaskDb();
@@ -4720,6 +4749,37 @@ function cmdNext(args) {
       const nextAgentAction = handoff.next_action === 'human_accept_waiting'
         ? readEndgameAgentAction(taskDb.workspaceRoot(), owner)
         : null;
+      if (hasFlag(args, '--create-next')) {
+        if (!nextAgentAction || !nextAgentAction.task_seed) {
+          failTask('atris task next', 'no_create_next_seed', 'no concrete Endgame seed is available to create');
+        }
+        const created = createEndgameSeedTask(taskDb, db, nextAgentAction.task_seed, owner);
+        if (!created.ok) {
+          failTask('atris task next', created.reason || 'create_next_failed', `failed to create next task: ${created.reason || 'unknown'}`);
+        }
+        const { projection: createdProjection, outPath: createdOutPath } = writeDefaultProjection(taskDb, db);
+        const createdTask = compactTaskFromProjection(createdProjection, created.task_id);
+        if (wantsJson(args)) {
+          printJson({
+            ok: true,
+            action: 'created_next',
+            task_id: created.task_id,
+            owner: String(owner),
+            projection_path: createdOutPath,
+            handoff,
+            next_agent_action: nextAgentAction,
+            note_version: created.note_version,
+            task: createdTask,
+            review_task: reviewTask,
+          });
+          return;
+        }
+        console.log(`created ${taskRef(createdTask)} @${owner}`);
+        console.log(createdTask.title);
+        console.log(`Noted v${created.note_version}. Human accept remains pending on ${taskRef(reviewTask)}.`);
+        console.log(`Verify: ${nextAgentAction.task_seed.verifier}`);
+        return;
+      }
       if (wantsJson(args)) {
         printJson({
           ok: true,
