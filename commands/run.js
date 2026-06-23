@@ -311,10 +311,12 @@ async function runAtris(options = {}) {
     console.log(`Max cycles: ${cycles}`);
     console.log(`Phase timeout: ${timeout / 1000}s`);
     console.log(`Verbose: ${verbose}`);
+    console.log(`Run logs: atris/logs/runs/`);
     console.log('');
   } else {
     console.log(`atris run v${pkg.version} — plan, do, review, repeat.`);
     console.log(`i'll run up to ${cycles} cycle${cycles === 1 ? '' : 's'}, ${timeout / 1000}s per phase. next i'll check the backlog.`);
+    console.log(`phase reasoning will be saved to atris/logs/runs/ — you can read what i thought after.`);
     console.log('');
   }
 
