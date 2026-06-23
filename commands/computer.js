@@ -354,14 +354,48 @@ function printRecruitingWorkflowContract() {
 }
 
 function printRecruitingComputerHelp() {
-  console.log('Usage: atris computer recruiting [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
+  console.log('Usage: atris computer recruiting [chat|status|sync|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
   console.log('');
   console.log('Examples:');
   console.log('  atris computer recruiting');
   console.log('  atris computer recruiting status');
+  console.log('  atris computer recruiting sync');
   console.log('  atris computer recruiting run "pwd && find . -maxdepth 2 -type f | head"');
   console.log("  atris computer recruiting exec \"Summarize today's candidate follow-ups\"");
   console.log('  atris computer recruiting create');
+}
+
+function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG) {
+  console.log('');
+  console.log('Recruiting sync commands');
+  console.log(`  cd ~/arena/atris-business/${slug}`);
+  console.log('  atris sync --status');
+  console.log('  atris sync --dry-run');
+  console.log('  atris sync');
+  console.log('  atris sync --watch');
+}
+
+async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
+  const slug = cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG;
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('Usage: atris computer recruiting sync [--status]');
+    console.log('');
+    console.log('Shows local recruiting workspace sync health and the exact safe sync commands.');
+    printRecruitingSyncNextSteps(slug);
+    return;
+  }
+
+  const binding = readBusinessBinding();
+  console.log('Recruiting local sync');
+  if (!binding) {
+    console.log('  local workspace: not detected in this folder');
+    printRecruitingSyncNextSteps(slug);
+    return;
+  }
+
+  const { businessSync } = require('./business-sync');
+  await businessSync(['--status'], process.cwd());
+  printRecruitingSyncNextSteps(binding.slug || slug);
 }
 
 function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
@@ -3400,6 +3434,10 @@ async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
     });
   }
 
+  if (sub === 'sync') {
+    return runRecruitingSyncHelper(args.slice(2), recruitingOptions);
+  }
+
   const ctx = await resolveTypedBusinessComputerContext(token, recruitingOptions, {
     businessSlug: RECRUITING_BUSINESS_SLUG,
     computerType: 'recruiting',
@@ -3528,6 +3566,10 @@ async function runComputer() {
     return;
   }
 
+  if (sub === 'recruiting' && args[1] === 'sync') {
+    return runRecruitingSyncHelper(args.slice(2), cloudOptions);
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -3605,6 +3647,7 @@ async function runComputer() {
     console.log('  atris computer codeops exec "Plan a safe repo fix"');
     console.log('  atris computer recruiting');
     console.log('  atris computer recruiting status');
+    console.log('  atris computer recruiting sync');
     console.log('  atris computer recruiting run "pwd"');
     console.log('  atris computer recruiting exec "Summarize candidate follow-ups"');
     console.log('  atris computer status');

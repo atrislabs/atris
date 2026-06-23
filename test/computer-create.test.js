@@ -290,10 +290,71 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /recruiting\s+Open the Atris Labs recruiting computer/);
     assert.match(help.stdout, /atris computer recruiting status/);
+    assert.match(help.stdout, /atris computer recruiting sync/);
 
     const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
     assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
     assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
+    assert.match(shortcutHelp.stdout, /sync/);
+
+    const syncHelp = await runCliAsync(['computer', 'recruiting', 'sync', '--help'], { cwd, env });
+    assert.equal(syncHelp.status, 0, syncHelp.stderr || syncHelp.stdout);
+    assert.match(syncHelp.stdout, /Usage: atris computer recruiting sync/);
+    assert.match(syncHelp.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync prints local sync commands outside a business workspace', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local sync/);
+    assert.match(res.stdout, /local workspace: not detected/);
+    assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync shows local business sync status without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local sync/);
+    assert.match(res.stdout, /Business workspace sync status/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.match(res.stdout, /atris sync --status/);
+    assert.match(res.stdout, /atris sync --watch/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
