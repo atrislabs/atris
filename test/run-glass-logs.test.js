@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -704,4 +704,83 @@ test('integration: full run log lifecycle (create, list, search, stats, export, 
     process.chdir(origCwd);
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+// --- Loop closure: review feeds into next plan ---
+
+test('buildRunPrompt accepts priorCycleReview as third argument', () => {
+  assert.match(RUN_SRC, /function buildRunPrompt\(phase, context, priorCycleReview\)/);
+});
+
+test('plan prompt includes review section when priorCycleReview is provided', () => {
+  const ctx = {
+    mapPath: 'atris/MAP.md',
+    todoPath: 'atris/TODO.md',
+    personaPath: 'atris/PERSONA.md',
+    lessonsPath: null,
+    journalPath: 'atris/logs/2026/2026-06-23.md',
+  };
+  const review = 'Tests failed in auth module. Missing import for bcrypt.';
+  const prompt = buildRunPrompt('plan', ctx, review);
+
+  assert.ok(prompt.includes("Previous Cycle's Review"), 'includes review section header');
+  assert.ok(prompt.includes(review), 'includes the actual review text');
+  assert.ok(prompt.includes('DATA from the previous cycle'), 'includes data-not-instructions preamble');
+  assert.ok(prompt.includes('```'), 'review wrapped in code fence');
+  assert.ok(prompt.includes("Read the Previous Cycle's Review"), 'workflow step references review');
+});
+
+test('plan prompt does NOT include review section when priorCycleReview is null', () => {
+  const ctx = {
+    mapPath: 'atris/MAP.md',
+    todoPath: 'atris/TODO.md',
+    personaPath: 'atris/PERSONA.md',
+    lessonsPath: null,
+    journalPath: null,
+  };
+  const prompt = buildRunPrompt('plan', ctx, null);
+
+  assert.ok(!prompt.includes("Previous Cycle's Review"), 'no review section when null');
+  assert.ok(!prompt.includes("Read the Previous Cycle's Review"), 'no review workflow step when null');
+});
+
+test('plan prompt does NOT include review section when priorCycleReview is whitespace only', () => {
+  const ctx = {
+    mapPath: null, todoPath: null, personaPath: null, lessonsPath: null, journalPath: null,
+  };
+  const prompt = buildRunPrompt('plan', ctx, '   \n\n  ');
+  assert.ok(!prompt.includes("Previous Cycle's Review"), 'no review section for whitespace-only input');
+});
+
+test('plan prompt truncates long review output with truncation marker', () => {
+  const ctx = {
+    mapPath: null, todoPath: null, personaPath: null, lessonsPath: null, journalPath: null,
+  };
+  // Create a review with newlines so boundary truncation kicks in
+  const longReview = Array(200).fill('line of review text here').join('\n') + '\nfinal line that should be cut';
+  const prompt = buildRunPrompt('plan', ctx, longReview);
+
+  assert.ok(prompt.includes('[...truncated]'), 'includes truncation marker');
+  // Should be wrapped in code fence
+  assert.ok(prompt.includes('```'), 'truncated review still in code fence');
+});
+
+test('do and review prompts ignore priorCycleReview (only plan uses it)', () => {
+  const ctx = {
+    mapPath: 'atris/MAP.md', todoPath: 'atris/TODO.md',
+    personaPath: null, lessonsPath: null, journalPath: null,
+  };
+  const review = 'Some review feedback that should not appear in do or review prompts';
+
+  const doPrompt = buildRunPrompt('do', ctx, review);
+  const reviewPrompt = buildRunPrompt('review', ctx, review);
+
+  assert.ok(!doPrompt.includes(review), 'do prompt does not include review');
+  assert.ok(!reviewPrompt.includes(review), 'review prompt does not include review');
+});
+
+test('run.js carries lastReviewOutput across cycles in the loop', () => {
+  assert.match(RUN_SRC, /let lastReviewOutput = null/);
+  assert.match(RUN_SRC, /priorCycleReview: lastReviewOutput/);
+  assert.match(RUN_SRC, /lastReviewOutput = reviewOutput/);
 });
