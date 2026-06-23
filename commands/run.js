@@ -51,7 +51,8 @@ function getRunLogPath(runStamp, cycle) {
  * header on first write.
  */
 function writePhaseToRunLog(runLogPath, cycle, phase, output, durationMs) {
-  const header = `# Run Log — Cycle ${cycle}\n\n`;
+  const now = new Date().toISOString();
+  const header = `# Run Log — Cycle ${cycle}\n\n> Generated: ${now}\n\n`;
   const phaseSection = `## ${phase.toUpperCase()} (${Math.round(durationMs / 1000)}s)\n\n${output || '(no output)'}\n\n---\n\n`;
 
   if (!fs.existsSync(runLogPath)) {
