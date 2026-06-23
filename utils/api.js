@@ -216,6 +216,7 @@ function streamProChat(url, token, body, showTools = false) {
       }
 
       let buffer = '';
+      let emittedText = false;
 
       res.on('data', (chunk) => {
         buffer += chunk.toString();
@@ -232,10 +233,16 @@ function streamProChat(url, token, body, showTools = false) {
 
               if (msg.type === 'system_init' && showTools) {
                 console.log(`[System] Tools available: ${msg.tools?.join(', ') || 'none'}`);
+              } else if (msg.type === 'text_delta') {
+                if (msg.content) {
+                  emittedText = true;
+                  process.stdout.write(msg.content);
+                }
               } else if (msg.type === 'assistant') {
                 if (msg.content && Array.isArray(msg.content)) {
                   for (const block of msg.content) {
                     if (block.type === 'text') {
+                      emittedText = true;
                       process.stdout.write(block.text);
                     }
                   }
@@ -245,11 +252,14 @@ function streamProChat(url, token, body, showTools = false) {
               } else if (msg.type === 'tool_result' && showTools) {
                 const preview = msg.content?.substring(0, 100) || '';
                 console.log(`[✓ Result]: ${preview}${msg.content?.length > 100 ? '...' : ''}`);
-              } else if (msg.type === 'result') {
+              } else if (msg.type === 'result' && !emittedText) {
                 if (msg.result) {
                   process.stdout.write(msg.result);
                 }
+              } else if (msg.type === 'error') {
+                reject(new Error(msg.error || 'Atris stream error'));
               } else if (msg.chunk) {
+                emittedText = true;
                 process.stdout.write(msg.chunk);
               }
             } catch (e) {
@@ -270,7 +280,9 @@ function streamProChat(url, token, body, showTools = false) {
                 const msg = JSON.parse(data);
                 if (msg.chunk) {
                   process.stdout.write(msg.chunk);
-                } else if (msg.type === 'result' && msg.result) {
+                } else if (msg.type === 'text_delta' && msg.content) {
+                  process.stdout.write(msg.content);
+                } else if (msg.type === 'result' && msg.result && !emittedText) {
                   process.stdout.write(msg.result);
                 }
               } catch (e) {
