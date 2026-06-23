@@ -1,7 +1,8 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { loadManifest } = require('../lib/manifest');
+const { loadManifest, saveManifest } = require('../lib/manifest');
+const { removeBaseContents, writeBaseContents } = require('../lib/company-brain-sync');
 
 const WATCH_IGNORED_DIRS = new Set([
   '.git', '.atris', '.claude', '.cursor', '.next', '.cache',
@@ -29,6 +30,7 @@ function parseBusinessSyncArgs(args = []) {
   const resolveIdx = positional.indexOf('resolve');
   const resolveFlag = parseFlagValue(args, '--resolve', null);
   const resolve = resolveFlag || (resolveIdx !== -1 ? positional[resolveIdx + 1] : null);
+  const resolvePath = parseFlagValue(args, '--path', parseFlagValue(args, '--file', null));
   const commandWords = new Set(['status', 'doctor', 'review', 'resolve', 'local', 'cloud', 'both', 'merge']);
   const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
@@ -39,7 +41,7 @@ function parseBusinessSyncArgs(args = []) {
   const debounceSec = Number.parseInt(parseFlagValue(args, '--debounce', '5'), 10);
   const help = args.includes('--help') || args.includes('-h') || positional[0] === 'help';
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, help };
+  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, help };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -332,7 +334,7 @@ function renderLocalSyncStatus(status) {
 
 function renderBusinessSyncHelp() {
   return [
-    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--timeout 120]',
+    'Usage: atris sync [business] [--dry-run] [--watch] [--status] [--review] [--resolve local|cloud|both|merge] [--path <file>] [--timeout 120]',
     '',
     'Safe loop:',
     '  Pull -> Review -> Publish',
@@ -341,7 +343,7 @@ function renderBusinessSyncHelp() {
     '  atris sync --status       Show local sync health',
     '  atris sync --dry-run      Preview pull and publish plans without writing cloud',
     '  atris sync --review       Read the latest conflict packet',
-    '  atris sync --resolve cloud|local|merge',
+    '  atris sync --resolve cloud|local|merge [--path <file>]',
     '  atris sync --watch        Keep the workspace live with the same safety gates',
     '',
     'Publish safety:',
@@ -398,6 +400,7 @@ function collectConflictResolutionEntries(cwd = process.cwd()) {
         const targetRel = path.relative(dir, full).replace(/\\/g, '/').replace(/\.local$/, '');
         entries.push({
           targetRel,
+          packetDir: dir,
           basePath: full.replace(/\.local$/, '.base'),
           localPath,
           remotePath,
@@ -424,6 +427,73 @@ function cleanupResolvedConflictSidecars(cwd, targetRel, { keepCloud = false } =
   for (const suffix of suffixes) {
     fs.rmSync(assertWorkspaceTarget(cwd, `${targetRel}${suffix}`), { force: true });
   }
+}
+
+function cleanupConflictPacketArtifacts(entry) {
+  for (const artifactPath of [entry.basePath, entry.localPath, entry.remotePath]) {
+    fs.rmSync(artifactPath, { force: true });
+  }
+}
+
+function conflictPacketHasEntries(packetDir) {
+  let hasEntries = false;
+
+  function walk(current) {
+    if (hasEntries) return;
+    let items;
+    try {
+      items = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const full = path.join(current, item.name);
+      if (item.isDirectory()) walk(full);
+      else if (item.isFile() && item.name.endsWith('.local')) {
+        hasEntries = true;
+        return;
+      }
+      if (hasEntries) return;
+    }
+  }
+
+  walk(packetDir);
+  return hasEntries;
+}
+
+function finalizeResolvedConflictPacket(cwd, packetDir) {
+  const pendingPath = path.join(packetDir, 'manifest.json');
+  const pending = readJsonFile(pendingPath);
+  if (!pending || !pending.manifest || !pending.manifest.files) return null;
+
+  const slug = pending.slug || readBusinessSlug(cwd);
+  if (!slug) return null;
+
+  const manifest = {
+    ...pending.manifest,
+    workspace_root: pending.manifest.workspace_root || cwd,
+  };
+  saveManifest(slug, manifest);
+  if (pending.baseContents && typeof pending.baseContents === 'object') {
+    writeBaseContents(cwd, pending.baseContents);
+  }
+  if (Array.isArray(pending.deletedRemote)) {
+    removeBaseContents(cwd, pending.deletedRemote);
+  }
+  return slug;
+}
+
+function cleanupEmptyConflictPackets(cwd, entries) {
+  const finalized = [];
+  const packetDirs = Array.from(new Set(entries.map((entry) => entry.packetDir).filter(Boolean)));
+  for (const packetDir of packetDirs) {
+    if (!conflictPacketHasEntries(packetDir)) {
+      const slug = finalizeResolvedConflictPacket(cwd, packetDir);
+      if (slug) finalized.push(slug);
+      fs.rmSync(packetDir, { recursive: true, force: true });
+    }
+  }
+  return finalized;
 }
 
 function changedRange(baseLines, changedLines) {
@@ -562,16 +632,24 @@ function safeMarkdownMerge(baseContent, localContent, remoteContent) {
   return { ok: true, content: merged, mode: 'markdown' };
 }
 
-function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
+function normalizeResolvePath(value) {
+  return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
+function resolveLatestConflict(cwd = process.cwd(), strategy = 'local', target = null) {
   if (!['local', 'cloud', 'both', 'merge'].includes(strategy)) {
     throw new Error('Use `atris sync --resolve local`, `atris sync --resolve cloud`, `atris sync --resolve both`, or `atris sync --resolve merge`.');
   }
 
-  const entries = collectConflictResolutionEntries(cwd);
+  const wantedTarget = normalizeResolvePath(target);
+  const entries = collectConflictResolutionEntries(cwd)
+    .filter((entry) => !wantedTarget || normalizeResolvePath(entry.targetRel) === wantedTarget);
   if (entries.length === 0) {
     return {
       resolved: [],
-      message: 'No sync conflicts need resolution.\n',
+      message: wantedTarget
+        ? `No sync conflicts need resolution for ${wantedTarget}.\n`
+        : 'No sync conflicts need resolution.\n',
     };
   }
 
@@ -591,6 +669,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
         fs.copyFileSync(entry.remotePath, remoteCopyPath);
       }
       cleanupResolvedConflictSidecars(cwd, entry.targetRel, { keepCloud: true });
+      cleanupConflictPacketArtifacts(entry);
       resolved.push(entry.targetRel);
       continue;
     }
@@ -612,6 +691,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       fs.writeFileSync(targetPath, merged.content, 'utf8');
       cleanupResolvedConflictSidecars(cwd, entry.targetRel);
+      cleanupConflictPacketArtifacts(entry);
       resolved.push(entry.targetRel);
       continue;
     }
@@ -621,8 +701,11 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
     cleanupResolvedConflictSidecars(cwd, entry.targetRel);
+    cleanupConflictPacketArtifacts(entry);
     resolved.push(entry.targetRel);
   }
+
+  const finalizedManifests = cleanupEmptyConflictPackets(cwd, entries);
 
   return {
     resolved,
@@ -630,6 +713,7 @@ function resolveLatestConflict(cwd = process.cwd(), strategy = 'local') {
     message: [
       `Resolved ${resolved.length} conflict${resolved.length === 1 ? '' : 's'} using ${strategy === 'both' ? 'both versions' : `${strategy === 'merge' ? 'safe merge' : `${strategy === 'local' ? 'local' : 'cloud'} version`}`}.`,
       ...resolved.map((rel) => `  - ${rel}`),
+      ...(finalizedManifests.length ? ['', `Updated sync manifest for ${finalizedManifests.join(', ')}.`] : []),
       ...(unresolved.length ? ['', 'Still needs review:', ...unresolved.map((rel) => `  - ${rel}`)] : []),
       '',
       'Next: run `atris sync --dry-run` before publishing.',
@@ -717,7 +801,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd()) {
   }
 
   if (options.resolve) {
-    process.stdout.write(resolveLatestConflict(cwd, options.resolve).message);
+    process.stdout.write(resolveLatestConflict(cwd, options.resolve, options.resolvePath).message);
     return;
   }
 
