@@ -14,6 +14,7 @@ const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), '
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
 
 const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_PROFILE',
   'ATRIS_RUNNER_MODEL',
   'ATRIS_RUNNER_BIN',
   'ATRIS_RUNNER_COMMAND_TEMPLATE',
@@ -82,6 +83,7 @@ test('run and autopilot sweep configured runner process groups on timeout', () =
 
 test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /function applyRunnerFlags\(args\)/);
+  assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_PROFILE = runnerProfile/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_BIN = runnerBin/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_BIN = runnerBin/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_COMMAND_TEMPLATE = runnerTemplate/);
@@ -93,6 +95,7 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /--runner-bin/);
   assert.match(BIN_SRC, /--runner-template/);
   assert.match(BIN_SRC, /--runner-model/);
+  assert.match(BIN_SRC, /--runner-profile/);
   assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
 });
 

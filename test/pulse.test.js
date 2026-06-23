@@ -239,6 +239,7 @@ test('buildTickScript embeds root, bin, deadline, marker, and calls pulse tick',
   // runner-agnostic model default so a retired model can't silently kill the loop
   assert.match(script, /export ATRIS_RUNNER_MODEL='opus'/);
   assert.match(script, /export ATRIS_CLAUDE_MODEL="\$\{ATRIS_RUNNER_MODEL\}"/);
+  assert.doesNotMatch(script, /ATRIS_RUNNER_PROFILE=/);
   assert.doesNotMatch(script, /ATRIS_RUNNER_BIN=/);
   assert.doesNotMatch(script, /ATRIS_CLAUDE_BIN=/);
   assert.doesNotMatch(script, /ATRIS_RUNNER_COMMAND_TEMPLATE=/);
@@ -271,6 +272,18 @@ test('buildTickScript preserves configured runner command for cron', () => {
   assert.ok(script.includes('export ATRIS_CLAUDE_COMMAND_TEMPLATE='));
   assert.ok(script.includes('--literal $HOME'));
   assert.ok(script.includes("'\\''nightly'\\'''"));
+});
+
+test('buildTickScript preserves configured runner profile for cron', () => {
+  const script = pulse.buildTickScript({
+    root: '/r',
+    stateHome: '/s',
+    deadlineEpoch: 123,
+    model: 'atris:fast',
+    runnerProfile: 'atris-fast',
+  });
+  assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
+  assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
 });
 
 test('buildTickScript escapes single quotes in the verify command', () => {
