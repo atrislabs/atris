@@ -473,9 +473,34 @@ function runAtrisCliCommand(cliArgs, cwd) {
   if (result.error) throw result.error;
   if (result.signal) {
     process.exitCode = 1;
-    return;
+    return 1;
   }
   process.exitCode = result.status || 0;
+  return process.exitCode;
+}
+
+function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
+  if (action === 'pull') {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  atris computer recruiting review   # if conflicts were reported');
+    console.log('  atris computer recruiting push --dry-run');
+    return;
+  }
+
+  if (action === 'push' && status !== 0) {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  atris computer recruiting pull --dry-run');
+    console.log('  atris computer recruiting review   # if conflicts were reported');
+    return;
+  }
+
+  if (action === 'push' && args.includes('--dry-run')) {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  atris computer recruiting push');
+  }
 }
 
 async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {}) {
@@ -504,7 +529,8 @@ async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {
   }
 
   const command = recruitingLocalSyncCommand(action, workspace.binding.slug || slug, args);
-  runAtrisCliCommand(command, workspace.cwd);
+  const status = runAtrisCliCommand(command, workspace.cwd);
+  printRecruitingLocalSyncOutcome(action, status, args);
 }
 
 async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
