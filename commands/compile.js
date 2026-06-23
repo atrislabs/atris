@@ -282,7 +282,7 @@ function executeBuild(root, name, options = {}) {
     try {
       execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
     } catch {
-      throw new Error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install Claude Code first.`);
+      throw new Error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install the configured runner first.`);
     }
   }
 
