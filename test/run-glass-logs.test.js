@@ -101,6 +101,7 @@ test('writePhaseToRunLog creates file with header on first write', () => {
     assert.ok(content.includes('## PLAN'), 'plan section present');
     assert.ok(content.includes('Plan reasoning here'), 'plan content present');
     assert.ok(content.includes('(3s)'), 'duration present');
+    assert.ok(content.includes('> Generated:'), 'timestamp present');
   } finally {
     process.chdir(origCwd);
     fs.rmSync(tmpRoot, { recursive: true, force: true });
