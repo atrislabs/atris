@@ -489,4 +489,4 @@ async function runAtris(options = {}) {
   }
 }
 
-module.exports = { runAtris };
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog };
