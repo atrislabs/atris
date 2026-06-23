@@ -40,6 +40,7 @@ const {
   saveContextProfile,
   createStarterTask,
   shouldGatherContext,
+  isAtrisMetaQuestion,
   renderPrompt: renderContextGathererPrompt,
 } = require('../lib/context-gatherer');
 
@@ -394,6 +395,7 @@ function showHelp() {
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
+  console.log('  youtube    - Process YouTube videos with Gemini native video analysis');
   console.log('');
   console.log('Experiments:');
   console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
@@ -450,8 +452,8 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
-  console.log('  agent      - Select cloud agent, or run `agent doctor` for local CLI wiring');
-  console.log('  chat       - Chat with the selected Atris agent');
+  console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
+  console.log('  chat       - Chat with the selected Atris agent (or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
   console.log('  login      - Sign in or add another account');
   console.log('  logout     - Sign out of current account');
@@ -821,7 +823,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync',
+                       'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship'];
@@ -913,10 +915,23 @@ if (!command || !knownCommands.includes(command)) {
   return;
 }
 
+function printAtrisOverview() {
+  console.log('');
+  console.log('Atris is an AI computer for a workspace.');
+  console.log('It keeps project context, tasks, memory, tools, and proof in one loop: plan -> do -> review.');
+  console.log('Run `atris` to load the current workspace, or `atris help` to see commands.');
+  console.log('');
+}
+
 async function interactiveEntry(userInput) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
   const context = loadContext(workspaceDir);
+
+  if (isAtrisMetaQuestion(userInput)) {
+    printAtrisOverview();
+    return;
+  }
 
   // Fresh install - offer init
   if (state.state === 'fresh') {
@@ -993,6 +1008,10 @@ async function interactiveEntry(userInput) {
     inboxCount,
   })) {
     const answer = String(userInput || '').trim() || await askContextGatherer(workspaceDir);
+    if (isAtrisMetaQuestion(answer)) {
+      printAtrisOverview();
+      return;
+    }
     if (!answer.trim()) {
       console.log('');
       console.log('No problem. When you are ready, answer in normal words.');
@@ -1419,6 +1438,15 @@ if (command === 'init') {
   }
   upgradeAtris().then(() => process.exit(0)).catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'chat') {
+  if (process.argv[3] === 'scan') {
+    try {
+      require('../commands/chat-scan').chatScanCommand(process.argv.slice(4));
+      process.exit(0);
+    } catch (error) {
+      console.error(`✗ Chat scan failed: ${error.message || error}`);
+      process.exit(1);
+    }
+  }
   chatAtris()
     .then(() => process.exit(0))
     .catch((error) => {
@@ -1518,8 +1546,32 @@ if (command === 'init') {
   require('../commands/visualize').visualizeAtris(process.argv.slice(3))
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'youtube') {
+  require('../commands/youtube').youtubeCommand(process.argv.slice(3))
+    .then(() => process.exit(0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'run') {
   const args = process.argv.slice(3);
+  if (args[0] === 'logs') {
+    // Subcommand: atris run logs [--tail N] [--cat FILE]
+    const { listRunLogs } = require('../commands/run');
+    const logsArgs = args.slice(1);
+    if (logsArgs.includes('--help') || logsArgs.includes('-h')) {
+      console.log('');
+      console.log('Usage: atris run logs [options]');
+      console.log('');
+      console.log('List and read glass run logs from atris/logs/runs/.');
+      console.log('');
+      console.log('Options:');
+      console.log('  --tail N      Show last N lines of each log (default: 5)');
+      console.log('  --cat FILE    Print full contents of a specific log file');
+      console.log('  --help        Show this help');
+      console.log('');
+      process.exit(0);
+    }
+    listRunLogs(logsArgs);
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
@@ -1539,6 +1591,9 @@ if (command === 'init') {
     console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
+    console.log('');
+    console.log('Subcommands:');
+    console.log('  atris run logs [--tail N] [--cat FILE]  Browse glass run logs');
     console.log('');
     process.exit(0);
   }
@@ -2083,7 +2138,7 @@ function inspectAgentCliWiring() {
     },
   ];
 
-  const binaries = ['atris', 'claude', 'codex', 'cursor-agent', 'devin'].map((name) => ({
+  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin'].map((name) => ({
     name,
     path: commandOnPath(name),
   }));
@@ -2120,9 +2175,11 @@ async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent [doctor]');
+    console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
+    console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
+    console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
     console.log('  Requires `atris login` first.');
     console.log('');
@@ -2132,6 +2189,18 @@ async function agentAtris() {
 
   if (firstArg === 'doctor') {
     agentDoctor();
+  }
+  if (firstArg === 'spawn') {
+    require('../commands/agent-spawn').agentSpawnCommand(process.argv.slice(4));
+    return;
+  }
+  if (firstArg === 'spawns' || firstArg === 'spawn-list' || firstArg === 'list-spawns') {
+    require('../commands/agent-spawn').agentSpawnListCommand(process.argv.slice(4));
+    return;
+  }
+  if (firstArg === 'spawn-status' || firstArg === 'spawn-show') {
+    require('../commands/agent-spawn').agentSpawnStatusCommand(process.argv.slice(4));
+    return;
   }
 
   const targetDir = path.join(process.cwd(), 'atris');
