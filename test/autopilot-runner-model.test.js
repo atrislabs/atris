@@ -11,6 +11,7 @@ const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'au
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
 const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
+const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
 
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
@@ -60,6 +61,12 @@ test('mission claude ticks spawn the configured runner binary', () => {
   assert.match(MISSION_SRC, /spawnSync\(runnerBin, \['--help'\]/);
   assert.match(MISSION_SRC, /spawn\(resolveClaudeRunnerBin\(\), args/);
   assert.match(MISSION_SRC, /resolveClaudeRunnerBin/);
+});
+
+test('console claude launcher uses the configured runner binary', () => {
+  assert.doesNotMatch(CONSOLE_SRC, /spawnSync\('claude'/);
+  assert.match(CONSOLE_SRC, /resolveClaudeRunnerBin\(\)/);
+  assert.match(CONSOLE_SRC, /spawnSync\(runnerBin, args/);
 });
 
 // --- T3: every spawn injects a resolved --model alias by default ---

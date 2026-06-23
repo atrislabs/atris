@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const readline = require('readline');
+const { resolveClaudeRunnerBin } = require('../lib/runner-command');
 
 // ── Context Gathering ──────────────────────────────────────────────
 
@@ -206,7 +207,10 @@ function renderSkillsBar(ctx) {
 // ── Backend Detection & Auth ───────────────────────────────────────
 
 function detectBackend(requested) {
-  const hasClaude = spawnSync('which', ['claude'], { stdio: 'pipe' }).status === 0;
+  const claudeBin = resolveClaudeRunnerBin();
+  const hasClaude = claudeBin.includes(path.sep)
+    ? fs.existsSync(claudeBin)
+    : spawnSync('which', [claudeBin], { stdio: 'pipe' }).status === 0;
   const hasCodex = spawnSync('which', ['codex'], { stdio: 'pipe' }).status === 0;
 
   if (requested) {
@@ -277,20 +281,21 @@ function checkAuth(backend) {
 // ── Launch ──────────────────────────────────────────────────────────
 
 function launchClaude(systemPrompt, extraArgs) {
+  const runnerBin = resolveClaudeRunnerBin();
   const args = [
     '--dangerously-skip-permissions',
     '--append-system-prompt', systemPrompt,
     ...extraArgs,
   ];
 
-  const child = spawnSync('claude', args, {
+  const child = spawnSync(runnerBin, args, {
     cwd: process.cwd(),
     stdio: 'inherit',
     env: { ...process.env, CLAUDECODE: undefined },
   });
 
   if (child.error) {
-    console.error(`✗ Failed to start claude: ${child.error.message}`);
+    console.error(`✗ Failed to start ${runnerBin}: ${child.error.message}`);
     process.exit(1);
   }
   process.exit(child.status ?? 0);
