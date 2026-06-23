@@ -4623,12 +4623,51 @@ function readEndgameAgentAction(root, owner) {
   const horizon = (section.match(/\*\*Horizon:\*\*\s*([^\n]+)/i)?.[1] || '').trim();
   if (!slug && !horizon) return null;
   const member = String(owner || DEFAULT_OWNER);
+  const taskSeed = buildEndgameTaskSeed({ slug, horizon, owner: member });
   return {
     kind: 'create_bounded_endgame_task',
     endgame_slug: slug || null,
     horizon: horizon || null,
+    task_seed: taskSeed,
     command: `atris brain activate --member ${member} --root . --verify`,
     message: `Create the next bounded task from Endgame${slug ? ` ${slug}` : ''}${horizon ? `: ${horizon}` : ''}. Do not accept XP.`,
+  };
+}
+
+function shellQuoteTaskArg(value) {
+  const s = String(value || '');
+  if (/^[A-Za-z0-9_./:-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+function buildEndgameTaskSeed({ slug, horizon, owner }) {
+  const combined = `${slug || ''} ${horizon || ''}`.toLowerCase();
+  const runnerEndgame = /\b(runner|heartbeat|autopilot\/run|claude -p|model retirement|runner swap)\b/.test(combined);
+  const title = runnerEndgame
+    ? 'Audit and close next runner-agnostic heartbeat gap'
+    : `Advance Endgame ${slug || 'current horizon'}`;
+  const tag = runnerEndgame ? 'runner' : 'endgame';
+  const files = runnerEndgame
+    ? ['commands/autopilot.js', 'commands/run.js', 'lib/runner-command.js', 'test/autopilot-runner-model.test.js']
+    : ['atris/TODO.md', 'atris/MAP.md'];
+  const verifier = runnerEndgame
+    ? 'node --test test/autopilot-runner-model.test.js test/runner-command.test.js'
+    : 'git diff --check';
+  const stopRule = 'Move proof-ready work to Review; do not accept XP.';
+  const goal = runnerEndgame
+    ? 'Find and close one remaining runner-agnostic heartbeat gap, or record proof that the next gap is documentation/state only.'
+    : `Move the Endgame forward with one bounded, verifiable slice${horizon ? `: ${horizon}` : ''}.`;
+  const note = `Goal: ${goal} Files: ${files.join(', ')}. Done: one scoped Endgame slice is implemented or the audited gap is closed with proof. Check: ${verifier}; git diff --check. Stop: ${stopRule}`;
+  return {
+    title,
+    tag,
+    files,
+    verifier,
+    stop_rule: stopRule,
+    create_command: `atris task new ${shellQuoteTaskArg(title)} --tag ${shellQuoteTaskArg(tag)}`,
+    claim_command: `atris task claim <id> --as ${shellQuoteTaskArg(owner || DEFAULT_OWNER)}`,
+    note,
+    note_command: `atris task note <id> ${shellQuoteTaskArg(note)}`,
   };
 }
 
@@ -4706,6 +4745,12 @@ function cmdNext(args) {
         ? (nextAgentAction ? nextAgentAction.message : 'No concrete next agent task is attached; AgentXP waits for human accept.')
         : 'Review this task again before continuing.');
       if (nextAgentAction) console.log(`Command: ${nextAgentAction.command}`);
+      if (nextAgentAction && nextAgentAction.task_seed) {
+        console.log(`Create: ${nextAgentAction.task_seed.create_command}`);
+        console.log(`Claim: ${nextAgentAction.task_seed.claim_command}`);
+        console.log(`Note: ${nextAgentAction.task_seed.note_command}`);
+        console.log(`Verify: ${nextAgentAction.task_seed.verifier}`);
+      }
       if (continueWorkCommand) console.log(`Command: ${continueWorkCommand}`);
       return;
     }
