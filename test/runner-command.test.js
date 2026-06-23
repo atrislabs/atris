@@ -8,6 +8,7 @@ const {
   DEFAULT_CLAUDE_RUNNER_BIN,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
+  resolveClaudeRunnerCommandTemplate,
   buildRunnerAvailabilityCommand,
   buildRunnerCommand,
 } = require('../lib/runner-command');
@@ -33,6 +34,18 @@ function withBinEnv(value, fn) {
   } finally {
     if (prev === undefined) delete process.env.ATRIS_CLAUDE_BIN;
     else process.env.ATRIS_CLAUDE_BIN = prev;
+  }
+}
+
+function withTemplateEnv(value, fn) {
+  const prev = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  if (value === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = value;
+  try {
+    fn();
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+    else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = prev;
   }
 }
 
@@ -73,6 +86,15 @@ test('resolveClaudeRunnerBin honors ATRIS_CLAUDE_BIN', () => {
   });
 });
 
+test('resolveClaudeRunnerCommandTemplate honors ATRIS_CLAUDE_COMMAND_TEMPLATE', () => {
+  withTemplateEnv('{bin} --print-file {promptFile} {modelFlag}', () => {
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --print-file {promptFile} {modelFlag}');
+  });
+  withTemplateEnv(undefined, () => {
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '');
+  });
+});
+
 test('buildRunnerAvailabilityCommand checks the configured runner binary', () => {
   withBinEnv('/opt/atris/bin/claude-nightly', () => {
     assert.equal(buildRunnerAvailabilityCommand(), 'command -v /opt/atris/bin/claude-nightly');
@@ -90,11 +112,13 @@ test('default model is an alias, not a versioned claude-* id', () => {
 // --- buildRunnerCommand: --model always injected ---
 
 test('buildRunnerCommand always emits --model', () => {
-  withEnv(undefined, () => {
-    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
-    assert.match(cmd, /--model opus\b/);
-    assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
-    assert.match(cmd, /--allowedTools "Bash,Read"/);
+  withTemplateEnv(undefined, () => {
+    withEnv(undefined, () => {
+      const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
+      assert.match(cmd, /--model opus\b/);
+      assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
+      assert.match(cmd, /--allowedTools "Bash,Read"/);
+    });
   });
 });
 
@@ -110,6 +134,31 @@ test('buildRunnerCommand shell-quotes runner binaries with spaces', () => {
   withBinEnv('/Applications/Claude Nightly/bin/claude', () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
     assert.match(cmd, /^'\/Applications\/Claude Nightly\/bin\/claude' -p/);
+  });
+});
+
+test('buildRunnerCommand can replace the claude -p command shape by template', () => {
+  withBinEnv('/opt/atris/bin/claude-nightly', () => {
+    withTemplateEnv('{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}', () => {
+      const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet', allowedTools: 'Bash,Read' });
+      assert.equal(cmd, "/opt/atris/bin/claude-nightly --print-file /tmp/p.tmp --model sonnet --allowedTools 'Bash,Read'");
+    });
+  });
+});
+
+test('buildRunnerCommand template supports prompt substitution and optional tools', () => {
+  withTemplateEnv('{bin} --prompt {prompt} {modelFlag} {allowedToolsFlag}', () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' });
+    assert.equal(cmd, 'claude --prompt "$(cat /tmp/p.tmp)" --model opus');
+  });
+});
+
+test('buildRunnerCommand template shell-quotes substituted values', () => {
+  withBinEnv('/Applications/Claude Nightly/bin/claude', () => {
+    withTemplateEnv('{bin} --file {promptFile} {modelFlag}', () => {
+      const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
+      assert.equal(cmd, "'/Applications/Claude Nightly/bin/claude' --file '/tmp/it'\\''s.tmp' --model opus");
+    });
   });
 });
 
