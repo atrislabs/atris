@@ -315,8 +315,8 @@ test('computer recruiting push failure names reviewed broad publish command', ()
 
   assert.match(output, /Recruiting next step/);
   assert.match(output, /If the output says review before publish/);
-  assert.match(output, /atris computer recruiting push --dry-run --allow-broad-workspace/);
-  assert.match(output, /atris computer recruiting push --allow-broad-workspace/);
+  assert.match(output, /atris computer recruiting publish --dry-run/);
+  assert.match(output, /atris computer recruiting publish/);
   assert.match(output, /Otherwise:/);
   assert.match(output, /atris computer recruiting pull --dry-run/);
 });
@@ -341,6 +341,23 @@ test('computer recruiting allowed broad dry-run names live publish command', () 
   assert.doesNotMatch(output, /atris computer recruiting push$/m);
 });
 
+test('computer recruiting publish dry-run names publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('publish', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /atris computer recruiting publish/);
+  assert.doesNotMatch(output, /atris computer recruiting push/);
+});
+
+test('computer recruiting publish dry-run failure does not name live publish first', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('publish', 1, ['--dry-run']));
+
+  assert.match(output, /If the output says review before publish/);
+  assert.match(output, /atris computer recruiting publish --dry-run/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting pull --dry-run/);
+});
+
 test('computer help surfaces the recruiting shortcut without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
@@ -359,14 +376,17 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.match(help.stdout, /atris computer recruiting sync/);
     assert.match(help.stdout, /atris computer recruiting pull/);
     assert.match(help.stdout, /atris computer recruiting push --dry-run/);
+    assert.match(help.stdout, /atris computer recruiting publish --dry-run/);
 
     const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
     assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
     assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
+    assert.match(shortcutHelp.stdout, /publish/);
     assert.match(shortcutHelp.stdout, /doctor/);
     assert.match(shortcutHelp.stdout, /sync/);
     assert.match(shortcutHelp.stdout, /pull/);
     assert.match(shortcutHelp.stdout, /push --dry-run/);
+    assert.match(shortcutHelp.stdout, /publish --dry-run/);
 
     const syncHelp = await runCliAsync(['computer', 'recruiting', 'sync', '--help'], { cwd, env });
     assert.equal(syncHelp.status, 0, syncHelp.stderr || syncHelp.stdout);
@@ -384,6 +404,13 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.match(pushHelp.stdout, /atris push atris-labs --dry-run/);
     assert.match(pushHelp.stdout, /atris computer recruiting push --dry-run --allow-broad-workspace/);
     assert.match(pushHelp.stdout, /atris computer recruiting push --allow-broad-workspace/);
+
+    const publishHelp = await runCliAsync(['computer', 'recruiting', 'publish', '--help'], { cwd, env });
+    assert.equal(publishHelp.status, 0, publishHelp.stderr || publishHelp.stdout);
+    assert.match(publishHelp.stdout, /Usage: atris computer recruiting publish/);
+    assert.match(publishHelp.stdout, /atris push atris-labs --dry-run --allow-broad-workspace/);
+    assert.match(publishHelp.stdout, /atris computer recruiting publish --dry-run/);
+    assert.match(publishHelp.stdout, /atris computer recruiting publish/);
 
     const watchHelp = await runCliAsync(['computer', 'recruiting', 'watch', '--help'], { cwd, env });
     assert.equal(watchHelp.status, 0, watchHelp.stderr || watchHelp.stdout);
@@ -423,7 +450,7 @@ test('computer recruiting sync prints local sync commands outside a business wor
   }
 });
 
-test('computer recruiting pull and push explain canonical commands without auth', async () => {
+test('computer recruiting pull, push, and publish explain canonical commands without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
   try {
@@ -446,6 +473,13 @@ test('computer recruiting pull and push explain canonical commands without auth'
     assert.match(push.stdout, /local workspace: not detected/);
     assert.match(push.stdout, /atris push atris-labs --dry-run/);
     assert.match(push.stdout, /atris computer recruiting push --dry-run/);
+
+    const publish = await runCliAsync(['computer', 'recruiting', 'publish'], { cwd, env });
+    assert.equal(publish.status, 0, publish.stderr || publish.stdout);
+    assert.match(publish.stdout, /Recruiting local publish/);
+    assert.match(publish.stdout, /local workspace: not detected/);
+    assert.match(publish.stdout, /atris push atris-labs --dry-run --allow-broad-workspace/);
+    assert.match(publish.stdout, /atris computer recruiting publish --dry-run/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
