@@ -321,6 +321,17 @@ test('computer recruiting push failure names reviewed broad publish command', ()
   assert.match(output, /atris computer recruiting pull --dry-run/);
 });
 
+test('computer recruiting push dry-run names reviewed broad publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('push', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /If the dry-run showed review before publish/);
+  assert.match(output, /atris computer recruiting push --dry-run --allow-broad-workspace/);
+  assert.match(output, /atris computer recruiting push --allow-broad-workspace/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting push/);
+});
+
 test('computer help surfaces the recruiting shortcut without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
