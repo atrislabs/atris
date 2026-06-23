@@ -227,9 +227,13 @@ function renderBusinessAgentAdapter(bizMeta = {}, targetRoot = '.') {
     '## Proof Loop',
     '',
     '```bash',
+    'atris sync --dry-run',
     'atris business check',
     'atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"',
     'atris business share --write',
+    'atris sync',
+    '# Optional during active collaboration:',
+    'atris sync --watch',
     '```',
     '',
     `Workspace root at creation: ${rootHint}`,
@@ -370,7 +374,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     console.log('  ✓ Already up to date');
   } else {
     ensureWikiScaffold(targetRoot);
-    console.log(`  ✓ Local workspace updated. Run \`atris align ${params.slug} --fix\` to push to EC2.`);
+    console.log('  ✓ Local workspace updated. Run `atris sync` to push and pull with safety checks.');
   }
 
   return {

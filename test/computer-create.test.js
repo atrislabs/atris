@@ -957,7 +957,8 @@ test('business init seeds Atris operator onboarding as the first computer path',
     assert.match(res.stdout, /atris member activate operator/);
     assert.match(res.stdout, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
     assert.match(res.stdout, /Sync when ready:/);
-    assert.match(res.stdout, /atris align acme-corp --fix/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync/);
 
     const workspaceRoot = path.join(home, 'arena', 'atris-business', 'acme-corp');
     assert.ok(fs.existsSync(path.join(workspaceRoot, '.atris', 'business.json')));
