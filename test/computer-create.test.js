@@ -324,6 +324,7 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /recruiting\s+Open the Atris Labs recruiting computer/);
     assert.match(help.stdout, /atris computer recruiting status/);
+    assert.match(help.stdout, /atris computer recruiting doctor/);
     assert.match(help.stdout, /atris computer recruiting sync/);
     assert.match(help.stdout, /atris computer recruiting pull/);
     assert.match(help.stdout, /atris computer recruiting push --dry-run/);
@@ -331,6 +332,7 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
     assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
     assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
+    assert.match(shortcutHelp.stdout, /doctor/);
     assert.match(shortcutHelp.stdout, /sync/);
     assert.match(shortcutHelp.stdout, /pull/);
     assert.match(shortcutHelp.stdout, /push --dry-run/);
@@ -354,6 +356,11 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     assert.equal(watchHelp.status, 0, watchHelp.stderr || watchHelp.stdout);
     assert.match(watchHelp.stdout, /Usage: atris computer recruiting watch/);
     assert.match(watchHelp.stdout, /atris sync --watch/);
+
+    const doctorHelp = await runCliAsync(['computer', 'recruiting', 'doctor', '--help'], { cwd, env });
+    assert.equal(doctorHelp.status, 0, doctorHelp.stderr || doctorHelp.stdout);
+    assert.match(doctorHelp.stdout, /Usage: atris computer recruiting doctor/);
+    assert.match(doctorHelp.stdout, /atris sync --status/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
@@ -406,6 +413,48 @@ test('computer recruiting pull and push explain canonical commands without auth'
     assert.match(push.stdout, /local workspace: not detected/);
     assert.match(push.stdout, /atris push atris-labs --dry-run/);
     assert.match(push.stdout, /atris computer recruiting push --dry-run/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting doctor reports canonical sync state without mutating', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris', 'sync', 'conflicts', '20260623T120000Z'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'sync', 'conflicts', '20260623T120000Z', 'summary.md'), 'conflict packet\n', 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'doctor'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local doctor/);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stdout, /Recruiting sync doctor/);
+    assert.match(res.stdout, /workspace: ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.match(res.stdout, /local git changes:/);
+    assert.match(res.stdout, /review packet: \.atris\/sync\/conflicts\/20260623T120000Z\/summary\.md/);
+    assert.match(res.stdout, /Next command/);
+    assert.match(res.stdout, /atris computer recruiting review/);
+    assert.doesNotMatch(res.stdout, /Pulling Atris Labs/);
+    assert.doesNotMatch(res.stdout, /Pushing to Atris Labs/);
   } finally {
     cleanupTempDir(home);
     cleanupTempDir(cwd);
