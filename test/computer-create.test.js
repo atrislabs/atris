@@ -530,6 +530,50 @@ test('computer recruiting pull blocks dirty workspace writes without apply', asy
   }
 });
 
+test('computer recruiting pull apply checkpoints dirty workspace before running pull', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_RECRUITING_CHECKPOINT_STAMP: '20260623T120000Z',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'pull', '--apply'], { cwd, env });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting checkpoint/);
+    assert.match(res.stdout, /wrote: \.atris\/sync\/checkpoints\/20260623T120000Z\/summary\.md/);
+    assert.match(res.stderr, /Not logged in\. Run: atris login/);
+
+    const checkpointDir = path.join(recruitingRoot, '.atris', 'sync', 'checkpoints', '20260623T120000Z');
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'summary.md')));
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'tracked.patch')));
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'staged.patch')));
+    assert.match(fs.readFileSync(path.join(checkpointDir, 'untracked.txt'), 'utf8'), /local-note\.md/);
+    assert.equal(
+      fs.readFileSync(path.join(checkpointDir, 'untracked', 'local-note.md'), 'utf8'),
+      'local dirty note\n'
+    );
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
 test('computer recruiting review explains pull apply when no packet exists', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
