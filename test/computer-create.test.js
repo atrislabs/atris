@@ -363,6 +363,46 @@ test('computer recruiting sync auto-detects the canonical business workspace wit
   }
 });
 
+test('computer recruiting sync ignores non-recruiting current business bindings', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-other',
+      workspace_id: 'ws-other',
+      slug: 'other-co',
+      name: 'Other Co',
+    }), 'utf8');
+
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.doesNotMatch(res.stdout, /business: other-co/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
 test('computer recruiting sync shows local business sync status without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();

@@ -379,9 +379,29 @@ function recruitingBusinessWorkspacePath(slug = RECRUITING_BUSINESS_SLUG) {
   return path.join(root, slug);
 }
 
+function normalizeBusinessSlug(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function bindingMatchesBusinessSlug(binding, slug) {
+  if (!binding) return false;
+  const wanted = normalizeBusinessSlug(slug);
+  return [binding.slug, binding.business_slug, binding.name]
+    .map(normalizeBusinessSlug)
+    .some((candidate) => candidate && candidate === wanted);
+}
+
+function bindingBusinessLabel(binding) {
+  return binding?.slug || binding?.business_slug || binding?.name || 'unknown';
+}
+
 function resolveRecruitingSyncWorkspace(slug = RECRUITING_BUSINESS_SLUG) {
   const currentBinding = readBusinessBinding();
-  if (currentBinding) {
+  if (bindingMatchesBusinessSlug(currentBinding, slug)) {
     return {
       cwd: process.cwd(),
       binding: currentBinding,
@@ -391,7 +411,7 @@ function resolveRecruitingSyncWorkspace(slug = RECRUITING_BUSINESS_SLUG) {
 
   const canonicalCwd = recruitingBusinessWorkspacePath(slug);
   const canonicalBinding = readBusinessBinding(canonicalCwd);
-  if (canonicalBinding) {
+  if (bindingMatchesBusinessSlug(canonicalBinding, slug)) {
     return {
       cwd: canonicalCwd,
       binding: canonicalBinding,
@@ -426,7 +446,12 @@ async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
   const workspace = resolveRecruitingSyncWorkspace(slug);
   console.log('Recruiting local sync');
   if (!workspace) {
-    console.log('  local workspace: not detected in this folder');
+    const currentBinding = readBusinessBinding();
+    if (currentBinding && !bindingMatchesBusinessSlug(currentBinding, slug)) {
+      console.log(`  current workspace: ${bindingBusinessLabel(currentBinding)} (not ${slug})`);
+    } else {
+      console.log('  local workspace: not detected in this folder');
+    }
     printRecruitingSyncNextSteps(slug);
     return;
   }
