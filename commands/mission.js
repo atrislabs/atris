@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
-const { resolveClaudeRunnerModel } = require('../lib/runner-command');
+const {
+  resolveClaudeRunnerModel,
+  resolveClaudeRunnerBin,
+} = require('../lib/runner-command');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -1417,7 +1420,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
   return lines.join('\n');
 }
 
-// resolveClaudeRunnerModel + the model-resolution rationale now live in
+// resolveClaudeRunnerModel / resolveClaudeRunnerBin + the runner-resolution rationale now live in
 // lib/runner-command.js so missions, autopilot, and run share one resolver
 // (imported at the top, re-exported below for test/mission-model-resolution.test.js).
 
@@ -1467,7 +1470,7 @@ function spawnClaudeTick(mission, opts) {
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
     const startedAt = Date.now();
-    const proc = spawn('claude', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(resolveClaudeRunnerBin(), args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -2619,6 +2622,7 @@ module.exports = {
   extractLayerFromReceiptText,
   classifyPathsByLayer,
   resolveClaudeRunnerModel,
+  resolveClaudeRunnerBin,
   detectUnavailableModel,
   missionPauseNextAction,
   consecutiveSameReasonErrors,

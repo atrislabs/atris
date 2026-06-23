@@ -3,7 +3,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { resolveClaudeRunnerModel, detectUnavailableModel, missionPauseNextAction, consecutiveSameReasonErrors } = require('../commands/mission');
+const {
+  resolveClaudeRunnerModel,
+  resolveClaudeRunnerBin,
+  detectUnavailableModel,
+  missionPauseNextAction,
+  consecutiveSameReasonErrors,
+} = require('../commands/mission');
 
 // --- resolveClaudeRunnerModel: precedence explicit > env > default alias ---
 
@@ -37,6 +43,16 @@ test('resolveClaudeRunnerModel defaults to the opus alias (never a retired versi
     assert.equal(resolveClaudeRunnerModel({ model: '   ' }), 'opus');
   } finally {
     if (prev !== undefined) process.env.ATRIS_CLAUDE_MODEL = prev;
+  }
+});
+
+test('resolveClaudeRunnerBin lets missions swap the Claude binary by env', () => {
+  const prev = process.env.ATRIS_CLAUDE_BIN;
+  process.env.ATRIS_CLAUDE_BIN = '/opt/atris/bin/claude-nightly';
+  try {
+    assert.equal(resolveClaudeRunnerBin(), '/opt/atris/bin/claude-nightly');
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_BIN; else process.env.ATRIS_CLAUDE_BIN = prev;
   }
 });
 
