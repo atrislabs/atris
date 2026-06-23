@@ -350,9 +350,9 @@ function writeDogfoodReceipt(root, receipt) {
 }
 
 function showDogfoodHelp(output = console.log) {
-  output('Usage: atris agent dogfood [devin|droid|--engine all] [--model glm-5.2] [--live] [--json]');
+  output('Internal usage: atris agent dogfood [devin|droid|--engine all] [--model glm-5.2] [--live] [--json]');
   output('');
-  output('Cheaply verifies external coding CLIs without a model call by default.');
+  output('Internal support smoke for external coding CLIs; hidden from public agent help.');
   output('Add --live to run one exact sentinel prompt through Devin/Droid.');
 }
 
