@@ -831,4 +831,55 @@ function statsRunLogs() {
   console.log('');
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs };
+/**
+ * Export all run logs as a JSON bundle for backup or transfer.
+ * Options:
+ *   --out FILE   Write to a specific file (default: atris/logs/runs/export.json)
+ */
+function exportRunLogs(args = []) {
+  const runsDir = getRunLogDir();
+
+  let outFile = path.join(runsDir, 'export.json');
+  const outIdx = args.indexOf('--out');
+  if (outIdx !== -1 && args[outIdx + 1]) {
+    outFile = args[outIdx + 1];
+  }
+
+  const files = fs.existsSync(runsDir)
+    ? fs.readdirSync(runsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+    : [];
+
+  if (files.length === 0) {
+    console.log('No run logs found to export.');
+    return;
+  }
+
+  const bundle = {
+    exported_at: new Date().toISOString(),
+    count: files.length,
+    logs: files.map(file => {
+      const filePath = path.join(runsDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+      const phases = [...content.matchAll(/## (\w+)\s*\((\d+)s\)/g)].map(m => ({
+        name: m[1],
+        duration_s: parseInt(m[2]),
+      }));
+      return {
+        file,
+        cycle: cycleMatch ? parseInt(cycleMatch[1]) : null,
+        phases,
+        content,
+      };
+    }),
+  };
+
+  const json = JSON.stringify(bundle, null, 2);
+  fs.writeFileSync(outFile, json, 'utf8');
+  console.log(`Exported ${files.length} run log${files.length === 1 ? '' : 's'} to ${outFile}`);
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs };
