@@ -137,6 +137,11 @@ test('buildRunnerCommand shell-quotes runner binaries with spaces', () => {
   });
 });
 
+test('buildRunnerCommand shell-quotes model values in the default command shape', () => {
+  const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'nightly model' });
+  assert.match(cmd, /--model 'nightly model'/);
+});
+
 test('buildRunnerCommand can replace the claude -p command shape by template', () => {
   withBinEnv('/opt/atris/bin/claude-nightly', () => {
     withTemplateEnv('{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}', () => {
