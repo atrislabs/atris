@@ -5074,6 +5074,50 @@ test('brain activate routes executor to certified review before creating work', 
   }
 });
 
+test('brain activate routes executor to agent-safe review before human accept rows', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        {
+          display_id: 'CLI-8',
+          title: 'Needs agent review',
+          status: 'review',
+          metadata: {
+            approval_status: 'pending',
+            agent_review_pass_count: 1,
+          },
+        },
+        {
+          display_id: 'CLI-9',
+          title: 'Certified checkpoint',
+          status: 'review',
+          metadata: {
+            approval_status: 'pending',
+            agent_certified: true,
+            agent_review_pass_count: 2,
+          },
+        },
+      ],
+    }), 'utf8');
+    const memberDir = path.join(dir, 'atris', 'team', 'executor');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Executor — Builder\n\nBuilds scoped tasks from proof targets.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'START_HERE.md'), 'Execute one scoped patch and run the verifier.\n', 'utf8');
+
+    const res = runCli(['brain', 'activate', '--member', 'executor', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Executor — Builder: run the agent-safe review lane for CLI-8/);
+    assert.match(res.stdout, /atris task review-chat CLI-8 --as codex-review/);
+    assert.doesNotMatch(res.stdout, /hand off certified review CLI-9/);
+    assert.doesNotMatch(res.stdout, /atris task accept CLI-9/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain activate routes navigator members to concrete planning work', () => {
   const dir = makeTempDir();
   try {
