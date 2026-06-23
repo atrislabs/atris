@@ -35,6 +35,7 @@ function writeRunner(root, name, body) {
 }
 
 const DOUBLER = 'module.exports = { run: (input) => ({ doubled: input.n * 2 }) };\n';
+const COMPILE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'compile.js'), 'utf8');
 
 function seedRecords(root, name, count, { badFrom = Infinity } = {}) {
   for (let i = 0; i < count; i++) {
@@ -70,6 +71,13 @@ test('parseFlags: --k v, --k=v, boolean flags, positionals', () => {
   assert.equal(flags.input, '{"n":1}');
   assert.equal(flags.threshold, '0.9');
   assert.equal(flags.record, true);
+});
+
+test('compile build uses the shared runner command instead of raw claude', () => {
+  assert.doesNotMatch(COMPILE_SRC, /which claude/);
+  assert.doesNotMatch(COMPILE_SRC, /claude -p "\$\(cat/);
+  assert.match(COMPILE_SRC, /buildRunnerAvailabilityCommand\(/);
+  assert.match(COMPILE_SRC, /buildRunnerCommand\(/);
 });
 
 test('records: append + read round-trip with timestamps', () => {
@@ -224,6 +232,37 @@ test('rebuild: an active process drops to draft and must re-earn the gate', asyn
   assert.equal(rebuilt.backtest, null);
   assert.equal(rebuilt.version, 2);
   assert.throws(() => promoteProcess(root, 'demo'), /no backtest/);
+});
+
+test('executeBuild honors ATRIS_CLAUDE_BIN when no cmdOverride is provided', () => {
+  const root = makeRoot();
+  seedRecords(root, 'demo', 5);
+  const fakeRunner = path.join(root, 'fake-runner');
+  fs.writeFileSync(fakeRunner, [
+    '#!/bin/sh',
+    'mkdir -p atris/processes/demo',
+    "cat > atris/processes/demo/run.js <<'RUNNER'",
+    DOUBLER.trim(),
+    'RUNNER',
+    '',
+  ].join('\n'));
+  fs.chmodSync(fakeRunner, 0o755);
+
+  const prevBin = process.env.ATRIS_CLAUDE_BIN;
+  const prevTemplate = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  process.env.ATRIS_CLAUDE_BIN = fakeRunner;
+  delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  try {
+    const manifest = executeBuild(root, 'demo');
+    assert.equal(manifest.status, 'draft');
+    assert.equal(manifest.version, 1);
+    assert.ok(fs.existsSync(runnerPath(root, 'demo')));
+  } finally {
+    if (prevBin === undefined) delete process.env.ATRIS_CLAUDE_BIN;
+    else process.env.ATRIS_CLAUDE_BIN = prevBin;
+    if (prevTemplate === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+    else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = prevTemplate;
+  }
 });
 
 test('writeManifest: leaves no partial tmp file behind', () => {
