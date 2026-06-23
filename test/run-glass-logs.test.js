@@ -649,3 +649,59 @@ test('diffRunLogs shows usage when not enough args', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+// --- Integration: full run log lifecycle ---
+
+test('integration: full run log lifecycle (create, list, search, stats, export, prune)', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    // 1. Create multiple run logs
+    for (let i = 0; i < 5; i++) {
+      const logPath = getRunLogPath(`80000${i}`, 1);
+      writePhaseToRunLog(logPath, 1, 'plan', `Plan reasoning ${i} with keyword auth`, 3000 + i * 1000);
+      writePhaseToRunLog(logPath, 1, 'do', `Build reasoning ${i}`, 10000 + i * 1000);
+      writePhaseToRunLog(logPath, 1, 'review', `Review reasoning ${i}`, 5000);
+    }
+
+    // 2. List logs
+    output = '';
+    listRunLogs(['--tail', '0']);
+    assert.ok(output.includes('Run logs (5 files)'), 'list shows 5 files');
+
+    // 3. Search for keyword
+    output = '';
+    searchRunLogs(['auth']);
+    assert.ok(output.includes('5 matches'), 'search finds 5 matches for auth');
+
+    // 4. Stats
+    output = '';
+    statsRunLogs();
+    assert.ok(output.includes('Run Log Stats'), 'stats shows header');
+    assert.ok(output.includes('PLAN'), 'stats shows PLAN');
+
+    // 5. Export
+    output = '';
+    const outFile = path.join(tmpRoot, 'export.json');
+    exportRunLogs(['--out', outFile]);
+    assert.ok(fs.existsSync(outFile), 'export file created');
+    const bundle = JSON.parse(fs.readFileSync(outFile, 'utf8'));
+    assert.equal(bundle.count, 5, 'export has 5 logs');
+
+    // 6. Prune to 2
+    output = '';
+    pruneRunLogs(['--keep', '2']);
+    const remaining = fs.readdirSync(getRunLogDir()).filter(f => f.endsWith('.md'));
+    assert.equal(remaining.length, 2, 'prune leaves 2 logs');
+
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
