@@ -69,3 +69,16 @@ test('ATRIS_CLAUDE_MODEL flips the spawned model without touching code', () => {
     else process.env.ATRIS_CLAUDE_MODEL = prev;
   }
 });
+
+test('ATRIS_CLAUDE_COMMAND_TEMPLATE flips the command shape without touching code', () => {
+  const prev = process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+  process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = '{bin} --print-file {promptFile} {modelFlag} {allowedToolsFlag}';
+  try {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus', allowedTools: 'Bash,Read' });
+    assert.equal(cmd, "claude --print-file /tmp/p.tmp --model opus --allowedTools 'Bash,Read'");
+    assert.doesNotMatch(cmd, / -p /);
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+    else process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = prev;
+  }
+});
