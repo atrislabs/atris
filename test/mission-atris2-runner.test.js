@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { businessIdForAtris2Mission } = require('../commands/mission');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -39,6 +40,28 @@ test('mission start --runner atris2 defaults model to atris:fast', () => {
     const mission = JSON.parse(res.stdout).mission;
     assert.equal(mission.runner, 'atris2');
     assert.equal(mission.model, 'atris:fast');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission start in a business workspace stores business binding for atris2', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+    }), 'utf8');
+
+    const res = runCli(['mission', 'start', 'recruiting follow-up loop', '--owner', 'justin', '--runner', 'atris2', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const mission = JSON.parse(res.stdout).mission;
+    assert.equal(mission.business_id, 'biz-recruiting');
+    assert.equal(mission.workspace_id, 'ws-recruiting');
+    assert.equal(businessIdForAtris2Mission(mission, dir), 'biz-recruiting');
+    assert.equal(businessIdForAtris2Mission({ runner: 'atris2' }, dir), 'biz-recruiting');
   } finally {
     cleanupTempDir(dir);
   }

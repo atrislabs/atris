@@ -223,6 +223,24 @@ function statePaths(root = process.cwd()) {
   };
 }
 
+function readBusinessBinding(root = process.cwd()) {
+  const file = path.join(root, '.atris', 'business.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return {
+      business_id: parsed.business_id || '',
+      workspace_id: parsed.workspace_id || '',
+      slug: parsed.slug || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function businessIdForAtris2Mission(mission, cwd = process.cwd()) {
+  return mission?.business_id || readBusinessBinding(cwd)?.business_id || null;
+}
+
 function readJsonLines(file) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, 'utf8')
@@ -536,6 +554,7 @@ function missionFromArgs(args) {
   const humanAsks = readRepeatedFlag(args, '--ask');
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
+  const businessBinding = readBusinessBinding(process.cwd());
   const id = missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
@@ -547,6 +566,8 @@ function missionFromArgs(args) {
     cadence,
     runner,
     ...(model ? { model } : {}),
+    ...(businessBinding?.business_id ? { business_id: businessBinding.business_id } : {}),
+    ...(businessBinding?.workspace_id ? { workspace_id: businessBinding.workspace_id } : {}),
     lane,
     verifier,
     always_on: alwaysOn,
@@ -1751,9 +1772,11 @@ async function runMission(args) {
       } else if (atris2Runner) {
         const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
         const { runAtris2Turn } = require('./probe');
+        const businessId = businessIdForAtris2Mission(mission, cwd);
         const turn = await runAtris2Turn({
           prompt,
           model: mission.model || 'atris:fast',
+          business: businessId,
           maxTurns: 16,
           signal: controller.signal,
         });
@@ -2624,6 +2647,7 @@ module.exports = {
   classifyPathsByLayer,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
+  businessIdForAtris2Mission,
   detectUnavailableModel,
   missionPauseNextAction,
   consecutiveSameReasonErrors,
