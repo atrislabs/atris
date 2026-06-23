@@ -8,6 +8,7 @@ const { spawn } = require('node:child_process');
 const {
   contextForAttachedWorkspaceMismatch,
   extractAttachedWorkspaceMismatch,
+  printRecruitingLocalSyncOutcome,
 } = require('../commands/computer');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -246,6 +247,20 @@ function runCliAsync(args, { cwd, env, input = null }) {
   });
 }
 
+function captureStdout(fn) {
+  const original = console.log;
+  const lines = [];
+  console.log = (...args) => {
+    lines.push(args.join(' '));
+  };
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 test('computer proof can parse active workspace mismatch errors', () => {
   const message = 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.';
 
@@ -274,6 +289,15 @@ test('computer proof can retry against attached workspace context', () => {
     workspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
   });
   assert.equal(contextForAttachedWorkspaceMismatch(ctx, { fallback: { error: 'other' } }), null);
+});
+
+test('computer recruiting pull dry-run outcome explains that real pull writes review packet', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('pull', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /atris computer recruiting pull\s+# writes review packet if conflicts were reported/);
+  assert.match(output, /atris computer recruiting review/);
+  assert.match(output, /atris computer recruiting push --dry-run/);
 });
 
 test('computer help surfaces the recruiting shortcut without auth', async () => {
