@@ -1553,7 +1553,7 @@ if (command === 'init') {
 } else if (command === 'run') {
   const args = process.argv.slice(3);
   if (args[0] === 'logs') {
-    // Subcommand: atris run logs [--tail N] [--cat FILE]
+    // Subcommand: atris run logs [--tail N] [--cat FILE] [--json]
     const { listRunLogs } = require('../commands/run');
     const logsArgs = args.slice(1);
     if (logsArgs.includes('--help') || logsArgs.includes('-h')) {
@@ -1571,6 +1571,26 @@ if (command === 'init') {
       process.exit(0);
     }
     listRunLogs(logsArgs);
+    process.exit(0);
+  }
+  if (args[0] === 'prune-logs') {
+    // Subcommand: atris run prune-logs [--keep N] [--dry-run]
+    const { pruneRunLogs } = require('../commands/run');
+    const pruneArgs = args.slice(1);
+    if (pruneArgs.includes('--help') || pruneArgs.includes('-h')) {
+      console.log('');
+      console.log('Usage: atris run prune-logs [options]');
+      console.log('');
+      console.log('Prune old run logs, keeping only the most recent N files.');
+      console.log('');
+      console.log('Options:');
+      console.log('  --keep N      Number of recent logs to keep (default: 50)');
+      console.log('  --dry-run     Show what would be deleted without deleting');
+      console.log('  --help        Show this help');
+      console.log('');
+      process.exit(0);
+    }
+    pruneRunLogs(pruneArgs);
     process.exit(0);
   }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -1594,7 +1614,8 @@ if (command === 'init') {
     console.log('  --no-push     Skip auto-push after each cycle');
     console.log('');
     console.log('Subcommands:');
-    console.log('  atris run logs [--tail N] [--cat FILE]  Browse glass run logs');
+    console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
+    console.log('  atris run prune-logs [--keep N] [--dry-run]      Prune old run logs');
     console.log('');
     process.exit(0);
   }

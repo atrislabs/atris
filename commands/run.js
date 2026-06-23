@@ -612,4 +612,56 @@ function listRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs };
+/**
+ * Prune old run logs, keeping only the most recent N files.
+ * Options:
+ *   --keep N    Number of recent logs to keep (default: 50)
+ *   --dry-run   Show what would be deleted without deleting
+ */
+function pruneRunLogs(args = []) {
+  const runsDir = getRunLogDir();
+  const dryRun = args.includes('--dry-run');
+
+  let keep = 50;
+  const keepIdx = args.indexOf('--keep');
+  if (keepIdx !== -1 && args[keepIdx + 1]) {
+    keep = parseInt(args[keepIdx + 1]) || 50;
+  }
+
+  const files = fs.existsSync(runsDir)
+    ? fs.readdirSync(runsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+    : [];
+
+  if (files.length <= keep) {
+    console.log(`No pruning needed. ${files.length} run log${files.length === 1 ? '' : 's'} exist, keeping ${keep}.`);
+    return;
+  }
+
+  const toDelete = files.slice(keep);
+  console.log(`Pruning ${toDelete.length} old run log${toDelete.length === 1 ? '' : 's'} (keeping ${keep} of ${files.length}):`);
+
+  for (const file of toDelete) {
+    const filePath = path.join(runsDir, file);
+    if (dryRun) {
+      console.log(`  [DRY RUN] Would delete: ${file}`);
+    } else {
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`  Deleted: ${file}`);
+      } catch (err) {
+        console.log(`  Failed: ${file} (${err.message})`);
+      }
+    }
+  }
+
+  if (dryRun) {
+    console.log(`\n[DRY RUN] No files were actually deleted.`);
+  } else {
+    console.log(`\nPruned ${toDelete.length} run log${toDelete.length === 1 ? '' : 's'}.`);
+  }
+}
+
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs };
