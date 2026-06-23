@@ -24,6 +24,43 @@ const pkg = require('../package.json');
 const DEFAULT_MAX_CYCLES = 5;
 const PHASE_TIMEOUT = 600000; // 10 min per phase
 
+/**
+ * Resolve the run log directory (atris/logs/runs/), creating it if needed.
+ * Returns the directory path.
+ */
+function getRunLogDir() {
+  const runsDir = path.join(process.cwd(), 'atris', 'logs', 'runs');
+  if (!fs.existsSync(runsDir)) {
+    fs.mkdirSync(runsDir, { recursive: true });
+  }
+  return runsDir;
+}
+
+/**
+ * Build a per-cycle run log path with a run-scoped timestamp so multiple
+ * same-day runs don't clobber each other.
+ */
+function getRunLogPath(runStamp, cycle) {
+  const { dateFormatted } = getLogPath();
+  const runsDir = getRunLogDir();
+  return path.join(runsDir, `${dateFormatted}-${runStamp}-cycle-${cycle}.md`);
+}
+
+/**
+ * Append a phase section to the cycle's run log. Creates the file with a
+ * header on first write.
+ */
+function writePhaseToRunLog(runLogPath, cycle, phase, output, durationMs) {
+  const header = `# Run Log — Cycle ${cycle}\n\n`;
+  const phaseSection = `## ${phase.toUpperCase()} (${Math.round(durationMs / 1000)}s)\n\n${output || '(no output)'}\n\n---\n\n`;
+
+  if (!fs.existsSync(runLogPath)) {
+    fs.writeFileSync(runLogPath, header + phaseSection);
+  } else {
+    fs.appendFileSync(runLogPath, phaseSection);
+  }
+}
+
 function isPhaseTimeoutError(err) {
   return Boolean(err && err.code === 'ETIMEDOUT');
 }
@@ -149,10 +186,17 @@ function executePhase(phase, context, options = {}) {
       cwd: process.cwd(),
       encoding: 'utf8',
       timeout,
-      stdio: verbose ? 'inherit' : 'pipe',
+      // Always pipe stdout so reasoning is captured as material for run logs.
+      // In verbose mode, inherit stderr so progress streams live; stdout is
+      // printed after capture below.
+      stdio: verbose ? ['pipe', 'pipe', 'inherit'] : 'pipe',
       maxBuffer: 10 * 1024 * 1024,
       env
     });
+
+    if (verbose && output) {
+      process.stdout.write(output);
+    }
 
     try { fs.unlinkSync(tmpFile); } catch {}
     return output || '';
@@ -291,7 +335,9 @@ async function runAtris(options = {}) {
   }
 
   const startTime = Date.now();
+  const runStamp = String(startTime).slice(-6); // HHMMSS-style run-scoped suffix
   const cycleTimings = [];
+  const writtenRunLogs = [];
   let completedCycles = 0;
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
@@ -312,6 +358,7 @@ async function runAtris(options = {}) {
     }
 
     const timing = { plan: 0, do: 0, review: 0 };
+    const runLogPath = getRunLogPath(runStamp, cycle);
 
     try {
       // PLAN
@@ -321,6 +368,9 @@ async function runAtris(options = {}) {
       let phaseStart = Date.now();
       const planOutput = executePhase('plan', context, { verbose, timeout });
       timing.plan = Date.now() - phaseStart;
+
+      writePhaseToRunLog(runLogPath, cycle, 'plan', planOutput, timing.plan);
+      if (!writtenRunLogs.includes(runLogPath)) writtenRunLogs.push(runLogPath);
 
       if (planOutput.includes('[NOTHING_TO_DO]')) {
         console.log(verbose ? 'Nothing to do. Stopping.' : 'navigator says nothing to do. stopping.');
@@ -339,8 +389,10 @@ async function runAtris(options = {}) {
       // DO
       console.log(verbose ? '\n[2/3] DO — building task...' : 'building the top task now.');
       phaseStart = Date.now();
-      executePhase('do', context, { verbose, timeout });
+      const doOutput = executePhase('do', context, { verbose, timeout });
       timing.do = Date.now() - phaseStart;
+      writePhaseToRunLog(runLogPath, cycle, 'do', doOutput, timing.do);
+
       console.log(verbose
         ? `✓ Build complete (${Math.round(timing.do / 1000)}s)`
         : `built in ${Math.round(timing.do / 1000)}s. next i'll review it.`);
@@ -350,6 +402,7 @@ async function runAtris(options = {}) {
       phaseStart = Date.now();
       const reviewOutput = executePhase('review', context, { verbose, timeout });
       timing.review = Date.now() - phaseStart;
+      writePhaseToRunLog(runLogPath, cycle, 'review', reviewOutput, timing.review);
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
         console.log(verbose
@@ -423,6 +476,15 @@ async function runAtris(options = {}) {
     console.log('');
   } else {
     console.log(`run complete. ${completedCycles} cycle${completedCycles === 1 ? '' : 's'} in ${elapsed}s. logged to today's journal.`);
+    console.log('');
+  }
+
+  // Print run log paths so the reasoning is discoverable as material
+  if (writtenRunLogs.length > 0) {
+    console.log(`run logs: atris/logs/runs/ (${writtenRunLogs.length} file${writtenRunLogs.length === 1 ? '' : 's'})`);
+    for (const logPath of writtenRunLogs) {
+      console.log(`  ${path.relative(process.cwd(), logPath)}`);
+    }
     console.log('');
   }
 }

@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-18
+last_compiled: 2026-06-23
 sources:
   - commands/member.js:211-223 (memberPaths and MISSION.md wiring)
   - commands/member.js:422-452 (member run bridge to Mission Runtime)

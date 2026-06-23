@@ -1,6 +1,6 @@
 ---
 name: flow
-description: "All-day operating partner. Reads your MEMBER.md, goals, logs, and company state. Tracks work in real time. Updates your identity and goals as you evolve."
+description: "All-day operating partner. Reads your MEMBER.md, goals, logs, and company state. Tracks work in real time. Updates your identity and goals as you evolve. Use when starting a work session, checking member status, or reviewing goals."
 version: 1.0.0
 tags:
   - member

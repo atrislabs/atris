@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-18
+last_compiled: 2026-06-23
 validated_by: executor
 validation_notes: Re-verified 2026-06-18. Reconciled all drifted file:line refs against current source after showHelp/init/workflow/task-db growth. showHelp now also lists pulse + spaceship in Core workflow. TODO.md is regenerated from durable task state (lib/task-db.js renderTodoMarkdown), so the file is a readable board, not ownership truth. state-detection moved to lib/; MAP.md plan/do/review lives in the "Agent Activation Commands" By-Feature section.
 sources:
