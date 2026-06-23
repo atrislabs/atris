@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -537,6 +537,57 @@ test('statsRunLogs shows phase counts and avg durations', () => {
     assert.ok(output.includes('DO'), 'shows DO phase');
     assert.ok(output.includes('REVIEW'), 'shows REVIEW phase');
     assert.ok(output.includes('3s'), 'shows plan avg duration');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// --- exportRunLogs ---
+
+test('exportRunLogs exports all logs as JSON bundle', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    const logPath = getRunLogPath('600001', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+    writePhaseToRunLog(logPath, 1, 'do', 'Build reasoning', 12000);
+
+    const outFile = path.join(tmpRoot, 'export.json');
+    exportRunLogs(['--out', outFile]);
+
+    assert.ok(fs.existsSync(outFile), 'export file created');
+    const bundle = JSON.parse(fs.readFileSync(outFile, 'utf8'));
+    assert.ok(bundle.exported_at, 'has exported_at timestamp');
+    assert.equal(bundle.count, 1, 'count is 1');
+    assert.equal(bundle.logs.length, 1, 'one log in bundle');
+    assert.equal(bundle.logs[0].cycle, 1, 'cycle parsed correctly');
+    assert.ok(bundle.logs[0].content.includes('Plan reasoning'), 'content included');
+    assert.ok(output.includes('Exported 1 run log'), 'reports export');
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('exportRunLogs reports no logs gracefully', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    exportRunLogs([]);
+    assert.ok(output.includes('No run logs found'), 'reports no logs');
   } finally {
     console.log = origLog;
     process.chdir(origCwd);

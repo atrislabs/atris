@@ -1619,6 +1619,25 @@ if (command === 'init') {
     statsRunLogs();
     process.exit(0);
   }
+  if (args[0] === 'export') {
+    // Subcommand: atris run export [--out FILE]
+    const { exportRunLogs } = require('../commands/run');
+    const exportArgs = args.slice(1);
+    if (exportArgs.includes('--help') || exportArgs.includes('-h')) {
+      console.log('');
+      console.log('Usage: atris run export [options]');
+      console.log('');
+      console.log('Export all run logs as a JSON bundle for backup or transfer.');
+      console.log('');
+      console.log('Options:');
+      console.log('  --out FILE    Write to a specific file (default: atris/logs/runs/export.json)');
+      console.log('  --help        Show this help');
+      console.log('');
+      process.exit(0);
+    }
+    exportRunLogs(exportArgs);
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     console.log('');
     console.log('Usage: atris run [options]');
@@ -1644,6 +1663,7 @@ if (command === 'init') {
     console.log('  atris run prune-logs [--keep N] [--dry-run]      Prune old run logs');
     console.log('  atris run search <keyword> [--phase P] [--limit N]  Search run logs');
     console.log('  atris run stats                                  Show run log stats');
+    console.log('  atris run export [--out FILE]                    Export logs as JSON');
     console.log('');
     process.exit(0);
   }
