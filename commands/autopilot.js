@@ -12,7 +12,11 @@ const { execSync, execFileSync, spawnSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
-const { buildRunnerCommand } = require('../lib/runner-command');
+const {
+  buildRunnerCommand,
+  buildRunnerAvailabilityCommand,
+  resolveClaudeRunnerBin,
+} = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 const {
   buildScorecardData,
@@ -3018,8 +3022,8 @@ async function autopilotAtris(description, options = {}) {
     process.exit(1);
   }
 
-  try { execSync('which claude', { stdio: 'pipe' }); } catch {
-    console.error('claude CLI not found. Install Claude Code first.');
+  try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
+    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_CLAUDE_BIN or install Claude Code first.`);
     process.exit(1);
   }
 
