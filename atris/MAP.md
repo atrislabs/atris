@@ -48,7 +48,7 @@ rg "logAtris" commands/log.js               # Log command
 rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "experimentsCommand" commands/experiments.js  # Experiments CLI command
 rg "loginAtris|switchAccount|useAccount|accountsCmd|showAuthHelp" bin/atris.js commands/auth.js test/commands.test.js # Auth/account commands + non-mutating help
-rg "agentDoctor|inspectAgentCliWiring|agent doctor|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, durable worker spawn requests, and Devin init scaffold
+rg "agentDoctor|inspectAgentCliWiring|agent dogfood|agentDogfoodCommand|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, Devin/Droid GLM 5.2 dogfood smoke, durable worker spawn requests, and Devin init scaffold
 rg "activateAtris|showActivateHelp|activate and next --help" bin/atris.js commands/activate.js test/commands.test.js # Activate command + wiki status + non-mutating help
 rg "autopilotAtris" commands/autopilot.js   # Autopilot command
 rg "runImprove|summarizeImproveResponse|shouldFallbackLocal|summarizeTickHistory|appendTickToJournal" commands/improve.js bin/atris.js test/improve.test.js  # Improve command: paid RL tick (POST /api/improve, deducts credits), scorecard row + journal, `improve history` compounding view, --member attribution, local fallback
@@ -955,12 +955,13 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - Fetches available agents from backend
 - Interactive selection
 - Saves to `~/.atris/config.json`
-- `atris agent doctor [--json]` is auth-free and checks Atris core files plus Codex/AGENTS.md, Claude, Cursor, and Devin wiring.
+- `atris agent doctor [--json]` is auth-free and checks Atris core files plus Codex/AGENTS.md, Claude, Cursor, and Devin wiring; it also reports local binaries including Devin and Factory Droid.
+- `atris agent dogfood [devin|droid|--engine all] [--model glm-5.2] [--live] [--json]` writes a receipt under `atris/runs/` and cheaply verifies external CLIs. Default mode checks binary/help/model support without a model call; `--live` sends one exact sentinel prompt through Devin/Droid GLM 5.2.
 - `atris init` now scaffolds `.devin/config.local.json` with `Exec(atris)` so Devin can run Atris boot/context commands in new workspaces.
-- **Regression:** `test/commands.test.js` covers workspace-free `agent --help`, Devin init scaffold, and JSON doctor output.
+- **Regression:** `test/commands.test.js` covers workspace-free `agent --help`, Devin init scaffold, and JSON doctor output. `test/agent-spawn.test.js` covers Devin/Droid GLM 5.2 spawn commands and agent dogfood dry/live harness behavior.
 - **Value:** Switch between different agent personalities and prove local agent CLIs are connected to Atris before work starts.
 
-**Search:** `rg "agentAtris|agentDoctor|inspectAgentCliWiring|agent doctor" bin/atris.js test/commands.test.js commands/init.js`
+**Search:** `rg "agentAtris|agentDoctor|agentDogfoodCommand|inspectAgentCliWiring|agent dogfood|agent doctor" bin/atris.js commands/agent-spawn.js test/commands.test.js test/agent-spawn.test.js commands/init.js`
 
 ### Feature: Interactive Chat (`atris chat`)
 
