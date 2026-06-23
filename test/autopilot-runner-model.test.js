@@ -56,6 +56,8 @@ test('run and autopilot expose runner flags through the bin router', () => {
 
 test('mission claude ticks spawn the configured runner binary', () => {
   assert.doesNotMatch(MISSION_SRC, /spawn\('claude'/);
+  assert.doesNotMatch(MISSION_SRC, /spawnSync\('claude'/);
+  assert.match(MISSION_SRC, /spawnSync\(runnerBin, \['--help'\]/);
   assert.match(MISSION_SRC, /spawn\(resolveClaudeRunnerBin\(\), args/);
   assert.match(MISSION_SRC, /resolveClaudeRunnerBin/);
 });
