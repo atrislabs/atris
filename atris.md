@@ -62,12 +62,12 @@ Labels used below:
 
 What you ship should not read as generated. The test: if someone said "an AI made this," would they believe it instantly? If yes, that is the bug. The model has no words for restraint and it falls into gravity wells. Beat both.
 
-- **Gate it.** `atris slop detect <path>` is deterministic: no model, exit 1 on a tell, built for CI and the review stage. A finding is a fact (file:line + rule), not an opinion. `guarded` once wired into review.
+- **Gate it.** `atris slop detect <path>` is deterministic: no model, exit 1 on a tell, built for CI and the review stage. A finding is a fact (file:line + rule), not an opinion. `--diff`/`--staged` scopes it to changed lines for a commit gate; `--fix` repairs the safe tells. `guarded` once wired into review.
 - **Name the move.** Vague prompts make vague output. Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, bolder here / quieter there, restraint. Precise language is the lever. Own it.
 - **Refuse the wells** (named so you can): purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
 - **Commit to constraints.** One distinctive font, one accent hue, a small spacing scale. Taste is subtraction, not addition.
-- **Generate it right.** `atris deck` (slides) and the `design` policy apply the system by default: own backgrounds and fonts, never the tool's stock template.
-- **Compound it.** A new tell becomes a typed lesson with a `detector:` regex, so the gate grows instead of leaning on memory. Taste lives in code, not vibes.
+- **Generate it right.** `atris deck` (and `atris deck from <doc.md>`, which turns a plain doc into slides) and the `design` policy apply the system by default: own backgrounds and fonts, never the tool's stock template.
+- **Compound it.** A new tell becomes a project rule in `.atris/slop.rules.json` (`atris slop rules --add`), so the gate grows per project instead of leaning on memory. Taste lives in code, not vibes.
 
 ## voice
 

@@ -14,6 +14,7 @@ const fs = require('fs');
 const https = require('https');
 const os = require('os');
 const { buildDeck, THEMES } = require('../lib/slides-deck');
+const { parseMarkdownToSpec } = require('../lib/deck-from-md');
 
 const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
@@ -60,8 +61,50 @@ const SAMPLE = {
   ],
 };
 
+// shared: spec -> live deck. Returns the URL.
+async function publishDeck(spec, { title, updateId, tok }) {
+  const { requests } = buildDeck(spec);
+  let id, firstSlide;
+  if (updateId) {
+    id = updateId;
+    const got = await api('GET', `/presentations/${id}`, null, tok);
+    const slides = got.slides || (got.presentation && got.presentation.slides) || [];
+    firstSlide = slides[0] && slides[0].objectId;
+  } else {
+    const pres = await api('POST', '/presentations', { title }, tok);
+    id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
+    const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
+    firstSlide = slides[0] && slides[0].objectId;
+  }
+  const reqs = firstSlide ? [...requests, { deleteObject: { objectId: firstSlide } }] : requests;
+  console.log(`  building ${spec.slides.length} slides (${spec.theme}) · ${reqs.length} ops...`);
+  await api('POST', `/presentations/${id}/batch-update`, { requests: reqs }, tok);
+  return `https://docs.google.com/presentation/d/${id}/edit`;
+}
+
 async function run(argv) {
   const sub = argv[0];
+
+  if (sub === 'from') {
+    const docPath = argv.slice(1).find((a) => !a.startsWith('-'));
+    if (!docPath) { console.error('  usage: atris deck from <doc.md> [--theme x] [--brand Name] [--build] [--title T]'); return 2; }
+    let md;
+    try { md = fs.readFileSync(docPath, 'utf8'); }
+    catch (e) { console.error(`  cannot read doc: ${e.message}`); return 2; }
+    const spec = parseMarkdownToSpec(md, { theme: flag(argv, '--theme'), brandName: flag(argv, '--brand') });
+    if (!THEMES[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`); return 2; }
+    if (!hasFlag(argv, '--build')) {
+      // default: print the spec so the PM can tweak before building
+      console.log(JSON.stringify(spec, null, 2));
+      return 0;
+    }
+    const tok = token();
+    if (!tok) { console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.'); return 1; }
+    const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
+    const url = await publishDeck(spec, { title, updateId: flag(argv, '--update'), tok });
+    console.log(`\n  ✓ deck from ${docPath} ready: ${url}\n`);
+    return 0;
+  }
 
   if (sub === 'themes') {
     console.log('\n  atris deck themes:\n');
@@ -91,45 +134,29 @@ async function run(argv) {
     const tok = token();
     if (!tok) { console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.'); return 1; }
 
-    const { requests } = buildDeck(spec);
-
-    let id, firstSlide;
-    const updateId = flag(argv, '--update');
-    if (updateId) {
-      id = updateId;
-      const got = await api('GET', `/presentations/${id}`, null, tok);
-      const slides = got.slides || (got.presentation && got.presentation.slides) || [];
-      firstSlide = slides[0] && slides[0].objectId;
-    } else {
-      const pres = await api('POST', '/presentations', { title }, tok);
-      id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
-      const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
-      firstSlide = slides[0] && slides[0].objectId;
-    }
-
-    const reqs = firstSlide ? [...requests, { deleteObject: { objectId: firstSlide } }] : requests;
-    console.log(`  building ${spec.slides.length} slides (${spec.theme}) · ${reqs.length} ops...`);
-    await api('POST', `/presentations/${id}/batch-update`, { requests: reqs }, tok);
-
-    const url = `https://docs.google.com/presentation/d/${id}/edit`;
+    const url = await publishDeck(spec, { title, updateId: flag(argv, '--update'), tok });
     console.log(`\n  ✓ deck ready: ${url}\n`);
     return 0;
   }
 
   console.log(`
-  atris deck — premium Google Slides from a plain content spec
+  atris deck — premium Google Slides from a plain content spec or a markdown doc
 
-    atris deck sample [--theme paper] > my.json   start from a sample spec
+    atris deck from doc.md [--build] [--title T]   turn a markdown doc into a deck
+    atris deck sample [--theme paper] > my.json    start from a sample spec
     atris deck build my.json [--title "Q3 review"] create the deck, print the URL
     atris deck build my.json --update <id>         rebuild into an existing deck
     atris deck themes                              list design themes
 
-  Design system is baked in: distinctive fonts, one accent, real data panels,
-  and no AI tells (em dashes sanitized, sentence-case labels, no gradient text).
+  'from' maps headings to slides (## with bullets -> columns, "**X** label" -> a
+  big number, Close -> a closing slide). Without --build it prints the spec to tweak.
+  Design system is baked in: distinctive fonts, one accent, real data panels, and
+  no AI tells (em dashes sanitized, sentence-case labels, no gradient text).
 `);
   return 0;
 }
 
 function flag(argv, name) { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; }
+function hasFlag(argv, name) { return argv.includes(name); }
 
-module.exports = { run, SAMPLE };
+module.exports = { run, SAMPLE, publishDeck };
