@@ -364,7 +364,7 @@ function showHelp() {
   console.log('  slop       - Detect frontend AI-slop tells (deterministic, exit 1 = found)');
   console.log('  deck       - Generate a premium Google Slides deck from a content spec');
   console.log('  site       - Build a beautiful static site from a folder of markdown');
-  console.log('  theme      - Brand themes (.atris/theme.json) used by deck/html/site');
+  console.log('  theme      - Brand themes: "theme create" builds your own by feel (deck/html/site)');
   console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
   console.log('  run logs   - Browse glass run logs (phase reasoning persisted to disk)');
   console.log('  run search - Search phase reasoning across all run logs');
