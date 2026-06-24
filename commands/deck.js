@@ -122,6 +122,21 @@ function hasFlag(argv, name) {
   return argv.includes(name);
 }
 
+// Flags that take a value, so their following token is consumed (not a path).
+const VALUE_FLAGS = new Set(['--theme', '--title', '--update', '--out', '--style', '--url', '--md']);
+
+// Positional args, skipping boolean flags and value-flag values. Lets batch
+// build collect real spec paths even when flags like `--theme noir` precede them.
+function positionals(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('-')) { if (VALUE_FLAGS.has(a)) i += 1; continue; }
+    out.push(a);
+  }
+  return out;
+}
+
 function readSpec(specPath) {
   return JSON.parse(fs.readFileSync(specPath, 'utf8'));
 }
@@ -213,6 +228,49 @@ async function publishDeck({ spec, title, updateId, api: apiFn, token: tok }) {
   }
   await apiFn('POST', `/presentations/${id}/batch-update`, { requests: batch }, tok);
   return { id, url: `https://docs.google.com/presentation/d/${id}/edit`, ops: batch.length };
+}
+
+// One-shot: an analysis text -> composed spec -> lint gate -> published deck.
+// api/token injected so the orchestration is testable without the network.
+// Returns { ok:false, findings } if the composed spec fails the lint gate.
+async function videoToDeck({ analysisText, title, theme, style, url, api: apiFn, token: tok }) {
+  const spec = composeSpec(analysisText, { theme, style, title, url });
+  const findings = checkSpec(spec, lintSpec);
+  if (hasErrors(findings)) return { ok: false, spec, findings };
+  const published = await publishDeck({
+    spec,
+    title: title || (spec.brand && spec.brand.name) || 'Atris deck',
+    updateId: null,
+    api: apiFn,
+    token: tok,
+  });
+  return { ok: true, spec, findings, ...published };
+}
+
+// Build several specs in sequence (avoids rate-limit bursts). Plain build only.
+async function runBatch(specPaths, { themeOverride }) {
+  const tok = token();
+  if (!tok) {
+    console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+    return 1;
+  }
+  let failures = 0;
+  for (const specPath of specPaths) {
+    let spec;
+    try { spec = readSpec(specPath); }
+    catch (e) { console.error(`  ✗ ${specPath}: ${e.message}`); failures += 1; continue; }
+    if (themeOverride) spec.theme = themeOverride;
+    if (!THEMES[spec.theme]) { console.error(`  ✗ ${specPath}: unknown theme "${spec.theme}"`); failures += 1; continue; }
+    const findings = validateSpec(spec);
+    if (hasErrors(findings)) { console.error(`  ✗ ${specPath}: invalid spec`); printLint(findings); failures += 1; continue; }
+    try {
+      const { id, url, ops } = await publishDeck({ spec, title: (spec.brand && spec.brand.name) || 'Atris deck', updateId: null, api, token: tok });
+      try { recordBuild({ spec, specPath, presentationId: id, url, mode: 'create' }); } catch { /* ignore */ }
+      console.log(`  ✓ ${specPath}  ->  ${url}  (${ops} ops)`);
+    } catch (e) { console.error(`  ✗ ${specPath}: ${e.message}`); failures += 1; }
+  }
+  console.log(`\n  built ${specPaths.length - failures}/${specPaths.length} decks\n`);
+  return failures ? 1 : 0;
 }
 
 async function run(argv) {
@@ -362,10 +420,62 @@ async function run(argv) {
     });
   }
 
+  if (sub === 'video') {
+    const url = positionals(argv.slice(1))[0] || flag(argv, '--url');
+    if (!url) {
+      console.error('  usage: atris deck video <youtube-url> [--title T] [--theme noir] [--style narrative] [--review]');
+      return 2;
+    }
+    const tok = token();
+    if (!tok) {
+      console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+      return 1;
+    }
+    let analysisText;
+    try {
+      const { processYoutube } = require('./youtube');
+      console.error(`  fetching analysis for ${url} (this can take a minute)...`);
+      const data = await processYoutube({
+        youtubeUrl: url,
+        query: 'Summarize this video into a slide outline. Use markdown: one H1 title, then ## sections. Within a section use a bullet list for parallel points, a blockquote for a memorable line (with attribution), and short paragraphs for narrative. End with a ## Takeaway.',
+        timeoutMs: 300000,
+      });
+      analysisText = data.video_analysis || data.analysis || data.result || (typeof data === 'string' ? data : '');
+    } catch (e) {
+      console.error(`  atris deck video needs Atris cloud access (run \`atris login\`): ${e.message}`);
+      return 1;
+    }
+    if (!analysisText) { console.error('  no analysis returned for that URL'); return 1; }
+    const result = await videoToDeck({
+      analysisText,
+      title: flag(argv, '--title'),
+      theme: flag(argv, '--theme'),
+      style: flag(argv, '--style'),
+      url,
+      api,
+      token: tok,
+    });
+    if (!result.ok) {
+      console.error('\n  ✗ composed spec failed lint — not building:');
+      printLint(result.findings);
+      return 1;
+    }
+    try { recordBuild({ spec: result.spec, presentationId: result.id, url: result.url, mode: 'create' }); } catch { /* ignore */ }
+    console.log(`\n  ✓ deck ready: ${result.url}  (${result.spec.slides.length} slides)\n`);
+    if (hasFlag(argv, '--review') || hasFlag(argv, '--review-auto')) {
+      return runReviewFlow({ presentationId: result.id, spec: result.spec, specPath: null, json: hasFlag(argv, '--json'), auto: hasFlag(argv, '--review-auto') });
+    }
+    return 0;
+  }
+
   if (sub === 'build') {
-    const specPath = argv.slice(1).find((a) => !a.startsWith('-'));
+    const specPaths = positionals(argv.slice(1));
+    if (specPaths.length > 1) {
+      return runBatch(specPaths, { themeOverride: flag(argv, '--theme') });
+    }
+    const specPath = specPaths[0];
     if (!specPath) {
-      console.error('  usage: atris deck build <spec.json> [--title T] [--theme x] [--review]');
+      console.error('  usage: atris deck build <spec.json> [<spec2.json> ...] [--title T] [--theme x] [--review]');
       return 2;
     }
     let spec;
@@ -422,8 +532,9 @@ async function run(argv) {
     atris deck sample [--theme paper] > my.json
     atris deck compose --md notes.md --out my.json [--style narrative]
     atris deck compose --url <youtube> --out my.json [--theme ink]
+    atris deck video <youtube> [--theme noir] [--review]   compose+build in one shot
     atris deck lint my.json
-    atris deck build my.json [--title "Q3 review"] [--update ID] [--review]
+    atris deck build my.json [more.json ...] [--title "Q3 review"] [--update ID] [--review]
     atris deck review <id|url> [--spec my.json]
     atris deck review <id> --confirm "looks good"
     atris deck history [my.json]            builds recorded for a spec
@@ -454,5 +565,7 @@ module.exports = {
   checkSpec,
   planBatch,
   publishDeck,
+  videoToDeck,
+  positionals,
   DEFAULT_OUT_ROOT,
 };
