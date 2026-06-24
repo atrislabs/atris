@@ -94,6 +94,7 @@ rg "checkForUpdates|helpRequested|help invocations skip" bin/atris.js utils/upda
 # Documentation
 rg "Phase 1" atris.md                       # Agent generation spec
 rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/init.js atris/CLAUDE.md  # generated agent onboarding contract
+rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/policies/outbound-artifact-gate.md scripts/outbound-artifact-gate.js test/outbound-artifact-gate.test.js  # Human-facing send gate: no raw HTML/source artifacts, require render proof for HTML/visual sends, anti-slop copy check
 ```
 
 ---
@@ -1327,10 +1328,13 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris/policies/atris-design.md` — Frontend aesthetics policy
 - `atris/policies/atris-backend.md` — Backend architecture policy
 - `atris/policies/writing.md` — Essay writing skill
+- `atris/policies/outbound-artifact-gate.md` — Human-facing send gate: rendered artifacts, anti-slop copy, approval packet, receipt
+- `scripts/outbound-artifact-gate.js` — Cheap validator for raw HTML/source sends, missing render proof, and slop copy
+- `test/outbound-artifact-gate.test.js` — Regression coverage for the Justin raw-HTML failure class
 
 **Purpose:** Enforce quality standards and prevent generic AI output.
 
-**Search:** `rg "slop|kill list" policies/`
+**Search:** `rg "slop|kill list|outbound artifact gate" policies/ scripts/outbound-artifact-gate.js`
 
 ---
 
