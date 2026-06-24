@@ -156,3 +156,32 @@ test('confirmReview marks manifest ready', () => {
   assert.equal(packet.status, 'confirmed_visual_review');
   assert.equal(packet.ready, true);
 });
+
+test('confirmReview emits a Center Study receipt next to the manifest and on the ledger', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const ledger = path.join(tmp, 'deck-receipts.jsonl');
+  const dir = path.join(tmp, 'deckCS');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'review.json'), `${JSON.stringify({
+    schema: SCHEMA,
+    presentationId: 'deckCS',
+    url: 'https://docs.google.com/presentation/d/deckCS/edit',
+    specPath: 'decks/cs.json',
+    status: 'pending_visual_review',
+    ready: false,
+    slides: [{ index: 1 }, { index: 2 }, { index: 3 }],
+    specLint: [],
+  }, null, 2)}\n`);
+  const { receiptPath } = confirmReview('deckCS', 'ship it', tmp, ledger);
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  assert.equal(receipt.schema, 'atris.deck_receipt.v1');
+  assert.equal(receipt.presentationId, 'deckCS');
+  assert.equal(receipt.specPath, 'decks/cs.json');
+  assert.equal(receipt.slideCount, 3);
+  assert.equal(receipt.confirmNote, 'ship it');
+  assert.ok(receipt.confirmedAt, 'receipt carries a confirmed timestamp');
+  // central ledger got one appended line
+  const lines = fs.readFileSync(ledger, 'utf8').split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  assert.equal(JSON.parse(lines[0]).presentationId, 'deckCS');
+});
