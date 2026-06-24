@@ -17,7 +17,7 @@ const fs = require('fs');
 const https = require('https');
 const os = require('os');
 const path = require('path');
-const { buildDeck, THEMES } = require('../lib/slides-deck');
+const { buildDeck, THEMES, notesRequests } = require('../lib/slides-deck');
 const {
   lintSpec,
   reviewDeck,
@@ -227,7 +227,20 @@ async function publishDeck({ spec, title, updateId, api: apiFn, token: tok }) {
     batch = planBatch({ requests, newFirstSlideId: slides[0] && slides[0].objectId });
   }
   await apiFn('POST', `/presentations/${id}/batch-update`, { requests: batch }, tok);
-  return { id, url: `https://docs.google.com/presentation/d/${id}/edit`, ops: batch.length };
+
+  // Second pass for speaker notes: the notes body objectIds only exist once the
+  // slides do, so re-read the deck and insert notes for slides that declare them.
+  let notes = 0;
+  if ((spec.slides || []).some((s) => s.notes)) {
+    const got = await apiFn('GET', `/presentations/${id}`, null, tok);
+    const apiSlides = got.slides || (got.presentation && got.presentation.slides) || [];
+    const nreqs = notesRequests(apiSlides, spec.slides);
+    if (nreqs.length) {
+      await apiFn('POST', `/presentations/${id}/batch-update`, { requests: nreqs }, tok);
+      notes = nreqs.length;
+    }
+  }
+  return { id, url: `https://docs.google.com/presentation/d/${id}/edit`, ops: batch.length, notes };
 }
 
 // One-shot: an analysis text -> composed spec -> lint gate -> published deck.
