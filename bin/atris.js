@@ -364,6 +364,7 @@ function showHelp() {
   console.log('  slop       - Detect frontend AI-slop tells (deterministic, exit 1 = found)');
   console.log('  deck       - Generate a premium Google Slides deck from a content spec');
   console.log('  site       - Build a beautiful static site from a folder of markdown');
+  console.log('  theme      - Brand themes (.atris/theme.json) used by deck/html/site');
   console.log('  run        - Auto-chain plan→do→review (autonomous loop, auto-pushes)');
   console.log('  run logs   - Browse glass run logs (phase reasoning persisted to disk)');
   console.log('  run search - Search phase reasoning across all run logs');
@@ -829,7 +830,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'deck', 'site', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'deck', 'site', 'theme', 'improve', 'xp', 'play', 'gm', 'x', 'recap',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship'];
 
@@ -1356,6 +1357,11 @@ if (command === 'init') {
 } else if (command === 'site') {
   // Site: beautiful static site from a folder of markdown, in the anti-slop design system.
   Promise.resolve(require('../commands/site').run(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'theme') {
+  // Theme: brand themes (.atris/theme.json) for the whole design system (deck/html/site).
+  Promise.resolve(require('../commands/theme').run(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'aeo') {

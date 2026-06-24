@@ -15,6 +15,7 @@ const https = require('https');
 const os = require('os');
 const { buildDeck, THEMES } = require('../lib/slides-deck');
 const { parseMarkdownToSpec } = require('../lib/deck-from-md');
+const { mergedThemes } = require('../lib/theme');
 
 const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
@@ -63,7 +64,7 @@ const SAMPLE = {
 
 // shared: spec -> live deck. Returns the URL.
 async function publishDeck(spec, { title, updateId, tok }) {
-  const { requests } = buildDeck(spec);
+  const { requests } = buildDeck(spec, { themes: mergedThemes(THEMES) });
   let id, firstSlide;
   if (updateId) {
     id = updateId;
@@ -85,13 +86,14 @@ async function publishDeck(spec, { title, updateId, tok }) {
 // beautiful HTML output (page or AppBlock JSON) from a content spec
 function outputHtml(spec, argv, srcLabel) {
   const { renderHtml, renderBlock, THEMES: HTML_THEMES } = require('../lib/html-render');
-  if (!HTML_THEMES[spec.theme]) spec.theme = 'atris';
+  const themes = mergedThemes(HTML_THEMES);
+  if (!themes[spec.theme]) spec.theme = 'atris';
   const title = flag(argv, '--title');
   if (hasFlag(argv, '--block')) {
-    console.log(JSON.stringify(renderBlock(spec, { title }), null, 2));
+    console.log(JSON.stringify(renderBlock(spec, { title, themes }), null, 2));
     return 0;
   }
-  const html = renderHtml(spec, { title });
+  const html = renderHtml(spec, { title, themes });
   const out = flag(argv, '--out');
   if (out) { fs.writeFileSync(out, html); console.log(`\n  ✓ html written: ${out}${srcLabel ? ` (from ${srcLabel})` : ''}\n`); }
   else process.stdout.write(html + '\n');
@@ -109,7 +111,7 @@ async function run(argv) {
     catch (e) { console.error(`  cannot read doc: ${e.message}`); return 2; }
     const spec = parseMarkdownToSpec(md, { theme: flag(argv, '--theme'), brandName: flag(argv, '--brand') });
     if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, docPath);
-    if (!THEMES[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`); return 2; }
+    { const dt = mergedThemes(THEMES); if (!dt[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(dt).join(', ')}`); return 2; } }
     if (!hasFlag(argv, '--build')) {
       // default: print the spec so the PM can tweak before building
       console.log(JSON.stringify(spec, null, 2));
@@ -146,7 +148,7 @@ async function run(argv) {
     catch (e) { console.error(`  cannot read spec: ${e.message}`); return 2; }
     const themeOverride = flag(argv, '--theme'); if (themeOverride) spec.theme = themeOverride;
     if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, specPath);
-    if (!THEMES[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`); return 2; }
+    { const dt = mergedThemes(THEMES); if (!dt[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(dt).join(', ')}`); return 2; } }
     const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
 
     const tok = token();

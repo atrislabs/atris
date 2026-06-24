@@ -223,11 +223,14 @@ function recapAtris(args = []) {
   if (args.includes('--html')) {
     // another way to view memory updates: a beautiful HTML page of what the workspace learned
     const { buildMemorySpec } = require('../lib/memory-view');
-    const { renderHtml, renderBlock } = require('../lib/html-render');
+    const { renderHtml, renderBlock, THEMES: HTML_THEMES } = require('../lib/html-render');
+    const { mergedThemes } = require('../lib/theme');
+    const themes = mergedThemes(HTML_THEMES);
     const flagVal = (n) => { const i = args.indexOf(n); return i !== -1 ? args[i + 1] : null; };
     const spec = buildMemorySpec(process.cwd(), { theme: flagVal('--theme'), brand: flagVal('--brand') });
-    if (args.includes('--block')) { console.log(JSON.stringify(renderBlock(spec, { title: 'Workspace memory' }), null, 2)); return; }
-    const html = renderHtml(spec, { title: 'Workspace memory' });
+    if (!themes[spec.theme]) spec.theme = 'atris';
+    if (args.includes('--block')) { console.log(JSON.stringify(renderBlock(spec, { title: 'Workspace memory', themes }), null, 2)); return; }
+    const html = renderHtml(spec, { title: 'Workspace memory', themes });
     const out = flagVal('--out');
     if (out) { fs.writeFileSync(out, html); console.log(`\n  ✓ memory view written: ${out}\n`); }
     else process.stdout.write(html + '\n');
