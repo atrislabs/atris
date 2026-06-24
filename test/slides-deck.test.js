@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES } = require('../lib/slides-deck');
+const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES, fitSize, estLines } = require('../lib/slides-deck');
 const { SAMPLE } = require('../commands/deck');
 
 test('every theme defines all color roles + three fonts', () => {
@@ -90,6 +90,38 @@ test('v2 archetypes render without falling back to statement', () => {
   assert.ok(texts.includes('ok'));
   assert.ok(texts.includes('hello'));
   assert.ok(texts.includes('cmd'));
+});
+
+test('fitSize shrinks the font for longer text and never goes below the floor', () => {
+  const w = 560;
+  const maxH = 110;
+  const short = fitSize('A short sub.', w, maxH, 12.5, 10, 120);
+  const long = fitSize('y'.repeat(600), w, maxH, 12.5, 10, 120);
+  assert.equal(short, 12.5, 'short text keeps the base size');
+  assert.ok(long < short, 'long text shrinks');
+  assert.ok(long >= 10, 'never below the min size');
+  assert.ok(estLines('a'.repeat(200), w, 12) > estLines('a'.repeat(20), w, 12));
+});
+
+test('density tuning shrinks a long statement headline but leaves a short one at base', () => {
+  const headlineSize = (text) => {
+    const { requests } = buildDeck({ theme: 'paper', brand: { name: 'X' }, slides: [{ type: 'statement', text }] });
+    const styled = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize);
+    return Math.max(...styled.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  const long = 'This is a long statement headline that spans well beyond a single line and even a second line so it has to shrink to fit the box.';
+  assert.equal(headlineSize('Short.'), 38, 'a short headline keeps the base display size');
+  assert.ok(headlineSize(long) < 38, 'a long headline shrinks to stay on-slide');
+});
+
+test('prose with three long paragraphs shrinks below the two-paragraph size', () => {
+  const longPara = 'This paragraph is long enough to wrap multiple times across the full content width of the slide and so it consumes real vertical space that must be shared.';
+  const proseSize = (paras) => {
+    const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'prose', heading: 'Section heading here', paragraphs: paras }] });
+    const styled = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize && r.updateTextStyle.style.fontSize.magnitude <= 14);
+    return Math.max(...styled.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  assert.ok(proseSize([longPara, longPara, longPara]) <= proseSize([longPara, longPara]));
 });
 
 test('bullets archetype renders a typography list with no card boxes', () => {
