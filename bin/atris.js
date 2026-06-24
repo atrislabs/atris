@@ -376,7 +376,7 @@ function showHelp() {
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
-  console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
+  console.log('  recap      - What your AI team did, in plain English (--share, or --html for a memory page)');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');

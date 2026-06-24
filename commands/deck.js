@@ -82,6 +82,22 @@ async function publishDeck(spec, { title, updateId, tok }) {
   return `https://docs.google.com/presentation/d/${id}/edit`;
 }
 
+// beautiful HTML output (page or AppBlock JSON) from a content spec
+function outputHtml(spec, argv, srcLabel) {
+  const { renderHtml, renderBlock, THEMES: HTML_THEMES } = require('../lib/html-render');
+  if (!HTML_THEMES[spec.theme]) spec.theme = 'atris';
+  const title = flag(argv, '--title');
+  if (hasFlag(argv, '--block')) {
+    console.log(JSON.stringify(renderBlock(spec, { title }), null, 2));
+    return 0;
+  }
+  const html = renderHtml(spec, { title });
+  const out = flag(argv, '--out');
+  if (out) { fs.writeFileSync(out, html); console.log(`\n  ✓ html written: ${out}${srcLabel ? ` (from ${srcLabel})` : ''}\n`); }
+  else process.stdout.write(html + '\n');
+  return 0;
+}
+
 async function run(argv) {
   const sub = argv[0];
 
@@ -92,6 +108,7 @@ async function run(argv) {
     try { md = fs.readFileSync(docPath, 'utf8'); }
     catch (e) { console.error(`  cannot read doc: ${e.message}`); return 2; }
     const spec = parseMarkdownToSpec(md, { theme: flag(argv, '--theme'), brandName: flag(argv, '--brand') });
+    if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, docPath);
     if (!THEMES[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`); return 2; }
     if (!hasFlag(argv, '--build')) {
       // default: print the spec so the PM can tweak before building
@@ -128,6 +145,7 @@ async function run(argv) {
     try { spec = JSON.parse(fs.readFileSync(specPath, 'utf8')); }
     catch (e) { console.error(`  cannot read spec: ${e.message}`); return 2; }
     const themeOverride = flag(argv, '--theme'); if (themeOverride) spec.theme = themeOverride;
+    if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, specPath);
     if (!THEMES[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`); return 2; }
     const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
 
@@ -143,9 +161,11 @@ async function run(argv) {
   atris deck — premium Google Slides from a plain content spec or a markdown doc
 
     atris deck from doc.md [--build] [--title T]   turn a markdown doc into a deck
+    atris deck from doc.md --html --out page.html  beautiful HTML page (theme: atris|terminal|paper)
+    atris deck from doc.md --block                 emit the AppBlock JSON for a web app
     atris deck sample [--theme paper] > my.json    start from a sample spec
     atris deck build my.json [--title "Q3 review"] create the deck, print the URL
-    atris deck build my.json --update <id>         rebuild into an existing deck
+    atris deck build my.json --html --out p.html   render the spec as HTML instead of slides
     atris deck themes                              list design themes
 
   'from' maps headings to slides (## with bullets -> columns, "**X** label" -> a

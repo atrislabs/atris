@@ -220,6 +220,19 @@ function recapAtris(args = []) {
     printRecapHelp();
     return;
   }
+  if (args.includes('--html')) {
+    // another way to view memory updates: a beautiful HTML page of what the workspace learned
+    const { buildMemorySpec } = require('../lib/memory-view');
+    const { renderHtml, renderBlock } = require('../lib/html-render');
+    const flagVal = (n) => { const i = args.indexOf(n); return i !== -1 ? args[i + 1] : null; };
+    const spec = buildMemorySpec(process.cwd(), { theme: flagVal('--theme'), brand: flagVal('--brand') });
+    if (args.includes('--block')) { console.log(JSON.stringify(renderBlock(spec, { title: 'Workspace memory' }), null, 2)); return; }
+    const html = renderHtml(spec, { title: 'Workspace memory' });
+    const out = flagVal('--out');
+    if (out) { fs.writeFileSync(out, html); console.log(`\n  ✓ memory view written: ${out}\n`); }
+    else process.stdout.write(html + '\n');
+    return;
+  }
   const daysIdx = args.indexOf('--days');
   const days = daysIdx !== -1 ? Number(args[daysIdx + 1]) : DEFAULT_DAYS;
   const data = buildRecapData(process.cwd(), { days });
