@@ -82,6 +82,15 @@ test('composeSpec produces a valid, lint-clean, narrative deck', () => {
   assert.match(texts, /Post-train/);
 });
 
+test('composeSpec preserves content when the doc opens with a bullet list (no cover overwrite)', () => {
+  const md = '- first key point that must survive\n- second key point\n- third point\n\n## Next\n\nSome prose body content here.';
+  const spec = composeSpec(md, { style: 'narrative', title: 'My Talk' });
+  assert.equal(hasErrors(validateSpec(spec)), false);
+  const json = JSON.stringify(spec);
+  assert.match(json, /first key point that must survive/, 'opening bullets must not be destroyed by the cover');
+  assert.ok(spec.slides.some((s) => s.type === 'bullets'), 'the opening list survives as a bullets slide');
+});
+
 test('composeSpec handles headingless prose without crashing', () => {
   const spec = composeSpec('Just one paragraph of analysis with no structure at all here.', { style: 'narrative' });
   assert.equal(hasErrors(validateSpec(spec)), false);

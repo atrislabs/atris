@@ -61,6 +61,15 @@ test('planned deck stays under template-fatigue and validates + builds', () => {
   assert.equal(slideIds.length, sections.length);
 });
 
+test('planned bullets are capped to the engine limit so output stays lint-clean', () => {
+  const items = Array.from({ length: 12 }, (_, i) => `point ${i}`);
+  const [slide] = planLayout([{ kind: 'points', heading: 'Many', items }], { style: 'narrative' });
+  assert.equal(slide.type, 'bullets');
+  assert.ok(slide.items.length <= 7, 'bullets capped to 7');
+  const findings = lintSpec({ slides: [slide] });
+  assert.ok(!findings.some((f) => f.rule === 'content-truncated'), 'capped bullets do not trip content-truncated');
+});
+
 test('a section with no convertible content degrades to a statement, not an empty bullets', () => {
   const [slide] = planLayout([{ kind: 'points', heading: 'Empty section' }], { style: 'narrative' });
   assert.equal(slide.type, 'statement');

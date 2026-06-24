@@ -124,6 +124,39 @@ test('prose with three long paragraphs shrinks below the two-paragraph size', ()
   assert.ok(proseSize([longPara, longPara, longPara]) <= proseSize([longPara, longPara]));
 });
 
+test('buildDeck never throws on malformed-but-plausible specs (engine is self-defensive)', () => {
+  const cases = [
+    { slides: [{ type: 'metricgrid', metrics: [null, { value: '1', label: 'a' }] }] },
+    { slides: [{ type: 'panel', panel: { rows: 'oops' } }] },
+    { slides: [{ type: 'versus', left: { items: 'x' }, right: { items: ['y'] } }] },
+    { slides: [{ type: 'columns', columns: 'nope' }] },
+    { slides: [null, { type: 'statement', text: 'ok' }] },
+    undefined,
+    {},
+  ];
+  for (const spec of cases) {
+    assert.doesNotThrow(() => buildDeck(spec), `buildDeck threw on ${JSON.stringify(spec)}`);
+  }
+});
+
+test('bignumber renders a literal 0 instead of dropping it (no falsy coalescing)', () => {
+  const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'bignumber', number: 0, label: 'zero defects' }] });
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('0'), 'the big number 0 must render');
+});
+
+test('narrative archetypes shrink long copy to stay on-slide (lede, quote)', () => {
+  const maxSize = (spec) => {
+    const { requests } = buildDeck(spec);
+    const st = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize).map((r) => r.updateTextStyle.style.fontSize.magnitude);
+    return Math.max(...st);
+  };
+  const longHead = 'A very long lede headline that runs well past one line '.repeat(4);
+  assert.ok(maxSize({ slides: [{ type: 'lede', headline: longHead }] }) < 40, 'long lede headline shrinks below base 40');
+  const longQuote = 'word '.repeat(80);
+  assert.ok(maxSize({ slides: [{ type: 'quote', text: longQuote }] }) < 28, 'long quote shrinks below base 28');
+});
+
 test('notesRequests targets the notes body of slides that declare notes', () => {
   const apiSlides = [
     { objectId: 'deck_slide_1', slideProperties: { notesPage: { pageElements: [
