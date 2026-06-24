@@ -27,6 +27,7 @@ const {
 } = require('../lib/deck-review');
 const { validateSpec, checkSpec, hasErrors } = require('../lib/deck-schema');
 const { recordBuild, historyFor } = require('../lib/deck-history');
+const { composeSpec } = require('../lib/deck-compose');
 
 const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
@@ -258,6 +259,58 @@ async function run(argv) {
     return 0;
   }
 
+  if (sub === 'compose') {
+    const out = flag(argv, '--out');
+    const url = flag(argv, '--url');
+    const mdPath = flag(argv, '--md');
+    const composeOpts = {
+      theme: flag(argv, '--theme'),
+      style: flag(argv, '--style'),
+      title: flag(argv, '--title'),
+      url,
+    };
+    if (!url && !mdPath) {
+      console.error('  usage: atris deck compose (--url <youtube> | --md <file.md>) [--out spec.json] [--theme ink] [--style narrative|dense|pitch]');
+      return 2;
+    }
+    let text;
+    if (mdPath) {
+      try { text = fs.readFileSync(mdPath, 'utf8'); }
+      catch (e) { console.error(`  cannot read ${mdPath}: ${e.message}`); return 2; }
+    } else {
+      // Network path: fetch a transcript analysis from the cloud, then compose.
+      try {
+        const { processYoutube } = require('./youtube');
+        console.error(`  fetching analysis for ${url} (this can take a minute)...`);
+        const data = await processYoutube({
+          youtubeUrl: url,
+          query: 'Summarize this video into a slide outline. Use markdown: one H1 title, then ## sections. Within a section use a bullet list for parallel points, a blockquote for a memorable line (with attribution), and short paragraphs for narrative. End with a ## Takeaway.',
+          timeoutMs: 300000,
+        });
+        text = data.video_analysis || data.analysis || data.result || (typeof data === 'string' ? data : '');
+      } catch (e) {
+        console.error(`  compose --url needs Atris cloud access (run \`atris login\`): ${e.message}`);
+        return 1;
+      }
+      if (!text) { console.error('  no analysis returned for that URL'); return 1; }
+    }
+    const spec = composeSpec(text, composeOpts);
+    const findings = checkSpec(spec, lintSpec);
+    if (out) {
+      fs.writeFileSync(out, `${JSON.stringify(spec, null, 2)}\n`);
+      console.error(`\n  ✓ composed ${spec.slides.length} slides (${spec.theme}) -> ${out}`);
+      printLint(findings);
+      console.error(`  next: atris deck build ${out} --review\n`);
+    } else {
+      // stdout stays clean JSON for piping; lint goes to stderr
+      console.log(JSON.stringify(spec, null, 2));
+      const errs = findings.filter((f) => f.severity === 'error').length;
+      const warns = findings.filter((f) => f.severity === 'warn').length;
+      console.error(`  composed ${spec.slides.length} slides (${spec.theme}) · lint: ${errs} errors, ${warns} warnings`);
+    }
+    return hasErrors(findings) ? 1 : 0;
+  }
+
   if (sub === 'lint') {
     const specPath = argv.slice(1).find((a) => !a.startsWith('-'));
     if (!specPath) {
@@ -367,6 +420,8 @@ async function run(argv) {
   atris deck — premium Google Slides from a plain content spec
 
     atris deck sample [--theme paper] > my.json
+    atris deck compose --md notes.md --out my.json [--style narrative]
+    atris deck compose --url <youtube> --out my.json [--theme ink]
     atris deck lint my.json
     atris deck build my.json [--title "Q3 review"] [--update ID] [--review]
     atris deck review <id|url> [--spec my.json]
