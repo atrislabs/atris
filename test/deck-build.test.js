@@ -50,6 +50,46 @@ test('publishDeck creates a new presentation and batch-updates it', async () => 
   assert.deepEqual(batchCall.body.requests[ops - 1], { deleteObject: { objectId: 'p_default' } });
 });
 
+test('publishDeck does a second pass to insert speaker notes', async () => {
+  const calls = [];
+  const api = async (method, p, body) => {
+    calls.push({ method, p, body });
+    if (method === 'POST' && p === '/presentations') return { presentationId: 'NID', slides: [{ objectId: 'p_default' }] };
+    if (method === 'GET' && p === '/presentations/NID') {
+      return { slides: [
+        { objectId: 'deck_slide_1', slideProperties: { notesPage: { pageElements: [{ objectId: 'n1', shape: { placeholder: { type: 'BODY' } } }] } } },
+        { objectId: 'deck_slide_2', slideProperties: { notesPage: { pageElements: [{ objectId: 'n2', shape: { placeholder: { type: 'BODY' } } }] } } },
+      ] };
+    }
+    if (p.endsWith('/batch-update')) return {};
+    throw new Error(`unexpected ${method} ${p}`);
+  };
+  const spec = { theme: 'paper', brand: { name: 'X' }, slides: [
+    { type: 'statement', text: 'One.', notes: 'ts 00:10' },
+    { type: 'statement', text: 'Two.' },
+  ] };
+  const res = await publishDeck({ spec, title: 'T', updateId: null, api, token: 'tok' });
+  assert.equal(res.notes, 1, 'one note inserted');
+  // a GET happened (to find notes bodies) and two batch-updates were sent
+  assert.ok(calls.some((c) => c.method === 'GET' && c.p === '/presentations/NID'));
+  const batches = calls.filter((c) => c.p.endsWith('/batch-update'));
+  assert.equal(batches.length, 2, 'main build batch + notes batch');
+  assert.deepEqual(batches[1].body.requests[0], { insertText: { objectId: 'n1', text: 'ts 00:10' } });
+});
+
+test('publishDeck skips the notes pass entirely when no slide has notes', async () => {
+  const calls = [];
+  const api = async (method, p) => {
+    calls.push({ method, p });
+    if (method === 'POST' && p === '/presentations') return { presentationId: 'NN', slides: [{ objectId: 'p_default' }] };
+    if (p.endsWith('/batch-update')) return {};
+    throw new Error(`unexpected ${method} ${p}`);
+  };
+  const res = await publishDeck({ spec: SPEC, title: 'T', updateId: null, api, token: 'tok' });
+  assert.equal(res.notes, 0);
+  assert.ok(!calls.some((c) => c.method === 'GET'), 'no GET when there are no notes');
+});
+
 test('publishDeck --update reuses the id and replaces all existing slides', async () => {
   const calls = [];
   const api = async (method, path, body) => {

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES, fitSize, estLines } = require('../lib/slides-deck');
+const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES, fitSize, estLines, notesRequests, findNotesBodyId } = require('../lib/slides-deck');
 const { SAMPLE } = require('../commands/deck');
 
 test('every theme defines all color roles + three fonts', () => {
@@ -122,6 +122,26 @@ test('prose with three long paragraphs shrinks below the two-paragraph size', ()
     return Math.max(...styled.map((r) => r.updateTextStyle.style.fontSize.magnitude));
   };
   assert.ok(proseSize([longPara, longPara, longPara]) <= proseSize([longPara, longPara]));
+});
+
+test('notesRequests targets the notes body of slides that declare notes', () => {
+  const apiSlides = [
+    { objectId: 'deck_slide_1', slideProperties: { notesPage: { pageElements: [
+      { objectId: 'notes_1', shape: { placeholder: { type: 'BODY' } } },
+    ] } } },
+    { objectId: 'deck_slide_2', slideProperties: { notesPage: { pageElements: [
+      { objectId: 'img_2', shape: { placeholder: { type: 'SLIDE_IMAGE' } } },
+      { objectId: 'notes_2', shape: { placeholder: { type: 'BODY' } } },
+    ] } } },
+  ];
+  const specSlides = [
+    { type: 'title', notes: 'source 00:00' },
+    { type: 'statement' }, // no notes -> skipped
+  ];
+  const reqs = notesRequests(apiSlides, specSlides);
+  assert.equal(reqs.length, 1);
+  assert.deepEqual(reqs[0], { insertText: { objectId: 'notes_1', text: 'source 00:00' } });
+  assert.equal(findNotesBodyId(apiSlides[1]), 'notes_2', 'picks the BODY placeholder, not the image');
 });
 
 test('bullets archetype renders a typography list with no card boxes', () => {
