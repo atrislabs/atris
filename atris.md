@@ -67,7 +67,7 @@ What you ship should not read as generated. The test: if someone said "an AI mad
 - **Refuse the wells** (named so you can): purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
 - **Commit to constraints.** One distinctive font, one accent hue, a small spacing scale. Taste is subtraction, not addition.
 - **Generate it right.** `atris deck` (slides), `atris deck from <doc.md> --html` (a web page from a plain doc, in the web app's design tokens), `atris site <dir>` (a whole markdown folder into a navigable site), and `atris recap --html` (a memory-updates page) all apply the system by default: own backgrounds and fonts, never the tool's stock template. Output as an AppBlock with `--block` to drop into a web app.
-- **Compound it.** A new tell becomes a project rule in `.atris/slop.rules.json` (`atris slop rules --add`), and a project's brand lives in `.atris/theme.json` (`atris theme create` builds your own by feel, or `atris theme init` scaffolds one) so every deck, page, and site is on-brand by default. The gate and the look grow per project instead of leaning on memory. Taste lives in code, not vibes.
+- **Compound it.** A new tell becomes a project rule in `.atris/slop.rules.json` (`atris slop rules --add`), and a project's brand lives in `.atris/theme.json` (`atris theme create` builds your own by feel, or `atris theme init` scaffolds one) so every deck, page, and site is on-brand by default, and one line of text becomes an on-brand image with `atris card`. The gate and the look grow per project instead of leaning on memory. Taste lives in code, not vibes.
 
 ## voice
 
