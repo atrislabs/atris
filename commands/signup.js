@@ -10,12 +10,34 @@
 // mail paid-gated) — identity is free, capability is earned via AgentXP.
 // Backend: backend/routers/agent_auth_router.py (POST /auth/agent/signup).
 
+const crypto = require('crypto');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { saveCredentials } = require('../utils/auth');
 
 // Mirror the server rule exactly (^[a-z0-9]{3,30}$) so we fail fast and friendly
 // before spending a network round trip / a rate-limit slot.
 const HANDLE_RE = /^[a-z0-9]{3,30}$/;
+
+// Proof-of-work — mirror the server (agent_auth_router.py). The signup endpoint
+// requires a nonce whose sha256(prefix:handle:bucket:nonce) has DIFFICULTY_BITS
+// leading zero bits. Bucket = current 5-min window. Solved locally (~1s) so
+// signup stays a single call; this is the cost that makes mass-minting expensive.
+const POW_PREFIX = 'atris-signup-v1';
+const POW_WINDOW_S = 300;
+const POW_DIFFICULTY_BITS = 20;
+
+function solvePow(handle) {
+  const bucket = Math.floor(Date.now() / 1000 / POW_WINDOW_S);
+  const fullBytes = Math.floor(POW_DIFFICULTY_BITS / 8);
+  const remBits = POW_DIFFICULTY_BITS % 8;
+  for (let n = 0; ; n++) {
+    const d = crypto.createHash('sha256').update(`${POW_PREFIX}:${handle}:${bucket}:${n}`).digest();
+    let ok = true;
+    for (let i = 0; i < fullBytes; i++) { if (d[i] !== 0) { ok = false; break; } }
+    if (ok && remBits && (d[fullBytes] >> (8 - remBits)) !== 0) ok = false;
+    if (ok) return String(n);
+  }
+}
 
 function parseHandle(args = []) {
   const positional = args.find((a) => a && !a.startsWith('-'));
@@ -36,11 +58,12 @@ async function signupCommand(args = []) {
     return 1;
   }
 
-  console.log(`Claiming @${handle} …`);
+  console.log(`Claiming @${handle} … (solving proof-of-work)`);
+  const pow = solvePow(handle);
 
   const res = await apiRequestJson('/auth/agent/signup', {
     method: 'POST',
-    body: { handle },
+    body: { handle, pow },
   });
 
   if (res.ok && res.data && res.data.token) {
