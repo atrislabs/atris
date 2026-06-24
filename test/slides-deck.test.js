@@ -92,6 +92,37 @@ test('v2 archetypes render without falling back to statement', () => {
   assert.ok(texts.includes('cmd'));
 });
 
+test('bullets archetype renders a typography list with no card boxes', () => {
+  const spec = { theme: 'paper', brand: { name: 'X' }, slides: [{
+    type: 'bullets',
+    heading: 'Points',
+    items: ['one', 'two', { text: 'three', sub: 'note' }],
+  }] };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 1);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  for (const t of ['Points', 'one', 'two', 'three', 'note']) {
+    assert.ok(texts.includes(t), `missing bullet text ${t}`);
+  }
+  // the box-free promise: bullets must not draw rounded-rectangle cards
+  const cards = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ROUND_RECTANGLE').length;
+  assert.equal(cards, 0, 'bullets must not draw card boxes');
+  // accent dots mark each item
+  const dots = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ELLIPSE').length;
+  assert.equal(dots, 3, 'one accent dot per bullet');
+});
+
+test('bullets list shrinks font as it grows (dense lists still fit)', () => {
+  const sizeFor = (count) => {
+    const items = Array.from({ length: count }, (_, i) => `item ${i}`);
+    const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'bullets', items }] });
+    // the bullet body text style carries the font size
+    const styles = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize);
+    return Math.max(...styles.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  assert.ok(sizeFor(7) < sizeFor(3), 'a 7-item list should use a smaller font than a 3-item list');
+});
+
 test('narrative archetypes render typography-first slides', () => {
   const spec = {
     theme: 'ink',
