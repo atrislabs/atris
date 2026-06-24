@@ -26,6 +26,7 @@ const {
   DEFAULT_OUT_ROOT,
 } = require('../lib/deck-review');
 const { validateSpec, checkSpec, hasErrors } = require('../lib/deck-schema');
+const { recordBuild, historyFor } = require('../lib/deck-history');
 
 const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
@@ -228,6 +229,27 @@ async function run(argv) {
     return 0;
   }
 
+  if (sub === 'history') {
+    const query = argv.slice(1).find((a) => !a.startsWith('-'));
+    const entries = historyFor(query);
+    if (hasFlag(argv, '--json')) {
+      console.log(JSON.stringify(entries, null, 2));
+      return 0;
+    }
+    if (!entries.length) {
+      console.log(`\n  no deck builds recorded${query ? ` for "${query}"` : ''} yet\n`);
+      return 0;
+    }
+    console.log('');
+    for (const e of entries) {
+      const when = (e.at || '').replace('T', ' ').slice(0, 16);
+      console.log(`  ${when}  ${String(e.mode).padEnd(6)} ${String(e.slideCount).padStart(2)}sl ${String(e.theme || '?').padEnd(8)} ${e.specHash}`);
+      console.log(`                    ${e.specPath || '(inline)'}  ->  ${e.url || e.presentationId}`);
+    }
+    console.log('');
+    return 0;
+  }
+
   if (sub === 'lint') {
     const specPath = argv.slice(1).find((a) => !a.startsWith('-'));
     if (!specPath) {
@@ -320,6 +342,8 @@ async function run(argv) {
 
     console.log(`  ${updateId ? 'updating' : 'building'} ${spec.slides.length} slides (${spec.theme})...`);
     const { id, url, ops } = await publishDeck({ spec, title, updateId, api, token: tok });
+    // Ledger the build; never let a history write failure break a build.
+    try { recordBuild({ spec, specPath, presentationId: id, url, mode: updateId ? 'update' : 'create' }); } catch { /* ignore */ }
     console.log(`\n  ✓ deck ${updateId ? 'updated' : 'ready'}: ${url}  (${ops} ops)\n`);
 
     if (doReview) {
@@ -336,6 +360,7 @@ async function run(argv) {
     atris deck build my.json [--title "Q3 review"] [--update ID] [--review]
     atris deck review <id|url> [--spec my.json]
     atris deck review <id> --confirm "looks good"
+    atris deck history [my.json]            builds recorded for a spec
     atris deck themes
 
     --update ID replaces every slide in an existing deck in place, so the
