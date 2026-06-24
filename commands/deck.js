@@ -168,6 +168,43 @@ async function runReviewFlow({ presentationId, spec, specPath, json }) {
   return 0;
 }
 
+// Pure: given the engine's build requests and what the API reports, produce the
+// final batch-update request list.
+//   - update: delete every existing slide first, then add the fresh ones. The
+//     engine reuses fixed objectIds (deck_slide_N), so a prior build's slides
+//     must be removed before recreating them or the API rejects duplicate IDs.
+//   - create: append a delete of the blank default slide a new deck ships with.
+function planBatch({ requests, updateId = null, existingSlides = [], newFirstSlideId = null }) {
+  if (updateId) {
+    const deletions = (existingSlides || [])
+      .filter((s) => s && s.objectId)
+      .map((s) => ({ deleteObject: { objectId: s.objectId } }));
+    return [...deletions, ...requests];
+  }
+  return newFirstSlideId ? [...requests, { deleteObject: { objectId: newFirstSlideId } }] : requests;
+}
+
+// Publish a deck via the Slides API (create or in-place update). api/token are
+// injected so this is unit-testable with a mock transport.
+async function publishDeck({ spec, title, updateId, api: apiFn, token: tok }) {
+  const { requests } = buildDeck(spec);
+  let id;
+  let batch;
+  if (updateId) {
+    id = updateId;
+    const got = await apiFn('GET', `/presentations/${id}`, null, tok);
+    const existing = got.slides || (got.presentation && got.presentation.slides) || [];
+    batch = planBatch({ requests, updateId, existingSlides: existing });
+  } else {
+    const pres = await apiFn('POST', '/presentations', { title }, tok);
+    id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
+    const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
+    batch = planBatch({ requests, newFirstSlideId: slides[0] && slides[0].objectId });
+  }
+  await apiFn('POST', `/presentations/${id}/batch-update`, { requests: batch }, tok);
+  return { id, url: `https://docs.google.com/presentation/d/${id}/edit`, ops: batch.length };
+}
+
 async function run(argv) {
   const sub = argv[0];
 
@@ -281,28 +318,9 @@ async function run(argv) {
       return 1;
     }
 
-    const { requests } = buildDeck(spec);
-
-    let id;
-    let firstSlide;
-    if (updateId) {
-      id = updateId;
-      const got = await api('GET', `/presentations/${id}`, null, tok);
-      const existing = got.slides || (got.presentation && got.presentation.slides) || [];
-      firstSlide = existing[0] && existing[0].objectId;
-    } else {
-      const pres = await api('POST', '/presentations', { title }, tok);
-      id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
-      const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
-      firstSlide = slides[0] && slides[0].objectId;
-    }
-
-    const reqs = firstSlide ? [...requests, { deleteObject: { objectId: firstSlide } }] : requests;
-    console.log(`  building ${spec.slides.length} slides (${spec.theme}) · ${reqs.length} ops...`);
-    await api('POST', `/presentations/${id}/batch-update`, { requests: reqs }, tok);
-
-    const url = `https://docs.google.com/presentation/d/${id}/edit`;
-    console.log(`\n  ✓ deck ready: ${url}\n`);
+    console.log(`  ${updateId ? 'updating' : 'building'} ${spec.slides.length} slides (${spec.theme})...`);
+    const { id, url, ops } = await publishDeck({ spec, title, updateId, api, token: tok });
+    console.log(`\n  ✓ deck ${updateId ? 'updated' : 'ready'}: ${url}  (${ops} ops)\n`);
 
     if (doReview) {
       return runReviewFlow({ presentationId: id, spec, specPath, json: hasFlag(argv, '--json') });
@@ -319,6 +337,9 @@ async function run(argv) {
     atris deck review <id|url> [--spec my.json]
     atris deck review <id> --confirm "looks good"
     atris deck themes
+
+    --update ID replaces every slide in an existing deck in place, so the
+    presentation URL and id stay stable across rebuilds.
 
   Review loop:
     build --review -> downloads slide PNGs to ~/.atris/deck-review/<id>/
@@ -337,5 +358,9 @@ module.exports = {
   api,
   token,
   lintSpec,
+  validateSpec,
+  checkSpec,
+  planBatch,
+  publishDeck,
   DEFAULT_OUT_ROOT,
 };
