@@ -73,7 +73,20 @@ test('atris2 run without credentials pauses the mission with auth-required', () 
   const dir = makeTempDir();
   const fakeHome = makeTempDir();
   try {
-    const env = { HOME: fakeHome, ATRIS_TOKEN: '', ATRIS_PROFILE: '' };
+    // mission run probes the claude binary before the auth gate; stub it so this
+    // test exercises the auth path without a host-installed claude (CI has none).
+    const binDir = path.join(dir, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const fakeClaude = path.join(binDir, 'claude');
+    fs.writeFileSync(fakeClaude, `#!/usr/bin/env node
+if (process.argv.slice(2).includes('--help')) {
+  console.log('--output-format --permission-mode --resume --session-id --include-partial-messages');
+  process.exit(0);
+}
+process.exit(0);
+`, 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { HOME: fakeHome, ATRIS_TOKEN: '', ATRIS_PROFILE: '', PATH: `${binDir}:${process.env.PATH}` };
     const startRes = runCli(['mission', 'start', 'atris2 auth gate', '--owner', 'mission-lead', '--runner', 'atris2', '--verify', 'true', '--json'], { cwd: dir, env });
     assert.equal(startRes.status, 0, startRes.stderr || startRes.stdout);
     const mission = JSON.parse(startRes.stdout).mission;
