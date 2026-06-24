@@ -181,7 +181,7 @@ async function run(argv) {
     console.log('\n  pick one: spec.json "theme" field  OR  atris deck build spec.json --theme noir');
     console.log('\n  slide types: title, statement, columns, panel, chips, bignumber, close,');
     console.log('               timeline, versus, metricgrid, receipt, stack, quote, hero,');
-    console.log('               interstitial, lede, prose, split  (narrative / box-free)\n');
+    console.log('               interstitial, lede, prose, split, bullets  (narrative / box-free)\n');
     return 0;
   }
 
