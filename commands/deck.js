@@ -276,11 +276,12 @@ async function run(argv) {
     }
     const confirmNote = flag(argv, '--confirm');
     if (confirmNote) {
-      const { manifestPath, packet, alreadyConfirmed } = confirmReview(extractPresentationId(idArg), confirmNote);
+      const { manifestPath, packet, alreadyConfirmed, receiptPath } = confirmReview(extractPresentationId(idArg), confirmNote);
       if (hasFlag(argv, '--json')) {
-        console.log(JSON.stringify({ manifestPath, packet, alreadyConfirmed }, null, 2));
+        console.log(JSON.stringify({ manifestPath, packet, alreadyConfirmed, receiptPath }, null, 2));
       } else {
         console.log(`\n  ✓ review confirmed: ${manifestPath}`);
+        if (receiptPath) console.log(`  receipt: ${receiptPath}`);
         console.log(`  deck: ${packet.url}\n`);
       }
       return 0;
