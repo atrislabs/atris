@@ -76,6 +76,13 @@ test('checkSpec merges schema errors and taste lint, ordered', () => {
   assert.deepEqual(slideNos, [...slideNos].sort((a, b) => a - b));
 });
 
+test('gate blocks malformed nested arrays that would crash the renderer', () => {
+  assert.ok(validateSpec({ slides: [{ type: 'panel', panel: { rows: 'oops' } }] }).some((f) => f.rule === 'bad-array'), 'panel.rows non-array');
+  assert.ok(validateSpec({ slides: [{ type: 'versus', left: { items: 'x' }, right: { items: ['y'] } }] }).some((f) => f.rule === 'bad-array'), 'versus left.items non-array');
+  // a well-formed versus/panel still passes
+  assert.equal(hasErrors(validateSpec({ slides: [{ type: 'panel', panel: { rows: [{ title: 'a' }] } }] })), false);
+});
+
 test('every shipped deck spec passes schema validation', () => {
   const dir = path.join(__dirname, '..', 'decks');
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
