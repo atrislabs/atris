@@ -138,7 +138,7 @@ function printLint(findings) {
   console.log('');
 }
 
-async function runReviewFlow({ presentationId, spec, specPath, json }) {
+async function runReviewFlow({ presentationId, spec, specPath, json, auto = false }) {
   const tok = token();
   if (!tok) {
     console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
@@ -150,6 +150,7 @@ async function runReviewFlow({ presentationId, spec, specPath, json }) {
     specPath,
     api,
     token: tok,
+    auto,
   });
   if (json) {
     console.log(JSON.stringify({ ...packet, manifestPath, outDir }, null, 2));
@@ -158,6 +159,13 @@ async function runReviewFlow({ presentationId, spec, specPath, json }) {
     console.log(`  thumbnails:    ${outDir}`);
     console.log(`  status:          ${packet.status}`);
     console.log(`  slides:          ${packet.slides.length}`);
+    if (packet.autoReview) {
+      const ar = packet.autoReview;
+      console.log(`  auto review:     ${ar.passed}/${ar.results.length} thumbnails ok${ar.failed ? ` · ${ar.failed} FLAGGED` : ''}`);
+      for (const r of ar.results.filter((x) => !x.ok)) {
+        console.log(`        ✗ slide ${r.index}${r.type ? ` (${r.type})` : ''}: ${r.reason}`);
+      }
+    }
     if (packet.specLint.length) {
       printLint(packet.specLint);
     } else {
@@ -297,6 +305,7 @@ async function run(argv) {
       spec,
       specPath,
       json: hasFlag(argv, '--json'),
+      auto: hasFlag(argv, '--auto') || hasFlag(argv, '--review-auto'),
     });
   }
 
@@ -324,7 +333,8 @@ async function run(argv) {
       return 2;
     }
     const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
-    const doReview = hasFlag(argv, '--review');
+    const reviewAuto = hasFlag(argv, '--review-auto');
+    const doReview = hasFlag(argv, '--review') || reviewAuto;
     const updateId = flag(argv, '--update');
     if (doReview) {
       const findings = lintSpec(spec);
@@ -348,7 +358,7 @@ async function run(argv) {
     console.log(`\n  ✓ deck ${updateId ? 'updated' : 'ready'}: ${url}  (${ops} ops)\n`);
 
     if (doReview) {
-      return runReviewFlow({ presentationId: id, spec, specPath, json: hasFlag(argv, '--json') });
+      return runReviewFlow({ presentationId: id, spec, specPath, json: hasFlag(argv, '--json'), auto: reviewAuto });
     }
     return 0;
   }
@@ -369,6 +379,7 @@ async function run(argv) {
 
   Review loop:
     build --review -> downloads slide PNGs to ~/.atris/deck-review/<id>/
+    build --review-auto -> also auto-flags blank/failed thumbnails
     agent inspects thumbnails -> fix spec/engine -> rebuild
     review --confirm -> marks deck ready
 
