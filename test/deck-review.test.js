@@ -8,6 +8,7 @@ const {
   lintSpec,
   confirmReview,
   reviewDeck,
+  autoReviewSlides,
   SCHEMA,
   CLIP_LIMITS,
 } = require('../lib/deck-review');
@@ -96,6 +97,63 @@ test('every shipped deck spec lints without errors', () => {
     const spec = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
     const errs = lintSpec(spec).filter((f) => f.severity === 'error');
     assert.equal(errs.length, 0, `${file} has lint errors: ${JSON.stringify(errs)}`);
+  }
+});
+
+test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  const good = path.join(tmp, 'good.png');
+  const blank = path.join(tmp, 'blank.png');
+  fs.writeFileSync(good, Buffer.alloc(500, 1));
+  fs.writeFileSync(blank, Buffer.alloc(10, 0));
+  const summary = await autoReviewSlides([
+    { index: 1, type: 'title', thumbnail: good },
+    { index: 2, type: 'panel', thumbnail: blank },
+    { index: 3, type: 'close', thumbnail: path.join(tmp, 'missing.png') },
+  ]);
+  assert.equal(summary.passed, 1);
+  assert.equal(summary.failed, 2);
+  assert.equal(summary.results[0].ok, true);
+  assert.equal(summary.results[1].ok, false);
+  assert.equal(summary.results[2].ok, false);
+});
+
+test('autoReviewSlides invokes an optional vision hook and honors its verdict', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  const png = path.join(tmp, 'a.png');
+  fs.writeFileSync(png, Buffer.alloc(500, 1));
+  const summary = await autoReviewSlides([{ index: 1, thumbnail: png }], {
+    vision: async () => ({ ok: false, reason: 'heading overlaps body' }),
+  });
+  assert.equal(summary.failed, 1);
+  assert.match(summary.results[0].reason, /overlaps/);
+});
+
+test('reviewDeck with auto attaches an autoReview summary to the manifest', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const api = async (method, p) => {
+    if (method === 'GET' && p === '/presentations/auto1') return { slides: [{ objectId: 's1' }] };
+    if (p.includes('/thumbnail')) return { contentUrl: 'https://example.com/t.png' };
+    throw new Error(`unexpected ${method} ${p}`);
+  };
+  const originalGet = require('https').get;
+  require('https').get = (url, cb) => {
+    cb({ statusCode: 200, headers: {}, pipe: (dest) => { dest.write(png); dest.end(); return dest; } });
+    return { on: () => {} };
+  };
+  try {
+    const { packet } = await reviewDeck({
+      presentationId: 'auto1', spec: { slides: [{ type: 'title' }] }, outRoot: tmp, api, token: 'tok', auto: true, autoOpts: { minBytes: 1 },
+    });
+    assert.ok(packet.autoReview && packet.autoReview.ran);
+    assert.equal(packet.autoReview.results.length, 1);
+    assert.equal(packet.autoReview.passed, 1);
+  } finally {
+    require('https').get = originalGet;
   }
 });
 
