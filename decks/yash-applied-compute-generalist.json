@@ -1,0 +1,82 @@
+{
+  "theme": "ink",
+  "brand": { "name": "The Generalist", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Own or **be owned.**",
+      "sub": "Yash Patil, Applied Compute. Custom models on your data. Smaller, cheaper, built for the work you actually do.",
+      "panel": {
+        "header": { "title": "Applied Compute", "meta": "loop" },
+        "rows": [
+          { "title": "Evals", "sub": "your scorecard", "value": "1", "sev": 2 },
+          { "title": "Post-train", "sub": "hill climb RLVR", "value": "2", "sev": 0, "active": true },
+          { "title": "Deploy", "sub": "production at scale", "value": "3", "sev": 1 },
+          { "title": "Improve", "sub": "continuous learning", "value": "4", "sev": 2 }
+        ],
+        "footer": { "left": "open weights in", "right": "your evals stay" }
+      }
+    },
+    {
+      "type": "quote",
+      "text": "Evals are the new **PRD.**",
+      "author": "Yash Patil",
+      "role": "Applied Compute · The Generalist"
+    },
+    {
+      "type": "versus",
+      "heading": "Right model for the right task",
+      "left": {
+        "label": "Frontier model",
+        "items": ["sets the floor", "hardest 20% of spend", "shared capability", "blowtorch scale"]
+      },
+      "right": {
+        "label": "Your model",
+        "items": ["raises the ceiling", "80% of task spend", "private evals", "cost + latency fit"]
+      }
+    },
+    {
+      "type": "timeline",
+      "heading": "How Applied Compute works",
+      "steps": [
+        { "label": "eval", "sub": "define good" },
+        { "label": "data", "sub": "your traces" },
+        { "label": "train", "sub": "RLVR hill climb", "active": true },
+        { "label": "serve", "sub": "production" },
+        { "label": "improve", "sub": "never ends" }
+      ],
+      "sub": "Start from eval. Train on data that looks like the eval. Deploy. Loop forever."
+    },
+    {
+      "type": "receipt",
+      "heading": "DoorDash beat frontier on one task.",
+      "sub": "100k+ merchants per year. Menu photo in. Storefront out.",
+      "receiptTitle": "case study · merchant onboarding",
+      "fields": [
+        { "k": "input", "v": "unstructured menu photos" },
+        { "k": "eval", "v": "what a good storefront looks like" },
+        { "k": "train", "v": "small specialized model + RL" },
+        { "k": "result", "v": "quality above frontier on this task" },
+        { "k": "why", "v": "task-specific beats general at scale" }
+      ],
+      "stamp": "own the intelligence"
+    },
+    {
+      "type": "metricgrid",
+      "heading": "The squeeze",
+      "metrics": [
+        { "value": "$1.3B", "label": "Applied Compute valuation, year one" },
+        { "value": "100k+", "label": "merchants onboarded at DoorDash yearly" },
+        { "value": "80/20", "label": "custom vs frontier spend split Yash cites" },
+        { "value": "Decades", "label": "AI diffusion into the real economy" }
+      ]
+    },
+    {
+      "type": "hero",
+      "headline": "Train on your evals. **Keep your moat.**",
+      "sub": "DoorDash, Cognition, Mercor. Ex-OpenAI post-training. Open weights in, private scorecards stay home.",
+      "mono": "youtube.com/watch?v=B-MxM-OqON8",
+      "footer": "generalist.com · appliedcompute.com · 2026"
+    }
+  ]
+}

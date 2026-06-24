@@ -1,0 +1,83 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "quote",
+      "text": "The center does not disappear. It **defers** with proof.",
+      "author": "Center Study",
+      "role": "mission"
+    },
+    {
+      "type": "timeline",
+      "heading": "One micro-juridical loop",
+      "steps": [
+        { "label": "question", "sub": "what now?" },
+        { "label": "command", "sub": "member acts" },
+        { "label": "case", "sub": "evidence", "active": true },
+        { "label": "judgment", "sub": "you decide" },
+        { "label": "receipt", "sub": "proof out" }
+      ],
+      "sub": "Every irreversible act gets a packet before it ships."
+    },
+    {
+      "type": "versus",
+      "heading": "Click economy vs outcome economy",
+      "left": {
+        "label": "Everyone else",
+        "items": ["reward the draft", "optimize the click", "no verification", "self-grader cheats"]
+      },
+      "right": {
+        "label": "Atris",
+        "items": ["reward the result", "verify the loop", "judgment packet", "receipt trail"]
+      }
+    },
+    {
+      "type": "metricgrid",
+      "heading": "The gap is measurable",
+      "metrics": [
+        { "value": "98%", "label": "of agents act with no verification" },
+        { "value": "74%", "label": "of enterprises rolled agents back" },
+        { "value": "14%", "label": "of top models pass reward benchmarks" },
+        { "value": "1", "label": "loop to prove the whole company" }
+      ]
+    },
+    {
+      "type": "receipt",
+      "heading": "Deferral preserves judgment.",
+      "sub": "Every irreversible act ships with a packet first.",
+      "receiptTitle": "packet #042 · recovery",
+      "fields": [
+        { "k": "action", "v": "send recovery email" },
+        { "k": "risk", "v": "medium · outbound" },
+        { "k": "evidence", "v": "3 prior threads, churn score 0.82" },
+        { "k": "draft", "v": "ready for your edit" },
+        { "k": "outcome", "v": "customer replies within 48h" }
+      ],
+      "stamp": "awaiting keshav"
+    },
+    {
+      "type": "stack",
+      "heading": "Three layers, one scene",
+      "layers": [
+        { "title": "Periphery", "sub": "Atris2 Fast prepares. Reversible." },
+        { "title": "Deferral", "sub": "Sends pause. You judge." },
+        { "title": "Outcome", "sub": "Reward ties to the business end-state." }
+      ],
+      "sub": "The center stays the center. The periphery earns trust with proof."
+    },
+    {
+      "type": "quote",
+      "text": "Antislop runs at **file:line.**",
+      "author": "atris-cli",
+      "role": "deterministic gates"
+    },
+    {
+      "type": "hero",
+      "headline": "Seven new slide types. **Zero slop.**",
+      "sub": "Spec in JSON. Design system locked. Agent reviews thumbnails before you see it.",
+      "mono": "atris deck build decks/atris-archetypes-v2.json --review",
+      "footer": "atris.ai · archetypes v2 · 2026"
+    }
+  ]
+}

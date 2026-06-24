@@ -1,0 +1,80 @@
+{
+  "theme": "terminal",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "They learn the click. We learn the **outcome.**",
+      "sub": "The business computer that closes loops with proof, not vibes.",
+      "panel": {
+        "header": { "title": "End state", "meta": "verified" },
+        "rows": [
+          { "title": "Reply received", "sub": "email loop", "value": "yes", "sev": 0, "active": true },
+          { "title": "Deal closed", "sub": "sales loop", "value": "yes", "sev": 1 },
+          { "title": "Customer back", "sub": "recovery loop", "value": "yes", "sev": 2 }
+        ],
+        "footer": { "left": "reward the result", "right": "not the draft" }
+      }
+    },
+    {
+      "type": "bignumber",
+      "number": "98%",
+      "label": "of production agents act with no verification",
+      "sub": "AIRQ audit, 2026. Guardrails gate behavior. Nothing checks the result."
+    },
+    {
+      "type": "columns",
+      "heading": "Three layers",
+      "columns": [
+        {
+          "h": "Periphery",
+          "b": "Atris2 Fast prepares work. Draft, research, enrich. Reversible by default."
+        },
+        {
+          "h": "Deferral",
+          "b": "Sends, money, and public acts pause for your judgment with a receipt."
+        },
+        {
+          "h": "Outcome",
+          "b": "Reward ties to the business end-state, not whether someone clicked approve."
+        }
+      ]
+    },
+    {
+      "type": "panel",
+      "heading": "One loop to prove it.",
+      "sub": "Customer recovery. Then the whole company.",
+      "panel": {
+        "header": { "title": "Recovery", "meta": "wedge" },
+        "rows": [
+          { "title": "Silent customer", "sub": "churn signal", "value": "in", "sev": 1 },
+          { "title": "Member prepares", "sub": "context + draft", "value": "prep", "sev": 0, "active": true },
+          { "title": "You approve", "sub": "judgment packet", "value": "you", "sev": 2 },
+          { "title": "Receipt + outcome", "sub": "trust back?", "value": "proof", "sev": 0 }
+        ],
+        "footer": { "left": "one painful loop", "right": "then expand" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "Antislop is **proof at file:line.**",
+      "sub": "Deterministic gates block AI UI tells, hype copy, and raw HTML before your name goes out."
+    },
+    {
+      "type": "chips",
+      "heading": "Ship without slop",
+      "sub": "Every gate is a fact at file:line, not an opinion.",
+      "chips": ["slop detect", "outbound gate", "deck engine", "judgment packet", "receipt trail"],
+      "mono": "atris deck build --review"
+    },
+    {
+      "type": "close",
+      "tagline": "Prepare fast. Block slop. Reward outcomes.",
+      "buttons": [
+        { "label": "See one loop", "primary": true },
+        { "label": "Run slop detect" }
+      ],
+      "footer": "atris.ai · 2026"
+    }
+  ]
+}

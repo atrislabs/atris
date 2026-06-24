@@ -1,0 +1,48 @@
+{
+  "theme": "terminal",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Your agents ship **slop.** Atris catches it first.",
+      "sub": "Deterministic gates on UI, copy, and outbound sends. Facts at file:line, not opinions. You stay the center; nothing irreversible ships without proof.",
+      "panel": {
+        "header": { "title": "Antislop scan", "meta": "live" },
+        "rows": [
+          { "title": "ai-purple-gradient", "sub": "src/Hero.tsx:12", "value": "blocked", "valueSub": "error", "sev": 0, "active": true },
+          { "title": "hype-copy", "sub": "outbound/body.txt:3", "value": "blocked", "valueSub": "error", "sev": 0 },
+          { "title": "raw-html-in-plain-body", "sub": "email draft", "value": "blocked", "valueSub": "error", "sev": 1 },
+          { "title": "deck engine", "sub": "slides batch", "value": "clean", "valueSub": "pass", "sev": 2 }
+        ],
+        "footer": { "left": "3 blocked before send", "right": "exit 1" }
+      }
+    },
+    {
+      "type": "columns",
+      "heading": "Three gates. One operating system.",
+      "columns": [
+        {
+          "h": "Slop detect",
+          "b": "atris slop scans code and prose for AI tells: purple gradients, glass blur, em dashes, hype copy. Zero LLM. Built for CI and review."
+        },
+        {
+          "h": "Outbound gate",
+          "b": "Before your name goes out: no raw HTML, no fenced source as body, render proof for visual sends, copy kill-list enforced."
+        },
+        {
+          "h": "Your judgment",
+          "b": "Atris2 Fast prepares on the periphery. Sends, posts, and money defer to you with a judgment packet and receipt trail."
+        }
+      ]
+    },
+    {
+      "type": "close",
+      "tagline": "Prepare fast. Block slop. You approve consequence.",
+      "buttons": [
+        { "label": "Try Atris2 Fast", "primary": true },
+        { "label": "Run slop detect" }
+      ],
+      "footer": "atris.ai · antislop by design · 2026"
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "theme": "ink",
+  "brand": { "name": "The Generalist", "accent": "." },
+  "slides": [
+    {
+      "type": "interstitial",
+      "kicker": "Yash Patil · Applied Compute · The Generalist · 68 min",
+      "text": "Own or **be owned.**"
+    },
+    {
+      "type": "lede",
+      "headline": "Frontier models are a **blowtorch.** Most jobs need a knife.",
+      "dek": "23-year-old ex-OpenAI post-training researcher. $1.3B company in year one. Trains custom models on private evals for DoorDash, Cognition, and Mercor.",
+      "byline": "Own or Be Owned · June 2026 · generalist.com/p/own-or-be-owned"
+    },
+    {
+      "type": "quote",
+      "text": "A model-less company is sitting on **shifting sand.**",
+      "author": "Yash Patil",
+      "role": "On Fable 5 guardrails and frontier provider control"
+    },
+    {
+      "type": "prose",
+      "heading": "Why Fable 5 sparked the own-or-be-owned thesis.",
+      "paragraphs": [
+        "Anthropic's system card flagged restrictions on AI model development queries. Reasonable safety on one reading. Also: the model provider decides what capabilities you get.",
+        "If Anthropic holds out a capability for competitive reasons, downstream products built on their API get Sherlocked. The fix is owning your intelligence stack."
+      ]
+    },
+    {
+      "type": "statement",
+      "text": "Evals are the new **PRD.**",
+      "sub": "Every company codifies what good looks like. Proprietary evals stay home. Goldman and Mercor will never ship scorecards to frontier APIs."
+    },
+    {
+      "type": "columns",
+      "heading": "What Applied Compute does",
+      "columns": [
+        { "h": "Post-train", "b": "Start from open-weight models. RLVR hill climb on customer data. Task-specific, not general." },
+        { "h": "Serve", "b": "Deploy in production at scale. Revenue mostly on inference, not training fees." },
+        { "h": "Improve", "b": "Capture usage → new training data → continuous loop. Model learns the more you use it." }
+      ]
+    },
+    {
+      "type": "timeline",
+      "heading": "Customer engagement loop",
+      "steps": [
+        { "label": "eval", "sub": "define good" },
+        { "label": "data", "sub": "your traces" },
+        { "label": "train", "sub": "RLVR climb", "active": true },
+        { "label": "serve", "sub": "host + infer" },
+        { "label": "loop", "sub": "never ends" }
+      ],
+      "sub": "Applied researchers embed with customer ML teams. Palantir-style FDE model. Platform is the repeatable layer."
+    },
+    {
+      "type": "split",
+      "heading": "DoorDash beat frontier on one narrow task.",
+      "body": "100k+ new merchants per year. Unstructured menu photo in. High-fidelity DoorDash storefront out. Build eval → training data → RL → deploy. Specialized model exceeded frontier quality on this workflow.",
+      "accent": "100k+",
+      "accentSub": "merchants/year · menu photo → storefront · owned intelligence"
+    },
+    {
+      "type": "stack",
+      "heading": "Post-training stack (how RLVR works)",
+      "layers": [
+        { "title": "Pre-training", "sub": "internet-scale data, next-token prediction, sets the floor" },
+        { "title": "SFT", "sub": "behavior cloning on good completion examples" },
+        { "title": "RLVR", "sub": "verifiable rewards, many attempts, hill climb the eval" },
+        { "title": "Continuous", "sub": "sparse rewards from production usage, Cursor Composer-style online RL" }
+      ],
+      "sub": "Microsoft called it the hill-climbing machine. If you define the hill well, the algorithm works."
+    },
+    {
+      "type": "columns",
+      "heading": "Right model for the right task",
+      "columns": [
+        { "h": "Frontier (20%)", "b": "Hardest tasks. Sets the floor. Shared capability. Blowtorch scale." },
+        { "h": "Custom (80%)", "b": "Your evals. Cost + latency fit. Private data. Raises the ceiling." },
+        { "h": "Cost driver now", "b": "Token apocalypse. Inference dominates spend. Better, cheaper, faster open-weight models." }
+      ]
+    },
+    {
+      "type": "prose",
+      "heading": "Moat beyond the weights.",
+      "paragraphs": [
+        "Kirkland & Ellis talked about half a billion on AI tools competitors cannot use. The model is part of the moat. Training inside your harness with your context is the rest.",
+        "Same model + same frontier API as your competitor = no differentiation. Own the post-training loop on private evals."
+      ]
+    },
+    {
+      "type": "chips",
+      "heading": "Customers and context",
+      "chips": [
+        "DoorDash merchant onboarding",
+        "Cognition",
+        "Mercor agent training",
+        "AI natives",
+        "Digital natives",
+        "Large enterprises",
+        "Hyperscalers"
+      ],
+      "mono": "appliedcompute.com/case-studies/doordash"
+    },
+    {
+      "type": "columns",
+      "heading": "Training infrastructure bets",
+      "columns": [
+        { "h": "Async pipeline", "b": "Sample next problems while training runs. Off-policy corrections. Cut total GPU time on long-horizon tasks." },
+        { "h": "Replayable envs", "b": "Sandboxes with codebases and services. Same problem attempted 1,000x. Verifier assigns reward." },
+        { "h": "GPU perf", "b": "Own GPUs. ML infra researchers close to hardware. Environment perf so GPUs never idle on CPU work." }
+      ]
+    },
+    {
+      "type": "bignumber",
+      "number": "$1.3B",
+      "label": "Applied Compute valuation, ~14 months in",
+      "sub": "Ex-OpenAI post-training team. ~2/3 of hires are ex-founders. High-agency FDE culture."
+    },
+    {
+      "type": "prose",
+      "heading": "Yash's path to Applied Compute",
+      "paragraphs": [
+        "Stanford dropout (sophomore). Almost landed on ChatGPT engineering. Pulled last-minute to post-training infra. Mentored by Luke Metz, Barret Zoph, John Schulman.",
+        "Cold-emailed Sam Altman after a campus dinner. Residency required burning the boats. Lived through the Sam ouster weekend. Hug on the stairs when he returned."
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "Predictions and roadblocks",
+      "columns": [
+        { "h": "Decades, not years", "b": "AI diffusion is slow. Large institutions resist change. DeployCo exists because deployment is hard." },
+        { "h": "No one is data ready", "b": "Even best companies. Messy traces. Field notes from Michael Chan on FDE reality." },
+        { "h": "Compute crunch", "b": "Inference demand will balloon. Personal AI × enterprise models. Pareto-optimal cost-performance wins." }
+      ]
+    },
+    {
+      "type": "quote",
+      "text": "There is truly some **atrophy** happening by relying too much on AI tools.",
+      "author": "Yash Patil",
+      "role": "Recommends The Design of Everyday Things · humans stay overlords"
+    },
+    {
+      "type": "interstitial",
+      "text": "Train on your evals. **Keep your moat.**",
+      "sub": "youtube.com/watch?v=B-MxM-OqON8 · appliedcompute.com · yashpatil.me",
+      "align": "START"
+    }
+  ]
+}

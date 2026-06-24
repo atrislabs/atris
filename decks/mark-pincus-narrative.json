@@ -1,0 +1,102 @@
+{
+  "theme": "noir",
+  "brand": { "name": "Sourcery", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Separate the **instinct** from the idea.",
+      "sub": "Mark Pincus on Life at the Speed of Play. Zynga, FarmVille, Words With Friends, Hivemind. A Sourcery episode with Molly O'Shea."
+    },
+    {
+      "type": "quote",
+      "text": "Your number one job as a founder is to be **right.**",
+      "author": "Mark Pincus",
+      "role": "Life at the Speed of Play"
+    },
+    {
+      "type": "interstitial",
+      "kicker": "the vein",
+      "text": "Instinct is the **emotional vein.**",
+      "sub": "Something broken in human experience. SMS taxi was right. The Tribe.net instincts were right.",
+      "align": "START"
+    },
+    {
+      "type": "columns",
+      "heading": "Three things people **conflate**",
+      "columns": [
+        {
+          "h": "Instinct",
+          "b": "The emotional vein. Something broken in human experience that keeps pulling you back."
+        },
+        {
+          "h": "Idea",
+          "b": "One product bet on that instinct. Often a B+. Kill it fast so the A can show up."
+        },
+        {
+          "h": "Calibration",
+          "b": "The skill that sharpens with reps. Ask is this it? and you already know."
+        }
+      ]
+    },
+    {
+      "type": "interstitial",
+      "kicker": "the method",
+      "text": "Proven, better, **new.**",
+      "sub": "Run them in that order. Give yourself four shots on goal instead of one grind up a hill.",
+      "align": "START"
+    },
+    {
+      "type": "timeline",
+      "heading": "The order that **wins**",
+      "steps": [
+        { "label": "Proven", "sub": "find the closest success, same audience, deconstruct every pixel" },
+        { "label": "Better", "sub": "one change the audience would all notice", "active": true },
+        { "label": "New", "sub": "the novel hook, expect it to fail, isolate the experiment" }
+      ],
+      "sub": "Four shots on goal beat one slow march up a single hill."
+    },
+    {
+      "type": "bignumber",
+      "number": "Day 365",
+      "label": "retention beats virality in consumer",
+      "sub": "40,000 games launched. Zero held the top 25. People download zero new apps a month. Build for the life stack."
+    },
+    {
+      "type": "prose",
+      "heading": "Why **retention** is the only number",
+      "paragraphs": [
+        "Virality buys you a spike. Day 365 measures whether the spike turned into a habit, and habit is the whole game in consumer.",
+        "Forty thousand games launched and none of them held a top 25 spot. Most people add zero new apps to their phone in a month.",
+        "So build for the life stack. Earn a place people return to without a push notification dragging them back."
+      ]
+    },
+    {
+      "type": "split",
+      "heading": "Real CEO, **fake CEO**",
+      "body": "The real job lives in the product. Great product teams. Products users love. Half the calendar spent here. iPhone home screen research as a daily habit. The fake version tours investors, lectures on culture, chases press and Davos, and pushes an agenda detached from the product.",
+      "accent": "50%+",
+      "accentSub": "of a real CEO calendar sits inside the product itself."
+    },
+    {
+      "type": "prose",
+      "heading": "The tech assistant is **vampire blood**",
+      "paragraphs": [
+        "Bezos, Grove, and Gates each had someone shadow them. Proximity transfers judgment faster than any memo can.",
+        "Pluck the talent early, let them shadow the CEO, then hand them a mini-CEO project to ship on their own.",
+        "Ian Cinnamon: MIT early, built apps, marked low on paper. As an expert witness he sat closest to the data. Plucked early, shadowed the CEO, went on to found Apex."
+      ]
+    },
+    {
+      "type": "statement",
+      "text": "Organ rejection hides your best **gems.**",
+      "sub": "The talent a system instinctively pushes out is often the talent worth the most. Non-scalable leverage compounds."
+    },
+    {
+      "type": "hero",
+      "headline": "Life at the **speed of play.**",
+      "sub": "Book: Life at the Speed of Play. Episode: Mark Pincus, How to Spot a Fake CEO. Sourcery with Molly O'Shea.",
+      "mono": "youtube.com/watch?v=2z-sSISO9BE",
+      "footer": "sourcery.vc · 2026"
+    }
+  ]
+}

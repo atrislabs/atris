@@ -1,0 +1,54 @@
+{
+  "theme": "ink",
+  "brand": { "name": "The Generalist", "accent": "." },
+  "slides": [
+    {
+      "type": "interstitial",
+      "kicker": "Applied Compute · The Generalist · 68 min",
+      "text": "Own or **be owned.**"
+    },
+    {
+      "type": "lede",
+      "headline": "Frontier models are a **blowtorch.** Most jobs need a knife.",
+      "dek": "Yash Patil left OpenAI to help companies train custom models on private evals. DoorDash, Cognition, Mercor.",
+      "byline": "Episode · Own or Be Owned"
+    },
+    {
+      "type": "statement",
+      "text": "Evals are the new **PRD.**",
+      "sub": "Every company codifies what good looks like. Those scorecards stay private. They will never ship them to frontier providers."
+    },
+    {
+      "type": "prose",
+      "heading": "If evals are yours, post-training should be yours too.",
+      "paragraphs": [
+        "Open weights in. Your hill to climb. RLVR on traces that look like the eval, not the internet.",
+        "Goldman will not send its production scorecard to a shared frontier API. Neither will DoorDash, Cognition, or Mercor."
+      ]
+    },
+    {
+      "type": "bignumber",
+      "number": "$1.3B",
+      "label": "Applied Compute valuation, year one",
+      "sub": "Mercor as customer. Ex-OpenAI post-training team."
+    },
+    {
+      "type": "split",
+      "heading": "DoorDash beat frontier on one task.",
+      "body": "100k+ merchants onboarded per year. Menu photo in, storefront out. A small specialized model trained on what a good storefront looks like, not general intelligence.",
+      "accent": "100k+",
+      "accentSub": "merchants per year · one narrow task · owned intelligence"
+    },
+    {
+      "type": "statement",
+      "text": "80% of spend on custom models. **20% on frontier.**",
+      "sub": "Frontier sets the floor. Your model raises the ceiling. AI diffusion into the real economy takes decades, not quarters."
+    },
+    {
+      "type": "interstitial",
+      "text": "Train on your evals. **Keep your moat.**",
+      "sub": "youtube.com/watch?v=B-MxM-OqON8 · generalist.com · appliedcompute.com",
+      "align": "START"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "theme": "noir",
+  "brand": { "name": "Sourcery", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Separate the **instinct** from the idea.",
+      "sub": "Mark Pincus on Life at the Speed of Play. Zynga, FarmVille, Words With Friends, Hivemind. A builder playbook from Sourcery.",
+      "panel": {
+        "header": { "title": "Proven better new", "meta": "framework" },
+        "rows": [
+          { "title": "Proven", "sub": "same audience, worked before", "value": "1", "sev": 2 },
+          { "title": "Better", "sub": "10/10 say hell yeah", "value": "2", "sev": 1, "active": true },
+          { "title": "New", "sub": "reason to try it", "value": "3", "sev": 0 },
+          { "title": "Test", "sub": "many shots on goal", "value": "4", "sev": 2 }
+        ],
+        "footer": { "left": "white lab coat", "right": "no attachment" }
+      }
+    },
+    {
+      "type": "quote",
+      "text": "Your number one job as a founder is to be **right.**",
+      "author": "Mark Pincus",
+      "role": "Life at the Speed of Play"
+    },
+    {
+      "type": "columns",
+      "heading": "Instinct and idea are different things",
+      "columns": [
+        {
+          "h": "Instinct",
+          "b": "The emotional vein. Something broken in human experience. SMS taxi was right. Tribe.net instincts were right."
+        },
+        {
+          "h": "Idea",
+          "b": "One product bet on that instinct. Often a B+. Kill it fast so the A can show up."
+        },
+        {
+          "h": "Calibration",
+          "b": "The skill that improves with time. If you ask is this it?, you already know."
+        }
+      ]
+    },
+    {
+      "type": "stack",
+      "heading": "Proven better new, in order",
+      "layers": [
+        { "title": "Proven", "sub": "Find the closest success. Same audience. Deconstruct every pixel." },
+        { "title": "Better", "sub": "One change the existing audience would all notice." },
+        { "title": "New", "sub": "The novel hook. Expect it to fail. Isolate the experiment." }
+      ],
+      "sub": "Give yourself four shots on goal, not one grind up a hill."
+    },
+    {
+      "type": "bignumber",
+      "number": "Day 365",
+      "label": "retention beats virality in consumer",
+      "sub": "40,000 games launched. Zero sustained top 25. People download zero new apps a month. Build for the life stack."
+    },
+    {
+      "type": "versus",
+      "heading": "Real CEO vs fake CEO",
+      "left": {
+        "label": "Real job",
+        "items": ["great product teams", "products users love", "50%+ calendar here", "iPhone home screen research"]
+      },
+      "right": {
+        "label": "Fake job",
+        "items": ["investor touring", "culture lectures", "press and Davos", "agenda without product"]
+      }
+    },
+    {
+      "type": "receipt",
+      "heading": "Tech assistant = vampire blood.",
+      "sub": "Bezos, Grove, Gates. Shadow the CEO. Transfer judgment. Then ship a mini-CEO project.",
+      "receiptTitle": "model · ian cinnamon",
+      "fields": [
+        { "k": "recruit", "v": "MIT early, built apps, marked low" },
+        { "k": "signal", "v": "expert witness, closest to data" },
+        { "k": "move", "v": "pluck early, shadow CEO" },
+        { "k": "output", "v": "build cool shit, then found Apex" },
+        { "k": "lesson", "v": "organ rejection hides gems" }
+      ],
+      "stamp": "non-scalable leverage"
+    },
+    {
+      "type": "hero",
+      "headline": "Life at the **speed of play.**",
+      "sub": "Book: Life at the Speed of Play. Episode: Mark Pincus, How to Spot a Fake CEO. Sourcery with Molly O'Shea.",
+      "mono": "youtube.com/watch?v=2z-sSISO9BE",
+      "footer": "sourcery.vc · 2026"
+    }
+  ]
+}

@@ -42,6 +42,23 @@ test('columns archetype renders a heading + body per column', () => {
   for (const t of ['A', 'B', 'C', 'a', 'b', 'c']) assert.ok(texts.includes(t), `missing column text ${t}`);
 });
 
+test('chips wrap to a second row instead of running off-slide', () => {
+  const spec = { theme: 'paper', brand: { name: 'X' }, slides: [{
+    type: 'chips',
+    chips: [
+      '$200/mo business computer',
+      'Unlimited Members',
+      'Usage credits',
+      'Managed loop setup',
+      'Enterprise controls',
+    ],
+  }] };
+  const { requests } = buildDeck(spec);
+  const shapes = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ROUND_RECTANGLE');
+  const ys = shapes.map((r) => r.createShape.elementProperties.transform.translateY);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 20, 'chips should wrap to multiple rows');
+});
+
 test('unknown slide type falls back to statement, unknown theme to terminal', () => {
   const { requests } = buildDeck({ theme: 'nope', slides: [{ type: 'mystery', text: 'hi' }] });
   assert.ok(requests.some((r) => r.insertText && r.insertText.text === 'hi'));
@@ -50,4 +67,47 @@ test('unknown slide type falls back to statement, unknown theme to terminal', ()
 test('sanitize collapses spaced hyphen separators too', () => {
   assert.equal(sanitize('on - call'), 'on, call');
   assert.equal(sanitize('on-call'), 'on-call'); // real hyphenated word survives
+});
+
+test('v2 archetypes render without falling back to statement', () => {
+  const spec = {
+    theme: 'terminal',
+    brand: { name: 'X' },
+    slides: [
+      { type: 'timeline', heading: 'Flow', steps: [{ label: 'a' }, { label: 'b', active: true }] },
+      { type: 'versus', heading: 'Vs', left: { label: 'L', items: ['one'] }, right: { label: 'R', items: ['two'] } },
+      { type: 'metricgrid', metrics: [{ value: '1', label: 'a' }, { value: '2', label: 'b' }] },
+      { type: 'receipt', fields: [{ k: 'x', v: 'y' }], stamp: 'ok' },
+      { type: 'stack', layers: [{ title: 'A', sub: 'a' }] },
+      { type: 'quote', text: 'hello', author: 'me' },
+      { type: 'hero', headline: 'done', mono: 'cmd' },
+    ],
+  };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 7);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('Flow'));
+  assert.ok(texts.includes('ok'));
+  assert.ok(texts.includes('hello'));
+  assert.ok(texts.includes('cmd'));
+});
+
+test('narrative archetypes render typography-first slides', () => {
+  const spec = {
+    theme: 'ink',
+    brand: { name: 'X' },
+    slides: [
+      { type: 'interstitial', kicker: 'k', text: 'Chapter **one.**', sub: 'sub' },
+      { type: 'lede', headline: 'Big **headline.**', dek: 'dek line', byline: 'by me' },
+      { type: 'prose', heading: 'Section', paragraphs: ['para one', 'para two'] },
+      { type: 'split', heading: 'Split', body: 'left body', accent: '99%', accentSub: 'stat note' },
+    ],
+  };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 4);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('Chapter one.'));
+  assert.ok(texts.includes('Big headline.'));
+  assert.ok(texts.includes('para one'));
+  assert.ok(texts.includes('99%'));
 });
