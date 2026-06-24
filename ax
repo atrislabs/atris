@@ -6,13 +6,46 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { spawnSync } = require('child_process');
+const { Readable } = require('stream');
 const { loadCredentials } = require('./utils/auth');
+const {
+  MEMBER_SLUG,
+  loadAxPrefs,
+  setBypassPermissions,
+  resolveBypassPermissions,
+  permissionsLabel,
+} = require('./lib/ax-prefs');
+const {
+  renderShimmerText,
+} = require('./lib/ax-shimmer');
+const {
+  attachMultilineChatInput,
+  stripMultilineCsiText,
+} = require('./lib/ax-chat-input');
+const {
+  accumulateGoalUsage,
+  buildGoalDirective,
+  clearGoalState,
+  createGoalState,
+  evaluateGoalTurn,
+  finishGoalAchieved,
+  formatGoalAchieved,
+  formatGoalActiveBanner,
+  formatGoalContinue,
+  formatGoalStatus,
+  formatGoalStopped,
+  goalBudgetExceeded,
+  goalTurnLimitReached,
+  parseGoalCommand,
+} = require('./lib/ax-goal');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
   host: '127.0.0.1',
   port: 8000,
-  path: '/api/atris2/turn'
+  path: '/api/atris2/turn',
+  publicBase: 'https://api.atris.ai'
 };
 const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
 const CODE_FAST = {
@@ -55,14 +88,22 @@ const CONNECTOR_SCOPES = {
 const ANSI = {
   reset: '\x1b[0m',
   bold: '\x1b[1m',
+  italic: '\x1b[3m',
   dim: '\x1b[2m',
   muted: '\x1b[90m',
   accent: '\x1b[36m',
   ok: '\x1b[32m',
-  magenta: '\x1b[35m'
+  safe: '\x1b[34m',
+  warn: '\x1b[33m',
+  magenta: '\x1b[35m',
+  underline: '\x1b[4m',
+  strike: '\x1b[9m',
 };
 
 const TIER_COLORS = { fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+const PROGRESS_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const PROGRESS_START_DELAY_MS = 350;
+const PROGRESS_FRAME_MS = 100;
 
 function tierColor(mode) {
   return TIER_COLORS[mode] || ANSI.accent;
@@ -95,11 +136,23 @@ function tierLabel(mode) {
   return 'Atris 2 Pro';
 }
 
-function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false } = {}, options = {}) {
+function formatHeader({ mode = 'fast', cwd = process.cwd(), chat = false, bypassPermissions, goal } = {}, options = {}) {
+  const goalLine = chat && goal ? formatGoalActiveBanner(goal, {
+    paint: (text, codes) => paint(text, codes, options),
+    bold: ANSI.bold,
+    magenta: ANSI.magenta,
+    muted: ANSI.muted,
+    accent: ANSI.accent,
+    ...options,
+  }) : '';
+  const home = os.homedir();
+  const shortCwd = cwd && home && (cwd === home || cwd.startsWith(`${home}/`)) ? `~${cwd.slice(home.length)}` : cwd;
+  const title = paint(`${tierLabel(mode)}${chat ? ' chat' : ''}`, [ANSI.bold, tierColor(normalizeMode(mode))], options);
+  const titleLine = shortCwd ? `${title}${paint(`  ·  ${shortCwd}`, [ANSI.muted], options)}` : title;
   return [
-    paint(`${tierLabel(mode)}${chat ? ' chat' : ''}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
-    cwd,
-    chat ? paint('type / for the menu · /fast /pro /max swap tiers · exit to leave', [ANSI.muted], options) : '',
+    titleLine,
+    goalLine,
+    chat ? paint('shift+tab permissions · shift+enter newline · ctrl-c · / · exit', [ANSI.muted], options) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -108,8 +161,14 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
+  '  ax [--fast|--pro|--max|--code-fast] [--local|--cloud] [--bypass|--safe] <message>',
+  '  ax [--fast|--pro|--max|--code-fast] [--local|--cloud] [--bypass|--safe] --chat',
+  '  ax chat [ax] [--fast|--pro|--max]',
+  '  ax spawn <role> --task "..." [--engine manual|codex|claude|cursor|devin]',
+    '  ax spawns [--json]',
+    '  ax youtube <url> [--query "..."] [--json]',
+    '  ax --dogfood-chat [--loops 25] [--json]',
+    '  ax --dogfood-status [--json]',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
     '  ax [--max|--fast] --benchmark',
@@ -123,8 +182,30 @@ function formatUsage() {
     '  --cloud force authenticated cloud connectors/chat',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
+    '  --bypass  allow external side effects for this run (default: safe / approval-only)',
+    '  --safe    force approval-only mode for this run',
+    '  --dogfood-chat  run the safe ax fast chat checklist harness',
+    '  --dogfood-status  summarize the overnight dogfood mission progress',
+    '',
+    'Chat:',
+    '  /goal <condition>  work autonomously until the condition is met',
+    '  /goal              show active goal, turns, and evaluator reason',
+    '  /goal clear        stop the active goal',
+    '  /bypass  persist bypass mode (external actions allowed when backend supports it)',
+    '  /safe    persist safe mode (default; approval-only external actions)',
+    '',
+    'Delegation:',
+    '  ax spawn <role> --task "..."          create a worker request from ax',
+    '  atris agent spawn <role> --task "..." same request ledger from the Atris CLI',
+    '  ax youtube <url>                     process a YouTube video through Atris',
+    '  ax --dogfood-chat --loops 25         exercise chat UI and routing without spending credits',
+    '  ax --dogfood-status                  show overnight dogfood proof and remaining loops',
     '',
     'Examples:',
+    '  ax spawn worker --task "Fix the failing smoke test" --engine codex',
+    '  ax youtube https://www.youtube.com/watch?v=VIDEO_ID',
+    '  ax --dogfood-chat --loops 25',
+    '  ax --dogfood-status',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
     '  ax --max refactor this module and verify the tests',
@@ -145,7 +226,7 @@ function stripAnsi(value) {
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
-function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', output = process.stdout } = {}) {
+function createRunLogger({ cwd = process.cwd(), mode = 'fast', kind = 'play', output = process.stdout } = {}) {
   if (process.env.AX_AUTO_LOG === '0') return null;
   if (output !== process.stdout && output !== process.stderr && !output.isTTY) return null;
 
@@ -185,30 +266,51 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
   };
 }
 
-function backendBaseUrl() {
-  return (process.env.AX_BACKEND_URL
-    || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL
+function backendBaseUrl(options = {}) {
+  const route = options.route === 'local' || options.forceLocal
+    ? 'local'
+    : options.route === 'cloud' || options.forceCloud
+      ? 'cloud'
+      : 'auto';
+  const localOverride = process.env.AX_BACKEND_URL || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL;
+  const cloudOverride = process.env.OBELISK_ATRIS2_BACKEND_URL || process.env.ATRIS_API_BASE || BACKEND.publicBase;
+  if (route === 'cloud') {
+    if (localOverride && !isLoopbackUrl(localOverride)) return localOverride.replace(/\/$/, '');
+    return cloudOverride.replace(/\/$/, '');
+  }
+  if (route === 'auto' && !localOverride) {
+    return cloudOverride.replace(/\/$/, '');
+  }
+  return (localOverride
     || process.env.OBELISK_ATRIS2_BACKEND_URL
     || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
 }
 
-function backendUrl() {
-  return new URL(BACKEND.path, backendBaseUrl()).toString();
+function backendUrl(options = {}) {
+  return new URL(BACKEND.path, backendBaseUrl(options)).toString();
 }
 
-function backendPathUrl(pathname) {
-  return new URL(pathname, backendBaseUrl()).toString();
+function backendPathUrl(pathname, options = {}) {
+  return new URL(pathname, backendBaseUrl(options)).toString();
 }
 
-function codeFastBaseUrl() {
-  return (process.env.AX_CODE_FAST_BACKEND_URL
-    || process.env.AX_CODE_FAST_API_BASE
-    || process.env.ATRIS_API_BASE
-    || CODE_FAST.publicBase).replace(/\/$/, '');
+function codeFastBaseUrl(options = {}) {
+  const route = options.route === 'local' || options.forceLocal
+    ? 'local'
+    : options.route === 'cloud' || options.forceCloud
+      ? 'cloud'
+      : 'auto';
+  const backendOverride = process.env.AX_CODE_FAST_BACKEND_URL;
+  const useBackendOverride = backendOverride && !(route === 'cloud' && isLoopbackUrl(backendOverride));
+  return (useBackendOverride
+    ? backendOverride
+    : process.env.AX_CODE_FAST_API_BASE
+      || process.env.ATRIS_API_BASE
+      || CODE_FAST.publicBase).replace(/\/$/, '');
 }
 
-function codeFastUrl() {
-  return new URL(CODE_FAST.path, codeFastBaseUrl()).toString();
+function codeFastUrl(options = {}) {
+  return new URL(CODE_FAST.path, codeFastBaseUrl(options)).toString();
 }
 
 function isLoopbackUrl(value) {
@@ -231,7 +333,7 @@ function buildRunProfile(options = {}) {
   if (mode === 'code-fast') {
     const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
     return {
-      endpoint: codeFastUrl(),
+      endpoint: codeFastUrl({ route }),
       mode,
       route,
       model: CODE_FAST.model,
@@ -242,15 +344,18 @@ function buildRunProfile(options = {}) {
       reasoning: 'Composer 2.5 fast lane; charges 10 credits per public turn'
     };
   }
-  const route = resolveRoute(options.message || 'doctor', options);
-  const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
+  const profileMessage = options.message || 'what files are here?';
+  const route = resolveRoute(profileMessage, options);
+  const payload = buildPayload(profileMessage, { mode, cwd, route, bypassPermissions: options.bypassPermissions });
   return {
-    endpoint: backendUrl(),
+    endpoint: backendUrl({ route }),
     mode,
     route,
     model: payload.model,
     workspace_path: payload.workspace_path || 'cloud',
     max_turns: payload.max_turns,
+    member_slug: payload.member_slug,
+    bypass_permissions: payload.bypass_permissions,
     streaming: true,
     runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
     reasoning: mode === 'max'
@@ -264,6 +369,8 @@ function buildRunProfile(options = {}) {
 function formatRunProfile(profile, options = {}) {
   const rows = [
     ['mode', profile.mode],
+    ['agent', profile.member_slug || MEMBER_SLUG],
+    ['permissions', profile.bypass_permissions ? 'bypass' : 'safe'],
     ['endpoint', profile.endpoint],
     ['route', profile.route || 'auto'],
     ['workspace', formatPathSubject(profile.workspace_path, options)],
@@ -307,9 +414,9 @@ function authUserId() {
   }
 }
 
-function isLoopbackBackend() {
+function isLoopbackBackend(options = {}) {
   try {
-    const parsed = new URL(backendBaseUrl());
+    const parsed = new URL(backendBaseUrl(options));
     return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
   } catch (_) {
     return false;
@@ -491,10 +598,20 @@ function githubWorkspaceIntent(message) {
   return /\b(push|commit|commits?|branch|branches|checkout|merge|rebase|tag|release|pr|pull request|pull-request|repo change|code change|small change)\b/i.test(text);
 }
 
+function casualChatIntent(message) {
+  const text = String(message || '').trim();
+  if (!text) return false;
+  if (workspaceIntent(text) || mentionsConnector(text) || githubWorkspaceIntent(text)) return false;
+  if (/^(hi+|hello+|hey+|yo+|sup|gm|good morning|good afternoon|good evening|thanks?|thank you|ok+|okay|k|cool|nice|lol|lmao|haha|why\??|what\??|huh\??|yes|no|nah|yep|nope)[.!?]*$/i.test(text)) return true;
+  if (/^(hi|hello|hey)\b/i.test(text)) return true;
+  return /^[a-z]{1,8}[.!?]*$/i.test(text);
+}
+
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
   if (githubWorkspaceIntent(message)) return 'local';
+  if (casualChatIntent(message)) return 'cloud';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
   return 'local';
 }
@@ -502,13 +619,197 @@ function resolveRoute(message, options = {}) {
 function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'max') return 'max';
-  return mode === 'fast' ? 'fast' : 'pro';
+  if (mode === 'pro') return 'pro';
+  return 'fast';
 }
 
 function formatPrompt(mode, options = {}) {
-  if (!mode) return '› ';
   const tier = normalizeMode(mode);
-  return `${paint(tier, [ANSI.bold, tierColor(tier)], options)} › `;
+  const goalHint = options.goal && options.goal.active
+    ? `${paint('◎ ', [ANSI.bold, ANSI.magenta], options)}`
+    : '';
+  if (!mode) return `${goalHint}› `;
+  return `${goalHint}${paint(tier, [ANSI.bold, tierColor(tier)], options)} › `;
+}
+
+function terminalWidth(options = {}) {
+  const cols = Number(options.columns || process.stdout.columns || 0);
+  if (Number.isFinite(cols) && cols >= 48) return cols;
+  return 72;
+}
+
+function inputBoxPlainWidth(options = {}) {
+  const cols = Number(options.columns || process.stdout.columns || 0);
+  if (Number.isFinite(cols) && cols >= 48) return cols - 1;
+  return 71;
+}
+
+function inputBoxLayoutOptions(stream, overrides = {}) {
+  const cols = Number(stream?.columns || process.stdout.columns || 0);
+  return {
+    ...overrides,
+    columns: Number.isFinite(cols) && cols >= 48 ? cols - 1 : 71,
+    isTTY: stream?.isTTY ?? process.stdout.isTTY,
+  };
+}
+
+function buildInputBoxTopPlain(options = {}) {
+  const width = inputBoxPlainWidth(options);
+  return `╭${'─'.repeat(Math.max(0, width - 2))}╮`;
+}
+
+// The mode + newline affordance lives on its own line BELOW the box (claude
+// style), so the rules above/below stay clean and we never say "enter send".
+function buildInputBoxStatusPlain(options = {}) {
+  return `  ${formatPermissionModeBrief(options)} · shift+enter`;
+}
+
+function buildInputBoxBottomPlain(options = {}) {
+  const width = inputBoxPlainWidth(options);
+  return `╰${'─'.repeat(Math.max(0, width - 2))}╯`;
+}
+
+function formatInputBoxInputRow(prompt, line, options = {}) {
+  const width = inputBoxPlainWidth(options);
+  const promptPlain = stripAnsi(prompt);
+  const linePlain = stripAnsi(String(line || ''));
+  const rightBar = paint('│', [ANSI.dim, ANSI.muted], options);
+  const rightPlain = '│';
+  const pad = Math.max(0, width - promptPlain.length - linePlain.length - rightPlain.length);
+  return `${prompt}${line}${' '.repeat(pad)}${rightBar}`;
+}
+
+function formatPermissionModeBrief(options = {}) {
+  return resolveBypassPermissions(options) ? 'full access' : 'approve';
+}
+
+function permissionAccentCodes(options = {}) {
+  return resolveBypassPermissions(options) ? [ANSI.dim, ANSI.warn] : [ANSI.dim, ANSI.safe];
+}
+
+function formatPermissionToggleMessage(bypassPermissions, options = {}) {
+  const persistPrefs = options.persistPrefs !== false;
+  const suffix = persistPrefs ? ' (saved)' : ' (session)';
+  if (bypassPermissions) {
+    return paint(`· Full access${suffix} — external actions can run without approval`, [ANSI.warn], options);
+  }
+  return paint(`· Approve mode${suffix} — external actions ask before they run`, [ANSI.safe], options);
+}
+
+function isPermissionToggleKey(key) {
+  if (!key) return false;
+  if (key.shift && key.name === 'tab') return true;
+  const sequence = String(key.sequence || '');
+  return sequence === '\x1b[Z' || sequence === '\x1b[1;2Z';
+}
+
+function isMultilineInsertKey(str, key) {
+  if (!key) return str === '\n';
+  if (key.shift && (key.name === 'return' || key.name === 'enter')) return true;
+  if (key.meta && (key.name === 'return' || key.name === 'enter')) return true;
+  if (str === '\n' && key.name !== 'return') return true;
+  return false;
+}
+
+function insertMultilineBreak(rl) {
+  if (!rl) return;
+  // Insert a literal newline at the cursor. rl.write('\n') would SUBMIT the
+  // line (readline treats it as Enter) and also re-enter our _ttyWrite hook.
+  if (typeof rl._insertString === 'function') {
+    rl._insertString('\n');
+    return;
+  }
+  if (typeof rl.line === 'string') {
+    const cursor = Number.isFinite(rl.cursor) ? rl.cursor : rl.line.length;
+    rl.line = rl.line.slice(0, cursor) + '\n' + rl.line.slice(cursor);
+    rl.cursor = cursor + 1;
+    if (typeof rl._refreshLine === 'function') rl._refreshLine();
+  }
+}
+
+function formatInputBoxTop(options = {}) {
+  return paint(buildInputBoxTopPlain(options), [ANSI.dim, ANSI.muted], options);
+}
+
+function formatInputBoxBottom(options = {}) {
+  return paint(buildInputBoxBottomPlain(options), [ANSI.dim, ANSI.muted], options);
+}
+
+// Status line shown below the box: permission mode + the shift+enter newline
+// affordance, mode-colored. Drawn by the repaint, cleared on submit.
+function formatInputBoxStatus(options = {}) {
+  const plain = buildInputBoxStatusPlain(options);
+  const modeLabel = formatPermissionModeBrief(options);
+  const idx = plain.indexOf(modeLabel);
+  if (idx === -1) return paint(plain, [ANSI.dim, ANSI.muted], options);
+  const modePainted = paint(modeLabel, permissionAccentCodes(options), options);
+  const dim = [ANSI.dim, ANSI.muted];
+  return `${paint(plain.slice(0, idx), dim, options)}${modePainted}${paint(plain.slice(idx + modeLabel.length), dim, options)}`;
+}
+
+function closeInputBox(output, options = {}) {
+  // On submit the cursor sits on the bottom-rule row: redraw the rule, then
+  // clear the status line the repaint left below it and leave the cursor on a
+  // fresh row for the turn output.
+  output.write(`\r\x1b[2K${formatInputBoxBottom(options)}\n\x1b[2K\r`);
+}
+
+// Keep the input box closed while the user is typing: after each readline
+// render, repaint the bottom rule one row below the (possibly wrapped/multiline)
+// input plus a status line below that, then return the cursor. readline clears
+// to end-of-display on every refresh, so both must be redrawn each time. Writes
+// to the raw stream readline renders to (not the logger) since these are
+// transient cursor moves.
+function repaintInputBoxBottom(rl, output, options = {}) {
+  if (!rl || !output || typeof output.write !== 'function') return;
+  if (typeof rl._getDisplayPos !== 'function' || typeof rl.getCursorPos !== 'function') return;
+  let total;
+  let cur;
+  try {
+    total = rl._getDisplayPos(`${rl._prompt || ''}${rl.line || ''}`);
+    cur = rl.getCursorPos();
+  } catch {
+    return;
+  }
+  if (!total || !cur) return;
+  // When the input is taller than the viewport the terminal scrolls and the
+  // relative cursor math below can't land the rule reliably (it would corrupt
+  // the scrollback). Degrade gracefully: skip the closing rule for a giant
+  // input rather than scramble it. readline still renders the text correctly.
+  const rows = Number(output.rows || (typeof process !== 'undefined' && process.stdout && process.stdout.rows) || 0);
+  if (rows && total.rows + 3 >= rows) return;
+  const down = Math.max(1, (total.rows - cur.rows) + 1);
+  let seq = `\r\x1b[${down}B\x1b[2K${formatInputBoxBottom(options)}`;
+  seq += `\r\x1b[1B\x1b[2K${formatInputBoxStatus(options)}`;
+  seq += `\x1b[${down + 1}A\r`;
+  if (cur.cols > 0) seq += `\x1b[${cur.cols}C`;
+  output.write(seq);
+}
+
+function formatChatInputInnerPrefix(mode, options = {}) {
+  const tier = normalizeMode(mode);
+  const goalHint = options.goal && options.goal.active
+    ? `${paint('◎ ', [ANSI.bold, ANSI.magenta], options)}`
+    : '';
+  const tierPart = mode
+    ? `${goalHint}${paint(tier, [ANSI.bold, tierColor(tier)], options)} › `
+    : `${goalHint}› `;
+  return `${paint('→ ', [ANSI.muted], options)}${tierPart}`;
+}
+
+function formatChatInputPrompt(mode, options = {}) {
+  // Two-space indent (no left bar) to match the plain rules and the status line.
+  return `  ${formatChatInputInnerPrefix(mode, options)}`;
+}
+
+const PERMISSION_COMMANDS = new Map([
+  ['/bypass', true],
+  ['/safe', false],
+]);
+
+function chatPermissionCommand(line) {
+  const key = String(line || '').trim().toLowerCase();
+  return PERMISSION_COMMANDS.has(key) ? PERMISSION_COMMANDS.get(key) : null;
 }
 
 const TIER_COMMANDS = new Map([
@@ -522,21 +823,70 @@ function chatTierCommand(line) {
 }
 
 const CHAT_COMMANDS = [
+  ['/goal', 'set/show autonomous completion condition'],
   ['/fast', 'quick answers, lowest latency'],
   ['/pro', 'deeper tool loop for real work'],
   ['/max', 'highest reasoning for the hardest jobs'],
+  ['/bypass', 'allow external side effects (persisted)'],
+  ['/safe', 'approval-only external actions (default, persisted)'],
   ['/help', 'show this menu'],
   ['exit', 'leave chat'],
 ];
 
+const CHAT_SHORTCUTS = [
+  ['shift+tab', 'toggle approve ↔ full access'],
+  ['shift+enter', 'new line (enter sends)'],
+];
+
+const CHAT_DOGFOOD_BASE_CASES = [
+  { input: '/help', kind: 'command', coverage: 'menu' },
+  { input: '/fast', kind: 'command', coverage: 'tier_fast' },
+  { input: 'hi', kind: 'turn', expectRoute: 'cloud', coverage: 'small_talk' },
+  { input: 'pop', kind: 'turn', expectRoute: 'cloud', coverage: 'short_noise' },
+  { input: 'hello why', kind: 'turn', expectRoute: 'cloud', coverage: 'greeting_phrase' },
+  { input: 'what files are here?', kind: 'turn', expectRoute: 'local', coverage: 'workspace_read' },
+  { input: 'search src for the input component', kind: 'turn', expectRoute: 'local', coverage: 'workspace_search' },
+  { input: 'fix the xp game tests', kind: 'turn', expectRoute: 'local', coverage: 'workspace_fix' },
+  { input: 'what is on my calendar today?', kind: 'turn', expectRoute: 'cloud', coverage: 'connector_read' },
+  { input: 'which integrations are connected?', kind: 'turn', expectRoute: 'cloud', coverage: 'connector_status' },
+  { input: 'what github repos do I have?', kind: 'turn', expectRoute: 'cloud', coverage: 'github_read' },
+  { input: 'push something to github', kind: 'turn', expectRoute: 'local', coverage: 'github_workspace_mutation' },
+  { input: 'https://www.youtube.com/watch?v=gBukk9LIklc', kind: 'youtube', coverage: 'youtube_url' },
+  { input: '/max', kind: 'command', coverage: 'tier_max' },
+  { input: 'refactor this module and verify the tests', kind: 'turn', expectRoute: 'local', expectMode: 'max', coverage: 'max_local' },
+  { input: '/pro', kind: 'command', coverage: 'tier_pro' },
+  { input: 'send a slack message to the team', kind: 'turn', expectRoute: 'cloud', expectMode: 'pro', coverage: 'connector_write_safe' },
+  { input: '/bypass', kind: 'command', coverage: 'permission_bypass' },
+  { input: 'send a slack message to the team', kind: 'turn', expectRoute: 'cloud', expectBypass: true, coverage: 'connector_write_bypass' },
+  { input: '/safe', kind: 'command', coverage: 'permission_safe' },
+  { input: 'send a slack message to the team', kind: 'turn', expectRoute: 'cloud', expectBypass: false, coverage: 'connector_write_resafe' },
+  { input: '/wat', kind: 'command', coverage: 'unknown_slash' },
+  { input: '/goal', kind: 'command', coverage: 'goal_status' },
+  { input: 'oj', kind: 'turn', expectRoute: 'cloud', coverage: 'short_noise_repeat' },
+  { input: 'read MAP.md and do not edit', kind: 'turn', expectRoute: 'local', coverage: 'workspace_read_specific' },
+];
+
+function buildChatDogfoodCases(loopCount = 25) {
+  const count = Math.max(1, Number(loopCount) || 25);
+  const cases = [];
+  for (let i = 0; i < count; i += 1) {
+    cases.push({ ...CHAT_DOGFOOD_BASE_CASES[i % CHAT_DOGFOOD_BASE_CASES.length], index: i + 1 });
+  }
+  return cases;
+}
+
 function chatMenu(options = {}) {
-  return CHAT_COMMANDS
+  const commands = CHAT_COMMANDS
     .map(([name, desc]) => {
       const tier = TIER_COMMANDS.get(name);
       const color = tier ? tierColor(tier) : ANSI.accent;
       return `  ${paint(name.padEnd(6), [color], options)}  ${paint(desc, [ANSI.muted], options)}`;
     })
     .join('\n');
+  const shortcuts = CHAT_SHORTCUTS
+    .map(([name, desc]) => `  ${paint(name.padEnd(6), [ANSI.ok], options)}  ${paint(desc, [ANSI.muted], options)}`)
+    .join('\n');
+  return `${commands}\n${shortcuts}`;
 }
 
 function chatCompleter(line) {
@@ -547,10 +897,132 @@ function chatCompleter(line) {
   return [hits.length ? hits : names, trimmed];
 }
 
-function formatWorkingLine(ms, verb, frame) {
+function parsePermissionFlags(args) {
+  let bypassPermissions;
+  if (args.includes('--bypass')) bypassPermissions = true;
+  if (args.includes('--safe')) bypassPermissions = false;
+  return bypassPermissions;
+}
+
+function stripPermissionFlags(args) {
+  return args.filter(arg => arg !== '--bypass' && arg !== '--safe');
+}
+
+function normalizeChatCommandArgs(args = []) {
+  const normalized = [...args];
+  let firstPositional = -1;
+  const flagsWithValue = new Set(['--business', '--verify', '--loops']);
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const arg = String(normalized[i] || '');
+    if (flagsWithValue.has(arg)) {
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    firstPositional = i;
+    break;
+  }
+
+  let chatRequested = normalized.includes('--chat');
+  if (firstPositional !== -1 && normalized[firstPositional] === 'chat') {
+    chatRequested = true;
+    normalized.splice(firstPositional, 1, '--chat');
+    const target = String(normalized[firstPositional + 1] || '').toLowerCase();
+    if (target === MEMBER_SLUG || target === 'ax') {
+      normalized.splice(firstPositional + 1, 1);
+    }
+  }
+
+  return { args: normalized, chatRequested };
+}
+
+function isAxSpawnCommand(command) {
+  return ['spawn', 'spawns', 'spawn-list', 'list-spawns', 'spawn-status', 'spawn-show'].includes(String(command || ''));
+}
+
+function runAxSpawnCommand(args = [], deps = {}) {
+  const [command, ...rest] = args;
+  const root = deps.root || process.cwd();
+  const output = deps.output || ((line = '') => console.log(line));
+  const {
+    agentSpawnCommand,
+    agentSpawnListCommand,
+    agentSpawnStatusCommand,
+  } = require('./commands/agent-spawn');
+
+  if (command === 'spawn') return agentSpawnCommand(rest, { root, output, commandName: 'ax spawn' });
+  if (command === 'spawns' || command === 'spawn-list' || command === 'list-spawns') {
+    return agentSpawnListCommand(rest, { root, output });
+  }
+  if (command === 'spawn-status' || command === 'spawn-show') {
+    return agentSpawnStatusCommand(rest, { root, output });
+  }
+  throw new Error('Unknown ax spawn command');
+}
+
+const YOUTUBE_URL_PATTERN = /\bhttps?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s]+|youtu\.be\/[^\s]+|youtube\.com\/shorts\/[^\s]+)/i;
+
+function cleanYoutubeUrl(url) {
+  return String(url || '').replace(/[),.;\]]+$/g, '');
+}
+
+function extractYoutubeUrl(text) {
+  const match = String(text || '').match(YOUTUBE_URL_PATTERN);
+  return match ? cleanYoutubeUrl(match[0]) : null;
+}
+
+function youtubeQueryFromPrompt(prompt, youtubeUrl) {
+  const withoutUrl = String(prompt || '').replace(youtubeUrl, '').trim();
+  return withoutUrl.replace(/^[-:,\s]+|[-:,\s]+$/g, '').trim();
+}
+
+function buildAxYoutubeArgs(prompt, extraArgs = []) {
+  const text = Array.isArray(prompt) ? prompt.join(' ') : String(prompt || '');
+  const youtubeUrl = extractYoutubeUrl(text);
+  if (!youtubeUrl) return null;
+  const query = youtubeQueryFromPrompt(text, youtubeUrl);
+  const args = [youtubeUrl];
+  if (query) args.push('--query', query);
+  return args.concat(extraArgs || []);
+}
+
+async function runAxYoutubeCommand(args = [], deps = {}) {
+  const output = deps.output || ((line = '') => console.log(line));
+  const commandArgs = args[0] === 'youtube' ? args.slice(1) : args;
+  const inferred = args[0] === 'youtube' ? null : buildAxYoutubeArgs(commandArgs);
+  const finalArgs = inferred || commandArgs;
+  const youtubeCommand = deps.youtubeCommand || require('./commands/youtube').youtubeCommand;
+  const commandName = args[0] === 'youtube' ? 'ax youtube' : deps.commandName;
+  return youtubeCommand(finalArgs, { ...deps, output, commandName });
+}
+
+function normalizeWorkingOptions(frameOrOptions, maybeOptions = {}) {
+  if (typeof frameOrOptions === 'string') {
+    return { ...maybeOptions, frameChar: frameOrOptions };
+  }
+  if (frameOrOptions && typeof frameOrOptions === 'object') {
+    return frameOrOptions;
+  }
+  return maybeOptions;
+}
+
+function formatWorkingLine(ms, verb, frameOrOptions, maybeOptions = {}) {
+  const options = normalizeWorkingOptions(frameOrOptions, maybeOptions);
   const totalSeconds = Math.max(1, Math.round((Number(ms) || 0) / 1000));
-  if (verb) return `${frame || '•'} ${verb}… (${formatSeconds(totalSeconds)} · ctrl-c to interrupt)`;
-  return `• Working (${formatSeconds(totalSeconds)} • ctrl-c to interrupt)`;
+  const tick = Number.isFinite(options.tick) ? options.tick : null;
+  const labelVerb = String(verb || 'Thinking').trim() || 'Thinking';
+  const meta = paint(
+    `(${formatSeconds(totalSeconds)} · ctrl-c to interrupt)`,
+    [ANSI.dim, ANSI.muted],
+    options
+  );
+  const label = tick === null
+    ? paint(labelVerb, [ANSI.muted], options)
+    : renderShimmerText(labelVerb, tick ?? 0, options);
+  const suffix = paint('…', [ANSI.dim, ANSI.muted], options);
+  const prefix = paint('•', [ANSI.muted], options);
+  return `${prefix} ${label}${suffix} ${meta}`;
 }
 
 function verbForTool(tool) {
@@ -559,7 +1031,8 @@ function verbForTool(tool) {
   if (name.includes('grep') || name.includes('glob') || name.includes('search')) return 'Searching';
   if (name.includes('bash') || name.includes('command') || name.includes('run')) return 'Running';
   if (name.includes('write') || name.includes('edit')) return 'Editing';
-  return 'Working';
+  if (name.includes('think') || name.includes('reason') || name === 'task') return 'Thinking';
+  return 'Thinking';
 }
 
 function formatDoneLine(ms, credits) {
@@ -581,7 +1054,18 @@ function paint(text, codes, options = {}) {
   return `${codes.join('')}${text}${ANSI.reset}`;
 }
 
-function renderTerminalMarkdown(text, options = {}) {
+function formatMarkdownLink(label, url, options = {}) {
+  const display = String(label || '').trim();
+  const href = String(url || '').trim();
+  if (!href) return display;
+  const colored = paint(display, [ANSI.accent, ANSI.underline], options);
+  if (useColor(options) && (/^(https?:\/\/|file:\/\/)/i.test(href) || href.startsWith('/'))) {
+    return hyperlinkPath(colored, href, options);
+  }
+  return `${display} (${href})`;
+}
+
+function renderTerminalInline(text, options = {}) {
   let rendered = String(text || '');
   const codeSpans = [];
   rendered = rendered.replace(/`([^`\n]+)`/g, (_, code) => {
@@ -589,23 +1073,131 @@ function renderTerminalMarkdown(text, options = {}) {
     codeSpans.push(code);
     return token;
   });
-  rendered = rendered.replace(/^#{1,6}\s+(.+)$/gm, (_, title) => paint(title, [ANSI.bold], options));
+  rendered = rendered.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => formatMarkdownLink(label, url, options));
+  rendered = rendered.replace(/\*\*\*([^*\n]+)\*\*\*/g, (_, value) => paint(value, [ANSI.bold, ANSI.italic], options));
   rendered = rendered.replace(/\*\*([^*\n]+)\*\*/g, (_, value) => paint(value, [ANSI.bold], options));
   rendered = rendered.replace(/__([^_\n]+)__/g, (_, value) => paint(value, [ANSI.bold], options));
+  rendered = rendered.replace(/~~([^~\n]+)~~/g, (_, value) => paint(value, [ANSI.strike], options));
+  rendered = rendered.replace(/\*([^*\n]+)\*/g, (_, value) => paint(value, [ANSI.italic], options));
+  rendered = rendered.replace(/_([^_\n]+)_/g, (_, value) => paint(value, [ANSI.italic], options));
   rendered = rendered.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => paint(codeSpans[Number(index)] || '', [ANSI.accent], options));
   return rendered;
+}
+
+function renderTerminalBlockLine(line, options = {}) {
+  const header = line.match(/^(#{1,6})\s+(.+)$/);
+  if (header) return paint(header[2], [ANSI.bold], options);
+
+  const list = line.match(/^(\s*)(?:[*+-]|\d+\.)\s+(.*)$/);
+  if (list) {
+    const bullet = paint('•', [ANSI.accent], options);
+    return `${list[1]}${bullet} ${renderTerminalInline(list[2], options)}`;
+  }
+
+  const quote = line.match(/^>\s?(.*)$/);
+  if (quote) {
+    return `${paint('▏ ', [ANSI.muted], options)}${renderTerminalInline(quote[1], options)}`;
+  }
+
+  if (/^(\*{3,}|-{3,}|_{3,})$/.test(line.trim())) {
+    const width = Math.min(Math.max(16, terminalWidth(options) - 4), 48);
+    return paint('─'.repeat(width), [ANSI.dim, ANSI.muted], options);
+  }
+
+  return renderTerminalInline(line, options);
+}
+
+function renderTerminalMarkdown(text, options = {}) {
+  const source = String(text || '');
+  const parts = [];
+  const fence = /```[^\n]*\n([\s\S]*?)```/g;
+  let last = 0;
+  let match = fence.exec(source);
+  while (match) {
+    if (match.index > last) {
+      parts.push({ kind: 'text', value: source.slice(last, match.index) });
+    }
+    parts.push({ kind: 'code', value: match[1] || '' });
+    last = match.index + match[0].length;
+    match = fence.exec(source);
+  }
+  if (last < source.length) parts.push({ kind: 'text', value: source.slice(last) });
+
+  return parts.map((part) => {
+    if (part.kind === 'code') {
+      return part.value
+        .replace(/\n$/, '')
+        .split('\n')
+        .map((line) => paint(`  ${line}`, [ANSI.muted], options))
+        .join('\n');
+    }
+    return part.value
+      .split('\n')
+      .map((line) => renderTerminalBlockLine(line, options))
+      .join('\n');
+  }).join('\n');
+}
+
+function renderFenceBuffer(buffer, options = {}) {
+  return String(buffer || '')
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => paint(`  ${line}`, [ANSI.muted], options))
+    .join('\n');
 }
 
 function resetMarkdownState(state) {
   state.markdownMode = 'normal';
   state.markdownBuffer = '';
   state.markdownCarry = '';
+  state.markdownDelim = '';
+  state.atLineStart = true;
 }
 
 function ensureMarkdownState(state) {
   if (!state.markdownMode) state.markdownMode = 'normal';
   if (typeof state.markdownBuffer !== 'string') state.markdownBuffer = '';
   if (typeof state.markdownCarry !== 'string') state.markdownCarry = '';
+  if (typeof state.markdownDelim !== 'string') state.markdownDelim = '';
+  if (typeof state.atLineStart !== 'boolean') state.atLineStart = true;
+}
+
+function streamingListMarkerAt(input, index) {
+  const rest = input.slice(index);
+  const match = rest.match(/^(\s*)(?:[*+-]|\d+\.)\s+/);
+  if (!match) return null;
+  return { length: match[0].length, indent: match[1] || '' };
+}
+
+function streamingHeadingAt(input, index) {
+  const rest = input.slice(index);
+  const match = rest.match(/^#{1,6}\s+([^\n]*)/);
+  if (!match) return null;
+  return { length: match[0].length, title: match[1] || '' };
+}
+
+function streamingBlockquoteAt(input, index) {
+  const rest = input.slice(index);
+  const match = rest.match(/^>\s?/);
+  if (!match) return null;
+  return { length: match[0].length };
+}
+
+function streamingHorizontalRuleAt(input, index) {
+  const rest = input.slice(index);
+  const match = rest.match(/^(-{3,}|\*{3,}|_{3,})(?=\n|$)/);
+  if (!match) return null;
+  return { length: match[0].length };
+}
+
+function streamingLinkAt(input, index, options) {
+  const rest = input.slice(index);
+  const match = rest.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+  if (!match) return null;
+  return {
+    length: match[0].length,
+    rendered: formatMarkdownLink(match[1], match[2], options),
+  };
 }
 
 function renderStreamingMarkdown(state, text, options = {}) {
@@ -615,42 +1207,238 @@ function renderStreamingMarkdown(state, text, options = {}) {
   let out = '';
 
   for (let i = 0; i < input.length;) {
+    if (state.markdownMode === 'fence') {
+      if (state.atLineStart) {
+        const rest = input.slice(i);
+        if (/^```/.test(rest)) {
+          out += renderFenceBuffer(state.markdownBuffer, options);
+          state.markdownBuffer = '';
+          state.markdownMode = 'normal';
+          const nl = rest.indexOf('\n');
+          if (nl === -1) { i = input.length; state.atLineStart = true; continue; }
+          out += '\n';
+          i += nl + 1;
+          state.atLineStart = true;
+          continue;
+        }
+        if (/^`{1,3}$/.test(rest)) { state.markdownCarry = rest; break; }
+      }
+      const c = input[i];
+      state.markdownBuffer += c;
+      state.atLineStart = c === '\n';
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'normal' && state.atLineStart) {
+      const rest = input.slice(i);
+      // Code fence ```lang … ``` — wait for the full opening line, then stream
+      // the body as an indented block (handled by the 'fence' branch above).
+      if (/^```/.test(rest)) {
+        const nl = rest.indexOf('\n');
+        if (nl === -1) { state.markdownCarry = rest; break; }
+        state.markdownMode = 'fence';
+        state.markdownBuffer = '';
+        state.atLineStart = true;
+        i += nl + 1;
+        continue;
+      }
+      // Incomplete block marker at the end of this delta (heading ##, fence ```,
+      // bullet - / +, numbered 1.) — carry it so the next delta completes the
+      // marker instead of leaking it as plain text.
+      if (/^(?:#{1,6}|`{1,3}|[-+]|\d{1,9}\.)$/.test(rest)) { state.markdownCarry = rest; break; }
+
+      const heading = streamingHeadingAt(input, i);
+      if (heading) {
+        out += paint(heading.title, [ANSI.bold], options);
+        i += heading.length;
+        if (input[i] === '\n') {
+          out += '\n';
+          i += 1;
+          state.atLineStart = true;
+        } else {
+          state.atLineStart = false;
+        }
+        continue;
+      }
+      const list = streamingListMarkerAt(input, i);
+      if (list) {
+        out += `${list.indent}${paint('•', [ANSI.accent], options)} `;
+        i += list.length;
+        state.atLineStart = false;
+        continue;
+      }
+      const quote = streamingBlockquoteAt(input, i);
+      if (quote) {
+        out += paint('▏ ', [ANSI.muted], options);
+        i += quote.length;
+        state.atLineStart = false;
+        continue;
+      }
+      const hr = streamingHorizontalRuleAt(input, i);
+      if (hr) {
+        const width = Math.min(Math.max(16, terminalWidth(options) - 4), 48);
+        out += paint('─'.repeat(width), [ANSI.dim, ANSI.muted], options);
+        i += hr.length;
+        if (input[i] === '\n') {
+          out += '\n';
+          i += 1;
+          state.atLineStart = true;
+        } else {
+          state.atLineStart = false;
+        }
+        continue;
+      }
+    }
+
     const char = input[i];
     const next = input[i + 1];
+    const third = input[i + 2];
 
     if (state.markdownMode === 'normal') {
-      if (char === '*' && next === undefined) {
-        state.markdownCarry = '*';
+      const link = streamingLinkAt(input, i, options);
+      if (link) {
+        out += link.rendered;
+        i += link.length;
+        state.atLineStart = false;
+        continue;
+      }
+      if (char === '[') {
+        state.markdownCarry = '[';
         break;
+      }
+      if (char === '*' && next === '*' && third === '*') {
+        state.markdownMode = 'bold_italic';
+        state.markdownBuffer = '';
+        state.markdownDelim = '***';
+        i += 3;
+        continue;
       }
       if (char === '*' && next === '*') {
         state.markdownMode = 'bold';
         state.markdownBuffer = '';
+        state.markdownDelim = '**';
+        i += 2;
+        continue;
+      }
+      if (char === '*') {
+        if (next === undefined) {
+          state.markdownCarry = '*';
+          break;
+        }
+        state.markdownMode = 'italic';
+        state.markdownBuffer = '';
+        state.markdownDelim = '*';
+        i += 1;
+        continue;
+      }
+      if (char === '_' && next === '_') {
+        state.markdownMode = 'bold';
+        state.markdownBuffer = '';
+        state.markdownDelim = '__';
+        i += 2;
+        continue;
+      }
+      if (char === '_') {
+        if (next === undefined) {
+          state.markdownCarry = '_';
+          break;
+        }
+        state.markdownMode = 'italic';
+        state.markdownBuffer = '';
+        state.markdownDelim = '_';
+        i += 1;
+        continue;
+      }
+      if (char === '~' && next === '~') {
+        state.markdownMode = 'strike';
+        state.markdownBuffer = '';
+        state.markdownDelim = '~~';
         i += 2;
         continue;
       }
       if (char === '`') {
         state.markdownMode = 'code';
         state.markdownBuffer = '';
+        state.markdownDelim = '`';
         i += 1;
         continue;
       }
       out += char;
+      if (char === '\n') state.atLineStart = true;
+      else state.atLineStart = false;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'bold_italic') {
+      if (char === '*' && next === '*' && third === '*') {
+        out += paint(state.markdownBuffer, [ANSI.bold, ANSI.italic], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownDelim = '';
+        i += 3;
+        continue;
+      }
+      if (char === '*' && next === undefined) {
+        state.markdownCarry = '*';
+        break;
+      }
+      state.markdownBuffer += char;
       i += 1;
       continue;
     }
 
     if (state.markdownMode === 'bold') {
-      if (char === '*' && next === undefined) {
-        state.markdownCarry = '*';
-        break;
-      }
-      if (char === '*' && next === '*') {
+      const close = state.markdownDelim === '__' ? (char === '_' && next === '_') : (char === '*' && next === '*');
+      if (close) {
         out += paint(state.markdownBuffer, [ANSI.bold], options);
         state.markdownMode = 'normal';
         state.markdownBuffer = '';
+        state.markdownDelim = '';
         i += 2;
         continue;
+      }
+      if ((char === '*' || char === '_') && next === undefined) {
+        state.markdownCarry = char;
+        break;
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'italic') {
+      const close = char === state.markdownDelim && next !== state.markdownDelim;
+      if (close) {
+        out += paint(state.markdownBuffer, [ANSI.italic], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownDelim = '';
+        i += 1;
+        continue;
+      }
+      if (char === state.markdownDelim && next === undefined) {
+        state.markdownCarry = char;
+        break;
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'strike') {
+      if (char === '~' && next === '~') {
+        out += paint(state.markdownBuffer, [ANSI.strike], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownDelim = '';
+        i += 2;
+        continue;
+      }
+      if (char === '~' && next === undefined) {
+        state.markdownCarry = '~';
+        break;
       }
       state.markdownBuffer += char;
       i += 1;
@@ -677,10 +1465,19 @@ function renderStreamingMarkdown(state, text, options = {}) {
 function flushStreamingMarkdown(state, output) {
   ensureMarkdownState(state);
   let out = state.markdownCarry || '';
-  if (state.markdownMode === 'bold' && state.markdownBuffer) {
+  state.markdownCarry = '';
+  if (state.markdownMode === 'bold_italic' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.bold, ANSI.italic], output);
+  } else if (state.markdownMode === 'bold' && state.markdownBuffer) {
     out += paint(state.markdownBuffer, [ANSI.bold], output);
+  } else if (state.markdownMode === 'italic' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.italic], output);
+  } else if (state.markdownMode === 'strike' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.strike], output);
   } else if (state.markdownMode === 'code' && state.markdownBuffer) {
     out += paint(state.markdownBuffer, [ANSI.accent], output);
+  } else if (state.markdownMode === 'fence' && state.markdownBuffer) {
+    out += renderFenceBuffer(state.markdownBuffer, output);
   }
   resetMarkdownState(state);
   if (out) output.write(out);
@@ -730,21 +1527,26 @@ function createProgressReporter(output, options = {}) {
   const enabled = options.showProgress !== false;
   const isTty = Boolean(output && output.isTTY);
   const startedAt = Date.now();
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let frameIndex = 0;
-  let verb = 'Working';
+  let verb = 'Thinking';
   let interval = null;
   let timeout = null;
   let shown = false;
   let closed = false;
+  const renderOptions = () => ({
+    ...output,
+    color: options.color,
+    tick: frameIndex,
+    frameIndex,
+  });
 
   const render = () => {
     if (!enabled || closed) return;
     if (isTty) {
-      const frame = paint(frames[frameIndex++ % frames.length], [ANSI.accent], output);
-      output.write(`\r${formatWorkingLine(Date.now() - startedAt, verb, frame)}\x1b[K`);
+      output.write(`\r${formatWorkingLine(Date.now() - startedAt, verb, renderOptions())}\x1b[K`);
+      frameIndex += 1;
     } else if (!shown) {
-      output.write(`${formatWorkingLine(Date.now() - startedAt)}\n`);
+      output.write(`${formatWorkingLine(Date.now() - startedAt, verb, renderOptions())}\n`);
     }
     shown = true;
   };
@@ -754,11 +1556,11 @@ function createProgressReporter(output, options = {}) {
       if (!enabled) return;
       timeout = setTimeout(() => {
         render();
-        if (isTty) interval = setInterval(render, 120);
-      }, 700);
+        if (isTty) interval = setInterval(render, PROGRESS_FRAME_MS);
+      }, PROGRESS_START_DELAY_MS);
     },
     setVerb(next) {
-      verb = next || 'Working';
+      verb = next || 'Thinking';
     },
     clear() {
       if (!isTty || !shown || closed) return;
@@ -773,6 +1575,17 @@ function createProgressReporter(output, options = {}) {
       shown = false;
     }
   };
+}
+
+function manageTurnInterrupt(onInterrupt, options = {}) {
+  const trigger = () => onInterrupt();
+  const register = options.registerAbort;
+  if (typeof register === 'function') {
+    register(trigger);
+    return () => register(null);
+  }
+  process.once('SIGINT', trigger);
+  return () => process.removeListener('SIGINT', trigger);
 }
 
 function parseSseBlock(block) {
@@ -888,7 +1701,7 @@ function stopProgress(state) {
 }
 
 function flushPendingText(state, output) {
-  const hasMarkdownRemainder = output && output.isTTY && (
+  const hasMarkdownRemainder = output && (
     state.markdownCarry
     || state.markdownBuffer
     || (state.markdownMode && state.markdownMode !== 'normal')
@@ -900,7 +1713,7 @@ function flushPendingText(state, output) {
     output.write('● ');
     state.needsBullet = false;
   }
-  if (state.pendingText) output.write(output && output.isTTY ? renderTerminalMarkdown(state.pendingText, output) : state.pendingText);
+  if (state.pendingText) output.write(renderTerminalMarkdown(state.pendingText, output));
   const flushedMarkdown = hasMarkdownRemainder ? flushStreamingMarkdown(state, output) : '';
   state.wroteText = true;
   state.wroteActivity = true;
@@ -956,7 +1769,8 @@ function buildMessage(message, history = []) {
     'Recent conversation:',
     compactHistory(history),
     '',
-    `Current user message: ${trimmed}`,
+    '# Current user message',
+    trimmed,
   ].join('\n');
 }
 
@@ -964,12 +1778,15 @@ function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
+  const bypass = resolveBypassPermissions(options);
   const verifyCommand = String(options.verify || '').trim();
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
-    max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
-    verify_command: verifyCommand || 'true'
+    max_turns: options.goalEval ? 1 : (local ? (mode === 'fast' ? 8 : 14) : 1),
+    verify_command: verifyCommand || 'true',
+    member_slug: MEMBER_SLUG,
+    bypass_permissions: bypass,
   };
   if (options.business) {
     // Business cloud workspace: the model loop stays on the backend and every
@@ -986,7 +1803,7 @@ function buildPayload(message, options = {}) {
   if (!local && options.connectionUserId) {
     payload.connection_user_id = options.connectionUserId;
   }
-  if (!local && connectorWriteIntent(message)) {
+  if (!local && bypass && connectorWriteIntent(message)) {
     payload.allow_external_actions = true;
     payload.cleanup_external_actions = true;
     payload.max_turns = mode === 'fast' ? 2 : 4;
@@ -1052,6 +1869,7 @@ function handleEvent(event, state, output) {
       writeAuxLine(state, output, formatToolResultLine(summarizeToolResult(result, output), output));
       state.lastAux = 'result';
     }
+    if (state.progress && state.progress.setVerb) state.progress.setVerb('Thinking');
     return;
   }
 
@@ -1082,8 +1900,14 @@ function handleEvent(event, state, output) {
       clearRetriedText(state);
       return;
     }
+    if (state.progress && state.progress.setVerb && /think|reason|plan/i.test(event.message)) {
+      state.progress.setVerb('Thinking');
+    }
     flushPendingText(state, output);
-    writeAuxLine(state, output, paint(`· ${formatStatusMessage(event.message)}`, [ANSI.muted], output));
+    const statusText = formatStatusMessage(event.message);
+    if (statusText) {
+      writeAuxLine(state, output, paint(`✦ ${statusText}`, [ANSI.bold, ANSI.magenta], output));
+    }
     return;
   }
 
@@ -1111,7 +1935,7 @@ async function postTurn(message, options = {}) {
   const connectionContext = options.connectionContext || (shouldSendConnectionContext
     ? await buildConnectionContext({ token, localWorkspace: local })
     : null);
-  const connectionUserId = !local && isLoopbackBackend() ? authUserId() : '';
+  const connectionUserId = !local && isLoopbackBackend({ route }) ? authUserId() : '';
   const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
@@ -1119,7 +1943,7 @@ async function postTurn(message, options = {}) {
   // SSE traffic in between, so the socket-idle timeout needs more headroom.
   const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
   const timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
-  const turnUrl = new URL(backendUrl());
+  const turnUrl = new URL(backendUrl({ route }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
     events: [],
@@ -1137,15 +1961,19 @@ async function postTurn(message, options = {}) {
     markdownMode: 'normal',
     markdownBuffer: '',
     markdownCarry: '',
+    atLineStart: true,
     relay: options.business ? {
       chain: Promise.resolve(),
       execute: options.business.executor,
-      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl())
+      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl({ route }))
     } : null
   };
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let interrupted = false;
+    let req = null;
+    let removeInterrupt = null;
     const startedAt = Date.now();
     state.progress = createProgressReporter(output, options);
     state.progress.start();
@@ -1153,6 +1981,8 @@ async function postTurn(message, options = {}) {
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
+      if (removeInterrupt) removeInterrupt();
+      removeInterrupt = null;
       if (state.progress) state.progress.stop();
       state.progress = null;
       state.durationMs = Date.now() - startedAt;
@@ -1160,7 +1990,15 @@ async function postTurn(message, options = {}) {
       else resolve(value);
     };
 
-    const req = transport.request({
+    removeInterrupt = manageTurnInterrupt(() => {
+      if (settled) return;
+      interrupted = true;
+      flushPendingText(state, output);
+      if (req) req.destroy();
+      finish(null, { ...state, interrupted: true });
+    }, options);
+
+    req = transport.request({
       hostname: turnUrl.hostname,
       port: turnUrl.port || (turnUrl.protocol === 'https:' ? 443 : 80),
       path: `${turnUrl.pathname}${turnUrl.search}`,
@@ -1225,8 +2063,12 @@ async function postTurn(message, options = {}) {
       });
     });
 
-    req.on('error', finish);
+    req.on('error', (error) => {
+      if (interrupted) return;
+      finish(error);
+    });
     req.setTimeout(timeoutMs, () => {
+      if (settled) return;
       finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
       req.destroy();
     });
@@ -1246,7 +2088,7 @@ async function postCodeFastTurn(message, options = {}) {
   const output = options.output || process.stdout;
   const token = authToken();
   const timeoutMs = Math.max(10000, Math.min(600000, Number(payload.timeout_seconds || 180) * 1000));
-  const turnUrl = new URL(codeFastUrl());
+  const turnUrl = new URL(codeFastUrl({ ...options, route }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
     events: [],
@@ -1263,11 +2105,15 @@ async function postCodeFastTurn(message, options = {}) {
     lastAux: '',
     markdownMode: 'normal',
     markdownBuffer: '',
-    markdownCarry: ''
+    markdownCarry: '',
+    atLineStart: true,
   };
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let interrupted = false;
+    let req = null;
+    let removeInterrupt = null;
     const startedAt = Date.now();
     state.progress = createProgressReporter(output, options);
     state.progress.start();
@@ -1275,6 +2121,8 @@ async function postCodeFastTurn(message, options = {}) {
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
+      if (removeInterrupt) removeInterrupt();
+      removeInterrupt = null;
       if (state.progress) state.progress.stop();
       state.progress = null;
       state.durationMs = Date.now() - startedAt;
@@ -1282,7 +2130,15 @@ async function postCodeFastTurn(message, options = {}) {
       else resolve(value);
     };
 
-    const req = transport.request({
+    removeInterrupt = manageTurnInterrupt(() => {
+      if (settled) return;
+      interrupted = true;
+      flushPendingText(state, output);
+      if (req) req.destroy();
+      finish(null, { ...state, interrupted: true });
+    }, options);
+
+    req = transport.request({
       hostname: turnUrl.hostname,
       port: turnUrl.port || (turnUrl.protocol === 'https:' ? 443 : 80),
       path: `${turnUrl.pathname}${turnUrl.search}`,
@@ -1334,8 +2190,12 @@ async function postCodeFastTurn(message, options = {}) {
       });
     });
 
-    req.on('error', finish);
+    req.on('error', (error) => {
+      if (interrupted) return;
+      finish(error);
+    });
     req.setTimeout(timeoutMs, () => {
+      if (settled) return;
       finish(new Error(`Request timeout after ${timeoutMs / 1000}s`));
       req.destroy();
     });
@@ -1350,15 +2210,137 @@ function turnFunctionForMode(mode) {
 
 async function chat(options = {}) {
   let mode = normalizeMode(options.mode);
+  let bypassPermissions = resolveBypassPermissions(options);
   const cwd = options.cwd || process.cwd();
   const input = options.input || process.stdin;
   const baseOutput = options.output || process.stdout;
   const logger = createRunLogger({ cwd, mode, kind: 'play', output: baseOutput });
   const output = logger ? logger.output : baseOutput;
   const history = [];
+  let goalState = null;
+  let lastAchievedGoal = null;
 
-  output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
-  if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
+  const goalPaintOptions = {
+    paint: (text, codes) => paint(text, codes, output),
+    bold: ANSI.bold,
+    magenta: ANSI.magenta,
+    muted: ANSI.muted,
+    accent: ANSI.accent,
+    ok: ANSI.ok,
+  };
+
+  const writeHeader = () => {
+    output.write(`${formatHeader({ mode, cwd, chat: true, bypassPermissions, goal: goalState }, output)}\n\n`);
+  };
+
+  writeHeader();
+
+  const executeChatTurn = async (message, turnOptions = {}) => {
+    let result;
+    try {
+      const turnFn = typeof options.turnFunction === 'function'
+        ? options.turnFunction
+        : turnFunctionForMode(mode);
+      result = await turnFn(message, {
+        mode,
+        cwd,
+        history,
+        output,
+        route: options.route,
+        business: options.business,
+        verify: options.verify,
+        bypassPermissions,
+        registerAbort: options.registerAbort,
+        goalEval: turnOptions.goalEval === true,
+      });
+    } finally {
+      if (typeof options.registerAbort === 'function') options.registerAbort(null);
+    }
+
+    if (result.interrupted) {
+      if (result.output && !result.output.endsWith('\n')) output.write('\n');
+      if (!turnOptions.goalEval) {
+        output.write(`${paint('· Interrupted', [ANSI.muted], output)}\n\n`);
+      }
+      if (result.output && result.output.trim()) {
+        history.push({ role: 'user', content: message });
+        history.push({ role: 'assistant', content: result.output });
+      }
+      return result;
+    }
+
+    if (result.output && !result.output.endsWith('\n')) output.write('\n');
+    if (!turnOptions.goalEval) {
+      output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
+    }
+    history.push({ role: 'user', content: message });
+    history.push({ role: 'assistant', content: result.output || '' });
+    return result;
+  };
+
+  const runGoalLoop = async (activeGoal) => {
+    output.write(`${formatGoalStatus(activeGoal, goalPaintOptions)}\n\n`);
+    writeHeader();
+
+    while (activeGoal.active) {
+      const directive = buildGoalDirective(activeGoal, { continue: activeGoal.turns > 0 });
+      if (activeGoal.turns > 0) {
+        output.write(`${formatGoalContinue(activeGoal, goalPaintOptions)}\n\n`);
+      }
+      output.write('\n');
+
+      const result = await executeChatTurn(directive, { goalLoop: true });
+      activeGoal.turns += 1;
+      accumulateGoalUsage(activeGoal, result, creditsFromState);
+
+      if (result.interrupted) {
+        output.write(`${paint('· Goal turn interrupted — /goal for status · /goal clear to stop', [ANSI.muted], output)}\n\n`);
+        return;
+      }
+
+      const evalResult = await evaluateGoalTurn(activeGoal, {
+        history,
+        lastOutput: result.output,
+        turnOptions: {
+          mode,
+          cwd,
+          bypassPermissions,
+          route: options.route,
+          business: options.business,
+          verify: options.verify,
+          registerAbort: options.registerAbort,
+        },
+      }, { postTurn, evaluateGoal: options.evaluateGoal });
+
+      activeGoal.evalTurns += 1;
+      activeGoal.lastReason = evalResult.reason || activeGoal.lastReason;
+
+      if (evalResult.achieved) {
+        finishGoalAchieved(activeGoal, evalResult.reason);
+        output.write(`${formatGoalAchieved(activeGoal, goalPaintOptions)}\n\n`);
+        lastAchievedGoal = { ...activeGoal };
+        goalState = null;
+        writeHeader();
+        return;
+      }
+
+      if (goalTurnLimitReached(activeGoal)) {
+        clearGoalState(activeGoal);
+        output.write(`${formatGoalStopped(activeGoal, 'Turn limit reached.', goalPaintOptions)}\n\n`);
+        goalState = null;
+        writeHeader();
+        return;
+      }
+
+      if (goalBudgetExceeded(activeGoal)) {
+        clearGoalState(activeGoal);
+        output.write(`${formatGoalStopped(activeGoal, 'Token budget reached.', goalPaintOptions)}\n\n`);
+        goalState = null;
+        writeHeader();
+        return;
+      }
+    }
+  };
 
   const runLine = async (line) => {
     const trimmed = String(line || '').trim();
@@ -1378,18 +2360,68 @@ async function chat(options = {}) {
       return false;
     }
 
+    const permission = chatPermissionCommand(trimmed);
+    if (permission !== null) {
+      bypassPermissions = permission;
+      const persistPrefs = options.persistPrefs !== false;
+      setBypassPermissions(permission, { persist: persistPrefs });
+      if (logger) logger.write(`${trimmed}\n`);
+      output.write(`${formatPermissionToggleMessage(permission, { ...output, persistPrefs })}\n\n`);
+      return false;
+    }
+
+    const goalCmd = parseGoalCommand(trimmed);
+    if (goalCmd) {
+      if (logger) logger.write(`${trimmed}\n`);
+      if (goalCmd.action === 'clear') {
+        if (goalState) clearGoalState(goalState);
+        goalState = null;
+        output.write(`${paint('· Goal cleared', [ANSI.ok], output)}\n\n`);
+        writeHeader();
+        return false;
+      }
+      if (goalCmd.action === 'status') {
+        output.write(`${formatGoalStatus(goalState || lastAchievedGoal, goalPaintOptions)}\n\n`);
+        return false;
+      }
+      if (goalCmd.action === 'set') {
+        if (goalState && goalState.active) clearGoalState(goalState);
+        goalState = createGoalState(goalCmd.condition, goalCmd);
+        lastAchievedGoal = null;
+        await runGoalLoop(goalState);
+        return false;
+      }
+    }
+
     if (trimmed.startsWith('/')) {
       output.write(`${chatMenu(output)}\n\n`);
       return false;
     }
 
-    if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
+    if (extractYoutubeUrl(trimmed)) {
+      if (logger) logger.write(`${formatPrompt(mode, { ...output, goal: goalState })}${trimmed}\n`);
+      output.write('\n');
+      const startedAt = Date.now();
+      const youtubeOutput = [];
+      await runAxYoutubeCommand([trimmed], {
+        youtubeCommand: options.youtubeCommand,
+        ensureValidCredentials: options.ensureValidCredentials,
+        apiRequestJson: options.apiRequestJson,
+        output: (line = '') => {
+          const text = String(line);
+          youtubeOutput.push(text);
+          output.write(`${text}\n`);
+        },
+      });
+      output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
+      history.push({ role: 'user', content: trimmed });
+      history.push({ role: 'assistant', content: youtubeOutput.join('\n') });
+      return false;
+    }
+
+    if (logger) logger.write(`${formatPrompt(mode, { ...output, goal: goalState })}${trimmed}\n`);
     output.write('\n');
-    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route, business: options.business, verify: options.verify });
-    if (result.output && !result.output.endsWith('\n')) output.write('\n');
-    output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
-    history.push({ role: 'user', content: trimmed });
-    history.push({ role: 'assistant', content: result.output || '' });
+    await executeChatTurn(trimmed);
     return false;
   };
 
@@ -1402,22 +2434,443 @@ async function chat(options = {}) {
     return;
   }
 
-  const rl = readline.createInterface({ input, output: baseOutput, completer: chatCompleter });
-  const ask = () => new Promise(resolve => rl.question(formatPrompt(mode, baseOutput), resolve));
-  while (true) {
-    const line = await ask();
+  const rl = readline.createInterface({
+    input,
+    output: baseOutput,
+    completer: chatCompleter,
+    crlfDelay: Infinity,
+  });
+  readline.emitKeypressEvents(input, rl);
+  // Bracketed paste: terminals wrap pasted text in \x1b[200~ … \x1b[201~ so a
+  // multi-line paste lands as ONE message instead of submitting on every
+  // newline. readline + the multiline hook already understand the markers; we
+  // just have to turn the mode on (and off again on every exit path).
+  const setBracketedPaste = (on) => {
+    if (baseOutput && baseOutput.isTTY && typeof baseOutput.write === 'function') {
+      baseOutput.write(on ? '\x1b[?2004h' : '\x1b[?2004l');
+    }
+  };
+  const disableBracketedPasteOnExit = () => setBracketedPaste(false);
+  setBracketedPaste(true);
+  process.once('exit', disableBracketedPasteOnExit);
+  // readline can't emit a 'line' string that holds a literal newline, so the
+  // multiline hook hands us the true buffer here and ask() prefers it.
+  let pendingMultilineLine = null;
+  const detachMultilineInput = attachMultilineChatInput(rl, {
+    insertBreak: insertMultilineBreak,
+    onSubmit: (line) => { pendingMultilineLine = line; },
+  });
+  const boxLayoutOptions = () => inputBoxLayoutOptions(baseOutput, { bypassPermissions });
+  let exiting = false;
+  let awaitingInput = false;
+  // Repaint the box bottom rule after every readline render so the frame stays
+  // closed while typing (empty, wrapped, and multiline input alike).
+  const baseRefreshLine = typeof rl._refreshLine === 'function' ? rl._refreshLine.bind(rl) : null;
+  if (baseRefreshLine) {
+    rl._refreshLine = () => {
+      baseRefreshLine();
+      if (awaitingInput) repaintInputBoxBottom(rl, baseOutput, boxLayoutOptions());
+    };
+  }
+  let turnAbort = null;
+  options.registerAbort = (fn) => {
+    turnAbort = typeof fn === 'function' ? fn : null;
+  };
+  const onChatKeypress = (_str, key) => {
+    if (!awaitingInput) return;
+    if (!isPermissionToggleKey(key)) return;
+    bypassPermissions = !bypassPermissions;
+    const persistPrefs = options.persistPrefs !== false;
+    setBypassPermissions(bypassPermissions, { persist: persistPrefs });
+    if (logger) logger.write(`[shift+tab permissions ${bypassPermissions ? 'bypass' : 'safe'}]\n`);
+    // The mode label lives on the status line below the box now, so repaint
+    // that (it also restores the cursor) instead of redrawing the plain top.
+    repaintInputBoxBottom(rl, baseOutput, boxLayoutOptions());
+  };
+  input.prependListener('keypress', onChatKeypress);
+  rl.on('SIGINT', () => {
+    if (turnAbort) {
+      turnAbort();
+      return;
+    }
+    exiting = true;
+    output.write('\n');
+    rl.close();
+  });
+  const ask = () => new Promise((resolve, reject) => {
+    function onClose() {
+      reject(new Error('CHAT_CLOSED'));
+    }
+    rl.once('close', onClose);
+    awaitingInput = true;
+    const layout = boxLayoutOptions();
+    output.write(`\n${formatInputBoxTop(layout)}\n`);
+    pendingMultilineLine = null;
+    rl.question(formatChatInputPrompt(mode, { ...layout, goal: goalState }), (answer) => {
+      awaitingInput = false;
+      rl.removeListener('close', onClose);
+      closeInputBox(output, layout);
+      const captured = pendingMultilineLine;
+      pendingMultilineLine = null;
+      resolve(stripMultilineCsiText(captured != null ? captured : answer));
+    });
+  });
+  while (!exiting) {
+    let line = '';
+    try {
+      line = await ask();
+    } catch (error) {
+      if (error && error.message === 'CHAT_CLOSED') break;
+      throw error;
+    }
     if (await runLine(line)) {
       rl.close();
       break;
     }
   }
+  input.removeListener('keypress', onChatKeypress);
+  detachMultilineInput();
+  if (baseRefreshLine) rl._refreshLine = baseRefreshLine;
+  setBracketedPaste(false);
+  process.removeListener('exit', disableBracketedPasteOnExit);
   if (logger) logger.close(0);
+}
+
+function newestAxLog(cwd, sinceMs = 0) {
+  const runsDir = path.join(cwd, 'atris', 'runs');
+  if (!fs.existsSync(runsDir)) return null;
+  let newest = null;
+  for (const name of fs.readdirSync(runsDir)) {
+    if (!/^ax-.*\.log$/.test(name)) continue;
+    const full = path.join(runsDir, name);
+    let stat = null;
+    try {
+      stat = fs.statSync(full);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile() || stat.mtimeMs < sinceMs) continue;
+    if (!newest || stat.mtimeMs > newest.mtimeMs) newest = { path: full, mtimeMs: stat.mtimeMs };
+  }
+  return newest ? newest.path : null;
+}
+
+function makeChecklistItem(id, label, passed, evidence = '') {
+  return { id, label, passed: passed === true, evidence: compactText(evidence, 180) };
+}
+
+function compactText(text, max = 180) {
+  const one = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!one) return '';
+  return one.length <= max ? one : `${one.slice(0, max - 3)}...`;
+}
+
+function buildDogfoodChecklist({ cases, outputText, turnCalls, youtubeCalls, logPath }) {
+  const turnCases = cases.filter(item => item.kind === 'turn');
+  const paired = turnCases.map((item, index) => ({ case: item, call: turnCalls[index] || null }));
+  const smallTalk = paired.filter(item => /small_talk|short_noise|greeting/.test(item.case.coverage));
+  const local = paired.filter(item => item.case.expectRoute === 'local');
+  const cloud = paired.filter(item => item.case.expectRoute === 'cloud');
+  const bypassCall = paired.find(item => item.case.coverage === 'connector_write_bypass')?.call;
+  const safeCalls = paired.filter(item => /connector_write_(safe|resafe)/.test(item.case.coverage)).map(item => item.call);
+  const maxCall = paired.find(item => item.case.coverage === 'max_local')?.call;
+  const firstHeader = outputText.split(/\r?\n/).slice(0, 4).map(stripAnsi);
+  const longestHeader = firstHeader.reduce((max, line) => Math.max(max, line.length), 0);
+  const modelPattern = /atris:|composer-2-5|gpt-|kimi|fable|fireworks|openrouter/i;
+  const errorPattern = /Cannot access 'business'|Blocked: direct network access|ReferenceError|TypeError|UnhandledPromiseRejection|ECONNREFUSED|HTTP 5\d\d/i;
+
+  return [
+    makeChecklistItem('loops_25', 'Ran the requested loop count', cases.length === 25, `${cases.length}/25 loops`),
+    makeChecklistItem('header_compact', 'Chat header fits a small terminal', longestHeader <= 96 && /shift\+enter/.test(outputText), `longest header line ${longestHeader}`),
+    makeChecklistItem('menu_discoverable', 'Slash menu exposes key controls', /\/goal/.test(outputText) && /\/fast/.test(outputText) && /\/safe/.test(outputText), 'menu printed by /help and unknown slash'),
+    makeChecklistItem('small_talk_cloud', 'Greetings/noise avoid workspace listings', smallTalk.length >= 4 && smallTalk.every(item => item.call?.route === 'cloud' && !item.call?.workspace_path), smallTalk.map(item => `${item.case.input}:${item.call?.route}`).join(', ')),
+    makeChecklistItem('workspace_local', 'Workspace asks still use local tools', local.length >= 5 && local.every(item => item.call?.route === 'local' && item.call?.workspace_path), local.map(item => `${item.case.coverage}:${item.call?.route}`).join(', ')),
+    makeChecklistItem('connectors_cloud', 'Connector reads/writes stay cloud by default', cloud.length >= 8 && cloud.every(item => item.call?.route === 'cloud'), cloud.map(item => `${item.case.coverage}:${item.call?.route}`).join(', ')),
+    makeChecklistItem('tier_switches', 'Tier commands affect following turns', maxCall?.mode === 'max', `max turn mode ${maxCall?.mode || 'missing'}`),
+    makeChecklistItem('permission_gates', 'Safe/bypass gates are visible in payloads', bypassCall?.allow_external_actions === true && safeCalls.every(call => call && call.allow_external_actions !== true), `bypass=${bypassCall?.allow_external_actions === true}; safe=${safeCalls.length}`),
+    makeChecklistItem('youtube_shortcut', 'YouTube URLs route to local processor path', youtubeCalls.length === 1 && !turnCalls.some(call => extractYoutubeUrl(call.message)), `${youtubeCalls.length} youtube call(s)`),
+    makeChecklistItem('no_model_ids', 'UI hides backend model ids', !modelPattern.test(outputText), 'no raw model ids in transcript'),
+    makeChecklistItem('no_error_patterns', 'Transcript has no known crash/block patterns', !errorPattern.test(outputText), 'business TDZ/network/crash patterns absent'),
+    makeChecklistItem('log_written', 'Dogfood leaves an inspectable ax run log', Boolean(logPath && fs.existsSync(logPath)), logPath || 'missing'),
+  ];
+}
+
+async function runChatDogfood(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const loops = Math.max(1, Number(options.loops) || 25);
+  const cases = buildChatDogfoodCases(loops);
+  const startedAt = Date.now();
+  const chunks = [];
+  const output = options.output || {
+    isTTY: true,
+    color: false,
+    write(chunk) {
+      chunks.push(String(chunk || ''));
+      return true;
+    },
+  };
+  const turnCalls = [];
+  const youtubeCalls = [];
+  const turnFunction = options.live === true ? undefined : async (message, turnOptions = {}) => {
+    const route = resolveRoute(message, turnOptions);
+    const payload = buildPayload(message, { ...turnOptions, route });
+    const record = {
+      message,
+      mode: normalizeMode(turnOptions.mode),
+      route,
+      workspace_path: payload.workspace_path || null,
+      max_turns: payload.max_turns,
+      bypass_permissions: payload.bypass_permissions === true,
+      allow_external_actions: payload.allow_external_actions === true,
+    };
+    turnCalls.push(record);
+    const text = `dogfood ok: ${record.mode}/${record.route}`;
+    if (turnOptions.output) turnOptions.output.write(text);
+    return {
+      output: text,
+      durationMs: 1,
+      events: [{ type: 'receipt', receipt: { billing: { billed: false }, dogfood: record } }],
+    };
+  };
+  const youtubeCommand = async (argv, deps = {}) => {
+    youtubeCalls.push(argv);
+    if (deps.output) deps.output(`dogfood youtube: ${argv[0] || 'missing-url'}`);
+    return 0;
+  };
+  const input = Readable.from(cases.map(item => `${item.input}\n`).concat('exit\n'));
+
+  await chat({
+    mode: 'fast',
+    cwd,
+    input,
+    output,
+    turnFunction,
+    youtubeCommand: options.youtubeCommand || youtubeCommand,
+    persistPrefs: false,
+    bypassPermissions: false,
+  });
+
+  const outputText = typeof output.text === 'function' ? output.text() : chunks.join('');
+  const logPath = newestAxLog(cwd, startedAt - 1000);
+  const checklist = buildDogfoodChecklist({ cases, outputText, turnCalls, youtubeCalls, logPath });
+  const failures = checklist.filter(item => !item.passed);
+  return {
+    schema: 'atris.ax_chat_dogfood.v1',
+    mode: 'fast',
+    loops_requested: loops,
+    loops_run: cases.length,
+    dry_run: options.live !== true,
+    cwd,
+    log_path: logPath,
+    turn_calls: turnCalls,
+    youtube_calls: youtubeCalls,
+    checklist,
+    failures,
+    output: outputText,
+  };
+}
+
+function formatChatDogfoodReport(report) {
+  const passed = report.checklist.filter(item => item.passed).length;
+  const lines = [
+    'Ax fast chat dogfood',
+    `loops: ${report.loops_run}/${report.loops_requested}`,
+    `checklist: ${passed}/${report.checklist.length} passed`,
+    `log: ${report.log_path || 'missing'}`,
+    '',
+  ];
+  for (const item of report.checklist) {
+    lines.push(`${item.passed ? 'ok' : 'fail'} ${item.id} — ${item.evidence || item.label}`);
+  }
+  if (report.failures.length) {
+    lines.push('');
+    lines.push(`failures: ${report.failures.map(item => item.id).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+function safeJsonFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function readJsonlRows(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    return fs.readFileSync(filePath, 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function parseDogfoodVerifierOutput(stdout = '') {
+  const text = String(stdout || '');
+  const loops = text.match(/loops:\s*(\d+)\/(\d+)/i);
+  const checklist = text.match(/checklist:\s*(\d+)\/(\d+)\s+passed/i);
+  const log = text.match(/^log:\s*(.+)$/im);
+  return {
+    loops_passed: loops ? Number(loops[1]) : 0,
+    loops_total: loops ? Number(loops[2]) : 0,
+    checklist_passed: checklist ? Number(checklist[1]) : 0,
+    checklist_total: checklist ? Number(checklist[2]) : 0,
+    log_path: log ? log[1].trim() : null,
+  };
+}
+
+function latestDogfoodMission(cwd = process.cwd()) {
+  const rows = readJsonlRows(path.join(cwd, '.atris', 'state', 'missions.jsonl'));
+  const byId = new Map();
+  for (const row of rows) {
+    if (!row || row.schema !== 'atris.mission.v1') continue;
+    if (!/--dogfood-chat/.test(String(row.verifier || ''))) continue;
+    byId.set(row.id, row);
+  }
+  const missions = Array.from(byId.values());
+  missions.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+  return missions[0] || null;
+}
+
+function collectDogfoodTicks(cwd, mission) {
+  const runsDir = path.join(cwd, 'atris', 'runs');
+  const out = new Map();
+  if (!mission || !mission.id || !fs.existsSync(runsDir)) return [];
+  const prefix = `mission-${mission.id}-`;
+  for (const name of fs.readdirSync(runsDir)) {
+    if (!name.startsWith(prefix) || !name.endsWith('.json')) continue;
+    const full = path.join(runsDir, name);
+    const payload = safeJsonFile(full);
+    if (!payload) continue;
+    let mtimeMs = 0;
+    try {
+      mtimeMs = fs.statSync(full).mtimeMs;
+    } catch {}
+    const body = payload.result || payload;
+    const stdout = body.verifier_result?.stdout || payload.verifier_result?.stdout || payload.mission?.verifier_result?.stdout || '';
+    const ticks = [];
+    if (payload.tick) ticks.push(payload.tick);
+    if (body.tick) ticks.push(body.tick);
+    if (Array.isArray(payload.ticks)) ticks.push(...payload.ticks);
+    if (Array.isArray(body.ticks)) ticks.push(...body.ticks);
+    for (const tick of ticks) {
+      const index = Number(tick && tick.tick_index);
+      if (!Number.isFinite(index) || index < 1) continue;
+      const previous = out.get(index);
+      if (previous && previous.mtimeMs > mtimeMs) continue;
+      const summary = parseDogfoodVerifierOutput(stdout);
+      out.set(index, {
+        index,
+        verifier_passed: tick.verifier_passed === true || body.verifier_result?.passed === true || payload.verifier_result?.passed === true,
+        receipt_path: path.relative(cwd, full),
+        mtimeMs,
+        ...summary,
+      });
+    }
+  }
+  return Array.from(out.values()).sort((a, b) => a.index - b.index);
+}
+
+function dogfoodCrontabInstalled(crontabText = null) {
+  const text = crontabText !== null ? String(crontabText || '') : (() => {
+    try {
+      const res = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 8000 });
+      return res.status === 0 ? String(res.stdout || '') : '';
+    } catch {
+      return '';
+    }
+  })();
+  return /ATRIS_AX_FAST_CHAT_DOGFOOD/.test(text);
+}
+
+function countDogfoodCronRuns(cwd = process.cwd(), cronLogText = null) {
+  const text = cronLogText !== null
+    ? String(cronLogText || '')
+    : String(safeReadText(path.join(cwd, 'atris', 'runs', 'ax-fast-chat-overnight-cron.log')) || '');
+  return (text.match(/^=== ax fast chat dogfood tick /gm) || []).length;
+}
+
+function safeReadText(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return '';
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function buildChatDogfoodStatus(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const targetLoops = Math.max(1, Number(options.targetLoops) || 25);
+  const mission = options.mission || latestDogfoodMission(cwd);
+  const ticks = collectDogfoodTicks(cwd, mission);
+  const cleanTicks = ticks.filter(tick => tick.verifier_passed && tick.loops_passed > 0);
+  const cleanLoops = cleanTicks.reduce((sum, tick) => sum + tick.loops_passed, 0);
+  const latestClean = cleanTicks[cleanTicks.length - 1] || null;
+  const latestTick = ticks[ticks.length - 1] || null;
+  const checklistPassed = latestClean && latestClean.checklist_total > 0 && latestClean.checklist_passed === latestClean.checklist_total;
+  const cronInstalled = dogfoodCrontabInstalled(options.crontabText ?? null);
+  const cronRuns = countDogfoodCronRuns(cwd, options.cronLogText ?? null);
+  return {
+    schema: 'atris.ax_chat_dogfood_status.v1',
+    cwd,
+    mission_id: mission ? mission.id : null,
+    mission_status: mission ? mission.status : null,
+    mission_cadence: mission ? mission.cadence : null,
+    last_tick_index: mission ? Number(mission.last_tick_index || 0) : 0,
+    last_tick_at: mission ? mission.last_tick_at || null : null,
+    target_loops: targetLoops,
+    clean_chat_loops: cleanLoops,
+    remaining_loops: Math.max(0, targetLoops - cleanLoops),
+    target_met: cleanLoops >= targetLoops,
+    clean_tick_count: cleanTicks.length,
+    latest_receipt_path: latestClean ? latestClean.receipt_path : latestTick ? latestTick.receipt_path : null,
+    latest_log_path: latestClean ? latestClean.log_path : null,
+    latest_checklist_passed: checklistPassed === true,
+    cron_installed: cronInstalled,
+    cron_runs: cronRuns,
+    overnight_proven: cronRuns > 0 && cleanLoops >= targetLoops,
+  };
+}
+
+function formatChatDogfoodStatusReport(status) {
+  const lines = [
+    'Ax fast chat overnight',
+    `mission: ${status.mission_id || 'missing'}`,
+    `status: ${status.mission_status || 'missing'} · cadence ${status.mission_cadence || 'n/a'}`,
+    `loops: ${status.clean_chat_loops}/${status.target_loops} clean (${status.remaining_loops} remaining)`,
+    `ticks: ${status.clean_tick_count} clean · last ${status.last_tick_index || 0} at ${status.last_tick_at || 'never'}`,
+    `checklist: ${status.latest_checklist_passed ? 'passed' : 'missing/failing'}`,
+    `cron: ${status.cron_installed ? 'installed' : 'missing'} · runs ${status.cron_runs}`,
+    `receipt: ${status.latest_receipt_path || 'missing'}`,
+    `log: ${status.latest_log_path || 'missing'}`,
+  ];
+  lines.push(status.overnight_proven ? 'result: overnight 25-loop proof is complete' : 'result: still collecting overnight proof');
+  return lines.join('\n');
 }
 
 function printBackendHint() {
   console.log('');
-  console.log('Start backend:');
-  console.log(`cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`);
+  console.log('Hosted lane:');
+  console.log('ax --cloud "hello"');
+  console.log('');
+  console.log('Cloud API:');
+  console.log(`ATRIS_API_BASE=${BACKEND.publicBase}`);
+  console.log('');
+  console.log('Local workspace lane:');
+  console.log(`Set AX_BACKEND_URL=http://${BACKEND.host}:${BACKEND.port} after starting a local Atris2 backend.`);
 }
 
 function bufferedOutput() {
@@ -1597,11 +3050,34 @@ async function runBenchmark(options = {}) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
+  if (isAxSpawnCommand(args[0])) {
+    try {
+      runAxSpawnCommand(args, { root: process.cwd() });
+    } catch (error) {
+      console.error(`x ${error.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+  if (args[0] === 'youtube') {
+    try {
+      await runAxYoutubeCommand(args, { output: (line = '') => console.log(line) });
+    } catch (error) {
+      console.error(`x ${error.message}`);
+      process.exit(1);
+    }
+    return;
+  }
   if (args.includes('--help') || args.includes('-h')) {
     console.log(formatUsage());
     return;
   }
+
+  const bypassPermissions = parsePermissionFlags(args);
+  args = stripPermissionFlags(args);
+  const chatArgs = normalizeChatCommandArgs(args);
+  args = chatArgs.args;
 
   // --business <slug>: chat against that business's cloud workspace. The flag
   // takes a value, so splice the pair out before building the prompt.
@@ -1629,16 +3105,62 @@ async function main() {
     args.splice(verifyIdx, 2);
   }
 
-  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--max') ? 'max' : args.includes('--fast') ? 'fast' : 'pro';
+  let dogfoodLoops = 25;
+  const loopsIdx = args.indexOf('--loops');
+  if (loopsIdx !== -1) {
+    dogfoodLoops = Number(args[loopsIdx + 1]);
+    if (!Number.isInteger(dogfoodLoops) || dogfoodLoops < 1 || dogfoodLoops > 100) {
+      console.error('Usage: ax --dogfood-chat --loops <1-100>');
+      process.exit(1);
+    }
+    args.splice(loopsIdx, 2);
+  }
+
+  const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast'
+    : args.includes('--max') ? 'max'
+      : args.includes('--pro') ? 'pro'
+        : 'fast';
   const doctor = args.includes('--doctor');
   const benchmark = args.includes('--benchmark');
+  const dogfoodChat = args.includes('--dogfood-chat');
+  const dogfoodStatus = args.includes('--dogfood-status');
+  const dogfoodJson = dogfoodChat && args.includes('--json');
+  const dogfoodLive = dogfoodChat && args.includes('--live');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--dogfood-chat', '--dogfood-status', '--json', '--live', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
+
+  if (dogfoodStatus) {
+    const status = buildChatDogfoodStatus({ cwd: process.cwd(), targetLoops: dogfoodLoops });
+    console.log(args.includes('--json') ? JSON.stringify(status, null, 2) : formatChatDogfoodStatusReport(status));
+    return;
+  }
+
+  if (dogfoodChat) {
+    try {
+      const report = await runChatDogfood({ mode, cwd: process.cwd(), loops: dogfoodLoops, live: dogfoodLive });
+      console.log(dogfoodJson ? JSON.stringify(report, null, 2) : formatChatDogfoodReport(report));
+      if (report.failures.length) process.exit(1);
+    } catch (error) {
+      console.error(`x ${error.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (prompt && extractYoutubeUrl(prompt)) {
+    try {
+      await runAxYoutubeCommand([prompt], { output: (line = '') => console.log(line) });
+    } catch (error) {
+      console.error(`x ${error.message}`);
+      process.exit(1);
+    }
+    return;
+  }
 
   let business = null;
   if (businessSlug) {
@@ -1671,6 +3193,15 @@ async function main() {
     console.log(`cloud workspace: ${biz.businessName || businessSlug}`);
   }
 
+  const runOptions = {
+    mode,
+    cwd: process.cwd(),
+    route: route === 'auto' ? undefined : route,
+    business,
+    verify,
+    bypassPermissions,
+  };
+
   try {
     if (benchmark) {
       await runBenchmark({ mode, cwd: process.cwd(), output: process.stdout });
@@ -1678,20 +3209,25 @@ async function main() {
     }
 
     if (doctor) {
-      console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
+      console.log(formatHeader({ mode, cwd: process.cwd(), chat: false, bypassPermissions: resolveBypassPermissions(runOptions) }, process.stdout));
       console.log('');
-      console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route }), process.stdout));
+      console.log(formatRunProfile(buildRunProfile(runOptions), process.stdout));
       return;
     }
 
-    if (!prompt || args.includes('--chat')) {
-      await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+    if (!prompt || chatArgs.chatRequested) {
+      await chat(runOptions);
       return;
     }
 
-    console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
+    console.log(formatHeader({ mode, cwd: process.cwd(), chat: false, bypassPermissions: resolveBypassPermissions(runOptions) }, process.stdout));
     console.log('');
-    const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+    const result = await turnFunctionForMode(mode)(prompt, runOptions);
+    if (result.interrupted) {
+      console.log('');
+      console.log('· Interrupted');
+      process.exit(130);
+    }
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
@@ -1710,15 +3246,29 @@ module.exports = {
   authUserId,
   backendBaseUrl,
   backendUrl,
+  buildAxYoutubeArgs,
   buildCodeFastPayload,
+  buildChatDogfoodCases,
+  buildChatDogfoodStatus,
+  buildMessage,
   buildPayload,
   cachedIntegrationStatus,
   buildConnectionContext,
   buildRunProfile,
   chat,
   chatCompleter,
+  chatGoalCommand: parseGoalCommand,
   chatMenu,
+  chatPermissionCommand,
   chatTierCommand,
+  loadAxPrefs,
+  MEMBER_SLUG,
+  parsePermissionFlags,
+  permissionsLabel,
+  printBackendHint,
+  resolveBypassPermissions,
+  runAxSpawnCommand,
+  setBypassPermissions,
   codeFastWorkspaceNotice,
   creditsFromState,
   codeFastBaseUrl,
@@ -1726,24 +3276,55 @@ module.exports = {
   createRunLogger,
   createProgressReporter,
   formatDoneLine,
+  formatChatDogfoodReport,
+  formatChatDogfoodStatusReport,
   formatDuration,
   formatHeader,
   formatPathSubject,
+  buildInputBoxBottomPlain,
+  buildInputBoxStatusPlain,
+  buildInputBoxTopPlain,
+  closeInputBox,
+  repaintInputBoxBottom,
+  formatChatInputInnerPrefix,
+  formatChatInputPrompt,
+  formatInputBoxBottom,
+  formatInputBoxInputRow,
+  formatInputBoxStatus,
+  formatInputBoxTop,
+  formatPermissionModeBrief,
+  formatPermissionToggleMessage,
   formatPrompt,
+  insertMultilineBreak,
+  inputBoxLayoutOptions,
+  inputBoxPlainWidth,
+  isMultilineInsertKey,
+  isPermissionToggleKey,
+  permissionAccentCodes,
   formatRunProfile,
   formatStatusMessage,
   formatSystemInit,
   formatUsage,
   formatWorkingLine,
   handleEvent,
+  extractYoutubeUrl,
+  isAxSpawnCommand,
+  manageTurnInterrupt,
   modelForMode,
+  normalizeChatCommandArgs,
   parseSseBlock,
   postCodeFastTurn,
   postTurn,
+  renderTerminalInline,
+  renderTerminalBlockLine,
+  formatMarkdownLink,
   renderStreamingMarkdown,
+  renderShimmerText,
   renderTerminalMarkdown,
   resolveRoute,
   runBenchmark,
+  runChatDogfood,
+  runAxYoutubeCommand,
   summarizeToolInput,
   summarizeToolResult,
   tierLabel
