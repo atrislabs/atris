@@ -373,7 +373,7 @@ function removeInboxItemFromContent(content, id) {
 }
 
 function writeJournalFile(logFile, content) {
-  if (!logFile) {
+  if (typeof logFile !== 'string' || logFile.trim() === '') {
     throw new Error('Journal log file path is required.');
   }
   if (typeof content !== 'string') {
