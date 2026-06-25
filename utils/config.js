@@ -77,6 +77,10 @@ function loadLogSyncState() {
  */
 function saveLogSyncState(state) {
   const statePath = getLogSyncStatePath();
+  const targetDir = path.dirname(statePath);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 

@@ -1307,3 +1307,77 @@ test('xp session reports an unreadable task projection without blocking verified
     cleanupTempDir(workspace);
   }
 });
+
+test('xp sync uses ATRIS_TOKEN env var when no --token or sync-token env is set', async () => {
+  const workspace = makeTempDir();
+  try {
+    writeJsonl(path.join(workspace, '.atris', 'state', 'task_episodes.jsonl'), [
+      taskEpisode(workspace, {
+        episode_id: 'env-token-sync',
+        task_id: 'task-env-token',
+        title: 'Sync with ATRIS_TOKEN env',
+        xp: 1,
+        proof: 'env token sync proof',
+        created_at: new Date().toISOString(),
+      }),
+    ]);
+
+    // Run in a subprocess to isolate env vars from concurrent tests
+    const result = spawnSync(process.execPath, ['-e', `
+      const http = require('http');
+      const path = require('path');
+      const { syncAgentXp } = require(${JSON.stringify(path.join(repoRoot, 'commands', 'xp.js'))});
+      
+      let capturedAuth = null;
+      const mockServer = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          capturedAuth = {
+            auth_header: req.headers['authorization'] || null,
+          };
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            accepted_count: 1,
+            stored_count: 1,
+            accepted_usernames: ['devinscribe'],
+            mapped_to_authenticated_user: false,
+          }));
+        });
+      });
+
+      mockServer.listen(0, async () => {
+        const port = mockServer.address().port;
+        process.env.ATRIS_TOKEN = 'test-agent-token-from-env';
+        delete process.env.ATRIS_AGENTXP_SYNC_TOKEN;
+        delete process.env.AGENTXP_SYNC_TOKEN;
+        process.env.ATRIS_API_URL = 'http://localhost:' + port + '/api';
+        
+        try {
+          const result = await syncAgentXp(['--local', '--as', 'devinscribe', '--workspace', ${JSON.stringify(workspace)}]);
+          process.stdout.write(JSON.stringify({
+            ok: true,
+            schema: result.schema,
+            auth_header: capturedAuth ? capturedAuth.auth_header : null,
+          }));
+        } catch(e) {
+          process.stdout.write(JSON.stringify({ ok: false, error: e.message }));
+        }
+        mockServer.close();
+      });
+    `], {
+      cwd: repoRoot,
+      timeout: 15000,
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout.trim());
+    assert.ok(payload.ok, `sync failed: ${payload.error || 'unknown'}`);
+    assert.equal(payload.schema, 'atris.agentxp_sync_result.v1');
+    assert.equal(payload.auth_header, 'Bearer test-agent-token-from-env',
+      'ATRIS_TOKEN should be sent as Bearer auth header');
+  } finally {
+    cleanupTempDir(workspace);
+  }
+});
