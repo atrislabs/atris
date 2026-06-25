@@ -171,9 +171,15 @@ function activateAtris() {
     } else {
       console.log('  none queued. add to ROADMAP.md under "## Open loop items", or jot one with atris log');
     }
-    if (isEmptyProfile(readProfile(root))) {
-      console.log('');
+    const profile = readProfile(root);
+    console.log('');
+    if (isEmptyProfile(profile)) {
       console.log('Tip: run atris clarity once so agents learn how you work.');
+    } else {
+      console.log('How you work (atris clarity):');
+      ['focus', 'voice', 'cadence', 'done', 'leash']
+        .filter((k) => profile[k])
+        .forEach((k) => console.log(`  ${k}: ${profile[k]}`));
     }
     console.log('');
   } catch { /* alive onboarding is best-effort; never block activate */ }
