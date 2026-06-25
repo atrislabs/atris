@@ -46,13 +46,17 @@ function parseIndexes(value) {
 }
 
 function applyDecision(root, moves, indexes, decision, stamp) {
+  const { claimRoadmapItem } = require('../lib/next-moves');
   const acted = [];
   for (const idx of indexes) {
     const move = moves[idx - 1];
     if (!move) continue;
     recordDecision(root, move, decision, stamp);
     if (decision === 'approve') {
+      // Seed then claim, mirroring the loop. For a roadmap-sourced move, mark it
+      // claimed in ROADMAP so the loop and the moves list agree it is handled.
       const seeded = seedInboxFromMove(root, move);
+      if (move.source === 'roadmap') claimRoadmapItem(root, move.title);
       acted.push({ move, seeded });
     } else {
       acted.push({ move });
@@ -94,7 +98,10 @@ async function movesCommand(args = [], root = process.cwd()) {
     const moves = currentMoves(root, Math.max(limit, ...approveIdx, ...killIdx));
     const killed = applyDecision(root, moves, killIdx, 'kill', stamp);
     const approved = applyDecision(root, moves, approveIdx, 'approve', stamp);
-    for (const a of approved) console.log(`approved: ${a.move.title}  ->  seeded into the loop (${a.seeded.line.trim()})`);
+    for (const a of approved) {
+      const note = a.seeded && a.seeded.alreadyPresent ? 'already in the inbox' : 'seeded into the loop';
+      console.log(`approved: ${a.move.title}  ->  ${note}`);
+    }
     for (const k of killed) console.log(`killed: ${k.move.title}  ->  will not suggest again`);
     if (!approved.length && !killed.length) console.log('no matching move for those numbers.');
     return 0;
