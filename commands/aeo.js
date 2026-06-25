@@ -5,17 +5,17 @@
  *   atris aeo init                          # create entity-graph skeleton
  *   atris aeo draft "<topic>" [opts]        # generate citation-optimized article
  *
- * Local-read against ~/arena/atrisos-backend/atris/features/aeo/proof/:
+ * Local-read against a developer-provided AEO workspace:
  *   atris aeo log [--engine X] [--limit N]  # citation attempt log
  *   atris aeo status                        # engine + proof + buyer summary
  *   atris aeo packet <slug>                 # buyer packet for a surface
  *   atris aeo proofs [--filter X]           # list proof receipt categories
  *
- * Shell out to atrisos-backend/scripts/aeo_*.py:
+ * Shell out to the configured workspace scripts/aeo_*.py:
  *   atris aeo discover <source> [...]       # discovery audit
  *   atris aeo audit <source> [...]          # agent-usability audit
  *
- * Backend root resolution: $ATRIS_BACKEND_ROOT or ~/arena/atrisos-backend.
+ * Local workspace resolution: $ATRIS_AEO_ROOT or legacy $ATRIS_BACKEND_ROOT.
  */
 
 const fs = require('fs');
@@ -28,8 +28,8 @@ const { loadBusinesses, saveBusinesses } = require('./business');
 
 function resolveBackendRoot() {
   const candidates = [
+    process.env.ATRIS_AEO_ROOT,
     process.env.ATRIS_BACKEND_ROOT,
-    path.join(os.homedir(), 'arena', 'atrisos-backend'),
   ].filter(Boolean);
   for (const root of candidates) {
     if (fs.existsSync(path.join(root, 'atris', 'features', 'aeo'))) return root;
@@ -40,7 +40,7 @@ function resolveBackendRoot() {
 function requireBackendRoot() {
   const root = resolveBackendRoot();
   if (!root) {
-    console.error('Cannot find atrisos-backend. Set $ATRIS_BACKEND_ROOT or clone to ~/arena/atrisos-backend.');
+    console.error('Cannot find local AEO workspace. Set ATRIS_AEO_ROOT to a workspace containing atris/features/aeo.');
     process.exit(1);
   }
   return root;

@@ -10,6 +10,7 @@ const {
   createStarterTask,
   hasContextProfile,
   inferDomain,
+  isAtrisMetaQuestion,
   loadContextProfile,
   renderPrompt,
   saveContextProfile,
@@ -83,4 +84,10 @@ test('context gatherer only interrupts when first-contact context is missing', (
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('context gatherer recognizes Atris overview questions', () => {
+  assert.equal(isAtrisMetaQuestion('what is atris?'), true);
+  assert.equal(isAtrisMetaQuestion('tell me about Atris'), true);
+  assert.equal(isAtrisMetaQuestion('help me organize college apps'), false);
 });

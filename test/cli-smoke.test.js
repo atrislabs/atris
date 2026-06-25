@@ -321,7 +321,7 @@ test('ax is a self-contained Atris2 local/cloud agent script', () => {
   assert.match(ax, /function modelForMode/);
   assert.match(ax, /function buildRunProfile/);
   assert.match(ax, /function formatSystemInit/);
-  assert.match(ax, /max_turns:\s*local \? \(mode === 'fast' \? 8 : 14\) : 1/);
+  assert.match(ax, /max_turns:\s*options\.goalEval \? 1 : \(local \? \(mode === 'fast' \? 8 : 14\) : 1\)/);
   assert.match(ax, /'atris:max'/);
   assert.match(ax, /Accept:\s*'text\/event-stream'/);
   assert.match(ax, /async function chat/);
@@ -344,8 +344,8 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
-  assert.match(res.stdout, /--max {3}local workspace agent, highest reasoning/);
+  assert.match(res.stdout, /ax \[--fast\|--pro\|--max\|--code-fast\] \[--local\|--cloud\] \[--bypass\|--safe\] <message>/);
+  assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
@@ -362,34 +362,36 @@ test('ax keeps chat context and file-operation proof readable', () => {
     ]
   });
 
-  assert.equal(payload.workspace_path, '/workspace/demo');
+  assert.equal(payload.workspace_path, undefined);
   assert.equal(payload.model, 'atris:pro');
-  assert.equal(payload.max_turns, 14);
-  assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 8);
+  assert.equal(payload.max_turns, 1);
+  assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 1);
   assert.match(payload.message, /Recent conversation/);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
   assert.equal(ax.modelForMode('max'), 'atris:max');
   assert.equal(ax.modelForMode('code-fast'), 'composer-2-5-fast');
-  assert.equal(ax.backendUrl(), 'http://127.0.0.1:8000/api/atris2/turn');
+  assert.equal(ax.backendUrl(), 'https://api.atris.ai/api/atris2/turn');
   assert.equal(ax.formatPrompt('pro'), 'pro › ');
   assert.equal(ax.formatDuration(6197), '6s');
   assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
-  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
+  assert.equal(ax.formatWorkingLine(2100), '• Thinking… (2s · ctrl-c to interrupt)');
   assert.equal(ax.formatStatusMessage('retrying_with_required_local_tool'), null);
   assert.equal(ax.formatStatusMessage('loading_workspace_context'), 'loading workspace context');
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat/);
   assert.doesNotMatch(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /atris:pro/);
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /\/workspace\/demo/);
   assert.deepEqual(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' }), {
-    endpoint: 'http://127.0.0.1:8000/api/atris2/turn',
+    endpoint: 'https://api.atris.ai/api/atris2/turn',
     mode: 'pro',
-    route: 'local',
+    route: 'cloud',
     model: 'atris:pro',
-    workspace_path: '/workspace/demo',
-    max_turns: 14,
+    workspace_path: 'cloud',
+    max_turns: 1,
+    member_slug: 'ax',
+    bypass_permissions: false,
     streaming: true,
-    runtime: 'local workspace',
+    runtime: 'authenticated cloud connectors/chat',
     reasoning: 'backend reports run row; Pro workspace tool loop uses API default medium'
   });
   assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+backend reports run row/);
