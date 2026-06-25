@@ -174,9 +174,9 @@ function formatUsage() {
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
-    '  --max   local workspace agent, highest reasoning, slowest turns',
-    '  --pro   local workspace agent, deeper tool loop',
-    '  --fast  local workspace agent, faster low-latency turns',
+    '  --max   hosted Atris 2, highest reasoning, slowest turns',
+    '  --pro   hosted Atris 2, deeper tool loop',
+    '  --fast  hosted Atris 2, faster low-latency turns',
     '  --code-fast  Atris Code Fast public lane',
     '  --local force local workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
@@ -320,6 +320,15 @@ function isLoopbackUrl(value) {
   } catch (_) {
     return false;
   }
+}
+
+function configuredLocalBackendUrl() {
+  return process.env.AX_BACKEND_URL || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL || '';
+}
+
+function hasLocalWorkspaceBackend(options = {}) {
+  if (options.localWorkspaceBackend === true) return true;
+  return Boolean(configuredLocalBackendUrl());
 }
 
 function isCodeFastLocal(options = {}) {
@@ -610,9 +619,11 @@ function casualChatIntent(message) {
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
-  if (githubWorkspaceIntent(message)) return 'local';
   if (casualChatIntent(message)) return 'cloud';
+  const localWorkspace = hasLocalWorkspaceBackend(options);
+  if (githubWorkspaceIntent(message) && localWorkspace) return 'local';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
+  if (!localWorkspace) return 'cloud';
   return 'local';
 }
 
@@ -844,16 +855,16 @@ const CHAT_DOGFOOD_BASE_CASES = [
   { input: 'hi', kind: 'turn', expectRoute: 'cloud', coverage: 'small_talk' },
   { input: 'pop', kind: 'turn', expectRoute: 'cloud', coverage: 'short_noise' },
   { input: 'hello why', kind: 'turn', expectRoute: 'cloud', coverage: 'greeting_phrase' },
-  { input: 'what files are here?', kind: 'turn', expectRoute: 'local', coverage: 'workspace_read' },
-  { input: 'search src for the input component', kind: 'turn', expectRoute: 'local', coverage: 'workspace_search' },
-  { input: 'fix the xp game tests', kind: 'turn', expectRoute: 'local', coverage: 'workspace_fix' },
+  { input: 'what files are here?', kind: 'turn', expectRoute: 'cloud', coverage: 'workspace_read' },
+  { input: 'search src for the input component', kind: 'turn', expectRoute: 'cloud', coverage: 'workspace_search' },
+  { input: 'fix the xp game tests', kind: 'turn', expectRoute: 'cloud', coverage: 'workspace_fix' },
   { input: 'what is on my calendar today?', kind: 'turn', expectRoute: 'cloud', coverage: 'connector_read' },
   { input: 'which integrations are connected?', kind: 'turn', expectRoute: 'cloud', coverage: 'connector_status' },
   { input: 'what github repos do I have?', kind: 'turn', expectRoute: 'cloud', coverage: 'github_read' },
-  { input: 'push something to github', kind: 'turn', expectRoute: 'local', coverage: 'github_workspace_mutation' },
+  { input: 'push something to github', kind: 'turn', expectRoute: 'cloud', coverage: 'github_workspace_mutation' },
   { input: 'https://www.youtube.com/watch?v=gBukk9LIklc', kind: 'youtube', coverage: 'youtube_url' },
   { input: '/max', kind: 'command', coverage: 'tier_max' },
-  { input: 'refactor this module and verify the tests', kind: 'turn', expectRoute: 'local', expectMode: 'max', coverage: 'max_local' },
+  { input: 'refactor this module and verify the tests', kind: 'turn', expectRoute: 'cloud', expectMode: 'max', coverage: 'max_cloud' },
   { input: '/pro', kind: 'command', coverage: 'tier_pro' },
   { input: 'send a slack message to the team', kind: 'turn', expectRoute: 'cloud', expectMode: 'pro', coverage: 'connector_write_safe' },
   { input: '/bypass', kind: 'command', coverage: 'permission_bypass' },
@@ -863,7 +874,7 @@ const CHAT_DOGFOOD_BASE_CASES = [
   { input: '/wat', kind: 'command', coverage: 'unknown_slash' },
   { input: '/goal', kind: 'command', coverage: 'goal_status' },
   { input: 'oj', kind: 'turn', expectRoute: 'cloud', coverage: 'short_noise_repeat' },
-  { input: 'read MAP.md and do not edit', kind: 'turn', expectRoute: 'local', coverage: 'workspace_read_specific' },
+  { input: 'read MAP.md and do not edit', kind: 'turn', expectRoute: 'cloud', coverage: 'workspace_read_specific' },
 ];
 
 function buildChatDogfoodCases(loopCount = 25) {
@@ -2569,11 +2580,11 @@ function buildDogfoodChecklist({ cases, outputText, turnCalls, youtubeCalls, log
   const turnCases = cases.filter(item => item.kind === 'turn');
   const paired = turnCases.map((item, index) => ({ case: item, call: turnCalls[index] || null }));
   const smallTalk = paired.filter(item => /small_talk|short_noise|greeting/.test(item.case.coverage));
-  const local = paired.filter(item => item.case.expectRoute === 'local');
+  const workspace = paired.filter(item => /workspace_|github_workspace_mutation|max_cloud/.test(item.case.coverage));
   const cloud = paired.filter(item => item.case.expectRoute === 'cloud');
   const bypassCall = paired.find(item => item.case.coverage === 'connector_write_bypass')?.call;
   const safeCalls = paired.filter(item => /connector_write_(safe|resafe)/.test(item.case.coverage)).map(item => item.call);
-  const maxCall = paired.find(item => item.case.coverage === 'max_local')?.call;
+  const maxCall = paired.find(item => item.case.coverage === 'max_cloud')?.call;
   const firstHeader = outputText.split(/\r?\n/).slice(0, 4).map(stripAnsi);
   const longestHeader = firstHeader.reduce((max, line) => Math.max(max, line.length), 0);
   const modelPattern = /atris:|composer-2-5|gpt-|kimi|fable|fireworks|openrouter/i;
@@ -2584,7 +2595,7 @@ function buildDogfoodChecklist({ cases, outputText, turnCalls, youtubeCalls, log
     makeChecklistItem('header_compact', 'Chat header fits a small terminal', longestHeader <= 96 && /shift\+enter/.test(outputText), `longest header line ${longestHeader}`),
     makeChecklistItem('menu_discoverable', 'Slash menu exposes key controls', /\/goal/.test(outputText) && /\/fast/.test(outputText) && /\/safe/.test(outputText), 'menu printed by /help and unknown slash'),
     makeChecklistItem('small_talk_cloud', 'Greetings/noise avoid workspace listings', smallTalk.length >= 4 && smallTalk.every(item => item.call?.route === 'cloud' && !item.call?.workspace_path), smallTalk.map(item => `${item.case.input}:${item.call?.route}`).join(', ')),
-    makeChecklistItem('workspace_local', 'Workspace asks still use local tools', local.length >= 5 && local.every(item => item.call?.route === 'local' && item.call?.workspace_path), local.map(item => `${item.case.coverage}:${item.call?.route}`).join(', ')),
+    makeChecklistItem('workspace_cloud_default', 'Workspace/code asks stay hosted by default', workspace.length >= 5 && workspace.every(item => item.call?.route === 'cloud' && !item.call?.workspace_path), workspace.map(item => `${item.case.coverage}:${item.call?.route}`).join(', ')),
     makeChecklistItem('connectors_cloud', 'Connector reads/writes stay cloud by default', cloud.length >= 8 && cloud.every(item => item.call?.route === 'cloud'), cloud.map(item => `${item.case.coverage}:${item.call?.route}`).join(', ')),
     makeChecklistItem('tier_switches', 'Tier commands affect following turns', maxCall?.mode === 'max', `max turn mode ${maxCall?.mode || 'missing'}`),
     makeChecklistItem('permission_gates', 'Safe/bypass gates are visible in payloads', bypassCall?.allow_external_actions === true && safeCalls.every(call => call && call.allow_external_actions !== true), `bypass=${bypassCall?.allow_external_actions === true}; safe=${safeCalls.length}`),

@@ -87,18 +87,18 @@ Integrates with any agent.
 
 ## Chat With Atris 2
 
-`ax` is the local Atris 2 coding-agent CLI. It talks to a local AtrisOS backend (default `http://127.0.0.1:8000`), streams text, shows tool activity, and sends the current folder as the workspace.
+`ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from backend setup.
 
 ```bash
 cd your-project
-ax --pro "find the task system and explain it"
-ax --fast "what files are here?"
-ax --max "refactor this module and verify the tests"
-ax --pro --chat
+ax chat ax --fast
+ax --fast "hello"
+ax --pro "help me plan this task"
+ax --max "reason through this hard decision"
 ax --doctor
 ```
 
-Use Pro for agentic file work and edit/test loops. Use Fast for quick workspace search, short chats, and small edits. Use Max for the hardest jobs — it runs the highest-reasoning model and takes longer per turn.
+Use Fast for quick chat and low-latency Atris loops. Use Pro for deeper tool loops. Use Max for the hardest jobs — it runs the highest-reasoning model and takes longer per turn. Advanced local workspace mode is opt-in with `--local` plus `AX_BACKEND_URL`.
 
 ## Play AgentXP
 
