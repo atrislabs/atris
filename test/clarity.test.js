@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const clarity = require('../lib/clarity');
+const { parseSets } = require('../commands/clarity');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -25,12 +26,32 @@ function runCli(args, cwd) {
   });
 }
 
-test('buildProfile keeps only known keys and trims', () => {
-  const p = clarity.buildProfile({ voice: '  plain  ', bogus: 'x', focus: 'atris' }, '2026-06-25');
+test('mergeProfile keeps only known keys and trims (fresh profile)', () => {
+  const p = clarity.mergeProfile({}, { voice: '  plain  ', bogus: 'x', focus: 'atris' }, '2026-06-25');
   assert.equal(p.voice, 'plain');
   assert.equal(p.focus, 'atris');
   assert.equal('bogus' in p, false);
   assert.equal(p.updated_at, '2026-06-25');
+});
+
+test('parseSets pins the key=value boundary contract', () => {
+  assert.deepEqual(parseSets(['--set', 'focus']), {}, 'no = is dropped');
+  assert.deepEqual(parseSets(['--set', '=plain']), {}, 'empty key is dropped');
+  assert.deepEqual(parseSets(['--set', 'voice=a = b']), { voice: 'a = b' }, 'value keeps embedded =');
+  assert.deepEqual(parseSets(['--set', 'bogus=z']), {}, 'unknown key filtered by KEYS');
+});
+
+test('`atris clarity --set voice=` (empty value) reports nothing saved and writes no field', () => {
+  const root = tmp();
+  try {
+    const res = runCli(['clarity', '--set', 'voice='], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /nothing to set/);
+    const p = path.join(root, '.atris', 'clarity.json');
+    if (fs.existsSync(p)) assert.equal('voice' in JSON.parse(fs.readFileSync(p, 'utf8')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('mergeProfile is incremental and does not wipe prior fields', () => {

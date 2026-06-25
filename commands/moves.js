@@ -1,21 +1,18 @@
 'use strict';
 
-// `atris moves` — alive onboarding. Shows the 3 highest-leverage next moves and
+// `atris moves`: alive onboarding. Shows the 3 highest-leverage next moves and
 // lets you approve (seed it into the loop), kill (stop suggesting it), or skip.
 // This is the seed of proactiveness: the workspace proposes, you steer.
 
 const readline = require('readline');
 const {
-  gatherCandidates,
-  pickNextMoves,
-  readDecisions,
+  nextMoves,
   recordDecision,
   seedInboxFromMove,
 } = require('../lib/next-moves');
 
 function currentMoves(root, limit) {
-  const { killedIds } = readDecisions(root);
-  return pickNextMoves(gatherCandidates(root), { limit, killedIds });
+  return nextMoves(root, limit);
 }
 
 function renderMoves(moves) {

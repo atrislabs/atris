@@ -410,10 +410,18 @@ async function runAtris(options = {}) {
     // inbox so this cycle pursues the goal. This is how the loop reads ROADMAP.
     if (!hasInboxOrBacklogWork(atrisDir)) {
       try {
-        const { pickRoadmapSeed, seedInboxFromMove } = require('../lib/next-moves');
+        const { pickRoadmapSeed, seedInboxFromMove, recordDecision, moveId } = require('../lib/next-moves');
         const pick = pickRoadmapSeed(process.cwd());
         if (pick) {
           seedInboxFromMove(process.cwd(), { title: pick.title, source: 'roadmap' });
+          // Record the seed so the next idle cycle advances to the next item
+          // instead of re-pulling this one once the DO phase clears the inbox.
+          recordDecision(
+            process.cwd(),
+            { id: moveId('roadmap', pick.title), title: pick.title, source: 'roadmap' },
+            'seeded',
+            new Date().toISOString()
+          );
           console.log(verbose
             ? `Seeded from ROADMAP: ${pick.title}`
             : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);
