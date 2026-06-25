@@ -373,8 +373,18 @@ function removeInboxItemFromContent(content, id) {
 }
 
 function writeJournalFile(logFile, content) {
-  fs.mkdirSync(path.dirname(logFile), { recursive: true });
-  fs.writeFileSync(logFile, content, 'utf8');
+  if (!logFile) {
+    throw new Error('Journal log file path is required.');
+  }
+  if (typeof content !== 'string') {
+    throw new Error('Journal content must be a string.');
+  }
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.writeFileSync(logFile, content, 'utf8');
+  } catch (error) {
+    throw new Error(`Could not write journal file: ${error.message}`);
+  }
 }
 
 function insertIntoNotesSection(content, block) {
