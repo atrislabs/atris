@@ -1455,7 +1455,7 @@ if (command === 'init') {
       console.error(`✗ Chat failed: ${error.message || error}`);
       process.exit(1);
     });
-} else if (command === 'fast' || (command === 'ax' && process.argv[3] === 'fast')) {
+} else if (command === 'fast' || command === 'ax') {
   atrisFastChat()
     .then(() => process.exit(0))
     .catch((error) => {

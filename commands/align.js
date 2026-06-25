@@ -466,6 +466,26 @@ async function alignHardLocalToCloud(token, biz, localDir) {
 
 async function alignAtris() {
   // Parse args
+  const printUsage = () => {
+    console.log('Usage: atris align [business] [--fix] [--hard] [--from cloud|local] [--dry-run]');
+    console.log('');
+    console.log('  atris align                   Diff current workspace against cloud (auto-detect)');
+    console.log('  atris align example-co            Diff example-co workspace');
+    console.log('  atris align example-co --fix      Fix drift (local is canonical by default)');
+    console.log('  atris align example-co --fix --hard  Force-push: nuke cloud cruft, upload local. Skips diff. Fast.');
+    console.log('  atris align example-co --fix --from cloud  Cloud is canonical: pull EC2-only, delete local extras');
+    console.log('  atris align example-co --dry-run  Show what would change, do nothing');
+  };
+
+  // Explicit help must win before we try to auto-detect a business slug,
+  // otherwise `--help` gets overwritten by the .atris/business.json fallback
+  // and the command attempts a real align instead of printing usage.
+  const firstArg = process.argv[3];
+  if (firstArg === '--help' || firstArg === '-h' || firstArg === 'help') {
+    printUsage();
+    process.exit(0);
+  }
+
   let slug = process.argv[3];
   if (!slug || slug.startsWith('-')) {
     const bizFile = path.join(process.cwd(), '.atris', 'business.json');
@@ -475,15 +495,8 @@ async function alignAtris() {
     if (!slug || slug.startsWith('-')) slug = null;
   }
 
-  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
-    console.log('Usage: atris align [business] [--fix] [--hard] [--from cloud|local] [--dry-run]');
-    console.log('');
-    console.log('  atris align                   Diff current workspace against cloud (auto-detect)');
-    console.log('  atris align example-co            Diff example-co workspace');
-    console.log('  atris align example-co --fix      Fix drift (local is canonical by default)');
-    console.log('  atris align example-co --fix --hard  Force-push: nuke cloud cruft, upload local. Skips diff. Fast.');
-    console.log('  atris align example-co --fix --from cloud  Cloud is canonical: pull EC2-only, delete local extras');
-    console.log('  atris align example-co --dry-run  Show what would change, do nothing');
+  if (!slug) {
+    printUsage();
     process.exit(0);
   }
 

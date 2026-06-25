@@ -595,6 +595,44 @@ test('default entry routes active work before completed history', () => {
   }
 });
 
+test('skill create rejects flag-shaped names instead of making a junk folder', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['skill', 'create', '--help'], { cwd: dir });
+    assert.match(res.stdout + res.stderr, /Usage: atris skill create/);
+    // The bug: it used to create atris/skills/--help/SKILL.md.
+    assert.ok(!fs.existsSync(path.join(dir, 'atris', 'skills', '--help')), 'must not create a "--help" skill folder');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('align --help prints usage even when a business is bound', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'test-co' }), 'utf8');
+    const res = runCli(['align', '--help'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /Usage: atris align/);
+    // The bug: --help got overwritten by the bound slug and it tried a real align.
+    assert.doesNotMatch(res.stdout + res.stderr, /Aligning test-co/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare ax shows usage instead of "Unknown command"', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['ax'], { cwd: dir });
+    assert.doesNotMatch(res.stdout + res.stderr, /Unknown command/);
+    assert.match(res.stdout + res.stderr, /atris ax fast/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('help lists essential commands', () => {
   const dir = makeTempDir();
   try {
