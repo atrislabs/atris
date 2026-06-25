@@ -622,15 +622,19 @@ curl -s "https://api.atris.ai/api/integrations/YOUR_INTEGRATION/items" \\
 // --- CREATE subcommand ---
 
 function skillCreate(nameArg, ...flags) {
-  if (!nameArg) {
-    console.error('Usage: atris skill create <name> [--integration] [--description="..."] [--local]');
-    console.error('');
-    console.error('Examples:');
-    console.error('  atris skill create daily-standup');
-    console.error('  atris skill create email-outreach --integration');
-    console.error('  atris skill create example-co/bol-processor --integration');
-    console.error('  atris skill create my-skill --local     # project only, skip system dirs');
-    process.exit(1);
+  // A flag-shaped first arg is not a skill name (e.g. `skill create --help`);
+  // show usage instead of creating a junk folder named "--help".
+  const wantsHelp = nameArg === '--help' || nameArg === '-h' || nameArg === 'help';
+  if (!nameArg || nameArg.startsWith('-')) {
+    const out = wantsHelp ? console.log : console.error;
+    out('Usage: atris skill create <name> [--integration] [--description="..."] [--local]');
+    out('');
+    out('Examples:');
+    out('  atris skill create daily-standup');
+    out('  atris skill create email-outreach --integration');
+    out('  atris skill create example-co/bol-processor --integration');
+    out('  atris skill create my-skill --local     # project only, skip system dirs');
+    process.exit(wantsHelp ? 0 : 1);
   }
 
   const isIntegration = flags.includes('--integration');
