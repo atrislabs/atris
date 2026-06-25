@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -783,4 +783,61 @@ test('run.js carries lastReviewOutput across cycles in the loop', () => {
   assert.match(RUN_SRC, /let lastReviewOutput = null/);
   assert.match(RUN_SRC, /priorCycleReview: lastReviewOutput/);
   assert.match(RUN_SRC, /lastReviewOutput = reviewOutput/);
+});
+
+// --- Master-loop receipt: the review verdict is now durable, not RAM-only ---
+
+test('run.js persists each cycle review verdict after carrying it forward', () => {
+  assert.match(RUN_SRC, /appendMasterLoopReceipt\(\{ runStamp, cycle, verdict, timing, reviewOutput \}\)/);
+  assert.match(RUN_SRC, /const verdict = reviewOutput\.includes\('\[REVIEW_FAILED\]'\) \? 'fail' : 'pass'/);
+});
+
+test('appendMasterLoopReceipt writes a durable jsonl row the brain can read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-master-loop-'));
+  try {
+    const stateDir = path.join(dir, '.atris', 'state');
+    const row = appendMasterLoopReceipt(
+      { runStamp: 'abc123', cycle: 2, verdict: 'pass', timing: { plan: 1000, do: 2000, review: 3000 }, reviewOutput: '[REVIEW_COMPLETE] tests green' },
+      stateDir
+    );
+    assert.equal(row.verdict, 'pass');
+    assert.equal(row.cycle, 2);
+    assert.equal(row.review_ms, 3000);
+    const file = path.join(stateDir, 'master_loop_events.jsonl');
+    assert.ok(fs.existsSync(file), 'master_loop_events.jsonl should exist');
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(lines.length, 1);
+    const parsed = JSON.parse(lines[0]);
+    assert.equal(parsed.run_stamp, 'abc123');
+    assert.equal(parsed.verdict, 'pass');
+    assert.match(parsed.review_summary, /tests green/);
+    assert.ok(parsed.ts, 'row carries a timestamp');
+    // A second cycle appends, not overwrites.
+    appendMasterLoopReceipt({ runStamp: 'abc123', cycle: 3, verdict: 'fail', timing: { plan: 1, do: 1, review: 1 }, reviewOutput: '[REVIEW_FAILED] broke' }, stateDir);
+    const after = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(after.length, 2);
+    assert.equal(JSON.parse(after[1]).verdict, 'fail');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('appendMasterLoopReceipt never throws on a bad state dir (best-effort telemetry)', () => {
+  // Point at a path under a regular file so mkdir fails; must return null, not throw.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ml-bad-'));
+  const fileAsDir = path.join(tmp, 'blocker');
+  fs.writeFileSync(fileAsDir, 'x');
+  try {
+    const result = appendMasterLoopReceipt({ cycle: 1, verdict: 'pass' }, path.join(fileAsDir, 'state'));
+    assert.equal(result, null);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('brain.js loop health drops writer-less channels and keeps the wired master loop', () => {
+  const BRAIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'brain.js'), 'utf8');
+  assert.doesNotMatch(BRAIN_SRC, /label: 'Overnight RL'/);
+  assert.doesNotMatch(BRAIN_SRC, /label: 'Company YC'/);
+  assert.match(BRAIN_SRC, /label: 'Master loop'/);
 });

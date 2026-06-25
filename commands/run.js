@@ -281,6 +281,35 @@ function hasWork(atrisDir) {
 }
 
 /**
+ * Append a durable Master-loop receipt for one cycle's review verdict.
+ *
+ * Closes the loop: until now the validator's pass/fail lived only in RAM
+ * (carried to the next cycle's plan), so a crash lost it and `atris brain`
+ * could never see that the review step ran. This persists the verdict to
+ * .atris/state/master_loop_events.jsonl, the channel the brain reads for
+ * loop health. Best-effort: telemetry must never fail the run.
+ */
+function appendMasterLoopReceipt(receipt, stateDir = path.join(process.cwd(), '.atris', 'state')) {
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    const row = {
+      ts: new Date().toISOString(),
+      run_stamp: receipt.runStamp || null,
+      cycle: receipt.cycle,
+      verdict: receipt.verdict,
+      plan_ms: receipt.timing ? receipt.timing.plan : null,
+      do_ms: receipt.timing ? receipt.timing.do : null,
+      review_ms: receipt.timing ? receipt.timing.review : null,
+      review_summary: String(receipt.reviewOutput || '').replace(/\s+/g, ' ').trim().slice(0, 280),
+    };
+    fs.appendFileSync(path.join(stateDir, 'master_loop_events.jsonl'), JSON.stringify(row) + '\n');
+    return row;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Log completion to journal
  */
 function logRunCompletion(cycles, startTime, cycleTimings = []) {
@@ -452,6 +481,10 @@ async function runAtris(options = {}) {
 
       // Carry the review output into the next cycle's plan — closes the loop
       lastReviewOutput = reviewOutput;
+
+      // Persist the verdict durably so the brain can see the review actually ran.
+      const verdict = reviewOutput.includes('[REVIEW_FAILED]') ? 'fail' : 'pass';
+      appendMasterLoopReceipt({ runStamp, cycle, verdict, timing, reviewOutput });
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
         console.log(verbose
@@ -989,4 +1022,4 @@ function diffRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
+module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
