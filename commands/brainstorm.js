@@ -321,36 +321,43 @@ async function brainstormAtris() {
       const nextSteps = nextStepsRaw
         ? nextStepsRaw.split(';').map((item) => item.trim()).filter(Boolean)
         : [];
-      recordBrainstormSession(
-        logFile,
-        sourceLabel,
-        topicSummary,
-        userStory,
-        [],
-        [],
-        constraints,
-        '',
-        feelingsVibe || '',
-        nextSteps,
-        sessionSummary
-      );
-      if (selectedInboxItem) {
-        const archive = await askYesNo('Archive this Inbox idea now? (y/n): ');
-        if (archive) {
-          try {
-            let latestContent = fs.readFileSync(logFile, 'utf8');
-            latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
-            if (typeof latestContent !== 'string') {
-              throw new Error('Archive operation produced invalid journal content.');
+      try {
+        recordBrainstormSession(
+          logFile,
+          sourceLabel,
+          topicSummary,
+          userStory,
+          [],
+          [],
+          constraints,
+          '',
+          feelingsVibe || '',
+          nextSteps,
+          sessionSummary
+        );
+        if (selectedInboxItem) {
+          const archive = await askYesNo('Archive this Inbox idea now? (y/n): ');
+          if (archive) {
+            try {
+              let latestContent = fs.readFileSync(logFile, 'utf8');
+              latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
+              if (typeof latestContent !== 'string') {
+                throw new Error('Archive operation produced invalid journal content.');
+              }
+              writeJournalFile(logFile, latestContent);
+              console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
+            } catch (error) {
+              console.log(`Could not archive I${selectedInboxItem.id}: ${error.message}`);
             }
-            writeJournalFile(logFile, latestContent);
-            console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
-          } catch (error) {
-            console.log(`Could not archive I${selectedInboxItem.id}: ${error.message}`);
           }
         }
+        console.log('✓ Brainstorm session logged.');
+      } catch (error) {
+        if (error && error.__brainstormAbort) {
+          throw error;
+        }
+        console.log(`Could not log brainstorm session: ${error.message}`);
       }
-      console.log('✓ Brainstorm session logged.');
     } else {
       console.log('Skipped journaling. Prompt is ready for your agent.');
     }
