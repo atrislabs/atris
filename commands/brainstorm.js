@@ -387,10 +387,10 @@ function writeJournalFile(logFile, content) {
     throw new Error('Journal content must be a string.');
   }
   const logDir = path.dirname(logFile);
-  const tempFile = path.join(logDir, `.${path.basename(logFile)}.${process.pid}.tmp`);
+  const tempFile = path.join(logDir, `.${path.basename(logFile)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
   try {
     fs.mkdirSync(logDir, { recursive: true });
-    fs.writeFileSync(tempFile, content, 'utf8');
+    fs.writeFileSync(tempFile, content, { encoding: 'utf8', flag: 'wx' });
     fs.renameSync(tempFile, logFile);
   } catch (error) {
     try {
