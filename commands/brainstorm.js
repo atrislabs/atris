@@ -340,6 +340,9 @@ async function brainstormAtris() {
           try {
             let latestContent = fs.readFileSync(logFile, 'utf8');
             latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
+            if (typeof latestContent !== 'string') {
+              throw new Error('Archive operation produced invalid journal content.');
+            }
             fs.mkdirSync(path.dirname(logFile), { recursive: true });
             fs.writeFileSync(logFile, latestContent, 'utf8');
             console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
