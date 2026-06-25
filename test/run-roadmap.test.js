@@ -244,6 +244,21 @@ test('addRoadmapItem creates ROADMAP + section, inserts top-first, dedups, rejec
   }
 });
 
+test('addRoadmapItem sanitizes a multi-line or pre-marked title into one clean line', () => {
+  const root = tmp();
+  try {
+    assert.equal(nm.addRoadmapItem(root, '  - [ ] paste\nwith newline  ').title, 'paste with newline');
+    const text = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
+    assert.match(text, /- \[ \] paste with newline/);
+    assert.doesNotMatch(text, /- \[ \] - \[ \]/, 'no doubled checkbox');
+    // a $-laden title is written literally (no replacement injection)
+    nm.addRoadmapItem(root, 'cost $1 and $&');
+    assert.match(fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8'), /- \[ \] cost \$1 and \$&/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('pickRoadmapSeed returns null when ROADMAP has no open items', () => {
   const root = tmp();
   try {
