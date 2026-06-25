@@ -7,7 +7,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
-const { taskProofState } = require('../lib/task-proof');
+const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
@@ -96,6 +96,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
   atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
+  atris task ready <id> --verify "<cmd>"   Run <cmd>; only ready if it exits 0 (executed proof)
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
   atris task accept <id> [--proof "..."]   Human accepts proof, marks done
   atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
@@ -6317,12 +6318,29 @@ function cmdReady(args) {
     console.error('atris task ready: id required');
     process.exit(2);
   }
-  const proof = flag(args, '--proof');
-  if (!proof || proof === true) {
-    console.error('atris task ready: --proof required');
+  // Two ways to prove: --proof "<note>" (claimed, pattern-checked, unchanged) or
+  // --verify "<command>" which actually RUNS the command and gates ready on exit 0,
+  // turning a claim into executed evidence. --verify can carry an optional --proof note.
+  const proofFlag = flag(args, '--proof');
+  const verifyFlag = flag(args, '--verify');
+  let proof = typeof proofFlag === 'string' ? proofFlag : '';
+  if (typeof verifyFlag === 'string' && verifyFlag.trim()) {
+    const verified = buildVerifiedProof(verifyFlag, proof, undefined, { cwd: process.cwd() });
+    if (!verified.ok) {
+      const detail = verified.exit != null ? ` (exit ${verified.exit})` : (verified.signal ? ` (signal ${verified.signal})` : '');
+      console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
+      if (verified.output) console.error(verified.output);
+      else if (verified.error) console.error(verified.error);
+      process.exit(1);
+    }
+    proof = verified.proof;
+    if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0`);
+  }
+  if (!proof) {
+    console.error('atris task ready: --proof or --verify required');
     process.exit(2);
   }
-  requireMeaningfulTaskProof('atris task ready', String(proof));
+  requireMeaningfulTaskProof('atris task ready', proof);
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
