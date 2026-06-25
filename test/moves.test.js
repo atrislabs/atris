@@ -196,6 +196,34 @@ test('`atris moves --approve` claims the roadmap item ([~]) so the loop agrees i
   }
 });
 
+test('resolveSelection prefers a stable id, falls back to position, ignores garbage', () => {
+  const { resolveSelection } = require('../commands/moves');
+  const moves = nextMoves.pickNextMoves([
+    { title: 'a', source: 'roadmap', weight: 100 },
+    { title: 'b', source: 'roadmap', weight: 90 },
+  ], {});
+  assert.deepEqual(resolveSelection(moves, moves[1].id).map((m) => m.title), ['b'], 'resolves by stable id');
+  assert.deepEqual(resolveSelection(moves, '1').map((m) => m.title), ['a'], 'positional fallback');
+  assert.deepEqual(resolveSelection(moves, '99'), [], 'out of range');
+  assert.deepEqual(resolveSelection(moves, 'nope'), [], 'garbage');
+});
+
+test('`atris moves --kill <id>` kills exactly that move regardless of position', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['first', 'second']);
+    const secondId = JSON.parse(runCli(['moves', '--json'], root).stdout).moves.find((m) => m.title === 'second').id;
+    const res = runCli(['moves', '--kill', secondId], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /killed: second/);
+    const after = JSON.parse(runCli(['moves', '--json'], root).stdout).moves.map((m) => m.title);
+    assert.ok(!after.includes('second'), 'the id-targeted move is gone');
+    assert.ok(after.includes('first'), 'the other move stays');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('parseIndexes parses lists and drops non-positive / garbage', () => {
   assert.deepEqual(parseIndexes('abc'), []);
   assert.deepEqual(parseIndexes('0'), []);
