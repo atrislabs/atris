@@ -107,6 +107,32 @@ function startLocalOptions(argv = []) {
   return opts;
 }
 
+// Summarize the local plan/do/review run logs (run.js writes these). Pure of
+// console, takes the dir, so it is testable.
+function localRunSummary(dir) {
+  const fs = require('fs');
+  let files;
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort();
+  } catch {
+    return { count: 0, latest: null };
+  }
+  if (!files.length) return { count: 0, latest: null };
+  return { count: files.length, latest: files[files.length - 1] };
+}
+
+function printLocalRunSummary() {
+  try {
+    const { getRunLogDir } = require('./run');
+    const s = localRunSummary(getRunLogDir());
+    if (!s.count) {
+      console.log('local runs: none yet. start one with `atris loop start`.');
+      return;
+    }
+    console.log(`local runs: ${s.count} logged, latest ${s.latest}. read them: atris run logs`);
+  } catch { /* best-effort: never block status */ }
+}
+
 // Executor. Returns a Promise resolving to an exit code (0 = ok).
 function loopFront(argv = []) {
   const route = routeLoop(argv);
@@ -122,7 +148,12 @@ function loopFront(argv = []) {
 
     case 'status':
       return Promise.resolve(require('./pulse').pulseCommand(['status', ...jsonFlag]))
-        .then((res) => (res && res.ok === false ? 1 : 0));
+        .then((res) => {
+          // Pulse covers the overnight heartbeat; also surface local runs so
+          // `atris loop status` reflects both engines, not just pulse.
+          if (!jsonFlag.length) printLocalRunSummary();
+          return res && res.ok === false ? 1 : 0;
+        });
 
     case 'stop':
       return Promise.resolve(require('./pulse').pulseCommand(['uninstall', ...jsonFlag]))
@@ -153,5 +184,6 @@ module.exports = {
   renderLoopHome,
   printLoopHome,
   startLocalOptions,
+  localRunSummary,
   loopFront,
 };

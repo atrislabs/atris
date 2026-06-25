@@ -37,9 +37,12 @@ Small, bounded tasks the loop pulls one at a time when idle (top first), and
 Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
-- [ ] point `pulse` help at `atris loop start` (one line, like run and autopilot already have)
-- [ ] add `atris/CLARITY.md` to the boot-load list in `atris.md` so agents read how the operator works
-- [ ] `atris loop status` should also summarize the last run-log cycle, not just pulse
+- [ ] `atris moves` should mark a move already seeded/approved so the human sees what's queued
+- [ ] fix the em dash in the canonical journal title (`# Log — ` in lib/journal.js); the repo's own slop rule bans it
+- [ ] `atris loop status --json` should emit a combined machine-readable summary (pulse + local runs)
+- [x] point `pulse` help at `atris loop start` (shipped)
+- [x] add `atris/CLARITY.md` to the boot-load list in `atris.md` (shipped)
+- [x] `atris loop status` summarizes local runs, not just pulse (shipped)
 - [x] wire ROADMAP open items into the loop planner (shipped: hasWork + idle seed pull the top item into the inbox)
 - [x] atris clarity: interview the user for style and workflow, write a durable profile (shipped)
 

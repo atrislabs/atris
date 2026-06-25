@@ -12,6 +12,7 @@ On session start, before responding:
 1. Read:
    - `atris/logs/YYYY/YYYY-MM-DD.md`: today's journal
    - `atris/MAP.md`: navigation
+   - `atris/CLARITY.md` if present: how the operator works (voice, cadence, leash); prompt yourself to match it
    - `atris/wiki/STATUS.md` if present: current memory snapshot
 
 2. Show this box, then ask what to work on if no task was already given.
