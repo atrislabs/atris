@@ -1626,8 +1626,7 @@ async function executeAgentSDKFast(userInput) {
   } catch (error) {
     console.error(`✗ Error: ${error.message}`);
     console.log('');
-    console.log('💡 Make sure the AtrisOS backend is running on port 8000');
-    console.log('   Start it with: cd /Users/keshavrao/arena/atrisos-backend/backend && python -m uvicorn main:app --reload --port 8000');
+    console.log('💡 Hosted turns use https://api.atris.ai. For local development, set ATRIS_API_BASE to your own backend URL.');
     process.exit(1);
   }
 }
