@@ -1473,7 +1473,7 @@ if (command === 'init') {
       console.error(`✗ Chat failed: ${error.message || error}`);
       process.exit(1);
     });
-} else if (command === 'fast' || (command === 'ax' && process.argv[3] === 'fast')) {
+} else if (command === 'fast' || command === 'ax') {
   atrisFastChat()
     .then(() => process.exit(0))
     .catch((error) => {
@@ -1713,9 +1713,11 @@ if (command === 'init') {
   const push = !args.includes('--no-push');
   applyRunnerFlags(args);
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
-  const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
+  const cyclesValue = cyclesArg ? cyclesArg.split('=')[1] : '';
+  const maxCycles = cyclesValue && !isNaN(parseInt(cyclesValue, 10)) ? parseInt(cyclesValue, 10) : 5;
   const timeoutArg = args.find(a => a.startsWith('--timeout='));
-  const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
+  const timeoutValue = timeoutArg ? timeoutArg.split('=')[1] : '';
+  const timeout = timeoutValue && !isNaN(parseInt(timeoutValue, 10)) ? parseInt(timeoutValue, 10) * 1000 : undefined;
 
   require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
     .then(() => process.exit(0))
@@ -1736,7 +1738,8 @@ if (command === 'init') {
   const auto = args.includes('--auto');
   applyRunnerFlags(args);
   const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
+  const iterValue = maxIterationsArg ? maxIterationsArg.split('=')[1] : '';
+  const maxIterations = iterValue && !isNaN(parseInt(iterValue, 10)) ? parseInt(iterValue, 10) : undefined;
   const durationArg = args.find(a => a.startsWith('--duration='));
   const duration = durationArg ? durationArg.split('=')[1] : null;
 
