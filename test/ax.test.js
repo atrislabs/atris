@@ -204,7 +204,7 @@ test('ax dogfoods fast chat with a 25-loop checklist', async () => {
     assert.equal(report.checklist.every(item => item.passed), true);
     assert.ok(fs.existsSync(report.log_path));
     assert.equal(report.turn_calls.some(call => call.message === 'hi' && call.route === 'cloud' && !call.workspace_path), true);
-    assert.equal(report.turn_calls.some(call => call.message === 'what files are here?' && call.route === 'local' && call.workspace_path === dir), true);
+    assert.equal(report.turn_calls.some(call => call.message === 'what files are here?' && call.route === 'cloud' && !call.workspace_path), true);
     assert.equal(report.youtube_calls.length, 1);
     assert.match(ax.formatChatDogfoodReport(report), /loops: 25\/25/);
     assert.match(ax.formatChatDogfoodReport(report), /checklist: 12\/12 passed/);
@@ -265,10 +265,10 @@ test('ax dogfood status summarizes overnight mission proof', () => {
   }
 });
 
-test('ax routes workspace questions to local Atris 2 tools', () => {
-  assert.equal(ax.resolveRoute('what files are here?'), 'local');
-  assert.equal(ax.resolveRoute('search src for the input component'), 'local');
-  assert.equal(ax.resolveRoute('fix the xp game tests'), 'local');
+test('ax routes fresh-user workspace questions to hosted cloud by default', () => {
+  assert.equal(ax.resolveRoute('what files are here?'), 'cloud');
+  assert.equal(ax.resolveRoute('search src for the input component'), 'cloud');
+  assert.equal(ax.resolveRoute('fix the xp game tests'), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -276,10 +276,24 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
   });
 
   assert.equal(payload.model, 'atris:fast');
-  assert.equal(payload.workspace_path, '/tmp/project');
-  assert.equal(payload.max_turns, 8);
+  assert.equal(payload.workspace_path, undefined);
+  assert.equal(payload.max_turns, 1);
   assert.equal(payload.member_slug, 'ax');
   assert.equal(payload.bypass_permissions, false);
+});
+
+test('ax uses local workspace tools only when a local backend is configured or forced', () => {
+  assert.equal(ax.resolveRoute('what files are here?', { localWorkspaceBackend: true }), 'local');
+  assert.equal(ax.resolveRoute('search src for the input component', { localWorkspaceBackend: true }), 'local');
+
+  const payload = ax.buildPayload('what files are here?', {
+    mode: 'fast',
+    cwd: '/tmp/project',
+    localWorkspaceBackend: true,
+  });
+
+  assert.equal(payload.workspace_path, '/tmp/project');
+  assert.equal(payload.max_turns, 8);
 });
 
 test('ax routes greetings and no-intent snippets to cloud chat', () => {
@@ -289,8 +303,8 @@ test('ax routes greetings and no-intent snippets to cloud chat', () => {
   assert.equal(ax.resolveRoute('hello why'), 'cloud');
   assert.equal(ax.resolveRoute('hello please'), 'cloud');
   assert.equal(ax.resolveRoute('oj'), 'cloud');
-  assert.equal(ax.resolveRoute('fix'), 'local');
-  assert.equal(ax.resolveRoute('what files are here?'), 'local');
+  assert.equal(ax.resolveRoute('fix'), 'cloud');
+  assert.equal(ax.resolveRoute('what files are here?'), 'cloud');
 
   const payload = ax.buildPayload('hi', {
     mode: 'fast',
@@ -310,8 +324,8 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
     cwd: '/tmp/project',
   });
   assert.equal(payload.model, 'atris:max');
-  assert.equal(payload.workspace_path, '/tmp/project');
-  assert.equal(payload.max_turns, 14);
+  assert.equal(payload.workspace_path, undefined);
+  assert.equal(payload.max_turns, 1);
 
   const cloudWrite = ax.buildPayload('send a slack message to the team', {
     mode: 'max',
@@ -334,7 +348,8 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
 
   const profile = ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' });
   assert.equal(profile.model, 'atris:max');
-  assert.equal(profile.max_turns, 14);
+  assert.equal(profile.max_turns, 1);
+  assert.equal(profile.route, 'cloud');
   assert.match(profile.reasoning, /high reasoning/);
 });
 
@@ -342,7 +357,8 @@ test('ax defaults to fast tier when no mode flag is set', () => {
   const profile = ax.buildRunProfile({ cwd: '/tmp/project' });
   assert.equal(profile.mode, 'fast');
   assert.equal(profile.model, 'atris:fast');
-  assert.equal(profile.max_turns, 8);
+  assert.equal(profile.max_turns, 1);
+  assert.equal(profile.route, 'cloud');
   assert.match(ax.formatHeader({ cwd: '/tmp/project', chat: true }), /Atris 2 Fast chat/);
 });
 
@@ -595,10 +611,11 @@ test('ax continuation wrapper marks current user message for backend connector r
   assert.doesNotMatch(wrapped, /Current user message: check my slack messages/);
 });
 
-test('ax routes GitHub repo mutations to local workspace tools', () => {
-  assert.equal(ax.resolveRoute('push something to github'), 'local');
-  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'local');
-  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'local');
+test('ax routes GitHub repo mutations to cloud unless local workspace is configured', () => {
+  assert.equal(ax.resolveRoute('push something to github'), 'cloud');
+  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'cloud');
+  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'cloud');
+  assert.equal(ax.resolveRoute('push something to github', { localWorkspaceBackend: true }), 'local');
 });
 
 test('ax carries local connector lookup id only on cloud payloads', () => {
@@ -670,6 +687,7 @@ test('ax sends a no-op verify_command unless --verify opts in', () => {
     cwd: '/tmp/project',
   });
   assert.equal(defaultPayload.verify_command, 'true');
+  assert.equal(defaultPayload.workspace_path, undefined);
 
   const blankPayload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -677,9 +695,11 @@ test('ax sends a no-op verify_command unless --verify opts in', () => {
     verify: '   ',
   });
   assert.equal(blankPayload.verify_command, 'true');
+  assert.equal(blankPayload.workspace_path, undefined);
 
   const localPayload = ax.buildPayload('fix the failing suite', {
     mode: 'max',
+    route: 'local',
     cwd: '/tmp/project',
     verify: 'npm test',
   });
