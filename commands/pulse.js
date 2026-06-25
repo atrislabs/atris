@@ -494,6 +494,7 @@ module.exports = {
   pulseCommand,
   tickCommand,
   statusCommand,
+  cronInstalled,
   installCommand,
   uninstallCommand,
   runCommand,
