@@ -3692,6 +3692,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     status: false,
     review: false,
     resolve: null,
+    resolvePath: null,
     help: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
@@ -16350,7 +16351,7 @@ test('loop flags stale wiki pages and refreshes status/log', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const res = runCli(['loop'], { cwd: dir });
+    const res = runCli(['loop', 'wiki'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
     assert.match(res.stdout, /Stale: 1/);
@@ -16372,7 +16373,7 @@ test('loop suggests next ingest candidates when wiki is clean', () => {
   try {
     initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
-    const res = runCli(['loop', '--json'], { cwd: dir });
+    const res = runCli(['loop', 'wiki', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const report = JSON.parse(res.stdout);
     assert.ok(report.nextSources.includes('README.md'));
