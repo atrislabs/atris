@@ -30,7 +30,7 @@ The agent then:
    - `cron`: `"*/13 * * * *"` (every 13 min) for tight loops, or `"7 * * * *"` (hourly at :07) for slow loops
    - `prompt`: `"First run: atris mission run --due --max-ticks 1 --complete-on-pass. If it reports no_due_mission, run /autopilot for one tick. One bounded goal only, then stop. Do not start a conversation."`
    - `recurring`: `true`
-   - `durable`: `false` (in-memory only — gone when this Claude session ends)
+   - `durable`: `false` (in-memory only, gone when this Claude session ends)
 2. After creating, calls `CronList` and shows the user the active cron jobs.
 3. Tells the user: "loop is alive. job id <X>. fires roughly every <N> minutes. say 'stop the loop' to kill it. auto-expires after 7 days."
 
@@ -68,6 +68,8 @@ If the user says "kill all loops", call `CronList`, then `CronDelete` for every 
 
 This is the autonomous mode. Without `/loop`, `/autopilot` only runs when a human invokes it.
 
-## Wiki upkeep is a separate concern
+## The CLI front door and wiki upkeep
 
-The CLI command `atris loop` is wiki upkeep (stale pages, orphans, ingest candidates). That's a different verb on the same name. If the user wants wiki health, run `atris loop` from a terminal. If they want the autopilot heartbeat, invoke `/loop` here in Claude Code.
+The CLI command `atris loop` is now the single front door to the self-improvement loop: `atris loop start` (local), `atris loop start --overnight` (durable heartbeat), `atris loop status`, `atris loop stop`. It delegates to the existing engines (`run`, `pulse`) rather than adding a new one.
+
+Wiki upkeep (stale pages, orphans, ingest candidates) moved to `atris loop wiki` (or `atris wiki loop`). If the user wants wiki health, run that. If they want the autopilot heartbeat from inside Claude Code, invoke `/loop` here.

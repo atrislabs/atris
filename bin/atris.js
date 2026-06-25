@@ -405,7 +405,7 @@ function showHelp() {
   console.log('  ingest     - Local-first wiki ingest into atris/wiki/');
   console.log('  query      - Local-first wiki query against atris/wiki/');
   console.log('  lint       - Local-first wiki lint for atris/wiki/');
-  console.log('  loop       - Local wiki upkeep loop (stale pages, orphans, next ingest)');
+  console.log('  loop       - The self-improvement loop: start, status, stop (wiki upkeep: loop wiki)');
   console.log('');
   console.log('Optional helpers:');
   console.log('  brainstorm - Explore ideas conversationally before planning');
@@ -757,16 +757,26 @@ function showServeHelp() {
 
 function showLoopHelp() {
   console.log('');
-  console.log('Usage: atris loop [--dry-run] [--json] [--limit=N]');
+  console.log('Usage: atris loop [start|status|stop|wiki] [options]');
   console.log('');
-  console.log('Description:');
-  console.log('  Inspect wiki upkeep state and optionally refresh wiki status/log files.');
+  console.log('The self-improvement loop: plan, do, review, verify, commit.');
+  console.log('Ships one small verifiable change at a time. Reads ROADMAP.md.');
   console.log('');
-  console.log('Options:');
-  console.log('  --dry-run    Preview wiki loop state without writing files.');
-  console.log('  --json       Print the loop report as JSON.');
-  console.log('  --limit=N    Limit suggested source count.');
-  console.log('  --help, -h   Show this help.');
+  console.log('Commands:');
+  console.log('  (none)       Show loop home: status and the next moves');
+  console.log('  start        Run the loop now, locally (plan -> do -> review)');
+  console.log('  status       Liveness, last tick, and reward');
+  console.log('  stop         Remove the durable overnight heartbeat');
+  console.log('  wiki         Wiki upkeep (the old `atris loop`)');
+  console.log('');
+  console.log('Options for start:');
+  console.log('  --once       One cycle, then stop');
+  console.log('  --overnight  Install the durable heartbeat (OS cron, ~15m)');
+  console.log('  --cycles=N   Max cycles (default 5)');
+  console.log('  --dry-run    Preview without executing');
+  console.log('  --no-push    Skip auto-push after each cycle');
+  console.log('  --verbose    Show engine output');
+  console.log('  --help, -h   Show this help');
   console.log('');
 }
 
@@ -2072,8 +2082,8 @@ if (command === 'init') {
     showLoopHelp();
     process.exit(0);
   }
-  require('../commands/loop').loopAtris(args)
-    .then(() => process.exit(0))
+  require('../commands/loop-front').loopFront(args)
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
   const { cleanWorkspace } = require('../commands/workspace-clean');

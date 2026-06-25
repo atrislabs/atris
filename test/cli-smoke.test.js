@@ -234,13 +234,13 @@ test('skill list and audit include bundled skills from any workspace', () => {
   }
 });
 
-test('loop refreshes wiki STATUS and appends wiki log entries', () => {
+test('loop wiki refreshes wiki STATUS and appends wiki log entries', () => {
   const dir = makeTempDir();
   try {
     fs.writeFileSync(path.join(dir, 'README.md'), '# Temp Repo\n', 'utf8');
     runCli(['init'], { cwd: dir, input: '\n' });
 
-    const res = runCli(['loop'], { cwd: dir });
+    const res = runCli(['loop', 'wiki'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
     assert.match(res.stdout, /Health:/);
@@ -353,6 +353,18 @@ test('ax help stays local and does not start an agent turn', () => {
 
 test('ax keeps chat context and file-operation proof readable', () => {
   const ax = require('../ax');
+  // Hermetic: backendUrl()/buildRunProfile() read the backend env at call time.
+  // Clear ambient overrides (set on the operator's shell / Obelisk) so we assert
+  // the built-in default, not whatever backend this machine happens to point at.
+  const savedBackend = {
+    AX_BACKEND_URL: process.env.AX_BACKEND_URL,
+    OBELISK_LOCAL_ATRIS2_BACKEND_URL: process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL,
+    OBELISK_ATRIS2_BACKEND_URL: process.env.OBELISK_ATRIS2_BACKEND_URL,
+  };
+  delete process.env.AX_BACKEND_URL;
+  delete process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL;
+  delete process.env.OBELISK_ATRIS2_BACKEND_URL;
+  try {
   const payload = ax.buildPayload('edit config', {
     cwd: '/workspace/demo',
     mode: 'pro',
@@ -466,6 +478,12 @@ test('ax keeps chat context and file-operation proof readable', () => {
   ax.handleEvent({ type: 'text_delta', content: 'streaming' }, ttyState, ttyOutput);
   assert.equal(ttyWrites.join(''), 'streaming');
   assert.equal(ttyState.output, 'streaming');
+  } finally {
+    for (const [k, v] of Object.entries(savedBackend)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });
 
 test('default entry auto-advances to plan when inbox has items', () => {
