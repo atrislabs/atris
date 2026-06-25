@@ -263,11 +263,12 @@ function hasInboxOrBacklogWork(atrisDir) {
   const todo = parseTodo(todoPath);
   if (todo.backlog.length > 0 || todo.inProgress.length > 0) return true;
 
-  // Check inbox
+  // Check inbox. Tolerate a header suffix (e.g. "## Inbox (raw ideas)") so this
+  // gate matches what seedInboxFromMove writes and what latestInboxItems reads.
   const { logFile } = getLogPath();
   if (fs.existsSync(logFile)) {
     const content = fs.readFileSync(logFile, 'utf8');
-    const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|$)/);
+    const inboxMatch = content.match(/## Inbox[^\n]*\r?\n([\s\S]*?)(?=\r?\n##|$)/);
     if (inboxMatch && inboxMatch[1].trim()) {
       const items = inboxMatch[1].trim().split('\n').filter(l => {
         const t = l.trim();
@@ -280,8 +281,9 @@ function hasInboxOrBacklogWork(atrisDir) {
   return false;
 }
 
-// ROADMAP.md open items count as work, so an idle loop pursues the goal in
-// ROADMAP instead of stopping. path.dirname(atrisDir) is the project root.
+// Raw count of unchecked ROADMAP open items. Utility for status/reporting; the
+// work gate below does NOT use it (a raw count and the seed picker can disagree
+// once items are handled/killed), it uses pickRoadmapSeed directly.
 function roadmapOpenCount(atrisDir) {
   try {
     return require('../lib/next-moves').readRoadmapOpenItems(path.dirname(atrisDir)).length;
@@ -290,8 +292,19 @@ function roadmapOpenCount(atrisDir) {
   }
 }
 
+// A seedable ROADMAP item (the exact thing the idle loop would pull) counts as
+// work. Using pickRoadmapSeed here means the work gate and the seed path are the
+// SAME signal, so the loop never spins on an empty inbox with nothing to seed.
+function hasSeedableRoadmapItem(atrisDir) {
+  try {
+    return require('../lib/next-moves').pickRoadmapSeed(path.dirname(atrisDir)) != null;
+  } catch {
+    return false;
+  }
+}
+
 function hasWork(atrisDir) {
-  return hasInboxOrBacklogWork(atrisDir) || roadmapOpenCount(atrisDir) > 0;
+  return hasInboxOrBacklogWork(atrisDir) || hasSeedableRoadmapItem(atrisDir);
 }
 
 /**
@@ -410,18 +423,15 @@ async function runAtris(options = {}) {
     // inbox so this cycle pursues the goal. This is how the loop reads ROADMAP.
     if (!hasInboxOrBacklogWork(atrisDir)) {
       try {
-        const { pickRoadmapSeed, seedInboxFromMove, recordDecision, moveId } = require('../lib/next-moves');
+        const { pickRoadmapSeed, seedInboxFromMove, checkRoadmapItem } = require('../lib/next-moves');
         const pick = pickRoadmapSeed(process.cwd());
         if (pick) {
+          // Mark the ROADMAP item handled BEFORE seeding the inbox. ROADMAP `[x]`
+          // is the single source of truth the work gate and seed picker share, so
+          // the loop always advances. Mark-then-seed means a seed failure leaves
+          // the item handled (skipped) rather than re-seeded forever.
+          checkRoadmapItem(process.cwd(), pick.title);
           seedInboxFromMove(process.cwd(), { title: pick.title, source: 'roadmap' });
-          // Record the seed so the next idle cycle advances to the next item
-          // instead of re-pulling this one once the DO phase clears the inbox.
-          recordDecision(
-            process.cwd(),
-            { id: moveId('roadmap', pick.title), title: pick.title, source: 'roadmap' },
-            'seeded',
-            new Date().toISOString()
-          );
           console.log(verbose
             ? `Seeded from ROADMAP: ${pick.title}`
             : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);
