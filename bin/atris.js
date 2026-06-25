@@ -766,6 +766,7 @@ function showLoopHelp() {
   console.log('');
   console.log('Commands:');
   console.log('  (none)       Show loop home: status and the next moves');
+  console.log('  add "<task>" Put a bounded task into the loop queue (ROADMAP open items)');
   console.log('  start        Run the loop now, locally (plan -> do -> review)');
   console.log('  status       Liveness, last tick, and reward');
   console.log('  stop         Remove the durable overnight heartbeat');

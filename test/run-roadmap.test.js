@@ -227,6 +227,23 @@ test('a seed into a "## Inbox (raw ideas)" header is still seen by the work gate
   }
 });
 
+test('addRoadmapItem creates ROADMAP + section, inserts top-first, dedups, rejects empty', () => {
+  const root = tmp();
+  try {
+    assert.equal(nm.addRoadmapItem(root, 'first task').added, true);
+    assert.equal(nm.addRoadmapItem(root, 'second task').added, true);
+    // newest at the top, so the loop pulls it next
+    assert.deepEqual(readRoadmapOpenItems(root).map((i) => i.title), ['second task', 'first task']);
+    assert.equal(pickRoadmapSeed(root).title, 'second task');
+    // case-insensitive dedup against open items
+    assert.equal(nm.addRoadmapItem(root, 'First Task').added, false);
+    // empty text is rejected
+    assert.equal(nm.addRoadmapItem(root, '   ').added, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('pickRoadmapSeed returns null when ROADMAP has no open items', () => {
   const root = tmp();
   try {
