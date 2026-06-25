@@ -39,6 +39,12 @@ function routeLoop(argv = []) {
     case 'wiki':
       // Forward the remaining args (e.g. --json, --limit=) to wiki upkeep.
       return { action: 'wiki', rest: argv.filter((a) => a.toLowerCase() !== 'wiki') };
+    case 'add': {
+      // Everything after `add` (minus flags) is the item text.
+      const i = argv.findIndex((a) => a.toLowerCase() === 'add');
+      const text = argv.slice(i + 1).filter((a) => !isFlag(a)).join(' ').trim();
+      return { action: 'add', text };
+    }
     case '': {
       // A start flag with no `start` verb does nothing on its own; nudge.
       const stray = ['--overnight', '--cloud', '--once'].find((f) => argv.includes(f));
@@ -57,6 +63,9 @@ function renderLoopHome(route = { action: 'home' }) {
     '  one loop: plan, do, review, verify, commit. it ships one small',
     '  verifiable change at a time, then goes again. it reads ROADMAP.md',
     '  for what to pursue.',
+    '',
+    '  feed it',
+    '    atris loop add "<task>"        put a bounded task into the queue',
     '',
     '  start it',
     '    atris loop start              run it now, here (local)',
@@ -161,6 +170,21 @@ function loopFront(argv = []) {
 
     case 'wiki':
       return Promise.resolve(require('./loop').loopAtris(route.rest)).then(() => 0);
+
+    case 'add': {
+      if (!route.text) {
+        console.log('usage: atris loop add "<one bounded task the loop should pursue>"');
+        return Promise.resolve(0);
+      }
+      const res = require('../lib/next-moves').addRoadmapItem(process.cwd(), route.text);
+      if (res.added) {
+        console.log(`added to the loop: ${res.title}`);
+        console.log('see it: atris moves   |   run it: atris loop start');
+      } else {
+        console.log(`not added (${res.reason}${res.title ? `: ${res.title}` : ''})`);
+      }
+      return Promise.resolve(0);
+    }
 
     case 'status': {
       if (jsonFlag.length) {

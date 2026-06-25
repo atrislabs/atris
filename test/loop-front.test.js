@@ -50,6 +50,35 @@ test('routeLoop forwards wiki upkeep with its remaining flags', () => {
   assert.deepEqual(routeLoop(['wiki', '--json']), { action: 'wiki', rest: ['--json'] });
 });
 
+test('routeLoop parses `add` and joins its multi-word text', () => {
+  assert.deepEqual(routeLoop(['add', 'ship', 'dark', 'mode']), { action: 'add', text: 'ship dark mode' });
+  assert.equal(routeLoop(['add']).text, '');
+});
+
+test('`atris loop add` puts a bounded task into the queue', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['loop', 'add', 'ship it'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /added to the loop: ship it/);
+    assert.match(fs.readFileSync(path.join(dir, 'ROADMAP.md'), 'utf8'), /- \[ \] ship it/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('`atris loop add` with no text prints usage and writes nothing', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['loop', 'add'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /usage: atris loop add/);
+    assert.equal(fs.existsSync(path.join(dir, 'ROADMAP.md')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('routeLoop falls back to home for an unknown subcommand', () => {
   const r = routeLoop(['frobnicate']);
   assert.equal(r.action, 'home');
