@@ -392,9 +392,9 @@ test('ax keeps chat context and file-operation proof readable', () => {
     bypass_permissions: false,
     streaming: true,
     runtime: 'authenticated cloud connectors/chat',
-    reasoning: 'backend reports run row; Pro workspace tool loop uses API default medium'
+    reasoning: 'Atris cloud service; Pro workspace tool loop uses API default medium'
   });
-  assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+backend reports run row/);
+  assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+Atris cloud service/);
   assert.equal(
     ax.formatSystemInit({
       type: 'system_init',
