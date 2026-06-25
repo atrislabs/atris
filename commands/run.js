@@ -263,20 +263,11 @@ function hasInboxOrBacklogWork(atrisDir) {
   const todo = parseTodo(todoPath);
   if (todo.backlog.length > 0 || todo.inProgress.length > 0) return true;
 
-  // Check inbox. Tolerate a header suffix (e.g. "## Inbox (raw ideas)") so this
-  // gate matches what seedInboxFromMove writes and what latestInboxItems reads.
-  const { logFile } = getLogPath();
-  if (fs.existsSync(logFile)) {
-    const content = fs.readFileSync(logFile, 'utf8');
-    const inboxMatch = content.match(/## Inbox[^\n]*\r?\n([\s\S]*?)(?=\r?\n##|$)/);
-    if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => {
-        const t = l.trim();
-        return t.startsWith('- ') && t.length > 2;
-      });
-      if (items.length > 0) return true;
-    }
-  }
+  // Check today's inbox through the ONE shared parser, so the gate, the seed
+  // picker, and the seeder all read the same file with the same section bounds.
+  try {
+    if (require('../lib/next-moves').todayInboxItems(process.cwd()).length > 0) return true;
+  } catch { /* best-effort */ }
 
   return false;
 }
@@ -423,15 +414,17 @@ async function runAtris(options = {}) {
     // inbox so this cycle pursues the goal. This is how the loop reads ROADMAP.
     if (!hasInboxOrBacklogWork(atrisDir)) {
       try {
-        const { pickRoadmapSeed, seedInboxFromMove, checkRoadmapItem } = require('../lib/next-moves');
+        const { pickRoadmapSeed, seedInboxFromMove, claimRoadmapItem } = require('../lib/next-moves');
         const pick = pickRoadmapSeed(process.cwd());
         if (pick) {
-          // Mark the ROADMAP item handled BEFORE seeding the inbox. ROADMAP `[x]`
-          // is the single source of truth the work gate and seed picker share, so
-          // the loop always advances. Mark-then-seed means a seed failure leaves
-          // the item handled (skipped) rather than re-seeded forever.
-          checkRoadmapItem(process.cwd(), pick.title);
+          // Seed THEN claim. A crash after the seed leaves the item in the inbox
+          // (carried as recoverable work) rather than claimed-but-lost; the seed
+          // is idempotent by title so a retry will not duplicate it. The claim
+          // ('- [~]' in the Open loop items section) then drops it from the open
+          // set so the next idle cycle advances. ROADMAP state is the one source
+          // of truth the work gate and the seed picker both read.
           seedInboxFromMove(process.cwd(), { title: pick.title, source: 'roadmap' });
+          claimRoadmapItem(process.cwd(), pick.title);
           console.log(verbose
             ? `Seeded from ROADMAP: ${pick.title}`
             : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);

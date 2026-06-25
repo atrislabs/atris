@@ -182,6 +182,20 @@ test('`atris moves --approve` then --json no longer shows the approved move', ()
   }
 });
 
+test('`atris moves --approve` claims the roadmap item ([~]) so the loop agrees it is handled', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['approve me', 'keep me']);
+    const res = runCli(['moves', '--approve', '1'], root);
+    assert.equal(res.status, 0, res.stderr);
+    const roadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
+    assert.match(roadmap, /- \[~\] approve me/, 'approved roadmap move is claimed in ROADMAP');
+    assert.match(roadmap, /- \[ \] keep me/, 'the other item stays open');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('parseIndexes parses lists and drops non-positive / garbage', () => {
   assert.deepEqual(parseIndexes('abc'), []);
   assert.deepEqual(parseIndexes('0'), []);
