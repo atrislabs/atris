@@ -125,25 +125,39 @@ function readOptionArg(args, name) {
   return null;
 }
 
+function optionArgWasPassed(args, name) {
+  const prefix = `${name}=`;
+  return args.some((arg) => arg === name || arg.startsWith(prefix));
+}
+
+function readRequiredOptionArg(args, name) {
+  const value = readOptionArg(args, name);
+  if ((value === null || value === '') && optionArgWasPassed(args, name)) {
+    console.error(`✗ Error: ${name} requires a value.`);
+    process.exit(1);
+  }
+  return value;
+}
+
 function isOptionValue(args, index, optionNames) {
   return index > 0 && optionNames.includes(args[index - 1]);
 }
 
 function applyRunnerFlags(args) {
-  const runnerProfile = readOptionArg(args, '--runner-profile');
-  if (runnerProfile) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
-  const runnerBin = readOptionArg(args, '--runner-bin');
-  if (runnerBin) {
+  const runnerProfile = readRequiredOptionArg(args, '--runner-profile');
+  if (runnerProfile !== null) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+  const runnerBin = readRequiredOptionArg(args, '--runner-bin');
+  if (runnerBin !== null) {
     process.env.ATRIS_RUNNER_BIN = runnerBin;
     process.env.ATRIS_CLAUDE_BIN = runnerBin;
   }
-  const runnerTemplate = readOptionArg(args, '--runner-template');
-  if (runnerTemplate) {
+  const runnerTemplate = readRequiredOptionArg(args, '--runner-template');
+  if (runnerTemplate !== null) {
     process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = runnerTemplate;
     process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
   }
-  const runnerModel = readOptionArg(args, '--runner-model');
-  if (runnerModel) {
+  const runnerModel = readRequiredOptionArg(args, '--runner-model');
+  if (runnerModel !== null) {
     process.env.ATRIS_RUNNER_MODEL = runnerModel;
     process.env.ATRIS_CLAUDE_MODEL = runnerModel;
   }
