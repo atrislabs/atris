@@ -90,6 +90,20 @@ test('`atris clarity` is non-interactive-safe (no hang, prints profile + guidanc
   }
 });
 
+test('atris activate surfaces the clarity profile so agents read it', () => {
+  const root = tmp();
+  try {
+    runCli(['init'], root);
+    runCli(['clarity', '--set', 'voice=plain, terse'], root);
+    const res = runCli(['activate'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /How you work \(atris clarity\)/);
+    assert.match(res.stdout, /voice: plain, terse/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('`atris clarity --reset` clears the profile fields', () => {
   const root = tmp();
   try {
