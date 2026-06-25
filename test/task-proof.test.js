@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { spawnSync } = require('node:child_process');
-const { taskProofLooksMeaningful, taskProofState } = require('../lib/task-proof');
+const { taskProofLooksMeaningful, taskProofState, buildVerifiedProof } = require('../lib/task-proof');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -52,6 +52,59 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
     'Human approved: reviewed by keshavrao',
   ]) {
     assert.equal(taskProofLooksMeaningful(proof), true, `${JSON.stringify(proof)} should be accepted`);
+  }
+});
+
+test('buildVerifiedProof turns a passing command into executed proof', () => {
+  const calls = [];
+  const result = buildVerifiedProof('npm test', 'fixed the parser', (cmd, args, opts) => {
+    calls.push([cmd, args]);
+    return { status: 0, stdout: 'ok 42 passed\n', stderr: '' };
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.exit, 0);
+  assert.match(result.proof, /^\[verified\] `npm test` passed \(exit 0\)/);
+  assert.match(result.proof, /fixed the parser/);
+  // The synthesized proof must itself satisfy the proof gate.
+  assert.equal(taskProofLooksMeaningful(result.proof), true);
+  // It actually ran the command via bash.
+  assert.deepEqual(calls[0][0], 'bash');
+  assert.deepEqual(calls[0][1], ['-lc', 'npm test']);
+});
+
+test('buildVerifiedProof refuses to vouch for a failing or empty command', () => {
+  const failing = buildVerifiedProof('npm test', '', () => ({ status: 1, stdout: '', stderr: '3 failing\n' }));
+  assert.equal(failing.ok, false);
+  assert.equal(failing.reason, 'verifier_failed');
+  assert.equal(failing.exit, 1);
+
+  const empty = buildVerifiedProof('', 'note', () => ({ status: 0 }));
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, 'verify_command_required');
+});
+
+test('task ready --verify runs the command and gates on its exit code', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    // Failing verifier must block ready (no --proof escape hatch was given).
+    const failAdd = runCli(['task', 'add', 'Verify must run', '--json'], { cwd: dir, env });
+    assert.equal(failAdd.status, 0, failAdd.stderr);
+    const failRef = JSON.parse(failAdd.stdout).task.display_id;
+    const failReady = runCli(['task', 'ready', failRef, '--verify', 'exit 3'], { cwd: dir, env });
+    assert.equal(failReady.status, 1);
+    assert.match(failReady.stderr, /verifier failed/);
+
+    // Passing verifier marks ready with executed proof.
+    const okReady = runCli(['task', 'ready', failRef, '--verify', 'true', '--json'], { cwd: dir, env });
+    assert.equal(okReady.status, 0, okReady.stderr);
+    const okTask = JSON.parse(okReady.stdout).task;
+    assert.match(okTask.review.proof, /\[verified\] `true` passed \(exit 0\)/);
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
