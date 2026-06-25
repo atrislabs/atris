@@ -820,6 +820,8 @@ function showAutopilotHelp() {
   console.log('  atris autopilot "Add dark mode toggle"  # Seed inbox, then suggest');
   console.log('  atris autopilot --auto --iterations=3   # Fully autonomous, 3 tasks max');
   console.log('');
+  console.log('Tip: `atris loop start` is the one front door to the loop.');
+  console.log('');
 }
 
 if (command === 'help' || command === '--help' || command === '-h') {
@@ -1719,6 +1721,8 @@ if (command === 'init') {
     console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
     console.log('  --push        Auto-push after each cycle (default: true)');
     console.log('  --no-push     Skip auto-push after each cycle');
+    console.log('');
+    console.log('Tip: `atris loop start` is the one front door to the loop.');
     console.log('');
     console.log('Subcommands:');
     console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
