@@ -343,8 +343,7 @@ async function brainstormAtris() {
             if (typeof latestContent !== 'string') {
               throw new Error('Archive operation produced invalid journal content.');
             }
-            fs.mkdirSync(path.dirname(logFile), { recursive: true });
-            fs.writeFileSync(logFile, latestContent, 'utf8');
+            writeJournalFile(logFile, latestContent);
             console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
           } catch (error) {
             console.log(`Could not archive I${selectedInboxItem.id}: ${error.message}`);
@@ -371,6 +370,11 @@ function brainstormAbortError() {
 function removeInboxItemFromContent(content, id) {
   const items = parseInboxItems(content).filter((item) => item.id !== id);
   return replaceInboxSection(content, items);
+}
+
+function writeJournalFile(logFile, content) {
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  fs.writeFileSync(logFile, content, 'utf8');
 }
 
 function insertIntoNotesSection(content, block) {
@@ -445,7 +449,7 @@ function recordBrainstormSession(
 
   const block = lines.join('\n');
   content = insertIntoNotesSection(content, block);
-  fs.writeFileSync(logFile, content);
+  writeJournalFile(logFile, content);
 }
 
 
