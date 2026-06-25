@@ -664,7 +664,6 @@ function findAtrisCodeTerminal() {
     envPath,
     path.join(__dirname, '..', 'cli', 'atris_code.py'),
     path.join(process.cwd(), 'cli', 'atris_code.py'),
-    path.join(os.homedir(), 'arena', 'atrisos-backend', 'cli', 'atris_code.py'),
   ].filter(Boolean);
 
   let dir = process.cwd();
