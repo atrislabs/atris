@@ -158,8 +158,11 @@ function sleepMs(ms) {
 }
 
 function verifyPublishedVersionWithRetry(version, runner = spawnSync, options = {}) {
-  const attempts = Math.max(1, Number(options.attempts || 6));
-  const delayMs = Math.max(0, Number(options.delayMs ?? 2000));
+  // npm's `latest` dist-tag is eventually consistent: the read CDN can lag the
+  // publish by well over a minute. Give it a realistic window (~60s) before we
+  // fall back to confirming the exact version landed.
+  const attempts = Math.max(1, Number(options.attempts || 12));
+  const delayMs = Math.max(0, Number(options.delayMs ?? 5000));
   let verification = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     verification = {
@@ -178,6 +181,15 @@ function renderPublishVerification(verification) {
     return `Verified npm latest: atris@${verification.actual} gitHead ${verification.gitHead || 'unknown'}\n`;
   }
   return `npm latest verification failed: expected ${verification.expected || 'unknown'}, got ${verification.actual || verification.error || 'unknown'}\n`;
+}
+
+function renderPublishLatestLag(version, verification) {
+  return [
+    `Published atris@${version} to npm (confirmed on the registry).`,
+    `The "latest" dist-tag still reads ${verification.actual || 'an older version'}; it is propagating and will catch up.`,
+    'Treating the release as successful: npm publish already succeeded and the version is live.',
+    '',
+  ].join('\n');
 }
 
 function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, options = {}) {
@@ -213,10 +225,20 @@ function publishAtrisRelease(args = process.argv.slice(2), runner = spawnSync, o
       attempts: options.verificationAttempts,
       delayMs: options.verificationDelayMs,
     });
-    const output = renderPublishVerification(verification);
-    if (verification.ok) process.stdout.write(output);
-    else process.stderr.write(output);
-    return verification.ok ? 0 : 1;
+    if (verification.ok) {
+      process.stdout.write(renderPublishVerification(verification));
+      return 0;
+    }
+    // npm publish already succeeded; the latest read-back just lagged. Confirm the
+    // exact version actually landed before failing the job — a red CI for a release
+    // that is live on the registry is a false negative, and you cannot un-publish.
+    const landed = checkVersionAvailability(version, runner);
+    if (landed.reason === 'version_exists') {
+      process.stdout.write(renderPublishLatestLag(version, verification));
+      return 0;
+    }
+    process.stderr.write(renderPublishVerification(verification));
+    return 1;
   }
   return typeof result.status === 'number' ? result.status : 1;
 }
@@ -234,6 +256,7 @@ module.exports = {
   publishAtrisRelease,
   renderOtpHelp,
   renderPublishVerification,
+  renderPublishLatestLag,
   renderTrustedPublishHelp,
   renderVersionAvailabilityFailure,
   verifyPublishedVersion,
