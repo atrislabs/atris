@@ -14,6 +14,7 @@ const {
   publishAtrisRelease,
   renderOtpHelp,
   renderPublishVerification,
+  renderPublishLatestLag,
   renderTrustedPublishHelp,
   renderVersionAvailabilityFailure,
   verifyPublishedVersion,
@@ -289,6 +290,66 @@ test('publish helper retries registry lag after a successful publish run', () =>
   } finally {
     process.stdout.write = originalStdoutWrite;
   }
+});
+
+test('publish helper treats a lagging npm latest as success once the version is confirmed live', () => {
+  const stdout = [];
+  const originalStdoutWrite = process.stdout.write;
+  process.stdout.write = chunk => { stdout.push(String(chunk)); return true; };
+  try {
+    let atrisAtCalls = 0;
+    const status = publishAtrisRelease([], (cmd, args) => {
+      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
+      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
+        atrisAtCalls += 1;
+        // 1st call is the preflight (must be unpublished to proceed);
+        // 2nd is the post-publish confirmation (now live on the registry).
+        if (atrisAtCalls === 1) return { status: 1, stderr: 'npm error code E404\n' };
+        return { status: 0, stdout: JSON.stringify({ version: packageVersion, gitHead: 'abc123' }) };
+      }
+      if (args[0] === 'view') {
+        // The latest dist-tag never catches up during this run.
+        return { status: 0, stdout: JSON.stringify({ version: '3.0.0', gitHead: 'old' }) };
+      }
+      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
+    }, { verificationAttempts: 2, verificationDelayMs: 0 });
+    assert.equal(status, 0);
+    assert.match(stdout.join(''), /confirmed on the registry/);
+    assert.match(stdout.join(''), /propagating/);
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+  }
+});
+
+test('publish helper still fails when latest lags and the version is not on the registry', () => {
+  const stderr = [];
+  const originalStderrWrite = process.stderr.write;
+  const originalStdoutWrite = process.stdout.write;
+  process.stderr.write = chunk => { stderr.push(String(chunk)); return true; };
+  process.stdout.write = () => true;
+  try {
+    const status = publishAtrisRelease([], (cmd, args) => {
+      if (args[0] === 'publish') return { status: 0, stdout: 'published\n', stderr: '' };
+      if (args[0] === 'view' && String(args[1] || '').startsWith('atris@')) {
+        return { status: 1, stderr: 'npm error code E404\n' };
+      }
+      if (args[0] === 'view') {
+        return { status: 0, stdout: JSON.stringify({ version: '3.0.0', gitHead: 'old' }) };
+      }
+      throw new Error(`unexpected command: ${cmd} ${args.join(' ')}`);
+    }, { verificationAttempts: 2, verificationDelayMs: 0 });
+    assert.equal(status, 1);
+    assert.match(stderr.join(''), /npm latest verification failed/);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    process.stdout.write = originalStdoutWrite;
+  }
+});
+
+test('renderPublishLatestLag explains the release succeeded despite the lag', () => {
+  const text = renderPublishLatestLag('9.9.9', { actual: '3.0.0' });
+  assert.match(text, /Published atris@9\.9\.9 to npm/);
+  assert.match(text, /successful/);
 });
 
 test('trusted publish workflow uses OIDC without npm token secrets', () => {
