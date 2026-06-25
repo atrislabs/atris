@@ -52,9 +52,8 @@ Only use this path if the CLI is unavailable (stale install, broken login).
 
 ### Setup
 
-```bash
-cd ~/arena/atrisos-backend && source venv/bin/activate
-```
+Use this only from a trusted service workspace with AWS credentials already
+configured. Do not ask end users to clone or run backend services locally.
 
 ```python
 from dotenv import load_dotenv; load_dotenv('backend/.env')
