@@ -337,10 +337,14 @@ async function brainstormAtris() {
       if (selectedInboxItem) {
         const archive = await askYesNo('Archive this Inbox idea now? (y/n): ');
         if (archive) {
-          let latestContent = fs.readFileSync(logFile, 'utf8');
-          latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
-          fs.writeFileSync(logFile, latestContent);
-          console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
+          try {
+            let latestContent = fs.readFileSync(logFile, 'utf8');
+            latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
+            fs.writeFileSync(logFile, latestContent);
+            console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
+          } catch (error) {
+            console.log(`Could not archive I${selectedInboxItem.id}: ${error.message}`);
+          }
         }
       }
       console.log('✓ Brainstorm session logged.');
