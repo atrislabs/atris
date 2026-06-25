@@ -159,11 +159,10 @@ function activateAtris() {
   }
   console.log('');
   try {
-    const { gatherCandidates, pickNextMoves, readDecisions } = require('../lib/next-moves');
+    const { nextMoves } = require('../lib/next-moves');
     const { readProfile, isEmptyProfile } = require('../lib/clarity');
     const root = process.cwd();
-    const { killedIds } = readDecisions(root);
-    const moves = pickNextMoves(gatherCandidates(root), { limit: 3, killedIds });
+    const moves = nextMoves(root, 3);
     console.log('Your next moves:');
     if (moves.length) {
       moves.forEach((m, i) => console.log(`  ${i + 1}. ${m.title}`));

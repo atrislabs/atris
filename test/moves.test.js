@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const nextMoves = require('../lib/next-moves');
+const { parseIndexes } = require('../commands/moves');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -122,6 +123,65 @@ test('`atris moves --kill` stops suggesting that move', () => {
     const titles = JSON.parse(res.stdout).moves.map((m) => m.title);
     assert.ok(titles.includes('keep me'));
     assert.ok(!titles.includes('kill me'), 'killed move should not reappear');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('pickNextMoves suppresses a killed title across sources', () => {
+  const cands = [
+    { title: 'ship it', source: 'roadmap', weight: 100 },
+    { title: 'ship it', source: 'inbox', weight: 40 },
+  ];
+  const killedId = nextMoves.moveId('roadmap', 'ship it');
+  const picks = nextMoves.pickNextMoves(cands, { killedIds: [killedId], killedTitles: ['ship it'] });
+  assert.equal(picks.length, 0, 'same title from a different source stays suppressed');
+});
+
+test('pickNextMoves suppresses approved moves so they stop nagging', () => {
+  const cands = [{ title: 'approved one', source: 'roadmap', weight: 100 }];
+  assert.equal(nextMoves.pickNextMoves(cands, { approvedTitles: ['approved one'] }).length, 0);
+});
+
+test('pickNextMoves keeps the highest-weight copy of a duplicated title', () => {
+  const cands = [
+    { title: 'dup', source: 'inbox', weight: 40 },
+    { title: 'dup', source: 'roadmap', weight: 100 },
+  ];
+  const picks = nextMoves.pickNextMoves(cands, {});
+  assert.equal(picks.length, 1);
+  assert.equal(picks[0].source, 'roadmap', 'sort-before-dedup keeps the roadmap copy');
+});
+
+test('`atris moves --approve` then --json no longer shows the approved move', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['keep me too', 'approve me']);
+    runCli(['moves', '--approve', '2'], root);
+    const res = runCli(['moves', '--json'], root);
+    const titles = JSON.parse(res.stdout).moves.map((m) => m.title);
+    assert.ok(!titles.includes('approve me'), 'approved move should be suppressed, not nag');
+    assert.ok(titles.includes('keep me too'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parseIndexes parses lists and drops non-positive / garbage', () => {
+  assert.deepEqual(parseIndexes('abc'), []);
+  assert.deepEqual(parseIndexes('0'), []);
+  assert.deepEqual(parseIndexes('1, 3'), [1, 3]);
+  assert.deepEqual(parseIndexes(''), []);
+});
+
+test('`atris moves --approve 99` (out of range) seeds nothing and says so', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['only one']);
+    const res = runCli(['moves', '--approve', '99'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /no matching move/);
+    assert.equal(fs.existsSync(path.join(root, 'atris', 'logs')), false, 'nothing should be seeded');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

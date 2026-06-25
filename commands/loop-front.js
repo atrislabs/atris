@@ -39,8 +39,11 @@ function routeLoop(argv = []) {
     case 'wiki':
       // Forward the remaining args (e.g. --json, --limit=) to wiki upkeep.
       return { action: 'wiki', rest: argv.filter((a) => a.toLowerCase() !== 'wiki') };
-    case '':
-      return { action: 'home' };
+    case '': {
+      // A start flag with no `start` verb does nothing on its own; nudge.
+      const stray = ['--overnight', '--cloud', '--once'].find((f) => argv.includes(f));
+      return stray ? { action: 'home', strayStartFlag: stray } : { action: 'home' };
+    }
     default:
       return { action: 'home', unknown: sub };
   }
@@ -62,7 +65,7 @@ function renderLoopHome(route = { action: 'home' }) {
     '',
     '  watch it',
     '    atris loop status             liveness, last tick, reward',
-    '    atris run logs                read the reasoning from each phase',
+    '    atris run logs                read each phase (local runs)',
     '',
     '  stop it',
     '    atris loop stop               remove the durable heartbeat',
@@ -72,6 +75,9 @@ function renderLoopHome(route = { action: 'home' }) {
   ];
   if (route && route.unknown) {
     lines.splice(1, 0, `  (unknown: "${route.unknown}". here is the loop:)`);
+  }
+  if (route && route.strayStartFlag) {
+    lines.splice(1, 0, `  (did you mean: atris loop start ${route.strayStartFlag}?)`);
   }
   return lines.join('\n');
 }
@@ -127,7 +133,13 @@ function loopFront(argv = []) {
       // pulse install flags the operator added (e.g. --cadence).
       const passthrough = argv.filter((a) => a !== 'start' && a !== '--overnight' && a !== '--cloud');
       return Promise.resolve(require('./pulse').pulseCommand(['install', ...passthrough]))
-        .then((res) => (res && res.ok === false ? 1 : 0));
+        .then((res) => {
+          const failed = res && res.ok === false;
+          // Keep the front door consistent: the stop verb is `atris loop stop`,
+          // not the underlying pulse command.
+          if (!failed && !argv.includes('--json')) console.log('to stop: atris loop stop');
+          return failed ? 1 : 0;
+        });
     }
 
     case 'start-local':

@@ -1,6 +1,6 @@
 'use strict';
 
-// `atris clarity` — interview the operator for how they work, write it down once.
+// `atris clarity`: interview the operator for how they work, write it down once.
 // The interview moves one question at a time so you stay in flow. The result is
 // a durable profile (.atris/clarity.json + atris/CLARITY.md) that agents read.
 
@@ -79,8 +79,14 @@ async function clarityCommand(args = [], root = process.cwd()) {
   const sets = parseSets(args);
   if (Object.keys(sets).length) {
     const merged = mergeProfile(existing, sets, stamp);
+    // Only the keys whose values actually landed (mergeProfile drops empties).
+    const changed = Object.keys(sets).filter((k) => sets[k].trim() && merged[k] === sets[k].trim());
+    if (!changed.length) {
+      console.log('nothing to set (empty value ignored). use --reset to clear all.');
+      return 0;
+    }
     const { md } = writeProfile(root, merged);
-    console.log(`saved ${Object.keys(sets).join(', ')} to ${md.replace(`${root}/`, '')}`);
+    console.log(`saved ${changed.join(', ')} to ${md.replace(`${root}/`, '')}`);
     return 0;
   }
 
