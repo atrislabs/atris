@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { routeLoop, renderLoopHome, startLocalOptions, loopFront, localRunSummary } = require('../commands/loop-front');
+const { routeLoop, renderLoopHome, startLocalOptions, loopFront, localRunSummary, loopStatusJson } = require('../commands/loop-front');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -72,6 +72,28 @@ test('localRunSummary counts run logs and names the latest', () => {
     const s = localRunSummary(dir);
     assert.equal(s.count, 2);
     assert.equal(s.latest, '2026-06-25-100001-cycle-2.md');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loopStatusJson returns one combined object (pulse + local_runs)', () => {
+  const out = loopStatusJson(makeTempDir());
+  assert.equal(out.ok, true);
+  assert.equal(out.action, 'loop_status');
+  assert.ok('pulse' in out, 'has a pulse field');
+  assert.ok('local_runs' in out, 'has a local_runs field');
+  assert.equal(typeof out.local_runs.count, 'number');
+});
+
+test('`atris loop status --json` prints one valid combined object', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['loop', 'status', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.action, 'loop_status');
+    assert.equal(parsed.local_runs.count, 0, 'a fresh dir has no local runs');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -37,7 +37,7 @@ Small, bounded tasks the loop pulls one at a time when idle (top first), and
 Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
 cycle never chases something too vague to finish.
 
-- [ ] `atris loop status --json` should emit a combined machine-readable summary (pulse + local runs)
+- [x] `atris loop status --json` emits one combined machine-readable summary (pulse + local runs) (shipped)
 - [x] clean the em dashes in commands/run.js (output + the coupled Run Log Cycle header and its 3 regexes) (shipped)
 - [x] fix the em dash in the canonical journal title in lib/journal.js (shipped)
 - [x] `atris moves --kill/--approve` resolves a stable move id, not just a position (shipped)

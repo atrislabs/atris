@@ -133,6 +133,22 @@ function printLocalRunSummary() {
   } catch { /* best-effort: never block status */ }
 }
 
+// Combined machine-readable status: the overnight pulse heartbeat and the local
+// runs in one object. Best-effort per engine so a missing one does not fail it.
+function loopStatusJson(root = process.cwd()) {
+  const out = { ok: true, action: 'loop_status', pulse: null, local_runs: { count: 0, latest: null } };
+  try {
+    const lp = require('../lib/pulse');
+    const { cronInstalled } = require('./pulse');
+    const summary = lp.summarizePulse(lp.readPulseReceipts(root));
+    out.pulse = { cron_installed: cronInstalled(), ...summary };
+  } catch { /* pulse optional */ }
+  try {
+    out.local_runs = localRunSummary(require('./run').getRunLogDir());
+  } catch { /* runs optional */ }
+  return out;
+}
+
 // Executor. Returns a Promise resolving to an exit code (0 = ok).
 function loopFront(argv = []) {
   const route = routeLoop(argv);
@@ -146,14 +162,22 @@ function loopFront(argv = []) {
     case 'wiki':
       return Promise.resolve(require('./loop').loopAtris(route.rest)).then(() => 0);
 
-    case 'status':
-      return Promise.resolve(require('./pulse').pulseCommand(['status', ...jsonFlag]))
+    case 'status': {
+      if (jsonFlag.length) {
+        // One machine-readable object covering BOTH engines (overnight pulse
+        // heartbeat + local runs), for headless agents and web status.
+        const out = loopStatusJson(process.cwd());
+        console.log(JSON.stringify(out, null, 2));
+        return Promise.resolve(out.ok === false ? 1 : 0);
+      }
+      return Promise.resolve(require('./pulse').pulseCommand(['status']))
         .then((res) => {
           // Pulse covers the overnight heartbeat; also surface local runs so
           // `atris loop status` reflects both engines, not just pulse.
-          if (!jsonFlag.length) printLocalRunSummary();
+          printLocalRunSummary();
           return res && res.ok === false ? 1 : 0;
         });
+    }
 
     case 'stop':
       return Promise.resolve(require('./pulse').pulseCommand(['uninstall', ...jsonFlag]))
@@ -185,5 +209,6 @@ module.exports = {
   printLoopHome,
   startLocalOptions,
   localRunSummary,
+  loopStatusJson,
   loopFront,
 };
