@@ -1627,8 +1627,9 @@ async function runMission(args) {
     process.exit(0);
   }
 
+  const preLockRunner = String(mission.runner || '').trim().toLowerCase();
   const preLockCallerSession = runnerUsesCallerSession(mission.runner);
-  if (!skipClaude && !preLockCallerSession) {
+  if (!skipClaude && !preLockCallerSession && preLockRunner !== 'atris2') {
     const probe = probeClaudeBinary();
     if (!probe.ok) {
       console.error(`[mission run] claude probe failed: ${probe.error}`);
