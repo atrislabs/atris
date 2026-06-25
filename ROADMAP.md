@@ -35,7 +35,7 @@ Owner: Keshav. Read this before picking overnight work. This is the goal the loo
 These feed `atris moves` (alive onboarding) and, once approved, the loop.
 
 - [ ] wire ROADMAP open items into the loop planner (hasWork + navigator read this section)
-- [ ] atris clarity: interview the user for style and workflow, write a durable profile
+- [x] atris clarity: interview the user for style and workflow, write a durable profile (shipped)
 - [ ] integrations on demand: messy input becomes a working setup
 - [ ] real --cloud: run the loop on remote computers via atrisos-backend
 - [ ] weekly report + data-answer output blocks (card, reel, deck, site already ship)
@@ -86,3 +86,16 @@ Next on this task, in order:
 3. A real `--cloud` that reaches remote computers (atrisos-backend); `--overnight` today is a local OS-cron heartbeat, not remote cloud.
 
 Branch hygiene: this work sits on the stale `feat/pulse-self-improve-loop` (v3.17.0). The loop front door should be rebased/cherry-picked onto master (v3.25.x) before any release. The HEALTH.md fixes committed here are already on master via 3.25.x.
+
+### job 1 (draw out clarity): first slices shipped
+
+- `atris moves` (alive onboarding): reads the goal (ROADMAP open items), work in flight (task projection), and fresh inbox; shows the 3 highest-leverage next moves; approve one (seeds it into today's inbox, which the loop's `hasWork()` already reads, so onboarding feeds the loop), kill one (suppressed), or skip. Pure ranking in `lib/next-moves.js`, thin CLI in `commands/moves.js`, 8 tests.
+- `atris clarity` (the interview): a short, high-signal interview (focus, voice, cadence, done, leash), one question at a time, writing `.atris/clarity.json` + readable `atris/CLARITY.md` that agents read so the human stops repeating how they work. `lib/clarity.js` + `commands/clarity.js`, 7 tests.
+- `atris activate` now surfaces the 3 next moves + a clarity nudge on boot, so onboarding is alive, not a static MAP/TODO wall.
+
+Next on this job: have the boot contract and agents actually read `atris/CLARITY.md` (wire into the activation card / persona load); interactive idea-at-a-time modes for writing and feature shaping.
+
+### still open (the big multi-day jobs)
+
+- Job 2 (set up anything fast / integrations on demand): not started; needs atrisos-backend integration work, too large to fake overnight.
+- Job 3 (loop provably self-improving, running overnight on remote computers): the local engines exist (`run`, `pulse`); the gaps are (a) the planner reading ROADMAP, (b) real remote `--cloud`. Both queued above. Not safe to half-wire the autonomous core unverified while the Devin runner churns this branch.
