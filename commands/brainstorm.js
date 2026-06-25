@@ -388,15 +388,20 @@ function writeJournalFile(logFile, content) {
   }
   const logDir = path.dirname(logFile);
   const tempFile = path.join(logDir, `.${path.basename(logFile)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  let tempFileWritten = false;
   try {
     fs.mkdirSync(logDir, { recursive: true });
     fs.writeFileSync(tempFile, content, { encoding: 'utf8', flag: 'wx' });
+    tempFileWritten = true;
     fs.renameSync(tempFile, logFile);
   } catch (error) {
-    try {
-      fs.unlinkSync(tempFile);
-    } catch {}
-    throw new Error(`Could not write journal file: ${error.message}`);
+    if (tempFileWritten || !error || error.code !== 'EEXIST') {
+      try {
+        fs.unlinkSync(tempFile);
+      } catch {}
+    }
+    const message = error && error.message ? error.message : String(error);
+    throw new Error(`Could not write journal file: ${message}`);
   }
 }
 
