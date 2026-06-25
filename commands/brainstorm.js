@@ -386,10 +386,16 @@ function writeJournalFile(logFile, content) {
   if (typeof content !== 'string') {
     throw new Error('Journal content must be a string.');
   }
+  const logDir = path.dirname(logFile);
+  const tempFile = path.join(logDir, `.${path.basename(logFile)}.${process.pid}.tmp`);
   try {
-    fs.mkdirSync(path.dirname(logFile), { recursive: true });
-    fs.writeFileSync(logFile, content, 'utf8');
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(tempFile, content, 'utf8');
+    fs.renameSync(tempFile, logFile);
   } catch (error) {
+    try {
+      fs.unlinkSync(tempFile);
+    } catch {}
     throw new Error(`Could not write journal file: ${error.message}`);
   }
 }
