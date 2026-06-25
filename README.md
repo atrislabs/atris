@@ -87,7 +87,7 @@ Integrates with any agent.
 
 ## Chat With Atris 2
 
-`ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from backend setup.
+`ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
 
 ```bash
 cd your-project
