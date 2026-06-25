@@ -1,6 +1,6 @@
 'use strict';
 
-// `atris pulse` — the durable overnight self-improvement heartbeat for atris-cli.
+// `atris pulse` - the durable overnight self-improvement heartbeat for atris-cli.
 //
 //   atris pulse tick      run ONE self-improvement tick (what the cron calls)
 //   atris pulse status    liveness, reward sum, ghost-tick detection
@@ -57,6 +57,8 @@ Options:
   --runner-template <s>  Runner command template for installed heartbeat
   --max-ticks <n>        Number of foreground ticks for run
   --help, -h             Show this help
+
+Tip: \`atris loop start --overnight\` is the one front door to this.
 `.trim();
 }
 
@@ -105,7 +107,7 @@ function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
 }
 
 // Fallback worker: one headless autopilot tick. This is the path that reaches
-// proposeCandidateHorizons — i.e. where the member AUTHORS a new goal when no
+// proposeCandidateHorizons - i.e. where the member AUTHORS a new goal when no
 // mission is due, instead of idling.
 function runAutopilotTick(root, { timeoutMs = 600000 } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
@@ -152,7 +154,7 @@ function gitChangedFiles(root) {
 
 // A cheap snapshot of the working tree: current HEAD + the set of dirty files.
 // Comparing two snapshots gives a tick's ACTUAL contribution (a new commit, or
-// files it newly dirtied) — never the whole pre-existing dirty tree.
+// files it newly dirtied) - never the whole pre-existing dirty tree.
 function gitSnapshot(root) {
   let head = null;
   try {
@@ -196,7 +198,7 @@ function tickCommand(args, root = process.cwd()) {
 
   const tickIndex = pulse.nextTickIndex(root);
 
-  // 'started' receipt — if the tick dies after this, the orphan surfaces as a ghost.
+  // 'started' receipt - if the tick dies after this, the orphan surfaces as a ghost.
   pulse.appendPulseReceipt(root, pulse.buildPulseReceipt({
     tickIndex,
     phase: 'started',
@@ -225,8 +227,8 @@ function tickCommand(args, root = process.cwd()) {
     const elapsedMs = Date.now() - startedAt;
     const reward = pulse.scoreTick({ verifyPassed: verify.passed, producedWork });
     const changedTail = committed
-      ? ' — committed'
-      : (changedFiles.length ? ` — ${changedFiles.length} file(s) changed` : '');
+      ? ' - committed'
+      : (changedFiles.length ? ` - ${changedFiles.length} file(s) changed` : '');
     const what = engine.actor === 'autopilot'
       ? `autopilot authored/advanced a goal${changedTail}`
       : engine.reason === 'no_due_mission'
@@ -249,7 +251,7 @@ function tickCommand(args, root = process.cwd()) {
     });
     pulse.appendPulseReceipt(root, receipt);
 
-    // Revive the reward channel — but only when there is signal (gate noise).
+    // Revive the reward channel - but only when there is signal (gate noise).
     let scorecardWritten = false;
     if (pulse.shouldWriteScorecard({ reward })) {
       pulse.appendScorecard(root, pulse.buildPulseScorecardRow({
@@ -280,7 +282,7 @@ function tickCommand(args, root = process.cwd()) {
     if (!asJson) {
       const ghost = priorStale.stale ? ` (recovered ghost tick #${priorStale.tick_index || '?'})` : '';
       const r = reward > 0 ? `+${reward}` : String(reward);
-      process.stdout.write(`pulse tick #${tickIndex}: ${what} — verify ${verify.passed === null ? 'n/a' : verify.passed ? 'pass' : 'FAIL'} — reward ${r}${ghost}\n`);
+      process.stdout.write(`pulse tick #${tickIndex}: ${what} - verify ${verify.passed === null ? 'n/a' : verify.passed ? 'pass' : 'FAIL'} - reward ${r}${ghost}\n`);
     }
     return emit(out, asJson);
   } catch (err) {

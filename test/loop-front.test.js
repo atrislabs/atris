@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { routeLoop, renderLoopHome, startLocalOptions, loopFront } = require('../commands/loop-front');
+const { routeLoop, renderLoopHome, startLocalOptions, loopFront, localRunSummary } = require('../commands/loop-front');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -61,6 +61,20 @@ test('routeLoop flags a stray start flag, and home hints the fix', () => {
   assert.equal(r.action, 'home');
   assert.equal(r.strayStartFlag, '--overnight');
   assert.match(renderLoopHome(r), /did you mean: atris loop start --overnight/);
+});
+
+test('localRunSummary counts run logs and names the latest', () => {
+  const dir = makeTempDir();
+  try {
+    assert.deepEqual(localRunSummary(path.join(dir, 'absent')), { count: 0, latest: null });
+    fs.writeFileSync(path.join(dir, '2026-06-25-100000-cycle-1.md'), 'x');
+    fs.writeFileSync(path.join(dir, '2026-06-25-100001-cycle-2.md'), 'x');
+    const s = localRunSummary(dir);
+    assert.equal(s.count, 2);
+    assert.equal(s.latest, '2026-06-25-100001-cycle-2.md');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('startLocalOptions parses the run flags it forwards', () => {
