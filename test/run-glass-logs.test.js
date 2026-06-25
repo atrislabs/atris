@@ -97,7 +97,7 @@ test('writePhaseToRunLog creates file with header on first write', () => {
 
     assert.ok(fs.existsSync(logPath), 'file created');
     const content = fs.readFileSync(logPath, 'utf8');
-    assert.ok(content.includes('# Run Log — Cycle 1'), 'header present');
+    assert.ok(content.includes('# Run Log - Cycle 1'), 'header present');
     assert.ok(content.includes('## PLAN'), 'plan section present');
     assert.ok(content.includes('Plan reasoning here'), 'plan content present');
     assert.ok(content.includes('(3s)'), 'duration present');
@@ -126,7 +126,7 @@ test('writePhaseToRunLog appends on subsequent writes', () => {
     assert.ok(content.includes('Build reasoning'), 'do content present');
     assert.ok(content.includes('Review reasoning'), 'review content present');
     // Header should appear only once
-    const headerCount = (content.match(/# Run Log — Cycle 1/g) || []).length;
+    const headerCount = (content.match(/# Run Log - Cycle 1/g) || []).length;
     assert.equal(headerCount, 1, 'header appears exactly once');
   } finally {
     process.chdir(origCwd);
@@ -251,7 +251,7 @@ test('listRunLogs --cat prints full contents of a specific log', () => {
 
     const fileName = path.basename(logPath);
     listRunLogs(['--cat', fileName]);
-    assert.ok(output.includes('# Run Log — Cycle 1'), 'shows full header');
+    assert.ok(output.includes('# Run Log - Cycle 1'), 'shows full header');
     assert.ok(output.includes('Full plan reasoning here'), 'shows full content');
   } finally {
     console.log = origLog;

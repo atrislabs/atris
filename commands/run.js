@@ -1,5 +1,5 @@
 /**
- * Atris Run — Auto-chain plan → do → review cycles
+ * Atris Run - Auto-chain plan → do → review cycles
  *
  * The ignition switch. Reads inbox/backlog, loops autonomously
  * until work is done or max cycles reached.
@@ -52,7 +52,7 @@ function getRunLogPath(runStamp, cycle) {
  */
 function writePhaseToRunLog(runLogPath, cycle, phase, output, durationMs) {
   const now = new Date().toISOString();
-  const header = `# Run Log — Cycle ${cycle}\n\n> Generated: ${now}\n\n`;
+  const header = `# Run Log - Cycle ${cycle}\n\n> Generated: ${now}\n\n`;
   const phaseSection = `## ${phase.toUpperCase()} (${Math.round(durationMs / 1000)}s)\n\n${output || '(no output)'}\n\n---\n\n`;
 
   if (!fs.existsSync(runLogPath)) {
@@ -115,7 +115,7 @@ function execPhaseCommandSync(cmd, opts = {}) {
  * Build prompt for each phase with full context.
  * If priorCycleReview is provided (from the previous cycle's review phase),
  * it is injected into the plan prompt so the navigator can adjust based on
- * what the validator found — closing the try → notice → adjust loop.
+ * what the validator found - closing the try → notice → adjust loop.
  */
 function buildRunPrompt(phase, context, priorCycleReview) {
   const { mapPath, todoPath, personaPath, lessonsPath, journalPath } = context;
@@ -153,12 +153,12 @@ Workflow:
 1. Read the journal's ## Inbox section for ideas/tasks
 2. Read MAP.md for codebase navigation (file:line references)
 3. Read lessons.md for past learnings (if it exists)
-${(priorCycleReview && priorCycleReview.trim()) ? "4. Read the Previous Cycle's Review above — adjust planning based on what the validator found\n" : ""}5. For each inbox item, create a task in TODO.md under ## Backlog
+${(priorCycleReview && priorCycleReview.trim()) ? "4. Read the Previous Cycle's Review above - adjust planning based on what the validator found\n" : ""}5. For each inbox item, create a task in TODO.md under ## Backlog
    Format: - **T#:** Description [execute]
 6. Keep tasks small and specific (one function, one file, one fix)
 7. Do NOT write code. Planning only.
 
-If inbox is empty but TODO.md has backlog tasks, skip planning — tasks already exist.
+If inbox is empty but TODO.md has backlog tasks, skip planning - tasks already exist.
 If both inbox and backlog are empty, reply: [NOTHING_TO_DO]
 
 Reply [PLAN_COMPLETE] when done.`;
@@ -171,7 +171,7 @@ Read these files first:
 ${readFiles}
 
 Workflow:
-1. Read TODO.md — pick the first task from ## Backlog
+1. Read TODO.md - pick the first task from ## Backlog
 2. Move it to ## In Progress with: **Claimed by:** Executor at ${new Date().toISOString()}
 3. Read MAP.md to find exact file:line locations
 4. Implement the task step by step
@@ -191,7 +191,7 @@ Read these files first:
 ${readFiles}
 
 Workflow:
-1. Read TODO.md — find the task in ## In Progress
+1. Read TODO.md - find the task in ## In Progress
 2. Review the implementation:
    - Does it actually work? Test it if possible.
    - Does it follow existing patterns? (check MAP.md)
@@ -320,7 +320,7 @@ function logRunCompletion(cycles, startTime, cycleTimings = []) {
     timingLines = '\n' + timingLines;
   }
 
-  const entry = `\n### Atris Run — ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s${timingLines}\n`;
+  const entry = `\n### Atris Run - ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s${timingLines}\n`;
 
   if (content.includes('## Notes')) {
     content = content.replace(/(## Notes[^\n]*\n)/, `$1${entry}\n`);
@@ -332,7 +332,7 @@ function logRunCompletion(cycles, startTime, cycleTimings = []) {
 }
 
 /**
- * Main run function — the ignition switch
+ * Main run function - the ignition switch
  */
 async function runAtris(options = {}) {
   const {
@@ -363,7 +363,7 @@ async function runAtris(options = {}) {
   console.log('');
   if (verbose) {
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log(`│ Atris Run v${pkg.version} — autonomous plan → do → review       │`);
+    console.log(`│ Atris Run v${pkg.version} - autonomous plan → do → review       │`);
     console.log('└─────────────────────────────────────────────────────────────┘');
     console.log('');
     console.log(`Max cycles: ${cycles}`);
@@ -372,9 +372,9 @@ async function runAtris(options = {}) {
     console.log(`Run logs: atris/logs/runs/`);
     console.log('');
   } else {
-    console.log(`atris run v${pkg.version} — plan, do, review, repeat.`);
+    console.log(`atris run v${pkg.version} - plan, do, review, repeat.`);
     console.log(`i'll run up to ${cycles} cycle${cycles === 1 ? '' : 's'}, ${timeout / 1000}s per phase. next i'll check the backlog.`);
-    console.log(`phase reasoning will be saved to atris/logs/runs/ — you can read what i thought after.`);
+    console.log(`phase reasoning will be saved to atris/logs/runs/ - you can read what i thought after.`);
     console.log('');
   }
 
@@ -399,7 +399,7 @@ async function runAtris(options = {}) {
   const cycleTimings = [];
   const writtenRunLogs = [];
   let completedCycles = 0;
-  let lastReviewOutput = null; // Carried to next cycle's plan — closes the loop
+  let lastReviewOutput = null; // Carried to next cycle's plan - closes the loop
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
     if (verbose) {
@@ -446,7 +446,7 @@ async function runAtris(options = {}) {
     try {
       // PLAN
       console.log(verbose
-        ? '\n[1/3] PLAN — reading inbox, creating tasks...'
+        ? '\n[1/3] PLAN - reading inbox, creating tasks...'
         : 'planning… reading inbox, turning ideas into tasks.');
       if (lastReviewOutput && verbose) {
         console.log('  [loop] carrying previous review into plan prompt');
@@ -473,7 +473,7 @@ async function runAtris(options = {}) {
       }
 
       // DO
-      console.log(verbose ? '\n[2/3] DO — building task...' : 'building the top task now.');
+      console.log(verbose ? '\n[2/3] DO - building task...' : 'building the top task now.');
       phaseStart = Date.now();
       const doOutput = executePhase('do', context, { verbose, timeout });
       timing.do = Date.now() - phaseStart;
@@ -484,13 +484,13 @@ async function runAtris(options = {}) {
         : `built in ${Math.round(timing.do / 1000)}s. next i'll review it.`);
 
       // REVIEW
-      console.log(verbose ? '\n[3/3] REVIEW — validating...' : 'reviewing the change against tests and validate.md.');
+      console.log(verbose ? '\n[3/3] REVIEW - validating...' : 'reviewing the change against tests and validate.md.');
       phaseStart = Date.now();
       const reviewOutput = executePhase('review', context, { verbose, timeout });
       timing.review = Date.now() - phaseStart;
       writePhaseToRunLog(runLogPath, cycle, 'review', reviewOutput, timing.review);
 
-      // Carry the review output into the next cycle's plan — closes the loop
+      // Carry the review output into the next cycle's plan - closes the loop
       lastReviewOutput = reviewOutput;
 
       if (reviewOutput.includes('[REVIEW_FAILED]')) {
@@ -510,7 +510,7 @@ async function runAtris(options = {}) {
 
       // Self-heal MAP.md refs after each cycle
       console.log(verbose
-        ? '\n[+] CLEAN — healing MAP.md refs...'
+        ? '\n[+] CLEAN - healing MAP.md refs...'
         : 'cleaning up drifted MAP.md refs.');
       try {
         cleanAtris({ dryRun: false });
@@ -520,7 +520,7 @@ async function runAtris(options = {}) {
 
       // Auto-push if not disabled
       if (push) {
-        console.log(verbose ? '\n[+] PUSH — pushing to remote...' : 'pushing to remote.');
+        console.log(verbose ? '\n[+] PUSH - pushing to remote...' : 'pushing to remote.');
         try {
           execSync('git push', { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
           console.log(verbose ? '✓ Pushed to remote' : 'pushed.');
@@ -660,7 +660,7 @@ function listRunLogs(args = []) {
     const filePath = path.join(runsDir, file);
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n');
-    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
     const phases = [...content.matchAll(/## (\w+)/g)].map(m => m[1]);
     return {
       file,
@@ -826,7 +826,7 @@ function searchRunLogs(args = []) {
   }
 
   console.log('');
-  console.log(`Search: "${keyword}" — ${results.length} match${results.length === 1 ? '' : 'es'} in ${files.length} run log${files.length === 1 ? '' : 's'}:`);
+  console.log(`Search: "${keyword}" - ${results.length} match${results.length === 1 ? '' : 'es'} in ${files.length} run log${files.length === 1 ? '' : 's'}:`);
   console.log('');
 
   const shown = results.slice(0, limit);
@@ -867,7 +867,7 @@ function statsRunLogs() {
     const filePath = path.join(runsDir, file);
     const content = fs.readFileSync(filePath, 'utf8');
 
-    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
     if (cycleMatch) totalCycles++;
 
     // Extract phase headers with durations: ## PLAN (3s)
@@ -892,7 +892,7 @@ function statsRunLogs() {
     const count = phaseCounts[phase];
     const durs = phaseDurations[phase] || [];
     const avg = durs.length > 0 ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0;
-    console.log(`  ${phase.padEnd(7)} │ ${String(count).padStart(5)} │ ${avg > 0 ? avg + 's' : '—'}`);
+    console.log(`  ${phase.padEnd(7)} │ ${String(count).padStart(5)} │ ${avg > 0 ? avg + 's' : '-'}`);
   }
   console.log('');
 }
@@ -929,7 +929,7 @@ function exportRunLogs(args = []) {
     logs: files.map(file => {
       const filePath = path.join(runsDir, file);
       const content = fs.readFileSync(filePath, 'utf8');
-      const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+      const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
       const phases = [...content.matchAll(/## (\w+)\s*\((\d+)s\)/g)].map(m => ({
         name: m[1],
         duration_s: parseInt(m[2]),
