@@ -32,13 +32,15 @@ const CORE_STATE_FILES = [
   'agents.jsonl',
   'approvals.jsonl',
 ];
+// Loop health measures loops that actually emit receipts. Channels with no writer
+// anywhere in the codebase were dropped so the dashboard reports real failures, not
+// never-built aspirations: "Overnight RL" duplicated the active Pulse AGI loop, and
+// "Company YC" had no data source. "Master loop" is now emitted by `atris run`.
 const LOOP_HEALTH_CHANNELS = [
   { label: 'Task plane', files: ['task_events.jsonl', 'tasks.projection.json'] },
-  { label: 'Overnight RL', files: ['overnight_rl_self_heal.jsonl'] },
   { label: 'Career XP', files: ['career_xp_receipts.jsonl', 'career_xp.projection.json', 'gm_xp.projection.json'] },
   { label: 'Master loop', files: ['master_loop_events.jsonl'] },
   { label: 'Missions', files: ['mission_events.jsonl', 'missions.jsonl'] },
-  { label: 'Company YC', files: ['company_yc_wow_events.jsonl', 'company_yc_wow_latest.json'] },
   { label: 'Codex goal', files: ['codex_goal.json'] },
   { label: 'Pulse AGI', files: ['pulse_agi_loop_receipts.jsonl'] },
 ];
