@@ -349,7 +349,7 @@ function buildRunProfile(options = {}) {
       workspace_path: isCodeFastLocal(options) ? cwd : 'cloud scratch',
       max_turns: 1,
       streaming: false,
-      runtime: isCodeFastLocal(options) ? 'local Cursor SDK through backend' : 'authenticated Code Fast cloud scratch',
+      runtime: isCodeFastLocal(options) ? 'local Cursor SDK bridge' : 'authenticated Code Fast cloud scratch',
       reasoning: 'Composer 2.5 fast lane; charges 10 credits per public turn'
     };
   }
@@ -368,10 +368,10 @@ function buildRunProfile(options = {}) {
     streaming: true,
     runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
     reasoning: mode === 'max'
-      ? 'backend reports run row; Max workspace tool loop uses high reasoning effort'
+      ? 'Atris cloud service; Max workspace tool loop uses high reasoning effort'
       : mode === 'pro'
-        ? 'backend reports run row; Pro workspace tool loop uses API default medium'
-        : 'backend reports run row; Fast workspace tool loop uses provider default'
+        ? 'Atris cloud service; Pro workspace tool loop uses API default medium'
+        : 'Atris cloud service; Fast workspace tool loop uses provider default'
   };
 }
 
@@ -2872,16 +2872,18 @@ function formatChatDogfoodStatusReport(status) {
   return lines.join('\n');
 }
 
-function printBackendHint() {
+function printBackendHint(options = {}) {
   console.log('');
   console.log('Hosted lane:');
   console.log('ax --cloud "hello"');
   console.log('');
   console.log('Cloud API:');
   console.log(`ATRIS_API_BASE=${BACKEND.publicBase}`);
-  console.log('');
-  console.log('Local workspace lane:');
-  console.log(`Set AX_BACKEND_URL=http://${BACKEND.host}:${BACKEND.port} after starting a local Atris2 backend.`);
+  if (options.route === 'local' || options.forceLocal) {
+    console.log('');
+    console.log('Local developer lane:');
+    console.log(`Set AX_BACKEND_URL=http://${BACKEND.host}:${BACKEND.port} after starting your local Atris2 service.`);
+  }
 }
 
 function bufferedOutput() {
@@ -3243,7 +3245,7 @@ async function main() {
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
-    printBackendHint();
+    printBackendHint(runOptions);
     process.exit(1);
   }
 }

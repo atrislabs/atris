@@ -351,6 +351,7 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
   assert.equal(profile.max_turns, 1);
   assert.equal(profile.route, 'cloud');
   assert.match(profile.reasoning, /high reasoning/);
+  assert.doesNotMatch(ax.formatRunProfile(profile, { color: false }), /\bbackend\b/i);
 });
 
 test('ax defaults to fast tier when no mode flag is set', () => {
@@ -794,7 +795,7 @@ test('ax backend URL is configurable', () => {
   }
 });
 
-test('ax backend hint points users to hosted or their own local backend', () => {
+test('ax backend hint defaults to hosted cloud without local setup instructions', () => {
   const writes = [];
   const originalLog = console.log;
   try {
@@ -807,6 +808,23 @@ test('ax backend hint points users to hosted or their own local backend', () => 
   const text = writes.join('\n');
   assert.match(text, /ax --cloud "hello"/);
   assert.match(text, /ATRIS_API_BASE=https:\/\/api\.atris\.ai/);
+  assert.doesNotMatch(text, /AX_BACKEND_URL=http:\/\/127\.0\.0\.1:8000/);
+  assert.doesNotMatch(text, /\blocal\b.*\bbackend\b/i);
+  assert.doesNotMatch(text, /\/Users\/keshavrao\/arena\/atrisos-backend/);
+});
+
+test('ax backend hint shows local developer lane only when local is requested', () => {
+  const writes = [];
+  const originalLog = console.log;
+  try {
+    console.log = (line = '') => writes.push(String(line));
+    ax.printBackendHint({ route: 'local' });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const text = writes.join('\n');
+  assert.match(text, /Local developer lane/);
   assert.match(text, /AX_BACKEND_URL=http:\/\/127\.0\.0\.1:8000/);
   assert.doesNotMatch(text, /\/Users\/keshavrao\/arena\/atrisos-backend/);
 });
