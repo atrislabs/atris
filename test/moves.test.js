@@ -1,0 +1,128 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const nextMoves = require('../lib/next-moves');
+const { scrubAgentEnv } = require('./helpers/agent-env');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-moves-'));
+}
+function runCli(args, cwd) {
+  return spawnSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+}
+function writeRoadmap(root, items) {
+  const body = items.map((i) => `- [ ] ${i}`).join('\n');
+  fs.writeFileSync(path.join(root, 'ROADMAP.md'), `# Roadmap\n\n## Open loop items\n\n${body}\n\n## Other\n\ntext\n`, 'utf8');
+}
+
+test('pickNextMoves ranks roadmap over task over inbox, and dedupes', () => {
+  const cands = [
+    { title: 'inbox idea', why: 'x', source: 'inbox', weight: 40 },
+    { title: 'goal item', why: 'x', source: 'roadmap', weight: 100 },
+    { title: 'task in flight', why: 'x', source: 'task', weight: 60 },
+    { title: 'goal item', why: 'dup', source: 'roadmap', weight: 100 },
+  ];
+  const picks = nextMoves.pickNextMoves(cands, { limit: 3 });
+  assert.deepEqual(picks.map((p) => p.source), ['roadmap', 'task', 'inbox']);
+  assert.equal(picks.length, 3, 'dedup dropped the duplicate goal item');
+});
+
+test('pickNextMoves drops killed ids', () => {
+  const cands = [{ title: 'a', why: 'x', source: 'roadmap', weight: 100 }];
+  const id = nextMoves.moveId('roadmap', 'a');
+  assert.equal(nextMoves.pickNextMoves(cands, { killedIds: [id] }).length, 0);
+});
+
+test('moveId is stable and case-insensitive on title', () => {
+  assert.equal(nextMoves.moveId('roadmap', 'Do The Thing'), nextMoves.moveId('roadmap', 'do the thing'));
+});
+
+test('seedInboxFromMove writes an I# item under today\'s Inbox', () => {
+  const root = tmp();
+  try {
+    const res = nextMoves.seedInboxFromMove(root, { title: 'ship the loop', source: 'roadmap' });
+    const content = fs.readFileSync(res.file, 'utf8');
+    assert.match(content, /## Inbox/);
+    assert.match(content, /- \*\*I1:\*\* ship the loop/);
+    // second seed increments the id
+    const res2 = nextMoves.seedInboxFromMove(root, { title: 'second', source: 'roadmap' });
+    assert.equal(res2.nextId, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readRoadmapOpenItems reads only the unchecked items in the section', () => {
+  const root = tmp();
+  try {
+    fs.writeFileSync(path.join(root, 'ROADMAP.md'),
+      '# R\n\n## Open loop items\n\n- [ ] alpha\n- [x] done already\n- [ ] beta\n\n## Next\n\n- [ ] not in scope\n', 'utf8');
+    const items = nextMoves.readRoadmapOpenItems(root).map((i) => i.title);
+    assert.deepEqual(items, ['alpha', 'beta']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('`atris moves --json` surfaces roadmap open items', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['first move', 'second move']);
+    const res = runCli(['moves', '--json'], root);
+    assert.equal(res.status, 0, res.stderr);
+    const moves = JSON.parse(res.stdout).moves;
+    assert.equal(moves[0].title, 'first move');
+    assert.equal(moves[0].source, 'roadmap');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('`atris moves --approve` seeds the move into the inbox the loop reads', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['approved move']);
+    const res = runCli(['moves', '--approve', '1'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /approved: approved move/);
+    // the move now lives in today's inbox
+    const logsDir = path.join(root, 'atris', 'logs');
+    const year = fs.readdirSync(logsDir)[0];
+    const file = fs.readdirSync(path.join(logsDir, year))[0];
+    const journal = fs.readFileSync(path.join(logsDir, year, file), 'utf8');
+    assert.match(journal, /## Inbox/);
+    assert.match(journal, /approved move/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('`atris moves --kill` stops suggesting that move', () => {
+  const root = tmp();
+  try {
+    writeRoadmap(root, ['keep me', 'kill me']);
+    let res = runCli(['moves', '--kill', '2'], root);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /killed: kill me/);
+    res = runCli(['moves', '--json'], root);
+    const titles = JSON.parse(res.stdout).moves.map((m) => m.title);
+    assert.ok(titles.includes('keep me'));
+    assert.ok(!titles.includes('kill me'), 'killed move should not reappear');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

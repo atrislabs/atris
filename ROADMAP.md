@@ -30,6 +30,16 @@ Owner: Keshav. Read this before picking overnight work. This is the goal the loo
 - onboarding that is alive, not a static MAP/TODO wall: show the 3 next moves, human approves or kills, it suggests. seed of proactiveness.
 - multiplayer, when the base is solid.
 
+## Open loop items
+
+These feed `atris moves` (alive onboarding) and, once approved, the loop.
+
+- [ ] wire ROADMAP open items into the loop planner (hasWork + navigator read this section)
+- [ ] atris clarity: interview the user for style and workflow, write a durable profile
+- [ ] integrations on demand: messy input becomes a working setup
+- [ ] real --cloud: run the loop on remote computers via atrisos-backend
+- [ ] weekly report + data-answer output blocks (card, reel, deck, site already ship)
+
 ## The gate (do this before anything on top)
 
 Foundation first. Dynamic onboarding, the clarity interview, and reports all sit on top of these two.
