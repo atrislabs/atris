@@ -143,6 +143,21 @@ test('pickNextMoves suppresses approved moves so they stop nagging', () => {
   assert.equal(nextMoves.pickNextMoves(cands, { approvedTitles: ['approved one'] }).length, 0);
 });
 
+test('killing or approving an idea never hides a real task with the same title', () => {
+  const cands = [
+    { title: 'fix login', source: 'roadmap', weight: 100 },
+    { title: 'fix login', source: 'task', weight: 60, ref: 'CLI-42' },
+  ];
+  // kill the roadmap idea by its id + title
+  const killed = nextMoves.pickNextMoves(cands, { killedIds: [nextMoves.moveId('roadmap', 'fix login')], killedTitles: ['fix login'] });
+  assert.equal(killed.length, 1);
+  assert.equal(killed[0].source, 'task', 'the genuine in-flight task survives');
+  // same for approve
+  const approved = nextMoves.pickNextMoves(cands, { approvedIds: [nextMoves.moveId('roadmap', 'fix login')], approvedTitles: ['fix login'] });
+  assert.equal(approved.length, 1);
+  assert.equal(approved[0].source, 'task');
+});
+
 test('pickNextMoves keeps the highest-weight copy of a duplicated title', () => {
   const cands = [
     { title: 'dup', source: 'inbox', weight: 40 },
