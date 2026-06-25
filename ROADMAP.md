@@ -32,13 +32,24 @@ Owner: Keshav. Read this before picking overnight work. This is the goal the loo
 
 ## Open loop items
 
-These feed `atris moves` (alive onboarding) and, once approved, the loop.
+Small, bounded tasks the loop pulls one at a time when idle (top first), and
+`atris moves` surfaces. Keep each executable in one plan -> do -> review cycle.
+Epics live below in "Big jobs" and are NOT loop-seedable, so an unattended
+cycle never chases something too vague to finish.
 
-- [ ] wire ROADMAP open items into the loop planner (hasWork + navigator read this section)
+- [ ] point `pulse` help at `atris loop start` (one line, like run and autopilot already have)
+- [ ] add `atris/CLARITY.md` to the boot-load list in `atris.md` so agents read how the operator works
+- [ ] `atris loop status` should also summarize the last run-log cycle, not just pulse
+- [x] wire ROADMAP open items into the loop planner (shipped: hasWork + idle seed pull the top item into the inbox)
 - [x] atris clarity: interview the user for style and workflow, write a durable profile (shipped)
-- [ ] integrations on demand: messy input becomes a working setup
-- [ ] real --cloud: run the loop on remote computers via atrisos-backend
-- [ ] weekly report + data-answer output blocks (card, reel, deck, site already ship)
+
+## Big jobs (epics, not loop-seedable)
+
+Too coarse for one autonomous cycle. Break into bounded open-loop items first.
+
+- Set up anything fast / integrations on demand: messy input becomes a working setup; build the integration if one does not exist. Needs atrisos-backend.
+- Real `--cloud`: run the loop on remote computers via atrisos-backend (`--overnight` today is a local OS-cron heartbeat).
+- Weekly report + data-answer output blocks (card, reel, deck, site already ship).
 
 ## The gate (do this before anything on top)
 

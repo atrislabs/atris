@@ -257,7 +257,7 @@ function executePhase(phase, context, options = {}) {
 /**
  * Check if there's work to do (inbox items or backlog tasks)
  */
-function hasWork(atrisDir) {
+function hasInboxOrBacklogWork(atrisDir) {
   // Check backlog tasks
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
@@ -278,6 +278,20 @@ function hasWork(atrisDir) {
   }
 
   return false;
+}
+
+// ROADMAP.md open items count as work, so an idle loop pursues the goal in
+// ROADMAP instead of stopping. path.dirname(atrisDir) is the project root.
+function roadmapOpenCount(atrisDir) {
+  try {
+    return require('../lib/next-moves').readRoadmapOpenItems(path.dirname(atrisDir)).length;
+  } catch {
+    return 0;
+  }
+}
+
+function hasWork(atrisDir) {
+  return hasInboxOrBacklogWork(atrisDir) || roadmapOpenCount(atrisDir) > 0;
 }
 
 /**
@@ -390,6 +404,21 @@ async function runAtris(options = {}) {
       console.log(`${'━'.repeat(60)}`);
     } else {
       console.log(`\ncycle ${cycle} of ${cycles}.`);
+    }
+
+    // If there's no inbox/backlog work, pull the top open ROADMAP item into the
+    // inbox so this cycle pursues the goal. This is how the loop reads ROADMAP.
+    if (!hasInboxOrBacklogWork(atrisDir)) {
+      try {
+        const { pickRoadmapSeed, seedInboxFromMove } = require('../lib/next-moves');
+        const pick = pickRoadmapSeed(process.cwd());
+        if (pick) {
+          seedInboxFromMove(process.cwd(), { title: pick.title, source: 'roadmap' });
+          console.log(verbose
+            ? `Seeded from ROADMAP: ${pick.title}`
+            : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);
+        }
+      } catch { /* roadmap seeding is best-effort */ }
     }
 
     // Check if there's work
@@ -989,4 +1018,4 @@ function diffRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
+module.exports = { runAtris, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, getRunLogDir, getRunLogPath, writePhaseToRunLog, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
