@@ -68,4 +68,11 @@ Note: the "fix: overnight loop tick N" junk commit messages + `Co-Authored-By: D
 
 Built: `commands/loop-front.js` (pure `routeLoop` + executor), rewired dispatch + help in `bin/atris.js`, `test/loop-front.test.js` (9 tests), migrated 3 wiki tests to `loop wiki`. Full suite green.
 
-Next on this task: point `run`/`pulse`/`autopilot` help at `atris loop` so the six doors visibly converge on one; then a real `--cloud` that reaches remote computers (atrisos-backend), since `--overnight` today is a local OS-cron heartbeat, not remote cloud.
+Done since: `run` and `autopilot` help now point at `atris loop` (the six doors converge on one, discoverably).
+
+Next on this task, in order:
+1. **Wire this ROADMAP into the loop's planner.** Today the loop's `hasWork()` (`commands/run.js`) reads inbox + backlog only; it does not read ROADMAP.md, so "the overnight loop reads from ROADMAP" is still aspirational. Make the Navigator seed tasks from the unchecked items here when inbox/backlog are empty, and make `hasWork()` return true when ROADMAP has open items. Verify with a real `atris loop start --once` run (not a mock), confirming it picks a ROADMAP item. Do this when the branch is not being concurrently churned by the Devin runner.
+2. Point `pulse` help at `atris loop` too (finish convergence).
+3. A real `--cloud` that reaches remote computers (atrisos-backend); `--overnight` today is a local OS-cron heartbeat, not remote cloud.
+
+Branch hygiene: this work sits on the stale `feat/pulse-self-improve-loop` (v3.17.0). The loop front door should be rebased/cherry-picked onto master (v3.25.x) before any release. The HEALTH.md fixes committed here are already on master via 3.25.x.
