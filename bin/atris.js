@@ -769,6 +769,7 @@ function showLoopHelp() {
   console.log('  add "<task>" Put a bounded task into the loop queue (ROADMAP open items)');
   console.log('  start        Run the loop now, locally (plan -> do -> review)');
   console.log('  status       Liveness, last tick, and reward');
+  console.log('  report       What the loop has handled, what is in flight and next');
   console.log('  stop         Remove the durable overnight heartbeat');
   console.log('  wiki         Wiki upkeep (the old `atris loop`)');
   console.log('');

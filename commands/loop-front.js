@@ -45,6 +45,8 @@ function routeLoop(argv = []) {
       const text = argv.slice(i + 1).filter((a) => !isFlag(a)).join(' ').trim();
       return { action: 'add', text };
     }
+    case 'report':
+      return { action: 'report' };
     case '': {
       // A start flag with no `start` verb does nothing on its own; nudge.
       const stray = ['--overnight', '--cloud', '--once'].find((f) => argv.includes(f));
@@ -74,6 +76,7 @@ function renderLoopHome(route = { action: 'home' }) {
     '',
     '  watch it',
     '    atris loop status             liveness, last tick, reward',
+    '    atris loop report             what the loop has handled and what is next',
     '    atris run logs                read each phase (local runs)',
     '',
     '  stop it',
@@ -158,6 +161,47 @@ function loopStatusJson(root = process.cwd()) {
   return out;
 }
 
+// The evidence that the loop is improving things: ROADMAP items it has handled,
+// what is in flight and queued, and the heartbeat's reward/verify trend. Pure of
+// console so it is testable.
+function loopReport(root = process.cwd()) {
+  const status = loopStatusJson(root);
+  let roadmap = { open: [], claimed: [], done: [] };
+  try {
+    roadmap = require('../lib/next-moves').roadmapItemsByState(root);
+  } catch { /* roadmap optional */ }
+  return { ok: true, action: 'loop_report', roadmap, pulse: status.pulse, local_runs: status.local_runs };
+}
+
+function renderLoopReport(rep) {
+  const r = rep.roadmap;
+  const lines = ['', 'loop report: what the self-improvement loop has done', ''];
+  lines.push(`  roadmap: ${r.done.length} done, ${r.claimed.length} in flight, ${r.open.length} queued`);
+  if (r.done.length) {
+    lines.push('');
+    lines.push('  handled:');
+    r.done.slice(0, 6).forEach((t) => lines.push(`    [x] ${t}`));
+    if (r.done.length > 6) lines.push(`    ... and ${r.done.length - 6} more`);
+  }
+  if (r.claimed.length) {
+    lines.push('');
+    lines.push('  in flight:');
+    r.claimed.slice(0, 4).forEach((t) => lines.push(`    [~] ${t}`));
+  }
+  if (r.open.length) {
+    lines.push('');
+    lines.push('  next up:');
+    r.open.slice(0, 4).forEach((t) => lines.push(`    [ ] ${t}`));
+  }
+  if (rep.pulse) {
+    lines.push('');
+    lines.push(`  heartbeat: ${rep.pulse.total_ticks} ticks, reward ${rep.pulse.reward_sum}, verify ${rep.pulse.verify_pass}/${rep.pulse.verify_fail}`);
+  }
+  lines.push(`  local runs: ${rep.local_runs.count}`);
+  lines.push('');
+  return lines.join('\n');
+}
+
 // Executor. Returns a Promise resolving to an exit code (0 = ok).
 function loopFront(argv = []) {
   const route = routeLoop(argv);
@@ -170,6 +214,12 @@ function loopFront(argv = []) {
 
     case 'wiki':
       return Promise.resolve(require('./loop').loopAtris(route.rest)).then(() => 0);
+
+    case 'report': {
+      const rep = loopReport(process.cwd());
+      console.log(jsonFlag.length ? JSON.stringify(rep, null, 2) : renderLoopReport(rep));
+      return Promise.resolve(0);
+    }
 
     case 'add': {
       if (!route.text) {
@@ -234,5 +284,7 @@ module.exports = {
   startLocalOptions,
   localRunSummary,
   loopStatusJson,
+  loopReport,
+  renderLoopReport,
   loopFront,
 };
