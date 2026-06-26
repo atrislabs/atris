@@ -554,6 +554,13 @@ test('default entry treats completed-only TODO rows as history', () => {
     runCli(['init'], { cwd: dir, input: '\n' });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
 
+    // Mark first-contact done so the default entry renders the history view
+    // instead of the (correct, but unrelated) onboarding gatherer that fires
+    // for a profile-less workspace with no active work. Keeps this test hermetic.
+    const profilePath = path.join(dir, '.atris', 'state', 'context_profile.json');
+    fs.mkdirSync(path.dirname(profilePath), { recursive: true });
+    fs.writeFileSync(profilePath, JSON.stringify({ first_answer: 'coding', source: 'first_contact' }), 'utf8');
+
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(
       todoPath,
