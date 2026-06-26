@@ -46,7 +46,7 @@ function generateManifest(skills, projectDir) {
     version: pkg.version || '1.0.0',
     description: `Atris workspace skills for Cowork — ${skills.length} integrations (email, calendar, slack, drive, notion, and more)`,
     author: {
-      name: typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name || 'Atris Labs')
+      name: typeof pkg.author === 'string' ? pkg.author : (pkg.author?.name || 'Atris')
     },
     homepage: pkg.homepage || 'https://github.com/atrislabs/atris',
     keywords: ['atris', 'workspace', 'integrations', 'email', 'calendar', 'slack', 'notion', 'drive']

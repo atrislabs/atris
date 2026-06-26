@@ -3337,12 +3337,12 @@ test('live help exposes fresh brain command', () => {
 test('live dry-run prints doctor pull push plan without credentials', () => {
   const dir = makeTempDir();
   try {
-    const res = runCli(['live', 'atris-labs', '--dry-run', '--once', '--only', 'atris/MAP.md'], { cwd: dir });
+    const res = runCli(['live', 'acme', '--dry-run', '--once', '--only', 'atris/MAP.md'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Atris Live: atris-labs/);
+    assert.match(res.stdout, /Atris Live: acme/);
     assert.match(res.stdout, /dry-run: atris business doctor --fix/);
-    assert.match(res.stdout, /dry-run: atris push atris-labs --from/);
-    assert.match(res.stdout, /dry-run: atris pull atris-labs --timeout 600 --only atris\/MAP\.md/);
+    assert.match(res.stdout, /dry-run: atris push acme --from/);
+    assert.match(res.stdout, /dry-run: atris pull acme --timeout 600 --only atris\/MAP\.md/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3367,13 +3367,13 @@ test('live options infer slug from business workspace and parse timing', () => {
 test('live options resolve explicit slug to child workspace from portfolio root', () => {
   const dir = makeTempDir();
   try {
-    const child = path.join(dir, 'atris-labs');
+    const child = path.join(dir, 'acme');
     fs.mkdirSync(path.join(child, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(child, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(child, '.atris', 'business.json'), JSON.stringify({ slug: 'atris-labs' }), 'utf8');
+    fs.writeFileSync(path.join(child, '.atris', 'business.json'), JSON.stringify({ slug: 'acme' }), 'utf8');
 
-    const options = parseLiveOptions(['atris-labs', '--once'], dir);
-    assert.equal(options.slug, 'atris-labs');
+    const options = parseLiveOptions(['acme', '--once'], dir);
+    assert.equal(options.slug, 'acme');
     assert.equal(options.cwd, child);
     assert.equal(options.root, dir);
   } finally {
@@ -3411,11 +3411,11 @@ test('push source resolver keeps pulled business folder as root', () => {
   try {
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# Map\n', 'utf8');
 
     assert.equal(
-      resolvePushSourceDir({ slug: 'doordash', cwd: dir, argv: ['node', 'atris', 'push', 'doordash'] }),
+      resolvePushSourceDir({ slug: 'example-co', cwd: dir, argv: ['node', 'atris', 'push', 'example-co'] }),
       dir
     );
   } finally {
@@ -3430,7 +3430,7 @@ test('push source resolver honors explicit --from path', () => {
     fs.mkdirSync(source, { recursive: true });
 
     assert.equal(
-      resolvePushSourceDir({ slug: 'doordash', cwd: dir, argv: ['node', 'atris', 'push', 'doordash', '--from', './custom-root'] }),
+      resolvePushSourceDir({ slug: 'example-co', cwd: dir, argv: ['node', 'atris', 'push', 'example-co', '--from', './custom-root'] }),
       source
     );
   } finally {
@@ -3620,9 +3620,9 @@ test('push retries multi-file server failures individually but not access or sle
 
 test('push safety blocks nested workspace pollution and sync artifacts', () => {
   const report = analyzePushSafety({
-    slug: 'atris-labs',
+    slug: 'acme',
     filesToPush: [
-      { path: '/atris-labs/atris/now.md' },
+      { path: '/acme/atris/now.md' },
       { path: '/CLAUDE.md.remote' },
     ],
     unchangedCount: 30,
@@ -3635,7 +3635,7 @@ test('push safety blocks nested workspace pollution and sync artifacts', () => {
 
 test('push safety blocks large unscoped dirty workspace plans', () => {
   const report = analyzePushSafety({
-    slug: 'atris-labs',
+    slug: 'acme',
     filesToPush: Array.from({ length: 30 }, (_, i) => ({ path: `/atris/wiki/file-${i}.md` })),
     unchangedCount: 296,
   });
@@ -3646,7 +3646,7 @@ test('push safety blocks large unscoped dirty workspace plans', () => {
 
 test('push safety allows exact scoped repair pushes', () => {
   const report = analyzePushSafety({
-    slug: 'atris-labs',
+    slug: 'acme',
     onlyPrefixes: ['/atris/now.md'],
     filesToPush: [{ path: '/atris/now.md' }],
     unchangedCount: 1,
@@ -3671,18 +3671,18 @@ test('business workspace root detection requires .atris binding and atris folder
 
 test('manifest records workspace root metadata', () => {
   const manifest = buildManifest({ '/atris/MAP.md': { hash: 'abc', size: 3 } }, 'commit123', {
-    workspaceRoot: '/tmp/doordash',
+    workspaceRoot: '/tmp/example-co',
   });
 
-  assert.equal(manifest.workspace_root, '/tmp/doordash');
+  assert.equal(manifest.workspace_root, '/tmp/example-co');
   assert.equal(manifest.last_commit, 'commit123');
   assert.equal(manifest.files['/atris/MAP.md'].hash, 'abc');
 });
 
 test('business sync plan pulls safely then pushes wiki scope through normal push', () => {
-  const options = parseBusinessSyncArgs(['doordash']);
+  const options = parseBusinessSyncArgs(['example-co']);
   assert.deepEqual(options, {
-    slug: 'doordash',
+    slug: 'example-co',
     dryRun: false,
     timeout: '120',
     allowDelete: false,
@@ -3695,8 +3695,8 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     help: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
-    pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
-    pushArgs: ['push', 'doordash'],
+    pullArgs: ['pull', 'example-co', '--keep-local', '--fail-on-conflict', '--timeout', '120'],
+    pushArgs: ['push', 'example-co'],
   });
 });
 
@@ -3704,9 +3704,9 @@ test('business sync auto-detects slug from business workspace', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     const options = resolveBusinessSyncOptions(['--dry-run'], dir);
-    assert.equal(options.slug, 'doordash');
+    assert.equal(options.slug, 'example-co');
     assert.equal(options.dryRun, true);
   } finally {
     cleanupTempDir(dir);
@@ -3714,7 +3714,7 @@ test('business sync auto-detects slug from business workspace', () => {
 });
 
 test('business sync plan supports dry-run and explicit delete opt-in', () => {
-  const options = parseBusinessSyncArgs(['doordash', '--timeout', '240', '--dry-run', '--delete', '--watch', '--interval=30', '--debounce', '2']);
+  const options = parseBusinessSyncArgs(['example-co', '--timeout', '240', '--dry-run', '--delete', '--watch', '--interval=30', '--debounce', '2']);
   assert.equal(options.watch, true);
   assert.equal(options.intervalSec, 30);
   assert.equal(options.debounceSec, 2);
@@ -3723,8 +3723,8 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
   assert.equal(options.resolve, null);
   assert.equal(options.help, false);
   assert.deepEqual(buildBusinessSyncPlan(options), {
-    pullArgs: ['pull', 'doordash', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
-    pushArgs: ['push', 'doordash', '--dry-run', '--delete'],
+    pullArgs: ['pull', 'example-co', '--keep-local', '--fail-on-conflict', '--timeout', '240', '--dry-run'],
+    pushArgs: ['push', 'example-co', '--dry-run', '--delete'],
   });
 });
 
@@ -3823,7 +3823,7 @@ test('business sync resolve command is local-only and works without credentials'
     const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
     fs.mkdirSync(packetDir, { recursive: true });
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'A\nB\nC\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'A\nB local\nC\n', 'utf8');
     fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'A\nB\nC cloud\n', 'utf8');
@@ -3957,7 +3957,7 @@ test('business sync review command is local-only and works without credentials',
   try {
     fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n\n- atris/wiki/a.md\n', 'utf8');
 
     const res = runCli(['sync', '--review'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
@@ -3975,13 +3975,13 @@ test('business sync status renders a nonengineer-safe local brain readout', () =
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
     fs.mkdirSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), '# Index\n', 'utf8');
     fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
-    writeSyncStatus(dir, { slug: 'doordash', state: 'current', mode: 'watch' });
+    writeSyncStatus(dir, { slug: 'example-co', state: 'current', mode: 'watch' });
 
-    const status = collectLocalSyncStatus(dir, { slug: 'doordash' });
-    assert.equal(status.slug, 'doordash');
+    const status = collectLocalSyncStatus(dir, { slug: 'example-co' });
+    assert.equal(status.slug, 'example-co');
     assert.equal(status.brainExists, true);
     assert.equal(status.brainFileCount, 1);
     assert.equal(status.conflictCount, 1);
@@ -3989,7 +3989,7 @@ test('business sync status renders a nonengineer-safe local brain readout', () =
 
     const rendered = renderLocalSyncStatus(status);
     assert.match(rendered, /Business workspace sync status/);
-    assert.match(rendered, /business: doordash/);
+    assert.match(rendered, /business: example-co/);
     assert.match(rendered, /workspace: 1 file \(atris\/ present\)/);
     assert.match(rendered, /conflicts: 1 review packet/);
     assert.match(rendered, /warnings: none/);
@@ -4003,18 +4003,18 @@ test('business sync status renders a nonengineer-safe local brain readout', () =
 test('business sync status warns about nested workspace pollution', () => {
   const dir = makeTempDir();
   try {
-    fs.mkdirSync(path.join(dir, 'atris-labs', 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'acme', 'atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'atris-labs', 'atris', 'now.md'), '# now\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'acme', 'atris', 'now.md'), '# now\n', 'utf8');
     fs.writeFileSync(path.join(dir, 'CLAUDE.md.remote'), 'cloud copy\n', 'utf8');
 
-    const warnings = collectWorkspaceWarnings(dir, 'atris-labs');
+    const warnings = collectWorkspaceWarnings(dir, 'acme');
     assert.equal(warnings.length, 2);
-    assert.match(warnings[0], /nested workspace folder: atris-labs\//);
+    assert.match(warnings[0], /nested workspace folder: acme\//);
     assert.match(warnings[1], /sync review artifacts/);
 
     const rendered = renderLocalSyncStatus({
-      slug: 'atris-labs',
+      slug: 'acme',
       cwd: dir,
       workspaceFileCount: 3,
       brainExists: true,
@@ -4036,13 +4036,13 @@ test('business sync status command is local-only and works without credentials',
   try {
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
     fs.writeFileSync(path.join(dir, 'atris', 'wiki', 'index.md'), '# Index\n', 'utf8');
 
     const res = runCli(['sync', '--status'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Business workspace sync status/);
-    assert.match(res.stdout, /business: doordash/);
+    assert.match(res.stdout, /business: example-co/);
     assert.match(res.stdout, /Next: run `atris sync --dry-run`/);
   } finally {
     cleanupTempDir(dir);
@@ -4058,7 +4058,7 @@ test('business sync help is read-only and names the safety gates', () => {
   try {
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'doordash' }), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'example-co' }), 'utf8');
 
     const res = runCli(['sync', '--help'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
     assert.equal(res.status, 0, res.stderr);
@@ -4075,7 +4075,7 @@ test('business sync watch failures retry instead of killing the alive loop', () 
   assert.equal(transient.state, 'retrying');
   assert.match(transient.detail, /still running/);
 
-  const conflictErr = new Error('atris pull doordash exited 2');
+  const conflictErr = new Error('atris pull example-co exited 2');
   conflictErr.status = 2;
   const conflict = describeWatchFailure(conflictErr);
   assert.equal(conflict.state, 'conflict');
@@ -4485,7 +4485,7 @@ test('brain scorecard uses latest review episode per task', () => {
       '--reward', '5',
       '--lesson', 'Latest review is the task outcome',
       '--proof', 'final validation passed',
-      '--next', 'Draft the Atris Labs operator one-pager from the latest recap',
+      '--next', 'Draft the Acme Co operator one-pager from the latest recap',
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(review.status, 0, review.stderr);
@@ -4498,12 +4498,12 @@ test('brain scorecard uses latest review episode per task', () => {
     assert.equal(payload.scorecards[0].reward, 5);
     assert.equal(payload.scorecards[0].lesson, 'Latest review is the task outcome');
     assert.equal(payload.scorecards[0].proof, 'final validation passed');
-    assert.equal(payload.scorecards[0].next_task_suggestion, 'Draft the Atris Labs operator one-pager from the latest recap');
+    assert.equal(payload.scorecards[0].next_task_suggestion, 'Draft the Acme Co operator one-pager from the latest recap');
 
     fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n\n## Backlog\n\n(empty)\n', 'utf8');
     const compile = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
     assert.equal(compile.status, 0, compile.stderr);
-    assert.match(compile.stdout, /Draft the Atris Labs operator one-pager from the latest recap/);
+    assert.match(compile.stdout, /Draft the Acme Co operator one-pager from the latest recap/);
     assert.doesNotMatch(compile.stdout, /Run a business loop/);
   } finally {
     cleanupTempDir(dir);
@@ -11034,11 +11034,11 @@ test('task status resolves goal_id display refs to parent task objectives', () =
       '',
     ].join('\n'), 'utf8');
 
-    const parentCreated = runCli(['task', 'add', 'GM Desk v0: make Atris Labs open to one playable daily rep', '--tag', 'gm-desk', '--json'], { cwd: dir, env });
+    const parentCreated = runCli(['task', 'add', 'GM Desk v0: make Acme Co open to one playable daily rep', '--tag', 'gm-desk', '--json'], { cwd: dir, env });
     assert.equal(parentCreated.status, 0, parentCreated.stderr);
     const parent = JSON.parse(parentCreated.stdout).task;
 
-    const childCreated = runCli(['task', 'add', 'GM Desk v0 step 2: route Atris Labs open to daily surface, no /flow', '--tag', 'gm-desk', '--goal-id', parent.display_id, '--json'], { cwd: dir, env });
+    const childCreated = runCli(['task', 'add', 'GM Desk v0 step 2: route Acme Co open to daily surface, no /flow', '--tag', 'gm-desk', '--goal-id', parent.display_id, '--json'], { cwd: dir, env });
     assert.equal(childCreated.status, 0, childCreated.stderr);
     const child = JSON.parse(childCreated.stdout).task;
 
@@ -13931,60 +13931,60 @@ test('agent spawn creates a durable worker request without auth', () => {
 
 test('business slug matcher accepts config aliases', () => {
   const business = {
-    slug: 'atris-labs',
-    name: 'Atris Labs',
+    slug: 'acme',
+    name: 'Acme Co',
     config: { aliases: ['atris'] },
   };
 
-  assert.equal(businessMatchesSlug(business, 'atris-labs'), true);
+  assert.equal(businessMatchesSlug(business, 'acme'), true);
   assert.equal(businessMatchesSlug(business, 'atris'), true);
-  assert.equal(businessMatchesSlug(business, 'Atris Labs'), false);
-  assert.equal(businessMatchesSlug(business, 'Atris Labs', { includeName: true }), true);
+  assert.equal(businessMatchesSlug(business, 'Acme Co'), false);
+  assert.equal(businessMatchesSlug(business, 'Acme Co', { includeName: true }), true);
 });
 
 test('business doctor plans safe cache repoints for stale duplicate rows', () => {
   const active = {
     id: 'active-example',
-    slug: 'example-recruiting',
-    name: 'example-recruiting',
+    slug: 'example-customer-ops',
+    name: 'example-customer-ops',
     workspace_id: 'active-workspace',
     config: {},
   };
   const analysis = analyzeBusinessDoctor({
     cloudBusinesses: [active],
     cache: {
-      'example-recruiting': {
+      'example-customer-ops': {
         business_id: 'deleted-duplicate',
         workspace_id: 'deleted-workspace',
-        name: 'example-recruiting',
-        slug: 'example-recruiting-1',
+        name: 'example-customer-ops',
+        slug: 'example-customer-ops-1',
       },
     },
     folderBindings: [],
   });
 
   assert.ok(analysis.issues.some((issue) => issue.code === 'stale-cache-repoint'));
-  assert.equal(analysis.cacheUpdates['example-recruiting'].business_id, 'active-example');
-  assert.equal(analysis.cacheUpdates['example-recruiting'].workspace_id, 'active-workspace');
-  assert.equal(analysis.cacheUpdates['example-recruiting'].slug, 'example-recruiting');
+  assert.equal(analysis.cacheUpdates['example-customer-ops'].business_id, 'active-example');
+  assert.equal(analysis.cacheUpdates['example-customer-ops'].workspace_id, 'active-workspace');
+  assert.equal(analysis.cacheUpdates['example-customer-ops'].slug, 'example-customer-ops');
 });
 
 test('business doctor accepts clean alias folders and asks for missing alias cache', () => {
   const atrisLabs = {
-    id: 'biz-atris-labs',
-    slug: 'atris-labs',
-    name: 'Atris Labs',
-    workspace_id: 'workspace-atris-labs',
+    id: 'biz-acme',
+    slug: 'acme',
+    name: 'Acme Co',
+    workspace_id: 'workspace-acme',
     config: { aliases: ['atris'] },
   };
   const analysis = analyzeBusinessDoctor({
     cloudBusinesses: [atrisLabs],
     cache: {
-      'atris-labs': {
-        business_id: 'biz-atris-labs',
-        workspace_id: 'workspace-atris-labs',
-        name: 'Atris Labs',
-        slug: 'atris-labs',
+      'acme': {
+        business_id: 'biz-acme',
+        workspace_id: 'workspace-acme',
+        name: 'Acme Co',
+        slug: 'acme',
       },
     },
     folderBindings: [{
@@ -13993,19 +13993,19 @@ test('business doctor accepts clean alias folders and asks for missing alias cac
       hasAtris: true,
       hasBusinessJson: true,
       meta: {
-        business_id: 'biz-atris-labs',
-        workspace_id: 'workspace-atris-labs',
-        name: 'Atris Labs',
+        business_id: 'biz-acme',
+        workspace_id: 'workspace-acme',
+        name: 'Acme Co',
         slug: 'atris',
-        canonical_slug: 'atris-labs',
+        canonical_slug: 'acme',
       },
     }],
   });
 
   assert.equal(analysis.issues.some((issue) => issue.code === 'folder-name-not-slug-or-alias'), false);
   assert.equal(analysis.issues.some((issue) => issue.code === 'folder-slug-mismatch'), false);
-  assert.equal(analysis.cacheUpdates.atris.business_id, 'biz-atris-labs');
-  assert.equal(analysis.cacheUpdates.atris.canonical_slug, 'atris-labs');
+  assert.equal(analysis.cacheUpdates.atris.business_id, 'biz-acme');
+  assert.equal(analysis.cacheUpdates.atris.canonical_slug, 'acme');
 });
 
 test('ensureWikiScaffold migrates legacy syntheses pages into briefs', () => {
@@ -14687,18 +14687,18 @@ test('release --help prints usage without changing package metadata', () => {
 test('createCanonicalBusinessWorkspace writes business metadata and canonical atris scaffold into an existing folder', () => {
   const dir = makeTempDir();
   try {
-    fs.writeFileSync(path.join(dir, 'BLONDISH_NOTES.md'), '# raw notes\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'EXAMPLE_NOTES.md'), '# raw notes\n', 'utf8');
 
     const result = createCanonicalBusinessWorkspace(dir, {
       business_id: 'biz-123',
       workspace_id: 'ws-456',
-      name: 'BLOND:ISH',
-      slug: 'blondish',
-      owner_email: 'joel@blondish.world',
+      name: 'Example Co',
+      slug: 'example-co',
+      owner_email: 'operator@example.com',
     }, { here: true });
 
     assert.equal(result.targetRoot, dir);
-    assert.ok(fs.existsSync(path.join(dir, 'BLONDISH_NOTES.md')));
+    assert.ok(fs.existsSync(path.join(dir, 'EXAMPLE_NOTES.md')));
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'business.json')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'MAP.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
@@ -14728,14 +14728,14 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'research', 'MEMBER.md')));
 
     const meta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'business.json'), 'utf8'));
-    assert.equal(meta.slug, 'blondish');
+    assert.equal(meta.slug, 'example-co');
     assert.equal(meta.business_id, 'biz-123');
     assert.equal(meta.workspace_id, 'ws-456');
     assert.equal(meta.workspace_template, 'business');
-    assert.equal(meta.owner_email, 'joel@blondish.world');
+    assert.equal(meta.owner_email, 'operator@example.com');
 
     const syncMeta = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', '_sync.json'), 'utf8'));
-    assert.equal(syncMeta.workspace_slug, 'blondish');
+    assert.equal(syncMeta.workspace_slug, 'example-co');
     assert.equal(syncMeta.business_id, 'biz-123');
     assert.equal(syncMeta.workspace_id, 'ws-456');
     assert.equal(syncMeta.workspace_template, 'business');
@@ -14748,19 +14748,19 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.deepEqual(runtime.agent_adapters, ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']);
 
     const rootAgents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
-    assert.match(rootAgents, /BLOND:ISH Atris Workspace/);
+    assert.match(rootAgents, /Example Co Atris Workspace/);
     assert.match(rootAgents, /atris business start/);
     assert.match(rootAgents, /atris radar/);
     assert.match(rootAgents, /atris task next/);
     assert.match(rootAgents, /atris member activate operator/);
-    assert.match(rootAgents, /atris mission start "Run the first useful loop for BLOND:ISH"/);
+    assert.match(rootAgents, /atris mission start "Run the first useful loop for Example Co"/);
     assert.match(rootAgents, /atris do/);
     assert.match(rootAgents, /atris task ready <id> --proof/);
     assert.match(rootAgents, /Do not run `atris task accept` or claim XP unless a human approved the proof/);
     assert.match(rootAgents, /atris business share --write/);
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
-    assert.match(map, /BLOND:ISH/);
+    assert.match(map, /Example Co/);
     assert.match(map, /\.atris\/state\/events\.jsonl/);
     assert.match(map, /atris\/team\/START_HERE\.md/);
 
@@ -14774,7 +14774,7 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(teamStart, /Ask `validator` to check proof/);
 
     const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
-    assert.match(persona, /BLOND:ISH/);
+    assert.match(persona, /Example Co/);
 
     const reward = fs.readFileSync(path.join(dir, 'atris', 'policies', 'REWARD.md'), 'utf8');
     assert.match(reward, /Reward what makes the operator faster/i);
@@ -14972,9 +14972,9 @@ test('fresh business environment starter exposes an endgame task with explicit v
     createCanonicalBusinessWorkspace(dir, {
       business_id: 'biz-123',
       workspace_id: 'ws-456',
-      name: 'BLOND:ISH',
-      slug: 'blondish',
-      owner_email: 'joel@blondish.world',
+      name: 'Example Co',
+      slug: 'example-co',
+      owner_email: 'operator@example.com',
       workspace_template: 'business',
     }, { here: true });
 
@@ -15018,9 +15018,9 @@ test('business record appends recap state to all three workspace logs', async ()
     createCanonicalBusinessWorkspace(dir, {
       business_id: 'biz-123',
       workspace_id: 'ws-456',
-      name: 'BLOND:ISH',
-      slug: 'blondish',
-      owner_email: 'joel@blondish.world',
+      name: 'Example Co',
+      slug: 'example-co',
+      owner_email: 'operator@example.com',
       workspace_template: 'business',
     }, { here: true });
 
@@ -15045,7 +15045,7 @@ test('business record appends recap state to all three workspace logs', async ()
     assert.equal(events[0].type, 'report_recorded');
     assert.equal(episodes[0].type, 'episode');
     assert.equal(scorecards[0].type, 'scorecard');
-    assert.equal(events[0].business_slug, 'blondish');
+    assert.equal(events[0].business_slug, 'example-co');
     assert.equal(events[0].report_path, 'atris/reports/2026-04-12-operator-recap.md');
     assert.equal(events[0].metric, 'ticket pulse');
     assert.equal(events[0].outcome, 'positive');

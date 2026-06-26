@@ -1,7 +1,7 @@
 ---
 name: aeo
 description: "AI Engine Optimization — write content engineered to get cited by ChatGPT, Claude, and Gemini. Not SEO. Triggers on: aeo, AI engine, llm citation, get cited, write for ai."
-when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get ExampleCo cited by ChatGPT', 'aeo for our recruiting page', 'make this quotable by LLMs'."
+when_to_use: "Use when the user wants content that ranks in AI answers (not Google SERP). Examples: 'write an AEO page', 'get ExampleCo cited by ChatGPT', 'aeo for our pricing page', 'make this quotable by LLMs'."
 version: 0.1.0
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 tags:

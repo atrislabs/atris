@@ -12,7 +12,7 @@
 import { execFileSync } from 'node:child_process';
 
 const EVAL = [
-  { q: 'A warehouse receives 7 pallets, each with 24 cartons, each carton holding 15 units. 138 units are damaged and removed. How many usable units remain?', a: 2382 },
+  { q: 'A warehouse receives 7 crates, each with 24 cartons, each carton holding 15 units. 138 units are damaged and removed. How many usable units remain?', a: 2382 },
   { q: 'A tank holds 1200 L. It is 5/8 full, then 175 L are added, then 1/4 of the new amount is drained. How many liters remain?', a: 693.75 },
   { q: 'Three numbers sum to 180. The second is twice the first; the third is 30 more than the second. What is the third number?', a: 90 },
   { q: 'Lin works 37 hours at $18.50/hr, then gets a $45 bonus. 22% of the total is withheld. What is the take-home pay in dollars?', a: 568.91 },

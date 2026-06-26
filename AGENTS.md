@@ -110,7 +110,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - [ ] Only use `atris task accept <id>` when the human has approved the proof
 - [ ] Keep durable learning in Atris-owned policy/skill/wiki/task state; keep `AGENTS.md` as a generated/pointer layer
 - [ ] Treat `atris/TODO.md` as a rendered view; do not manually use it as the source of truth
-- [ ] Use `atris-labs` for the Atris Labs business computer slug in docs and links
+- [ ] Use the real business slug from local Atris state; do not hardcode private slugs in generated docs
 
 ## Anti-patterns
 

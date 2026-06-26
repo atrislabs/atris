@@ -28,7 +28,7 @@ A logistics company processing freight documents:
 - "Draft a follow-up to the CIO from Tuesday's call" — pulls context from prior emails, attaches the right freight doc, drafts in the CEO's voice, waits for approval before sending
 - "Process the new BOL from Old Dominion" — reads the document, extracts fields, matches against the system, flags exceptions
 
-A recruiting marketplace doing outbound:
+A hiring marketplace doing outbound:
 - "Score these 50 candidates against the JD" — reads resumes, applies the scoring rubric, ranks and explains
 - "Draft outreach to the top 10" — personalized messages using the candidate's background, not a mail merge
 

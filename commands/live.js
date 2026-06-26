@@ -101,10 +101,10 @@ function printLiveHelp() {
   console.log('Keeps a business brain fresh: doctor, pull, watch local changes, push after quiet, and periodically pull.');
   console.log('');
   console.log('Examples:');
-  console.log('  atris live atris-labs');
+  console.log('  atris live <business>');
   console.log('  atris live --once');
-  console.log('  atris live atris-labs --dry-run');
-  console.log('  atris live atris-labs --interval=120 --debounce=30');
+  console.log('  atris live <business> --dry-run');
+  console.log('  atris live <business> --interval=120 --debounce=30');
   console.log('');
   console.log('Options:');
   console.log('  --once             Run one freshness cycle and exit');

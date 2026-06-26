@@ -173,7 +173,7 @@ function printHelp() {
   console.log('');
   console.log('Examples:');
   console.log('  atris aeo log --engine perplexity --limit 5');
-  console.log('  atris aeo packet pallet');
+  console.log('  atris aeo packet <slug>');
   console.log('  atris aeo status');
   console.log('  atris aeo discover https://atris.ai/aeo --canonical-url https://atris.ai/aeo');
 }

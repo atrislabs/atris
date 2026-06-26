@@ -144,8 +144,6 @@ Input files:
 - `atris/wiki/index.md`
 - `atris/wiki/systems/atris-cli.md`
 - `atris/wiki/systems/atris-business.md`
-- `atris/wiki/systems/atris-labs.md`
-- `atris/wiki/briefs/atris-labs-workspace-protocol.md`
 - `/Users/keshavrao/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
 - `/Users/keshavrao/arena/atrisos-backend/atris/wiki/ai-computer.md`
 
@@ -157,7 +155,6 @@ The agent recovered:
 - `business` is the internal shared-owner primitive
 - labs, collectives, communities, artists, teams, projects, and companies stay `Business` records with display/entity packaging
 - `computer_type` carries runtime function
-- Atris Labs is the reference business owner dogfooding a default `business_ops` computer
 - workspace language resolves as filesystem-inside-computer, not the owner/product primitive
 
 ## Score

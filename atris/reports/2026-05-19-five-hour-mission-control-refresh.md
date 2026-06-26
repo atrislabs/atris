@@ -35,7 +35,7 @@ Task load:
 | --- | ---: | --- | --- | --- |
 | BCK-292 | 8 | claimed | keshavrao | Owner action required; GitHub Actions billing/spend gate. |
 | CLI-164 | 2 | review | codex | ctop owner-gate dogfood source is certified Review. |
-| WEB-51 | 1 | review | codex | Pallet ask-recruiting web handoff is certified Review. |
+| WEB-51 | 1 | review | codex | Customer handoff is certified Review. |
 | OBL-529 | 1 | claimed | claude | Human live microphone signoff lane; not agent-executable. |
 
 Untasked sessions are cleanup candidates only:

@@ -1601,8 +1601,8 @@ async function computerCreate(token, args = [], defaults = {}) {
     console.log('Create a business computer, activate it, and wake it in one command.');
     console.log('');
     console.log('Examples:');
-    console.log('  atris computer create "My Business Computer" --business atris-labs');
-    console.log('  atris computer create "Recruiting Computer"');
+    console.log('  atris computer create "My Business Computer" --business <business>');
+    console.log('  atris computer create "Support Computer"');
     if (!options.name && !options.help) process.exitCode = 1;
     return;
   }
@@ -1810,8 +1810,8 @@ async function computerDelete(token, ctx, options = {}, args = []) {
     console.log('Sleeps the computer first, then deletes the non-default workspace after confirmation.');
     console.log('');
     console.log('Examples:');
-    console.log('  atris computer delete --business atris-labs --workspace ws_123');
-    console.log('  atris computer delete --business atris-labs --workspace ws_123 --confirm "delete ws_123"');
+    console.log('  atris computer delete --business <business> --workspace ws_123');
+    console.log('  atris computer delete --business <business> --workspace ws_123 --confirm "delete ws_123"');
     return;
   }
 
@@ -3291,7 +3291,7 @@ async function runComputer() {
     console.log('  Owner has many Computers');
     console.log('  Computer = workspace + files + tools + secrets + memory + agents + validation');
     console.log('');
-    console.log('Common types: codeops, research, CRM, reporting, recruiting, event ops, support, business ops.');
+    console.log('Common types: codeops, research, CRM, reporting, event ops, support, business ops.');
     console.log('A business can be a company, lab, collective, community, artist, team, or project.');
     console.log('');
     console.log('First use:');
@@ -3342,10 +3342,10 @@ async function runComputer() {
     console.log('  atris computer');
     console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # first/default computer with Atris + operator');
-    console.log('  atris computer create "Recruiting Computer" --business atris-labs');
-    console.log('  atris computer --business atris-labs --workspace <workspace-id>');
-    console.log('  atris computer sleep --business atris-labs --workspace <workspace-id>');
-    console.log('  atris computer delete --business atris-labs --workspace <workspace-id>');
+    console.log('  atris computer create "Support Computer" --business <business>');
+    console.log('  atris computer --business <business> --workspace <workspace-id>');
+    console.log('  atris computer sleep --business <business> --workspace <workspace-id>');
+    console.log('  atris computer delete --business <business> --workspace <workspace-id>');
     console.log('  atris computer proof');
     console.log('  atris computer local');
     console.log('  atris computer codex');

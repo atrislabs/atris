@@ -97,7 +97,7 @@ Forensic write-up of the 2026-04-08 multi-agent collision on
 
 ### Commit c65aaf9 — autopilot tick agent
 
-- **Author:** Keshav <keshavrao250@gmail.com> (Co-Authored-By: Claude Opus 4.6)
+- **Author:** Keshav <dev@example.com> (Co-Authored-By: Claude Opus 4.6)
 - **Date:** Wed Apr 8 12:12:06 2026 -0700
 - **Subject:** `autopilot: add getIdleTickCount helper (M1)`
 - **Written by:** an `atris autopilot` tick running the M1 task. The tick had
@@ -129,7 +129,7 @@ appended. There is no `getIdleTickCount` function anywhere in the patch.
 
 ### Commit 2279936 — recovery commit (parallel sub-agent)
 
-- **Author:** Keshav <keshavrao250@gmail.com>
+- **Author:** Keshav <dev@example.com>
 - **Date:** Wed Apr 8 12:14:38 2026 -0700 (≈ 2m32s after c65aaf9)
 - **Subject:** `fix(autopilot): commit the real M1 helper (getIdleTickCount)`
 - **Written by:** a parallel sub-agent doing manual recovery after noticing

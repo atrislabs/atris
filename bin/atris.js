@@ -345,7 +345,7 @@ function showHelp() {
   console.log('Atris Computers:');
   console.log('  Owner = User | Business');
   console.log('  Owners have Computers: workspace + files + tools + secrets + memory + agents + validation');
-  console.log('  Types: code, research, CRM, reporting, recruiting, events, support, business ops');
+  console.log('  Types: code, research, CRM, reporting, events, support, business ops');
   console.log('');
   console.log('Setup:');
   console.log('  setup      - Guided first-time setup (login, pick business, pull)');

@@ -2,9 +2,9 @@
 
 ## Current Patch
 
-The immediate Acme lane now follows the correct company-brain model:
+The immediate Example Co lane now follows the correct company-brain model:
 
-- `atris push` keeps the business root as the path root so `doordash/atris/MAP.md` maps to cloud `/atris/MAP.md`
+- `atris push` keeps the business root as the path root so `example-co/atris/MAP.md` maps to cloud `/atris/MAP.md`
 - business `pull` and `push` default to the `atris/` scope
 - root-level duplicates such as `MAP.md`, `TODO.md`, and `security-report.md` are ignored by default
 - manifests record the local workspace root to prevent a manifest from one folder authorizing pushes from another folder
@@ -114,7 +114,7 @@ Later it should also let the user ask Atris to merge semantically with model ass
 
 `atris sync --watch` is the current always-on lane:
 
-- watch `doordash/atris/`
+- watch `example-co/atris/`
 - debounce local edits
 - fetch cloud hashes periodically
 - sync clean changes
@@ -136,5 +136,5 @@ Required before broad customer use:
 - retry-policy tests proving watch failures do not kill the alive loop
 - fixture tests proving parent-folder junk is ignored
 - fixture tests proving no cloud deletes without explicit opt-in
-- end-to-end dry-run against a real Acme-shaped workspace
+- end-to-end dry-run against a real Example Co-shaped workspace
 - command copy that never recommends `--force` for normal use
