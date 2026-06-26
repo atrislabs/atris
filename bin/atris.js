@@ -1040,6 +1040,7 @@ async function interactiveEntry(userInput) {
     wipCount,
     backlogCount,
     inboxCount,
+    completedTasksCount,
   })) {
     const answer = String(userInput || '').trim() || await askContextGatherer(workspaceDir);
     if (isAtrisMetaQuestion(answer)) {
