@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { routeLoop, renderLoopHome, startLocalOptions, loopFront, localRunSummary, loopStatusJson } = require('../commands/loop-front');
+const { routeLoop, renderLoopHome, startLocalOptions, loopFront, localRunSummary, loopStatusJson, loopReport, renderLoopReport } = require('../commands/loop-front');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -101,6 +101,39 @@ test('localRunSummary counts run logs and names the latest', () => {
     const s = localRunSummary(dir);
     assert.equal(s.count, 2);
     assert.equal(s.latest, '2026-06-25-100001-cycle-2.md');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loopReport groups roadmap state and renders without an em dash', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'ROADMAP.md'),
+      '# R\n\n## Open loop items\n\n- [x] did it\n- [~] doing it\n- [ ] todo\n', 'utf8');
+    const rep = loopReport(dir);
+    assert.equal(rep.action, 'loop_report');
+    assert.deepEqual(rep.roadmap.done, ['did it']);
+    assert.deepEqual(rep.roadmap.claimed, ['doing it']);
+    assert.deepEqual(rep.roadmap.open, ['todo']);
+    const out = renderLoopReport(rep);
+    assert.match(out, /1 done, 1 in flight, 1 queued/);
+    assert.match(out, /\[x\] did it/);
+    assert.equal(out.includes('—'), false, 'no em dash');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('`atris loop report --json` prints a valid proof object', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'ROADMAP.md'), '# R\n\n## Open loop items\n\n- [x] shipped thing\n', 'utf8');
+    const res = runCli(['loop', 'report', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.action, 'loop_report');
+    assert.deepEqual(parsed.roadmap.done, ['shipped thing']);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
