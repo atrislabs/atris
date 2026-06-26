@@ -2,7 +2,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const PACKAGE_NAME = 'atris';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -34,6 +34,8 @@ function getCacheData() {
       return {
         lastCheck: data.lastCheck ? new Date(data.lastCheck) : null,
         latestVersion: data.latestVersion || null,
+        lastAutoUpdate: data.lastAutoUpdate ? new Date(data.lastAutoUpdate) : null,
+        lastAutoUpdateVersion: data.lastAutoUpdateVersion || null,
       };
     }
   } catch (error) {
@@ -52,7 +54,11 @@ function saveCacheData(latestVersion) {
     if (!fs.existsSync(ATRIS_DIR)) {
       fs.mkdirSync(ATRIS_DIR, { recursive: true });
     }
+    const existing = fs.existsSync(CACHE_FILE)
+      ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'))
+      : {};
     const data = {
+      ...existing,
       lastCheck: new Date().toISOString(),
       latestVersion: latestVersion,
     };
@@ -60,6 +66,34 @@ function saveCacheData(latestVersion) {
   } catch (error) {
     // Ignore cache write errors
   }
+}
+
+function markAutoUpdateStarted(latestVersion) {
+  try {
+    if (!fs.existsSync(ATRIS_DIR)) {
+      fs.mkdirSync(ATRIS_DIR, { recursive: true });
+    }
+    const existing = fs.existsSync(CACHE_FILE)
+      ? JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'))
+      : {};
+    fs.writeFileSync(CACHE_FILE, JSON.stringify({
+      ...existing,
+      lastAutoUpdate: new Date().toISOString(),
+      lastAutoUpdateVersion: latestVersion,
+    }, null, 2));
+  } catch (error) {
+    // Ignore cache write errors
+  }
+}
+
+function autoUpdateRecentlyStarted(latestVersion, now = new Date()) {
+  const cache = getCacheData();
+  return Boolean(
+    latestVersion &&
+    cache.lastAutoUpdate &&
+    cache.lastAutoUpdateVersion === latestVersion &&
+    now - cache.lastAutoUpdate < CHECK_INTERVAL_MS
+  );
 }
 
 /**
@@ -189,7 +223,7 @@ function showUpdateNotification(updateInfo) {
   // Single yellow warning line — non-intrusive
   const yellow = '\x1b[33m';
   const reset = '\x1b[0m';
-  console.log(`${yellow}Update available: ${updateInfo.installed} → ${updateInfo.latest}. Run: npm install -g atris${reset}`);
+  console.log(`${yellow}Update available: ${updateInfo.installed} → ${updateInfo.latest}. Run: atris upgrade${reset}`);
 }
 
 function inspectInstallGitState(packageRoot = path.join(__dirname, '..')) {
@@ -237,37 +271,55 @@ function formatInstallGitWarning(state) {
   if (state.detached) flags.push(`detached HEAD${state.head ? ` ${state.head}` : ''}`);
   if (state.dirty) flags.push(`dirty worktree (${state.dirtyCount} file${state.dirtyCount === 1 ? '' : 's'})`);
   return `WARNING: Atris is running from a ${flags.join(' + ')} at ${state.root}.\n` +
-    'npm update may not change the code currently on PATH; resolve that checkout before trusting upgrade status.';
+    'npm install -g atris@latest may not change the code currently on PATH; resolve that checkout before trusting upgrade status.';
 }
 
-function autoUpdate(updateInfo) {
+function normalizeAutoUpdateMode(env = process.env) {
+  const raw = String(env.ATRIS_AUTO_UPDATE || '').trim().toLowerCase();
+  if (['0', 'false', 'no', 'off', 'notify'].includes(raw)) return 'off';
+  if (['1', 'true', 'yes', 'on', 'force'].includes(raw)) return 'force';
+  return 'auto';
+}
+
+function shouldAutoUpdate(updateInfo, state, env = process.env) {
   if (!updateInfo || !updateInfo.needsUpdate) return false;
 
-  const { execSync } = require('child_process');
+  const mode = normalizeAutoUpdateMode(env);
+  if (mode === 'off') return false;
+  if (mode === 'force') return true;
 
-  console.log('');
-  console.log(`⬆️  Updating atris ${updateInfo.installed} → ${updateInfo.latest}...`);
+  // Packaged npm installs are not git repositories. Git checkouts may be linked
+  // dev installs, where a global npm install would not update the code on PATH.
+  return !(state && state.isGitRepo);
+}
+
+function autoUpdate(updateInfo, options = {}) {
+  if (!updateInfo || !updateInfo.needsUpdate) return false;
+
+  const env = options.env || process.env;
+  const packageRoot = options.packageRoot || path.join(__dirname, '..');
+  const installState = options.installState || inspectInstallGitState(packageRoot);
+  if (!shouldAutoUpdate(updateInfo, installState, env)) return false;
+
+  const recentlyStarted = options.recentlyStarted || autoUpdateRecentlyStarted;
+  if (recentlyStarted(updateInfo.latest)) return false;
+
+  const spawnImpl = options.spawn || spawn;
+  const markStarted = options.markStarted || markAutoUpdateStarted;
+  const log = options.log || console.log;
 
   try {
-    execSync('npm update -g atris', { stdio: 'pipe', timeout: 30000 });
-    console.log(`✅ Updated to ${updateInfo.latest}`);
-
-    // Auto-sync skills into current project if atris/skills/ exists
-    try {
-      if (fs.existsSync(path.join(process.cwd(), 'atris', 'skills'))) {
-        execSync('atris sync', { stdio: 'pipe', timeout: 10000 });
-        console.log(`✅ Skills synced`);
-      }
-    } catch (e) {
-      // Sync failed — not critical
-    }
-
-    console.log('');
+    const child = spawnImpl('npm', ['install', '-g', `${PACKAGE_NAME}@latest`], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    if (child && typeof child.on === 'function') child.on('error', () => {});
+    if (child && typeof child.unref === 'function') child.unref();
+    markStarted(updateInfo.latest);
+    log(`Auto-update started: atris ${updateInfo.installed} -> ${updateInfo.latest} (background)`);
     return true;
   } catch (error) {
-    // npm update failed (permissions, network, etc) — fall back to notification
-    console.log(`⚠️  Auto-update failed. Run manually: npm update -g atris`);
-    console.log('');
     return false;
   }
 }
@@ -276,6 +328,7 @@ module.exports = {
   checkForUpdates,
   showUpdateNotification,
   autoUpdate,
+  shouldAutoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
 };
