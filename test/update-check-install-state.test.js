@@ -5,8 +5,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
+  autoUpdate,
   inspectInstallGitState,
   formatInstallGitWarning,
+  shouldAutoUpdate,
 } = require('../utils/update-check');
 
 function makeTempDir() {
@@ -47,7 +49,7 @@ test('install git state warns on dirty install checkout', () => {
 
     const warning = formatInstallGitWarning(state);
     assert.match(warning, /dirty worktree \(1 file\)/);
-    assert.match(warning, /npm update may not change the code currently on PATH/);
+    assert.match(warning, /npm install -g atris@latest may not change the code currently on PATH/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -70,7 +72,67 @@ test('install git state warns on detached install checkout', () => {
 
     const warning = formatInstallGitWarning(state);
     assert.match(warning, /detached HEAD/);
-    assert.match(warning, /npm update may not change the code currently on PATH/);
+    assert.match(warning, /npm install -g atris@latest may not change the code currently on PATH/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto update starts a detached npm latest install for packaged installs', () => {
+  const dir = makeTempDir();
+  const calls = [];
+  try {
+    const started = autoUpdate(
+      { installed: '1.0.0', latest: '2.0.0', needsUpdate: true },
+      {
+        packageRoot: dir,
+        recentlyStarted: () => false,
+        markStarted: (version) => calls.push({ markStarted: version }),
+        log: (message) => calls.push({ message }),
+        spawn: (command, args, options) => {
+          calls.push({ command, args, options });
+          return {
+            on: () => {},
+            unref: () => calls.push({ unref: true }),
+          };
+        },
+      }
+    );
+
+    assert.equal(started, true);
+    assert.equal(calls[0].command, 'npm');
+    assert.deepEqual(calls[0].args, ['install', '-g', 'atris@latest']);
+    assert.equal(calls[0].options.detached, true);
+    assert.equal(calls[0].options.stdio, 'ignore');
+    assert.deepEqual(calls[1], { unref: true });
+    assert.deepEqual(calls[2], { markStarted: '2.0.0' });
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto update skips git checkouts by default', () => {
+  const dir = makeTempDir();
+  try {
+    git(dir, ['init']);
+    const state = inspectInstallGitState(dir);
+    const updateInfo = { installed: '1.0.0', latest: '2.0.0', needsUpdate: true };
+
+    assert.equal(shouldAutoUpdate(updateInfo, state, {}), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('auto update can be forced or disabled with ATRIS_AUTO_UPDATE', () => {
+  const dir = makeTempDir();
+  try {
+    git(dir, ['init']);
+    const state = inspectInstallGitState(dir);
+    const updateInfo = { installed: '1.0.0', latest: '2.0.0', needsUpdate: true };
+
+    assert.equal(shouldAutoUpdate(updateInfo, state, { ATRIS_AUTO_UPDATE: '1' }), true);
+    assert.equal(shouldAutoUpdate(updateInfo, { isGitRepo: false }, { ATRIS_AUTO_UPDATE: '0' }), false);
   } finally {
     cleanupTempDir(dir);
   }
