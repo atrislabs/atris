@@ -256,7 +256,6 @@ The projection reads goals from:
 ```text
 atris/goals.md
 goals.md
-atris/wiki/concepts/atris-labs-goals.md
 ```
 
 Each task gets mapped to an objective.

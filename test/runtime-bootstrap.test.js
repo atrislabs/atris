@@ -6,7 +6,7 @@ const { buildRemoteAtrisBootstrapCommand } = require('../lib/runtime-bootstrap')
 test('remote runtime bootstrap falls back to a workspace npm prefix', () => {
   const command = buildRemoteAtrisBootstrapCommand({
     boundary: 'computer-wake',
-    businessSlug: 'doordash',
+    businessSlug: 'example-co',
     businessId: 'biz-1',
     workspaceId: 'ws-1',
   });

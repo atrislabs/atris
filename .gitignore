@@ -5,7 +5,7 @@
 atris/brain/
 
 # Local scratch workspaces (created by `atris init` in subdirs for testing)
-atris-labs-*/
+business-*/
 atris/business/
 
 # Dependencies

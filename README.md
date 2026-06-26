@@ -10,7 +10,7 @@ Owner has many Computers
 Computer = workspace + files + tools + secrets + memory + agents + validation loop
 ```
 
-A computer can be personal or shared by a business. It can run a job like code, research, CRM, reporting, recruiting, event ops, support, or business ops.
+A computer can be personal or shared by a business. It can run a job like code, research, CRM, reporting, event ops, support, or business ops.
 
 ## For Coding Agents
 
@@ -142,9 +142,9 @@ leaderboard.
 If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.
 
 ```bash
-atris business init "BLOND:ISH" --owner-email joel@blondish.world
-cd ~/arena/atris-business/blondish
-atris business onboard --website https://blondish.world --contact "Joel Zimmerman" --note "artist-led brand and ticket sales"
+atris business init "Example Co" --owner-email operator@example.com
+cd ~/arena/atris-business/example-co
+atris business onboard --website https://example.com --contact "Example Owner" --note "sample customer workspace"
 atris align --fix
 ```
 
@@ -166,7 +166,7 @@ You can also use bare input:
 atris business onboard https://example.com "founder-led b2b ops" ./notes.md
 ```
 
-If you already have a folder full of source material, run it from there with `atris business init "BLOND:ISH" --here`.
+If you already have a folder full of source material, run it from there with `atris business init "Example Co" --here`.
 
 When the first recap is done, record it into the RL state logs:
 

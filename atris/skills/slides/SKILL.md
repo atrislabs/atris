@@ -121,7 +121,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-slides/presentatio
     {
       "insertText": {
         "objectId": "subtitleId",
-        "text": "Atris Labs - Confidential"
+        "text": "{{company_name}} - Confidential"
       }
     }
   ]
@@ -207,7 +207,7 @@ curl -s -X POST "https://api.atris.ai/api/integrations/google-slides/presentatio
     {
       "replaceAllText": {
         "containsText": {"text": "{{company_name}}"},
-        "replaceText": "Atris Labs"
+        "replaceText": "Example Co"
       }
     }
   ]

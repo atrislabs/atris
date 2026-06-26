@@ -20,7 +20,7 @@ Computer = workspace + files + tools + secrets + memory + agents + validation/RL
 
 Keep `business` as the shared owner in the schema and CLI internals.
 Externally, a business owner may be a company, lab, collective, community, artist, team, or project.
-Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `recruiting`, `event_ops`, or `support`.
+Computer type carries the function: `business_ops`, `codeops`, `research`, `crm`, `reporting`, `event_ops`, or `support`.
 
 For details, read `atris/wiki/concepts/owner-computer-model.md` before changing business/computer commands or public help text.
 

@@ -2,7 +2,7 @@
 
 ## Problem
 
-Atris business workspaces are company brains, not plain folders. The canonical knowledge surface is the `atris/` folder inside each business workspace, for example `doordash/atris/`.
+Atris business workspaces are company brains, not plain folders. The canonical knowledge surface is the `atris/` folder inside each business workspace, for example `example-co/atris/`.
 
 Raw push/pull is the wrong abstraction for this surface. It makes a shared knowledge base feel like file mirroring, which creates merge anxiety and makes users responsible for sync safety.
 
@@ -19,7 +19,7 @@ Cloud Atris is canonical. Local Atris is a working copy. Sync publishes proposed
 
 ## User Model
 
-Jonathan should be able to work inside `doordash/atris/` and run one command:
+Jonathan should be able to work inside `example-co/atris/` and run one command:
 
 ```bash
 atris sync

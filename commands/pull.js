@@ -110,9 +110,9 @@ async function pullAtris() {
     console.log('  Local files that conflict with cloud are replaced by the cloud version.');
     console.log('');
     console.log('  atris pull                   Pull into current business workspace');
-    console.log('  atris pull doordash          Pull a business into ./doordash or --into <path>');
-    console.log('  atris pull doordash --into /tmp/doordash');
-    console.log('  atris pull doordash --only atris/wiki/');
+    console.log('  atris pull <business>         Pull a business into ./<business> or --into <path>');
+    console.log('  atris pull <business> --into /tmp/<business>');
+    console.log('  atris pull <business> --only atris/wiki/');
     console.log('  atris pull --keep-local      Preserve conflicting local edits as .remote files (legacy)');
     console.log('  atris pull --dry-run         Preview pull changes without writing local files');
     console.log('  atris pull --no-manifest     Pull for inspection without changing this machine\'s sync anchor');
@@ -249,7 +249,7 @@ async function pullBusiness(slug) {
   // correct workspace for THIS business — i.e. it has a `.atris/business.json`
   // whose slug matches `slug`. Any other signal (a stray `atris/` folder, a
   // business.json for a different business, etc.) is NOT enough: pulling
-  // atris-labs on top of another business workspace would mix two businesses into
+  // one business on top of another business workspace would mix two businesses into
   // one directory and write one manifest over the other (or vice
   // versa), causing the next sync to do strange things.
   //

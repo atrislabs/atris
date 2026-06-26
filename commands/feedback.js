@@ -231,7 +231,7 @@ function printHelp(write = console.log) {
   write('  atris feedback delete <id>             Delete feedback (admin)');
   write('');
   write('IDs may be the first 8 chars of the UUID.');
-  write('Business slugs come from ~/.atris/businesses.json (e.g. acme, atris-labs).');
+  write('Business slugs come from ~/.atris/businesses.json.');
   write('');
 }
 

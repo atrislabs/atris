@@ -122,7 +122,7 @@ Certified tasks awaiting human action:
 | backend | BCK-327 | Prior AEO source-ref deploy verified; pending human accept. |
 | backend | BCK-323 | Business workspace route/export fix certified; pending human accept. |
 | cli | CLI-156 | Prior five-hour mission report certified; pending human accept. |
-| web | WEB-51 | Pallet ask-recruiting web handoff certified; pending human accept. |
+| web | WEB-51 | Customer handoff certified; pending human accept. |
 
 Do not use agent-side `atris task accept`.
 

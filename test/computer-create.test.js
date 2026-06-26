@@ -53,7 +53,7 @@ function startApiServer(requests) {
       }
 
       if (req.method === 'GET' && req.url === '/api/business/') {
-        send(200, [{ id: 'biz-1', slug: 'atris-labs', name: 'Atris Labs', workspace_id: 'ws-old' }]);
+        send(200, [{ id: 'biz-1', slug: 'acme', name: 'Acme Co', workspace_id: 'ws-old' }]);
         return;
       }
       if (req.method === 'GET' && req.url === '/api/business/biz-1/workspaces') {
@@ -257,7 +257,7 @@ test('computer proof can parse active workspace mismatch errors', () => {
 test('computer proof can retry against attached workspace context', () => {
   const ctx = {
     businessId: 'biz-1',
-    businessName: 'Atris Labs',
+    businessName: 'Acme Co',
     workspaceId: '89e8432e-e796-4e7b-9a40-e536c454fa9a',
   };
   const failure = {
@@ -290,13 +290,13 @@ test('top-level wake and sleep use business computer lifecycle for business slug
       ATRIS_SKIP_UPDATE_CHECK: '1',
     };
 
-    const wake = await runCliAsync(['wake', 'atris-labs'], { cwd, env });
+    const wake = await runCliAsync(['wake', 'acme'], { cwd, env });
     assert.equal(wake.status, 0, wake.stderr || wake.stdout);
-    assert.match(wake.stdout, /Business computer 'Atris Labs' is alive/);
+    assert.match(wake.stdout, /Business computer 'Acme Co' is alive/);
 
-    const sleep = await runCliAsync(['sleep', 'atris-labs'], { cwd, env });
+    const sleep = await runCliAsync(['sleep', 'acme'], { cwd, env });
     assert.equal(sleep.status, 0, sleep.stderr || sleep.stdout);
-    assert.match(sleep.stdout, /Business computer 'Atris Labs' is now sleeping/);
+    assert.match(sleep.stdout, /Business computer 'Acme Co' is now sleeping/);
 
     assert.deepEqual(
       requests.map((request) => [request.method, request.url]),
@@ -329,7 +329,7 @@ test('computer create creates workspace, activates it, wakes it, and prints next
       'create',
       'My Business Computer',
       '--business',
-      'atris-labs',
+      'acme',
     ], {
       cwd,
       env: {
@@ -346,9 +346,9 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(res.stdout, /Computer created: ws-new/);
     assert.match(res.stdout, /Dashboard: http:\/\/app\.local\/dashboard\/gm\/biz-1/);
     assert.match(res.stdout, /Start here:/);
-    assert.match(res.stdout, /atris computer --business atris-labs --workspace ws-new/);
+    assert.match(res.stdout, /atris computer --business acme --workspace ws-new/);
     assert.match(res.stdout, /Org workspace:/);
-    assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /cd ~\/arena\/atris-business\/acme/);
     assert.match(res.stdout, /atris member activate operator/);
     assert.match(res.stdout, /atris member activate validator/);
     assert.match(res.stdout, /Runtime: install=installed_latest/);
@@ -363,12 +363,12 @@ test('computer create creates workspace, activates it, wakes it, and prints next
     assert.match(bootstrapRequest.body.command, /\$LOCAL_ATRIS_BIN" update/);
     assert.doesNotMatch(bootstrapRequest.body.command, /npm install -g atris@latest/);
     assert.match(res.stdout, /Default:\s+unchanged \(ws-old\)/);
-    assert.match(res.stdout, /Switch default: atris computer activate --business atris-labs --workspace ws-new/);
+    assert.match(res.stdout, /Switch default: atris computer activate --business acme --workspace ws-new/);
     assert.match(res.stdout, /If the org workspace does not exist yet:/);
-    assert.match(res.stdout, /atris business init "Atris Labs"/);
+    assert.match(res.stdout, /atris business init "Acme Co"/);
     assert.doesNotMatch(res.stdout, /atris member create operator/);
     assert.match(res.stdout, /Cost control:/);
-    assert.match(res.stdout, /atris computer sleep --business atris-labs --workspace ws-new/);
+    assert.match(res.stdout, /atris computer sleep --business acme --workspace ws-new/);
 
     assert.deepEqual(
       requests.map((request) => [request.method, request.url]),
@@ -385,14 +385,14 @@ test('computer create creates workspace, activates it, wakes it, and prints next
 
     const cachePath = path.join(home, '.atris', 'businesses.json');
     const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    assert.equal(cache['atris-labs'].workspace_id, 'ws-old');
+    assert.equal(cache['acme'].workspace_id, 'ws-old');
 
     const ls = await runCliAsync([
       'computer',
       'ls',
       '.',
       '--business',
-      'atris-labs',
+      'acme',
     ], {
       cwd,
       env: {
@@ -433,7 +433,7 @@ test('computer create --set-default updates the cached workspace', async () => {
       'create',
       'My Business Computer',
       '--business',
-      'atris-labs',
+      'acme',
       '--set-default',
     ], {
       cwd,
@@ -450,8 +450,8 @@ test('computer create --set-default updates the cached workspace', async () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Default:\s+now ws-new/);
     const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
-    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
-    assert.equal(cache['atris-labs'].computer_name, 'My Business Computer');
+    assert.equal(cache['acme'].workspace_id, 'ws-new');
+    assert.equal(cache['acme'].computer_name, 'My Business Computer');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
@@ -479,7 +479,7 @@ test('computer activate attaches workspace and updates the cached default', asyn
       'computer',
       'activate',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], { cwd, env });
@@ -488,7 +488,7 @@ test('computer activate attaches workspace and updates the cached default', asyn
     assert.match(res.stdout, /Activated workspace ws-new/);
     assert.match(res.stdout, /CLI default: ws-new/);
     const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
-    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
+    assert.equal(cache['acme'].workspace_id, 'ws-new');
     const activateRequest = requests.find((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-new/activate');
     assert.ok(activateRequest);
     assert.equal(activateRequest.body.force, false);
@@ -519,7 +519,7 @@ test('computer activate --force sends explicit takeover flag', async () => {
       'computer',
       'activate',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       '--force',
@@ -549,7 +549,7 @@ test('computer run prints workspace mismatch detail instead of saying off', asyn
       'run',
       'echo hello',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-mismatch',
     ], {
@@ -565,7 +565,7 @@ test('computer run prints workspace mismatch detail instead of saying off', asyn
 
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stderr, /AI computer is attached to workspace ws-old/);
-    assert.match(res.stderr, /atris computer activate --business atris-labs --workspace ws-mismatch/);
+    assert.match(res.stderr, /atris computer activate --business acme --workspace ws-mismatch/);
     assert.doesNotMatch(res.stderr, /Computer is off/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -586,7 +586,7 @@ test('computer status shows default target and attached workspace truth', async 
       'computer',
       'status',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], {
@@ -628,7 +628,7 @@ test('computer status resolves workspace name before probing health', async () =
       'computer',
       'status',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'My Business Computer',
     ], {
@@ -675,7 +675,7 @@ test('computer action commands resolve workspace name before backend calls', asy
       'run',
       'echo ACTION_ALIAS_OK',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'Main',
     ], { cwd, env });
@@ -686,7 +686,7 @@ test('computer action commands resolve workspace name before backend calls', asy
       'exec',
       '--no-wait',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'Main',
       'Reply briefly',
@@ -699,7 +699,7 @@ test('computer action commands resolve workspace name before backend calls', asy
       'cat',
       'README.md',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'Main',
     ], { cwd, env });
@@ -737,7 +737,7 @@ test('computer exec waits and streams the business chat result by default', asyn
       'computer',
       'exec',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       'What is 2+2?',
@@ -778,7 +778,7 @@ test('computer exec replays buffered result when completed poll delta is empty',
       'computer',
       'exec',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       'EMPTY_DELTA_REFETCH',
@@ -818,7 +818,7 @@ test('computer exec --no-wait keeps async stream URL mode', async () => {
       'exec',
       '--no-wait',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       'What is 2+2?',
@@ -854,7 +854,7 @@ test('computer chat sends piped prompts non-interactively', async () => {
       'computer',
       'chat',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], {
@@ -900,7 +900,7 @@ test('computer chat --message sends one quiet non-interactive prompt', async () 
       'computer',
       'chat',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       '--worker',
@@ -988,7 +988,7 @@ test('computer delete refuses noninteractive delete without confirmation', async
       'computer',
       'delete',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], {
@@ -1034,7 +1034,7 @@ test('computer up and sleep are simple lifecycle commands', async () => {
       'computer',
       'up',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], { cwd, env });
@@ -1042,7 +1042,7 @@ test('computer up and sleep are simple lifecycle commands', async () => {
       'computer',
       'sleep',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
     ], { cwd, env });
@@ -1080,7 +1080,7 @@ test('computer delete sleeps before deleting confirmed workspace', async () => {
       'computer',
       'delete',
       '--business',
-      'atris-labs',
+      'acme',
       '--workspace',
       'ws-new',
       '--confirm',

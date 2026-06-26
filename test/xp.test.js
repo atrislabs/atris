@@ -326,8 +326,8 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
     writeJson(path.join(workspace, '.atris', 'business.json'), {
       business_id: 'biz-atris',
       workspace_id: 'ws-atris',
-      name: 'Atris Labs',
-      slug: 'atris-labs',
+      name: 'Acme Co',
+      slug: 'acme',
       workspace_template: 'research',
       owner_email: 'private@example.com',
     });
@@ -351,10 +351,10 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
     assert.equal(payload.packet.org_id, 'biz-atris');
     assert.equal(payload.packet.business_id, 'biz-atris');
     assert.equal(payload.packet.workspace_id, 'ws-atris');
-    assert.equal(payload.packet.business_slug, 'atris-labs');
+    assert.equal(payload.packet.business_slug, 'acme');
     assert.equal(payload.packet.workspace_template, 'research');
     assert.equal(payload.packet.computer_id, 'ws-atris');
-    assert.equal(payload.packet.computer, 'atris-labs');
+    assert.equal(payload.packet.computer, 'acme');
     assert.equal(payload.packet.visibility, 'internal');
     assert.equal(payload.packet.public_agentxp, false);
     assert.equal(payload.packet.local_evidence.scope, 'org');
@@ -371,8 +371,8 @@ test('xp sync dry-run carries local business binding for org attribution', () =>
     assert.equal(payload.packet.gm_projection.public_agentxp, false);
     assert.equal(workspaceSummary.business_id, 'biz-atris');
     assert.equal(workspaceSummary.workspace_id, 'ws-atris');
-    assert.equal(workspaceSummary.business_slug, 'atris-labs');
-    assert.equal(workspaceSummary.computer_slug, 'atris-labs');
+    assert.equal(workspaceSummary.business_slug, 'acme');
+    assert.equal(workspaceSummary.computer_slug, 'acme');
     assert.equal(packetText.includes('private@example.com'), false);
     assert.equal(packetText.includes(workspace), false);
   } finally {
@@ -386,8 +386,8 @@ test('xp sync dry-run allows public AgentXP opt-in for a business workspace', ()
     writeJson(path.join(workspace, '.atris', 'business.json'), {
       business_id: 'biz-atris',
       workspace_id: 'ws-atris',
-      name: 'Atris Labs',
-      slug: 'atris-labs',
+      name: 'Acme Co',
+      slug: 'acme',
       agentxp_visibility: 'public',
       owner_email: 'private@example.com',
     });

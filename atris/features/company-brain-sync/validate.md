@@ -51,47 +51,47 @@ node -c commands/pull.js
 node -c commands/push.js
 ```
 
-Fresh DoorDash-shaped workspace dry-run:
+Fresh Example Co-shaped workspace dry-run:
 
 ```bash
-atris sync doordash --dry-run
+atris sync example-co --dry-run
 ```
 
 Observed result:
 
 ```text
-Syncing doordash knowledge wiki...
+Syncing example-co knowledge wiki...
 scope: atris/
 ...
-Pushing to DoorDash...
+Pushing to Example Co...
 Checking cloud freshness... fresh
 Already up to date.
 ```
 
-Fresh DoorDash-shaped workspace real command with no local edits:
+Fresh Example Co-shaped workspace real command with no local edits:
 
 ```bash
-atris sync doordash
+atris sync example-co
 ```
 
 Observed result:
 
 ```text
-Pulling DoorDash...
+Pulling Example Co...
 Already up to date.
 122 unchanged.
-Pushing to DoorDash...
+Pushing to Example Co...
 Checking cloud freshness... fresh
 Already up to date.
 ```
 
 No cloud writes were required in the validation case because the clean workspace had no local changes to publish.
 
-Local edit dry-run in a DoorDash-shaped workspace:
+Local edit dry-run in an Example Co-shaped workspace:
 
 ```bash
 printf '# Sync smoke\n\nLocal-only knowledge update.\n' > atris/wiki/smoke/local-edit.md
-atris sync doordash --dry-run
+atris sync example-co --dry-run
 ```
 
 Observed result:
@@ -101,11 +101,11 @@ Observed result:
 1 would be pushed, 122 unchanged. (--dry-run, nothing sent)
 ```
 
-Local delete dry-run in a DoorDash-shaped workspace:
+Local delete dry-run in an Example Co-shaped workspace:
 
 ```bash
 rm -f atris/wiki/index.md
-atris sync doordash --dry-run
+atris sync example-co --dry-run
 ```
 
 Observed result:
@@ -118,7 +118,7 @@ Deletes require an explicit real push with --delete.
 Real delete attempt without `--delete`:
 
 ```bash
-atris sync doordash
+atris sync example-co
 ```
 
 Observed result:
@@ -148,10 +148,10 @@ Slug auto-detection:
 atris sync --dry-run
 ```
 
-Observed result from a DoorDash-shaped workspace:
+Observed result from an Example Co-shaped workspace:
 
 ```text
-Syncing doordash knowledge wiki...
+Syncing example-co knowledge wiki...
 scope: atris/
 ```
 
@@ -165,7 +165,7 @@ Observed shape:
 
 ```text
 Company brain status
-  business: doordash
+  business: example-co
   brain: atris/ (...)
   conflicts: none
   watcher: ...
@@ -218,12 +218,12 @@ atris pull example-co --keep-local --only atris/wiki --timeout 120
 atris push example-co --only atris/wiki --dry-run
 ```
 
-- DoorDash post-publish smoke:
+- Example Co post-publish smoke:
 
 ```bash
-cd ~/arena/atris-business/doordash
+cd ~/arena/atris-business/example-co
 atris wiki verify
-atris push doordash --dry-run
+atris push example-co --dry-run
 ```
 
 - Packaged CLI smoke already passed locally for `3.15.12`: tarball install exposes `atris pull --no-manifest` and `atris wiki verify`.

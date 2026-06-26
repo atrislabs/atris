@@ -616,7 +616,6 @@ function readGoalSources(root = process.cwd()) {
   const candidates = [
     path.join(root, 'atris', 'goals.md'),
     path.join(root, 'goals.md'),
-    path.join(root, 'atris', 'wiki', 'concepts', 'atris-labs-goals.md'),
   ];
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue;

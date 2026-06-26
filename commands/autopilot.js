@@ -42,7 +42,7 @@ function looksOwnerGatedTitle(title) {
     /\bhuman[- ](?:approval|input|gate|gated)\b/.test(text) ||
     /\bmanual send\b/.test(text) ||
     /\broute confirmation\b/.test(text) ||
-    /\bconfirm pallet destination\b/.test(text) ||
+    /\bconfirm customer destination\b/.test(text) ||
     /\bconfirm .+ destination before .+ approval\b/.test(text) ||
     /\bapprove and manually send\b/.test(text)
   );

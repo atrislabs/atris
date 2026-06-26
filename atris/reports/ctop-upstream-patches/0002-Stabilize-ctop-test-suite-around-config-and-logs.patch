@@ -1,5 +1,5 @@
 From b605ad23966ba1050dad2606efb7475ff565ee13 Mon Sep 17 00:00:00 2001
-From: Keshav <keshavrao250@gmail.com>
+From: Keshav <dev@example.com>
 Date: Tue, 19 May 2026 04:54:17 -0700
 Subject: [PATCH 2/2] Stabilize ctop test suite around config and logs
 

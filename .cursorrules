@@ -52,7 +52,7 @@ CHECK → atris review (verify + cleanup)
 - [ ] Check MAP.md before touching code
 - [ ] Claim tasks with `atris task`; use TODO.md only as rendered fallback
 - [ ] Finish task records with proof when done
-- [ ] Use `atris-labs` for the Atris Labs business computer slug in docs and links
+- [ ] Use the real business slug from local Atris state; do not hardcode private slugs in generated docs
 
 ## Anti-patterns
 

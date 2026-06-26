@@ -20,8 +20,8 @@ Every tick prints this BEFORE scanning for work, so you can see the loop's state
   ┌──────────────────────────────────────────────────────────────┐
   │ tick · 14:23                                                 │
   │ identity:  building atris-business cloud for design partners │
-  │ horizon:   wiki-from-atris-labs                              │
-  │            atris-cli wiki has 3 new pages from atris-labs    │
+  │ horizon:   customer-onboarding                               │
+  │            three setup checks are ready to ship               │
   │ progress:  ████████░░░░  6/9 endgame steps                   │
   └──────────────────────────────────────────────────────────────┘
 ```
