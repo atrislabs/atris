@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.17.0",
+  "version": "3.26.1",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris.js",
@@ -47,13 +47,6 @@
     "atris/features/_templates/",
     "atris/features/company-brain-sync/",
     "templates/",
-    "atris/wiki/index.md",
-    "atris/wiki/concepts/agent-activation-contract.md",
-    "atris/wiki/concepts/workspace-initialization-contract.md",
-    "atris/wiki/sources/atris-labs-2026-05-10.txt",
-    "atris/wiki/sources/atris-labs-goals-2026-05-10.txt",
-    "atris/wiki/sources/atrisos-generative-ui-product-surface-2026-05-10.txt",
-    "atris/wiki/sources/jack-dorsey-2026-05-10.txt",
     "atris/policies/",
     "atris/skills/"
   ],
