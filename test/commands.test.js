@@ -14446,7 +14446,7 @@ test('upgrade --help prints usage without npm update checks', () => {
     const res = runCli(['upgrade', '--help'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Usage: atris upgrade/);
-    assert.doesNotMatch(res.stdout, /Checking for updates|Installing update|npm update -g atris/);
+    assert.doesNotMatch(res.stdout, /Checking for updates|Installing update|npm install -g atris@latest/);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
     cleanupTempDir(dir);

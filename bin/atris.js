@@ -92,14 +92,10 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
     .then((updateInfo) => {
       // Show notification if update available (after command completes)
       if (updateInfo) {
-        // Notify only — never auto-update mid-session (opt-in via ATRIS_AUTO_UPDATE=1)
-        if (process.env.ATRIS_AUTO_UPDATE === '1') {
-          setTimeout(() => {
-            if (!autoUpdate(updateInfo)) {
-              showUpdateNotification(updateInfo);
-            }
-          }, 100);
-        } else {
+        const autoUpdateStarted = autoUpdate(updateInfo, {
+          packageRoot: path.join(__dirname, '..'),
+        });
+        if (!autoUpdateStarted) {
           showUpdateNotification(updateInfo);
         }
       }
@@ -644,6 +640,7 @@ function showUpgradeHelp() {
   console.log('');
   console.log('Description:');
   console.log('  Check npm for the latest Atris CLI and install it globally if newer.');
+  console.log('  Normal packaged installs also auto-update in the background.');
   console.log('');
   console.log('Options:');
   console.log('  --help, -h       Show this help.');
@@ -2167,8 +2164,8 @@ async function upgradeAtris() {
   console.log('Installing update...');
   console.log('');
 
-  // Run npm update -g atris
-  const result = spawnSync('npm', ['update', '-g', 'atris'], {
+  // Run npm install -g atris@latest
+  const result = spawnSync('npm', ['install', '-g', 'atris@latest'], {
     stdio: 'inherit',
     shell: true
   });
@@ -2182,10 +2179,10 @@ async function upgradeAtris() {
   } else {
     console.log('');
     console.log('✗ Upgrade failed. Try running manually:');
-    console.log('  npm update -g atris');
+    console.log('  npm install -g atris@latest');
     console.log('');
     console.log('If you see permission errors, try:');
-    console.log('  sudo npm update -g atris');
+    console.log('  sudo npm install -g atris@latest');
     console.log('');
   }
 }
