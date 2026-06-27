@@ -46,6 +46,9 @@ jobs:
             exit 1
           fi
 
+      - name: Block command regressions vs published latest
+        run: node scripts/check-command-regression.js
+
       - name: Publish with npm trusted publishing
         run: |
           npm config delete //registry.npmjs.org/:_authToken || true
