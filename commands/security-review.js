@@ -31,6 +31,8 @@ const {
   applyBaseline,
   shouldFail,
   scoreFindings,
+  recordRun,
+  buildLanding,
 } = require('../lib/security-scan');
 
 const ICON = { critical: '✗', high: '✗', medium: '!', low: '·', privacy: '✗', secret: '✗', pii: '!' };
@@ -46,6 +48,8 @@ function parseArgs(argv) {
     noBaseline: false,
     deep: false,
     md: false,
+    land: false,
+    noRecord: false,
     baseline: DEFAULT_BASELINE,
     paths: [],
   };
@@ -60,6 +64,8 @@ function parseArgs(argv) {
     else if (arg === '--no-baseline') opts.noBaseline = true;
     else if (arg === '--deep') opts.deep = true;
     else if (arg === '--md' || arg === '--markdown') opts.md = true;
+    else if (arg === '--land' || arg === '--landing') opts.land = true;
+    else if (arg === '--no-record') opts.noRecord = true;
     else if (arg === '--baseline') {
       if (!argv[i + 1] || argv[i + 1].startsWith('-')) throw new Error('--baseline requires a path');
       opts.baseline = argv[++i];
@@ -144,6 +150,13 @@ function securityReviewCommand(argv = []) {
   const failing = failingCount(findings, threshold);
   const ok = !shouldFail(findings, threshold);
 
+  // Flight recorder + landing: the loop appends one row per run; the landing
+  // compares this run to the last one. buildLanding must read the ledger BEFORE
+  // recordRun appends this run.
+  const scanResult = { findings, counts, scanned: raw.scanned, suppressed: result.suppressed };
+  const landing = buildLanding(root, scanResult, { failOn: threshold });
+  if (!opts.noRecord) recordRun(root, scanResult, { failOn: threshold });
+
   if (opts.json) {
     console.log(JSON.stringify({
       ok,
@@ -155,6 +168,7 @@ function securityReviewCommand(argv = []) {
       score: scoreFindings(findings),
       score_all: scoreFindings(allFindings),
       fail_threshold: threshold,
+      landing,
       findings,
       deep_review: opts.deep ? deepReviewPayload({ findings, counts, scanned: raw.scanned, suppressed: result.suppressed }) : undefined,
       generated_for: 'soc2-evidence',
@@ -175,6 +189,11 @@ function securityReviewCommand(argv = []) {
     console.log(renderDeepReview({
       findings, counts, scanned: raw.scanned, threshold, suppressed: result.suppressed, baseline: result.baseline,
     }));
+    return ok ? 0 : 1;
+  }
+
+  if (opts.land) {
+    console.log(renderLanding(landing, threshold));
     return ok ? 0 : 1;
   }
 
@@ -203,6 +222,49 @@ function securityReviewCommand(argv = []) {
     console.log(`  no findings at the ${threshold.toUpperCase()} threshold · exit 0\n`);
   }
   return ok ? 0 : 1;
+}
+
+// The landing: short, true, decision-ready. What you read after the overnight
+// loop — the opposite of a finding dump.
+function renderLanding(landing, threshold) {
+  const date = new Date().toISOString().slice(0, 10);
+  const L = ['', `  ✈ security landing — ${date}`, ''];
+  if (landing.cleared) {
+    L.push(`  CLEARED TO SHIP    no unresolved findings at the ${threshold.toUpperCase()} line`);
+  } else {
+    const n = landing.open.length;
+    L.push(`  HOLD               ${n} finding${n === 1 ? '' : 's'} need a decision before ship`);
+  }
+  L.push('');
+  if (landing.hadPrevRun) {
+    L.push('  since last run:');
+    L.push(`    fixed     ${landing.fixed}`);
+    L.push(`    new       ${landing.appeared}`);
+    L.push(`    accepted  ${landing.accepted}  (known-safe, in baseline)`);
+  } else {
+    L.push(`  first run:  ${landing.open.length} open · ${landing.accepted} accepted (baseline)`);
+  }
+  L.push('');
+  if (landing.open.length) {
+    L.push('  needs you:');
+    for (const f of landing.open.slice(0, 10)) {
+      L.push(`    ${f.sev.toUpperCase().padEnd(8)} ${f.file}${f.line ? ':' + f.line : ''} — ${f.why}`);
+    }
+    if (landing.open.length > 10) L.push(`    … and ${landing.open.length - 10} more`);
+  } else {
+    L.push('  needs you:  nothing');
+  }
+  L.push('');
+  if (landing.trend.length > 1) {
+    const a = landing.trend[0], b = landing.trend[landing.trend.length - 1];
+    const da = a.critical + a.high, db = b.critical + b.high;
+    const dir = db < da ? 'improving' : db > da ? 'worsening' : 'steady';
+    L.push(`  posture: critical ${a.critical}→${b.critical}, high ${a.high}→${b.high} over ${landing.trend.length} runs (${dir})`);
+  } else {
+    L.push(`  posture: ${landing.runs} run${landing.runs === 1 ? '' : 's'} recorded · scanned ${landing.scanned} files`);
+  }
+  L.push('');
+  return L.join('\n');
 }
 
 function printRules() {
@@ -343,6 +405,8 @@ function printHelp() {
     atris security-review --json     machine output / SOC 2 evidence artifact
     atris security-review --md       markdown evidence report
     atris security-review --deep     prompt a stronger model with framework + evidence
+    atris security-review --land     the landing: cleared-to-ship or hold, what changed,
+                                      what needs you, the trend (read this after the loop)
     atris security-review --update-baseline
                                       accept current findings in .security-review.baseline.json
     atris security-review --no-baseline
