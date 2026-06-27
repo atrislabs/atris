@@ -177,3 +177,48 @@ test('code-execution rules only apply to code files, not docs', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('security landing: records runs and reports a clean, decision-ready summary', () => {
+  const lib = require('../lib/security-scan');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sec-land-'));
+  try {
+    // run 1: a real finding is open -> HOLD, nothing fixed yet
+    const open = { findings: [{ rule: 'aws-access-key-id', sev: 'critical', cat: 'secret', file: 'a.js', line: 1, why: 'x', fingerprint: 'fp1' }], counts: { critical: 1, high: 0, medium: 0, low: 0 }, scanned: 1, suppressed: 0 };
+    let landing = lib.buildLanding(dir, open, { failOn: 'high' });
+    assert.equal(landing.cleared, false);
+    assert.equal(landing.open.length, 1);
+    lib.recordRun(dir, open, { failOn: 'high' });
+
+    // run 2: the finding is gone -> CLEARED, fixed 1
+    const clean = { findings: [], counts: { critical: 0, high: 0, medium: 0, low: 0 }, scanned: 1, suppressed: 0 };
+    landing = lib.buildLanding(dir, clean, { failOn: 'high' });
+    assert.equal(landing.cleared, true);
+    assert.equal(landing.fixed, 1);
+    assert.equal(landing.appeared, 0);
+    lib.recordRun(dir, clean, { failOn: 'high' });
+
+    // ledger has both runs
+    assert.equal(lib.loadLedger(dir).length, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI --land prints the landing report and gates', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sec-land-cli-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'leak.js'), 'const k = "' + 'AKIA' + 'ZX7QWP2KMR4VT9BH' + '";\n');
+    const hold = spawnSync(process.execPath, [cli, 'security-review', '--land'], { cwd: dir, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+    assert.equal(hold.status, 1, hold.stdout + hold.stderr);
+    assert.match(hold.stdout, /security landing/);
+    assert.match(hold.stdout, /HOLD/);
+    assert.match(hold.stdout, /needs you:/);
+
+    fs.writeFileSync(path.join(dir, 'leak.js'), 'module.exports = 1;\n');
+    const cleared = spawnSync(process.execPath, [cli, 'security-review', '--land'], { cwd: dir, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+    assert.equal(cleared.status, 0, cleared.stdout + cleared.stderr);
+    assert.match(cleared.stdout, /CLEARED TO SHIP/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
