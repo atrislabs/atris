@@ -6,11 +6,26 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
+const { getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, hasSeedableRoadmapItem, seedRoadmapWorkIfIdle } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
+
+function makeRunWorkspace() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-run-work-'));
+  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# Tasks\n\n## Backlog\n\n## In Progress\n\n', 'utf8');
+  return root;
+}
+
+function writeOpenLoopItems(root, items) {
+  fs.writeFileSync(
+    path.join(root, 'ROADMAP.md'),
+    `# Roadmap\n\n## Open loop items\n\n${items.map((item) => `- [ ] ${item}`).join('\n')}\n\n## Other\n\n- [ ] ignored\n`,
+    'utf8'
+  );
+}
 
 test('run.js captures stdout in non-verbose mode for run log persistence', () => {
   // In non-verbose mode, stdout must be piped for capture
@@ -39,6 +54,43 @@ test('run.js prints run log notice at startup in non-verbose mode', () => {
 
 test('run.js prints run log notice at startup in verbose mode', () => {
   assert.match(RUN_SRC, /Run logs: atris\/logs\/runs/);
+});
+
+test('run work gate treats a seedable ROADMAP item as work', () => {
+  const root = makeRunWorkspace();
+  try {
+    writeOpenLoopItems(root, ['roadmap seed', 'next seed']);
+    const atrisDir = path.join(root, 'atris');
+    assert.equal(hasInboxOrBacklogWork(atrisDir), false);
+    assert.equal(roadmapOpenCount(atrisDir), 2);
+    assert.equal(hasSeedableRoadmapItem(atrisDir), true);
+    assert.equal(hasWork(atrisDir), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('idle run seeding moves the top ROADMAP item into today inbox and claims it', () => {
+  const root = makeRunWorkspace();
+  try {
+    writeOpenLoopItems(root, ['roadmap seed', 'next seed']);
+    const atrisDir = path.join(root, 'atris');
+    const pick = seedRoadmapWorkIfIdle(atrisDir, false);
+    assert.equal(pick.title, 'roadmap seed');
+    const roadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
+    assert.match(roadmap, /- \[~\] roadmap seed/);
+    assert.match(roadmap, /- \[ \] next seed/);
+
+    const logsDir = path.join(root, 'atris', 'logs');
+    const year = fs.readdirSync(logsDir)[0];
+    const day = fs.readdirSync(path.join(logsDir, year))[0];
+    const journal = fs.readFileSync(path.join(logsDir, year, day), 'utf8');
+    assert.match(journal, /## Inbox/);
+    assert.match(journal, /- \*\*I1:\*\* roadmap seed/);
+    assert.equal(hasInboxOrBacklogWork(atrisDir), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // --- Functional: exercise the real production helpers ---

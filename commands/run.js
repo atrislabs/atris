@@ -254,30 +254,63 @@ function executePhase(phase, context, options = {}) {
   }
 }
 
+function workspaceRootFromAtrisDir(atrisDir) {
+  return path.dirname(atrisDir);
+}
+
 /**
- * Check if there's work to do (inbox items or backlog tasks)
+ * Check if there's work to do in today's inbox or TODO backlog.
  */
-function hasWork(atrisDir) {
+function hasInboxOrBacklogWork(atrisDir) {
   // Check backlog tasks
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
   if (todo.backlog.length > 0 || todo.inProgress.length > 0) return true;
 
-  // Check inbox
-  const { logFile } = getLogPath();
-  if (fs.existsSync(logFile)) {
-    const content = fs.readFileSync(logFile, 'utf8');
-    const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|$)/);
-    if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => {
-        const t = l.trim();
-        return t.startsWith('- ') && t.length > 2;
-      });
-      if (items.length > 0) return true;
-    }
-  }
+  // Check today's inbox through the shared parser used by the ROADMAP seeder.
+  try {
+    if (require('../lib/next-moves').todayInboxItems(workspaceRootFromAtrisDir(atrisDir)).length > 0) return true;
+  } catch { /* best-effort */ }
 
   return false;
+}
+
+function roadmapOpenCount(atrisDir) {
+  try {
+    return require('../lib/next-moves').readRoadmapOpenItems(workspaceRootFromAtrisDir(atrisDir)).length;
+  } catch {
+    return 0;
+  }
+}
+
+function hasSeedableRoadmapItem(atrisDir) {
+  try {
+    return require('../lib/next-moves').pickRoadmapSeed(workspaceRootFromAtrisDir(atrisDir)) != null;
+  } catch {
+    return false;
+  }
+}
+
+function hasWork(atrisDir) {
+  return hasInboxOrBacklogWork(atrisDir) || hasSeedableRoadmapItem(atrisDir);
+}
+
+function seedRoadmapWorkIfIdle(atrisDir, verbose = false) {
+  if (hasInboxOrBacklogWork(atrisDir)) return null;
+  try {
+    const root = workspaceRootFromAtrisDir(atrisDir);
+    const { pickRoadmapSeed, seedInboxFromMove, claimRoadmapItem } = require('../lib/next-moves');
+    const pick = pickRoadmapSeed(root);
+    if (!pick) return null;
+    seedInboxFromMove(root, { title: pick.title, source: 'roadmap' });
+    claimRoadmapItem(root, pick.title);
+    console.log(verbose
+      ? `Seeded from ROADMAP: ${pick.title}`
+      : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);
+    return pick;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -420,6 +453,8 @@ async function runAtris(options = {}) {
     } else {
       console.log(`\ncycle ${cycle} of ${cycles}.`);
     }
+
+    seedRoadmapWorkIfIdle(atrisDir, verbose);
 
     // Check if there's work
     if (!hasWork(atrisDir)) {
@@ -1022,4 +1057,4 @@ function diffRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
+module.exports = { runAtris, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, hasSeedableRoadmapItem, seedRoadmapWorkIfIdle, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
