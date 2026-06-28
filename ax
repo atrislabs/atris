@@ -478,7 +478,7 @@ function mentionsConnector(message) {
 }
 
 function connectorWriteIntent(message) {
-  return mentionsConnector(message) && /\b(send|post|dm|message|reply|draft|compose|schedule|book|create|update|delete|archive|move|share|comment|invite)\b/i.test(message || '');
+  return mentionsConnector(message) && /\b(add|send|post|dm|message|reply|draft|compose|schedule|book|create|update|delete|archive|move|share|comment|invite)\b/i.test(message || '');
 }
 
 function workspaceIntent(message) {
@@ -939,25 +939,34 @@ function writeAuxLine(state, output, line) {
   state.needsBullet = true;
 }
 
-function compactHistory(history, limit = 8) {
-  return history
+function structuredHistory(history, limit = 8) {
+  return (Array.isArray(history) ? history : [])
     .slice(-limit)
-    .map(turn => `${turn.role}: ${String(turn.content || '').slice(0, 1200)}`)
-    .join('\n');
+    .map(turn => {
+      const message = {
+        role: turn && turn.role === 'assistant' ? 'assistant' : 'user',
+        content: String((turn && turn.content) || '').slice(0, 1200)
+      };
+      if (message.role === 'assistant' && turn && turn.task_preview) {
+        message.task_preview = turn.task_preview;
+      }
+      return message;
+    })
+    .filter(turn => turn.content.trim());
+}
+
+function latestPendingTaskPreview(history = []) {
+  for (const turn of [...(Array.isArray(history) ? history : [])].reverse()) {
+    if (!turn || turn.role !== 'assistant' || !turn.task_preview) continue;
+    const status = String(turn.task_preview.status || '');
+    if (['needs_input', 'approval_required'].includes(status)) return turn.task_preview;
+    return null;
+  }
+  return null;
 }
 
 function buildMessage(message, history = []) {
-  const trimmed = String(message || '').trim();
-  if (!history.length) return trimmed;
-  return [
-    'Continue this terminal coding-agent conversation in the same workspace.',
-    'Use local tools when the user asks about files, code, tests, or edits.',
-    '',
-    'Recent conversation:',
-    compactHistory(history),
-    '',
-    `Current user message: ${trimmed}`,
-  ].join('\n');
+  return String(message || '').trim();
 }
 
 function buildPayload(message, options = {}) {
@@ -965,12 +974,19 @@ function buildPayload(message, options = {}) {
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
   const verifyCommand = String(options.verify || '').trim();
+  const previousMessages = structuredHistory(options.history || []);
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
     verify_command: verifyCommand || 'true'
   };
+  if (previousMessages.length) {
+    payload.previous_messages = previousMessages;
+  }
+  if (options.conversationId) {
+    payload.conversation_id = String(options.conversationId);
+  }
   if (options.business) {
     // Business cloud workspace: the model loop stays on the backend and every
     // file/bash tool call relays here, executing on the business EC2 via the
@@ -995,11 +1011,18 @@ function buildPayload(message, options = {}) {
 }
 
 function buildCodeFastPayload(message, options = {}) {
+  const previousMessages = structuredHistory(options.history || []);
   const payload = {
     message: buildMessage(message, options.history || []),
     model: CODE_FAST.model,
     timeout_seconds: Number(options.timeoutSeconds || 180)
   };
+  if (previousMessages.length) {
+    payload.previous_messages = previousMessages;
+  }
+  if (options.conversationId) {
+    payload.conversation_id = String(options.conversationId);
+  }
   if (isCodeFastLocal(options)) {
     payload.workspace_path = options.cwd || process.cwd();
   }
@@ -1356,6 +1379,7 @@ async function chat(options = {}) {
   const logger = createRunLogger({ cwd, mode, kind: 'play', output: baseOutput });
   const output = logger ? logger.output : baseOutput;
   const history = [];
+  const conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
@@ -1385,11 +1409,18 @@ async function chat(options = {}) {
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
-    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route: options.route, business: options.business, verify: options.verify });
+    const pendingTaskPreview = latestPendingTaskPreview(history);
+    const route = pendingTaskPreview ? 'cloud' : options.route;
+    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
+    const receipt = receiptFromState(result);
     history.push({ role: 'user', content: trimmed });
-    history.push({ role: 'assistant', content: result.output || '' });
+    history.push({
+      role: 'assistant',
+      content: result.output || '',
+      ...(receipt && receipt.task_preview ? { task_preview: receipt.task_preview } : {}),
+    });
     return false;
   };
 
