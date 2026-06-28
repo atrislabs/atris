@@ -1082,6 +1082,7 @@ test('mission help documents status filters', () => {
     const help = runCli(['mission', '--help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(help.stdout, /mission attach-task <id> \[--json\]/);
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
