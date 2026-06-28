@@ -18,7 +18,9 @@ const {
   readTickHistory,
   summarizeTickHistory,
   formatTickHistory,
+  normalizeImproveError,
   improveApiPath,
+  formatImproveReport,
   SCORECARD_SCHEMA,
 } = require('../commands/improve');
 
@@ -225,6 +227,33 @@ test('runImprove: insufficient credits (402) is reported, not silently retried l
   assert.equal(res.reason, 'api_error_402');
   assert.equal(res.error, 'insufficient credits');
   assert.equal(calls.local.length, 0); // did NOT run local work on a real, answerable failure
+});
+
+test('formatImproveReport: structured API errors print a readable message and next action', () => {
+  const report = formatImproveReport({
+    ok: false,
+    source: 'api',
+    reason: 'api_error_403',
+    error: {
+      error: 'workspace_path must be under an allowed directory',
+      recommended_next_action: 'Use an allowed Atris workspace, then rerun /api/improve.',
+    },
+  });
+  assert.match(report, /error:   workspace_path must be under an allowed directory/);
+  assert.match(report, /next:    Use an allowed Atris workspace, then rerun \/api\/improve\./);
+  assert.doesNotMatch(report, /\[object Object\]/);
+});
+
+test('normalizeImproveError: reads nested backend detail objects', () => {
+  assert.deepEqual(normalizeImproveError({
+    detail: {
+      error: 'workspace missing',
+      recommended_next_action: 'Pick another workspace.',
+    },
+  }), {
+    message: 'workspace missing',
+    next: 'Pick another workspace.',
+  });
 });
 
 test('runImprove: --no-fallback + no auth reports instead of running local', async () => {

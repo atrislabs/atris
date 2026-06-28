@@ -236,6 +236,30 @@ function formatTickHistory(summary = {}) {
   return lines.join('\n');
 }
 
+function firstStringField(obj, fields = []) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (const field of fields) {
+    const value = obj[field];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function normalizeImproveError(error) {
+  if (!error) return null;
+  if (typeof error === 'string') return { message: error, next: null };
+  if (error instanceof Error) return { message: error.message, next: null };
+  if (typeof error !== 'object') return { message: String(error), next: null };
+
+  const detail = error.detail && typeof error.detail === 'object' ? error.detail : null;
+  const message = firstStringField(error, ['error', 'message', 'detail'])
+    || firstStringField(detail, ['error', 'message'])
+    || JSON.stringify(error);
+  const next = firstStringField(error, ['recommended_next_action', 'next_action'])
+    || firstStringField(detail, ['recommended_next_action', 'next_action']);
+  return { message, next: next || null };
+}
+
 // Local calendar day — journal receipts are local workspace files, never UTC
 // (see lessons.md: now-front-door-uses-local-date).
 function localDateKey(d = new Date()) {
@@ -425,7 +449,11 @@ function formatImproveReport(result = {}) {
   }
   lines.push('improve tick did not run.');
   lines.push(`  reason:  ${result.reason || 'unknown'}`);
-  if (result.error) lines.push(`  error:   ${result.error}`);
+  if (result.error) {
+    const error = normalizeImproveError(result.error);
+    if (error && error.message) lines.push(`  error:   ${error.message}`);
+    if (error && error.next) lines.push(`  next:    ${error.next}`);
+  }
   return lines.join('\n');
 }
 
@@ -494,6 +522,7 @@ module.exports = {
   readTickHistory,
   summarizeTickHistory,
   formatTickHistory,
+  normalizeImproveError,
   improveApiPath,
   formatImproveReport,
   runLocalFallback,
