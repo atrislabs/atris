@@ -6,6 +6,10 @@ const fs = require('fs');
 const path = require('path');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
+const {
+  describeAutopilotRunnerIdentity,
+  renderHumanTickIntro,
+} = require('../commands/autopilot');
 
 const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
@@ -97,6 +101,33 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /--runner-model/);
   assert.match(BIN_SRC, /--runner-profile/);
   assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
+});
+
+test('autopilot intro can show the resolved runner identity', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_BIN: 'node',
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --eval {prompt}',
+  }, () => {
+    assert.equal(
+      describeAutopilotRunnerIdentity(),
+      'runner: node · model: glm-5.2 · profile: atris-fast · template: custom'
+    );
+    const intro = renderHumanTickIntro({
+      time: '3:47 pm',
+      slug: 'autopilot-runner-agnostic',
+      horizon: 'runner swaps should be visible before the loop acts',
+      remaining: 0,
+      total: 0,
+      done: 0,
+    }, {
+      auto: true,
+      durationLabel: '1 task',
+      runnerIdentity: describeAutopilotRunnerIdentity(),
+    });
+    assert.match(intro, /runner: node · model: glm-5\.2 · profile: atris-fast · template: custom/);
+  });
 });
 
 test('mission claude ticks spawn the configured runner binary', () => {

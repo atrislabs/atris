@@ -16,6 +16,10 @@ const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
   resolveClaudeRunnerBin,
+  resolveRunnerBin,
+  resolveRunnerCommandTemplate,
+  resolveRunnerModel,
+  resolveRunnerProfileName,
 } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 const {
@@ -2077,6 +2081,17 @@ function printPlainBlock(text) {
   console.log('');
 }
 
+function describeAutopilotRunnerIdentity() {
+  const parts = [
+    `runner: ${resolveRunnerBin()}`,
+    `model: ${resolveRunnerModel()}`,
+  ];
+  const profile = resolveRunnerProfileName();
+  if (profile) parts.push(`profile: ${profile}`);
+  if (resolveRunnerCommandTemplate()) parts.push('template: custom');
+  return parts.join(' · ');
+}
+
 function getTickStatus(cwd) {
   const atrisDir = path.join(cwd, 'atris');
 
@@ -2123,6 +2138,7 @@ function renderHumanTickIntro(status, options = {}) {
   return [
     status.time,
     `I am starting an autopilot tick in ${modeLabel} mode. Limit: ${options.durationLabel || 'until clean'}.`,
+    ...(options.runnerIdentity ? [options.runnerIdentity] : []),
     ...horizonLines,
     progressSentence,
     'Next I will scan the workspace and choose one task.'
@@ -2146,8 +2162,9 @@ function renderHumanSuggestion(suggestion, step, maxIterations) {
  */
 function printTickStatus(cwd, options = {}) {
   const status = getTickStatus(cwd);
+  const runnerIdentity = describeAutopilotRunnerIdentity();
   if (!options.verbose) {
-    printPlainBlock(renderHumanTickIntro(status, options));
+    printPlainBlock(renderHumanTickIntro(status, { ...options, runnerIdentity }));
     return;
   }
 
@@ -2176,6 +2193,7 @@ function printTickStatus(cwd, options = {}) {
   if (status.horizon) {
     console.log(line(`           ${trim(status.horizon, C - 11)}`));
   }
+  console.log(line(`runner:    ${trim(runnerIdentity, C - 11)}`));
   console.log(line(`progress:  ${bar}  ${ratio} endgame steps`));
   console.log('  └' + '─'.repeat(W - 2) + '┘');
 }
@@ -3661,6 +3679,7 @@ module.exports = {
   readEndgameState,
   renderHumanSuggestion,
   renderHumanTickIntro,
+  describeAutopilotRunnerIdentity,
   proposeCandidateHorizons,
   recordTickCommit,
   regressionCheck,
