@@ -890,6 +890,52 @@ test('ax persists approvals privately and lists them without payload text', asyn
   }
 });
 
+test('ax stored approval preview includes exact approve command without payload text', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-one-shot-approval-'));
+  const storePath = path.join(dir, 'approvals.json');
+  const receipt = {
+    task_preview: {
+      task: 'calendar.create_event',
+      owner_member: 'harness-engineer',
+      status: 'approval_required',
+      missing: [],
+      slots: {
+        title: 'markoo',
+        start: '2026-06-28T14:00:00-07:00',
+      },
+    },
+    tool_events: [{
+      tool: 'google_calendar',
+      approval_request: {
+        connector: 'google_calendar',
+        action: 'create_event',
+        executor_action_type: 'google_calendar_create_event',
+        status: 'approval_required',
+        payload: {
+          summary: 'secret payload text',
+          start: { dateTime: '2026-06-28T14:00:00-07:00' },
+        },
+      },
+    }],
+  };
+
+  try {
+    const request = ax.approvalRequestFromReceipt(receipt);
+    const record = ax.persistPendingApproval(receipt, request, { storePath, cwd: dir, mode: 'fast' });
+    const listed = ax.formatStoredApprovals(ax.readApprovalStore({ storePath }), { color: false });
+
+    assert.equal(record.id, request.approval_request_id);
+    assert.match(listed, /owner\s+harness-engineer/);
+    assert.match(listed, /plan\s+create calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
+    assert.match(listed, /check\s+approval required/);
+    assert.match(listed, /wait\s+Approval needed before creation: calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
+    assert.match(listed, new RegExp(`approve\\s+ax --approve ${record.id}`));
+    assert.doesNotMatch(listed, /secret payload text/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('ax formats blocked approval execution without leaking payloads', () => {
   assert.equal(
     ax.formatApprovalExecutionResult({
