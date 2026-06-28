@@ -409,6 +409,62 @@ test('ax renders connector result when no text delta was emitted', () => {
   assert.equal(state.pendingText, 'No Slack user matched jared.');
 });
 
+test('ax renders approval preview rows from Atris2 receipts', () => {
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const state = {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    needsBullet: true,
+    markdownMode: 'normal',
+    markdownBuffer: '',
+    markdownCarry: '',
+  };
+
+  ax.handleEvent({
+    type: 'text_delta',
+    content: 'Accepted: markoo today at 2:00 PM.\nCalendar approval still needed before I create it.',
+  }, state, output);
+  ax.handleEvent({
+    type: 'receipt',
+    receipt: {
+      task_accept_receipt: {
+        task: 'calendar.create_event',
+        title: 'markoo',
+        start: '2026-06-28T14:00:00-07:00',
+      },
+      tool_events: [{
+        tool: 'google_calendar',
+        approval_request: {
+          connector: 'google_calendar',
+          action: 'create_event',
+          executor_action_type: 'google_calendar_create_event',
+          status: 'approval_required',
+          payload: { summary: 'markoo' },
+        },
+      }],
+    },
+  }, state, output);
+
+  const rendered = chunks.join('');
+  assert.match(rendered, /^Accepted: markoo today at 2:00 PM\./);
+  assert.match(rendered, /wait\s+Approval needed before creation: calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
+  assert.equal(state.output, 'Accepted: markoo today at 2:00 PM.\nCalendar approval still needed before I create it.');
+});
+
 test('ax auto logger writes clean chat transcripts under atris/runs', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-log-test-'));
   fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });

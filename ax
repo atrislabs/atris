@@ -871,6 +871,39 @@ function formatSystemInit(event, options = {}) {
   return parts.length ? parts.join('  ') : null;
 }
 
+function formatApprovalTime(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return '';
+  const [, year, month, day, rawHour, minute] = match;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const hour24 = Number(rawHour);
+  const hour12 = hour24 % 12 || 12;
+  const ampm = hour24 >= 12 ? 'PM' : 'AM';
+  return `${months[Number(month) - 1] || month} ${Number(day)}, ${year} at ${hour12}:${minute} ${ampm}`;
+}
+
+function formatApprovalReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null;
+  const events = Array.isArray(receipt.tool_events) ? receipt.tool_events : [];
+  const approvalEvent = events.find(event => event && event.approval_request);
+  const request = approvalEvent && approvalEvent.approval_request;
+  if (!request || request.status !== 'approval_required') return null;
+
+  const accept = receipt.task_accept_receipt || {};
+  const actionType = request.executor_action_type || request.action_type || '';
+  if (actionType === 'google_calendar_create_event' || accept.task === 'calendar.create_event') {
+    const payload = request.payload || {};
+    const start = accept.start || (payload.start && payload.start.dateTime) || (approvalEvent.preview && approvalEvent.preview.start);
+    const when = formatApprovalTime(start);
+    const title = accept.title || payload.summary || (approvalEvent.preview && approvalEvent.preview.summary) || 'calendar event';
+    return `Approval needed before creation: calendar event "${String(title).slice(0, 80)}"${when ? ` ${when}` : ''}`;
+  }
+
+  const connector = String(request.connector || approvalEvent.tool || 'connector').replace(/_/g, ' ');
+  const action = String(request.action || actionType || 'action').replace(/_/g, ' ');
+  return `Approval needed before ${action}: ${connector}`;
+}
+
 function clearRetriedText(state) {
   state.pendingText = '';
   state.output = '';
@@ -1107,6 +1140,16 @@ function handleEvent(event, state, output) {
     }
     flushPendingText(state, output);
     writeAuxLine(state, output, paint(`· ${formatStatusMessage(event.message)}`, [ANSI.muted], output));
+    return;
+  }
+
+  if (event.type === 'receipt' && event.receipt) {
+    const approvalLine = formatApprovalReceipt(event.receipt);
+    if (approvalLine) {
+      flushPendingText(state, output);
+      writeAuxLine(state, output, formatAuxRow('wait', approvalLine, output));
+      state.lastAux = 'approval';
+    }
     return;
   }
 
@@ -1758,6 +1801,7 @@ module.exports = {
   createProgressReporter,
   formatDoneLine,
   formatDuration,
+  formatApprovalReceipt,
   formatHeader,
   formatPathSubject,
   formatPrompt,
