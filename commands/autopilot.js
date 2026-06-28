@@ -3046,33 +3046,47 @@ async function autopilotAtris(description, options = {}) {
 
   // Seed inbox if a description was given
   if (description) {
-    ensureLogDirectory();
-    const { logFile, dateFormatted } = getLogPath();
-    if (!fs.existsSync(logFile)) createLogFile(logFile, dateFormatted);
-
-    let content = fs.readFileSync(logFile, 'utf8');
-    const idMatch = content.match(/\*\*I(\d+):/g);
-    const nextId = idMatch
-      ? Math.max(...idMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
-      : 1;
-
-    const entry = `- **I${nextId}:** ${description}`;
-    if (content.includes('## Inbox')) {
-      content = content.replace(/(## Inbox[^\n]*\n)/, `$1${entry}\n`);
+    if (dryRun) {
+      if (verbose) {
+        console.log(`  dry run: would add to inbox: "${description}"`);
+        console.log('');
+      } else {
+        printPlainBlock([
+          'Dry run: I would add this request to the inbox.',
+          `"${description}"`,
+          '',
+          'Next I will scan the current workspace without writing that request.'
+        ].join('\n'));
+      }
     } else {
-      content += `\n## Inbox\n${entry}\n`;
-    }
-    fs.writeFileSync(logFile, content);
-    if (verbose) {
-      console.log(`  added to inbox: "${description}"`);
-      console.log('');
-    } else {
-      printPlainBlock([
-        'I added this request to the inbox.',
-        `"${description}"`,
-        '',
-        'Next I will scan the workspace with that request in mind.'
-      ].join('\n'));
+      ensureLogDirectory();
+      const { logFile, dateFormatted } = getLogPath();
+      if (!fs.existsSync(logFile)) createLogFile(logFile, dateFormatted);
+
+      let content = fs.readFileSync(logFile, 'utf8');
+      const idMatch = content.match(/\*\*I(\d+):/g);
+      const nextId = idMatch
+        ? Math.max(...idMatch.map(m => parseInt(m.match(/\d+/)[0]))) + 1
+        : 1;
+
+      const entry = `- **I${nextId}:** ${description}`;
+      if (content.includes('## Inbox')) {
+        content = content.replace(/(## Inbox[^\n]*\n)/, `$1${entry}\n`);
+      } else {
+        content += `\n## Inbox\n${entry}\n`;
+      }
+      fs.writeFileSync(logFile, content);
+      if (verbose) {
+        console.log(`  added to inbox: "${description}"`);
+        console.log('');
+      } else {
+        printPlainBlock([
+          'I added this request to the inbox.',
+          `"${description}"`,
+          '',
+          'Next I will scan the workspace with that request in mind.'
+        ].join('\n'));
+      }
     }
   }
 
