@@ -6,6 +6,7 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const crypto = require('crypto');
 const { loadCredentials } = require('./utils/auth');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
@@ -23,6 +24,7 @@ const CODE_FAST = {
 const CONNECTION_STATUS_PATH = '/api/integrations/status';
 const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
 const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
+const APPROVAL_EXECUTE_PATH = '/api/atris2/approvals/execute';
 const CONNECTOR_NAMES = {
   gmail: 'Gmail',
   google_calendar: 'Google Calendar',
@@ -347,6 +349,48 @@ function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
       req.destroy();
       resolve({ ok: false, status: 0, data: null, text: '', error: `timeout after ${timeoutMs}ms` });
     });
+    req.end();
+  });
+}
+
+function postJson(pathname, body, { token = authToken(), timeoutMs = 30000 } = {}) {
+  const url = backendPathUrl(pathname);
+  const parsed = new URL(url);
+  const transport = parsed.protocol === 'https:' ? https : http;
+  const postData = JSON.stringify(body || {});
+  return new Promise((resolve) => {
+    const req = transport.request({
+      method: 'POST',
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: `${parsed.pathname}${parsed.search}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    }, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch (_) {
+          resolve({ ok: false, status: res.statusCode, data: null, text });
+          return;
+        }
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data, text });
+      });
+    });
+    req.on('error', error => resolve({ ok: false, status: 0, data: null, text: '', error: error.message }));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: null, text: '', error: `timeout after ${timeoutMs}ms` });
+    });
+    req.write(postData);
     req.end();
   });
 }
@@ -904,6 +948,126 @@ function formatApprovalReceipt(receipt) {
   return `Approval needed before ${action}: ${connector}`;
 }
 
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+function approvalRequestWithStableId(request) {
+  if (!request || typeof request !== 'object') return null;
+  const copy = JSON.parse(JSON.stringify(request));
+  if (!copy.approval_request_id && !copy.approval_id) {
+    const fingerprint = crypto
+      .createHash('sha256')
+      .update(stableStringify({
+        action_type: copy.executor_action_type || copy.action_type || copy.action || '',
+        connector: copy.connector || '',
+        payload: copy.payload || null,
+      }))
+      .digest('hex')
+      .slice(0, 20);
+    copy.approval_request_id = `apreq_ax_${fingerprint}`;
+  }
+  return copy;
+}
+
+function approvalExecutionRequestFromReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null;
+  const accepted = receipt.task_accept_receipt || {};
+  if (accepted.accepted !== true) return null;
+  if (accepted.execution_endpoint && accepted.execution_endpoint !== APPROVAL_EXECUTE_PATH) return null;
+  if (accepted.execution_status && accepted.execution_status !== 'pending_approval_execution') return null;
+
+  const events = Array.isArray(receipt.tool_events) ? receipt.tool_events : [];
+  const approvalEvent = events.find(event => event && event.approval_request);
+  const request = approvalEvent && approvalEvent.approval_request;
+  if (!request || request.status !== 'approval_required') return null;
+  return approvalRequestWithStableId(request);
+}
+
+function approvalExecutionRequestFromState(state) {
+  return approvalExecutionRequestFromReceipt(receiptFromState(state));
+}
+
+function approvalActionLabel(actionType) {
+  if (actionType === 'google_calendar_create_event') return 'calendar event';
+  if (actionType === 'gmail_send') return 'email';
+  if (actionType === 'slack_post_message') return 'Slack message';
+  if (actionType === 'github_create_issue') return 'GitHub issue';
+  if (actionType === 'google_drive_create_file') return 'Drive file';
+  if (actionType === 'notion_create_page') return 'Notion page';
+  return 'approved action';
+}
+
+function capitalize(value) {
+  const text = String(value || '');
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
+}
+
+function approvalSuccessMessage(actionType) {
+  const actionLabel = approvalActionLabel(actionType);
+  if (actionType === 'gmail_send') return 'Sent email.';
+  if (actionType === 'slack_post_message') return 'Sent Slack message.';
+  return `Created ${actionLabel}.`;
+}
+
+function approvalNotDoneMessage(actionType, reason) {
+  const actionLabel = approvalActionLabel(actionType);
+  const verb = actionType === 'gmail_send' || actionType === 'slack_post_message' ? 'sent' : 'created';
+  return `${capitalize(actionLabel)} was not ${verb} because ${reason}.`;
+}
+
+function formatApprovalExecutionResult(response) {
+  if (!response) return null;
+  const data = response.data && typeof response.data === 'object' ? response.data : {};
+  const detail = data.detail && typeof data.detail === 'object' ? data.detail : {};
+  const execution = data.execution && typeof data.execution === 'object' ? data.execution : {};
+  const actionType = data.action_type || execution.action_type || detail.action_type || '';
+  const actionLabel = approvalActionLabel(actionType);
+  const status = data.status || execution.status || detail.error || '';
+
+  if (!response.ok) {
+    if (detail.error === 'paid_cloud_computer_required') return 'Approval execution needs a paid cloud computer.';
+    if (detail.error === 'approval_signing_key_required') return 'Approval execution is not configured in this runtime.';
+    if (detail.error === 'approval_already_executed') return `Already executed this ${actionLabel}.`;
+    if (detail.user_message) return String(detail.user_message);
+    if (detail.message) return String(detail.message);
+    return response.error || `Approval execution failed (${response.status || 'unknown'}).`;
+  }
+
+  if (execution.executed || status === 'executed') return approvalSuccessMessage(actionType);
+  if (status === 'blocked_connector_not_connected') return approvalNotDoneMessage(actionType, 'the connector is not connected');
+  if (status === 'execution_failed') return approvalNotDoneMessage(actionType, 'execution failed');
+  if (execution.would_execute) return `${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} was approved but not confirmed as created.`;
+  return `Approval handled for ${actionLabel}.`;
+}
+
+async function postApprovalExecution(approvalRequest, { model = 'atris:fast', token = authToken() } = {}) {
+  return postJson(APPROVAL_EXECUTE_PATH, {
+    model,
+    approval_request: approvalRequest,
+  }, { token });
+}
+
+async function executeApprovalFromState(state, {
+  model = 'atris:fast',
+  output = process.stdout,
+  postApproval = postApprovalExecution,
+} = {}) {
+  const approvalRequest = approvalExecutionRequestFromState(state);
+  if (!approvalRequest) return null;
+  writeAuxLine(state, output, formatAuxRow('wait', 'Sending approved action to Atris cloud...', output));
+  const response = await postApproval(approvalRequest, { model });
+  const message = formatApprovalExecutionResult(response);
+  if (message) {
+    const execution = response && response.data && response.data.execution;
+    const label = response && response.ok && execution && execution.executed ? 'done' : 'wait';
+    writeAuxLine(state, output, formatAuxRow(label, message, output));
+  }
+  return { approval_request: approvalRequest, response, message };
+}
+
 function clearRetriedText(state) {
   state.pendingText = '';
   state.output = '';
@@ -1456,12 +1620,19 @@ async function chat(options = {}) {
     const route = pendingTaskPreview ? 'cloud' : options.route;
     const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
+    const approvalExecution = normalizeMode(mode) === 'code-fast'
+      ? null
+      : await executeApprovalFromState(result, { model: modelForMode(mode), output });
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     const receipt = receiptFromState(result);
+    const assistantContent = [
+      result.output || '',
+      approvalExecution && approvalExecution.message ? approvalExecution.message : '',
+    ].filter(Boolean).join('\n');
     history.push({ role: 'user', content: trimmed });
     history.push({
       role: 'assistant',
-      content: result.output || '',
+      content: assistantContent,
       ...(receipt && receipt.task_preview ? { task_preview: receipt.task_preview } : {}),
     });
     return false;
@@ -1782,6 +1953,7 @@ if (require.main === module) {
 module.exports = {
   authToken,
   authUserId,
+  approvalExecutionRequestFromReceipt,
   backendBaseUrl,
   backendUrl,
   buildCodeFastPayload,
@@ -1799,8 +1971,10 @@ module.exports = {
   codeFastUrl,
   createRunLogger,
   createProgressReporter,
+  executeApprovalFromState,
   formatDoneLine,
   formatDuration,
+  formatApprovalExecutionResult,
   formatApprovalReceipt,
   formatHeader,
   formatPathSubject,
@@ -1813,6 +1987,7 @@ module.exports = {
   handleEvent,
   modelForMode,
   parseSseBlock,
+  postApprovalExecution,
   postCodeFastTurn,
   postTurn,
   renderStreamingMarkdown,
