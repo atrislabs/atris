@@ -1540,10 +1540,8 @@ function refreshCodexGoalController(root = process.cwd(), options = {}) {
   };
 }
 
-function runMissionRunDueOnce(root = process.cwd(), options = {}) {
+function runAtrisMissionJsonCommand(root, args, options = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
-  const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
-  if (options.noClaude) args.push('--no-claude');
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',
@@ -1555,13 +1553,77 @@ function runMissionRunDueOnce(root = process.cwd(), options = {}) {
     payload = JSON.parse(result.stdout || '{}');
   } catch {}
   return {
+    action: options.action || null,
     command: `atris ${args.join(' ')}`,
     status: result.status,
     ok: result.status === 0,
+    heavy_work: options.heavyWork === true,
+    setup_work: options.setupWork === true,
     stdout: String(result.stdout || '').slice(-4000),
     stderr: String(result.stderr || '').slice(-4000),
     payload,
   };
+}
+
+function runMissionRunDueOnce(root = process.cwd(), options = {}) {
+  const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
+  if (options.noClaude) args.push('--no-claude');
+  return runAtrisMissionJsonCommand(root, args, {
+    action: 'mission_run_due',
+    heavyWork: true,
+  });
+}
+
+function goalLoopNextCommandPlan(goal) {
+  const command = String(goal?.next_command || '').trim();
+  const attach = command.match(/^atris\s+mission\s+(attach-task|ensure-task|task-spine)\s+([A-Za-z0-9_.:-]+)\s+--json$/);
+  if (attach) {
+    return {
+      action: 'mission_attach_task',
+      command,
+      args: ['mission', 'attach-task', attach[2], '--json'],
+      heavy_work: false,
+      setup_work: true,
+      run_when_due_only: false,
+    };
+  }
+
+  const dueRun = command.match(/^atris\s+mission\s+run\s+--due\s+--max-ticks\s+([0-9]+)(\s+--complete-on-pass)?(?:\s+--json)?$/);
+  if (dueRun) {
+    const args = ['mission', 'run', '--due', '--max-ticks', dueRun[1]];
+    if (dueRun[2]) args.push('--complete-on-pass');
+    args.push('--json');
+    return {
+      action: 'mission_run_due',
+      command: `atris ${args.join(' ')}`,
+      args,
+      heavy_work: true,
+      setup_work: false,
+      run_when_due_only: true,
+    };
+  }
+
+  return null;
+}
+
+function shouldRunGoalLoopCommand(heartbeat, plan) {
+  if (!heartbeat?.goal) return false;
+  if (plan && plan.run_when_due_only === false) return true;
+  return heartbeat.heartbeat?.due === true;
+}
+
+function runMissionGoalNextCommand(root = process.cwd(), heartbeat, options = {}) {
+  const plan = goalLoopNextCommandPlan(heartbeat?.goal);
+  if (plan) {
+    const args = [...plan.args];
+    if (options.noClaude && plan.action === 'mission_run_due') args.push('--no-claude');
+    return runAtrisMissionJsonCommand(root, args, {
+      action: plan.action,
+      heavyWork: plan.heavy_work,
+      setupWork: plan.setup_work,
+    });
+  }
+  return runMissionRunDueOnce(root, options);
 }
 
 function sleep(ms, signal) {
@@ -2624,16 +2686,27 @@ async function goalLoopMission(args) {
       iteration: index + 1,
       heartbeat,
       ran_heavy_work: false,
+      ran_setup_work: false,
       dry_run: dryRun,
     };
 
-    if (heartbeat.heartbeat?.due && heartbeat.goal) {
+    const commandPlan = goalLoopNextCommandPlan(heartbeat.goal);
+    if (shouldRunGoalLoopCommand(heartbeat, commandPlan)) {
       if (dryRun) {
         event.ran_heavy_work = false;
-        event.run = { skipped: true, reason: 'dry-run', command: 'atris mission run --due --max-ticks 1 --complete-on-pass --json' };
+        event.ran_setup_work = false;
+        event.run = {
+          skipped: true,
+          reason: 'dry-run',
+          action: commandPlan?.action || 'mission_run_due',
+          command: commandPlan?.command || 'atris mission run --due --max-ticks 1 --complete-on-pass --json',
+          heavy_work: commandPlan?.heavy_work === true,
+          setup_work: commandPlan?.setup_work === true,
+        };
       } else {
-        event.run = runMissionRunDueOnce(root, { noClaude });
-        event.ran_heavy_work = event.run.ok === true;
+        event.run = runMissionGoalNextCommand(root, heartbeat, { noClaude });
+        event.ran_heavy_work = event.run.ok === true && event.run.heavy_work === true;
+        event.ran_setup_work = event.run.ok === true && event.run.setup_work === true;
         event.after_run = refreshCodexGoalController(root, { heartbeat: true });
       }
     }
@@ -2660,6 +2733,7 @@ async function goalLoopMission(args) {
     max_iterations: maxIterations,
     max_wall_seconds: maxWallSeconds,
     heavy_runs: events.filter((event) => event.ran_heavy_work).length,
+    setup_runs: events.filter((event) => event.ran_setup_work).length,
     events,
     final_state: finalState,
   };

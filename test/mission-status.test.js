@@ -37,6 +37,14 @@ function runCli(args, { cwd, env = {} } = {}) {
   return result;
 }
 
+function hasNodeSqlite() {
+  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+  });
+  return result.status === 0;
+}
+
 function startMission(dir, title) {
   const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -899,8 +907,51 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
   }
 });
 
-test('mission goal-loop runs due mission work once and refreshes final state', () => {
+test('mission goal-loop attaches task spine before due mission work', () => {
+  if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'mission-lead' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'loop setup codex goal mission',
+      '--owner',
+      'mission-lead',
+      '--runner',
+      'codex_goal',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
+    assert.equal(loop.status, 0, loop.stderr || loop.stdout);
+    const payload = JSON.parse(loop.stdout);
+    assert.equal(payload.action, 'codex_goal_loop');
+    assert.equal(payload.iterations, 1);
+    assert.equal(payload.heavy_runs, 0);
+    assert.equal(payload.setup_runs, 1);
+    assert.equal(payload.events[0].heartbeat.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.equal(payload.events[0].run.action, 'mission_attach_task');
+    assert.equal(payload.events[0].run.payload.action, 'mission_task_spine_attached');
+    assert.equal(payload.events[0].run.payload.task_spine.goal_id, mission.id);
+    assert.equal(payload.events[0].after_run.goal.task_spine.has_task, true);
+    assert.equal(payload.events[0].after_run.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.final_state.goal.task_spine.has_task, true);
+    assert.equal(payload.final_state.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal-loop runs due mission work once and refreshes final state', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'mission-lead' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const started = runCli([
@@ -913,24 +964,29 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
       'codex_goal',
       '--verify',
       'node -e "process.exit(0)"',
+      '--xp-task',
       '--json',
-    ], { cwd: dir });
+    ], { cwd: dir, env });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
 
-    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir });
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
     assert.equal(loop.status, 0, loop.stderr || loop.stdout);
     const payload = JSON.parse(loop.stdout);
     assert.equal(payload.action, 'codex_goal_loop');
     assert.equal(payload.iterations, 1);
     assert.equal(payload.heavy_runs, 1);
+    assert.equal(payload.setup_runs, 0);
     assert.equal(payload.events[0].heartbeat.goal.mission_id, mission.id);
     assert.equal(payload.events[0].heartbeat.heartbeat.due, true);
+    assert.equal(payload.events[0].run.action, 'mission_run_due');
     assert.equal(payload.events[0].run.payload.action, 'mission_run');
     assert.equal(payload.events[0].run.payload.mission.id, mission.id);
-    assert.equal(payload.events[0].run.payload.mission.status, 'complete');
+    assert.equal(payload.events[0].run.payload.mission.status, 'ready');
     assert.equal(payload.final_state.action, 'codex_goal_heartbeat');
-    assert.equal(payload.final_state.mission, null);
+    assert.equal(payload.final_state.goal.mission_id, mission.id);
+    assert.equal(payload.final_state.goal.mission_status, 'ready');
+    assert.match(payload.final_state.goal.next_command, new RegExp(`^atris task current-step --goal-id ${mission.id}`));
   } finally {
     cleanupTempDir(dir);
   }
