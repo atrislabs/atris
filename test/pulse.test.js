@@ -7,6 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { currentRunnerIdentity } = require('../commands/pulse');
+
+const PULSE_COMMAND_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'pulse.js'), 'utf8');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -130,6 +133,20 @@ test('summarizePulse aggregates reward, verify counts, and last tick', () => {
   assert.equal(s.last_verify_passed, false);
 });
 
+test('summarizePulse exposes the last finished tick runner identity', () => {
+  const receipts = [
+    pulse.buildPulseReceipt({ tickIndex: 1, phase: 'finished', runner: { model: 'opus' } }),
+    pulse.buildPulseReceipt({ tickIndex: 2, phase: 'finished', runner: { model: 'atris:fast', profile: 'atris-fast', template_configured: true } }),
+  ];
+  const s = pulse.summarizePulse(receipts);
+  assert.deepEqual(s.last_runner, {
+    model: 'atris:fast',
+    profile: 'atris-fast',
+    bin: null,
+    template_configured: true,
+  });
+});
+
 // --- receipt + scorecard schemas ---
 
 test('buildPulseReceipt stamps the pulse schema and defaults phase to finished', () => {
@@ -138,6 +155,48 @@ test('buildPulseReceipt stamps the pulse schema and defaults phase to finished',
   assert.equal(r.phase, 'finished');
   assert.equal(r.tick_index, 3);
   assert.ok(r.ts);
+});
+
+test('buildPulseReceipt records normalized runner identity when provided', () => {
+  const r = pulse.buildPulseReceipt({
+    tickIndex: 4,
+    runner: {
+      model: 'glm-5.2',
+      profile: 'nightly',
+      bin: '/opt/runner',
+      template_configured: 1,
+    },
+  });
+  assert.deepEqual(r.runner, {
+    model: 'glm-5.2',
+    profile: 'nightly',
+    bin: '/opt/runner',
+    template_configured: true,
+  });
+});
+
+test('currentRunnerIdentity reports the configured runner environment', () => {
+  const identity = currentRunnerIdentity({
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_CLAUDE_MODEL: 'opus',
+    ATRIS_RUNNER_PROFILE: 'nightly',
+    ATRIS_RUNNER_BIN: '/opt/runner',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --prompt-file {promptFile}',
+  });
+  assert.deepEqual(identity, {
+    model: 'glm-5.2',
+    profile: 'nightly',
+    bin: '/opt/runner',
+    template_configured: true,
+  });
+});
+
+test('pulse tick receipts and output are wired with runner identity', () => {
+  assert.match(PULSE_COMMAND_SRC, /const runner = currentRunnerIdentity\(\)/);
+  assert.match(PULSE_COMMAND_SRC, /phase: 'started'[\s\S]*runner,/);
+  assert.match(PULSE_COMMAND_SRC, /phase: 'finished'[\s\S]*reward,[\s\S]*runner,/);
+  assert.match(PULSE_COMMAND_SRC, /tick crashed:[\s\S]*reward: -1,[\s\S]*runner,/);
+  assert.match(PULSE_COMMAND_SRC, /receipts_path: pulse\.pulseReceiptsPath\(root\),[\s\S]*runner,/);
 });
 
 test('buildPulseScorecardRow reuses the improve_tick schema so the brain sees it', () => {

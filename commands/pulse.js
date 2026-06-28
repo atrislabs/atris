@@ -174,6 +174,15 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
   return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
 }
 
+function currentRunnerIdentity(env = process.env) {
+  return {
+    model: env.ATRIS_RUNNER_MODEL || env.ATRIS_CLAUDE_MODEL || 'opus',
+    profile: env.ATRIS_RUNNER_PROFILE || null,
+    bin: env.ATRIS_RUNNER_BIN || env.ATRIS_CLAUDE_BIN || null,
+    template_configured: Boolean(env.ATRIS_RUNNER_COMMAND_TEMPLATE || env.ATRIS_CLAUDE_COMMAND_TEMPLATE),
+  };
+}
+
 // --- atris pulse tick ---
 
 function tickCommand(args, root = process.cwd()) {
@@ -186,6 +195,7 @@ function tickCommand(args, root = process.cwd()) {
   // Detect a previous tick that died mid-run before we take the lock.
   const priorReceipts = pulse.readPulseReceipts(root);
   const priorStale = pulse.detectStaleTick(priorReceipts);
+  const runner = currentRunnerIdentity();
 
   const lock = pulse.acquireLock(root);
   if (!lock.acquired) {
@@ -201,6 +211,7 @@ function tickCommand(args, root = process.cwd()) {
     tickIndex,
     phase: 'started',
     prevTickStale: priorStale.stale,
+    runner,
   }));
 
   let engine;
@@ -246,6 +257,7 @@ function tickCommand(args, root = process.cwd()) {
       elapsedMs,
       prevTickStale: priorStale.stale,
       reward,
+      runner,
     });
     pulse.appendPulseReceipt(root, receipt);
 
@@ -258,7 +270,7 @@ function tickCommand(args, root = process.cwd()) {
         what,
         changedFiles,
         elapsedMs,
-        model: process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus',
+        model: runner.model,
       }));
       scorecardWritten = true;
     }
@@ -276,6 +288,7 @@ function tickCommand(args, root = process.cwd()) {
       prev_tick_stale: priorStale.stale,
       elapsed_ms: elapsedMs,
       receipts_path: pulse.pulseReceiptsPath(root),
+      runner,
     };
     if (!asJson) {
       const ghost = priorStale.stale ? ` (recovered ghost tick #${priorStale.tick_index || '?'})` : '';
@@ -294,8 +307,9 @@ function tickCommand(args, root = process.cwd()) {
       what: `tick crashed: ${err && err.message ? err.message : String(err)}`,
       elapsedMs: Date.now() - startedAt,
       reward: -1,
+      runner,
     }));
-    const out = { ok: false, action: 'pulse_tick', tick_index: tickIndex, error: err && err.message ? err.message : String(err) };
+    const out = { ok: false, action: 'pulse_tick', tick_index: tickIndex, error: err && err.message ? err.message : String(err), runner };
     if (!asJson) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
     return emit(out, asJson);
   } finally {
@@ -331,6 +345,7 @@ function statusCommand(args, root = process.cwd()) {
       `pulse: ${installed ? 'cron INSTALLED' : 'cron NOT installed (run: atris pulse install)'}`,
       `ticks: ${summary.total_ticks} | reward: ${summary.reward_sum} | verify pass/fail: ${summary.verify_pass}/${summary.verify_fail}`,
       `last tick: ${summary.last_tick_ts || 'never'} (verify ${summary.last_verify_passed === null ? 'n/a' : summary.last_verify_passed ? 'pass' : 'FAIL'})`,
+      summary.last_runner ? `runner: ${summary.last_runner.model || 'unknown'}${summary.last_runner.profile ? ` (${summary.last_runner.profile})` : ''}` : '',
       summary.stale.stale ? `⚠ STALE: ${summary.stale.reason}${summary.stale.tick_index ? ` (ghost tick #${summary.stale.tick_index})` : ''}` : 'liveness: fresh',
       summary.orphan_ticks.length ? `⚠ orphan (crashed) ticks: ${summary.orphan_ticks.join(', ')}` : '',
     ].filter(Boolean).join('\n') + '\n');
@@ -500,5 +515,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  currentRunnerIdentity,
   STATE_HOME,
 };
