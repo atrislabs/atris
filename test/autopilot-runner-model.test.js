@@ -99,6 +99,18 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
 });
 
+test('run and autopilot reject invalid loop limit values before execution', () => {
+  assert.match(BIN_SRC, /function parsePositiveIntegerOption\(raw, name, fallback\)/);
+  assert.match(BIN_SRC, /exitUsageError\(`\$\{name\} must be a positive integer\.`\)/);
+  assert.match(BIN_SRC, /function parseDurationOption\(raw, name\)/);
+  assert.match(BIN_SRC, /exitUsageError\(`\$\{name\} must be a duration like 30m, 1h, or 90s\.`\)/);
+  assert.match(BIN_SRC, /const maxCycles = parsePositiveIntegerOption\(/);
+  assert.match(BIN_SRC, /const timeoutSec = parsePositiveIntegerOption\(/);
+  assert.match(BIN_SRC, /const maxIterations = parsePositiveIntegerOption\(/);
+  assert.match(BIN_SRC, /const duration = parseDurationOption\(/);
+  assert.match(AUTOPILOT_SRC, /if \(duration && !durationMs\) \{[\s\S]*Invalid duration/);
+});
+
 test('mission claude ticks spawn the configured runner binary', () => {
   assert.doesNotMatch(MISSION_SRC, /spawn\('claude'/);
   assert.doesNotMatch(MISSION_SRC, /spawnSync\('claude'/);
