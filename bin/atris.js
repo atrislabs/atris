@@ -127,18 +127,32 @@ function isOptionValue(args, index, optionNames) {
 
 function applyRunnerFlags(args) {
   const runnerProfile = readOptionArg(args, '--runner-profile');
-  if (runnerProfile) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
   const runnerBin = readOptionArg(args, '--runner-bin');
+  const runnerTemplate = readOptionArg(args, '--runner-template');
+  const runnerModel = readOptionArg(args, '--runner-model');
+  if (runnerProfile) {
+    process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+    if (!runnerBin) {
+      delete process.env.ATRIS_RUNNER_BIN;
+      delete process.env.ATRIS_CLAUDE_BIN;
+    }
+    if (!runnerTemplate) {
+      delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+      delete process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE;
+    }
+    if (!runnerModel) {
+      delete process.env.ATRIS_RUNNER_MODEL;
+      delete process.env.ATRIS_CLAUDE_MODEL;
+    }
+  }
   if (runnerBin) {
     process.env.ATRIS_RUNNER_BIN = runnerBin;
     process.env.ATRIS_CLAUDE_BIN = runnerBin;
   }
-  const runnerTemplate = readOptionArg(args, '--runner-template');
   if (runnerTemplate) {
     process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = runnerTemplate;
     process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate;
   }
-  const runnerModel = readOptionArg(args, '--runner-model');
   if (runnerModel) {
     process.env.ATRIS_RUNNER_MODEL = runnerModel;
     process.env.ATRIS_CLAUDE_MODEL = runnerModel;

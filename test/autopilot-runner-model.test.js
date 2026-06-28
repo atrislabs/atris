@@ -99,6 +99,14 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
 });
 
+test('runner profile flag clears inherited runner env before explicit overrides', () => {
+  assert.match(BIN_SRC, /if \(runnerProfile\) \{[\s\S]*delete process\.env\.ATRIS_RUNNER_BIN;[\s\S]*delete process\.env\.ATRIS_CLAUDE_BIN;/);
+  assert.match(BIN_SRC, /if \(runnerProfile\) \{[\s\S]*delete process\.env\.ATRIS_RUNNER_COMMAND_TEMPLATE;[\s\S]*delete process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE;/);
+  assert.match(BIN_SRC, /if \(runnerProfile\) \{[\s\S]*delete process\.env\.ATRIS_RUNNER_MODEL;[\s\S]*delete process\.env\.ATRIS_CLAUDE_MODEL;/);
+  assert.match(BIN_SRC, /if \(runnerProfile\) \{[\s\S]*\}\s*if \(runnerBin\) \{/);
+  assert.match(BIN_SRC, /if \(runnerProfile\) \{[\s\S]*\}\s*if \(runnerBin\) \{[\s\S]*if \(runnerTemplate\) \{[\s\S]*if \(runnerModel\) \{/);
+});
+
 test('mission claude ticks spawn the configured runner binary', () => {
   assert.doesNotMatch(MISSION_SRC, /spawn\('claude'/);
   assert.doesNotMatch(MISSION_SRC, /spawnSync\('claude'/);
