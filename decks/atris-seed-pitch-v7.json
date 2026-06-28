@@ -1,0 +1,122 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Every operator at a growing company has two real problems.",
+      "sub": "The work they hate doing. The work they can't afford to hire for. Atris does both — inside their company, with a receipt every time.",
+      "panel": {
+        "header": { "title": "Closed loop", "meta": "every action" },
+        "rows": [
+          { "title": "context", "sub": "memory in", "value": "1", "valueSub": "step", "sev": 2 },
+          { "title": "action", "sub": "member acts", "value": "2", "valueSub": "step", "sev": 1 },
+          { "title": "receipt", "sub": "proof out", "value": "3", "valueSub": "step", "sev": 0, "active": true },
+          { "title": "outcome", "sub": "result", "value": "4", "valueSub": "step", "sev": 2 }
+        ],
+        "footer": { "left": "perimeter-resident", "right": "outcome-graded" }
+      }
+    },
+    {
+      "type": "columns",
+      "heading": "Two paying customers. One running on itself.",
+      "columns": [
+        {
+          "h": "DoorDash · $15k/mo",
+          "b": "Weekly business review system live. Forecasting, decision engine, daily pacing, proactive alerts. Operator workflow inside the Ads team."
+        },
+        {
+          "h": "Pallet · live",
+          "b": "84 files, 7 production skills deployed. CEO has the system. Sales workflows across 1,163 deals, 25 meetings, 2,352 call moments."
+        },
+        {
+          "h": "Atris runs Atris",
+          "b": "20 blue-team security fixes shipped autonomously. 21+ hours autonomous operation. RL loop on the product's own receipts."
+        }
+      ]
+    },
+    {
+      "type": "bignumber",
+      "number": "$250k",
+      "label": "run rate · 1–3 FDEs · 3rd customer in close",
+      "sub": "We start in the room nobody else is in. Then ten more rooms exactly like it. The FDE-leverage curve is the only number that answers the services question."
+    },
+    {
+      "type": "panel",
+      "heading": "One closed loop, fully receipted.",
+      "sub": "Context in. Member acts. Proof out. Outcome graded. Reward signal flows back. The agent is sharper next week.",
+      "panel": {
+        "header": { "title": "Receipt shape", "meta": "every action carries one" },
+        "rows": [
+          { "title": "Authorized by", "sub": "operator", "value": "human", "sev": 2 },
+          { "title": "Acted by", "sub": "Atris member", "value": "agent", "sev": 1 },
+          { "title": "Proof", "sub": "diff + verifier passed", "value": "✓", "sev": 0, "active": true },
+          { "title": "Outcome graded", "sub": "reward streams back", "value": "loop", "valueSub": "closes", "sev": 1 }
+        ],
+        "footer": { "left": "every action has this receipt", "right": "every receipt trains the loop" }
+      }
+    },
+    {
+      "type": "panel",
+      "heading": "One machine, N customers.",
+      "sub": "Each with their own disk, own behavior, own reward signal. Same code everywhere. No data crosses.",
+      "panel": {
+        "header": { "title": "Architecture", "meta": "perimeter-resident" },
+        "rows": [
+          { "title": "Disk", "sub": "per-customer memory", "value": "in", "valueSub": "perimeter", "sev": 1 },
+          { "title": "Behavior", "sub": "per-customer policies", "value": "in", "valueSub": "perimeter", "sev": 1 },
+          { "title": "Reward signal", "sub": "verifiable outcomes", "value": "out", "valueSub": "to us", "sev": 0, "active": true },
+          { "title": "Weights", "sub": "trained on reward stream", "value": "back", "valueSub": "each release", "sev": 2 }
+        ],
+        "footer": { "left": "data plane stays", "right": "reward plane streams" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "They store **facts.** We learn the **outcome.**",
+      "sub": "Mem0 stores facts. Letta stores context. Glean indexes docs. Atris is the only one where the customer's runtime ships back a reward signal so the agent gets measurably better at their work — with the data never leaving their perimeter."
+    },
+    {
+      "type": "panel",
+      "heading": "Why now",
+      "sub": "The labs are becoming the new oil companies. Standard Oil didn't lose to a better well — it lost to the refinery.",
+      "panel": {
+        "header": { "title": "Gating is live", "meta": "2025–2026" },
+        "rows": [
+          { "title": "GPT-5.6 Sol", "sub": "~20 White House–approved customers", "value": "Jun 26", "valueSub": "2026", "sev": 0, "active": true },
+          { "title": "Claude Fable 5", "sub": "pulled in 3 days, US export directive", "value": "Jun 12", "valueSub": "2026", "sev": 0 },
+          { "title": "OpenAI Verified Org", "sub": "gov ID + selfie for GPT-5/o3 API", "value": "Apr", "valueSub": "2025", "sev": 1 },
+          { "title": "EU AI Act GPAI", "sub": "fines up to 7% global revenue", "value": "Aug 2", "valueSub": "2026", "sev": 2 }
+        ],
+        "footer": { "left": "labs becoming utilities", "right": "the layer beneath wins" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "The **layer beneath** every AI business.",
+      "sub": "Memory, taste, approval, proof. Running inside the customer's perimeter. Getting sharper every week. The labs build the models. We build the seat the model sits in."
+    },
+    {
+      "type": "statement",
+      "text": "Solo founder. Two production customers. Builds the company on the product.",
+      "sub": "Atris runs Atris. The weekly business review you'd run on Atris is the same one I run to operate. The chip on the shoulder is that nobody else is willing to live inside their own product long enough to make it real."
+    },
+    {
+      "type": "panel",
+      "heading": "$10M seed.",
+      "sub": "Itemized. Named milestones. Next round funded by revenue, not desperation.",
+      "panel": {
+        "header": { "title": "Use of funds", "meta": "$10M · 24 months" },
+        "rows": [
+          { "title": "4 FDEs", "sub": "clone DoorDash/Pallet to 8 more accounts", "value": "$1.8M", "sev": 1 },
+          { "title": "2 substrate engineers", "sub": "receipts, judges, succession surface", "value": "$1.2M", "sev": 1 },
+          { "title": "Narrative + customer receipts engine", "sub": "founder content, public proof", "value": "$0.3M", "sev": 2 },
+          { "title": "Compute + lab dependency", "sub": "18 months", "value": "$1.5M", "sev": 2 },
+          { "title": "Spin-up reserve", "sub": "first overnight-loop business on Atris", "value": "$1.0M", "sev": 0, "active": true },
+          { "title": "Reserve + runway", "sub": "24 months personal + corporate", "value": "$4.2M", "sev": 2 }
+        ],
+        "footer": { "left": "milestone: $3M ARR in 12 months", "right": "next round on revenue" }
+      }
+    }
+  ]
+}
