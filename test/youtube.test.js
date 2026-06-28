@@ -101,12 +101,43 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
   assert.equal(calls[0].options.token, 'token-123');
   assert.equal(calls[0].options.timeoutMs, 300000);
   assert.equal(calls[0].options.retries, 0);
-  assert.equal(extractorCalls, 0);
+  assert.equal(extractorCalls, 1);
   assert.match(output.join('\n'), /Video title/);
   assert.match(output.join('\n'), /Main insight/);
 });
 
-test('youtubeCommand retries with local transcript after server transcript failure', async () => {
+test('youtubeCommand sends local transcript first without caching it', async () => {
+  const calls = [];
+
+  const status = await youtubeCommand([
+    'https://youtube.com/watch?v=abc123',
+  ], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => ({
+      transcriptText: 'local captions',
+      language: 'en',
+      durationSeconds: 33,
+    }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: { status: 'success', message: 'ok', video_analysis: 'done' },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.body.transcript_text, 'local captions');
+  assert.equal(calls[0].options.body.transcript_language, 'en');
+  assert.equal(calls[0].options.body.duration_seconds, 33);
+  assert.equal(calls[0].options.body.cache_transcript, false);
+});
+
+test('youtubeCommand falls back to cloud video after local transcript failure', async () => {
   const calls = [];
 
   const status = await youtubeCommand([
@@ -125,23 +156,23 @@ test('youtubeCommand retries with local transcript after server transcript failu
         return {
           ok: false,
           status: 502,
-          error: { error: 'Transcript and native video processing failed' },
+          error: { error: 'Transcript summarization failed' },
         };
       }
       return {
         ok: true,
         status: 200,
-        data: { status: 'success', message: 'ok', video_analysis: 'done' },
+        data: { status: 'success', message: 'ok', video_analysis: 'cloud done' },
       };
     },
   });
 
   assert.equal(status, 0);
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].options.body.transcript_text, undefined);
-  assert.equal(calls[1].options.body.transcript_text, 'local captions');
-  assert.equal(calls[1].options.body.transcript_language, 'en');
-  assert.equal(calls[1].options.body.duration_seconds, 33);
+  assert.equal(calls[0].options.body.transcript_text, 'local captions');
+  assert.equal(calls[0].options.body.cache_transcript, false);
+  assert.equal(calls[1].options.body.transcript_text, undefined);
+  assert.equal(calls[1].options.body.cache_transcript, undefined);
 });
 
 test('shouldRetryWithLocalTranscript only retries YouTube extraction failures', () => {

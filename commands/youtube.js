@@ -122,6 +122,9 @@ function buildYoutubePayload(options) {
     if (options.localTranscript.language) payload.transcript_language = options.localTranscript.language;
     if (options.localTranscript.durationSeconds) payload.duration_seconds = options.localTranscript.durationSeconds;
   }
+  if (options.cacheTranscript !== undefined) {
+    payload.cache_transcript = Boolean(options.cacheTranscript);
+  }
   return payload;
 }
 
@@ -308,23 +311,6 @@ async function processYoutube(options, deps = {}) {
     throw new Error(detail ? `Authentication failed: ${detail}. Run "atris login".` : 'Not logged in. Run "atris login".');
   }
 
-  const payload = buildYoutubePayload(options);
-  const firstResult = await apiFn('/agent/process_youtube', {
-    method: 'POST',
-    token: creds.token,
-    timeoutMs: options.timeoutMs,
-    retries: 0,
-    body: payload,
-  });
-
-  if (firstResult.ok) {
-    return firstResult.data;
-  }
-
-  if (!shouldRetryWithLocalTranscript(firstResult)) {
-    throw youtubeFailureError(firstResult);
-  }
-
   const localExtractor = deps.extractLocalTranscript || extractLocalTranscript;
   let localTranscript = null;
   try {
@@ -332,17 +318,31 @@ async function processYoutube(options, deps = {}) {
   } catch {
     localTranscript = null;
   }
-  if (!localTranscript?.transcriptText) {
-    throw youtubeFailureError(firstResult);
+
+  if (localTranscript?.transcriptText) {
+    const transcriptResult = await apiFn('/agent/process_youtube', {
+      method: 'POST',
+      token: creds.token,
+      timeoutMs: options.timeoutMs,
+      retries: 0,
+      body: buildYoutubePayload({ ...options, localTranscript, cacheTranscript: false }),
+    });
+
+    if (transcriptResult.ok) {
+      return transcriptResult.data;
+    }
+
+    if (transcriptResult.status === 401 || transcriptResult.status === 402 || transcriptResult.status === 400) {
+      throw youtubeFailureError(transcriptResult);
+    }
   }
 
-  const retryPayload = buildYoutubePayload({ ...options, localTranscript });
   const result = await apiFn('/agent/process_youtube', {
     method: 'POST',
     token: creds.token,
     timeoutMs: options.timeoutMs,
     retries: 0,
-    body: retryPayload,
+    body: buildYoutubePayload(options),
   });
 
   if (!result.ok) {
