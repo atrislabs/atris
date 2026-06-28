@@ -442,6 +442,7 @@ function renderMemberNowMarkdown(owner, missions) {
     return lines.join('\n');
   }
   for (const mission of missions) {
+    const taskSpine = missionTaskSpine(mission);
     lines.push(`## ${mission.objective}`);
     lines.push('');
     lines.push(`- id: ${mission.id}`);
@@ -449,6 +450,8 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- cadence: ${mission.cadence}`);
     lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
+    if (taskSpine.task_ref) lines.push(`- task: ${taskSpine.task_ref}`);
+    if (taskSpine.current_step_command) lines.push(`- task next: ${taskSpine.current_step_command}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
@@ -542,10 +545,13 @@ function renderMissionStatus(root = process.cwd()) {
     lines.push('No missions yet.', '');
   } else {
     for (const mission of missions.slice(0, 12)) {
+      const taskSpine = missionTaskSpine(mission);
       lines.push(`- **${mission.id}** ${mission.objective}`);
       lines.push(`  - owner: ${mission.owner}`);
       lines.push(`  - state: ${mission.status}`);
       lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
+      if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
+      if (taskSpine?.current_step_command) lines.push(`  - task next: ${taskSpine.current_step_command}`);
       if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
       const gateLabel = completionGateLabel(mission.completion_gate);
@@ -570,6 +576,47 @@ function missionXpReadyAction(mission, receiptPath) {
   if (!ref || !receiptPath) return null;
   const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
   return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${receiptPath}" --json`;
+}
+
+function missionTaskSpine(mission) {
+  if (!mission || !mission.id) return null;
+  const taskIds = Array.isArray(mission.task_ids) ? mission.task_ids.filter(Boolean) : [];
+  const taskId = mission.xp_task?.task_id
+    || mission.current_task_id
+    || mission.task_id
+    || taskIds[0]
+    || null;
+  const taskRef = mission.xp_task?.ref
+    || mission.task_ref
+    || (taskId ? String(taskId) : null);
+  const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  return {
+    schema: 'atris.mission_task_spine.v1',
+    goal_id: mission.id,
+    owner,
+    lane: mission.lane || 'workspace',
+    runner: mission.runner || 'manual',
+    task_id: taskId,
+    current_task_id: taskId,
+    task_ref: taskRef,
+    has_task: Boolean(taskId || taskRef),
+    current_step_command: taskId || taskRef
+      ? `atris task current-step --goal-id ${mission.id} --as ${owner} --proof "<proof>" --json`
+      : null,
+  };
+}
+
+function missionStatusView(mission) {
+  const taskSpine = missionTaskSpine(mission);
+  if (!taskSpine) return mission;
+  return {
+    ...mission,
+    goal_id: taskSpine.goal_id,
+    task_id: taskSpine.task_id,
+    current_task_id: taskSpine.current_task_id,
+    task_ref: taskSpine.task_ref,
+    task_spine: taskSpine,
+  };
 }
 
 function missionFromArgs(args) {
@@ -719,10 +766,11 @@ function statusMission(args) {
   for (const owner of new Set(missions.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
   }
+  const missionViews = missions.map(missionStatusView);
   const payload = {
     ok: true,
     action: 'mission_status',
-    missions,
+    missions: missionViews,
     state_path: statePaths().missionsJsonl,
     events_path: statePaths().eventsJsonl,
     status_path: renderMissionStatus(),
@@ -730,7 +778,7 @@ function statusMission(args) {
   printJsonOrText(
     payload,
     missions.length
-      ? missions.flatMap((mission) => [
+      ? missionViews.flatMap((mission) => [
         `Mission: ${mission.objective}`,
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
@@ -738,6 +786,8 @@ function statusMission(args) {
         ...missionHeartbeatLines(mission),
         ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
         `  next: ${mission.next_action || 'tick or verify'}`,
+        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
+        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
@@ -1388,11 +1438,13 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   }
 
   const { mission, reason } = selected;
+  const taskSpine = missionTaskSpine(mission);
   const goal = {
     objective: codexGoalObjective(mission),
     mission_id: mission.id,
     mission_objective: mission.objective,
     mission_status: mission.status,
+    task_spine: taskSpine,
     reason,
     next_command: codexGoalNextCommand(mission),
     replace_after: 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.',
