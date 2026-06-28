@@ -3,7 +3,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
 
@@ -12,6 +14,7 @@ const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js')
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
 const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
+const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 
 const RUNNER_ENV_KEYS = [
   'ATRIS_RUNNER_PROFILE',
@@ -40,6 +43,33 @@ function withRunnerEnv(values, fn) {
   }
 }
 
+function makePreviewWorkspace() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-preview-'));
+  fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+    '# TODO',
+    '',
+    '## Backlog',
+    '- **T1:** Preview runner swap [runner]',
+    '  **Verify:** node --version',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP\n');
+  fs.writeFileSync(path.join(dir, 'atris', 'PERSONA.md'), '# Persona\n');
+  return dir;
+}
+
+function runPreviewCli(args, cwd) {
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  for (const key of RUNNER_ENV_KEYS) delete env[key];
+  return spawnSync(process.execPath, [CLI_PATH, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    env,
+  });
+}
+
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
 // model resolution and inherit the CLI's mutable selection — retired-model-kills-loop-silently)
@@ -62,6 +92,19 @@ test('runner availability checks use the shared configured binary', () => {
   assert.doesNotMatch(RUN_SRC, /which claude/);
   assert.match(AUTOPILOT_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(RUN_SRC, /buildRunnerAvailabilityCommand\(/);
+});
+
+test('run and autopilot dry-run previews do not require the configured runner binary', () => {
+  const dir = makePreviewWorkspace();
+  try {
+    for (const command of ['run', 'autopilot']) {
+      const res = runPreviewCli([command, '--dry-run', '--runner-bin', '/tmp/atris-missing-runner-proof'], dir);
+      assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
+      assert.doesNotMatch(res.stderr, /CLI not found/);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('runtime runner wording is config-neutral', () => {

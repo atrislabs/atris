@@ -363,14 +363,6 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check configured runner CLI is available.
-  try {
-    execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
-  } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
-    process.exit(1);
-  }
-
   console.log('');
   if (verbose) {
     console.log('┌─────────────────────────────────────────────────────────────┐');
@@ -403,6 +395,14 @@ async function runAtris(options = {}) {
     console.log(`  ${cycles} cycles of plan → do → review`);
     console.log('  Context:', JSON.stringify(context, null, 2));
     return;
+  }
+
+  // Check configured runner CLI is available only when execution will spawn it.
+  try {
+    execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
+  } catch {
+    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+    process.exit(1);
   }
 
   const startTime = Date.now();

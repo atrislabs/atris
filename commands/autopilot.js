@@ -3022,11 +3022,6 @@ async function autopilotAtris(description, options = {}) {
     process.exit(1);
   }
 
-  try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
-    process.exit(1);
-  }
-
   const durationMs = parseDuration(duration);
   const durationLabel = duration
     ? duration
@@ -3152,6 +3147,11 @@ async function autopilotAtris(description, options = {}) {
       if (suggestion.kind === 'lessons') skipped.add('lessons');
       if (suggestion.kind === 'feature') skipped.add('incomplete-features');
       continue;
+    }
+
+    try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
+      console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+      process.exit(1);
     }
 
     // Get approval
