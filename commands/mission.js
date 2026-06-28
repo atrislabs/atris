@@ -481,6 +481,52 @@ function completionGateLabel(gate) {
   return gate.forced ? `forced override (${gate.source})` : gate.source;
 }
 
+function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
+  const gate = mission.completion_gate || {};
+  const gateLabel = completionGateLabel(gate) || 'completion gate';
+  const checked = gate.source === 'receipt' && gate.receipt_path
+    ? `I checked the passing verifier receipt ${gate.receipt_path}.`
+    : gate.source === 'mission_state'
+      ? 'I checked mission state showing the verifier passed.'
+      : gate.source === 'no_verifier'
+        ? 'No verifier was configured, so completion used the no-verifier gate.'
+        : `I checked the ${gateLabel} completion gate.`;
+  const tested = mission.verifier_result?.passed
+    ? `Verifier passed: ${mission.verifier_result.command || mission.verifier || 'configured verifier'}.`
+    : mission.verifier
+      ? `Completion proof is attached for verifier: ${mission.verifier}.`
+      : 'No verifier command was recorded for this mission.';
+  const landing = {
+    happened: `Mission completed: ${mission.objective}.`,
+    checked,
+    tested,
+    saved: `Saved complete mission ${mission.id}${proof ? ` with proof ${proof}` : ''}.`,
+    decision: xpNextCommand
+      ? `Queue AgentXP next: ${xpNextCommand}`
+      : 'Mission is complete; start or resume the next mission if more work remains.',
+  };
+  const result = {
+    changed: landing.happened,
+    checked: landing.checked,
+    tested: landing.tested,
+    saved: landing.saved,
+    accept: landing.decision,
+  };
+  return { landing, result };
+}
+
+function missionResultLines(completion) {
+  const landing = completion?.landing || {};
+  const result = completion?.result || {};
+  const lines = ['Result:'];
+  if (landing.happened) lines.push(`  What happened: ${landing.happened}`);
+  if (landing.checked) lines.push(`  How I checked: ${landing.checked}`);
+  if (landing.tested) lines.push(`  What I tested: ${landing.tested}`);
+  if (result.saved) lines.push(`  Saved: ${result.saved}`);
+  if (landing.decision) lines.push(`  Decision: ${landing.decision}`);
+  return lines;
+}
+
 function renderMissionStatus(root = process.cwd()) {
   const paths = statePaths(root);
   const missions = listMissions(root);
@@ -2325,22 +2371,43 @@ function completeMission(args) {
     exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
   }
   const baselineSummary = pruneMissionWorktreeBaseline(mission, process.cwd());
-  const next = {
+  const completionGate = { ...gate, forced: force && !gate.ok };
+  const baseNext = {
     ...mission,
     status: 'complete',
     completed_at: stampIso(),
     proof,
-    completion_gate: { ...gate, forced: force && !gate.ok },
+    completion_gate: completionGate,
     worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: 'mission complete',
+  };
+  const xpNextCommand = missionXpReadyAction(baseNext, proof);
+  const completion = missionCompletionReceipt(baseNext, proof, xpNextCommand);
+  const next = {
+    ...baseNext,
+    landing: completion.landing,
+    result: completion.result,
   };
   const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof, completion_gate: next.completion_gate });
   const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
   const codexGoalState = refreshCodexGoalController(process.cwd());
-  const xpNextCommand = missionXpReadyAction(saved, proof);
   printJsonOrText(
-    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath, codex_goal_state: codexGoalState, xp_next_command: xpNextCommand },
-    [`Completed mission: ${saved.objective}`, `Proof: ${proof}`, ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : [])],
+    {
+      ok: true,
+      action: 'mission_completed',
+      mission: saved,
+      landing: completion.landing,
+      result: completion.result,
+      log_path: logPath,
+      codex_goal_state: codexGoalState,
+      xp_next_command: xpNextCommand,
+    },
+    [
+      `Completed mission: ${saved.objective}`,
+      ...missionResultLines(completion),
+      `Proof: ${proof}`,
+      ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : []),
+    ],
     asJson,
   );
 }

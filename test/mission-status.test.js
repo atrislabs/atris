@@ -274,6 +274,67 @@ test('mission status normalizes stale terminal next actions', () => {
   }
 });
 
+test('mission complete emits a human-readable Result receipt', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'json complete receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const tick = runCli(['mission', 'tick', mission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receiptPath = JSON.parse(tick.stdout).receipt_path;
+
+    const completed = runCli(['mission', 'complete', mission.id, '--proof', receiptPath, '--json'], { cwd: dir });
+    assert.equal(completed.status, 0, completed.stderr || completed.stdout);
+    const payload = JSON.parse(completed.stdout);
+    assert.equal(payload.action, 'mission_completed');
+    assert.equal(payload.mission.status, 'complete');
+    assert.equal(payload.landing.happened, 'Mission completed: json complete receipt mission.');
+    assert.match(payload.landing.checked, /passing verifier receipt/);
+    assert.match(payload.landing.tested, /Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(payload.result.saved, new RegExp(`Saved complete mission ${mission.id}`));
+    assert.equal(payload.mission.landing.happened, payload.landing.happened);
+    assert.equal(payload.mission.result.saved, payload.result.saved);
+
+    const humanStarted = runCli([
+      'mission',
+      'start',
+      'human complete receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(humanStarted.status, 0, humanStarted.stderr || humanStarted.stdout);
+    const humanMission = JSON.parse(humanStarted.stdout).mission;
+    const humanTick = runCli(['mission', 'tick', humanMission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(humanTick.status, 0, humanTick.stderr || humanTick.stdout);
+    const humanReceiptPath = JSON.parse(humanTick.stdout).receipt_path;
+
+    const humanCompleted = runCli(['mission', 'complete', humanMission.id, '--proof', humanReceiptPath], { cwd: dir });
+    assert.equal(humanCompleted.status, 0, humanCompleted.stderr || humanCompleted.stdout);
+    assert.match(humanCompleted.stdout, /Result:/);
+    assert.match(humanCompleted.stdout, /What happened: Mission completed: human complete receipt mission\./);
+    assert.match(humanCompleted.stdout, /How I checked: I checked the passing verifier receipt/);
+    assert.match(humanCompleted.stdout, /What I tested: Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(humanCompleted.stdout, /Saved: Saved complete mission/);
+    assert.match(humanCompleted.stdout, /Decision: Mission is complete/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission report keeps worker debrief separate from verifier proof', () => {
   const dir = makeTempDir();
   try {
