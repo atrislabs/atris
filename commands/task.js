@@ -1812,6 +1812,9 @@ function sortTasksOldestFirst(tasks) {
 function taskQueueItem(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const page = taskPageContract(task, { reviewer, hasExistingReviewFollowUp });
   const item = compactTaskForStatus(task) || {};
+  item.ref = taskRef(task);
+  item.display_id = item.display_id || task.display_id || null;
+  item.legacy_ref = item.legacy_ref || task.legacy_ref || taskRef(task.id);
   if (item.review && item.review.verification_chat) {
     item.review = { ...item.review };
     delete item.review.verification_chat;
