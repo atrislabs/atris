@@ -4325,6 +4325,25 @@ test('brain compile writes loadable status and ledger artifacts', () => {
   }
 });
 
+test('brain compile includes chat scan load pointer when present', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'chat_scan.latest.json'), JSON.stringify({
+      generated_at: '2026-06-28T00:00:00.000Z',
+      next_command: 'atris member wake auto-improver --execute --confirm-autonomy-policy',
+    }) + '\n', 'utf8');
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const claude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(claude, /`\.atris\/state\/chat_scan\.latest\.json`/);
+    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /`\.atris\/state\/chat_scan\.latest\.json`/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile refreshes stale now.md before collecting state', () => {
   const dir = makeTempDir();
   try {

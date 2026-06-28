@@ -13,6 +13,9 @@ const GENERATED_LOAD_ORDER_FILES = [
   'atris/brain/STATUS.md',
   'atris/brain/self_improvement_ledger.md',
 ];
+const OPTIONAL_STATE_LOAD_ORDER_FILES = [
+  '.atris/state/chat_scan.latest.json',
+];
 const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/wiki/concepts/agent-activation-contract.md',
   'atris/skills/atris/SKILL.md',
@@ -1280,9 +1283,11 @@ function verifyApproval(root, approvalId) {
 
 function brainLoadOrderFiles(state) {
   const root = state.root;
+  const existingState = OPTIONAL_STATE_LOAD_ORDER_FILES
+    .filter(rel => fs.existsSync(path.join(root, rel)));
   const existing = OPTIONAL_LOAD_ORDER_FILES
     .filter(rel => fs.existsSync(path.join(root, rel)));
-  return [...GENERATED_LOAD_ORDER_FILES, ...existing];
+  return [...GENERATED_LOAD_ORDER_FILES, ...existingState, ...existing];
 }
 
 function renderNumberedLoadOrder(state) {
