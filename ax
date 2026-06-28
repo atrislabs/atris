@@ -116,6 +116,9 @@ function formatUsage() {
     '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
+    '  ax --approvals',
+    '  ax --approve <approval-id>',
+    '  ax --deny <approval-id>',
     '  ax --self-test',
     '  ax [--max|--fast] --benchmark',
     '',
@@ -136,6 +139,7 @@ function formatUsage() {
     '  ax --max --verify "npm test" fix the failing suite',
     '  ax --code-fast explain this error',
     '  ax --fast what is on my calendar today',
+    '  ax --approvals',
     '  ax --pro --chat',
   ].join('\n');
 }
@@ -1073,6 +1077,116 @@ function formatTaskPreviewRows(receipt, options = {}) {
   ].filter(Boolean);
 }
 
+function approvalStorePath(options = {}) {
+  return options.storePath || process.env.AX_APPROVAL_STORE || path.join(os.homedir(), '.atris', 'ax-approvals.json');
+}
+
+function emptyApprovalStore() {
+  return { schema: 'ax.pending_approvals.v1', approvals: [] };
+}
+
+function readApprovalStore(options = {}) {
+  const file = approvalStorePath(options);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const approvals = Array.isArray(parsed.approvals) ? parsed.approvals.filter(row => row && row.id && row.approval_request) : [];
+    return { schema: 'ax.pending_approvals.v1', approvals };
+  } catch (_) {
+    return emptyApprovalStore();
+  }
+}
+
+function writeApprovalStore(store, options = {}) {
+  const file = approvalStorePath(options);
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch (_) {}
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const data = JSON.stringify({
+    schema: 'ax.pending_approvals.v1',
+    approvals: Array.isArray(store && store.approvals) ? store.approvals : [],
+  }, null, 2);
+  fs.writeFileSync(tmp, data, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch (_) {}
+  return file;
+}
+
+function approvalRecordFromReceipt(receipt, approvalRequest, options = {}) {
+  const request = approvalRequestWithStableId(approvalRequest);
+  const id = request && (request.approval_request_id || request.approval_id);
+  if (!id) return null;
+  const approvalLine = formatApprovalReceipt({
+    ...receipt,
+    tool_events: [{
+      ...(taskPreviewApprovalEvent(receipt) || {}),
+      approval_request: request,
+    }],
+  });
+  return {
+    id,
+    created_at: options.createdAt || new Date().toISOString(),
+    updated_at: options.updatedAt || new Date().toISOString(),
+    cwd: options.cwd || '',
+    mode: normalizeMode(options.mode || 'fast'),
+    approval_request: request,
+    display_rows: [
+      ...formatTaskPreviewRows(receipt, { color: false }),
+      approvalLine ? formatAuxRow('wait', approvalLine, { color: false }) : null,
+    ].filter(Boolean),
+  };
+}
+
+function persistPendingApproval(receipt, approvalRequest, options = {}) {
+  if (options.disableApprovalStore) return null;
+  const record = approvalRecordFromReceipt(receipt || {}, approvalRequest, options);
+  if (!record) return null;
+  const store = readApprovalStore(options);
+  const existing = store.approvals.find(row => row.id === record.id);
+  if (existing && existing.created_at) record.created_at = existing.created_at;
+  store.approvals = [
+    record,
+    ...store.approvals.filter(row => row.id !== record.id),
+  ].slice(0, 50);
+  writeApprovalStore(store, options);
+  return record;
+}
+
+function findStoredApproval(ref, options = {}) {
+  const target = String(ref || '').trim();
+  if (!target) return null;
+  const store = readApprovalStore(options);
+  const matches = store.approvals.filter(row => String(row.id || '').startsWith(target));
+  if (matches.length !== 1) return null;
+  return matches[0];
+}
+
+function removeStoredApproval(ref, options = {}) {
+  const record = findStoredApproval(ref, options);
+  if (!record) return null;
+  const store = readApprovalStore(options);
+  store.approvals = store.approvals.filter(row => row.id !== record.id);
+  writeApprovalStore(store, options);
+  return record;
+}
+
+function formatStoredApprovals(store, options = {}) {
+  const approvals = Array.isArray(store && store.approvals) ? store.approvals : [];
+  if (!approvals.length) return 'No pending approvals.';
+  const blocks = ['Pending approvals'];
+  for (const approval of approvals) {
+    blocks.push(formatAuxRow('id', approval.id, options));
+    for (const row of Array.isArray(approval.display_rows) ? approval.display_rows : []) {
+      blocks.push(row);
+    }
+  }
+  return blocks.join('\n');
+}
+
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
@@ -1231,6 +1345,35 @@ async function executeApprovalFromState(state, options = {}) {
   const approvalRequest = approvalExecutionRequestFromState(state);
   if (!approvalRequest) return null;
   return executeApprovalRequest(approvalRequest, { ...options, state });
+}
+
+async function approveStoredApproval(ref, options = {}) {
+  const record = findStoredApproval(ref, options);
+  if (!record) throw new Error(`Pending approval not found: ${ref}`);
+  const output = options.output || process.stdout;
+  const startedAt = Date.now();
+  output.write('Accepted.\n');
+  const execution = await executeApprovalRequest(record.approval_request, {
+    model: options.model || modelForMode(options.mode || record.mode || 'fast'),
+    output,
+    ...(options.postApproval ? { postApproval: options.postApproval } : {}),
+  });
+  const credits = creditsFromApprovalExecution(execution && execution.response);
+  output.write(`${formatDoneLine(Date.now() - startedAt, credits)}\n`);
+  if (approvalExecutionShouldRemainPending(execution && execution.response)) {
+    const store = readApprovalStore(options);
+    store.approvals = store.approvals.map(row => row.id === record.id ? { ...row, updated_at: new Date().toISOString() } : row);
+    writeApprovalStore(store, options);
+  } else {
+    removeStoredApproval(record.id, options);
+  }
+  return execution;
+}
+
+function denyStoredApproval(ref, options = {}) {
+  const record = removeStoredApproval(ref, options);
+  if (!record) throw new Error(`Pending approval not found: ${ref}`);
+  return record;
 }
 
 function clearRetriedText(state) {
@@ -1844,6 +1987,7 @@ async function chat(options = {}) {
     const pendingApprovalRequest = latestPendingApprovalRequest(history);
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageCancelsPendingApproval(trimmed)) {
       const startedAt = Date.now();
+      if (!options.turnFunction) removeStoredApproval(pendingApprovalRequest.approval_request_id || pendingApprovalRequest.approval_id, { storePath: options.approvalStorePath });
       output.write('Cancelled.\n');
       output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
       history.push({ role: 'user', content: trimmed });
@@ -1874,6 +2018,14 @@ async function chat(options = {}) {
       });
       const credits = creditsFromApprovalExecution(approvalExecution && approvalExecution.response);
       output.write(`${formatDoneLine(Date.now() - startedAt, credits)}\n\n`);
+      if (!options.turnFunction) {
+        const approvalId = pendingApprovalRequest.approval_request_id || pendingApprovalRequest.approval_id;
+        if (approvalExecutionShouldRemainPending(approvalExecution && approvalExecution.response)) {
+          persistPendingApproval({}, pendingApprovalRequest, { cwd, mode, storePath: options.approvalStorePath });
+        } else {
+          removeStoredApproval(approvalId, { storePath: options.approvalStorePath });
+        }
+      }
       history.push({ role: 'user', content: trimmed });
       history.push({
         role: 'assistant',
@@ -1909,6 +2061,9 @@ async function chat(options = {}) {
             : null
         )
       : approvalRequestFromReceipt(receipt);
+    if (approvalRequest && !options.turnFunction) {
+      persistPendingApproval(receipt, approvalRequest, { cwd, mode, storePath: options.approvalStorePath });
+    }
     const assistantContent = [
       result.output || '',
       approvalExecution && approvalExecution.message ? approvalExecution.message : '',
@@ -2430,6 +2585,43 @@ async function runSelfTest(options = {}) {
     assertSelfTest(/Cancelled\./.test(text), 'denial did not render cancellation');
   }, results, output);
 
+  await runSelfTestCase('approval queue privacy', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-self-test-approvals-'));
+    const storePath = path.join(dir, 'approvals.json');
+    try {
+      const receipt = {
+        task_preview: {
+          task: 'slack.post_message',
+          owner_member: 'comms',
+          status: 'approval_required',
+          missing: [],
+        },
+        tool_events: [{
+          tool: 'slack',
+          approval_request: {
+            connector: 'slack',
+            action: 'post_message',
+            executor_action_type: 'slack_post_message',
+            status: 'approval_required',
+            payload: { channel: '#general', text: 'secret payload text' },
+          },
+        }],
+      };
+      const request = approvalRequestFromReceipt(receipt);
+      const record = persistPendingApproval(receipt, request, { storePath, cwd: dir, mode: 'fast' });
+      const mode = fs.statSync(storePath).mode & 0o777;
+      const listed = formatStoredApprovals(readApprovalStore({ storePath }), { color: false });
+      assertSelfTest(record && record.id, 'approval queue record missing');
+      assertSelfTest(mode === 0o600, `approval queue mode was ${mode.toString(8)}`);
+      assertSelfTest(/owner\s+comms/.test(listed), 'approval queue owner missing');
+      assertSelfTest(!/secret payload text/.test(listed), 'approval queue list leaked payload');
+      denyStoredApproval(record.id, { storePath });
+      assertSelfTest(readApprovalStore({ storePath }).approvals.length === 0, 'approval denial did not remove queue record');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, results, output);
+
   await runSelfTestCase('approval output privacy', async () => {
     const text = formatApprovalExecutionResult({
       ok: false,
@@ -2638,11 +2830,35 @@ async function main() {
   const doctor = args.includes('--doctor');
   const selfTest = args.includes('--self-test');
   const benchmark = args.includes('--benchmark');
+  const approvals = args.includes('--approvals');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
+
+  let approveId = '';
+  const approveIdx = args.indexOf('--approve');
+  if (approveIdx !== -1) {
+    approveId = String(args[approveIdx + 1] || '').trim();
+    if (!approveId) {
+      console.error('Usage: ax --approve <approval-id>');
+      process.exit(1);
+    }
+    args.splice(approveIdx, 2);
+  }
+
+  let denyId = '';
+  const denyIdx = args.indexOf('--deny');
+  if (denyIdx !== -1) {
+    denyId = String(args[denyIdx + 1] || '').trim();
+    if (!denyId) {
+      console.error('Usage: ax --deny <approval-id>');
+      process.exit(1);
+    }
+    args.splice(denyIdx, 2);
+  }
+
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--self-test', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -2697,6 +2913,22 @@ async function main() {
       return;
     }
 
+    if (approvals) {
+      console.log(formatStoredApprovals(readApprovalStore(), process.stdout));
+      return;
+    }
+
+    if (approveId) {
+      await approveStoredApproval(approveId, { mode, output: process.stdout });
+      return;
+    }
+
+    if (denyId) {
+      const record = denyStoredApproval(denyId);
+      console.log(`Cancelled pending approval ${record.id}.`);
+      return;
+    }
+
     if (!prompt || args.includes('--chat')) {
       await chat({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
       return;
@@ -2705,6 +2937,9 @@ async function main() {
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
+    const receipt = receiptFromState(result);
+    const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
+    if (approvalRequest) persistPendingApproval(receipt, approvalRequest, { cwd: process.cwd(), mode });
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
@@ -2723,6 +2958,8 @@ module.exports = {
   authUserId,
   approvalExecutionRequestFromReceipt,
   approvalRequestFromReceipt,
+  approvalStorePath,
+  approveStoredApproval,
   backendBaseUrl,
   backendStartCommand,
   backendUrl,
@@ -2743,6 +2980,7 @@ module.exports = {
   createRunLogger,
   createProgressReporter,
   creditsFromApprovalExecution,
+  denyStoredApproval,
   executeApprovalRequest,
   executeApprovalFromState,
   formatDoneLine,
@@ -2756,6 +2994,7 @@ module.exports = {
   formatRunProfile,
   formatRuntimeHealth,
   formatStatusMessage,
+  formatStoredApprovals,
   formatSystemInit,
   formatTaskPreviewRows,
   formatUsage,
@@ -2766,9 +3005,12 @@ module.exports = {
   messageCancelsPendingApproval,
   modelForMode,
   parseSseBlock,
+  persistPendingApproval,
   postApprovalExecution,
   postCodeFastTurn,
   postTurn,
+  readApprovalStore,
+  removeStoredApproval,
   renderStreamingMarkdown,
   renderTerminalMarkdown,
   resolveRoute,

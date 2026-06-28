@@ -165,7 +165,7 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   const results = await ax.runSelfTest({ output });
   const text = chunks.join('');
 
-  assert.equal(results.length, 10);
+  assert.equal(results.length, 11);
   assert.equal(results.every(result => result.ok), true);
   assert.match(text, /AX self-test/);
   assert.match(text, /doctor redaction .*ok/);
@@ -176,9 +176,10 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   assert.match(text, /calendar chat approval loop .*ok/);
   assert.match(text, /calendar blocked approval retry .*ok/);
   assert.match(text, /calendar chat denial loop .*ok/);
+  assert.match(text, /approval queue privacy .*ok/);
   assert.match(text, /approval output privacy .*ok/);
   assert.match(text, /run log privacy .*ok/);
-  assert.match(text, /Self-test passed: 10\/10/);
+  assert.match(text, /Self-test passed: 11\/11/);
   assert.match(ax.formatUsage(), /--self-test/);
 });
 
@@ -803,6 +804,66 @@ test('ax executes a stored generic approval request without another model turn',
   const rendered = chunks.join('');
   assert.match(rendered, /wait\s+Sending approved action to Atris cloud/);
   assert.match(rendered, /done\s+Sent Slack message\./);
+});
+
+test('ax persists approvals privately and lists them without payload text', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-approval-store-'));
+  const storePath = path.join(dir, 'approvals.json');
+  try {
+    const receipt = {
+      task_preview: {
+        task: 'slack.post_message',
+        owner_member: 'comms',
+        status: 'approval_required',
+        missing: [],
+      },
+      tool_events: [{
+        tool: 'slack',
+        approval_request: {
+          connector: 'slack',
+          action: 'post_message',
+          executor_action_type: 'slack_post_message',
+          status: 'approval_required',
+          payload: { channel: '#general', text: 'secret payload text' },
+        },
+      }],
+    };
+    const approvalRequest = ax.approvalRequestFromReceipt(receipt);
+    const record = ax.persistPendingApproval(receipt, approvalRequest, { storePath, cwd: '/tmp/project', mode: 'fast' });
+    const mode = fs.statSync(storePath).mode & 0o777;
+    assert.equal(mode, 0o600);
+
+    const listed = ax.formatStoredApprovals(ax.readApprovalStore({ storePath }), { color: false });
+    assert.match(listed, /Pending approvals/);
+    assert.match(listed, new RegExp(record.id));
+    assert.match(listed, /owner\s+comms/);
+    assert.match(listed, /check\s+approval required/);
+    assert.doesNotMatch(listed, /secret payload text/);
+
+    const chunks = [];
+    await ax.approveStoredApproval(record.id.slice(0, 16), {
+      storePath,
+      output: { isTTY: false, write(chunk) { chunks.push(String(chunk)); return true; } },
+      postApproval: async () => ({
+        ok: true,
+        status: 200,
+        data: {
+          status: 'executed',
+          action_type: 'slack_post_message',
+          execution: { status: 'executed', action_type: 'slack_post_message', executed: true },
+        },
+      }),
+    });
+    assert.equal(ax.readApprovalStore({ storePath }).approvals.length, 0);
+    assert.match(chunks.join(''), /Sent Slack message/);
+
+    const second = ax.persistPendingApproval(receipt, approvalRequest, { storePath, cwd: '/tmp/project', mode: 'fast' });
+    const denied = ax.denyStoredApproval(second.id.slice(0, 16), { storePath });
+    assert.equal(denied.id, second.id);
+    assert.equal(ax.readApprovalStore({ storePath }).approvals.length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('ax formats blocked approval execution without leaking payloads', () => {
