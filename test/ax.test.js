@@ -36,7 +36,8 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
     mode: 'max',
     route: 'cloud',
   });
-  assert.equal(cloudWrite.max_turns, 4);
+  assert.equal(cloudWrite.max_turns, 1);
+  assert.equal(cloudWrite.allow_external_actions, undefined);
 
   assert.match(ax.formatHeader({ mode: 'max', cwd: '/tmp/project', chat: true }), /Atris 2 Max chat/);
 
@@ -122,14 +123,15 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   const results = await ax.runSelfTest({ output });
   const text = chunks.join('');
 
-  assert.equal(results.length, 4);
+  assert.equal(results.length, 5);
   assert.equal(results.every(result => result.ok), true);
   assert.match(text, /AX self-test/);
   assert.match(text, /doctor redaction .*ok/);
   assert.match(text, /approval id .*ok/);
+  assert.match(text, /calendar approval rail .*ok/);
   assert.match(text, /approval output privacy .*ok/);
   assert.match(text, /run log privacy .*ok/);
-  assert.match(text, /Self-test passed: 4\/4/);
+  assert.match(text, /Self-test passed: 5\/5/);
   assert.match(ax.formatUsage(), /--self-test/);
 });
 
@@ -258,8 +260,9 @@ test('ax sends chat history as structured previous messages, not a prompt wrappe
   assert.equal(payload.previous_messages[1].task_preview.task, 'calendar.create_event');
   assert.equal(payload.conversation_id, 'ax-thread-1');
   assert.equal(payload.workspace_path, undefined);
-  assert.equal(payload.allow_external_actions, true);
-  assert.equal(payload.max_turns, 2);
+  assert.equal(payload.allow_external_actions, undefined);
+  assert.equal(payload.cleanup_external_actions, undefined);
+  assert.equal(payload.max_turns, 1);
   assert.doesNotMatch(payload.message, /Current user message|Recent conversation|Continue this terminal/);
 });
 

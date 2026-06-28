@@ -1322,11 +1322,6 @@ function buildPayload(message, options = {}) {
   if (!local && options.connectionUserId) {
     payload.connection_user_id = options.connectionUserId;
   }
-  if (!local && connectorWriteIntent(message)) {
-    payload.allow_external_actions = true;
-    payload.cleanup_external_actions = true;
-    payload.max_turns = mode === 'fast' ? 2 : 4;
-  }
   return payload;
 }
 
@@ -1944,6 +1939,26 @@ async function runSelfTest(options = {}) {
     const second = approvalRequestFromReceipt(receipt);
     assertSelfTest(first && /^apreq_ax_[a-f0-9]{20}$/.test(first.approval_request_id), 'stable approval id missing');
     assertSelfTest(first.approval_request_id === second.approval_request_id, 'approval id was not stable');
+  }, results, output);
+
+  await runSelfTestCase('calendar approval rail', async () => {
+    const payload = buildPayload('add calendar event today at 2pm', {
+      mode: 'fast',
+      route: 'cloud',
+      connectionContext: {
+        schema: 'atris.connection_capabilities.v1',
+        source: 'ax',
+        connections: [{
+          id: 'google-calendar',
+          connected: true,
+          actions: ['list_events', 'create_event'],
+          authority: { list_events: 'read_only', create_event: 'approval_required' },
+        }],
+      },
+    });
+    assertSelfTest(payload.workspace_path === undefined, 'calendar write should stay on cloud approval route');
+    assertSelfTest(payload.allow_external_actions === undefined, 'calendar write bypassed approval rail');
+    assertSelfTest(payload.cleanup_external_actions === undefined, 'calendar write requested cleanup bypass');
   }, results, output);
 
   await runSelfTestCase('approval output privacy', async () => {
