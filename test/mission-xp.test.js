@@ -76,6 +76,29 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     assert.equal(task.metadata.goal_id, mission.id);
     assert.equal(task.metadata.goal_objective, 'Ship one AgentXP mission loop');
 
+    const status = runCli(['mission', 'status', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusMission = JSON.parse(status.stdout).missions[0];
+    assert.equal(statusMission.goal_id, mission.id);
+    assert.equal(statusMission.task_id, mission.xp_task.task_id);
+    assert.equal(statusMission.current_task_id, mission.xp_task.task_id);
+    assert.equal(statusMission.task_ref, mission.xp_task.ref);
+    assert.equal(statusMission.task_spine.goal_id, mission.id);
+    assert.equal(statusMission.task_spine.owner, 'game-manager');
+    assert.equal(statusMission.task_spine.runner, 'codex_goal');
+    assert.equal(statusMission.task_spine.lane, 'code');
+    assert.match(statusMission.task_spine.current_step_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    assert.match(statusMission.task_spine.current_step_command, /--as game-manager/);
+
+    const humanStatus = runCli(['mission', 'status', mission.id], { cwd: dir, env });
+    assert.equal(humanStatus.status, 0, humanStatus.stderr || humanStatus.stdout);
+    assert.match(humanStatus.stdout, new RegExp(`task: ${mission.xp_task.ref}`));
+    assert.match(humanStatus.stdout, new RegExp(`task next: atris task current-step --goal-id ${mission.id}`));
+
+    const nowText = fs.readFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'now.md'), 'utf8');
+    assert.match(nowText, new RegExp(`task: ${mission.xp_task.ref}`));
+    assert.match(nowText, new RegExp(`task next: atris task current-step --goal-id ${mission.id}`));
+
     const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir, env });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const ticked = JSON.parse(tick.stdout);
@@ -86,7 +109,9 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
 
     const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
-    assert.match(JSON.parse(goal.stdout).goal.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.match(goalPayload.goal.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    assert.equal(goalPayload.goal.task_spine.task_ref, mission.xp_task.ref);
 
     const ready = runCli(['task', 'current-step', '--goal-id', mission.id, '--proof', ticked.receipt_path, '--as', 'game-manager', '--json'], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
