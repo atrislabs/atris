@@ -8753,6 +8753,14 @@ test('task current returns read-only selected page and queue lanes', () => {
     ], { cwd: dir, env });
     assert.equal(scopedPlanAdd.status, 0, scopedPlanAdd.stderr);
     const scopedPlanTask = JSON.parse(scopedPlanAdd.stdout).task;
+    const scopedParallelAdd = runCli([
+      'task', 'add', 'Scoped OBL-928 validator task should wait',
+      '--tag', 'agent',
+      '--goal-id', 'OBL-928',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(scopedParallelAdd.status, 0, scopedParallelAdd.stderr);
+    const scopedParallelTask = JSON.parse(scopedParallelAdd.stdout).task;
 
     const backlogAdd = runCli(['task', 'add', 'Raw inbox idea', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(backlogAdd.status, 0, backlogAdd.stderr);
@@ -8809,7 +8817,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(capabilitiesPayload.safety.read_only, true);
 	    assert.equal(capabilitiesPayload.safety.claims_work, false);
 	    assert.equal(payload.queue.counts.review, 1);
-	    assert.equal(payload.queue.counts.plan, 2);
+	    assert.equal(payload.queue.counts.plan, 3);
 	    assert.equal(payload.queue.counts.backlog, 1);
 	    assert.equal(payload.current.review_state_counts.total, 1);
 	    assert.equal(payload.current.review_state_counts.needs_agent, 1);
@@ -8862,16 +8870,16 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(scopedPayload.current.selected_ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.page.task.ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.queue.scope.goal_id, 'OBL-928');
-    assert.equal(scopedPayload.queue.counts.total, 1);
+    assert.equal(scopedPayload.queue.counts.total, 2);
     assert.equal(scopedPayload.queue.counts.review, 0);
-    assert.equal(scopedPayload.queue.counts.plan, 1);
+    assert.equal(scopedPayload.queue.counts.plan, 2);
 
     const scopedQueue = runCli(['task', 'queue', '--as', 'codex', '--goal-id', 'OBL-928', '--limit', '1', '--json'], { cwd: dir, env });
     assert.equal(scopedQueue.status, 0, scopedQueue.stderr);
     const scopedQueuePayload = JSON.parse(scopedQueue.stdout);
     assert.equal(scopedQueuePayload.queue.scope.goal_id, 'OBL-928');
-    assert.equal(scopedQueuePayload.queue.counts.total, 1);
-    assert.equal(scopedQueuePayload.queue.columns.find(column => column.key === 'plan').items[0].id, scopedPlanTask.id);
+    assert.equal(scopedQueuePayload.queue.counts.total, 2);
+    assert.equal(scopedQueuePayload.queue.columns.find(column => column.key === 'plan').items[0].id, scopedParallelTask.id);
 
     const tagQueue = runCli(['task', 'queue', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(tagQueue.status, 0, tagQueue.stderr);

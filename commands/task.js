@@ -1801,6 +1801,14 @@ function sortTasksNewestFirst(tasks) {
   });
 }
 
+function sortTasksOldestFirst(tasks) {
+  return [...tasks].sort((a, b) => {
+    const byUpdated = Number(a.updated_at || 0) - Number(b.updated_at || 0);
+    if (byUpdated) return byUpdated;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  });
+}
+
 function taskQueueItem(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const page = taskPageContract(task, { reviewer, hasExistingReviewFollowUp });
   const item = compactTaskForStatus(task) || {};
@@ -2885,7 +2893,8 @@ function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, s
 }
 
 function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, hasExistingReviewFollowUp = null } = {}) {
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), scope, { hasExistingReviewFollowUp });
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope, { hasExistingReviewFollowUp });
   const columns = {
     backlog: [],
     plan: [],
@@ -2906,7 +2915,8 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, h
   if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
   const reviewProofBoundaryBlocked = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION);
   if (reviewProofBoundaryBlocked) return { task: reviewProofBoundaryBlocked, reason: 'review_proof_boundary_blocked' };
-  const planReady = columns.plan[0];
+  const planQueue = normalizedScope.goal_id ? sortTasksOldestFirst(columns.plan) : columns.plan;
+  const planReady = planQueue[0];
   if (planReady) return { task: planReady, reason: 'plan_ready' };
   const backlogIdea = columns.backlog[0];
   if (backlogIdea) return { task: backlogIdea, reason: 'backlog_idea' };
