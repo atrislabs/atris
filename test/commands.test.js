@@ -8962,8 +8962,12 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.match(payload.current.review_state_actions.needs_agent.human_accept.command, new RegExp(`atris task accept ${reviewTask.display_id}`));
 	    assert.equal(payload.current.review_state_actions.continue_work, null);
 	    assert.equal(payload.current.review_state_actions.human_accept_waiting, null);
-	    assert.equal(payload.queue.columns.find(column => column.key === 'review').items[0].id, reviewTask.id);
-	    assert.equal(payload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, undefined);
+	    const reviewQueueItem = payload.queue.columns.find(column => column.key === 'review').items[0];
+	    assert.equal(reviewQueueItem.id, reviewTask.id);
+	    assert.equal(reviewQueueItem.ref, reviewTask.display_id);
+	    assert.equal(reviewQueueItem.display_id, reviewTask.display_id);
+	    assert.ok(reviewQueueItem.legacy_ref);
+	    assert.equal(reviewQueueItem.continue_work_command, undefined);
 
 	    const needsAgentCurrent = runCli(['task', 'current', '--as', 'codex', '--review-state', 'needs-agent', '--json'], { cwd: dir, env });
 	    assert.equal(needsAgentCurrent.status, 0, needsAgentCurrent.stderr);
@@ -12012,8 +12016,12 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.api, null);
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.continue_work_command, undefined);
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.human_accept.human_only, true);
-    assert.equal(continuePayload.queue.columns.find(column => column.key === 'review').items[0].id, continueTask.id);
-    assert.equal(continuePayload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, continueCommand);
+    const continueQueueItem = continuePayload.queue.columns.find(column => column.key === 'review').items[0];
+    assert.equal(continueQueueItem.id, continueTask.id);
+    assert.equal(continueQueueItem.ref, continueTask.display_id);
+    assert.equal(continueQueueItem.display_id, continueTask.display_id);
+    assert.ok(continueQueueItem.legacy_ref);
+    assert.equal(continueQueueItem.continue_work_command, continueCommand);
 
     const waitingQueue = runCli([
       'task', 'queue',
@@ -12044,8 +12052,12 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.next_action, 'human_accept_waiting');
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.command, null);
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.api, null);
-    assert.equal(waitingPayload.queue.columns.find(column => column.key === 'review').items[0].id, waitingTask.id);
-    assert.equal(waitingPayload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, undefined);
+    const waitingQueueItem = waitingPayload.queue.columns.find(column => column.key === 'review').items[0];
+    assert.equal(waitingQueueItem.id, waitingTask.id);
+    assert.equal(waitingQueueItem.ref, waitingTask.display_id);
+    assert.equal(waitingQueueItem.display_id, waitingTask.display_id);
+    assert.ok(waitingQueueItem.legacy_ref);
+    assert.equal(waitingQueueItem.continue_work_command, undefined);
 
     const waitingCurrent = runCli([
       'task', 'current',
