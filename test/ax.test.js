@@ -110,6 +110,29 @@ test('ax doctor formats runtime readiness without model ids or secrets', async (
   assert.doesNotMatch(offlineText, modelPattern);
 });
 
+test('ax self-test verifies harness invariants without backend calls', async () => {
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const results = await ax.runSelfTest({ output });
+  const text = chunks.join('');
+
+  assert.equal(results.length, 4);
+  assert.equal(results.every(result => result.ok), true);
+  assert.match(text, /AX self-test/);
+  assert.match(text, /doctor redaction .*ok/);
+  assert.match(text, /approval id .*ok/);
+  assert.match(text, /approval output privacy .*ok/);
+  assert.match(text, /run log privacy .*ok/);
+  assert.match(text, /Self-test passed: 4\/4/);
+  assert.match(ax.formatUsage(), /--self-test/);
+});
+
 test('ax chat renders claude-style blocks and a slash menu', () => {
   const writes = [];
   const out = { isTTY: false, write: (chunk) => writes.push(chunk) };

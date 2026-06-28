@@ -115,6 +115,7 @@ function formatUsage() {
     '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
+    '  ax --self-test',
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
@@ -136,6 +137,20 @@ function formatUsage() {
     '  ax --fast what is on my calendar today',
     '  ax --pro --chat',
   ].join('\n');
+}
+
+function selfTestOutput() {
+  let text = '';
+  return {
+    isTTY: false,
+    write(chunk) {
+      text += String(chunk || '');
+      return true;
+    },
+    text() {
+      return text;
+    }
+  };
 }
 
 function timestampForFile(date = new Date()) {
@@ -1884,6 +1899,118 @@ async function runBenchmarkCase(label, fn, results, output) {
   }
 }
 
+async function runSelfTestCase(label, fn, results, output) {
+  output.write(`- ${label} ... `);
+  try {
+    await fn();
+    output.write('ok\n');
+    results.push({ label, ok: true });
+  } catch (error) {
+    output.write(`fail - ${error.message}\n`);
+    results.push({ label, ok: false, error: error.message });
+  }
+}
+
+function assertSelfTest(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+async function runSelfTest(options = {}) {
+  const output = options.output || process.stdout;
+  const results = [];
+  output.write('AX self-test\n\n');
+
+  await runSelfTestCase('doctor redaction', async () => {
+    const health = await buildRuntimeHealth({
+      healthRes: {
+        ok: true,
+        status: 200,
+        data: {
+          ready: true,
+          models: [{
+            id: 'atris:fast',
+            route: 'fireworks',
+            chat_model: 'fireworks:glm-5.2',
+            tool_model: 'fireworks:glm-5.2',
+            ready: true,
+          }],
+        },
+      },
+    });
+    const text = formatRuntimeHealth(health, { color: false });
+    assertSelfTest(/backend\s+ready/.test(text), 'backend readiness missing');
+    assertSelfTest(/fast\s+ready/.test(text), 'fast readiness missing');
+    assertSelfTest(!/atris:|fireworks|glm|secret|token/i.test(text), 'doctor output leaked provider/debug text');
+  }, results, output);
+
+  await runSelfTestCase('approval id', async () => {
+    const receipt = {
+      tool_events: [{
+        approval_request: {
+          connector: 'slack',
+          executor_action_type: 'slack_post_message',
+          status: 'approval_required',
+          payload: { channel: '#general', text: 'ship note' },
+        },
+      }],
+    };
+    const first = approvalRequestFromReceipt(receipt);
+    const second = approvalRequestFromReceipt(receipt);
+    assertSelfTest(first && /^apreq_ax_[a-f0-9]{20}$/.test(first.approval_request_id), 'stable approval id missing');
+    assertSelfTest(first.approval_request_id === second.approval_request_id, 'approval id was not stable');
+  }, results, output);
+
+  await runSelfTestCase('approval output privacy', async () => {
+    const text = formatApprovalExecutionResult({
+      ok: false,
+      status: 402,
+      data: { detail: { error: 'paid_cloud_computer_required', message: 'secret payload text' } },
+    });
+    assertSelfTest(text === 'Approval execution needs a paid cloud computer.', 'unexpected approval failure text');
+    assertSelfTest(!/secret payload/i.test(text), 'approval failure leaked private detail');
+  }, results, output);
+
+  await runSelfTestCase('run log privacy', async () => {
+    const previousFull = process.env.AX_LOG_FULL;
+    const previousAuto = process.env.AX_AUTO_LOG;
+    delete process.env.AX_LOG_FULL;
+    delete process.env.AX_AUTO_LOG;
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-self-test-log-'));
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    try {
+      const logger = createRunLogger({
+        cwd,
+        mode: 'fast',
+        kind: 'self-test',
+        output: { isTTY: true, write() { return true; } },
+      });
+      assertSelfTest(logger, 'logger was not created');
+      logger.output.write('private input secret\n');
+      logger.write('private output secret\n');
+      logger.close(0);
+      const logText = fs.readFileSync(logger.path, 'utf8');
+      assertSelfTest(/transcript: redacted/.test(logText), 'redacted transcript marker missing');
+      assertSelfTest(!/private input secret|private output secret/.test(logText), 'run log leaked private text');
+    } finally {
+      if (previousFull === undefined) delete process.env.AX_LOG_FULL;
+      else process.env.AX_LOG_FULL = previousFull;
+      if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+      else process.env.AX_AUTO_LOG = previousAuto;
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  }, results, output);
+
+  const failed = results.filter(result => !result.ok);
+  output.write('\n');
+  output.write(failed.length ? `Self-test failed: ${failed.length}/${results.length} failed\n` : `Self-test passed: ${results.length}/${results.length}\n`);
+  if (failed.length) {
+    const error = new Error(failed.map(result => `${result.label}: ${result.error}`).join('; '));
+    error.results = results;
+    throw error;
+  }
+  return results;
+}
+
 async function runBenchmark(options = {}) {
   const normalized = normalizeMode(options.mode);
   const mode = normalized === 'code-fast' ? 'fast' : normalized;
@@ -2039,12 +2166,13 @@ async function main() {
 
   const mode = args.includes('--code-fast') || args.includes('--code') ? 'code-fast' : args.includes('--max') ? 'max' : args.includes('--fast') ? 'fast' : 'pro';
   const doctor = args.includes('--doctor');
+  const selfTest = args.includes('--self-test');
   const benchmark = args.includes('--benchmark');
   const forceCloud = args.includes('--cloud');
   const forceLocal = args.includes('--local');
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
+    .filter(arg => !['--max', '--fast', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--self-test', '--benchmark', '--local', '--cloud', '--help', '-h'].includes(arg))
     .join(' ')
     .trim();
 
@@ -2080,6 +2208,11 @@ async function main() {
   }
 
   try {
+    if (selfTest) {
+      await runSelfTest({ output: process.stdout });
+      return;
+    }
+
     if (benchmark) {
       await runBenchmark({ mode, cwd: process.cwd(), output: process.stdout });
       return;
@@ -2167,6 +2300,7 @@ module.exports = {
   renderTerminalMarkdown,
   resolveRoute,
   runBenchmark,
+  runSelfTest,
   summarizeToolInput,
   summarizeToolResult,
   tierLabel
