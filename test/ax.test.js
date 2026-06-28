@@ -465,6 +465,148 @@ test('ax renders approval preview rows from Atris2 receipts', () => {
   assert.equal(state.output, 'Accepted: markoo today at 2:00 PM.\nCalendar approval still needed before I create it.');
 });
 
+test('ax does not execute approval previews before explicit acceptance', async () => {
+  const output = { isTTY: false, write() { return true; } };
+  const state = {
+    events: [{
+      type: 'receipt',
+      receipt: {
+        task_preview: { task: 'calendar.create_event', status: 'approval_required' },
+        tool_events: [{
+          approval_request: {
+            connector: 'google_calendar',
+            executor_action_type: 'google_calendar_create_event',
+            status: 'approval_required',
+            payload: { summary: 'markoo' },
+          },
+        }],
+      },
+    }],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    needsBullet: true,
+  };
+  let called = false;
+
+  const result = await ax.executeApprovalFromState(state, {
+    output,
+    postApproval: async () => {
+      called = true;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(result, null);
+  assert.equal(called, false);
+});
+
+test('ax executes accepted approval receipts through Atris2 approval endpoint', async () => {
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const receipt = {
+    task_accept_receipt: {
+      accepted: true,
+      task: 'calendar.create_event',
+      execution_status: 'pending_approval_execution',
+      execution_endpoint: '/api/atris2/approvals/execute',
+    },
+    tool_events: [{
+      tool: 'google_calendar',
+      approval_request: {
+        connector: 'google_calendar',
+        action: 'create_event',
+        executor_action_type: 'google_calendar_create_event',
+        status: 'approval_required',
+        payload: {
+          summary: 'markoo',
+          start: { dateTime: '2026-06-28T14:00:00-07:00' },
+          end: { dateTime: '2026-06-28T15:00:00-07:00' },
+        },
+      },
+    }],
+  };
+  const request = ax.approvalExecutionRequestFromReceipt(receipt);
+  assert.match(request.approval_request_id, /^apreq_ax_[a-f0-9]{20}$/);
+
+  const state = {
+    events: [{ type: 'receipt', receipt }],
+    errors: [],
+    output: 'Accepted: markoo today at 2:00 PM.',
+    pendingText: '',
+    wroteText: true,
+    wroteActivity: true,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    needsBullet: true,
+  };
+  let captured = null;
+
+  const execution = await ax.executeApprovalFromState(state, {
+    model: 'atris:fast',
+    output,
+    postApproval: async (approvalRequest, options) => {
+      captured = { approvalRequest, options };
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'executed',
+          action_type: 'google_calendar_create_event',
+          execution: {
+            action_type: 'google_calendar_create_event',
+            executed: true,
+            status: 'executed',
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(captured.options.model, 'atris:fast');
+  assert.equal(captured.approvalRequest.approval_request_id, request.approval_request_id);
+  assert.equal(captured.approvalRequest.payload.summary, 'markoo');
+  assert.equal(execution.message, 'Created calendar event.');
+  const rendered = chunks.join('');
+  assert.match(rendered, /wait\s+Sending approved action to Atris cloud/);
+  assert.match(rendered, /done\s+Created calendar event\./);
+});
+
+test('ax formats blocked approval execution without leaking payloads', () => {
+  assert.equal(
+    ax.formatApprovalExecutionResult({
+      ok: false,
+      status: 402,
+      data: { detail: { error: 'paid_cloud_computer_required', message: 'secret body should not matter' } },
+    }),
+    'Approval execution needs a paid cloud computer.'
+  );
+  assert.equal(
+    ax.formatApprovalExecutionResult({
+      ok: true,
+      status: 200,
+      data: {
+        status: 'blocked_connector_not_connected',
+        action_type: 'google_calendar_create_event',
+        execution: { status: 'blocked_connector_not_connected', action_type: 'google_calendar_create_event' },
+      },
+    }),
+    'Calendar event was not created because the connector is not connected.'
+  );
+});
+
 test('ax auto logger writes clean chat transcripts under atris/runs', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-log-test-'));
   fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
