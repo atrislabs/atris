@@ -192,6 +192,13 @@ test('mission attach-task creates a task spine for an existing active mission', 
     assert.equal(statusMission.task_ref, payload.task.ref);
     assert.equal(statusMission.task_spine.ensure_task_command, null);
 
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.goal.task_spine.task_ref, payload.task.ref);
+    assert.equal(goalPayload.goal.task_spine.ensure_task_command, null);
+    assert.equal(goalPayload.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+
     const again = runCli(['mission', 'task-spine', mission.id, '--json'], { cwd: dir, env });
     assert.equal(again.status, 0, again.stderr || again.stdout);
     const againPayload = JSON.parse(again.stdout);
