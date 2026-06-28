@@ -208,3 +208,48 @@ test('mission attach-task creates a task spine for an existing active mission', 
     cleanupTempDir(dir);
   }
 });
+
+test('mission attach-task assigns engine-owned missions to functional owners', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const start = runCli([
+      'mission', 'start', 'Watch chat log task signals and infer next action',
+      '--owner', 'codex',
+      '--runner', 'codex_goal',
+      '--lane', 'code',
+      '--verify', 'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+    assert.equal(mission.owner, 'signal-scout');
+    assert.equal(mission.requested_owner, 'codex');
+    assert.equal(mission.executed_by, 'codex');
+
+    const attached = runCli(['mission', 'attach-task', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const payload = JSON.parse(attached.stdout);
+    assert.equal(payload.task_spine.owner, 'signal-scout');
+    assert.equal(payload.task_spine.requested_owner, 'codex');
+    assert.equal(payload.task_spine.executed_by, 'codex');
+    assert.equal(payload.task_spine.owner_resolution, 'engine_owner_resolved_by_task_signal');
+    assert.match(payload.task_spine.current_step_command, /--as signal-scout/);
+
+    const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    const task = JSON.parse(list.stdout).tasks.find(row => row.id === payload.task.task_id);
+    assert.equal(task.status, 'claimed');
+    assert.equal(task.claimed_by, 'signal-scout');
+    assert.equal(task.metadata.assigned_to, 'signal-scout');
+    assert.equal(task.metadata.executed_by, 'codex');
+    assert.equal(task.metadata.requested_owner, 'codex');
+    assert.equal(task.metadata.owner_resolution, 'engine_owner_resolved_by_task_signal');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

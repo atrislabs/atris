@@ -8,6 +8,10 @@ const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
+const {
+  normalizeOwnerSlug,
+  resolveFunctionalOwner,
+} = require('../lib/functional-owner');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -166,27 +170,33 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot(root);
   const title = `Mission XP: ${mission.objective}`;
+  const ownerResolution = resolveMissionOwner(mission, workspaceRoot);
+  const owner = ownerResolution.owner;
   const metadata = {
-    assigned_to: mission.owner,
+    assigned_to: owner,
     delegate_via: 'mission_goal_loop',
     created_for_day: todayName(),
     goal_id: mission.id,
     goal_objective: mission.objective,
     mission_id: mission.id,
     mission_objective: mission.objective,
-    mission_owner: mission.owner,
+    mission_owner: owner,
+    owner_resolution: ownerResolution.reason,
     mission_lane: mission.lane,
     mission_runner: mission.runner,
     verify: mission.verifier || null,
     stop_condition: mission.stop_condition || null,
   };
+  if (ownerResolution.requested_owner && ownerResolution.requested_owner !== owner) metadata.requested_owner = ownerResolution.requested_owner;
+  if (ownerResolution.executed_by) metadata.executed_by = normalizeOwnerSlug(ownerResolution.executed_by);
+  if (ownerResolution.proposed_member) metadata.proposed_member = ownerResolution.proposed_member;
   const result = taskDb.addTask(db, {
     title,
     tag: 'agent-xp',
     workspaceRoot,
     sourceKey: `mission-xp:${mission.id}`,
     status: 'claimed',
-    claimedBy: mission.owner,
+    claimedBy: owner,
     metadata,
   });
   const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
@@ -194,7 +204,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   if (task) {
     taskDb.noteTask(db, {
       id: task.id,
-      actor: process.env.ATRIS_AGENT_ID || mission.owner || 'mission-lead',
+      actor: process.env.ATRIS_AGENT_ID || owner,
       content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task current-step; AgentXP lands only after human accept.`,
     });
   }
@@ -204,7 +214,9 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     ref: missionTaskRef(task) || result.id,
     title,
     status: task?.status || 'claimed',
-    assigned_to: mission.owner,
+    assigned_to: owner,
+    owner_resolution: ownerResolution.reason,
+    executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
     inserted: result.inserted !== false,
     projection_path: outPath,
   };
@@ -573,15 +585,57 @@ function missionXpTaskRefFromMission(mission) {
   return '';
 }
 
+function resolveMissionOwner(mission, root = process.cwd()) {
+  const requestedOwner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const resolved = resolveFunctionalOwner({
+    requestedOwner,
+    title: mission?.objective || '',
+    tag: mission?.lane || 'mission',
+    note: mission?.next_action || '',
+    goal: mission?.objective || '',
+    root,
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const requested = mission?.requested_owner || (
+    resolved.requested_owner && resolved.requested_owner !== resolved.owner ? resolved.requested_owner : null
+  );
+  return {
+    ...resolved,
+    reason: mission?.owner_resolution || resolved.reason,
+    requested_owner: requested,
+    executed_by: mission?.executed_by || resolved.executed_by || null,
+  };
+}
+
+function applyMissionOwnerResolution(mission, root = process.cwd()) {
+  const ownerResolution = resolveMissionOwner(mission, root);
+  const next = {
+    ...mission,
+    owner: ownerResolution.owner,
+    owner_resolution: ownerResolution.reason,
+  };
+  if (ownerResolution.requested_owner && ownerResolution.requested_owner !== ownerResolution.owner) {
+    next.requested_owner = ownerResolution.requested_owner;
+  }
+  if (ownerResolution.executed_by) {
+    next.executed_by = normalizeOwnerSlug(ownerResolution.executed_by);
+  }
+  if (ownerResolution.proposed_member) {
+    next.proposed_member = ownerResolution.proposed_member;
+  }
+  return { mission: next, ownerResolution };
+}
+
 function missionXpReadyAction(mission, receiptPath) {
   const ref = missionXpTaskRefFromMission(mission);
   if (!ref || !receiptPath) return null;
-  const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const owner = resolveMissionOwner(mission).owner;
   return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${receiptPath}" --json`;
 }
 
 function missionTaskSpine(mission) {
   if (!mission || !mission.id) return null;
+  const ownerResolution = resolveMissionOwner(mission);
   const taskIds = Array.isArray(mission.task_ids) ? mission.task_ids.filter(Boolean) : [];
   const taskId = mission.xp_task?.task_id
     || mission.current_task_id
@@ -591,11 +645,14 @@ function missionTaskSpine(mission) {
   const taskRef = mission.xp_task?.ref
     || mission.task_ref
     || (taskId ? String(taskId) : null);
-  const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const owner = ownerResolution.owner;
   return {
     schema: 'atris.mission_task_spine.v1',
     goal_id: mission.id,
     owner,
+    requested_owner: ownerResolution.requested_owner || null,
+    owner_resolution: ownerResolution.reason,
+    executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
     lane: mission.lane || 'workspace',
     runner: mission.runner || 'manual',
     task_id: taskId,
@@ -614,8 +671,16 @@ function missionTaskSpine(mission) {
 function missionStatusView(mission) {
   const taskSpine = missionTaskSpine(mission);
   if (!taskSpine) return mission;
+  const requestedOwner = taskSpine.requested_owner
+    || mission.requested_owner
+    || (mission.owner && mission.owner !== taskSpine.owner ? mission.owner : null);
   return {
     ...mission,
+    owner: taskSpine.owner,
+    functional_owner: taskSpine.owner,
+    requested_owner: requestedOwner,
+    owner_resolution: taskSpine.owner_resolution,
+    executed_by: taskSpine.executed_by || mission.executed_by || null,
     goal_id: taskSpine.goal_id,
     task_id: taskSpine.task_id,
     current_task_id: taskSpine.current_task_id,
@@ -640,11 +705,20 @@ function missionFromArgs(args) {
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
-  const owner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
   const model = readFlag(args, '--model', '') || (String(runner).toLowerCase() === 'atris2' ? 'atris:fast' : '');
   const lane = readFlag(args, '--lane', 'workspace');
+  const ownerResolution = resolveFunctionalOwner({
+    requestedOwner,
+    title: objective,
+    tag: lane,
+    goal: objective,
+    root: process.cwd(),
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const owner = ownerResolution.owner;
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
   const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
@@ -660,6 +734,10 @@ function missionFromArgs(args) {
     slug: slugify(objective),
     objective,
     owner,
+    owner_resolution: ownerResolution.reason,
+    ...(ownerResolution.requested_owner && ownerResolution.requested_owner !== owner ? { requested_owner: ownerResolution.requested_owner } : {}),
+    ...(ownerResolution.executed_by ? { executed_by: normalizeOwnerSlug(ownerResolution.executed_by) } : {}),
+    ...(ownerResolution.proposed_member ? { proposed_member: ownerResolution.proposed_member } : {}),
     status: 'planning',
     cadence,
     runner,
@@ -772,12 +850,14 @@ function attachMissionTask(args) {
     return;
   }
 
-  const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
+  const ownership = applyMissionOwnerResolution(mission, process.cwd());
+  const baseMission = ownership.mission;
+  const xpTask = createMissionXpTask(baseMission, process.cwd(), asJson);
   const nextMission = {
-    ...mission,
+    ...baseMission,
     xp_task_enabled: true,
     xp_task: xpTask,
-    task_ids: Array.from(new Set([...(mission.task_ids || []), xpTask.task_id])),
+    task_ids: Array.from(new Set([...(baseMission.task_ids || []), xpTask.task_id])),
   };
   if (nextMission.status === 'ready' && nextMission.receipt_path) {
     nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
@@ -827,11 +907,11 @@ function statusMission(args) {
   if (ref && !missions.length) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
+  const missionViews = missions.map(missionStatusView);
   // Member state renders are cwd-local writes; rolled-up missions stay read-only.
-  for (const owner of new Set(missions.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
+  for (const owner of new Set(missionViews.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
   }
-  const missionViews = missions.map(missionStatusView);
   const payload = {
     ok: true,
     action: 'mission_status',
@@ -847,6 +927,7 @@ function statusMission(args) {
         `Mission: ${mission.objective}`,
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
+        ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
         `  state: ${mission.status}`,
         ...missionHeartbeatLines(mission),
         ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
@@ -1509,11 +1590,14 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
 
   const { mission, reason } = selected;
   const taskSpine = missionTaskSpine(mission);
+  const missionView = missionStatusView(mission);
   const goal = {
     objective: codexGoalObjective(mission),
     mission_id: mission.id,
     mission_objective: mission.objective,
     mission_status: mission.status,
+    owner: taskSpine?.owner || mission.owner,
+    executed_by: taskSpine?.executed_by || mission.executed_by || null,
     task_spine: taskSpine,
     reason,
     next_command: codexGoalNextCommand(mission),
@@ -1525,7 +1609,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     ok: true,
     action: heartbeatMode ? 'codex_goal_heartbeat' : 'codex_goal_candidate',
     goal,
-    mission,
+    mission: missionView,
     heartbeat,
   };
 }

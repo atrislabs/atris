@@ -907,6 +907,40 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
   }
 });
 
+test('mission goal normalizes engine mission owners into functional owners', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-engine-owned-signals',
+      objective: 'Watch chat log task signals and infer the next bounded action',
+      owner: 'codex',
+      runner: 'codex_goal',
+      lane: 'code',
+      status: 'planning',
+      verifier: 'node -e "process.exit(0)"',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.goal.owner, 'signal-scout');
+    assert.equal(payload.goal.executed_by, 'codex');
+    assert.equal(payload.goal.task_spine.owner, 'signal-scout');
+    assert.equal(payload.goal.task_spine.requested_owner, 'codex');
+    assert.equal(payload.goal.task_spine.executed_by, 'codex');
+    assert.equal(payload.goal.task_spine.owner_resolution, 'engine_owner_resolved_by_task_signal');
+    assert.equal(payload.mission.owner, 'signal-scout');
+    assert.equal(payload.mission.requested_owner, 'codex');
+    assert.equal(payload.mission.executed_by, 'codex');
+    assert.equal(payload.goal.next_command, 'atris mission attach-task mission-engine-owned-signals --json');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal-loop attaches task spine before due mission work', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
