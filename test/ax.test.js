@@ -552,6 +552,16 @@ test('ax renders approval preview rows from Atris2 receipts', () => {
   ax.handleEvent({
     type: 'receipt',
     receipt: {
+      task_preview: {
+        task: 'calendar.create_event',
+        owner_member: 'harness-engineer',
+        status: 'approval_required',
+        missing: [],
+        slots: {
+          title: 'markoo',
+          start: '2026-06-28T14:00:00-07:00',
+        },
+      },
       task_accept_receipt: {
         task: 'calendar.create_event',
         title: 'markoo',
@@ -572,6 +582,9 @@ test('ax renders approval preview rows from Atris2 receipts', () => {
 
   const rendered = chunks.join('');
   assert.match(rendered, /^Accepted: markoo today at 2:00 PM\./);
+  assert.match(rendered, /owner\s+harness-engineer/);
+  assert.match(rendered, /plan\s+create calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
+  assert.match(rendered, /check\s+approval required/);
   assert.match(rendered, /wait\s+Approval needed before creation: calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
   assert.equal(state.output, 'Accepted: markoo today at 2:00 PM.\nCalendar approval still needed before I create it.');
 });
