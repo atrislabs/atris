@@ -139,20 +139,6 @@ function formatUsage() {
   ].join('\n');
 }
 
-function selfTestOutput() {
-  let text = '';
-  return {
-    isTTY: false,
-    write(chunk) {
-      text += String(chunk || '');
-      return true;
-    },
-    text() {
-      return text;
-    }
-  };
-}
-
 function timestampForFile(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, '-');
 }
