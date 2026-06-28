@@ -866,6 +866,24 @@ test('ax persists approvals privately and lists them without payload text', asyn
     const denied = ax.denyStoredApproval(second.id.slice(0, 16), { storePath });
     assert.equal(denied.id, second.id);
     assert.equal(ax.readApprovalStore({ storePath }).approvals.length, 0);
+
+    const oldCreatedAt = new Date(Date.now() - (25 * 60 * 60 * 1000)).toISOString();
+    const stale = ax.persistPendingApproval(receipt, approvalRequest, { storePath, cwd: '/tmp/project', mode: 'fast', createdAt: oldCreatedAt });
+    let called = false;
+    const staleChunks = [];
+    const staleResult = await ax.approveStoredApproval(stale.id, {
+      storePath,
+      output: { isTTY: false, write(chunk) { staleChunks.push(String(chunk)); return true; } },
+      postApproval: async () => {
+        called = true;
+        return { ok: true, status: 200, data: {} };
+      },
+    });
+    assert.equal(staleResult.stale, true);
+    assert.equal(called, false);
+    assert.equal(ax.readApprovalStore({ storePath }).approvals.length, 0);
+    assert.match(staleChunks.join(''), /Approval expired/);
+    assert.doesNotMatch(staleChunks.join(''), /secret payload text/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
