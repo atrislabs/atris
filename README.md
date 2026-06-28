@@ -319,6 +319,8 @@ atris upgrade     # Install latest from npm
 atris update      # Sync local workspace files to new version
 ```
 
+Packaged npm installs check for new versions during normal commands and start a background update automatically. Git checkout installs stay manual so linked development copies are not overwritten unexpectedly.
+
 ---
 
 **License:** MIT | **Repo:** [github.com/atrislabs/atris](https://github.com/atrislabs/atris.git)

@@ -358,7 +358,7 @@ test('computer recruiting publish dry-run failure does not name live publish fir
   assert.match(output, /atris computer recruiting pull --dry-run/);
 });
 
-test('computer help surfaces the recruiting shortcut without auth', async () => {
+test('computer help keeps recruiting shortcut out of broad help without auth', async () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
   try {
@@ -370,13 +370,9 @@ test('computer help surfaces the recruiting shortcut without auth', async () => 
     };
     const help = await runCliAsync(['computer', '--help'], { cwd, env });
     assert.equal(help.status, 0, help.stderr || help.stdout);
-    assert.match(help.stdout, /recruiting\s+Open the Atris Labs recruiting computer/);
-    assert.match(help.stdout, /atris computer recruiting status/);
-    assert.match(help.stdout, /atris computer recruiting doctor/);
-    assert.match(help.stdout, /atris computer recruiting sync/);
-    assert.match(help.stdout, /atris computer recruiting pull/);
-    assert.match(help.stdout, /atris computer recruiting push --dry-run/);
-    assert.match(help.stdout, /atris computer recruiting publish --dry-run/);
+    assert.doesNotMatch(help.stdout, /Open the Atris Labs recruiting computer/);
+    assert.doesNotMatch(help.stdout, /atris computer recruiting\b/);
+    assert.doesNotMatch(help.stdout, /--business atris-labs --type recruiting/);
 
     const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
     assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);

@@ -13910,6 +13910,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['soul', '-h'],
     ['soul', 'help'],
     ['activate', '--help'],
+    ['launchpad', '--help'],
     ['next', '--help'],
     ['now', '--help'],
     ['radar', '--help'],
@@ -13956,6 +13957,124 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  }
+});
+
+test('launchpad --json picks the current actor claimed task first', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), [
+      '# Atris Brain Status',
+      '',
+      '## Next Move',
+      '',
+      'Pick the highest-leverage open TODO item.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      surface: { hidden_done_count: 7 },
+      tasks: [
+        {
+          id: 'task-codex',
+          display_id: 'CLI-9',
+          title: 'Ship launchpad',
+          status: 'claimed',
+          claimed_by: 'codex',
+          updated_at: 30,
+          metadata: {},
+        },
+        {
+          id: 'task-review',
+          display_id: 'CLI-8',
+          title: 'Check finished work',
+          status: 'review',
+          claimed_by: 'claude',
+          updated_at: 20,
+          metadata: { agent_review_pass_count: 1 },
+          review: { agent_review_pass_count: 1 },
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      id: 'mission-live',
+      objective: 'Keep loop alive',
+      status: 'running',
+      verifier: 'npm test',
+    })}\n`, 'utf8');
+
+    const res = runCli(['launchpad', '--json', '--as', 'codex'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.schema, 'atris.launchpad.v1');
+    assert.equal(payload.next_action.kind, 'continue_claimed_task');
+    assert.equal(payload.next_action.command, 'atris task step CLI-9');
+    assert.equal(payload.counts.review_needs_agent, 1);
+    assert.equal(payload.counts.missions_need_tick, 1);
+    assert.deepEqual(payload.suggestions.map(item => item.title), [
+      'Finish current work',
+      'Run the paused live job',
+      'Check a finished change',
+    ]);
+    assert.equal(payload.suggestions[0].subject, 'Ship launchpad');
+    assert.equal(payload.suggestions[0].ref, 'CLI-9');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('launchpad chooses a verifier mission when there is no owned claimed task', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), '# Status\n\n## Next Move\n\nSeed work.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        {
+          id: 'task-review',
+          display_id: 'CLI-10',
+          title: 'Check finished work',
+          status: 'review',
+          claimed_by: 'claude',
+          updated_at: 20,
+          metadata: { agent_review_pass_count: 1 },
+          review: { agent_review_pass_count: 1 },
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      id: 'mission-verify',
+      objective: 'Ship one checked loop',
+      status: 'ready',
+      verifier: 'node --test',
+    })}\n`, 'utf8');
+
+    const res = runCli(['launchpad', '--as', 'codex'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Live job waiting on a check/);
+    assert.match(res.stdout, /Ship one checked loop/);
+    assert.match(res.stdout, /RUN THIS\n\s+atris mission tick mission-verify --verify --complete-on-pass/);
+    assert.match(res.stdout, /WHAT HAPPENED\n\s+Ship one checked loop/);
+    assert.match(res.stdout, /WHAT TO WORK ON NEXT\n\s+1\. Run the paused live job/);
+    assert.match(res.stdout, /2\. Check a finished change/);
+    assert.match(res.stdout, /An always-on job is paused until its check runs\./);
+    assert.doesNotMatch(res.stdout, /proof|review-chat|agent review/i);
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
@@ -14579,7 +14698,7 @@ test('upgrade --help prints usage without npm update checks', () => {
     const res = runCli(['upgrade', '--help'], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Usage: atris upgrade/);
-    assert.doesNotMatch(res.stdout, /Checking for updates|Installing update|npm update -g atris/);
+    assert.doesNotMatch(res.stdout, /Checking for updates|Installing update|npm install -g atris@latest/);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
