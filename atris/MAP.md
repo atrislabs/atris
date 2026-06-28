@@ -38,6 +38,7 @@ rg "function reviewAtris" commands/workflow.js  # Review command: default certif
 rg "Confidence Gate|confidenceGatePrompt" commands/workflow.js test/confidence-gate.test.js  # Plan/do/review loophole gate prompt + regression
 rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js # Status command + workspace-free help
 rg "analyticsAtris|showAnalyticsHelp|status and analytics --help" bin/atris.js commands/analytics.js test/commands.test.js  # Analytics command + workspace-free help
+rg "launchpadCommand|collectLaunchpad|ATRIS LAUNCHPAD|launchpad --json" bin/atris.js commands/launchpad.js test/commands.test.js  # Launchpad command: compact next-action card from task projection, missions, brain, and Endgame state
 rg "xpCommand|collectLocalXpProjection|buildCareerXpProjection|buildCareerXpSessionCapsule|buildAgentXpSyncPacket|syncAgentXp|parseJsonlContent|readTaskProjectionState|loadLocalPayload" commands/xp.js bin/atris.js  # AgentXP command: remote graph, local status/collect, all-workspace profile, session capsule, and hosted leaderboard sync packet/upload
 rg "gmState|AgentXP General Manager|pickSeedPlayer|inferManager" commands/gm.js test/gm.test.js  # AgentXP GM mode: manager/player identity, starter mission seeding, review queue, and global sync handoff
 
@@ -89,7 +90,7 @@ rg "wikiCommand|printWikiHelp|wiki help paths" commands/wiki.js test/commands.te
 # Utilities
 rg "ensureValidCredentials" utils/auth.js   # Auth flow
 rg "apiRequestJson" utils/api.js            # API requests
-rg "checkForUpdates|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/commands.test.js  # Version checks + help-side-effect skip
+rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/update-check-install-state.test.js test/commands.test.js  # Version checks, packaged auto-update, and help-side-effect skip
 
 # Documentation
 rg "Phase 1" atris.md                       # Agent generation spec
@@ -918,12 +919,12 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2109-2161` (upgradeAtris function)
-- **Dispatch/help:** `bin/atris.js:1053-1059` handles `upgrade --help` before npm checks or global installs
+- **Entry point:** `bin/atris.js:2174-2225` (upgradeAtris function)
+- **Dispatch/help:** `bin/atris.js:1489-1495` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
-- If update available, runs `npm update -g atris`
+- If update available, runs `npm install -g atris@latest`
 - Shows success/failure with next steps
 - **Regression:** `test/commands.test.js:4235-4247` covers `upgrade --help` without npm update checks or update-cache writes
 - **Value:** One-command upgrade without remembering npm syntax
@@ -932,20 +933,20 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 ### Feature: Auto Update Check
 
-**Purpose:** Notify users of new versions (non-blocking)
+**Purpose:** Keep packaged installs current without interrupting workflow
 
-- **Entry point:** `utils/update-check.js:4-182`
-- **Dispatch skip:** `bin/atris.js:64-76` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
+- **Entry point:** `utils/update-check.js:1-331`
+- **Dispatch skip:** `bin/atris.js:77-108` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
 - **Logic:**
 - Background check on normal commands except version/update/help/help-flag invocations
 - Fetches latest from npm registry
 - Compares with local version
-- Shows notification after command completes
-- **Cache:** 24-hour cache to avoid spam
+- Packaged installs spawn `npm install -g atris@latest` in the background; git checkout installs fall back to notification/manual `atris upgrade`
+- **Cache:** 1-hour cache for registry checks and auto-update start throttling
 - **Regression:** `test/commands.test.js:4264-4285` covers representative help commands that previously wrote only the update-check cache
 - **Value:** Keep users up-to-date without interrupting workflow
 
-**Search:** `rg "checkForUpdates|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/commands.test.js`
+**Search:** `rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/update-check-install-state.test.js test/commands.test.js`
 
 ### Feature: Agent Selection + Local CLI Doctor (`atris agent`)
 

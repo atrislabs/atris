@@ -13,7 +13,7 @@
  *   atris computer ls [path]        — List files
  *   atris computer cat <path>       — Read a file
  *   atris computer exec <prompt>    — Run with LLM (Claude Code)
- *   atris computer recruiting       — Open Atris Labs recruiting computer
+ *   atris computer recruiting       — Open the recruiting workflow shortcut
  */
 
 const fs = require('fs');
@@ -4047,7 +4047,6 @@ async function runComputer() {
     console.log('  --cloud         Open CLOUD workspace mode in the bound business workspace');
     console.log('  cloud           Open CLOUD workspace mode in the bound business workspace');
     console.log('  codeops         Open Atris CodeOps workflow computer if your account has access');
-    console.log('  recruiting      Open the Atris Labs recruiting computer');
     console.log('  --business      Select a business by slug');
     console.log('  --workspace     Select a specific workspace/computer id');
     console.log('  --worker        Cloud worker override: claude | openai');
@@ -4082,10 +4081,10 @@ async function runComputer() {
     console.log('  atris computer');
     console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # first/default computer with Atris + operator');
-    console.log('  atris computer create "Recruiting Computer" --business atris-labs --type recruiting');
-    console.log('  atris computer --business atris-labs --workspace <workspace-id>');
-    console.log('  atris computer sleep --business atris-labs --workspace <workspace-id>');
-    console.log('  atris computer delete --business atris-labs --workspace <workspace-id>');
+    console.log('  atris computer create "Hiring Computer" --business my-lab --type recruiting');
+    console.log('  atris computer --business my-lab --workspace <workspace-id>');
+    console.log('  atris computer sleep --business my-lab --workspace <workspace-id>');
+    console.log('  atris computer delete --business my-lab --workspace <workspace-id>');
     console.log('  atris computer proof');
     console.log('  atris computer local');
     console.log('  atris computer codex');
@@ -4096,16 +4095,6 @@ async function runComputer() {
     console.log('  atris computer codeops status');
     console.log('  atris computer codeops run "pwd"');
     console.log('  atris computer codeops exec "Plan a safe repo fix"');
-    console.log('  atris computer recruiting');
-    console.log('  atris computer recruiting status');
-    console.log('  atris computer recruiting doctor');
-    console.log('  atris computer recruiting sync');
-    console.log('  atris computer recruiting pull');
-    console.log('  atris computer recruiting push --dry-run');
-    console.log('  atris computer recruiting publish --dry-run');
-    console.log('  atris computer recruiting watch');
-    console.log('  atris computer recruiting run "pwd"');
-    console.log('  atris computer recruiting exec "Summarize candidate follow-ups"');
     console.log('  atris computer status');
     console.log('  atris computer wake');
     console.log('  atris computer run "ls -la /workspace"');

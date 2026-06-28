@@ -700,6 +700,108 @@ function statusMission(args) {
   );
 }
 
+function readMissionReceipt(receiptPath, root = process.cwd()) {
+  if (!receiptPath) return null;
+  const file = path.isAbsolute(receiptPath) ? receiptPath : path.join(root, receiptPath);
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function firstUsefulLine(text, fallback = '') {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*\s#]+/, '').trim())
+    .filter(Boolean)
+    .find((line) => !/^(receipt|summary|final|result)$/i.test(line))
+    || fallback;
+}
+
+function missionWorkerLabel(mission) {
+  const runner = String(mission && mission.runner || 'manual').toLowerCase();
+  if (runner === 'atris2') return `Remote Atris2 computer${mission.model ? ` using ${mission.model}` : ''}`;
+  if (runner === 'claude') return `Claude worker${mission.model ? ` using ${mission.model}` : ''}`;
+  if (runner === 'codex_goal') return 'Codex goal handoff';
+  return 'Local mission tick';
+}
+
+function missionWorkerSummary(mission, receipt) {
+  if (mission && mission.worker_summary) return mission.worker_summary;
+  const tick = receipt && receipt.result && (receipt.result.tick || (Array.isArray(receipt.result.ticks) ? receipt.result.ticks[receipt.result.ticks.length - 1] : null));
+  if (!tick) return mission && mission.last_tick_reason ? `Last tick: ${mission.last_tick_reason}` : 'No worker receipt yet.';
+  if (tick.atris2) {
+    return firstUsefulLine(tick.atris2.receipt_text, tick.atris2.ok ? 'Remote worker ran and returned a response.' : 'Remote worker failed.');
+  }
+  if (tick.claude) {
+    if (tick.claude.skipped) {
+      return tick.summary || `Worker step skipped: ${tick.claude.reason || tick.reason || 'not needed'}.`;
+    }
+    return tick.claude.summary || firstUsefulLine(tick.claude.receipt_text, tick.claude.ok ? 'Worker ran and returned a response.' : 'Worker failed.');
+  }
+  if (tick.summary) return tick.summary;
+  return tick.reason ? `Worker tick: ${tick.reason}` : 'Worker tick recorded.';
+}
+
+function missionReportFor(mission, root = process.cwd()) {
+  const verifierReceiptPath = mission.receipt_path || null;
+  const receipt = readMissionReceipt(verifierReceiptPath, root);
+  const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
+  const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
+  const operatorOutcome = mission.operator_outcome
+    || (verifierPassed ? 'Verifier passed.' : mission.status === 'complete' ? 'Mission is complete.' : mission.status === 'blocked' ? 'Mission is blocked.' : 'Mission is still in progress.');
+  return {
+    id: mission.id,
+    objective: mission.objective,
+    status: mission.status,
+    operator_outcome: operatorOutcome,
+    worker: mission.worker || missionWorkerLabel(mission),
+    worker_summary: missionWorkerSummary(mission, receipt),
+    worker_receipt_path: workerReceiptPath,
+    verifier_receipt_path: verifierReceiptPath,
+    operator_next: mission.operator_next || mission.next_action || 'Review the mission state.',
+  };
+}
+
+function reportMission(args) {
+  const asJson = wantsJson(args);
+  const localOnly = hasFlag(args, '--local');
+  const ref = stripKnownFlags(args, ['--limit'], ['--json', '--local'])[0] || '';
+  const limit = readPositiveIntegerFlag(args, '--limit', ref ? 1 : 3, { json: asJson });
+  let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
+  if (!ref && !localOnly) {
+    const seen = new Set(missions.map((mission) => mission.id));
+    for (const rolled of listWorktreeRollupMissions()) {
+      if (seen.has(rolled.id)) continue;
+      seen.add(rolled.id);
+      missions.push(rolled);
+    }
+    missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  }
+  if (ref && !missions.length) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+  }
+  missions = missions.slice(0, limit);
+  const reports = missions.map((mission) => missionReportFor(mission, mission.worktree_root || process.cwd()));
+  printJsonOrText(
+    { ok: true, action: 'mission_report', reports },
+    reports.length
+      ? reports.flatMap((report) => [
+        `Mission: ${report.objective}`,
+        `  state: ${report.status}`,
+        `  What happened: ${report.operator_outcome}`,
+        `  Worker: ${report.worker}`,
+        `  Worker summary: ${report.worker_summary}`,
+        ...(report.worker_receipt_path ? [`  Worker receipt: ${report.worker_receipt_path}`] : []),
+        ...(report.verifier_receipt_path ? [`  Verifier receipt: ${report.verifier_receipt_path}`] : []),
+        `  Next: ${report.operator_next}`,
+      ])
+      : ['No missions yet. Run: atris mission start "..." --owner <member>'],
+    asJson,
+  );
+}
+
 // `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
 // lands so a human (or any terminal) can see the loop is alive without rerunning status.
 function watchMission(args) {
@@ -2395,6 +2497,7 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
@@ -2604,6 +2707,9 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'report':
+    case 'debrief':
+      return reportMission(rest);
     case 'watch':
       return watchMission(rest);
     case 'layers':

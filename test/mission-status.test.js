@@ -274,6 +274,69 @@ test('mission status normalizes stale terminal next actions', () => {
   }
 });
 
+test('mission report keeps worker debrief separate from verifier proof', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const receiptPath = path.join('atris', 'runs', 'mission-atris2-ready.json');
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, receiptPath), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'mission-atris2-ready',
+      objective: 'remote worker proof',
+      owner: 'mission-lead',
+      at: '2026-06-26T12:00:00.000Z',
+      verifier: 'true',
+      result: {
+        kind: 'mission_run_tick',
+        tick: {
+          status: 'ran',
+          reason: 'tick-ok',
+          atris2: {
+            ok: true,
+            engine: 'atris2',
+            tools_run: ['local_file_op'],
+            receipt_text: 'ATRIS2_MISSION_WORKER_READY\nRemote worker ran tools and returned a useful receipt.',
+          },
+        },
+        verifier_result: { passed: true, command: 'true', status: 0 },
+      },
+    }, null, 2), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-atris2-ready',
+      slug: 'mission-atris2-ready',
+      objective: 'remote worker proof',
+      runner: 'atris2',
+      model: 'atris:fast',
+      status: 'ready',
+      verifier: 'true',
+      verifier_result: { passed: true, command: 'true', status: 0 },
+      receipt_path: receiptPath,
+      next_action: 'review proof then complete mission',
+      created_at: '2026-06-26T12:00:00.000Z',
+      updated_at: '2026-06-26T12:01:00.000Z',
+    });
+
+    const report = runCli(['mission', 'report', '--limit', '1'], { cwd: dir });
+    assert.equal(report.status, 0, report.stderr || report.stdout);
+    assert.match(report.stdout, /What happened: Verifier passed\./);
+    assert.match(report.stdout, /Worker: Remote Atris2 computer using atris:fast/);
+    assert.match(report.stdout, /Worker summary: ATRIS2_MISSION_WORKER_READY/);
+    assert.match(report.stdout, /Worker receipt: atris\/runs\/mission-atris2-ready\.json/);
+    assert.match(report.stdout, /Verifier receipt: atris\/runs\/mission-atris2-ready\.json/);
+    assert.doesNotMatch(report.stdout, /atris mission - durable goal/);
+
+    const json = runCli(['mission', 'report', 'mission-atris2-ready', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.action, 'mission_report');
+    assert.equal(payload.reports[0].worker, 'Remote Atris2 computer using atris:fast');
+    assert.equal(payload.reports[0].operator_next, 'review proof then complete mission');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission action missing lookups are JSON-readable', () => {
   const dir = makeTempDir();
   try {
@@ -958,6 +1021,7 @@ test('mission help documents status filters', () => {
     const help = runCli(['mission', '--help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);

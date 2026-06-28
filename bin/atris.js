@@ -92,14 +92,10 @@ if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'updat
     .then((updateInfo) => {
       // Show notification if update available (after command completes)
       if (updateInfo) {
-        // Notify only — never auto-update mid-session (opt-in via ATRIS_AUTO_UPDATE=1)
-        if (process.env.ATRIS_AUTO_UPDATE === '1') {
-          setTimeout(() => {
-            if (!autoUpdate(updateInfo)) {
-              showUpdateNotification(updateInfo);
-            }
-          }, 100);
-        } else {
+        const autoUpdateStarted = autoUpdate(updateInfo, {
+          packageRoot: path.join(__dirname, '..'),
+        });
+        if (!autoUpdateStarted) {
           showUpdateNotification(updateInfo);
         }
       }
@@ -387,6 +383,7 @@ function showHelp() {
   console.log('  log        - Add ideas to inbox');
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  activate   - Load Atris context');
+  console.log('  launchpad  - One command-center card with the next action to run');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
@@ -662,6 +659,7 @@ function showUpgradeHelp() {
   console.log('');
   console.log('Description:');
   console.log('  Check npm for the latest Atris CLI and install it globally if newer.');
+  console.log('  Normal packaged installs also auto-update in the background.');
   console.log('');
   console.log('Options:');
   console.log('  --help, -h       Show this help.');
@@ -855,7 +853,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'launchpad', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'moves', 'clarity', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'deck', 'improve', 'xp', 'play', 'signup', 'gm', 'x', 'recap',
@@ -1397,6 +1395,10 @@ if (command === 'init') {
   // Signup: one-call seedless agent signup (POST /auth/agent/signup) → writes the
   // active profile so `atris play` works next. The install→signup→play seam.
   Promise.resolve(require('../commands/signup').signupCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'launchpad') {
+  Promise.resolve(require('../commands/launchpad').launchpadCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'brain') {
@@ -2199,8 +2201,8 @@ async function upgradeAtris() {
   console.log('Installing update...');
   console.log('');
 
-  // Run npm update -g atris
-  const result = spawnSync('npm', ['update', '-g', 'atris'], {
+  // Run npm install -g atris@latest
+  const result = spawnSync('npm', ['install', '-g', 'atris@latest'], {
     stdio: 'inherit',
     shell: true
   });
@@ -2214,10 +2216,10 @@ async function upgradeAtris() {
   } else {
     console.log('');
     console.log('✗ Upgrade failed. Try running manually:');
-    console.log('  npm update -g atris');
+    console.log('  npm install -g atris@latest');
     console.log('');
     console.log('If you see permission errors, try:');
-    console.log('  sudo npm update -g atris');
+    console.log('  sudo npm install -g atris@latest');
     console.log('');
   }
 }
