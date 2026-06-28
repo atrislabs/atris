@@ -1104,6 +1104,17 @@ function formatApprovalExecutionResult(response) {
   return `Approval handled for ${actionLabel}.`;
 }
 
+function approvalExecutionShouldRemainPending(response) {
+  if (!response) return true;
+  const data = response.data && typeof response.data === 'object' ? response.data : {};
+  const detail = data.detail && typeof data.detail === 'object' ? data.detail : {};
+  const execution = data.execution && typeof data.execution === 'object' ? data.execution : {};
+  const status = data.status || execution.status || detail.error || '';
+  if (execution.executed || status === 'executed') return false;
+  if (detail.error === 'approval_already_executed') return false;
+  return true;
+}
+
 function creditsFromApprovalExecution(response) {
   const billing = response && response.data && response.data.billing;
   if (!billing || billing.billed === false) return null;
@@ -1771,6 +1782,11 @@ async function chat(options = {}) {
       history.push({
         role: 'assistant',
         content: ['Accepted.', approvalExecution && approvalExecution.message ? approvalExecution.message : ''].filter(Boolean).join('\n'),
+        ...(
+          approvalExecutionShouldRemainPending(approvalExecution && approvalExecution.response)
+            ? { approval_request: pendingApprovalRequest }
+            : {}
+        ),
       });
       return false;
     }
@@ -1789,7 +1805,13 @@ async function chat(options = {}) {
       });
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     const receipt = receiptFromState(result);
-    const approvalRequest = approvalExecution ? null : approvalRequestFromReceipt(receipt);
+    const approvalRequest = approvalExecution
+      ? (
+          approvalExecutionShouldRemainPending(approvalExecution.response)
+            ? approvalExecution.approval_request
+            : null
+        )
+      : approvalRequestFromReceipt(receipt);
     const assistantContent = [
       result.output || '',
       approvalExecution && approvalExecution.message ? approvalExecution.message : '',
@@ -2087,6 +2109,98 @@ async function runSelfTest(options = {}) {
     assertSelfTest(approvals.length === 1, 'approval execution was not called exactly once');
     assertSelfTest(approvals[0].executor_action_type === 'google_calendar_create_event', 'chat loop executed wrong approval action');
     assertSelfTest(/Accepted\./.test(text) && /Created calendar event\./.test(text), 'chat loop did not render accepted execution result');
+  }, results, output);
+
+  await runSelfTestCase('calendar blocked approval retry', async () => {
+    const chunks = [];
+    const chatOutput = {
+      isTTY: false,
+      write(chunk) {
+        chunks.push(String(chunk || ''));
+        return true;
+      },
+    };
+    const approvalRequest = {
+      connector: 'google_calendar',
+      action: 'create_event',
+      executor_action_type: 'google_calendar_create_event',
+      status: 'approval_required',
+      payload: {
+        summary: 'markoo',
+        start: { dateTime: '2026-06-28T14:00:00-07:00' },
+        end: { dateTime: '2026-06-28T15:00:00-07:00' },
+      },
+    };
+    const turns = [];
+    const approvals = [];
+    await chat({
+      mode: 'fast',
+      route: 'cloud',
+      cwd: os.tmpdir(),
+      conversationId: 'ax-self-test-calendar-blocked-retry',
+      input: Readable.from(['add calendar event today at 2pm\n', 'markoo\n', 'yes\n', 'yes\n', 'exit\n']),
+      output: chatOutput,
+      turnFunction: async (message, turnOptions) => {
+        turns.push({ message, route: turnOptions.route, historyLength: turnOptions.history.length });
+        const receipt = turns.length === 1
+          ? {
+              final: "I'll add it today at 2:00 PM.\nWhat should I call it?",
+              task_preview: {
+                task: 'calendar.create_event',
+                status: 'needs_input',
+                missing: ['title'],
+                slots: {
+                  date: '2026-06-28',
+                  start: '2026-06-28T14:00:00-07:00',
+                  end: '2026-06-28T15:00:00-07:00',
+                },
+              },
+              tool_events: [{ tool: 'google_calendar', action: 'create_event', status: 'blocked_missing_details' }],
+            }
+          : {
+              final: 'Ready to create: markoo today at 2:00 PM.\nCreate it?',
+              task_preview: {
+                task: 'calendar.create_event',
+                status: 'approval_required',
+                missing: [],
+                slots: {
+                  title: 'markoo',
+                  date: '2026-06-28',
+                  start: '2026-06-28T14:00:00-07:00',
+                  end: '2026-06-28T15:00:00-07:00',
+                },
+              },
+              tool_events: [{ tool: 'google_calendar', action: 'create_event', status: 'approval_required', approval_request: approvalRequest }],
+            };
+        turnOptions.output.write(receipt.final);
+        return { output: receipt.final, durationMs: 1, events: [{ type: 'receipt', receipt }] };
+      },
+      postApproval: async (request) => {
+        approvals.push(request);
+        if (approvals.length === 1) {
+          return {
+            ok: false,
+            status: 402,
+            data: { detail: { error: 'paid_cloud_computer_required', action_type: 'google_calendar_create_event' } },
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            status: 'executed',
+            action_type: 'google_calendar_create_event',
+            execution: { status: 'executed', action_type: 'google_calendar_create_event', executed: true },
+          },
+        };
+      },
+    });
+    const text = chunks.join('');
+    assertSelfTest(turns.length === 2, 'blocked approval retry triggered another model/backend turn');
+    assertSelfTest(approvals.length === 2, 'blocked approval was not retryable');
+    assertSelfTest(approvals[0].approval_request_id === approvals[1].approval_request_id, 'retry changed approval id');
+    assertSelfTest(/Approval execution needs a paid cloud computer\./.test(text), 'blocked approval message missing');
+    assertSelfTest(/Created calendar event\./.test(text), 'retry success message missing');
   }, results, output);
 
   await runSelfTestCase('calendar chat denial loop', async () => {
