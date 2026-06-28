@@ -46,7 +46,8 @@ Commands:
 
 Options:
   --json                 Print machine-readable output
-  --no-claude            Do not spawn Claude-backed mission work
+  --no-runner            Do not spawn model-backed mission/autopilot work
+  --no-claude            Legacy alias for --no-runner
   --no-verify            Skip verifier command
   --verify "<cmd>"       Verifier for changed-work ticks (default: npm test)
   --cadence "<cron>"     Cron cadence for install
@@ -174,11 +175,15 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
   return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
 }
 
+function noRunnerFlag(args = []) {
+  return hasFlag(args, '--no-runner') || hasFlag(args, '--no-claude');
+}
+
 // --- atris pulse tick ---
 
 function tickCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
-  const noClaude = hasFlag(args, '--no-claude');
+  const noRunner = noRunnerFlag(args);
   const noVerify = hasFlag(args, '--no-verify');
   const verifyCmd = noVerify ? null : readFlag(args, '--verify', 'npm test');
   const startedAt = Date.now();
@@ -207,7 +212,7 @@ function tickCommand(args, root = process.cwd()) {
   let verify = { passed: null, cmd: verifyCmd };
   try {
     const before = gitSnapshot(root);
-    engine = runEngine(root, { noClaude, autopilotFallback: !hasFlag(args, '--no-autopilot') });
+    engine = runEngine(root, { noClaude: noRunner, autopilotFallback: !hasFlag(args, '--no-autopilot') });
     const after = gitSnapshot(root);
     // This tick's ACTUAL contribution: files it newly dirtied, or a new commit.
     // Pre-existing dirt is excluded so reward isn't re-credited every tick.
@@ -500,5 +505,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  noRunnerFlag,
   STATE_HOME,
 };

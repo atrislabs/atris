@@ -7,6 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { noRunnerFlag } = require('../commands/pulse');
+
+const PULSE_COMMAND_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'pulse.js'), 'utf8');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -49,11 +52,20 @@ test('shouldFallbackToAutopilot fires only when no mission is due', () => {
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'error' }), false);
 });
 
-test('shouldFallbackToAutopilot is suppressed by --no-autopilot and --no-claude', () => {
+test('shouldFallbackToAutopilot is suppressed by --no-autopilot and worker disable', () => {
   // no worker available → can't author a goal
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', noClaude: true }), false);
   // fallback explicitly disabled
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', autopilotFallback: false }), false);
+});
+
+test('pulse exposes --no-runner while preserving --no-claude as a legacy alias', () => {
+  assert.equal(noRunnerFlag(['--no-runner']), true);
+  assert.equal(noRunnerFlag(['--no-claude']), true);
+  assert.equal(noRunnerFlag([]), false);
+  assert.match(PULSE_COMMAND_SRC, /--no-runner\s+Do not spawn model-backed mission\/autopilot work/);
+  assert.match(PULSE_COMMAND_SRC, /--no-claude\s+Legacy alias for --no-runner/);
+  assert.match(PULSE_COMMAND_SRC, /engine = runEngine\(root, \{ noClaude: noRunner/);
 });
 
 // --- ghost / stale detection: the silent-runner-death failure mode ---
