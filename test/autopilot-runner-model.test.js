@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
+const { configuredRunnerFailureMessage } = require('../commands/autopilot');
 
 const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
@@ -70,6 +71,24 @@ test('runtime runner wording is config-neutral', () => {
   assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|install Claude Code first/);
   assert.match(AUTOPILOT_SRC, /configured runner/);
   assert.match(RUN_SRC, /configured runner command/);
+});
+
+test('autopilot helper calls share configured-runner failure diagnostics', () => {
+  assert.match(AUTOPILOT_SRC, /function configuredRunnerFailureMessage/);
+  assert.match(AUTOPILOT_SRC, /configuredRunnerFailureMessage\(phase, err, timeout\)/);
+  assert.match(AUTOPILOT_SRC, /configuredRunnerFailureMessage\('horizon-proposal', err, PHASE_TIMEOUT\)/);
+  assert.match(AUTOPILOT_SRC, /configuredRunnerFailureMessage\('staleness-check', err, 60000\)/);
+});
+
+test('configured runner failure messages are specific enough for overnight diagnosis', () => {
+  const timeout = configuredRunnerFailureMessage('horizon-proposal', { code: 'ETIMEDOUT' }, 600000);
+  assert.match(timeout, /horizon-proposal phase timed out after 600s/);
+  assert.match(timeout, /configured runner hit the wall/);
+  assert.match(timeout, /reconcile from pre-tick HEADs/);
+
+  const killed = configuredRunnerFailureMessage('staleness-check', { signal: 'SIGTERM' }, 60000);
+  assert.match(killed, /staleness-check phase killed by SIGTERM before the 60s wall/);
+  assert.match(killed, /configured runner did not exit cleanly/);
 });
 
 test('run and autopilot sweep configured runner process groups on timeout', () => {

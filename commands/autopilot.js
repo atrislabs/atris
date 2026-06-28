@@ -443,6 +443,17 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+function configuredRunnerFailureMessage(phase, err, timeoutMs) {
+  const seconds = Math.round(Number(timeoutMs || PHASE_TIMEOUT) / 1000);
+  if (isPhaseTimeoutError(err)) {
+    return `${phase} phase timed out after ${seconds}s (configured runner hit the wall; any work it committed survives - reconcile from pre-tick HEADs)`;
+  }
+  if (isPhaseKillError(err)) {
+    return `${phase} phase killed by ${err.signal || 'a signal'} before the ${seconds}s wall (configured runner did not exit cleanly; check memory pressure or an external supervisor)`;
+  }
+  return `${phase} phase failed in configured runner: ${(err && err.message ? err.message : String(err || 'unknown error')).slice(0, 180)}`;
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -471,12 +482,7 @@ function executePhaseDetailed(phase, context, options = {}) {
     return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
-    if (isPhaseTimeoutError(err)) {
-      throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
-    }
-    if (isPhaseKillError(err)) {
-      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
-    }
+    if (isPhaseTimeoutError(err) || isPhaseKillError(err)) throw new Error(configuredRunnerFailureMessage(phase, err, timeout));
     if (err.stdout) {
       return { prompt, output: err.stdout };
     }
@@ -2913,12 +2919,7 @@ Reply with the JSON array and nothing else.`;
       env
     }).toString();
   } catch (err) {
-    if (isPhaseTimeoutError(err)) {
-      throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
-    }
-    if (isPhaseKillError(err)) {
-      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall — not a timeout`);
-    }
+    if (isPhaseTimeoutError(err) || isPhaseKillError(err)) throw new Error(configuredRunnerFailureMessage('horizon-proposal', err, PHASE_TIMEOUT));
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -3612,7 +3613,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     // On timeout or crash, treat as unverifiable — conservative default
-    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+    return { fresh: false, reasoning: configuredRunnerFailureMessage('staleness-check', err, 60000).slice(0, 200) };
   }
 }
 
@@ -3634,6 +3635,7 @@ module.exports = {
   validateVerifyCommandShape,
   askHuman,
   askModel,
+  configuredRunnerFailureMessage,
   autopilotAtris,
   autopilotFromTodo,
   buildPrompt,
