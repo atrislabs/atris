@@ -494,6 +494,19 @@ test('run.js execPhaseCommandSync handles non-zero exit codes', () => {
   assert.match(RUN_SRC, /err\.signal = result\.signal/);
 });
 
+test('run.js fails phases on non-zero exit even when stdout exists', () => {
+  assert.match(RUN_SRC, /function formatPhaseFailure\(err\)/);
+  assert.match(RUN_SRC, /stdout:\\n/);
+  assert.match(RUN_SRC, /throw new Error\(`\$\{phase\} failed: \$\{formatPhaseFailure\(err\)\}`\)/);
+  assert.doesNotMatch(RUN_SRC, /if \(err\.stdout\) return err\.stdout/);
+});
+
+test('run.js exits non-zero after a failed cycle is logged', () => {
+  assert.match(RUN_SRC, /let failedCycleError = null/);
+  assert.match(RUN_SRC, /failedCycleError = err/);
+  assert.match(RUN_SRC, /throw new Error\(`run stopped after failed cycle: \$\{failedCycleError\.message\}`\)/);
+});
+
 test('run.js execPhaseCommandSync handles spawn errors', () => {
   assert.match(RUN_SRC, /if \(result\.error\) throw result\.error/);
 });

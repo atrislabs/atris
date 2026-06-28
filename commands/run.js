@@ -111,6 +111,15 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+function formatPhaseFailure(err) {
+  const parts = [err && err.message ? err.message : String(err || 'unknown error')];
+  const stdout = err && err.stdout ? String(err.stdout).trim() : '';
+  const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+  if (stdout) parts.push(`stdout:\n${stdout}`);
+  if (stderr) parts.push(`stderr:\n${stderr}`);
+  return parts.join('\n\n');
+}
+
 /**
  * Build prompt for each phase with full context.
  * If priorCycleReview is provided (from the previous cycle's review phase),
@@ -248,9 +257,7 @@ function executePhase(phase, context, options = {}) {
     if (isPhaseKillError(err)) {
       throw new Error(`${phase} killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall`);
     }
-    // execSync throws on non-zero exit but may still have output
-    if (err.stdout) return err.stdout;
-    throw err;
+    throw new Error(`${phase} failed: ${formatPhaseFailure(err)}`);
   }
 }
 
@@ -400,6 +407,7 @@ async function runAtris(options = {}) {
   const writtenRunLogs = [];
   let completedCycles = 0;
   let lastReviewOutput = null; // Carried to next cycle's plan - closes the loop
+  let failedCycleError = null;
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
     if (verbose) {
@@ -534,6 +542,7 @@ async function runAtris(options = {}) {
         : `cycle ${cycle} done. next cycle.`);
 
     } catch (err) {
+      failedCycleError = err;
       console.error(`\n✗ Cycle ${cycle} failed: ${err.message}`);
       // Log the failure to the run log for forensic value
       try {
@@ -596,6 +605,10 @@ async function runAtris(options = {}) {
       }
     }
   } catch {}
+
+  if (failedCycleError) {
+    throw new Error(`run stopped after failed cycle: ${failedCycleError.message}`);
+  }
 }
 
 /**
