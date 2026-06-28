@@ -150,7 +150,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
-  atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
+  atris task ready <id> --proof "..." [--happened "..." --checked "..." --tested "..." --decision "..."]
+                                           Agent proof ready; writes the human result receipt
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
   atris task accept <id> [--proof "..."]   Human accepts proof, marks done
   atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
@@ -353,6 +354,15 @@ function textFlag(args, names) {
     if (typeof value === 'string') return value.trim();
   }
   return '';
+}
+
+function landingFlags(args) {
+  return {
+    happened: textFlag(args, ['--happened', '--what-happened']),
+    checked: textFlag(args, ['--checked', '--how-checked']),
+    tested: textFlag(args, ['--tested', '--what-tested']),
+    decision: textFlag(args, ['--decision', '--acceptance']),
+  };
 }
 
 function numericFlag(args, name) {
@@ -692,6 +702,10 @@ function reviewSummary(task, payload = {}) {
 
   const title = String(task.title || 'this task').replace(/\s+/g, ' ').trim();
   const plainTitle = title ? title.charAt(0).toLowerCase() + title.slice(1) : 'this task';
+  const approvalStatus = payload.approval_status || metadata.approval_status || null;
+  if (approvalStatus === 'revise') {
+    return `Rework requested for ${plainTitle}.`;
+  }
   const careerText = [
     task.tag,
     metadata.goal_id,
@@ -753,38 +767,74 @@ function proofToHumanCheck(proof) {
   const text = String(proof || '').replace(/\s+/g, ' ').trim();
   if (!text) return 'Proof is attached below.';
   const lower = text.toLowerCase();
-  if (/git\s+diff\s+--check/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) {
-    if (/node\s+--test/.test(lower)) return 'Behavior check and diff check passed.';
-    return 'Diff check passed.';
+  if (/\b(?:atris\s+)?task\s+(?:show|page)\b/.test(lower) && /\b(?:print|prints|printed|render|renders|rendered|show|shows|showed)\b/.test(lower)) {
+    return 'I opened the real task screen and checked the receipt renders before raw proof.';
   }
-  if (/\btypecheck\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Typecheck passed.';
-  if (/\bbuild\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Build passed.';
-  if (/\btest\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Verification passed.';
-  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Validation passed.';
+  if (/git\s+diff\s+--check/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) {
+    if (/node\s+--test/.test(lower)) return 'I ran the behavior check and the diff cleanliness check.';
+    return 'I ran the diff cleanliness check.';
+  }
+  if (/\btypecheck\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the typecheck.';
+  if (/\bbuild\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the build check.';
+  if (/\btest\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the verifier named in the proof.';
+  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the validation check.';
   if (/\breview(?:ed)?\b/.test(lower)) return 'Review proof is attached below.';
   return 'Proof is attached below.';
 }
 
-function taskReviewResult(task, review = {}, payload = {}) {
+function taskReviewLandingTested(proof) {
+  const commands = taskReviewEvidenceCommands(proof, 3);
+  if (commands.length) return `I ran: ${commands.join(' | ')}.`;
+  const paths = taskReviewEvidencePaths(proof, 3);
+  if (paths.length) return `I inspected: ${paths.join(', ')}.`;
+  return String(proof || '').trim() ? 'I attached the proof below.' : 'No verifier command recorded yet.';
+}
+
+function landingPayloadValue(payload, metadata, key) {
+  const landing = payload && payload.landing && typeof payload.landing === 'object' ? payload.landing : {};
+  return landing[key]
+    || payload && payload[`landing_${key}`]
+    || metadata[`landing_${key}`]
+    || null;
+}
+
+function taskReviewLanding(task, review = {}, payload = {}) {
   const metadata = task.metadata || {};
   const proof = review.proof || payload.proof || metadata.latest_agent_proof || '';
-  const ref = taskRef(task);
   const agentCertified = review.agent_certified === true || metadata.agent_certified === true;
   const approvalStatus = review.approval_status || metadata.approval_status || null;
-  const explicitChanged = payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
-  const explicitChecked = payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
+  const explicitHappened = landingPayloadValue(payload, metadata, 'happened')
+    || payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
+  const explicitChecked = landingPayloadValue(payload, metadata, 'checked')
+    || payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
+  const explicitTested = landingPayloadValue(payload, metadata, 'tested');
+  const explicitDecision = landingPayloadValue(payload, metadata, 'decision');
+  return {
+    happened: clipStatusText(explicitHappened || titleToResultText(task.title), 220),
+    checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 220),
+    tested: clipStatusText(explicitTested || taskReviewLandingTested(proof), 260),
+    decision: clipStatusText(explicitDecision || (task.status === 'done'
+      ? 'Accepted. No action needed unless this regresses.'
+      : approvalStatus === 'revise'
+        ? 'Rework requested. Fix the note, then send a new receipt.'
+        : approvalStatus === 'pending' && !agentCertified
+          ? 'Accept if this matches the request; rework if the receipt misses the point.'
+          : 'Accept if this matches the request; otherwise request changes.'), 220),
+  };
+}
+
+function taskReviewResult(task, review = {}, payload = {}) {
+  const metadata = task.metadata || {};
+  const ref = taskRef(task);
+  const landing = taskReviewLanding(task, review, payload);
   const explicitSaved = payload.saved || metadata.result_saved || metadata.human_saved || metadata.saved;
   return {
-    changed: clipStatusText(explicitChanged || titleToResultText(task.title), 180),
-    checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 180),
+    changed: landing.happened,
+    checked: landing.checked,
     saved: clipStatusText(explicitSaved || (task.status === 'done'
       ? `Accepted as ${ref}.`
       : `Saved in Review as ${ref}.`), 180),
-    accept: task.status === 'done'
-      ? 'Accepted.'
-      : approvalStatus === 'pending' && !agentCertified
-        ? 'Review result, then accept or request changes.'
-        : 'Accept or request changes.',
+    accept: landing.decision,
   };
 }
 
@@ -807,6 +857,7 @@ function taskReviewSummary(task) {
       human_revision_count: metadata.human_revision_count || payload.revision_count || null,
       human_revision_note: metadata.human_revision_note || payload.note || null,
     };
+    review.landing = taskReviewLanding(task, review, payload);
     review.result = taskReviewResult(task, review, payload);
     return reviewSummaryWithVerificationChat(task, review);
   }
@@ -842,6 +893,7 @@ function taskReviewSummary(task) {
       || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
   };
+  review.landing = taskReviewLanding(task, review, payload);
   review.result = taskReviewResult(task, review, payload);
   return reviewSummaryWithVerificationChat(task, review);
 }
@@ -1068,6 +1120,14 @@ function taskDescriptionForCloud(task) {
       lines.push(`- ${message.actor || 'unknown'}: ${message.content}`);
     }
   }
+  const landing = reviewLandingForDisplay(task.review);
+  if (landing) {
+    lines.push('', 'Result:');
+    if (landing.happened) lines.push(`What happened: ${landing.happened}`);
+    if (landing.checked) lines.push(`How checked: ${landing.checked}`);
+    if (landing.tested) lines.push(`Tested: ${landing.tested}`);
+    if (landing.decision) lines.push(`Decision: ${landing.decision}`);
+  }
   const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed');
   if (reviewed && reviewed.payload) {
     if (reviewed.payload.proof) lines.push('', `Proof: ${reviewed.payload.proof}`);
@@ -1079,6 +1139,30 @@ function taskDescriptionForCloud(task) {
     if (task.review.next_task) lines.push(`Next: ${task.review.next_task}`);
   }
   return lines.join('\n').slice(0, 5000);
+}
+
+function reviewLandingForDisplay(review) {
+  if (!review) return null;
+  if (review.landing) return review.landing;
+  if (!review.result) return null;
+  return {
+    happened: review.result.changed || null,
+    checked: review.result.checked || null,
+    tested: review.proof ? taskReviewLandingTested(review.proof) : null,
+    decision: review.result.accept || null,
+  };
+}
+
+function printReviewLanding(review) {
+  const landing = reviewLandingForDisplay(review);
+  if (!landing) return false;
+  console.log('Result:');
+  if (landing.happened) console.log(`  What happened: ${landing.happened}`);
+  if (landing.checked) console.log(`  How I checked: ${landing.checked}`);
+  if (landing.tested) console.log(`  What I tested: ${landing.tested}`);
+  if (review.result && review.result.saved) console.log(`  Saved: ${review.result.saved}`);
+  if (landing.decision) console.log(`  Decision: ${landing.decision}`);
+  return true;
 }
 
 function cloudPayloadForTask(task, businessId) {
@@ -1498,6 +1582,7 @@ function compactTaskForStatus(task) {
     const review = {};
     if (typeof task.review.reward === 'number') review.reward = task.review.reward;
     else if (task.review.reward === null) review.reward = null;
+    if (task.review.landing) review.landing = task.review.landing;
     if (task.review.result) review.result = task.review.result;
     if (task.review.summary) review.summary = clipStatusText(task.review.summary, 240);
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
@@ -5464,12 +5549,7 @@ function cmdShow(args) {
   console.log(task.title);
   if (task.review) {
     console.log('');
-    if (task.review.result) {
-      console.log(`Changed: ${task.review.result.changed}`);
-      console.log(`Checked: ${task.review.result.checked}`);
-      console.log(`Saved: ${task.review.result.saved}`);
-      console.log(`Accept/Rework: ${task.review.result.accept}`);
-    }
+    printReviewLanding(task.review);
     if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
     if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
@@ -5518,12 +5598,7 @@ function cmdPage(args) {
   console.log(`TASK PAGE ${taskRef(task)}`);
   console.log(`Goal: ${page.goal.text || '(none)'}`);
   console.log(`Stage: ${page.stage.current}`);
-  if (page.review.result) {
-    console.log(`Changed: ${page.review.result.changed}`);
-    console.log(`Checked: ${page.review.result.checked}`);
-    console.log(`Saved: ${page.review.result.saved}`);
-    console.log(`Accept/Rework: ${page.review.result.accept}`);
-  }
+  printReviewLanding(page.review);
   console.log(`Next: ${page.stage.next_action.command || page.stage.next_action.label}`);
   console.log(`Chat: ${page.chat.command}`);
   if (page.review.verification_chat) console.log(`Review chat: ${page.review.verification_chat.command}`);
@@ -5659,7 +5734,7 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
     note_command: `atris task note ${ref} "<context>" --as ${owner}`,
     plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
     do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
-    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>"`,
+    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --happened "<what happened>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
     review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>" --verify "<safe verifier command>"`,
   };
   if (task && task.status === 'review') {
@@ -5782,6 +5857,7 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
     },
     actions,
     review: {
+      landing: review && review.landing || null,
       result: review && review.result || null,
       summary: review && review.summary || null,
       proof: review && review.proof || null,
@@ -6605,6 +6681,7 @@ function cmdReady(args) {
   requireMeaningfulTaskProof('atris task ready', String(proof));
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
+  const landing = landingFlags(args);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -6615,6 +6692,7 @@ function cmdReady(args) {
     proof: String(proof),
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: nextTaskInput.nextTask,
+    landing,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -7883,10 +7961,10 @@ function taskBoardHtml() {
         '<div class="meta"><span class="pill">' + task.status + '</span><span class="pill">' + (task.claimed_by || 'unowned') + '</span><span class="pill">v' + task.current_version + '</span></div>',
         '<div class="fact"><b>Goal</b><div id="taskGoal"></div></div>',
         '<div class="fact"><b>Lineage</b><div id="taskLineage"></div></div>',
-        '<div class="fact"><b>Changed</b><div id="taskChanged"></div></div>',
-        '<div class="fact"><b>Checked</b><div id="taskChecked"></div></div>',
-        '<div class="fact"><b>Saved</b><div id="taskSaved"></div></div>',
-        '<div class="fact"><b>Accept/Rework</b><div id="taskAccept"></div></div>',
+        '<div class="fact"><b>Result</b><div id="taskHappened"></div></div>',
+        '<div class="fact"><b>How I checked</b><div id="taskChecked"></div></div>',
+        '<div class="fact"><b>What I tested</b><div id="taskTested"></div></div>',
+        '<div class="fact"><b>Decision</b><div id="taskDecision"></div></div>',
         '<div class="fact"><b>Proof / lesson</b><div id="taskProof"></div></div>',
         '<div class="thread">' + (messages || '<div class="empty">No thread yet.</div>') + '</div>',
         '<label>Add context</label><textarea id="note" placeholder="Decision, blocker, context, update..."></textarea>',
@@ -7899,10 +7977,16 @@ function taskBoardHtml() {
       $('taskGoal').textContent = task.objective || 'No matching goal yet.';
       $('taskLineage').textContent = 'parent: ' + parent + ' / next: ' + children;
       const result = task.review && task.review.result || {};
-      $('taskChanged').textContent = result.changed || (task.review && task.review.summary) || 'No review result yet.';
-      $('taskChecked').textContent = result.checked || 'No check yet.';
-      $('taskSaved').textContent = result.saved || 'Not saved to Review yet.';
-      $('taskAccept').textContent = result.accept || 'No accept action yet.';
+      const landing = task.review && task.review.landing || {
+        happened: result.changed,
+        checked: result.checked,
+        tested: task.review && task.review.proof ? 'Proof is attached below.' : '',
+        decision: result.accept,
+      };
+      $('taskHappened').textContent = landing.happened || (task.review && task.review.summary) || 'No review result yet.';
+      $('taskChecked').textContent = landing.checked || 'No check yet.';
+      $('taskTested').textContent = landing.tested || 'No test recorded yet.';
+      $('taskDecision').textContent = landing.decision || 'No accept action yet.';
       $('taskProof').textContent = task.review && (task.review.proof || task.review.lesson)
         ? ((task.review.proof || 'no proof') + ' / ' + (task.review.lesson || 'no lesson'))
         : 'No proof yet.';
@@ -8371,6 +8455,12 @@ async function handleTaskApi(req, res, taskDb, db) {
       proof,
       lesson: String(body.lesson || ''),
       nextTask: nextTaskInput.nextTask,
+      landing: body.landing || {
+        happened: body.happened,
+        checked: body.checked,
+        tested: body.tested,
+        decision: body.decision,
+      },
     });
     if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
