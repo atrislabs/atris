@@ -8,6 +8,9 @@ skills: []
 
 permissions:
   can-read: true
+  can-execute: true
+  can-approve: false
+  can-accept-task: false
   approval-required: []
 
 tools: []
@@ -21,6 +24,16 @@ Replace with the long-term mission this member owns.
 
 Replace with what this member may and may not touch.
 
+## Cadence
+
+Replace with how often this member may wake up, how long one tick may run, and the lease timeout.
+
+## Ownership Contract
+
+- Own tasks by function or feature, never by execution engine.
+- If no existing member fits, create a member-creation task before assigning broad work.
+- Put coding agent models like Codex and Claude in the `executed_by` section.
+
 ## Proof Standard
 
 Replace with what proves good work.
@@ -28,6 +41,12 @@ Replace with what proves good work.
 ## Stop Rule
 
 Replace with when this member must stop and ask.
+
+## Cleanup Contract
+
+- Use isolated worktrees for parallel work.
+- Ship or archive the worktree before the lease ends.
+- Move proof-backed work to Review; never run human accept.
 
 ## Log System
 

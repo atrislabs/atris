@@ -15,9 +15,13 @@ Run `atris` first. It prints repo state, the files to read, and the next command
 If there is no existing task, create one before editing:
 
 ```bash
-atris task new "<small concrete title>" --tag <area>
-atris task claim <id> --as <agent>
+atris task delegate "<small concrete title>" --to <functional-member> --tag <area>
+atris task claim <id> --as <functional-member>
 ```
+
+Task owners are functional or feature members such as `task-planner`,
+`architect`, `mission-lead`, `validator`, or `launcher`. Coding agent models
+like Codex and Claude belong in the `executed_by` section, not visible ownership.
 
 ## Core Files
 
@@ -104,7 +108,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - [ ] Use ASCII visuals for planning
 - [ ] Check MAP.md before touching code
 - [ ] Run `atris task list` or `atris task next` before picking work
-- [ ] Claim tasks with `atris task claim <id> --as <agent>`
+- [ ] Claim tasks with `atris task claim <id> --as <functional-member>`
 - [ ] Move agent-completed work to Review via `atris task ready <id> --proof "..."`
 - [ ] Complete native Codex/Claude goals after proof is in Review, so always-on work can continue
 - [ ] Only use `atris task accept <id>` when the human has approved the proof

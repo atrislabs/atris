@@ -70,11 +70,11 @@ Core loop:
 
 ```bash
 atris task list
-atris task delegate "<title>" --to <owner> --tag <tag>
-atris task delegate "<title>" --to <owner> --via swarlo --tag <tag>
+atris task delegate "<title>" --to <functional-member> --tag <tag>
+atris task delegate "<title>" --to <functional-member> --executed-by <engine> --via swarlo --tag <tag>
 atris task day
 atris task next
-atris task claim <id> --as <agent>
+atris task claim <id> --as <functional-member>
 atris task note <id> "<context, blocker, decision, or handoff>"
 atris task finish <id> --proof "<tests, screenshot, diff, or receipt>"
 atris task review <id> --lesson "<what improved>" --next "<next task>"
@@ -89,13 +89,28 @@ Every task record should carry:
 
 ```
 Title: <small work packet>
-Owner: <agent or unclaimed>
+Owner: <functional or feature member, not an engine>
 Objective: <why this matters>
 Context: <links/files/decisions>
 Exit: <observable done condition>
 Verify: <shell command or concrete proof>
 Next: <suggested follow-up task>
 ```
+
+Task planning preview and landing:
+
+```
+Owner: <functional-member>
+Plan: <one sentence on the intended change>
+Done: <observable result>
+Check: <verifier, receipt, or artifact proof>
+```
+
+Owner is accountable company role (`task-planner`, `architect`, `mission-lead`,
+`validator`, `launcher`, or a feature owner). Coding agent models like Codex and
+Claude are not task owners; put them in the `executed_by` section when useful.
+If no existing member fits, create a member-creation task instead of assigning
+broad work to an engine or generic executor.
 
 | Field | Meaning | Enforcement |
 |---|---|---|

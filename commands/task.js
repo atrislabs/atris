@@ -62,6 +62,61 @@ const TASK_REVIEW_STATE_ALIASES = {
   'human-accept-waiting': ['human-accept', 'accept-waiting', 'waiting-accept', 'no-next-task'],
   certified: ['waiting-human', 'human-waiting'],
 };
+const ENGINE_OWNER_IDS = new Set([
+  'atris-2-fast',
+  'atris2',
+  'atris2-fast',
+  'claude',
+  'codex',
+  'codex-executor',
+  'cursor',
+  'devin',
+  'executor',
+  'openclaw',
+  'windsurf',
+]);
+const FUNCTIONAL_MEMBER_TOPICS = [
+  {
+    owner: 'task-planner',
+    terms: ['task', 'plan', 'planner', 'planning', 'preview', 'landing', 'queue', 'backlog', 'owner', 'assignment', 'routing'],
+  },
+  {
+    owner: 'architect',
+    terms: ['member', 'team', 'factory', 'architecture', 'workflow', 'role', 'permission', 'policy', 'contract'],
+  },
+  {
+    owner: 'mission-lead',
+    terms: ['mission', 'overnight', '24/7', 'autonomy', 'always-on', 'loop', 'heartbeat', 'cadence', 'lease'],
+  },
+  {
+    owner: 'validator',
+    terms: ['proof', 'review', 'verify', 'verifier', 'validation', 'test', 'check', 'inspect'],
+  },
+  {
+    owner: 'launcher',
+    terms: ['release', 'launch', 'publish', 'ship', 'dmg', 'zip', 'post'],
+  },
+  {
+    owner: 'researcher',
+    terms: ['research', 'paper', 'source', 'market', 'investigate'],
+  },
+  {
+    owner: 'wiki-miner',
+    terms: ['wiki', 'knowledge', 'map', 'docs', 'documentation', 'journal'],
+  },
+  {
+    owner: 'navigator',
+    terms: ['navigation', 'where', 'find', 'locate', 'map'],
+  },
+  {
+    owner: 'improver',
+    terms: ['improve', 'cleanup', 'clean', 'maintenance', 'tidy', 'stale'],
+  },
+  {
+    owner: 'signal-scout',
+    terms: ['signal', 'error', 'failure', 'pattern', 'alert'],
+  },
+];
 
 let taskDbModule = null;
 
@@ -103,7 +158,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
-  atris task delegate "<title>" --to <id> [--goal-id <id>]  Create an assigned task
+  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>]  Create assigned work
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
@@ -1396,7 +1451,7 @@ function compactTaskForStatus(task) {
     if (Object.keys(lineage).length) out.lineage = lineage;
   }
   const compactMetadata = {};
-  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'task_goal', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'owner_resolution', 'requested_owner', 'executed_by', 'proposed_member', 'proposed_member_command', 'goal_id', 'task_goal', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
     if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
   }
   if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
@@ -4369,15 +4424,128 @@ function delegateHandoff(task, owner, via, tag) {
   return handoff;
 }
 
+function normalizeOwnerSlug(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function isEngineOwner(value) {
+  return ENGINE_OWNER_IDS.has(normalizeOwnerSlug(value));
+}
+
+function listWorkspaceMemberSlugs(root) {
+  const teamDir = path.join(root || process.cwd(), 'atris', 'team');
+  try {
+    return new Set(fs.readdirSync(teamDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .filter(name => name !== '_template')
+      .filter(name => fs.existsSync(path.join(teamDir, name, 'MEMBER.md')))
+      .map(normalizeOwnerSlug));
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function firstAvailableFunctionalOwner(candidates, existingMembers) {
+  for (const candidate of candidates) {
+    const owner = normalizeOwnerSlug(candidate);
+    if (!owner) continue;
+    if (existingMembers.size === 0 || existingMembers.has(owner)) return owner;
+  }
+  return null;
+}
+
+function taskOwnerTermScore(text, term, weight = 1) {
+  const haystack = String(text || '').toLowerCase();
+  const needle = String(term || '').toLowerCase();
+  if (!haystack || !needle) return 0;
+  if (/^[a-z0-9-]+$/.test(needle)) {
+    const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(needle)}([^a-z0-9]|$)`, 'i');
+    return re.test(haystack) ? weight : 0;
+  }
+  return haystack.includes(needle) ? weight : 0;
+}
+
+function proposedMemberSlugFromTask({ title, tag }) {
+  const source = normalizeOwnerSlug(tag && tag !== true ? tag : title);
+  const core = source
+    .split('-')
+    .filter(part => part && !['add', 'build', 'create', 'design', 'fix', 'make', 'replace', 'ship', 'the', 'with'].includes(part))
+    .slice(0, 3)
+    .join('-');
+  return `${core || 'feature'}-owner`;
+}
+
+function resolveFunctionalTaskOwner({ requestedOwner, title, tag, note, goal, root }) {
+  const requested = normalizeOwnerSlug(requestedOwner);
+  const existingMembers = listWorkspaceMemberSlugs(root);
+  const highSignalText = [title, note, goal].filter(Boolean).join(' ').toLowerCase();
+  const tagText = tag && tag !== true ? String(tag).toLowerCase() : '';
+  const text = [highSignalText, tagText].filter(Boolean).join(' ');
+
+  if (requested && !isEngineOwner(requested)) {
+    return {
+      owner: requested,
+      reason: 'explicit_functional_owner',
+      requested_owner: requested,
+    };
+  }
+
+  const exact = firstAvailableFunctionalOwner(
+    FUNCTIONAL_MEMBER_TOPICS.filter(topic => text.includes(topic.owner)).map(topic => topic.owner),
+    existingMembers
+  );
+  if (exact) {
+    return {
+      owner: exact,
+      reason: requested ? 'engine_owner_resolved_by_exact_member' : 'inferred_exact_member',
+      requested_owner: requested || null,
+      executed_by: requested && isEngineOwner(requested) ? requested : null,
+    };
+  }
+
+  const scored = FUNCTIONAL_MEMBER_TOPICS
+    .map(topic => ({
+      owner: topic.owner,
+      score: topic.terms.reduce((sum, term) => (
+        sum
+        + taskOwnerTermScore(highSignalText, term, 3)
+        + taskOwnerTermScore(tagText, term, 1)
+      ), 0),
+    }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const inferred = firstAvailableFunctionalOwner(scored.map(row => row.owner), existingMembers);
+  if (inferred) {
+    return {
+      owner: inferred,
+      reason: requested ? 'engine_owner_resolved_by_task_signal' : 'inferred_by_task_signal',
+      requested_owner: requested || null,
+      executed_by: requested && isEngineOwner(requested) ? requested : null,
+    };
+  }
+
+  const fallback = firstAvailableFunctionalOwner(['architect', 'task-planner', 'mission-lead', 'validator'], existingMembers)
+    || Array.from(existingMembers).find(owner => !isEngineOwner(owner))
+    || 'architect';
+  return {
+    owner: fallback,
+    reason: requested ? 'engine_owner_resolved_to_factory_owner' : 'missing_functional_owner_fit',
+    requested_owner: requested || null,
+    executed_by: requested && isEngineOwner(requested) ? requested : null,
+    proposed_member: proposedMemberSlugFromTask({ title, tag }),
+  };
+}
+
 function cmdDelegate(args) {
   const pos = positional(args);
   const title = pos.join(' ').trim();
-  const owner = flag(args, '--to') || flag(args, '--as');
   if (!title) {
     failTask('atris task delegate', 'missing_title', 'title required');
-  }
-  if (!owner || owner === true) {
-    failTask('atris task delegate', 'missing_owner', '--to <owner> required');
   }
   const viaFlag = flag(args, '--via');
   const via = viaFlag === 'swarlo' ? 'swarlo' : 'local';
@@ -4386,15 +4554,36 @@ function cmdDelegate(args) {
   const goalId = flag(args, '--goal-id');
   const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
   const claimNow = hasFlag(args, '--claim');
+  const requestedOwner = flag(args, '--to') || flag(args, '--as');
+  const explicitExecutedBy = flag(args, '--executed-by');
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  const ownerResolution = resolveFunctionalTaskOwner({
+    requestedOwner: requestedOwner && requestedOwner !== true ? requestedOwner : null,
+    title,
+    tag,
+    note,
+    goal: goalObjective && goalObjective !== true ? goalObjective : '',
+    root: ws,
+  });
+  const owner = ownerResolution.owner;
+  const executedBy = explicitExecutedBy && explicitExecutedBy !== true
+    ? normalizeOwnerSlug(explicitExecutedBy)
+    : ownerResolution.executed_by;
   const metadata = {
-    assigned_to: String(owner),
+    assigned_to: owner,
     delegate_via: via,
     swarlo_channel: via === 'swarlo' ? String(tag || 'tasks') : null,
     created_for_day: new Date().toISOString().slice(0, 10),
+    owner_resolution: ownerResolution.reason,
   };
+  if (ownerResolution.requested_owner) metadata.requested_owner = ownerResolution.requested_owner;
+  if (executedBy) metadata.executed_by = executedBy;
+  if (ownerResolution.proposed_member) {
+    metadata.proposed_member = ownerResolution.proposed_member;
+    metadata.proposed_member_command = `atris member create ${ownerResolution.proposed_member} --role="${ownerResolution.proposed_member.replace(/-/g, ' ')}"`;
+  }
   if (goalId && goalId !== true) metadata.goal_id = String(goalId);
   if (goalObjective && goalObjective !== true) {
     metadata.task_goal = String(goalObjective);
@@ -4405,7 +4594,7 @@ function cmdDelegate(args) {
     tag: typeof tag === 'string' ? tag : null,
     workspaceRoot: ws,
     status: claimNow ? 'claimed' : 'open',
-    claimedBy: claimNow ? String(owner) : null,
+    claimedBy: claimNow ? owner : null,
     metadata,
   });
   if (typeof note === 'string' && note.trim()) {
@@ -4413,14 +4602,16 @@ function cmdDelegate(args) {
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const task = compactTaskFromProjection(projection, result.id);
-  const handoff = delegateHandoff(task, String(owner), via, typeof tag === 'string' ? tag : null);
+  const handoff = delegateHandoff(task, owner, via, typeof tag === 'string' ? tag : null);
   if (wantsJson(args)) {
     printJson({
       ok: true,
       action: 'delegated',
       task_id: result.id,
       inserted: result.inserted !== false,
-      owner: String(owner),
+      owner,
+      owner_resolution: ownerResolution,
+      executed_by: executedBy || null,
       via,
       handoff,
       projection_path: outPath,
@@ -4430,6 +4621,8 @@ function cmdDelegate(args) {
   }
   const tagText = tag && tag !== true ? ` #${tag}` : '';
   console.log(`delegated ${taskRef(task)} -> ${owner}${tagText} via=${via}`);
+  if (executedBy) console.log(`executed_by: ${executedBy}`);
+  if (ownerResolution.proposed_member) console.log(`member: ${metadata.proposed_member_command}`);
   console.log(`claim: ${handoff.command}`);
   if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
 }
@@ -4520,7 +4713,7 @@ function cmdDay(args) {
     console.log(`stale   ${staleFailed.length} failed >7d hidden — atris task list --status failed`);
   }
   console.log('');
-  console.log('add: atris task delegate "..." --to codex --tag tasks');
+  console.log('add: atris task delegate "..." --to task-planner --tag tasks');
 }
 
 function cmdHome(args) {
