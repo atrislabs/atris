@@ -19,6 +19,7 @@ const {
   summarizeTickHistory,
   formatTickHistory,
   improveApiPath,
+  buildLocalFallbackCommand,
   SCORECARD_SCHEMA,
 } = require('../commands/improve');
 
@@ -196,23 +197,36 @@ test('appendTickToJournal: writes an Improve Tick block under ## Notes (local da
 
 test('runImprove: no auth falls back to local without calling the API', async () => {
   const { calls, deps } = fakeDeps({ loadCredentials: () => null });
-  const res = await runImprove({ workspace: '/ws', fallback: true }, deps);
+  const res = await runImprove({ workspace: '/ws', fallback: true, model: 'glm-5.2' }, deps);
   assert.equal(res.source, 'local');
   assert.equal(res.reason, 'no_auth');
   assert.equal(res.ok, true);
   assert.equal(calls.api.length, 0); // did not attempt a paid call without auth
   assert.equal(calls.local.length, 1);
+  assert.equal(calls.local[0].model, 'glm-5.2');
 });
 
 test('runImprove: unreachable backend falls back to local', async () => {
   const { calls, deps } = fakeDeps({
     apiRequestJson: async () => ({ ok: false, status: 0, error: 'Network error' }),
   });
-  const res = await runImprove({ workspace: '/ws', fallback: true }, deps);
+  const res = await runImprove({ workspace: '/ws', fallback: true, model: 'atris:fast' }, deps);
   assert.equal(res.source, 'local');
   assert.equal(res.reason, 'unreachable');
   assert.equal(calls.local.length, 1);
+  assert.equal(calls.local[0].model, 'atris:fast');
   assert.equal(calls.rows.length, 0); // no scorecard for a non-shipping tick
+});
+
+test('buildLocalFallbackCommand: passes improve model override to autopilot runner', () => {
+  const script = path.join('/repo', 'bin', 'atris.js');
+  const built = buildLocalFallbackCommand(script, { model: 'glm-5.2' });
+  assert.equal(built.cmd, process.execPath);
+  assert.deepEqual(built.argv, [script, 'autopilot', '--auto', '--iterations=1', '--runner-model', 'glm-5.2']);
+
+  const plain = buildLocalFallbackCommand('atris', {});
+  assert.equal(plain.cmd, 'atris');
+  assert.deepEqual(plain.argv, ['autopilot', '--auto', '--iterations=1']);
 });
 
 test('runImprove: insufficient credits (402) is reported, not silently retried locally', async () => {
