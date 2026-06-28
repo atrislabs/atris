@@ -58,7 +58,7 @@ rg "Codex Executor|Start Here - Codex Executor" atris/team/codex-executor/MEMBER
 rg "prepareBrainState|refreshNowFile|isGeneratedNowFile|brain compile refreshes stale now|preserves a custom now" commands/brain.js commands/now.js test/commands.test.js # Brain compile refreshes generated now.md before state collection while preserving custom front doors
 rg "cleanAtris" commands/clean.js           # Clean command
 rg "loopAtris|buildReport|showLoopHelp|loop --help" bin/atris.js commands/loop.js test/commands.test.js # Wiki upkeep loop + non-mutating help
-rg "runAtris" commands/run.js               # Run command (autonomous loop)
+rg "runAtris|describeRunRunnerIdentity" commands/run.js test/run-glass-logs.test.js              # Run command (autonomous loop) and dry-run runner identity preview
 rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands.test.js # Verify command, rubric, and non-mutating help
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
 rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, projection-backed open work counts, proof receipts, portfolio signals, non-mutating help

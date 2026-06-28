@@ -16,6 +16,10 @@ const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
   resolveClaudeRunnerBin,
+  resolveRunnerBin,
+  resolveRunnerCommandTemplate,
+  resolveRunnerModel,
+  resolveRunnerProfileName,
 } = require('../lib/runner-command');
 const { cleanAtris } = require('./clean');
 
@@ -109,6 +113,17 @@ function execPhaseCommandSync(cmd, opts = {}) {
     }
     throw err;
   }
+}
+
+function describeRunRunnerIdentity() {
+  const parts = [
+    `runner: ${resolveRunnerBin()}`,
+    `model: ${resolveRunnerModel()}`,
+  ];
+  const profile = resolveRunnerProfileName();
+  if (profile) parts.push(`profile: ${profile}`);
+  if (resolveRunnerCommandTemplate()) parts.push('template: custom');
+  return parts.join(' · ');
 }
 
 /**
@@ -380,11 +395,13 @@ async function runAtris(options = {}) {
     console.log(`Max cycles: ${cycles}`);
     console.log(`Phase timeout: ${timeout / 1000}s`);
     console.log(`Verbose: ${verbose}`);
+    console.log(`Runner: ${describeRunRunnerIdentity()}`);
     console.log(`Run logs: atris/logs/runs/`);
     console.log('');
   } else {
     console.log(`atris run v${pkg.version} — plan, do, review, repeat.`);
     console.log(`i'll run up to ${cycles} cycle${cycles === 1 ? '' : 's'}, ${timeout / 1000}s per phase. next i'll check the backlog.`);
+    console.log(describeRunRunnerIdentity());
     console.log(`phase reasoning will be saved to atris/logs/runs/ — you can read what i thought after.`);
     console.log('');
   }

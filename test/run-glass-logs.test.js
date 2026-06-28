@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
+const { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt } = require('../commands/run');
 
 // --- Source-level: glass run log helpers exist and are wired ---
 
@@ -39,6 +39,41 @@ test('run.js prints run log notice at startup in non-verbose mode', () => {
 
 test('run.js prints run log notice at startup in verbose mode', () => {
   assert.match(RUN_SRC, /Run logs: atris\/logs\/runs/);
+});
+
+test('runAtris dry-run prints resolved runner identity', async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-run-dry-run-'));
+  const origCwd = process.cwd();
+  const origLog = console.log;
+  const oldEnv = {
+    ATRIS_RUNNER_BIN: process.env.ATRIS_RUNNER_BIN,
+    ATRIS_RUNNER_MODEL: process.env.ATRIS_RUNNER_MODEL,
+    ATRIS_RUNNER_PROFILE: process.env.ATRIS_RUNNER_PROFILE,
+    ATRIS_RUNNER_COMMAND_TEMPLATE: process.env.ATRIS_RUNNER_COMMAND_TEMPLATE,
+  };
+  let output = '';
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'atris'), { recursive: true });
+    process.chdir(tmpRoot);
+    process.env.ATRIS_RUNNER_BIN = process.execPath;
+    process.env.ATRIS_RUNNER_MODEL = 'glm-5.2';
+    process.env.ATRIS_RUNNER_PROFILE = 'atris-fast';
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = '{bin} --eval {prompt}';
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    await runAtris({ dryRun: true, once: true, push: false });
+
+    assert.match(output, /\[DRY RUN\] Would execute/);
+    assert.ok(output.includes(`runner: ${process.execPath} · model: glm-5.2 · profile: atris-fast · template: custom`));
+  } finally {
+    console.log = origLog;
+    for (const [key, value] of Object.entries(oldEnv)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });
 
 // --- Functional: exercise the real production helpers ---
