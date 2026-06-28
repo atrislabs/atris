@@ -7338,6 +7338,34 @@ test('task delegate creates assigned work and day view groups by owner', () => {
   }
 });
 
+test('task delegate infers a functional owner when none is supplied', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'Design 24/7 functional team member factory',
+      '--tag',
+      'team-members',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+    const body = JSON.parse(delegated.stdout);
+    assert.equal(body.owner, 'architect');
+    assert.equal(body.task.assigned_to, 'architect');
+    assert.equal(body.task.metadata.owner_resolution, 'inferred_by_task_signal');
+    assert.equal(body.executed_by, null);
+    assert.match(body.handoff.command, /^atris task claim [A-Z0-9]{3}-1 --as architect$/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task delegate can prepare a Swarlo handoff without changing task truth', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -7360,7 +7388,12 @@ test('task delegate can prepare a Swarlo handoff without changing task truth', (
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
     const body = JSON.parse(delegated.stdout);
-    assert.equal(body.task.assigned_to, 'codex');
+    assert.equal(body.owner, 'mission-lead');
+    assert.equal(body.executed_by, 'codex');
+    assert.equal(body.task.assigned_to, 'mission-lead');
+    assert.equal(body.task.metadata.executed_by, 'codex');
+    assert.equal(body.task.metadata.requested_owner, 'codex');
+    assert.equal(body.task.metadata.owner_resolution, 'engine_owner_resolved_by_task_signal');
     assert.equal(body.task.metadata.delegate_via, 'swarlo');
     assert.equal(body.handoff.swarlo.action, 'claim');
     assert.equal(body.handoff.swarlo.channel, 'tasks');

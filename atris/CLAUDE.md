@@ -36,6 +36,11 @@ Atris is the source of truth. This file is only an adapter for Claude Code; do n
 
 Before edits, claim or create one small task with `atris task`, read `atris/MAP.md`, and write the goal/files/done/check contract into task dialogue. After edits, move proof-backed work to Review with `atris task ready <id> --proof "<commands or receipt>"`; chat-only proof does not count.
 
+Task owners are functional or feature members, not engines. Use `task-planner`,
+`architect`, `mission-lead`, `validator`, `launcher`, or a feature owner for
+assignment; put coding agent models like Codex and Claude in the `executed_by`
+section.
+
 Native goals and task approval are separate gates:
 
 ```text
