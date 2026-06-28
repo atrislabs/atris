@@ -72,6 +72,44 @@ test('ax never shows model ids to the user and swaps tiers in chat', () => {
   assert.equal(ax.formatPrompt(), '› ');
 });
 
+test('ax doctor formats runtime readiness without model ids or secrets', async () => {
+  const modelPattern = /atris:|composer-2-5|gpt-|kimi|fable|fireworks|openrouter|secret|token/i;
+  const ready = await ax.buildRuntimeHealth({
+    healthRes: {
+      ok: true,
+      status: 200,
+      data: {
+        ready: true,
+        models: [{
+          id: 'atris:fast',
+          route: 'fireworks',
+          chat_model: 'fireworks:glm-5.2',
+          tool_model: 'fireworks:glm-5.2',
+          ready: true,
+        }],
+      },
+    },
+  });
+  const readyText = ax.formatRuntimeHealth(ready, { color: false });
+
+  assert.equal(ready.backend.ready, true);
+  assert.equal(ready.fast.ready, true);
+  assert.match(readyText, /backend\s+ready/);
+  assert.match(readyText, /fast\s+ready/);
+  assert.match(readyText, /approvals\s+ready/);
+  assert.doesNotMatch(readyText, modelPattern);
+
+  const offline = await ax.buildRuntimeHealth({
+    healthRes: { ok: false, status: 0, data: null, error: 'ECONNREFUSED secret-token' },
+  });
+  const offlineText = ax.formatRuntimeHealth(offline, { color: false });
+
+  assert.equal(offline.backend.reachable, false);
+  assert.match(offlineText, /backend\s+offline/);
+  assert.match(offlineText, /start local backend/);
+  assert.doesNotMatch(offlineText, modelPattern);
+});
+
 test('ax chat renders claude-style blocks and a slash menu', () => {
   const writes = [];
   const out = { isTTY: false, write: (chunk) => writes.push(chunk) };

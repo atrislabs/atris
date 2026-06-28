@@ -24,6 +24,7 @@ const CODE_FAST = {
 const CONNECTION_STATUS_PATH = '/api/integrations/status';
 const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
 const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
+const ATRIS2_HEALTH_PATH = '/api/atris2/health';
 const APPROVAL_EXECUTE_PATH = '/api/atris2/approvals/execute';
 const CONNECTOR_NAMES = {
   gmail: 'Gmail',
@@ -274,6 +275,46 @@ function formatRunProfile(profile, options = {}) {
     ['runtime', profile.runtime],
     ['thinking', profile.reasoning],
   ];
+  return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
+}
+
+async function buildRuntimeHealth(options = {}) {
+  const healthRes = options.healthRes
+    ? await Promise.resolve(options.healthRes)
+    : await requestJson(ATRIS2_HEALTH_PATH, { token: '', timeoutMs: options.timeoutMs || 1500 });
+  const data = healthRes.ok && healthRes.data && typeof healthRes.data === 'object' ? healthRes.data : {};
+  const models = Array.isArray(data.models) ? data.models : [];
+  const fast = models.find(row => row && row.id === 'atris:fast') || null;
+  return {
+    schema: 'ax.runtime_health.v1',
+    backend: {
+      ready: Boolean(healthRes.ok && data.ready),
+      reachable: Boolean(healthRes.ok),
+      status: healthRes.status || 0,
+      error: healthRes.error || '',
+    },
+    fast: {
+      ready: Boolean(fast && fast.ready),
+      route_ready: Boolean(fast && fast.ready),
+    },
+    permissions: {
+      approval_execution_path: APPROVAL_EXECUTE_PATH,
+      ready: Boolean(healthRes.ok),
+    },
+  };
+}
+
+function formatRuntimeHealth(health, options = {}) {
+  const backendReady = health && health.backend && health.backend.ready;
+  const backendReachable = health && health.backend && health.backend.reachable;
+  const fastReady = health && health.fast && health.fast.ready;
+  const permissionReady = health && health.permissions && health.permissions.ready;
+  const rows = [
+    ['backend', backendReady ? 'ready' : backendReachable ? 'not ready' : 'offline'],
+    ['fast', fastReady ? 'ready' : 'not ready'],
+    ['approvals', permissionReady ? 'ready' : 'offline'],
+  ];
+  if (!backendReachable) rows.push(['fix', 'start local backend, then rerun ax --doctor']);
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
 }
 
@@ -2034,6 +2075,8 @@ async function main() {
       console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
       console.log('');
       console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route }), process.stdout));
+      console.log('');
+      console.log(formatRuntimeHealth(await buildRuntimeHealth(), process.stdout));
       return;
     }
 
@@ -2067,6 +2110,7 @@ module.exports = {
   backendUrl,
   buildCodeFastPayload,
   buildPayload,
+  buildRuntimeHealth,
   cachedIntegrationStatus,
   buildConnectionContext,
   buildRunProfile,
@@ -2091,6 +2135,7 @@ module.exports = {
   formatPathSubject,
   formatPrompt,
   formatRunProfile,
+  formatRuntimeHealth,
   formatStatusMessage,
   formatSystemInit,
   formatUsage,
