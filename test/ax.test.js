@@ -742,10 +742,12 @@ test('ax formats blocked approval execution without leaking payloads', () => {
   );
 });
 
-test('ax auto logger writes clean chat transcripts under atris/runs', () => {
+test('ax auto logger redacts transcripts by default under atris/runs', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-log-test-'));
   fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
   const chunks = [];
+  const previousFull = process.env.AX_LOG_FULL;
+  delete process.env.AX_LOG_FULL;
   const logger = ax.createRunLogger({
     cwd,
     mode: 'pro',
@@ -759,16 +761,55 @@ test('ax auto logger writes clean chat transcripts under atris/runs', () => {
   });
 
   try {
-    logger.output.write('\x1b[32matris text\x1b[0m\n');
+    logger.output.write('\x1b[32mprivate payroll secret\x1b[0m\n');
+    logger.write('user typed private calendar secret\n');
     logger.close(0);
     assert.ok(logger.path.startsWith(path.join(cwd, 'atris', 'runs')));
     const text = fs.readFileSync(logger.path, 'utf8');
     assert.match(text, /mode: pro/);
-    assert.match(text, /atris text/);
+    assert.match(text, /transcript: redacted/);
+    assert.match(text, /redacted_chars: \d+/);
+    assert.match(text, /full transcript disabled by default/);
+    assert.doesNotMatch(text, /private payroll secret/);
+    assert.doesNotMatch(text, /private calendar secret/);
     assert.doesNotMatch(text, /\x1b\[/);
     assert.match(text, /exit_code: 0/);
-    assert.match(chunks.join(''), /\x1b\[32matris text/);
+    assert.match(chunks.join(''), /\x1b\[32mprivate payroll secret/);
   } finally {
+    if (previousFull === undefined) delete process.env.AX_LOG_FULL;
+    else process.env.AX_LOG_FULL = previousFull;
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('ax auto logger can opt into full transcripts explicitly', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-log-full-test-'));
+  fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+  const previousFull = process.env.AX_LOG_FULL;
+  process.env.AX_LOG_FULL = '1';
+  const logger = ax.createRunLogger({
+    cwd,
+    mode: 'pro',
+    kind: 'play',
+    output: {
+      isTTY: true,
+      write() {
+        return true;
+      }
+    }
+  });
+
+  try {
+    logger.output.write('\x1b[32mfull transcript text\x1b[0m\n');
+    logger.close(0);
+    const text = fs.readFileSync(logger.path, 'utf8');
+    assert.match(text, /transcript: full/);
+    assert.match(text, /full transcript text/);
+    assert.doesNotMatch(text, /\x1b\[/);
+    assert.match(text, /exit_code: 0/);
+  } finally {
+    if (previousFull === undefined) delete process.env.AX_LOG_FULL;
+    else process.env.AX_LOG_FULL = previousFull;
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });

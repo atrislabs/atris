@@ -151,6 +151,7 @@ function stripAnsi(value) {
 function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', output = process.stdout } = {}) {
   if (process.env.AX_AUTO_LOG === '0') return null;
   if (output !== process.stdout && output !== process.stderr && !output.isTTY) return null;
+  const fullTranscript = process.env.AX_LOG_FULL === '1';
 
   const baseDir = fs.existsSync(path.join(cwd, 'atris'))
     ? path.join(cwd, 'atris', 'runs')
@@ -158,15 +159,22 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
   fs.mkdirSync(baseDir, { recursive: true });
   const logPath = path.join(baseDir, `ax-${kind}-${timestampForFile()}.log`);
   fs.appendFileSync(logPath, [
-    `command: ${process.argv.join(' ')}`,
+    `command: ${fullTranscript ? process.argv.join(' ') : 'ax <redacted>'}`,
     `cwd: ${cwd}`,
     `mode: ${mode}`,
+    `transcript: ${fullTranscript ? 'full' : 'redacted'}`,
     `started_at: ${new Date().toISOString()}`,
     '',
   ].join('\n'));
 
+  let redactedChars = 0;
   const writeLog = (chunk) => {
-    fs.appendFileSync(logPath, stripAnsi(chunk));
+    const text = stripAnsi(chunk);
+    if (fullTranscript) {
+      fs.appendFileSync(logPath, text);
+      return;
+    }
+    redactedChars += text.length;
   };
   const teeOutput = {
     isTTY: Boolean(output && output.isTTY),
@@ -183,6 +191,12 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
     output: teeOutput,
     write: writeLog,
     close(exitCode = 0) {
+      if (!fullTranscript) {
+        fs.appendFileSync(logPath, `redacted_chars: ${redactedChars}\n`);
+        fs.appendFileSync(logPath, 'note: full transcript disabled by default; set AX_LOG_FULL=1 to opt in.\n');
+        fs.appendFileSync(logPath, `exit_code: ${exitCode}\nfinished_at: ${new Date().toISOString()}\n`);
+        return;
+      }
       writeLog(`\nexit_code: ${exitCode}\nfinished_at: ${new Date().toISOString()}\n`);
     }
   };
