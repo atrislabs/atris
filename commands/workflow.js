@@ -555,7 +555,7 @@ async function planAtris(userInput = null) {
   printConfidenceGate('   ');
   console.log('3) Write tasks to atris/TODO.md under ## Backlog');
   console.log('   Format: - **T#:** Description [explore|execute]');
-  console.log('4) Log to atris/team/navigator/journal/YYYY-MM-DD.md');
+  console.log('4) Log to atris/team/navigator/logs/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, User reaction, Pattern)');
   if (atris2Mode) {
     console.log('5) EXECUTE MODE ENABLED: Will execute tasks directly.');
@@ -636,7 +636,7 @@ async function planAtris(userInput = null) {
     userPrompt += `   - Each task: one job, clear exit condition\n`;
     userPrompt += `   - Include file:line references from MAP.md\n\n`;
     userPrompt += `STEP 5: Log to your journal\n`;
-    userPrompt += `   - Write to atris/team/navigator/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `   - Write to atris/team/navigator/logs/YYYY-MM-DD.md\n`;
     userPrompt += `   - Include: Task, Delivered, User reaction, Pattern\n`;
     userPrompt += `   - Your journal is how you learn — record what worked\n\n`;
     userPrompt += `Start planning now. Read MAP.md for file references.`;
@@ -900,7 +900,7 @@ async function doAtris() {
   console.log('3) Execute step-by-step. Run tests as you go.');
   console.log('4) Before completion, rerun the gate against proof and residual risk');
   console.log('5) When done, move task to ## Completed');
-  console.log('6) Log to atris/team/executor/journal/YYYY-MM-DD.md');
+  console.log('6) Log to atris/team/executor/logs/YYYY-MM-DD.md');
   console.log('   (Task, Delivered, Errors hit, Learned)');
   console.log('');
   console.log('⛔ Do NOT plan — just execute what\'s written.');
@@ -989,7 +989,7 @@ async function doAtris() {
     userPrompt += `4. Execute task: Use file edit tools, terminal commands, etc.\n`;
     userPrompt += `5. Before completion, rerun the gate against proof and residual risk\n`;
     userPrompt += `6. Move task to ## Completed in TODO.md\n`;
-    userPrompt += `7. Log to atris/team/executor/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `7. Log to atris/team/executor/logs/YYYY-MM-DD.md\n`;
     userPrompt += `   (Task, Delivered, Errors hit, Learned)\n`;
     userPrompt += `8. Use MAP.md to navigate codebase\n\n`;
     userPrompt += `DO NOT just describe what you would do - actually edit files and execute commands!\n`;
@@ -1288,7 +1288,7 @@ async function reviewAtris() {
     console.log('4) Confirm active task state is clean: no unresolved Backlog/In Progress/Blocked rows for the reviewed work.');
     console.log('   If durable task state changed, regenerate the readable view with `atris task render --out atris/TODO.md`.');
     console.log('   Do not hand-delete rendered completed history; use `atris task list --status done` for the ledger.');
-    console.log('5) Log to atris/team/validator/journal/YYYY-MM-DD.md');
+    console.log('5) Log to atris/team/validator/logs/YYYY-MM-DD.md');
     console.log('   (Task, Result, Issues found, Learned)');
     console.log('6) If anything surprised you, append to atris/lessons.md.');
     console.log('');
@@ -1389,7 +1389,7 @@ async function reviewAtris() {
     userPrompt += `  • Confirm active task state is clean — no unresolved Backlog/In Progress/Blocked rows for reviewed work.\n`;
     userPrompt += `    If durable task state changed, regenerate the readable view with \`atris task render --out atris/TODO.md\`.\n`;
     userPrompt += `    Do not hand-delete rendered completed history; if a task fails, move or mark it blocked with a note.\n`;
-    userPrompt += `  • Log to atris/team/validator/journal/YYYY-MM-DD.md\n`;
+    userPrompt += `  • Log to atris/team/validator/logs/YYYY-MM-DD.md\n`;
     userPrompt += `    (Task, Result, Issues found, Learned)\n`;
     userPrompt += `  • If anything surprised you, append to atris/lessons.md\n`;
     userPrompt += `  • EVOLUTION: If you see drift in the logs, propose a tool upgrade.\n\n`;
