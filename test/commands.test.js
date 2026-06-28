@@ -675,11 +675,23 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
-    assert.equal(runCli([
+    const startedMission = runCli([
       'mission', 'start', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
       '--json',
-    ], { cwd: dir }).status, 0);
+    ], { cwd: dir });
+    assert.equal(startedMission.status, 0, startedMission.stderr || startedMission.stdout);
+    const mission = JSON.parse(startedMission.stdout).mission;
+    const missionTaskAdd = runCli([
+      'task', 'add', 'Build the mission-owned task loop',
+      '--tag', 'mission',
+      '--goal-id', mission.id,
+      '--json',
+    ], { cwd: dir });
+    assert.equal(missionTaskAdd.status, 0, missionTaskAdd.stderr || missionTaskAdd.stdout);
+    const missionTask = JSON.parse(missionTaskAdd.stdout).task;
+    const missionTaskClaim = runCli(['task', 'claim', missionTask.display_id, '--as', 'mission-lead'], { cwd: dir });
+    assert.equal(missionTaskClaim.status, 0, missionTaskClaim.stderr || missionTaskClaim.stdout);
 
     const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
@@ -692,7 +704,14 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     assert.equal(payload.goal.mission_file, 'atris/team/mission-lead/MISSION.md');
     assert.equal(payload.goal.now_file, 'atris/team/mission-lead/now.md');
     assert.ok(payload.goal.mission_id);
-    assert.match(payload.next_command, /atris member tick mission-lead --goal/);
+    assert.equal(payload.task.ref, missionTask.display_id);
+    assert.equal(payload.native_goal.task.ref, missionTask.display_id);
+    assert.match(payload.native_goal.objective, /mission-lead: complete/);
+    assert.match(payload.native_goal.objective, /Build the mission-owned task loop/);
+    assert.equal(payload.native_goal.slash_goal, payload.native_goal.objective);
+    assert.match(payload.native_goal.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    assert.equal(payload.goal.native_goal.objective, payload.native_goal.objective);
+    assert.match(payload.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
 
     const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
     const goalsMdPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.md');

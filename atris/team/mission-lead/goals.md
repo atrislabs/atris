@@ -2,7 +2,7 @@
 
 <!-- Generated from goals.json. Edit with `atris member goal/tick/review` when possible. -->
 
-## Prove one bounded step toward: Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug...
+## Open-world self-improvement game loop: mission creates focused member goals, splits...
 
 - id: goal-2026-05-07-fbee1969
 - status: active
