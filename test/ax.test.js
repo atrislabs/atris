@@ -168,6 +168,40 @@ test('ax routes connector reads to authenticated cloud context', () => {
   assert.equal(payload.connection_context.schema, 'atris.connection_capabilities.v1');
 });
 
+test('ax sends chat history as structured previous messages, not a prompt wrapper', () => {
+  const history = [
+    { role: 'user', content: 'hi' },
+    {
+      role: 'assistant',
+      content: "I'll add it today at 2:00 PM.\nWhat should I call it?",
+      task_preview: {
+        task: 'calendar.create_event',
+        status: 'needs_input',
+        missing: ['title'],
+      },
+    },
+  ];
+  const payload = ax.buildPayload('can you add a calendar event at 2PM today please for buunch', {
+    mode: 'fast',
+    cwd: '/tmp/project',
+    history,
+    conversationId: 'ax-thread-1',
+    connectionContext: {
+      schema: 'atris.connection_capabilities.v1',
+      connections: [],
+    },
+  });
+
+  assert.equal(payload.message, 'can you add a calendar event at 2PM today please for buunch');
+  assert.deepEqual(payload.previous_messages, history);
+  assert.equal(payload.previous_messages[1].task_preview.task, 'calendar.create_event');
+  assert.equal(payload.conversation_id, 'ax-thread-1');
+  assert.equal(payload.workspace_path, undefined);
+  assert.equal(payload.allow_external_actions, true);
+  assert.equal(payload.max_turns, 2);
+  assert.doesNotMatch(payload.message, /Current user message|Recent conversation|Continue this terminal/);
+});
+
 test('ax routes GitHub repo mutations to local workspace tools', () => {
   assert.equal(ax.resolveRoute('push something to github'), 'local');
   assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'local');
