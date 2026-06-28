@@ -836,6 +836,7 @@ test('ax persists approvals privately and lists them without payload text', asyn
     const listed = ax.formatStoredApprovals(ax.readApprovalStore({ storePath }), { color: false });
     assert.match(listed, /Pending approvals/);
     assert.match(listed, new RegExp(record.id));
+    assert.match(listed, new RegExp(`approve\\s+ax --approve ${record.id}`));
     assert.match(listed, /owner\s+comms/);
     assert.match(listed, /check\s+approval required/);
     assert.doesNotMatch(listed, /secret payload text/);
