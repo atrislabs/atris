@@ -1352,6 +1352,10 @@ async function approveStoredApproval(ref, options = {}) {
   if (!record) throw new Error(`Pending approval not found: ${ref}`);
   const output = options.output || process.stdout;
   const startedAt = Date.now();
+  output.write(`${formatAuxRow('id', record.id, output)}\n`);
+  for (const row of Array.isArray(record.display_rows) ? record.display_rows : []) {
+    output.write(`${row}\n`);
+  }
   output.write('Accepted.\n');
   const execution = await executeApprovalRequest(record.approval_request, {
     model: options.model || modelForMode(options.mode || record.mode || 'fast'),

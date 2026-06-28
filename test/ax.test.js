@@ -855,7 +855,12 @@ test('ax persists approvals privately and lists them without payload text', asyn
       }),
     });
     assert.equal(ax.readApprovalStore({ storePath }).approvals.length, 0);
-    assert.match(chunks.join(''), /Sent Slack message/);
+    const approvedText = chunks.join('');
+    assert.match(approvedText, new RegExp(record.id));
+    assert.match(approvedText, /owner\s+comms/);
+    assert.match(approvedText, /check\s+approval required/);
+    assert.match(approvedText, /Sent Slack message/);
+    assert.doesNotMatch(approvedText, /secret payload text/);
 
     const second = ax.persistPendingApproval(receipt, approvalRequest, { storePath, cwd: '/tmp/project', mode: 'fast' });
     const denied = ax.denyStoredApproval(second.id.slice(0, 16), { storePath });
