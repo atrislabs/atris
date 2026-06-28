@@ -123,16 +123,17 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   const results = await ax.runSelfTest({ output });
   const text = chunks.join('');
 
-  assert.equal(results.length, 6);
+  assert.equal(results.length, 7);
   assert.equal(results.every(result => result.ok), true);
   assert.match(text, /AX self-test/);
   assert.match(text, /doctor redaction .*ok/);
   assert.match(text, /approval id .*ok/);
   assert.match(text, /calendar approval rail .*ok/);
   assert.match(text, /calendar approval execution .*ok/);
+  assert.match(text, /calendar chat approval loop .*ok/);
   assert.match(text, /approval output privacy .*ok/);
   assert.match(text, /run log privacy .*ok/);
-  assert.match(text, /Self-test passed: 6\/6/);
+  assert.match(text, /Self-test passed: 7\/7/);
   assert.match(ax.formatUsage(), /--self-test/);
 });
 

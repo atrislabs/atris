@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const { loadCredentials } = require('./utils/auth');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
@@ -1762,6 +1763,7 @@ async function chat(options = {}) {
         model: modelForMode(mode),
         output,
         state: approvalState,
+        ...(options.postApproval ? { postApproval: options.postApproval } : {}),
       });
       const credits = creditsFromApprovalExecution(approvalExecution && approvalExecution.response);
       output.write(`${formatDoneLine(Date.now() - startedAt, credits)}\n\n`);
@@ -1775,11 +1777,16 @@ async function chat(options = {}) {
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
-    const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
+    const turnFunction = options.turnFunction || turnFunctionForMode(mode);
+    const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
       ? null
-      : await executeApprovalFromState(result, { model: modelForMode(mode), output });
+      : await executeApprovalFromState(result, {
+        model: modelForMode(mode),
+        output,
+        ...(options.postApproval ? { postApproval: options.postApproval } : {}),
+      });
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     const receipt = receiptFromState(result);
     const approvalRequest = approvalExecution ? null : approvalRequestFromReceipt(receipt);
@@ -1991,6 +1998,95 @@ async function runSelfTest(options = {}) {
     assertSelfTest(executable && /^apreq_ax_[a-f0-9]{20}$/.test(executable.approval_request_id), 'accepted calendar approval lacks stable id');
     assertSelfTest(executable.executor_action_type === 'google_calendar_create_event', 'wrong calendar executor action');
     assertSelfTest(executable.payload && executable.payload.summary === 'markoo', 'calendar approval payload changed');
+  }, results, output);
+
+  await runSelfTestCase('calendar chat approval loop', async () => {
+    const chunks = [];
+    const chatOutput = {
+      isTTY: false,
+      write(chunk) {
+        chunks.push(String(chunk || ''));
+        return true;
+      },
+    };
+    const approvalRequest = {
+      connector: 'google_calendar',
+      action: 'create_event',
+      executor_action_type: 'google_calendar_create_event',
+      status: 'approval_required',
+      payload: {
+        summary: 'markoo',
+        start: { dateTime: '2026-06-28T14:00:00-07:00' },
+        end: { dateTime: '2026-06-28T15:00:00-07:00' },
+      },
+    };
+    const firstFinal = "I'll add it today at 2:00 PM.\nWhat should I call it?";
+    const firstTaskPreview = {
+      task: 'calendar.create_event',
+      status: 'needs_input',
+      missing: ['title'],
+      slots: {
+        date: '2026-06-28',
+        start: '2026-06-28T14:00:00-07:00',
+        end: '2026-06-28T15:00:00-07:00',
+      },
+    };
+    const secondFinal = 'Ready to create: markoo today at 2:00 PM.\nCreate it?';
+    const secondTaskPreview = {
+      task: 'calendar.create_event',
+      status: 'approval_required',
+      missing: [],
+      slots: {
+        title: 'markoo',
+        date: '2026-06-28',
+        start: '2026-06-28T14:00:00-07:00',
+        end: '2026-06-28T15:00:00-07:00',
+      },
+    };
+    const turns = [];
+    const approvals = [];
+    await chat({
+      mode: 'fast',
+      route: 'cloud',
+      cwd: os.tmpdir(),
+      conversationId: 'ax-self-test-calendar-chat',
+      input: Readable.from(['add calendar event today at 2pm\n', 'markoo\n', 'yes\n', 'exit\n']),
+      output: chatOutput,
+      turnFunction: async (message, turnOptions) => {
+        turns.push({ message, route: turnOptions.route, historyLength: turnOptions.history.length });
+        const receipt = turns.length === 1
+          ? {
+              final: firstFinal,
+              task_preview: firstTaskPreview,
+              tool_events: [{ tool: 'google_calendar', action: 'create_event', status: 'blocked_missing_details' }],
+            }
+          : {
+              final: secondFinal,
+              task_preview: secondTaskPreview,
+              tool_events: [{ tool: 'google_calendar', action: 'create_event', status: 'approval_required', approval_request: approvalRequest }],
+            };
+        turnOptions.output.write(receipt.final);
+        return { output: receipt.final, durationMs: 1, events: [{ type: 'receipt', receipt }] };
+      },
+      postApproval: async (request) => {
+        approvals.push(request);
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            status: 'executed',
+            action_type: 'google_calendar_create_event',
+            execution: { status: 'executed', action_type: 'google_calendar_create_event', executed: true },
+          },
+        };
+      },
+    });
+    const text = chunks.join('');
+    assertSelfTest(turns.length === 2, 'approval yes triggered another model/backend turn');
+    assertSelfTest(turns[1].route === 'cloud', 'slot-fill follow-up did not stay on cloud approval route');
+    assertSelfTest(approvals.length === 1, 'approval execution was not called exactly once');
+    assertSelfTest(approvals[0].executor_action_type === 'google_calendar_create_event', 'chat loop executed wrong approval action');
+    assertSelfTest(/Accepted\./.test(text) && /Created calendar event\./.test(text), 'chat loop did not render accepted execution result');
   }, results, output);
 
   await runSelfTestCase('approval output privacy', async () => {
