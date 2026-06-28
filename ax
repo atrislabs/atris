@@ -27,6 +27,7 @@ const CONNECTION_CAPABILITIES_PATH = '/api/atris2/connection-capabilities';
 const ATRIS2_CONNECTION_STATUS_PATH = '/api/atris2/connection-status';
 const ATRIS2_HEALTH_PATH = '/api/atris2/health';
 const APPROVAL_EXECUTE_PATH = '/api/atris2/approvals/execute';
+const DEFAULT_APPROVAL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CONNECTOR_NAMES = {
   gmail: 'Gmail',
   google_calendar: 'Google Calendar',
@@ -1081,6 +1082,22 @@ function approvalStorePath(options = {}) {
   return options.storePath || process.env.AX_APPROVAL_STORE || path.join(os.homedir(), '.atris', 'ax-approvals.json');
 }
 
+function approvalMaxAgeMs(options = {}) {
+  const value = Number(options.maxAgeMs);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_APPROVAL_MAX_AGE_MS;
+}
+
+function approvalRecordAgeMs(record, options = {}) {
+  const created = Date.parse(record && record.created_at ? record.created_at : '');
+  if (!Number.isFinite(created)) return Infinity;
+  const now = options.now instanceof Date ? options.now.getTime() : Number(options.now || Date.now());
+  return Math.max(0, now - created);
+}
+
+function storedApprovalIsStale(record, options = {}) {
+  return approvalRecordAgeMs(record, options) > approvalMaxAgeMs(options);
+}
+
 function emptyApprovalStore() {
   return { schema: 'ax.pending_approvals.v1', approvals: [] };
 }
@@ -1355,6 +1372,13 @@ async function approveStoredApproval(ref, options = {}) {
   output.write(`${formatAuxRow('id', record.id, output)}\n`);
   for (const row of Array.isArray(record.display_rows) ? record.display_rows : []) {
     output.write(`${row}\n`);
+  }
+  if (storedApprovalIsStale(record, options)) {
+    removeStoredApproval(record.id, options);
+    const message = 'Approval expired. Recreate the preview before approving.';
+    output.write(`${formatAuxRow('wait', message, output)}\n`);
+    output.write(`${formatDoneLine(Date.now() - startedAt)}\n`);
+    return { approval_request: record.approval_request, response: null, message, stale: true };
   }
   output.write('Accepted.\n');
   const execution = await executeApprovalRequest(record.approval_request, {
@@ -2621,6 +2645,30 @@ async function runSelfTest(options = {}) {
       assertSelfTest(!/secret payload text/.test(listed), 'approval queue list leaked payload');
       denyStoredApproval(record.id, { storePath });
       assertSelfTest(readApprovalStore({ storePath }).approvals.length === 0, 'approval denial did not remove queue record');
+
+      const oldCreatedAt = new Date(Date.now() - (25 * 60 * 60 * 1000)).toISOString();
+      const stale = persistPendingApproval(receipt, request, { storePath, cwd: dir, mode: 'fast', createdAt: oldCreatedAt });
+      let executed = false;
+      const staleOutput = {
+        isTTY: false,
+        chunks: [],
+        write(chunk) {
+          this.chunks.push(String(chunk || ''));
+          return true;
+        },
+      };
+      const result = await approveStoredApproval(stale.id, {
+        storePath,
+        output: staleOutput,
+        postApproval: async () => {
+          executed = true;
+          return { ok: true, status: 200, data: {} };
+        },
+      });
+      assertSelfTest(result && result.stale === true, 'stale approval was not marked stale');
+      assertSelfTest(executed === false, 'stale approval executed');
+      assertSelfTest(readApprovalStore({ storePath }).approvals.length === 0, 'stale approval was not removed');
+      assertSelfTest(/Approval expired/.test(staleOutput.chunks.join('')), 'stale approval message missing');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
