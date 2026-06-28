@@ -1008,7 +1008,7 @@ function formatApprovalReceipt(receipt) {
     const payload = request.payload || {};
     const start = accept.start || (payload.start && payload.start.dateTime) || (approvalEvent.preview && approvalEvent.preview.start);
     const when = formatApprovalTime(start);
-    const title = accept.title || payload.summary || (approvalEvent.preview && approvalEvent.preview.summary) || 'calendar event';
+    const title = taskPreviewTitle(receipt) || accept.title || (approvalEvent.preview && approvalEvent.preview.summary) || 'calendar event';
     return `Approval needed before creation: calendar event "${String(title).slice(0, 80)}"${when ? ` ${when}` : ''}`;
   }
 
@@ -1027,12 +1027,9 @@ function taskPreviewTitle(receipt) {
   const slots = taskPreview.slots && typeof taskPreview.slots === 'object' ? taskPreview.slots : {};
   const accept = receipt && receipt.task_accept_receipt && typeof receipt.task_accept_receipt === 'object' ? receipt.task_accept_receipt : {};
   const approvalEvent = taskPreviewApprovalEvent(receipt);
-  const request = approvalEvent && approvalEvent.approval_request ? approvalEvent.approval_request : {};
-  const payload = request.payload && typeof request.payload === 'object' ? request.payload : {};
   return String(
     slots.title
     || accept.title
-    || payload.summary
     || (approvalEvent && approvalEvent.preview && approvalEvent.preview.summary)
     || ''
   ).trim();
