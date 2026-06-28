@@ -4034,6 +4034,8 @@ function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
     tag: task.tag || null,
     updated_at: task.updated_at || null,
     review_pass_count: task.review?.agent_review_pass_count || null,
+    landing: reviewLandingForDisplay(task.review),
+    result: task.review?.result || null,
     proof: taskReviewClip(task.review?.proof, 500) || null,
     next_action: handoff?.next_action || null,
     accept_command: acceptCommand,
@@ -4213,6 +4215,14 @@ function cmdReviews(args) {
     const badge = item.evidence?.all_passing ? ' [evidence:passing]' : '';
     console.log('');
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
+    if (item.landing) {
+      console.log('   Result:');
+      if (item.landing.happened) console.log(`     What happened: ${item.landing.happened}`);
+      if (item.landing.checked) console.log(`     How I checked: ${item.landing.checked}`);
+      if (item.landing.tested) console.log(`     What I tested: ${item.landing.tested}`);
+      if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
+      if (item.landing.decision) console.log(`     Decision: ${item.landing.decision}`);
+    }
     if (item.proof) console.log(`   proof: ${item.proof}`);
     if (item.evidence) {
       item.evidence.receipts.forEach((receipt) => {
