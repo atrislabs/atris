@@ -294,7 +294,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Gate visibility:** `completionGateLabel()` surfaces `gate: <source>` / `gate: forced override (<source>)` on completed missions in both `mission status` text output and the rendered `atris/status/now.md`. Regression: `test/mission-stop-receipt.test.js`
 - **Value:** Turns a broad goal into append-only state plus proof, so `atris` can surface the next concrete mission action.
 
-**Search:** `rg "missionCommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|captureMissionWorktreeBaseline|missionCompletionGate|runMission|tickMission" commands/mission.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js test/mission-worktree-baseline.test.js test/mission-complete-guard.test.js`
+**Search:** `rg "missionCommand|helpForSubcommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|captureMissionWorktreeBaseline|missionCompletionGate|runMission|tickMission" commands/mission.js test/mission-help.test.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js test/mission-worktree-baseline.test.js test/mission-complete-guard.test.js`
 
 ### Feature: Member Worktrees (`atris worktree`)
 

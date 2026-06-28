@@ -2423,6 +2423,60 @@ State:
 `.trim());
 }
 
+function wantsHelp(args = []) {
+  return args.includes('--help') || args.includes('-h') || args[0] === 'help';
+}
+
+function helpForSubcommand(subcommand) {
+  const sub = String(subcommand || '');
+  if (sub === 'start' || sub === 'create' || sub === 'new') {
+    console.log('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]');
+    console.log('');
+    console.log('  --runner manual|claude|atris2|codex_goal');
+    console.log('  --verify "<cmd>"');
+    console.log('  --always-on --cadence "15m"');
+    console.log('  --xp-task');
+    return true;
+  }
+  if (sub === 'status' || sub === 'list' || sub === 'ls') {
+    console.log('Usage: atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]');
+    return true;
+  }
+  if (sub === 'watch') {
+    console.log('Usage: atris mission watch [id] [--interval <s>] [--idle-every <s>]');
+    return true;
+  }
+  if (sub === 'layers') {
+    console.log('Usage: atris mission layers [--mission <id-substr>] [--since <date>] [--json]');
+    return true;
+  }
+  if (sub === 'goal' || sub === 'codex-goal') {
+    console.log('Usage: atris mission goal [--heartbeat] [--json]');
+    return true;
+  }
+  if (sub === 'goal-loop' || sub === 'codex-goal-loop') {
+    console.log('Usage: atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]');
+    return true;
+  }
+  if (sub === 'tick') {
+    console.log('Usage: atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]');
+    return true;
+  }
+  if (sub === 'run') {
+    console.log('Usage: atris mission run <id|--due> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"] [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]');
+    return true;
+  }
+  if (sub === 'complete' || sub === 'done') {
+    console.log('Usage: atris mission complete <id> --proof "..."');
+    return true;
+  }
+  if (sub === 'stop' || sub === 'pause') {
+    console.log('Usage: atris mission stop <id> [--pause] [--reason "..."]');
+    return true;
+  }
+  return false;
+}
+
 // Extract layer classification from receipt text.
 // Priority: layer tag on the last non-empty line (source: explicit) >
 // last strictly-matching layer line anywhere in the text (source: explicit-inline) >
@@ -2573,6 +2627,7 @@ function layersMission(args) {
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
+  if (wantsHelp(rest) && helpForSubcommand(subcommand)) return 0;
   switch (subcommand) {
     case 'start':
     case 'create':
