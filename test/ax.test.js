@@ -584,6 +584,103 @@ test('ax executes accepted approval receipts through Atris2 approval endpoint', 
   assert.match(rendered, /done\s+Created calendar event\./);
 });
 
+test('ax keeps generic approval requests pending locally across turns', () => {
+  const receipt = {
+    tool_events: [{
+      tool: 'slack',
+      approval_request: {
+        connector: 'slack',
+        action: 'post_message',
+        executor_action_type: 'slack_post_message',
+        status: 'approval_required',
+        payload: { channel: '#general', text: 'ship note' },
+      },
+    }],
+  };
+  const approvalRequest = ax.approvalRequestFromReceipt(receipt);
+
+  assert.match(approvalRequest.approval_request_id, /^apreq_ax_[a-f0-9]{20}$/);
+  assert.equal(approvalRequest.payload.text, 'ship note');
+  assert.equal(
+    ax.latestPendingApprovalRequest([
+      { role: 'user', content: 'send this' },
+      { role: 'assistant', content: 'Approval needed.', approval_request: approvalRequest },
+    ]).approval_request_id,
+    approvalRequest.approval_request_id
+  );
+  assert.equal(
+    ax.latestPendingApprovalRequest([
+      { role: 'assistant', content: 'Approval needed.', approval_request: approvalRequest },
+      { role: 'assistant', content: 'Cancelled.' },
+    ]),
+    null
+  );
+  assert.equal(ax.messageApprovesPendingApproval('yes send it'), true);
+  assert.equal(ax.messageApprovesPendingApproval('change the channel'), false);
+  assert.equal(ax.messageCancelsPendingApproval('cancel it'), true);
+});
+
+test('ax executes a stored generic approval request without another model turn', async () => {
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const approvalRequest = ax.approvalRequestFromReceipt({
+    tool_events: [{
+      approval_request: {
+        connector: 'slack',
+        executor_action_type: 'slack_post_message',
+        status: 'approval_required',
+        payload: { channel: '#general', text: 'ship note' },
+      },
+    }],
+  });
+  const state = {
+    events: [],
+    errors: [],
+    output: 'Accepted.',
+    pendingText: '',
+    wroteText: true,
+    wroteActivity: true,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    needsBullet: true,
+  };
+  let captured = null;
+
+  const execution = await ax.executeApprovalRequest(approvalRequest, {
+    model: 'atris:fast',
+    output,
+    state,
+    postApproval: async (request, options) => {
+      captured = { request, options };
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          status: 'executed',
+          action_type: 'slack_post_message',
+          execution: { status: 'executed', action_type: 'slack_post_message', executed: true },
+          billing: { billed: true, credits_charged: 1 },
+        },
+      };
+    },
+  });
+
+  assert.equal(captured.options.model, 'atris:fast');
+  assert.equal(captured.request.approval_request_id, approvalRequest.approval_request_id);
+  assert.equal(execution.message, 'Sent Slack message.');
+  assert.equal(ax.creditsFromApprovalExecution(execution.response), 1);
+  const rendered = chunks.join('');
+  assert.match(rendered, /wait\s+Sending approved action to Atris cloud/);
+  assert.match(rendered, /done\s+Sent Slack message\./);
+});
+
 test('ax formats blocked approval execution without leaking payloads', () => {
   assert.equal(
     ax.formatApprovalExecutionResult({

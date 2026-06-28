@@ -972,18 +972,22 @@ function approvalRequestWithStableId(request) {
   return copy;
 }
 
+function approvalRequestFromReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null;
+  const events = Array.isArray(receipt.tool_events) ? receipt.tool_events : [];
+  const approvalEvent = events.find(event => event && event.approval_request);
+  const request = approvalEvent && approvalEvent.approval_request;
+  if (!request || request.status !== 'approval_required') return null;
+  return approvalRequestWithStableId(request);
+}
+
 function approvalExecutionRequestFromReceipt(receipt) {
   if (!receipt || typeof receipt !== 'object') return null;
   const accepted = receipt.task_accept_receipt || {};
   if (accepted.accepted !== true) return null;
   if (accepted.execution_endpoint && accepted.execution_endpoint !== APPROVAL_EXECUTE_PATH) return null;
   if (accepted.execution_status && accepted.execution_status !== 'pending_approval_execution') return null;
-
-  const events = Array.isArray(receipt.tool_events) ? receipt.tool_events : [];
-  const approvalEvent = events.find(event => event && event.approval_request);
-  const request = approvalEvent && approvalEvent.approval_request;
-  if (!request || request.status !== 'approval_required') return null;
-  return approvalRequestWithStableId(request);
+  return approvalRequestFromReceipt(receipt);
 }
 
 function approvalExecutionRequestFromState(state) {
@@ -1043,6 +1047,13 @@ function formatApprovalExecutionResult(response) {
   return `Approval handled for ${actionLabel}.`;
 }
 
+function creditsFromApprovalExecution(response) {
+  const billing = response && response.data && response.data.billing;
+  if (!billing || billing.billed === false) return null;
+  const credits = Number(billing.credits_charged);
+  return Number.isFinite(credits) && credits > 0 ? credits : null;
+}
+
 async function postApprovalExecution(approvalRequest, { model = 'atris:fast', token = authToken() } = {}) {
   return postJson(APPROVAL_EXECUTE_PATH, {
     model,
@@ -1050,22 +1061,40 @@ async function postApprovalExecution(approvalRequest, { model = 'atris:fast', to
   }, { token });
 }
 
-async function executeApprovalFromState(state, {
+async function executeApprovalRequest(approvalRequest, {
   model = 'atris:fast',
   output = process.stdout,
   postApproval = postApprovalExecution,
+  state = null,
 } = {}) {
-  const approvalRequest = approvalExecutionRequestFromState(state);
   if (!approvalRequest) return null;
-  writeAuxLine(state, output, formatAuxRow('wait', 'Sending approved action to Atris cloud...', output));
+  const localState = state || {
+    events: [],
+    errors: [],
+    output: '',
+    pendingText: '',
+    wroteText: false,
+    wroteActivity: false,
+    lastChar: '\n',
+    progress: null,
+    inAuxBlock: false,
+    needsBullet: true,
+  };
+  writeAuxLine(localState, output, formatAuxRow('wait', 'Sending approved action to Atris cloud...', output));
   const response = await postApproval(approvalRequest, { model });
   const message = formatApprovalExecutionResult(response);
   if (message) {
     const execution = response && response.data && response.data.execution;
     const label = response && response.ok && execution && execution.executed ? 'done' : 'wait';
-    writeAuxLine(state, output, formatAuxRow(label, message, output));
+    writeAuxLine(localState, output, formatAuxRow(label, message, output));
   }
   return { approval_request: approvalRequest, response, message };
+}
+
+async function executeApprovalFromState(state, options = {}) {
+  const approvalRequest = approvalExecutionRequestFromState(state);
+  if (!approvalRequest) return null;
+  return executeApprovalRequest(approvalRequest, { ...options, state });
 }
 
 function clearRetriedText(state) {
@@ -1160,6 +1189,44 @@ function latestPendingTaskPreview(history = []) {
     return null;
   }
   return null;
+}
+
+function latestPendingApprovalRequest(history = []) {
+  for (const turn of [...(Array.isArray(history) ? history : [])].reverse()) {
+    if (!turn || turn.role !== 'assistant') continue;
+    if (turn.approval_request) return approvalRequestWithStableId(turn.approval_request);
+    return null;
+  }
+  return null;
+}
+
+function messageApprovesPendingApproval(message) {
+  const normalized = String(message || '').trim().toLowerCase().replace(/[.!?]+$/g, '');
+  return new Set([
+    'yes',
+    'y',
+    'yep',
+    'yeah',
+    'ok',
+    'okay',
+    'approve',
+    'approved',
+    'confirm',
+    'create it',
+    'send it',
+    'post it',
+    'do it',
+    'go ahead',
+    'looks good',
+    'yes create it',
+    'yes send it',
+    'yes post it',
+  ]).has(normalized);
+}
+
+function messageCancelsPendingApproval(message) {
+  const normalized = String(message || '').trim().toLowerCase().replace(/[.!?]+$/g, '');
+  return new Set(['no', 'nope', 'cancel', 'cancel it', 'stop', 'never mind', 'nevermind', 'do not', "don't"]).has(normalized);
 }
 
 function buildMessage(message, history = []) {
@@ -1616,6 +1683,45 @@ async function chat(options = {}) {
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
+    const pendingApprovalRequest = latestPendingApprovalRequest(history);
+    if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageCancelsPendingApproval(trimmed)) {
+      const startedAt = Date.now();
+      output.write('Cancelled.\n');
+      output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
+      history.push({ role: 'user', content: trimmed });
+      history.push({ role: 'assistant', content: 'Cancelled.' });
+      return false;
+    }
+    if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageApprovesPendingApproval(trimmed)) {
+      const startedAt = Date.now();
+      const approvalState = {
+        events: [],
+        errors: [],
+        output: 'Accepted.',
+        pendingText: '',
+        wroteText: true,
+        wroteActivity: true,
+        lastChar: '\n',
+        progress: null,
+        inAuxBlock: false,
+        needsBullet: true,
+      };
+      output.write('Accepted.\n');
+      const approvalExecution = await executeApprovalRequest(pendingApprovalRequest, {
+        model: modelForMode(mode),
+        output,
+        state: approvalState,
+      });
+      const credits = creditsFromApprovalExecution(approvalExecution && approvalExecution.response);
+      output.write(`${formatDoneLine(Date.now() - startedAt, credits)}\n\n`);
+      history.push({ role: 'user', content: trimmed });
+      history.push({
+        role: 'assistant',
+        content: ['Accepted.', approvalExecution && approvalExecution.message ? approvalExecution.message : ''].filter(Boolean).join('\n'),
+      });
+      return false;
+    }
+
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
     const result = await turnFunctionForMode(mode)(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
@@ -1625,6 +1731,7 @@ async function chat(options = {}) {
       : await executeApprovalFromState(result, { model: modelForMode(mode), output });
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     const receipt = receiptFromState(result);
+    const approvalRequest = approvalExecution ? null : approvalRequestFromReceipt(receipt);
     const assistantContent = [
       result.output || '',
       approvalExecution && approvalExecution.message ? approvalExecution.message : '',
@@ -1634,6 +1741,7 @@ async function chat(options = {}) {
       role: 'assistant',
       content: assistantContent,
       ...(receipt && receipt.task_preview ? { task_preview: receipt.task_preview } : {}),
+      ...(approvalRequest ? { approval_request: approvalRequest } : {}),
     });
     return false;
   };
@@ -1954,6 +2062,7 @@ module.exports = {
   authToken,
   authUserId,
   approvalExecutionRequestFromReceipt,
+  approvalRequestFromReceipt,
   backendBaseUrl,
   backendUrl,
   buildCodeFastPayload,
@@ -1971,6 +2080,8 @@ module.exports = {
   codeFastUrl,
   createRunLogger,
   createProgressReporter,
+  creditsFromApprovalExecution,
+  executeApprovalRequest,
   executeApprovalFromState,
   formatDoneLine,
   formatDuration,
@@ -1985,6 +2096,9 @@ module.exports = {
   formatUsage,
   formatWorkingLine,
   handleEvent,
+  latestPendingApprovalRequest,
+  messageApprovesPendingApproval,
+  messageCancelsPendingApproval,
   modelForMode,
   parseSseBlock,
   postApprovalExecution,
