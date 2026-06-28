@@ -30,6 +30,9 @@ function readFlag(args, name, fallback = null) {
 function wantsJson(args) {
   return hasFlag(args, '--json');
 }
+function wantsHelp(args = []) {
+  return args.includes('--help') || args.includes('-h') || args.includes('help');
+}
 
 function helpText() {
   return `
@@ -466,7 +469,7 @@ function runCommand(args, root = process.cwd()) {
 function pulseCommand(argv = []) {
   const sub = argv[0];
   const rest = argv.slice(1);
-  if (sub === '--help' || sub === '-h' || sub === 'help') return showHelp();
+  if (wantsHelp(argv)) return showHelp();
   switch (sub) {
     case 'tick':
       return tickCommand(rest);
@@ -490,6 +493,7 @@ function pulseCommand(argv = []) {
 
 module.exports = {
   pulseCommand,
+  wantsHelp,
   tickCommand,
   statusCommand,
   installCommand,

@@ -814,7 +814,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** The durable overnight self-improvement heartbeat for atris-cli itself. Unlike `/loop` (Claude Code CronCreate — dies when Claude Code closes) this installs an OS cron that fires regardless, runs the existing mission engine, verifies, and writes a pulse receipt + reward scorecard so the loop compounds without a human turning the crank.
 
 - **Pure core:** `lib/pulse.js` — receipts (`buildPulseReceipt`), reward gating (`scoreTick`, `shouldWriteScorecard`), ghost/stale detection (`findOrphanStarts`, `detectStaleTick`), summary (`summarizePulse`), cron-script generation (`buildTickScript`, `buildCrontabLine`), IO (`appendPulseReceipt`, `nextTickIndex`, `acquireLock`)
-- **Command:** `commands/pulse.js` (`pulseCommand`) — subcommands `tick|status|install|uninstall|run`
+- **Command:** `commands/pulse.js` (`pulseCommand`, `wantsHelp`) — subcommands `tick|status|install|uninstall|run`; help flags are handled before mutating subcommands
   - `tickCommand` — lock → 'started' receipt → `runMissionEngine` (`atris mission run --due --max-ticks 1 --complete-on-pass`) → `runVerify` → 'finished' receipt + gated scorecard → release lock
   - `statusCommand` — liveness, reward sum, ghost-tick detection, cron-installed check
   - `installCommand` / `uninstallCommand` — write `~/.atris/overnight/atris-cli-self-improve/tick.sh` + manage the `ATRIS_PULSE_SELF_IMPROVE` crontab line (idempotent, preserves other entries, 7-day auto-expiry deadline)

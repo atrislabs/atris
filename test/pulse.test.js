@@ -7,12 +7,44 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { pulseCommand, wantsHelp } = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   return dir;
 }
+
+function captureStdout(fn) {
+  const originalWrite = process.stdout.write;
+  let output = '';
+  process.stdout.write = (chunk, ...args) => {
+    output += String(chunk);
+    if (typeof args[args.length - 1] === 'function') args[args.length - 1]();
+    return true;
+  };
+  try {
+    const result = fn();
+    return { output, result };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+}
+
+// --- command help guard: help must never mutate cron or run ticks ---
+
+test('pulseCommand treats subcommand help as help before side effects', () => {
+  assert.equal(wantsHelp(['install', '--help']), true);
+  assert.equal(wantsHelp(['run', '-h']), true);
+  assert.equal(wantsHelp(['tick', 'help']), true);
+
+  for (const argv of [['install', '--help'], ['run', '--help'], ['tick', '--help']]) {
+    const { output, result } = captureStdout(() => pulseCommand(argv));
+    assert.equal(result.ok, true);
+    assert.equal(result.action, 'pulse_help');
+    assert.match(output, /Usage: atris pulse/);
+  }
+});
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
 
