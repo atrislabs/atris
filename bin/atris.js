@@ -111,6 +111,7 @@ let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
 const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model', '--runner-profile'];
+const AUTOPILOT_VALUE_FLAG_NAMES = [...RUNNER_FLAG_NAMES, '--duration', '--iterations'];
 
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
@@ -776,8 +777,8 @@ function showAutopilotHelp() {
   console.log('');
   console.log('Options:');
   console.log('  --auto           Execute without waiting for approval');
-  console.log('  --duration=TIME  Run for a time limit (e.g. 1h, 30m, 90m)');
-  console.log('  --iterations=N   Max tasks before stopping');
+  console.log('  --duration TIME  Run for a time limit (e.g. 1h, 30m, 90m; also supports --duration=TIME)');
+  console.log('  --iterations N   Max tasks before stopping (also supports --iterations=N)');
   console.log('  --verbose, -v    Show detailed runner output');
   console.log('  --dry-run        Show suggestions without executing');
   console.log('  --runner-bin PATH       Runner binary for this run');
@@ -1663,11 +1664,11 @@ if (command === 'init') {
     console.log('Reads inbox ideas, creates tasks, builds them, validates, repeats.');
     console.log('');
     console.log('Options:');
-    console.log('  --cycles=N    Max cycles (default: 5)');
+    console.log('  --cycles N    Max cycles (default: 5; also supports --cycles=N)');
     console.log('  --once        Single plan→do→review cycle');
     console.log('  --verbose     Show configured runner output');
     console.log('  --dry-run     Preview without executing');
-    console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
+    console.log('  --timeout N   Phase timeout in seconds (default: 600; also supports --timeout=N)');
     console.log('  --runner-bin PATH       Runner binary for this run');
     console.log('  --runner-template CMD   Runner command template for this run');
     console.log('  --runner-model MODEL    Runner model for this run');
@@ -1691,10 +1692,10 @@ if (command === 'init') {
   const once = args.includes('--once');
   const push = !args.includes('--no-push');
   applyRunnerFlags(args);
-  const cyclesArg = args.find(a => a.startsWith('--cycles='));
-  const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
-  const timeoutArg = args.find(a => a.startsWith('--timeout='));
-  const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1]) * 1000 : undefined;
+  const cyclesArg = readOptionArg(args, '--cycles');
+  const maxCycles = cyclesArg ? parseInt(cyclesArg, 10) : 5;
+  const timeoutArg = readOptionArg(args, '--timeout');
+  const timeout = timeoutArg ? parseInt(timeoutArg, 10) * 1000 : undefined;
 
   require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
     .then(() => process.exit(0))
@@ -1714,13 +1715,12 @@ if (command === 'init') {
   const dryRun = args.includes('--dry-run');
   const auto = args.includes('--auto');
   applyRunnerFlags(args);
-  const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
-  const durationArg = args.find(a => a.startsWith('--duration='));
-  const duration = durationArg ? durationArg.split('=')[1] : null;
+  const maxIterationsArg = readOptionArg(args, '--iterations');
+  const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg, 10) : undefined;
+  const duration = readOptionArg(args, '--duration') || null;
 
   // Get description (non-flag args)
-  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;
+  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, AUTOPILOT_VALUE_FLAG_NAMES)).join(' ').trim() || null;
 
   const options = {
     ...(maxIterations !== undefined && { maxIterations }),

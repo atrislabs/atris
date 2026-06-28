@@ -96,7 +96,16 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /--runner-template/);
   assert.match(BIN_SRC, /--runner-model/);
   assert.match(BIN_SRC, /--runner-profile/);
-  assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
+  assert.match(BIN_SRC, /!isOptionValue\(args, i, AUTOPILOT_VALUE_FLAG_NAMES\)/);
+});
+
+test('run and autopilot parse space-form value flags without leaking descriptions', () => {
+  assert.match(BIN_SRC, /const AUTOPILOT_VALUE_FLAG_NAMES = \[\.\.\.RUNNER_FLAG_NAMES, '--duration', '--iterations'\]/);
+  assert.match(BIN_SRC, /const cyclesArg = readOptionArg\(args, '--cycles'\)/);
+  assert.match(BIN_SRC, /const timeoutArg = readOptionArg\(args, '--timeout'\)/);
+  assert.match(BIN_SRC, /const maxIterationsArg = readOptionArg\(args, '--iterations'\)/);
+  assert.match(BIN_SRC, /const duration = readOptionArg\(args, '--duration'\) \|\| null/);
+  assert.match(BIN_SRC, /isOptionValue\(args, i, AUTOPILOT_VALUE_FLAG_NAMES\)/);
 });
 
 test('mission claude ticks spawn the configured runner binary', () => {

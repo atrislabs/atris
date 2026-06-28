@@ -755,6 +755,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Model freshness check:** `commands/autopilot.js:3577` (`askModel`) — called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
 - **Staleness wiring:** `commands/autopilot.js:77` (suggestNextTask staleness gate) — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
+- **Option parsing:** `bin/atris.js` accepts both equals and space forms for `--duration` / `--iterations`, and filters those option values out of the optional description so `atris autopilot --auto --duration 8h` cannot seed `8h` as inbox work. Regression: `test/autopilot-runner-model.test.js`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
 **Search:** `rg "autopilotAtris|suggestNextTask" commands/autopilot.js`
@@ -806,6 +807,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
   4. Log run stats to journal
 - **Dependencies:** `lib/journal.js` (log paths), `lib/todo.js` (parseTodo)
 - **Value:** Fully autonomous work loop — no human in the loop between cycles
+- **Option parsing:** `bin/atris.js` accepts both equals and space forms for `run --cycles` and `run --timeout`, using the same `readOptionArg()` helper as runner flags. Regression: `test/autopilot-runner-model.test.js`
 
 **Search:** `rg "runAtris|getRunLogDir|getRunLogPath|writePhaseToRunLog|listRunLogs" commands/run.js`
 
