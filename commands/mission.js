@@ -452,6 +452,7 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- lane: ${mission.lane}`);
     if (taskSpine.task_ref) lines.push(`- task: ${taskSpine.task_ref}`);
     if (taskSpine.current_step_command) lines.push(`- task next: ${taskSpine.current_step_command}`);
+    if (!taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`- task setup: ${taskSpine.ensure_task_command}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
@@ -552,6 +553,7 @@ function renderMissionStatus(root = process.cwd()) {
       lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
       if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
       if (taskSpine?.current_step_command) lines.push(`  - task next: ${taskSpine.current_step_command}`);
+      if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${taskSpine.ensure_task_command}`);
       if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
       const gateLabel = completionGateLabel(mission.completion_gate);
@@ -603,6 +605,9 @@ function missionTaskSpine(mission) {
     current_step_command: taskId || taskRef
       ? `atris task current-step --goal-id ${mission.id} --as ${owner} --proof "<proof>" --json`
       : null,
+    ensure_task_command: taskId || taskRef
+      ? null
+      : `atris mission attach-task ${mission.id} --json`,
   };
 }
 
@@ -738,6 +743,66 @@ function startMission(args) {
   );
 }
 
+function attachMissionTask(args) {
+  const asJson = wantsJson(args);
+  const ref = stripKnownFlags(args, [], ['--json'])[0] || '';
+  if (!ref) {
+    exitMissionError('Usage: atris mission attach-task <id> [--json]', 1, asJson);
+  }
+  const mission = resolveMission(ref);
+  if (!mission) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+  }
+  if (TERMINAL_STATUSES.has(mission.status)) {
+    exitMissionError(`Mission "${ref}" is ${mission.status}; task spines attach only to active missions.`, 2, asJson);
+  }
+
+  const existingSpine = missionTaskSpine(mission);
+  if (existingSpine?.has_task) {
+    const view = missionStatusView(mission);
+    printJsonOrText(
+      { ok: true, action: 'mission_task_spine_exists', mission: view, task_spine: view.task_spine },
+      [
+        `Mission task spine already exists: ${mission.objective}`,
+        `Task: ${view.task_spine.task_ref}`,
+        `Next: ${view.task_spine.current_step_command}`,
+      ],
+      asJson,
+    );
+    return;
+  }
+
+  const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
+  const nextMission = {
+    ...mission,
+    xp_task_enabled: true,
+    xp_task: xpTask,
+    task_ids: Array.from(new Set([...(mission.task_ids || []), xpTask.task_id])),
+  };
+  if (nextMission.status === 'ready' && nextMission.receipt_path) {
+    nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
+  } else if (!nextMission.verifier && !nextMission.always_on) {
+    nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
+  }
+
+  const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref });
+  const memberState = renderMemberMissionState(saved.owner);
+  const logPath = appendMemberLog(saved.owner, 'Mission task spine attached', {
+    mission: saved.objective,
+    task: xpTask.ref,
+  });
+  const view = missionStatusView(saved);
+  printJsonOrText(
+    { ok: true, action: 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
+    [
+      `Attached task spine: ${saved.objective}`,
+      `Task: ${xpTask.ref}`,
+      `Next: ${view.task_spine.current_step_command}`,
+    ],
+    asJson,
+  );
+}
+
 function statusMission(args) {
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
@@ -788,6 +853,7 @@ function statusMission(args) {
         `  next: ${mission.next_action || 'tick or verify'}`,
         ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
         ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
+        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
@@ -2616,6 +2682,7 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission attach-task <id> [--json]   Create the missing task spine for an existing active mission
   atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
@@ -2826,6 +2893,10 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'attach-task':
+    case 'ensure-task':
+    case 'task-spine':
+      return attachMissionTask(rest);
     case 'report':
     case 'debrief':
       return reportMission(rest);

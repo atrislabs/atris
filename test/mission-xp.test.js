@@ -132,3 +132,72 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     cleanupTempDir(dir);
   }
 });
+
+test('mission attach-task creates a task spine for an existing active mission', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'game-manager' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'game-manager'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'MEMBER.md'), '# Game Manager\n');
+
+    const start = runCli([
+      'mission', 'start', 'Retrofit a mission onto the task board',
+      '--owner', 'game-manager',
+      '--runner', 'codex_goal',
+      '--lane', 'code',
+      '--verify', 'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+    assert.equal(mission.xp_task_enabled, false);
+
+    const before = runCli(['mission', 'status', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(before.status, 0, before.stderr || before.stdout);
+    const beforeMission = JSON.parse(before.stdout).missions[0];
+    assert.equal(beforeMission.task_spine.has_task, false);
+    assert.equal(beforeMission.task_spine.ensure_task_command, `atris mission attach-task ${mission.id} --json`);
+
+    const beforeText = runCli(['mission', 'status', mission.id], { cwd: dir, env });
+    assert.equal(beforeText.status, 0, beforeText.stderr || beforeText.stdout);
+    assert.match(beforeText.stdout, new RegExp(`task setup: atris mission attach-task ${mission.id} --json`));
+
+    const attached = runCli(['mission', 'attach-task', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const payload = JSON.parse(attached.stdout);
+    assert.equal(payload.action, 'mission_task_spine_attached');
+    assert.equal(payload.mission.xp_task_enabled, true);
+    assert.equal(payload.task_spine.has_task, true);
+    assert.equal(payload.task_spine.goal_id, mission.id);
+    assert.equal(payload.task_spine.owner, 'game-manager');
+    assert.equal(payload.task_spine.runner, 'codex_goal');
+    assert.equal(payload.task_spine.lane, 'code');
+    assert.equal(payload.task_spine.task_ref, payload.task.ref);
+    assert.match(payload.task_spine.current_step_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+
+    const list = runCli(['task', 'list', '--json'], { cwd: dir, env });
+    assert.equal(list.status, 0, list.stderr || list.stdout);
+    const task = JSON.parse(list.stdout).tasks.find(row => row.id === payload.task.task_id);
+    assert.equal(task.status, 'claimed');
+    assert.equal(task.claimed_by, 'game-manager');
+    assert.equal(task.metadata.goal_id, mission.id);
+    assert.equal(task.metadata.mission_id, mission.id);
+    assert.equal(task.metadata.delegate_via, 'mission_goal_loop');
+
+    const status = runCli(['mission', 'status', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusMission = JSON.parse(status.stdout).missions[0];
+    assert.equal(statusMission.task_ref, payload.task.ref);
+    assert.equal(statusMission.task_spine.ensure_task_command, null);
+
+    const again = runCli(['mission', 'task-spine', mission.id, '--json'], { cwd: dir, env });
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    const againPayload = JSON.parse(again.stdout);
+    assert.equal(againPayload.action, 'mission_task_spine_exists');
+    assert.equal(againPayload.task_spine.task_ref, payload.task.ref);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
