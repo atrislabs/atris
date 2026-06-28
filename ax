@@ -1197,11 +1197,16 @@ function formatStoredApprovals(store, options = {}) {
   const blocks = ['Pending approvals'];
   for (const approval of approvals) {
     blocks.push(formatAuxRow('id', approval.id, options));
+    blocks.push(formatAuxRow('approve', formatApprovalCommand(approval.id), options));
     for (const row of Array.isArray(approval.display_rows) ? approval.display_rows : []) {
       blocks.push(row);
     }
   }
   return blocks.join('\n');
+}
+
+function formatApprovalCommand(id) {
+  return `ax --approve ${String(id || '').trim()}`;
 }
 
 function stableStringify(value) {
@@ -2991,7 +2996,10 @@ async function main() {
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
-    if (approvalRequest) persistPendingApproval(receipt, approvalRequest, { cwd: process.cwd(), mode });
+    const approvalRecord = approvalRequest
+      ? persistPendingApproval(receipt, approvalRequest, { cwd: process.cwd(), mode })
+      : null;
+    if (approvalRecord) console.log(formatAuxRow('approve', formatApprovalCommand(approvalRecord.id), process.stdout));
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
