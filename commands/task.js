@@ -17,6 +17,7 @@ const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || os.userInfo().username
   || 'unknown';
 const AGENT_CERTIFICATION_REVIEW_PASSES = 2;
+const RESULT_SAVED_TEXT_LIMIT = 200;
 const REVIEW_LANE_LOOP_DEFAULT_MAX_STEPS = 3;
 const REVIEW_LANE_LOOP_MAX_STEPS = 10;
 const REVIEW_LANE_RUN_DEFAULT_MAX_RUNS = 3;
@@ -97,8 +98,15 @@ atris task - durable local task state (SQLite, gitignored)
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
   atris task ready <id> --proof "..."      Agent proof ready; native goal can complete
   atris task ready <id> --verify "<cmd>"   Run <cmd>; only ready if it exits 0 (executed proof)
+  atris task plan-preview "<purpose>" [--tag <tag>] [--owner <member>] [--task <id>]
+                                           Show the plain Plan before work starts
+  atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
+                                           Agent proof ready; records Result if needed
+  atris task result <id> --changed "..." --checked "..." [--saved "..."] [--try "..."]
+                                           Show the plain Result and store trace on the task
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
-  atris task accept <id> [--proof "..."]   Human accepts proof, marks done
+  atris task accept <id> [--proof "..."] [--public]
+                                           Human accepts proof, marks done; --public also publishes AgentXP
   atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task revise <id> --note "..."      Send reviewed work back to Do
@@ -5021,7 +5029,8 @@ function cmdPlan(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) failTask('atris task plan', 'missing_id', 'id required');
-  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const actorFlag = flag(args, '--as');
+  const actor = String(actorFlag || DEFAULT_OWNER);
   const goal = textFlag(args, ['--goal', '--objective']);
   const exit = textFlag(args, ['--exit', '--exit-condition']);
   const proofNeeded = textFlag(args, ['--proof-needed', '--proof', '--verify']);
@@ -5033,18 +5042,29 @@ function cmdPlan(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task plan');
+  const task = taskDetail(taskDb, db, taskId);
+  const automaticPlan = buildAutomaticPlanTrace(taskDb, task, {
+    actor,
+    actorExplicit: typeof actorFlag === 'string' && Boolean(actorFlag.trim()),
+    owner,
+    goal,
+    summary,
+    firstMove,
+    exit,
+  });
   const result = taskDb.stageTask(db, {
     id: taskId,
     actor,
     stage: 'plan',
     goal,
     summary,
-    owner,
+    owner: automaticPlan.ownerForStage || owner,
     exit,
     proofNeeded,
     firstMove,
     nextButton,
     confidence,
+    planTrace: automaticPlan.trace,
   });
   if (!result.staged) {
     failTask('atris task plan', result.reason || 'stage_failed', stageErrorDetail('atris task plan', result.reason, result), 1);
@@ -5056,6 +5076,11 @@ function cmdPlan(args) {
       action: 'planned',
       task_id: taskId,
       version: result.event.version,
+      plan_trace: automaticPlan.trace ? {
+        plan: automaticPlan.plan,
+        owner_choice: automaticPlan.ownerChoice,
+        trace: automaticPlan.trace,
+      } : null,
       stage_packet: result.stage_packet,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -5318,6 +5343,611 @@ function taskDetail(taskDb, db, taskId) {
 function taskCommandQuote(value) {
   const text = String(value || '').replace(/\s+/g, ' ').replace(/"/g, '\\"').trim();
   return `"${text || '...'}"`;
+}
+
+function cleanPublicText(value, max = 500) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 3)).trim()}...` : text;
+}
+
+function publicWords(value) {
+  return (String(value || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [])
+    .map(word => word.endsWith('s') && word.length > 4 ? word.slice(0, -1) : word)
+    .filter(word => !new Set([
+      'and',
+      'for',
+      'from',
+      'into',
+      'the',
+      'this',
+      'that',
+      'task',
+      'work',
+      'with',
+    ]).has(word));
+}
+
+function parseMemberFrontmatter(text) {
+  const source = String(text || '');
+  if (!source.startsWith('---')) return {};
+  const end = source.indexOf('\n---', 3);
+  if (end === -1) return {};
+  const block = source.slice(3, end).split(/\r?\n/);
+  const data = {};
+  for (const raw of block) {
+    const match = raw.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) continue;
+    data[match[1]] = match[2].replace(/^["']|["']$/g, '').trim();
+  }
+  return data;
+}
+
+function readTeamMembers(root = process.cwd()) {
+  const teamDir = path.join(root, 'atris', 'team');
+  if (!fs.existsSync(teamDir)) return [];
+  return fs.readdirSync(teamDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const slug = entry.name;
+      const memberPath = path.join(teamDir, slug, 'MEMBER.md');
+      if (!fs.existsSync(memberPath)) return null;
+      const text = fs.readFileSync(memberPath, 'utf8');
+      const frontmatter = parseMemberFrontmatter(text);
+      return {
+        slug,
+        role: cleanPublicText(frontmatter.role || slug.replace(/[-_]/g, ' '), 120),
+        description: cleanPublicText(frontmatter.description || '', 240),
+        path: memberPath,
+      };
+    })
+    .filter(Boolean);
+}
+
+const GENERIC_MEMBER_SLUGS = new Set([
+  '_template',
+  'coordinator',
+  'executor',
+  'generalist',
+  'navigator',
+  'supervisor',
+]);
+
+function scoreTeamMember(member, words, tag) {
+  const slug = String(member.slug || '').toLowerCase();
+  const role = String(member.role || '').toLowerCase();
+  const description = String(member.description || '').toLowerCase();
+  const haystack = `${slug} ${role} ${description}`.replace(/[-_]/g, ' ');
+  let score = 0;
+  const cleanTag = String(tag || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (cleanTag) {
+    if (slug === cleanTag || slug.replace(/[-_]/g, ' ') === cleanTag) score += 12;
+    else if (haystack.includes(cleanTag)) score += 5;
+  }
+  for (const word of words) {
+    if (slug.includes(word)) score += 5;
+    else if (role.includes(word)) score += 3;
+    else if (description.includes(word)) score += 2;
+  }
+  if (GENERIC_MEMBER_SLUGS.has(slug)) score -= 3;
+  return score;
+}
+
+function plainMemberDescription(member) {
+  const description = cleanPublicText(member && member.description, 220);
+  if (!description) return '';
+  const lowered = `${description.charAt(0).toLowerCase()}${description.slice(1)}`;
+  return /[.!?]$/.test(lowered) ? lowered : `${lowered}.`;
+}
+
+function chooseTaskOwner({ purpose, tag, requestedOwner, root = process.cwd() } = {}) {
+  const members = readTeamMembers(root);
+  const requested = cleanPublicText(requestedOwner, 80);
+  if (requested) {
+    const match = members.find(member => member.slug === requested);
+    if (match) {
+      const description = plainMemberDescription(match);
+      return {
+        owner: match.slug,
+        member: match,
+        source: 'requested',
+        reason: `${match.slug} matches this work${description ? ` because ${description}` : '.'}`,
+      };
+    }
+    return {
+      owner: requested,
+      member: null,
+      source: 'requested',
+      reason: `${requested} was requested, but no matching atris/team member was found.`,
+    };
+  }
+  const words = publicWords(`${purpose || ''} ${tag || ''}`);
+  let best = null;
+  for (const member of members) {
+    const score = scoreTeamMember(member, words, tag);
+    if (!best || score > best.score) best = { member, score };
+  }
+  if (best && best.score > 0) {
+    const member = best.member;
+    const description = plainMemberDescription(member);
+    return {
+      owner: member.slug,
+      member,
+      source: 'team',
+      score: best.score,
+      reason: `${member.slug} fits this work${description ? ` because ${description}` : '.'}`,
+    };
+  }
+  return {
+    owner: DEFAULT_OWNER,
+    member: null,
+    source: 'fallback',
+    reason: `${DEFAULT_OWNER} is handling it because no specific atris/team owner matched this work.`,
+  };
+}
+
+function isGenericPlanActor(value) {
+  const actor = cleanPublicText(value, 80).toLowerCase();
+  if (!actor) return true;
+  if (actor === String(DEFAULT_OWNER || '').toLowerCase()) return true;
+  return GENERIC_MEMBER_SLUGS.has(actor) || new Set([
+    'codex',
+    'codex-executor',
+    'claude',
+    'claude-code',
+    'cursor',
+    'devin',
+  ]).has(actor);
+}
+
+function taskTextMentionsActor(actor, text) {
+  const actorWords = publicWords(actor);
+  if (!actorWords.length) return false;
+  const words = new Set(publicWords(text));
+  return actorWords.some(word => words.has(word));
+}
+
+function buildPublicPlan({ purpose, owner, ownerReason, plan, expected }) {
+  const cleanPurpose = cleanPublicText(purpose, 240);
+  const cleanOwner = cleanPublicText(owner, 80);
+  const cleanReason = cleanPublicText(ownerReason, 240);
+  const cleanPlan = cleanPublicText(plan, 320) || `${cleanOwner || 'The owner'} will make the smallest needed change, then check the result.`;
+  const cleanExpected = cleanPublicText(expected, 240) || 'the check passes and the result is ready to review.';
+  return {
+    purpose: cleanPurpose,
+    owner: cleanOwner,
+    owner_reason: cleanReason,
+    plan: cleanPlan,
+    expected_result: cleanExpected,
+  };
+}
+
+function renderPublicPlan(plan) {
+  const lines = [];
+  if (plan.purpose) lines.push(`Purpose: ${plan.purpose}`);
+  if (plan.owner) lines.push(`Owner: ${plan.owner} is handling it.`);
+  if (plan.owner_reason) lines.push(`Why: ${plan.owner_reason}`);
+  if (plan.plan) lines.push(`Plan: ${plan.plan}`);
+  if (plan.expected_result) lines.push(`Expected result: ${plan.expected_result}`);
+  return lines.join('\n');
+}
+
+function planTraceData(plan, ownerChoice) {
+  return {
+    schema: 'atris.task_plan_trace.v1',
+    purpose: plan.purpose,
+    owner: plan.owner,
+    owner_reason: plan.owner_reason,
+    plan: plan.plan,
+    expected_result: plan.expected_result,
+    owner_source: ownerChoice && ownerChoice.source || null,
+    owner_score: ownerChoice && ownerChoice.score || null,
+    recorded_at: new Date().toISOString(),
+  };
+}
+
+function planTraceNote(plan, ownerChoice) {
+  return `TASK_PLAN_TRACE ${JSON.stringify(planTraceData(plan, ownerChoice))}`;
+}
+
+function traceLineFromContent(content, prefix) {
+  const lines = String(content || '').split(/\r?\n/);
+  return lines.find(line => line.startsWith(prefix)) || '';
+}
+
+function latestTraceValue(task, prefix, key) {
+  const messages = Array.isArray(task && task.messages) ? task.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = String(messages[i] && messages[i].content || '');
+    const line = traceLineFromContent(content, prefix);
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line.slice(prefix.length).trim());
+      const value = parsed && parsed[key];
+      if (value !== undefined && value !== null && String(value).trim()) return String(value);
+    } catch (_) {
+      continue;
+    }
+  }
+  return '';
+}
+
+function taskHasTrace(task, prefix) {
+  const messages = Array.isArray(task && task.messages) ? task.messages : [];
+  if (messages.some(message => traceLineFromContent(message && message.content, prefix))) return true;
+  const events = Array.isArray(task && task.events) ? task.events : [];
+  return events.some(event => {
+    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+    if (traceLineFromContent(payload.stage_packet, prefix)) return true;
+    if (traceLineFromContent(payload.result_packet, prefix)) return true;
+    if (prefix === 'TASK_RESULT_TRACE ' && payload.result_trace && typeof payload.result_trace === 'object') return true;
+    if (prefix === 'TASK_PLAN_TRACE ' && payload.plan_trace && typeof payload.plan_trace === 'object') return true;
+    return false;
+  });
+}
+
+function taskPurpose(task) {
+  const metadata = task && task.metadata || {};
+  return cleanPublicText(
+    metadata.task_goal
+      || metadata.goal_objective
+      || metadata.objective
+      || metadata.stage_goal
+      || latestTraceValue(task, 'TASK_PLAN_TRACE ', 'purpose')
+      || task && task.title
+      || '',
+    240,
+  );
+}
+
+function buildPublicResult(task, fields) {
+  const owner = cleanPublicText(
+    fields.owner
+      || latestTraceValue(task, 'TASK_PLAN_TRACE ', 'owner')
+      || taskAssignee(task)
+      || task && task.claimed_by
+      || fields.actor,
+    80,
+  );
+  const result = {
+    purpose: cleanPublicText(fields.purpose || taskPurpose(task), 240),
+    owner,
+    changed: cleanPublicText(fields.changed, 320),
+    checked: cleanPublicText(fields.checked, 320),
+    passed: cleanPublicText(fields.passed, 240),
+    failed: cleanPublicText(fields.failed, 240),
+    cost: cleanPublicText(fields.cost, 80),
+    saved: cleanPublicText(fields.saved, RESULT_SAVED_TEXT_LIMIT),
+    try_next: cleanPublicText(fields.tryNext, 240),
+    status: cleanPublicText(fields.status, 160) || 'ready for review',
+  };
+  return result;
+}
+
+function renderPublicResult(result) {
+  return [
+    `Changed: ${cleanPublicText(result && result.changed, 320) || 'changed the requested work'}`,
+    `Checked: ${cleanPublicText(result && result.checked, 320) || 'checked the result'}`,
+    `Try: ${cleanPublicText(result && result.try_next, 240) || 'try the changed work'}`,
+  ].join('\n');
+}
+
+function latestResultTrace(task) {
+  const messages = Array.isArray(task && task.messages) ? task.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = String(messages[i] && messages[i].content || '');
+    const line = traceLineFromContent(content, 'TASK_RESULT_TRACE ');
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line.slice('TASK_RESULT_TRACE '.length).trim());
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (_) {}
+  }
+
+  const events = Array.isArray(task && task.events) ? task.events : [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const payload = events[i] && events[i].payload && typeof events[i].payload === 'object'
+      ? events[i].payload
+      : {};
+    if (payload.result_trace && typeof payload.result_trace === 'object') return payload.result_trace;
+    const packetLine = traceLineFromContent(payload.result_packet, 'TASK_RESULT_TRACE ');
+    if (!packetLine) continue;
+    try {
+      const parsed = JSON.parse(packetLine.slice('TASK_RESULT_TRACE '.length).trim());
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function buildAcceptHumanResult({ task, proof, nextTask, publicSync }) {
+  const trace = latestResultTrace(task) || {};
+  const traceChanged = cleanPublicText(trace.changed, 320);
+  const changed = traceChanged === 'prepared the work for review'
+    ? 'accepted the completed work'
+    : traceChanged
+    || cleanPublicText(task && task.title, 260)
+    || 'accepted the completed work';
+  let checked = cleanPublicText(trace.checked, 320)
+    || cleanPublicText(proof, 320)
+    || 'checked the proof';
+  if (publicSync && publicSync.enabled === true && !publicSync.ok) {
+    const error = cleanPublicText(publicSync.error || 'publish failed', 140);
+    checked = `${checked}; AgentXP publish failed${error ? ` (${error})` : ''}`;
+  }
+  const tryNext = cleanPublicText(nextTask, 240)
+    || cleanPublicText(trace.try_next, 240)
+    || 'try the changed work';
+  return { changed, checked, try_next: tryNext };
+}
+
+function renderAcceptLanding({ task, proof, nextTask, publicSync }) {
+  return renderPublicResult(buildAcceptHumanResult({
+    task,
+    proof,
+    nextTask,
+    publicSync,
+  }));
+}
+
+async function publishAcceptAgentXp(args, actor) {
+  const token = flag(args, '--token');
+  const syncArgs = ['--all', '--root', process.cwd(), '--public', '--as', actor];
+  if (typeof token === 'string' && token.trim()) syncArgs.push('--token', token.trim());
+  try {
+    const { syncAgentXp } = require('../commands/xp');
+    const result = await syncAgentXp(syncArgs);
+    const server = result && result.server ? result.server : {};
+    const publicCount = Number(server.public_accepted_count);
+    const acceptedCount = Number(server.accepted_count);
+    const published = (
+      (Number.isFinite(publicCount) && publicCount > 0)
+      || (Number.isFinite(acceptedCount) && acceptedCount > 0 && server.private_agentxp !== true)
+    );
+    return {
+      enabled: true,
+      ok: published,
+      result,
+      error: published ? null : 'server accepted no public AgentXP rows',
+    };
+  } catch (error) {
+    return {
+      enabled: true,
+      ok: false,
+      error: error && error.message ? error.message : String(error),
+    };
+  }
+}
+
+function todayResultLogName() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.md`;
+}
+
+function appendResultOwnerLog(root, task, result) {
+  const owner = cleanPublicText(result && result.owner, 80);
+  if (!owner || !/^[A-Za-z0-9._-]+$/.test(owner)) return null;
+  const memberFile = path.join(root, 'atris', 'team', owner, 'MEMBER.md');
+  if (!fs.existsSync(memberFile)) return null;
+  const logName = todayResultLogName();
+  const logDir = path.join(root, 'atris', 'team', owner, 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logPath = path.join(logDir, logName);
+  const stamp = new Date().toTimeString().slice(0, 5);
+  const lines = [
+    `## ${stamp} - Result`,
+    `- task: ${taskRef(task)}`,
+    `- purpose: ${result.purpose || ''}`,
+    `- result: ${result.changed || ''}`,
+    `- checked: ${result.checked || ''}`,
+    `- saved: ${result.saved || ''}`,
+    `- try: ${result.try_next || ''}`,
+    `- status: ${result.status || ''}`,
+    '',
+  ];
+  fs.appendFileSync(logPath, lines.join('\n'), 'utf8');
+  return {
+    member_log_path: path.relative(root, logPath),
+  };
+}
+
+function resultTraceData(result, fields) {
+  return {
+    schema: 'atris.task_result_trace.v1',
+    purpose: result.purpose,
+    owner: result.owner || null,
+    changed: result.changed,
+    checked: result.checked,
+    passed: result.passed || null,
+    failed: result.failed || null,
+    cost: result.cost || null,
+    saved: result.saved || null,
+    try_next: result.try_next || null,
+    status: result.status,
+    files: cleanPublicText(fields.files, 500) || null,
+    commands: cleanPublicText(fields.commands, 500) || null,
+    member_log_path: fields.savedPaths && fields.savedPaths.member_log_path || null,
+    recorded_at: new Date().toISOString(),
+  };
+}
+
+function resultTraceNote(result, fields) {
+  return `TASK_RESULT_TRACE ${JSON.stringify(resultTraceData(result, fields))}`;
+}
+
+function cmdPlanPreview(args) {
+  const pos = positional(args);
+  const purpose = cleanPublicText(textFlag(args, ['--purpose', '--goal', '--objective']) || pos.join(' '), 240);
+  if (!purpose) failTask('atris task plan-preview', 'missing_purpose', 'purpose required');
+  const tag = textFlag(args, ['--tag']);
+  const requestedOwner = textFlag(args, ['--owner', '--as', '--member']);
+  const planText = textFlag(args, ['--plan', '--action', '--first-move']);
+  const expected = textFlag(args, ['--expected', '--expected-result', '--exit']);
+  const recordRef = textFlag(args, ['--task', '--record']);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const ownerChoice = chooseTaskOwner({
+    purpose,
+    tag,
+    requestedOwner,
+    root: taskDb.workspaceRoot(),
+  });
+  const publicPlan = buildPublicPlan({
+    purpose,
+    owner: ownerChoice.owner,
+    ownerReason: ownerChoice.reason,
+    plan: planText,
+    expected,
+  });
+  let recorded = null;
+  if (recordRef) {
+    const taskId = requireTaskId(taskDb, db, recordRef, 'atris task plan-preview');
+    const note = taskDb.noteTask(db, {
+      id: taskId,
+      actor: publicPlan.owner || DEFAULT_OWNER,
+      content: planTraceNote(publicPlan, ownerChoice),
+    });
+    if (!note.noted) failTask('atris task plan-preview', note.reason || 'note_failed', `plan-preview failed: ${note.reason || 'note_failed'}`, 1);
+    const { outPath } = writeDefaultProjection(taskDb, db);
+    recorded = {
+      task_id: taskId,
+      version: note.event.version,
+      projection_path: outPath,
+    };
+  }
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'plan_preview',
+      plan: publicPlan,
+      owner_choice: {
+        owner: ownerChoice.owner,
+        source: ownerChoice.source,
+        score: ownerChoice.score || null,
+        member: ownerChoice.member ? {
+          slug: ownerChoice.member.slug,
+          role: ownerChoice.member.role,
+          description: ownerChoice.member.description,
+        } : null,
+      },
+      recorded,
+      text: renderPublicPlan(publicPlan),
+    });
+    return;
+  }
+  console.log(renderPublicPlan(publicPlan));
+}
+
+function buildAutomaticPlanTrace(taskDb, task, { actor, actorExplicit = false, owner, goal, summary, firstMove, exit } = {}) {
+  if (!task) return { trace: null, plan: null, ownerChoice: null, ownerForStage: owner || null };
+  const metadata = task.metadata || {};
+  const purpose = cleanPublicText(goal, 240) || taskPurpose(task);
+  const claimedOwner = cleanPublicText(task.claimed_by, 80);
+  const actorNamed = taskTextMentionsActor(actor, `${purpose} ${task.title || ''} ${task.tag || ''}`);
+  const requestedActor = actorExplicit && (!isGenericPlanActor(actor) || actorNamed) ? actor : null;
+  const requestedOwner = owner || claimedOwner || requestedActor || null;
+  const ownerChoice = chooseTaskOwner({
+    purpose,
+    tag: task.tag,
+    requestedOwner,
+    root: taskDb.workspaceRoot(),
+  });
+  const publicPlan = buildPublicPlan({
+    purpose,
+    owner: ownerChoice.owner,
+    ownerReason: ownerChoice.reason,
+    plan: firstMove || summary || metadata.first_move || metadata.stage_summary || '',
+    expected: exit || metadata.exit_condition || '',
+  });
+  return {
+    trace: planTraceData(publicPlan, ownerChoice),
+    plan: publicPlan,
+    ownerChoice: {
+      owner: ownerChoice.owner,
+      source: ownerChoice.source,
+      score: ownerChoice.score || null,
+    },
+    ownerForStage: publicPlan.owner || actor || DEFAULT_OWNER,
+  };
+}
+
+function buildAutomaticResultTrace(taskDb, db, taskId, { actor, proof, changed, checked, passed, failed, cost, saved, tryNext, status, files, commands } = {}) {
+  const task = taskDetail(taskDb, db, taskId);
+  if (!task || taskHasTrace(task, 'TASK_RESULT_TRACE ')) return null;
+  const fields = {
+    actor,
+    changed: cleanPublicText(changed, 320) || 'prepared the work for review',
+    checked: cleanPublicText(checked, 320) || cleanPublicText(proof, 320),
+    passed: cleanPublicText(passed, 240),
+    failed: cleanPublicText(failed, 240),
+    cost: cleanPublicText(cost, 80),
+    saved: cleanPublicText(saved, RESULT_SAVED_TEXT_LIMIT) || 'task trace was updated',
+    tryNext: cleanPublicText(tryNext, 240) || 'review the proof and try the changed work',
+    status: cleanPublicText(status, 160) || 'ready for review',
+    files,
+    commands,
+  };
+  const result = buildPublicResult(task, fields);
+  const savedPaths = appendResultOwnerLog(taskDb.workspaceRoot(), task, result);
+  const trace = resultTraceData(result, { ...fields, savedPaths });
+  return {
+    result,
+    trace,
+    saved_paths: savedPaths,
+  };
+}
+
+function cmdResult(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task result', 'missing_id', 'id required');
+  const fields = {
+    purpose: textFlag(args, ['--purpose', '--goal', '--objective']),
+    changed: textFlag(args, ['--changed', '--result', '--done']),
+    checked: textFlag(args, ['--checked', '--check', '--verified']),
+    passed: textFlag(args, ['--passed', '--pass']),
+    failed: textFlag(args, ['--failed', '--fail']),
+    cost: textFlag(args, ['--cost']),
+    saved: textFlag(args, ['--saved', '--savings']),
+    tryNext: textFlag(args, ['--try', '--try-next', '--handoff']),
+    status: textFlag(args, ['--status']),
+    files: textFlag(args, ['--files']),
+    commands: textFlag(args, ['--commands', '--command']),
+  };
+  if (!fields.changed) failTask('atris task result', 'changed_required', '--changed required');
+  if (!fields.checked) failTask('atris task result', 'checked_required', '--checked required');
+  if (!fields.tryNext) failTask('atris task result', 'try_required', '--try required');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task result');
+  const task = taskDetail(taskDb, db, taskId);
+  if (!task) failTask('atris task result', 'not_found', `task not found: ${id}`, 1);
+  const result = buildPublicResult(task, { ...fields, actor });
+  const savedPaths = appendResultOwnerLog(taskDb.workspaceRoot(), task, result);
+  const note = taskDb.noteTask(db, {
+    id: taskId,
+    actor,
+    content: resultTraceNote(result, { ...fields, savedPaths }),
+  });
+  if (!note.noted) failTask('atris task result', note.reason || 'note_failed', `result failed: ${note.reason || 'note_failed'}`, 1);
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const text = renderPublicResult(result);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'result',
+      task_id: taskId,
+      version: note.event.version,
+      projection_path: outPath,
+      result,
+      saved_paths: savedPaths,
+      text,
+      task: compactTaskFromProjection(projection, taskId),
+    });
+    return;
+  }
+  console.log(text);
 }
 
 function taskPageGoal(task) {
@@ -5764,16 +6394,25 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
   let episode = null;
   let xpProjection = null;
   if (current === 'backlog') {
+    const automaticPlan = buildAutomaticPlanTrace(taskDb, task, {
+      actor,
+      owner: actor,
+      goal,
+      summary,
+      firstMove: String(options.firstMove || ''),
+      exit: String(options.exit || ''),
+    });
     const planned = taskDb.stageTask(db, {
       id: taskId,
       actor,
       stage: 'plan',
       goal,
       summary,
-      owner: actor,
+      owner: automaticPlan.ownerForStage || actor,
       exit: String(options.exit || ''),
       proofNeeded: String(options.proofNeeded || ''),
       firstMove: String(options.firstMove || ''),
+      planTrace: automaticPlan.trace,
     });
     if (!planned.staged) taskStepFailure('atris task step', planned, actionPage);
     stepAction = 'planned';
@@ -5807,7 +6446,15 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     }
     const lesson = String(options.lesson || '');
     const nextTask = String(options.nextTask || '');
-    const ready = taskDb.readyTask(db, { id: taskId, actor, proof, lesson, nextTask });
+    const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, { actor, proof });
+    const ready = taskDb.readyTask(db, {
+      id: taskId,
+      actor,
+      proof,
+      lesson,
+      nextTask,
+      resultTrace: resultTrace && resultTrace.trace,
+    });
     if (!ready.ready) taskStepFailure('atris task step', ready, actionPage);
     task = taskDetail(taskDb, db, taskId) || task;
     stepAction = 'ready';
@@ -6343,15 +6990,33 @@ function cmdReady(args) {
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const resultFields = {
+    changed: textFlag(args, ['--changed', '--result', '--done']),
+    checked: textFlag(args, ['--checked', '--check', '--verified']),
+    passed: textFlag(args, ['--passed', '--pass']),
+    failed: textFlag(args, ['--failed', '--fail']),
+    cost: textFlag(args, ['--cost']),
+    saved: textFlag(args, ['--saved', '--savings']),
+    tryNext: textFlag(args, ['--try', '--try-next', '--handoff']),
+    status: textFlag(args, ['--status']),
+    files: textFlag(args, ['--files']),
+    commands: textFlag(args, ['--commands', '--command']),
+  };
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+  const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
+    actor,
+    proof: String(proof),
+    ...resultFields,
+  });
   const result = taskDb.readyTask(db, {
     id: taskId,
     actor,
     proof: String(proof),
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: nextTaskInput.nextTask,
+    resultTrace: resultTrace && resultTrace.trace,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -6397,6 +7062,7 @@ function cmdReady(args) {
       review_pass_count: result.event.payload.review_pass_count,
       agent_certified: agentCertified,
       handoff,
+      result_trace: resultTrace,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
@@ -6404,13 +7070,14 @@ function cmdReady(args) {
     return;
   }
   console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
+  if (resultTrace) console.log('Result trace recorded.');
   console.log(handoff.rule);
   for (const hint of policyHints) {
     console.log(`policy (${hint.id}): ${hint.hint}`);
   }
 }
 
-function cmdAccept(args) {
+async function cmdAccept(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) {
@@ -6490,6 +7157,7 @@ function cmdAccept(args) {
   // Inform the gate, never block it: show what the receipts named in the proof
   // actually say so the accepting human isn't trusting prose.
   const evidence = extractReceiptEvidence(proof, projection.workspace_root || process.cwd());
+  const publicSync = hasFlag(args, '--public') ? await publishAcceptAgentXp(args, actor) : null;
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -6499,21 +7167,21 @@ function cmdAccept(args) {
       reward: reviewed.episode.reward.value,
       episode: reviewed.episode,
       evidence,
+      public_sync: publicSync,
       xp_projection: xpProjection,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
+    if (publicSync && !publicSync.ok) process.exitCode = 1;
     return;
   }
-  console.log(`accepted ${taskRef(compactTaskFromProjection(projection, taskId))} reward=${reviewed.episode.reward.value}`);
-  if (evidence) {
-    evidence.receipts.forEach((receipt) => {
-      const verdict = receipt.verifier_passed === true ? ' verifier:passed'
-        : receipt.verifier_passed === false ? ' verifier:FAILED' : '';
-      console.log(`  receipt: ${receipt.path}${verdict}`);
-    });
-    evidence.missing.forEach((missingPath) => console.log(`  receipt: ${missingPath} MISSING`));
-  }
+  console.log(renderAcceptLanding({
+    task: taskDetail(taskDb, db, taskId) || compactTaskFromProjection(projection, taskId),
+    proof,
+    nextTask,
+    publicSync,
+  }));
+  if (publicSync && !publicSync.ok) process.exitCode = 1;
 }
 
 function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
@@ -7975,22 +8643,39 @@ async function handleTaskApi(req, res, taskDb, db) {
     });
   }
   if (op === 'plan') {
+    const actor = String(body.actor || DEFAULT_OWNER);
+    const goal = String(body.goal || body.objective || '');
+    const summary = String(body.summary || body.plan || '');
+    const owner = String(body.owner || body.assignee || '');
+    const exit = String(body.exit || body.exit_condition || '');
+    const firstMove = String(body.first_move || body.firstMove || body.first || '');
+    const task = taskDetail(taskDb, db, taskId);
+    const automaticPlan = buildAutomaticPlanTrace(taskDb, task, {
+      actor,
+      actorExplicit: Boolean(body.actor),
+      owner,
+      goal,
+      summary,
+      firstMove,
+      exit,
+    });
     const result = taskDb.stageTask(db, {
       id: taskId,
-      actor: String(body.actor || DEFAULT_OWNER),
+      actor,
       stage: 'plan',
-      goal: String(body.goal || body.objective || ''),
-      summary: String(body.summary || body.plan || ''),
-      owner: String(body.owner || body.assignee || ''),
-      exit: String(body.exit || body.exit_condition || ''),
+      goal,
+      summary,
+      owner: automaticPlan.ownerForStage || owner,
+      exit,
       proofNeeded: String(body.proof_needed || body.proofNeeded || body.proof || body.verify || ''),
-      firstMove: String(body.first_move || body.firstMove || body.first || ''),
+      firstMove,
       nextButton: String(body.next_button || body.nextButton || ''),
       confidence: body.confidence,
+      planTrace: automaticPlan.trace,
     });
     if (!result.staged) return sendJson(res, 409, { ok: false, reason: result.reason, detail: stageErrorDetail('task plan', result.reason, result) });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
-    return sendJson(res, 200, { ok: true, action: 'planned', task_id: taskId, version: result.event.version, stage_packet: result.stage_packet, projection_path: outPath, task: taskFromProjection(projection, taskId) });
+    return sendJson(res, 200, { ok: true, action: 'planned', task_id: taskId, version: result.event.version, plan_trace: automaticPlan.trace, stage_packet: result.stage_packet, projection_path: outPath, task: taskFromProjection(projection, taskId) });
   }
   if (op === 'do') {
     const firstMove = String(body.first_move || body.firstMove || body.first || '').trim();
@@ -8097,12 +8782,28 @@ async function handleTaskApi(req, res, taskDb, db) {
     const proofIssue = meaningfulTaskProofIssue(proof);
     if (proofIssue) return sendProofIssue(res, proof, proofIssue);
     const nextTaskInput = normalizeReviewNextTaskInput(body.next);
+    const actor = String(body.actor || DEFAULT_OWNER);
+    const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
+      actor,
+      proof,
+      changed: body.changed || body.result || body.done,
+      checked: body.checked || body.check || body.verified,
+      passed: body.passed || body.pass,
+      failed: body.failed || body.fail,
+      cost: body.cost,
+      saved: body.saved || body.savings,
+      tryNext: body.try_next || body.tryNext || body.try || body.handoff,
+      status: body.status,
+      files: body.files,
+      commands: body.commands || body.command,
+    });
     const result = taskDb.readyTask(db, {
       id: taskId,
-      actor: String(body.actor || DEFAULT_OWNER),
+      actor,
       proof,
       lesson: String(body.lesson || ''),
       nextTask: nextTaskInput.nextTask,
+      resultTrace: resultTrace && resultTrace.trace,
     });
     if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
@@ -8110,6 +8811,7 @@ async function handleTaskApi(req, res, taskDb, db) {
       ok: true,
       action: 'ready',
       task_id: taskId,
+      result_trace: resultTrace,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: taskFromProjection(projection, taskId),
@@ -8300,6 +9002,10 @@ async function run(args) {
     case 'continue':
       return cmdContinueWork(rest);
     case 'chat':   return cmdChat(rest);
+    case 'plan-preview':
+    case 'preview-plan':
+    case 'plan-card':
+      return cmdPlanPreview(rest);
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
     case 'show':   return cmdShow(rest);
@@ -8309,6 +9015,7 @@ async function run(args) {
     case 'chat-review':
       return cmdReviewChat(rest);
     case 'ready':  return cmdReady(rest);
+    case 'result': return cmdResult(rest);
     case 'accept': return cmdAccept(rest);
     case 'auto-accept-certified':
     case 'auto-accept':

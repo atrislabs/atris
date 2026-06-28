@@ -885,6 +885,56 @@ test('xp sync render shows server public identity mapping', () => {
   assert.match(output, /Leaderboard: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
 });
 
+test('xp sync render says when XP was saved internally', () => {
+  const output = captureStdout(() => render({
+    schema: 'atris.agentxp_sync_result.v1',
+    dry_run: false,
+    player: 'internal-player',
+    entry: {
+      username: 'internal-player',
+      agent_xp: 12,
+      verified_receipts: 12,
+    },
+    packet_hash: 'internal123',
+    server: {
+      accepted_count: 1,
+      public_accepted_count: 0,
+      internal_accepted_count: 1,
+      accepted_usernames: ['internal-player'],
+      private_agentxp: {
+        scope: 'internal',
+      },
+    },
+  }));
+
+  assert.match(output, /Saved internally\. Public AgentXP was not updated\./);
+  assert.match(output, /To publish publicly, run: atris xp sync --all --public/);
+  assert.doesNotMatch(output, /Published to AgentXP:/);
+});
+
+test('xp sync render says when XP was published publicly', () => {
+  const output = captureStdout(() => render({
+    schema: 'atris.agentxp_sync_result.v1',
+    dry_run: false,
+    player: 'public-player',
+    entry: {
+      username: 'public-player',
+      agent_xp: 12,
+      verified_receipts: 12,
+    },
+    packet_hash: 'public123',
+    server: {
+      accepted_count: 1,
+      public_accepted_count: 1,
+      internal_accepted_count: 0,
+      accepted_usernames: ['public-player'],
+    },
+  }));
+
+  assert.match(output, /Published to AgentXP: https:\/\/api\.atris\.ai\/api\/agentxp\/leaderboard/);
+  assert.doesNotMatch(output, /Saved internally\. Public AgentXP was not updated\./);
+});
+
 test('xp status --all excludes tampered local ledgers from totals', () => {
   const root = makeTempDir();
   try {

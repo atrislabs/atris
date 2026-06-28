@@ -2106,7 +2106,16 @@ function renderSync(payload) {
     console.log('Login auth mapped this sync to your Atris account.');
   }
   console.log(`Packet ${payload.packet_hash}`);
-  console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
+  const publicAccepted = asNumber(server.public_accepted_count);
+  const internalAccepted = asNumber(server.internal_accepted_count);
+  if (publicAccepted > 0) {
+    console.log(`Published to AgentXP: ${AGENTXP_LEADERBOARD_URL}`);
+  } else if (internalAccepted > 0 || server.private_agentxp) {
+    console.log('Saved internally. Public AgentXP was not updated.');
+    console.log('To publish publicly, run: atris xp sync --all --public');
+  } else {
+    console.log(`Leaderboard: ${AGENTXP_LEADERBOARD_URL}`);
+  }
 }
 
 function render(payload) {
