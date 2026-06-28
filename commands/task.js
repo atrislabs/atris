@@ -7044,6 +7044,7 @@ function cmdRevise(args) {
       version: result.event.version,
       approval_status: 'revise',
       revision_count: result.event.payload.revision_count,
+      episode: result.episode || null,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });

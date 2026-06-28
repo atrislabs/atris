@@ -4594,6 +4594,90 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
   }
 });
 
+test('brain scorecard carries task landing quality and human outcome', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+
+    const acceptedAdd = runCli(['task', 'add', 'Landing accepted task', '--tag', 'approval', '--json'], { cwd: dir, env });
+    assert.equal(acceptedAdd.status, 0, acceptedAdd.stderr);
+    const acceptedRef = JSON.parse(acceptedAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', acceptedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const acceptedReady = runCli([
+      'task', 'ready', acceptedRef,
+      '--proof', 'node --test test/commands.test.js passed and diff reviewed',
+      '--happened', 'Made the approval receipt readable.',
+      '--checked', 'I checked the task page Result block.',
+      '--tested', 'I ran the focused regression.',
+      '--decision', 'Accept if the receipt is clear.',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(acceptedReady.status, 0, acceptedReady.stderr);
+    const accepted = runCli(['task', 'accept', acceptedRef, '--as', 'keshav', '--json'], { cwd: dir, env });
+    assert.equal(accepted.status, 0, accepted.stderr);
+    const acceptedPayload = JSON.parse(accepted.stdout);
+    assert.equal(acceptedPayload.episode.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedPayload.episode.landing_quality.completeness, 1);
+    assert.equal(acceptedPayload.episode.human_feedback.approval_status, 'accepted');
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episodeRows = fs.readFileSync(episodePath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    for (const row of episodeRows) {
+      if (row.task_id !== acceptedPayload.task_id) continue;
+      delete row.review_landing;
+      delete row.landing_quality;
+      delete row.human_feedback;
+      if (row.rl) {
+        delete row.rl.landing_completeness;
+        delete row.rl.approval_status;
+      }
+    }
+    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+
+    const revisedAdd = runCli(['task', 'add', 'Landing reworked task', '--tag', 'approval', '--json'], { cwd: dir, env });
+    assert.equal(revisedAdd.status, 0, revisedAdd.stderr);
+    const revisedRef = JSON.parse(revisedAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const revisedReady = runCli([
+      'task', 'ready', revisedRef,
+      '--proof', 'node --test test/commands.test.js passed but receipt was vague',
+      '--happened', 'Updated the result.',
+      '--checked', 'I checked something.',
+      '--tested', 'I ran tests.',
+      '--decision', 'Accept if useful.',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(revisedReady.status, 0, revisedReady.stderr);
+    const revised = runCli(['task', 'revise', revisedRef, '--as', 'keshav', '--note', 'Decision line was too vague', '--json'], { cwd: dir, env });
+    assert.equal(revised.status, 0, revised.stderr);
+    const revisedPayload = JSON.parse(revised.stdout);
+    assert.equal(revisedPayload.episode.rl.label, 'rework_requested');
+    assert.equal(revisedPayload.episode.review_landing.decision, 'Accept if useful.');
+    assert.equal(revisedPayload.episode.human_feedback.human_revision_note, 'Decision line was too vague');
+
+    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(scorecard.status, 0, scorecard.stderr);
+    const payload = JSON.parse(scorecard.stdout);
+    const acceptedCard = payload.scorecards.find(row => row.task_title === 'Landing accepted task');
+    const revisedCard = payload.scorecards.find(row => row.task_title === 'Landing reworked task');
+    assert.equal(acceptedCard.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedCard.landing_quality.completeness, 1);
+    assert.equal(acceptedCard.approval_status, 'accepted');
+    assert.equal(acceptedCard.rl_label, 'accepted');
+    assert.equal(revisedCard.review_landing.decision, 'Accept if useful.');
+    assert.equal(revisedCard.human_feedback.human_revision_note, 'Decision line was too vague');
+    assert.equal(revisedCard.approval_status, 'revise');
+    assert.equal(revisedCard.rl_label, 'rework_requested');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain scorecard uses latest review episode per task', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -7659,6 +7743,8 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
       has_proof: true,
       has_lesson: true,
       has_next_task: true,
+      landing_completeness: 0,
+      approval_status: 'accepted',
     });
   } finally {
     cleanupTempDir(dir);
