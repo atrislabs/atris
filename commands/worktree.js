@@ -487,6 +487,48 @@ function help() {
   console.log('  atris worktree prune [--apply]');
 }
 
+function wantsHelp(args = []) {
+  return args.includes('--help') || args.includes('-h') || args[0] === 'help';
+}
+
+function helpForSubcommand(sub) {
+  if (sub === 'start') {
+    console.log('Usage: atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
+    console.log('');
+    console.log('  --member <member>   Use an Atris member identity.');
+    console.log('  --agent <name>      Use a generic agent identity.');
+    console.log('  --task "<task>"     Short task name for branch/path metadata.');
+    console.log('  --path <path>       Override generated worktree path.');
+    console.log('  --base <ref>        Override default upstream base.');
+    console.log('  --claim             Also write a best-effort Swarlo claim.');
+    return true;
+  }
+  if (sub === 'ship') {
+    console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge]');
+    console.log('');
+    console.log('  --message, -m <msg> Commit message when local changes exist.');
+    console.log('  --verify "<cmd>"    Verification command to run before push.');
+    console.log('  --target <ref>      Merge-check target, defaulting to branch Atris base.');
+    console.log('  --no-pr             Push without opening a pull request.');
+    console.log('  --merge             Merge the opened pull request.');
+    console.log('  --dry-run           Show ship steps without committing, verifying, pushing, or opening a PR.');
+    return true;
+  }
+  if (sub === 'status') {
+    console.log('Usage: atris worktree status');
+    return true;
+  }
+  if (sub === 'guard') {
+    console.log('Usage: atris worktree guard [--allow-primary] [--allow-dirty]');
+    return true;
+  }
+  if (sub === 'prune') {
+    console.log('Usage: atris worktree prune [--apply]');
+    return true;
+  }
+  return false;
+}
+
 function worktreeCommand(args = []) {
   const sub = args[0] || 'status';
   const rest = args.slice(1);
@@ -494,6 +536,7 @@ function worktreeCommand(args = []) {
     help();
     return 0;
   }
+  if (wantsHelp(rest) && helpForSubcommand(sub)) return 0;
   if (sub === 'guide' || sub === 'recipe') return guide();
   if (sub === 'start') return startWorktree(rest);
   if (sub === 'ship') return shipWorktree(rest);
