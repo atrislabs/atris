@@ -11272,7 +11272,15 @@ test('task reviews gives a compact certified accept queue', () => {
     const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const certifiedProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, focused node --test review queue test, live atris task reviews json showing rows, git diff --check -- commands/task.js test/commands.test.js clean`;
-    assert.equal(runCli(['task', 'ready', certifiedTask.display_id, '--proof', certifiedProof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'ready', certifiedTask.display_id,
+      '--proof', certifiedProof,
+      '--happened', 'Certified proof packet is ready for human approval.',
+      '--checked', 'I checked the verifier claims and review thread.',
+      '--tested', 'I ran the focused review queue test.',
+      '--decision', 'Accept if the packet is readable; rework if proof is vague.',
+      '--as', 'codex',
+    ], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
     const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
@@ -11291,6 +11299,13 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(payload.queue.counts.blocking, 1);
     assert.equal(payload.queue.items.length, 1);
     assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
+    assert.deepEqual(payload.queue.items[0].landing, {
+      happened: 'Certified proof packet is ready for human approval.',
+      checked: 'I checked the verifier claims and review thread.',
+      tested: 'I ran the focused review queue test.',
+      decision: 'Accept if the packet is readable; rework if proof is vague.',
+    });
+    assert.equal(payload.queue.items[0].result.saved, `Saved in Review as ${certifiedTask.display_id}.`);
     assert.equal(payload.queue.items[0].accept_command, `atris task accept ${certifiedTask.display_id}`);
     assert.equal(payload.queue.items[0].revise_command, `atris task revise ${certifiedTask.display_id} --note "<what must change>"`);
     assert.equal(payload.queue.items[0].review_chat_command, `atris task review-chat ${certifiedTask.display_id} --as codex-review`);
@@ -11305,6 +11320,13 @@ test('task reviews gives a compact certified accept queue', () => {
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /CERTIFIED REVIEW QUEUE/);
+    assert.match(text.stdout, /Result:/);
+    assert.match(text.stdout, /What happened: Certified proof packet is ready for human approval\./);
+    assert.match(text.stdout, /How I checked: I checked the verifier claims and review thread\./);
+    assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
+    assert.match(text.stdout, /Saved: Saved in Review as .*?\./);
+    assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
+    assert.ok(text.stdout.indexOf('   Result:') < text.stdout.indexOf('   proof:'), 'Result should appear before raw proof');
     assert.match(text.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
     assert.match(text.stdout, new RegExp(`accept: atris task accept ${certifiedTask.display_id}`));
     assert.doesNotMatch(text.stdout, new RegExp(`accept: atris task accept ${blockingTask.display_id}`));
