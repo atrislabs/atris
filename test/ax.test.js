@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 
 const ax = require('../ax');
 
@@ -111,6 +112,47 @@ test('ax doctor formats runtime readiness without model ids or secrets', async (
   assert.doesNotMatch(offlineText, modelPattern);
 });
 
+test('ax chat fails fast when the Atris2 backend is offline', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  let healthCalls = 0;
+  try {
+    await ax.chat({
+      mode: 'fast',
+      cwd: os.tmpdir(),
+      input: Readable.from(['hi\n', 'exit\n']),
+      output,
+      runtimeHealth: async () => {
+        healthCalls += 1;
+        return {
+          schema: 'ax.runtime_health.v1',
+          backend: { ready: false, reachable: false, status: 0, error: 'ECONNREFUSED secret-token' },
+          fast: { ready: false, route_ready: false },
+          permissions: { ready: false },
+        };
+      },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  const text = chunks.join('');
+  assert.equal(healthCalls, 1);
+  assert.match(text, /backend\s+offline/);
+  assert.match(text, /Start backend:/);
+  assert.match(text, /uvicorn main:app/);
+  assert.doesNotMatch(text, /secret-token/);
+});
+
 test('ax self-test verifies harness invariants without backend calls', async () => {
   const chunks = [];
   const output = {
@@ -123,10 +165,11 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   const results = await ax.runSelfTest({ output });
   const text = chunks.join('');
 
-  assert.equal(results.length, 9);
+  assert.equal(results.length, 10);
   assert.equal(results.every(result => result.ok), true);
   assert.match(text, /AX self-test/);
   assert.match(text, /doctor redaction .*ok/);
+  assert.match(text, /chat backend offline preflight .*ok/);
   assert.match(text, /approval id .*ok/);
   assert.match(text, /calendar approval rail .*ok/);
   assert.match(text, /calendar approval execution .*ok/);
@@ -135,7 +178,7 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   assert.match(text, /calendar chat denial loop .*ok/);
   assert.match(text, /approval output privacy .*ok/);
   assert.match(text, /run log privacy .*ok/);
-  assert.match(text, /Self-test passed: 9\/9/);
+  assert.match(text, /Self-test passed: 10\/10/);
   assert.match(ax.formatUsage(), /--self-test/);
 });
 

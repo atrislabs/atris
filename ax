@@ -334,6 +334,13 @@ function formatRuntimeHealth(health, options = {}) {
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
 }
 
+function runtimeReadyForChat(health, mode = 'fast') {
+  if (!health || !health.backend || !health.permissions) return false;
+  if (!health.backend.ready || !health.permissions.ready) return false;
+  if (normalizeMode(mode) === 'fast' && (!health.fast || health.fast.ready === false)) return false;
+  return true;
+}
+
 function canonicalConnectorId(value) {
   return String(value || '').trim().toLowerCase().replace(/-/g, '_');
 }
@@ -1721,6 +1728,27 @@ async function chat(options = {}) {
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
 
+  const runtimePreflight = { ready: false };
+  const ensureRuntimeReady = async () => {
+    if (runtimePreflight.ready) return true;
+    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') {
+      runtimePreflight.ready = true;
+      return true;
+    }
+    const startedAt = Date.now();
+    const health = options.runtimeHealth
+      ? await Promise.resolve(options.runtimeHealth({ mode }))
+      : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200 });
+    if (runtimeReadyForChat(health, mode)) {
+      runtimePreflight.ready = true;
+      return true;
+    }
+    output.write(`${formatRuntimeHealth(health, output)}\n\n`);
+    output.write(`${formatBackendHint()}\n`);
+    output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
+    return false;
+  };
+
   const runLine = async (line) => {
     const trimmed = String(line || '').trim();
     if (!trimmed) return false;
@@ -1756,6 +1784,7 @@ async function chat(options = {}) {
       return false;
     }
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageApprovesPendingApproval(trimmed)) {
+      if (!(await ensureRuntimeReady())) return false;
       const startedAt = Date.now();
       const approvalState = {
         events: [],
@@ -1793,6 +1822,7 @@ async function chat(options = {}) {
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
+    if (!(await ensureRuntimeReady())) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
@@ -1849,8 +1879,15 @@ async function chat(options = {}) {
 
 function printBackendHint() {
   console.log('');
-  console.log('Start backend:');
-  console.log(`cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`);
+  console.log(formatBackendHint());
+}
+
+function backendStartCommand() {
+  return `cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`;
+}
+
+function formatBackendHint() {
+  return `Start backend:\n${backendStartCommand()}`;
 }
 
 function bufferedOutput() {
@@ -1951,6 +1988,45 @@ async function runSelfTest(options = {}) {
     assertSelfTest(/backend\s+ready/.test(text), 'backend readiness missing');
     assertSelfTest(/fast\s+ready/.test(text), 'fast readiness missing');
     assertSelfTest(!/atris:|fireworks|glm|secret|token/i.test(text), 'doctor output leaked provider/debug text');
+  }, results, output);
+
+  await runSelfTestCase('chat backend offline preflight', async () => {
+    const previousAuto = process.env.AX_AUTO_LOG;
+    process.env.AX_AUTO_LOG = '0';
+    const chunks = [];
+    const chatOutput = {
+      isTTY: false,
+      write(chunk) {
+        chunks.push(String(chunk || ''));
+        return true;
+      },
+    };
+    let healthCalls = 0;
+    try {
+      await chat({
+        mode: 'fast',
+        cwd: os.tmpdir(),
+        input: Readable.from(['hi\n', 'exit\n']),
+        output: chatOutput,
+        runtimeHealth: async () => {
+          healthCalls += 1;
+          return {
+            schema: 'ax.runtime_health.v1',
+            backend: { ready: false, reachable: false, status: 0, error: 'ECONNREFUSED secret-token' },
+            fast: { ready: false, route_ready: false },
+            permissions: { ready: false },
+          };
+        },
+      });
+    } finally {
+      if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+      else process.env.AX_AUTO_LOG = previousAuto;
+    }
+    const text = chunks.join('');
+    assertSelfTest(healthCalls === 1, 'offline preflight repeated unexpectedly');
+    assertSelfTest(/backend\s+offline/.test(text), 'offline backend status missing');
+    assertSelfTest(/Start backend:/.test(text) && /uvicorn main:app/.test(text), 'start-backend command missing');
+    assertSelfTest(!/secret-token/.test(text), 'offline preflight leaked error detail');
   }, results, output);
 
   await runSelfTestCase('approval id', async () => {
@@ -2572,6 +2648,7 @@ module.exports = {
   approvalExecutionRequestFromReceipt,
   approvalRequestFromReceipt,
   backendBaseUrl,
+  backendStartCommand,
   backendUrl,
   buildCodeFastPayload,
   buildPayload,
@@ -2596,6 +2673,7 @@ module.exports = {
   formatDuration,
   formatApprovalExecutionResult,
   formatApprovalReceipt,
+  formatBackendHint,
   formatHeader,
   formatPathSubject,
   formatPrompt,
@@ -2619,6 +2697,7 @@ module.exports = {
   resolveRoute,
   runBenchmark,
   runSelfTest,
+  runtimeReadyForChat,
   summarizeToolInput,
   summarizeToolResult,
   tierLabel
