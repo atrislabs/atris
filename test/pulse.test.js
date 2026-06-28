@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { parsePulseRunArgs } = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -54,6 +55,21 @@ test('shouldFallbackToAutopilot is suppressed by --no-autopilot and --no-claude'
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', noClaude: true }), false);
   // fallback explicitly disabled
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', autopilotFallback: false }), false);
+});
+
+test('parsePulseRunArgs strips only max-ticks and preserves passthrough values', () => {
+  assert.deepEqual(parsePulseRunArgs(['--max-ticks', '2', '--verify', '2', '--json']), {
+    maxTicks: 2,
+    passthrough: ['--verify', '2', '--json'],
+  });
+  assert.deepEqual(parsePulseRunArgs(['--verify', 'npm test', '--max-ticks=3', '--no-verify']), {
+    maxTicks: 3,
+    passthrough: ['--verify', 'npm test', '--no-verify'],
+  });
+  assert.deepEqual(parsePulseRunArgs(['--max-ticks', '--verify', 'npm test']), {
+    maxTicks: 1,
+    passthrough: ['--verify', 'npm test'],
+  });
 });
 
 // --- ghost / stale detection: the silent-runner-death failure mode ---

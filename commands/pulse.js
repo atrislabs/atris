@@ -451,10 +451,31 @@ function uninstallCommand(args) {
 
 // --- atris pulse run (foreground N ticks) ---
 
+function parsePulseRunArgs(args = []) {
+  let maxTicks = 1;
+  const passthrough = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = String(args[i]);
+    if (arg === '--max-ticks') {
+      const value = args[i + 1];
+      if (value !== undefined && !String(value).startsWith('--')) {
+        maxTicks = Math.max(1, Number(value) || 1);
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith('--max-ticks=')) {
+      maxTicks = Math.max(1, Number(arg.slice('--max-ticks='.length)) || 1);
+      continue;
+    }
+    passthrough.push(args[i]);
+  }
+  return { maxTicks, passthrough };
+}
+
 function runCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
-  const maxTicks = Math.max(1, Number(readFlag(args, '--max-ticks', '1')) || 1);
-  const passthrough = args.filter((a) => a !== '--max-ticks' && a !== String(maxTicks));
+  const { maxTicks, passthrough } = parsePulseRunArgs(args);
   const results = [];
   for (let i = 0; i < maxTicks; i++) {
     results.push(tickCommand(passthrough.concat(['--json-silent']).filter((a) => a !== '--json'), root));
@@ -500,5 +521,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  parsePulseRunArgs,
   STATE_HOME,
 };
