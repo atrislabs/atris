@@ -1961,6 +1961,38 @@ async function runSelfTest(options = {}) {
     assertSelfTest(payload.cleanup_external_actions === undefined, 'calendar write requested cleanup bypass');
   }, results, output);
 
+  await runSelfTestCase('calendar approval execution', async () => {
+    const approvalRequest = {
+      connector: 'google_calendar',
+      action: 'create_event',
+      executor_action_type: 'google_calendar_create_event',
+      status: 'approval_required',
+      payload: {
+        summary: 'markoo',
+        start: { dateTime: '2026-06-28T14:00:00-07:00' },
+        end: { dateTime: '2026-06-28T15:00:00-07:00' },
+      },
+    };
+    const previewOnly = {
+      tool_events: [{ approval_request: approvalRequest }],
+    };
+    assertSelfTest(approvalExecutionRequestFromReceipt(previewOnly) === null, 'preview-only calendar receipt would execute');
+
+    const accepted = {
+      task_accept_receipt: {
+        accepted: true,
+        task: 'calendar.create_event',
+        execution_status: 'pending_approval_execution',
+        execution_endpoint: APPROVAL_EXECUTE_PATH,
+      },
+      tool_events: [{ approval_request: approvalRequest }],
+    };
+    const executable = approvalExecutionRequestFromReceipt(accepted);
+    assertSelfTest(executable && /^apreq_ax_[a-f0-9]{20}$/.test(executable.approval_request_id), 'accepted calendar approval lacks stable id');
+    assertSelfTest(executable.executor_action_type === 'google_calendar_create_event', 'wrong calendar executor action');
+    assertSelfTest(executable.payload && executable.payload.summary === 'markoo', 'calendar approval payload changed');
+  }, results, output);
+
   await runSelfTestCase('approval output privacy', async () => {
     const text = formatApprovalExecutionResult({
       ok: false,
