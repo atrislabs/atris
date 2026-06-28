@@ -1012,6 +1012,67 @@ function formatApprovalReceipt(receipt) {
   return `Approval needed before ${action}: ${connector}`;
 }
 
+function taskPreviewApprovalEvent(receipt) {
+  const events = Array.isArray(receipt && receipt.tool_events) ? receipt.tool_events : [];
+  return events.find(event => event && event.approval_request) || null;
+}
+
+function taskPreviewTitle(receipt) {
+  const taskPreview = receipt && receipt.task_preview && typeof receipt.task_preview === 'object' ? receipt.task_preview : {};
+  const slots = taskPreview.slots && typeof taskPreview.slots === 'object' ? taskPreview.slots : {};
+  const accept = receipt && receipt.task_accept_receipt && typeof receipt.task_accept_receipt === 'object' ? receipt.task_accept_receipt : {};
+  const approvalEvent = taskPreviewApprovalEvent(receipt);
+  const request = approvalEvent && approvalEvent.approval_request ? approvalEvent.approval_request : {};
+  const payload = request.payload && typeof request.payload === 'object' ? request.payload : {};
+  return String(
+    slots.title
+    || accept.title
+    || payload.summary
+    || (approvalEvent && approvalEvent.preview && approvalEvent.preview.summary)
+    || ''
+  ).trim();
+}
+
+function formatTaskPreviewPlan(receipt) {
+  const taskPreview = receipt && receipt.task_preview && typeof receipt.task_preview === 'object' ? receipt.task_preview : null;
+  if (!taskPreview) return null;
+  const task = String(taskPreview.task || '').trim();
+  const slots = taskPreview.slots && typeof taskPreview.slots === 'object' ? taskPreview.slots : {};
+  if (task === 'calendar.create_event') {
+    const title = taskPreviewTitle(receipt);
+    const start = slots.start || (receipt.task_accept_receipt && receipt.task_accept_receipt.start);
+    const when = formatApprovalTime(start);
+    return ['create calendar event', title ? `"${title.slice(0, 80)}"` : '', when].filter(Boolean).join(' ');
+  }
+  return task ? task.replace(/[._-]/g, ' ') : null;
+}
+
+function formatTaskPreviewCheck(receipt) {
+  const taskPreview = receipt && receipt.task_preview && typeof receipt.task_preview === 'object' ? receipt.task_preview : null;
+  if (!taskPreview) return null;
+  const status = String(taskPreview.status || '').trim();
+  const missing = Array.isArray(taskPreview.missing)
+    ? taskPreview.missing.map(item => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (missing.length) return `needs ${missing.join(', ')}`;
+  if (status === 'approval_required') return 'approval required';
+  if (status === 'needs_input') return 'needs input';
+  return status ? status.replace(/_/g, ' ') : null;
+}
+
+function formatTaskPreviewRows(receipt, options = {}) {
+  const taskPreview = receipt && receipt.task_preview && typeof receipt.task_preview === 'object' ? receipt.task_preview : null;
+  if (!taskPreview) return [];
+  const owner = String(taskPreview.owner_member || taskPreview.owner || '').trim();
+  const plan = formatTaskPreviewPlan(receipt);
+  const check = formatTaskPreviewCheck(receipt);
+  return [
+    owner ? formatAuxRow('owner', owner, options) : null,
+    plan ? formatAuxRow('plan', plan, options) : null,
+    check ? formatAuxRow('check', check, options) : null,
+  ].filter(Boolean);
+}
+
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
@@ -1446,10 +1507,16 @@ function handleEvent(event, state, output) {
 
   if (event.type === 'receipt' && event.receipt) {
     const approvalLine = formatApprovalReceipt(event.receipt);
+    const previewRows = formatTaskPreviewRows(event.receipt, output);
     if (approvalLine) {
       flushPendingText(state, output);
+      for (const row of previewRows) writeAuxLine(state, output, row);
       writeAuxLine(state, output, formatAuxRow('wait', approvalLine, output));
       state.lastAux = 'approval';
+    } else if (previewRows.length) {
+      flushPendingText(state, output);
+      for (const row of previewRows) writeAuxLine(state, output, row);
+      state.lastAux = 'preview';
     }
     return;
   }
@@ -2121,6 +2188,7 @@ async function runSelfTest(options = {}) {
     const firstFinal = "I'll add it today at 2:00 PM.\nWhat should I call it?";
     const firstTaskPreview = {
       task: 'calendar.create_event',
+      owner_member: 'harness-engineer',
       status: 'needs_input',
       missing: ['title'],
       slots: {
@@ -2132,6 +2200,7 @@ async function runSelfTest(options = {}) {
     const secondFinal = 'Ready to create: markoo today at 2:00 PM.\nCreate it?';
     const secondTaskPreview = {
       task: 'calendar.create_event',
+      owner_member: 'harness-engineer',
       status: 'approval_required',
       missing: [],
       slots: {
@@ -2184,6 +2253,13 @@ async function runSelfTest(options = {}) {
     assertSelfTest(turns[1].route === 'cloud', 'slot-fill follow-up did not stay on cloud approval route');
     assertSelfTest(approvals.length === 1, 'approval execution was not called exactly once');
     assertSelfTest(approvals[0].executor_action_type === 'google_calendar_create_event', 'chat loop executed wrong approval action');
+    const previewRows = formatTaskPreviewRows({
+      task_preview: secondTaskPreview,
+      tool_events: [{ tool: 'google_calendar', action: 'create_event', status: 'approval_required', approval_request: approvalRequest }],
+    }, { color: false }).join('\n');
+    assertSelfTest(/owner\s+harness-engineer/.test(previewRows), 'task preview owner row missing');
+    assertSelfTest(/plan\s+create calendar event "markoo" Jun 28, 2026 at 2:00 PM/.test(previewRows), 'task preview plan row missing');
+    assertSelfTest(/check\s+approval required/.test(previewRows), 'task preview check row missing');
     assertSelfTest(/Accepted\./.test(text) && /Created calendar event\./.test(text), 'chat loop did not render accepted execution result');
   }, results, output);
 
@@ -2681,6 +2757,7 @@ module.exports = {
   formatRuntimeHealth,
   formatStatusMessage,
   formatSystemInit,
+  formatTaskPreviewRows,
   formatUsage,
   formatWorkingLine,
   handleEvent,
