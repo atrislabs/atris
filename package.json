@@ -1,6 +1,7 @@
 {
   "name": "atris",
   "version": "3.30.1",
+  "description": "Turn any repo into a workspace an agent can operate: shared context, a plan/do/review loop, durable tasks and daily logs, and verification that ends work on a real check.",
   "main": "bin/atris.js",
   "bin": {
     "atris": "bin/atris.js",

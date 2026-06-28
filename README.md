@@ -69,6 +69,16 @@ Requires Node.js 18+.
 
 If you want Atris cloud workspaces, businesses, or integrations, run `atris setup` after install.
 
+## Sign Up
+
+Claim a handle to create your Atris identity:
+
+```bash
+atris signup <handle>
+```
+
+A handle is 3–30 lowercase letters and digits. This mints a starter account at `<handle>@atrismail.com`: identity is free, capability is earned through proof-backed work. Your active profile is saved, so `atris play` works next.
+
 ## How To Run Atris
 
 ```bash
