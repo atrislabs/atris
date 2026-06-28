@@ -9203,7 +9203,13 @@ test('task ready holds work in review until human accept', () => {
     assert.match(readyPayload.handoff.codex_prompt, /Approve autonomous work before XP/);
     assert.match(readyPayload.handoff.codex_prompt, /Proof: typecheck passed and diff reviewed/);
     assert.equal(readyPayload.task.status, 'review');
-    assert.equal(readyPayload.task.review.summary, 'This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
+    assert.equal(readyPayload.task.review.summary, 'Review the result for approve autonomous work before XP, then accept only if the proof is real.');
+    assert.deepEqual(readyPayload.task.review.result, {
+      changed: 'Prepared approval for autonomous work before XP.',
+      checked: 'Typecheck passed.',
+      saved: `Saved in Review as ${ref}.`,
+      accept: 'Review result, then accept or request changes.',
+    });
     assert.equal(readyPayload.task.review.proof, 'typecheck passed and diff reviewed');
     assert.equal(readyPayload.task.review.reward, null);
     assert.equal(readyPayload.task.review.approval_status, 'pending');
@@ -9213,7 +9219,11 @@ test('task ready holds work in review until human accept', () => {
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /Summary: This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real\./);
+    assert.match(readyShow.stdout, /Changed: Prepared approval for autonomous work before XP\./);
+    assert.match(readyShow.stdout, /Checked: Typecheck passed\./);
+    assert.match(readyShow.stdout, new RegExp(`Saved: Saved in Review as ${ref}\\.`));
+    assert.match(readyShow.stdout, /Accept\/Rework: Review result, then accept or request changes\./);
+    assert.match(readyShow.stdout, /Summary: Review the result for approve autonomous work before XP, then accept only if the proof is real\./);
     assert.match(readyShow.stdout, /Proof: typecheck passed and diff reviewed/);
     assert.match(readyShow.stdout, /Approval: pending/);
     assert.match(readyShow.stdout, new RegExp(`Review chat: atris task review-chat ${ref} --as codex-review`));
@@ -9366,7 +9376,8 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.action, 'accepted');
     assert.equal(acceptPayload.task.status, 'done');
     assert.equal(acceptPayload.task.review.reward, 1);
-    assert.equal(acceptPayload.task.review.summary, 'This is accepted AgentXP work: approve autonomous work before XP is done and has a proof receipt.');
+    assert.equal(acceptPayload.task.review.summary, 'Accepted AgentXP result for approve autonomous work before XP.');
+    assert.equal(acceptPayload.task.review.result.saved, `Accepted as ${ref}.`);
     assert.equal(acceptPayload.task.review.proof, 'typecheck passed and diff reviewed again');
     assert.equal(acceptPayload.task.review.lesson, 'Double-check proof before awarding XP');
     assert.equal(acceptPayload.task.review.next_task, 'Queue the next proof loop');
@@ -10182,12 +10193,16 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
-    assert.equal(readyPayload.task.review.summary, 'This is the human checkpoint: clean stale claimed task queue after XP review is agent-complete and needs acceptance before it counts as done.');
+    assert.equal(readyPayload.task.review.summary, 'Review the result for clean stale claimed task queue after XP review, then accept or request changes.');
+    assert.equal(readyPayload.task.review.result.changed, 'Cleaned stale claimed task queue after XP review.');
+    assert.equal(readyPayload.task.review.result.checked, 'Validation passed.');
     assert.equal(readyPayload.task.review.proof, 'closed stale duplicate scheduler claims; validation passed reward 0');
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /Summary: This is the human checkpoint/);
+    assert.match(readyShow.stdout, /Changed: Cleaned stale claimed task queue after XP review\./);
+    assert.match(readyShow.stdout, /Checked: Validation passed\./);
+    assert.match(readyShow.stdout, /Summary: Review the result for clean stale claimed task queue after XP review, then accept or request changes\./);
     assert.match(readyShow.stdout, /Proof: closed stale duplicate scheduler claims; validation passed reward 0/);
     assert.doesNotMatch(readyShow.stdout, /AgentXP a real local scoreboard/);
   } finally {
@@ -13741,7 +13756,7 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
     assert.equal(unrelatedTask.objective, null);
     assert.equal(genericLoopTask.objective, null);
-    assert.equal(parent.review.summary, 'This is the accepted outcome: improve task factory lineage view is done and counted as real work.');
+    assert.equal(parent.review.summary, 'Accepted result for improve task factory lineage view.');
     assert.equal(parent.review.proof, 'board lineage validation passed');
     assert.equal(parent.review.lesson, 'Visual tasks need goal and proof context');
     assert.deepEqual(parent.lineage.child_task_ids, [nextId]);

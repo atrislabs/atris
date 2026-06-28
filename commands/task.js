@@ -706,20 +706,86 @@ function reviewSummary(task, payload = {}) {
     || careerText.includes('agent xp')
   ) {
     if (task.status === 'done') {
-      return `This is accepted AgentXP work: ${plainTitle} is done and has a proof receipt.`;
+      return `Accepted AgentXP result for ${plainTitle}.`;
     }
     if (task.status === 'review') {
-      return `This is AgentXP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
+      return `Review the result for ${plainTitle}, then accept only if the proof is real.`;
     }
     return `This explains what accepting ${plainTitle} would make real for AgentXP.`;
   }
   if (task.status === 'done') {
-    return `This is the accepted outcome: ${plainTitle} is done and counted as real work.`;
+    return `Accepted result for ${plainTitle}.`;
   }
   if (task.status === 'review') {
-    return `This is the human checkpoint: ${plainTitle} is agent-complete and needs acceptance before it counts as done.`;
+    return `Review the result for ${plainTitle}, then accept or request changes.`;
   }
   return `This explains what accepting ${plainTitle} would make real.`;
+}
+
+function titleToResultText(title) {
+  const text = String(title || 'this task').replace(/\s+/g, ' ').trim();
+  if (!text) return 'This task is ready to review.';
+  const [first, ...restParts] = text.split(' ');
+  const rest = restParts.join(' ');
+  const past = {
+    add: 'Added',
+    approve: 'Prepared approval for',
+    build: 'Built',
+    clean: 'Cleaned',
+    create: 'Created',
+    design: 'Designed',
+    document: 'Documented',
+    fix: 'Fixed',
+    make: 'Made',
+    replace: 'Replaced',
+    route: 'Routed',
+    run: 'Ran',
+    ship: 'Shipped',
+    update: 'Updated',
+    validate: 'Validated',
+    wire: 'Wired',
+  }[String(first || '').toLowerCase()];
+  if (past && rest) return `${past} ${rest}.`;
+  return `${text} is ready to review.`;
+}
+
+function proofToHumanCheck(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'Proof is attached below.';
+  const lower = text.toLowerCase();
+  if (/git\s+diff\s+--check/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) {
+    if (/node\s+--test/.test(lower)) return 'Behavior check and diff check passed.';
+    return 'Diff check passed.';
+  }
+  if (/\btypecheck\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Typecheck passed.';
+  if (/\bbuild\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Build passed.';
+  if (/\btest\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Verification passed.';
+  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'Validation passed.';
+  if (/\breview(?:ed)?\b/.test(lower)) return 'Review proof is attached below.';
+  return 'Proof is attached below.';
+}
+
+function taskReviewResult(task, review = {}, payload = {}) {
+  const metadata = task.metadata || {};
+  const proof = review.proof || payload.proof || metadata.latest_agent_proof || '';
+  const ref = taskRef(task);
+  const agentCertified = review.agent_certified === true || metadata.agent_certified === true;
+  const approvalStatus = review.approval_status || metadata.approval_status || null;
+  const explicitChanged = payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
+  const explicitChecked = payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
+  const explicitSaved = payload.saved || metadata.result_saved || metadata.human_saved || metadata.saved;
+  return {
+    changed: clipStatusText(explicitChanged || titleToResultText(task.title), 180),
+    checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 180),
+    saved: clipStatusText(explicitSaved || (task.status === 'done'
+      ? `Accepted as ${ref}.`
+      : `Saved in Review as ${ref}.`), 180),
+    accept: task.status === 'done'
+      ? 'Accepted.'
+      : approvalStatus === 'pending' && !agentCertified
+        ? 'Review result, then accept or request changes.'
+        : 'Accept or request changes.',
+  };
 }
 
 function taskReviewSummary(task) {
@@ -728,7 +794,7 @@ function taskReviewSummary(task) {
   const metadata = task.metadata || {};
   if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
   if (reviewed && reviewed.event_type === 'revision_requested') {
-    return reviewSummaryWithVerificationChat(task, {
+    const review = {
       summary: reviewSummary(task, payload),
       reward: null,
       proof: null,
@@ -740,7 +806,9 @@ function taskReviewSummary(task) {
       agent_certification_policy: null,
       human_revision_count: metadata.human_revision_count || payload.revision_count || null,
       human_revision_note: metadata.human_revision_note || payload.note || null,
-    });
+    };
+    review.result = taskReviewResult(task, review, payload);
+    return reviewSummaryWithVerificationChat(task, review);
   }
   const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
   const agentCertified = metadata.agent_certified === true
@@ -760,7 +828,7 @@ function taskReviewSummary(task) {
     }
     return payload[key] || metadata[metadataKey] || null;
   };
-  return reviewSummaryWithVerificationChat(task, {
+  const review = {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
     proof: readyField('proof', 'latest_agent_proof'),
@@ -773,7 +841,9 @@ function taskReviewSummary(task) {
       || payload.agent_certification_policy
       || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
-  });
+  };
+  review.result = taskReviewResult(task, review, payload);
+  return reviewSummaryWithVerificationChat(task, review);
 }
 
 function reviewSummaryWithVerificationChat(task, review) {
@@ -1428,6 +1498,7 @@ function compactTaskForStatus(task) {
     const review = {};
     if (typeof task.review.reward === 'number') review.reward = task.review.reward;
     else if (task.review.reward === null) review.reward = null;
+    if (task.review.result) review.result = task.review.result;
     if (task.review.summary) review.summary = clipStatusText(task.review.summary, 240);
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
     if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
@@ -5393,6 +5464,12 @@ function cmdShow(args) {
   console.log(task.title);
   if (task.review) {
     console.log('');
+    if (task.review.result) {
+      console.log(`Changed: ${task.review.result.changed}`);
+      console.log(`Checked: ${task.review.result.checked}`);
+      console.log(`Saved: ${task.review.result.saved}`);
+      console.log(`Accept/Rework: ${task.review.result.accept}`);
+    }
     if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
     if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
@@ -5441,6 +5518,12 @@ function cmdPage(args) {
   console.log(`TASK PAGE ${taskRef(task)}`);
   console.log(`Goal: ${page.goal.text || '(none)'}`);
   console.log(`Stage: ${page.stage.current}`);
+  if (page.review.result) {
+    console.log(`Changed: ${page.review.result.changed}`);
+    console.log(`Checked: ${page.review.result.checked}`);
+    console.log(`Saved: ${page.review.result.saved}`);
+    console.log(`Accept/Rework: ${page.review.result.accept}`);
+  }
   console.log(`Next: ${page.stage.next_action.command || page.stage.next_action.label}`);
   console.log(`Chat: ${page.chat.command}`);
   if (page.review.verification_chat) console.log(`Review chat: ${page.review.verification_chat.command}`);
@@ -5655,6 +5738,7 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
   const metadata = task && task.metadata || {};
   const current = taskPageCurrentStage(task);
   const actions = taskPageActions(task, { reviewer, hasExistingReviewFollowUp });
+  const review = task && (task.review || taskReviewSummary(task));
   const recentMessages = (task && Array.isArray(task.messages) ? task.messages : []).slice(-10).map(message => ({
     version: message.version || null,
     actor: message.actor || null,
@@ -5698,9 +5782,12 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
     },
     actions,
     review: {
-      approval_status: task.review && task.review.approval_status || metadata.approval_status || null,
-      agent_review_pass_count: task.review && task.review.agent_review_pass_count || metadata.agent_review_pass_count || null,
-      agent_certified: Boolean(task.review && task.review.agent_certified || metadata.agent_certified),
+      result: review && review.result || null,
+      summary: review && review.summary || null,
+      proof: review && review.proof || null,
+      approval_status: review && review.approval_status || metadata.approval_status || null,
+      agent_review_pass_count: review && review.agent_review_pass_count || metadata.agent_review_pass_count || null,
+      agent_certified: Boolean(review && review.agent_certified || metadata.agent_certified),
       verification_chat: reviewChat,
       handoff: reviewHandoff,
       human_accept: {
@@ -7796,7 +7883,10 @@ function taskBoardHtml() {
         '<div class="meta"><span class="pill">' + task.status + '</span><span class="pill">' + (task.claimed_by || 'unowned') + '</span><span class="pill">v' + task.current_version + '</span></div>',
         '<div class="fact"><b>Goal</b><div id="taskGoal"></div></div>',
         '<div class="fact"><b>Lineage</b><div id="taskLineage"></div></div>',
-        '<div class="fact"><b>Summary</b><div id="taskSummary"></div></div>',
+        '<div class="fact"><b>Changed</b><div id="taskChanged"></div></div>',
+        '<div class="fact"><b>Checked</b><div id="taskChecked"></div></div>',
+        '<div class="fact"><b>Saved</b><div id="taskSaved"></div></div>',
+        '<div class="fact"><b>Accept/Rework</b><div id="taskAccept"></div></div>',
         '<div class="fact"><b>Proof / lesson</b><div id="taskProof"></div></div>',
         '<div class="thread">' + (messages || '<div class="empty">No thread yet.</div>') + '</div>',
         '<label>Add context</label><textarea id="note" placeholder="Decision, blocker, context, update..."></textarea>',
@@ -7808,9 +7898,11 @@ function taskBoardHtml() {
       room.querySelector('h3').textContent = task.title;
       $('taskGoal').textContent = task.objective || 'No matching goal yet.';
       $('taskLineage').textContent = 'parent: ' + parent + ' / next: ' + children;
-      $('taskSummary').textContent = task.review && task.review.summary
-        ? task.review.summary
-        : 'No review summary yet.';
+      const result = task.review && task.review.result || {};
+      $('taskChanged').textContent = result.changed || (task.review && task.review.summary) || 'No review result yet.';
+      $('taskChecked').textContent = result.checked || 'No check yet.';
+      $('taskSaved').textContent = result.saved || 'Not saved to Review yet.';
+      $('taskAccept').textContent = result.accept || 'No accept action yet.';
       $('taskProof').textContent = task.review && (task.review.proof || task.review.lesson)
         ? ((task.review.proof || 'no proof') + ' / ' + (task.review.lesson || 'no lesson'))
         : 'No proof yet.';
