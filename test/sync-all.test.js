@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { buildSyncAllPlan, SYNC_ALL_FILES } = require('../commands/sync');
+const { buildSyncAllPlan, syncWorkspaceTemplate, SYNC_ALL_FILES } = require('../commands/sync');
 
 // The atris-cli package root is the real source of truth. We pass it in
 // as pkgRoot so tests use the live canonical files for content comparison.
@@ -222,6 +222,26 @@ test('node_modules and .git subtrees are not scanned', () => {
     const { projects } = buildSyncAllPlan({ root, pkgRoot: PKG_ROOT });
     assert.strictEqual(projects.length, 1);
     assert.match(projects[0], /real-project$/);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('workspace template sync repairs broken .claude skills link', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-broken-claude-'));
+  try {
+    fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+    fs.symlinkSync(path.join(root, 'missing-skills-target'), path.join(root, '.claude', 'skills'));
+
+    assert.doesNotThrow(() => syncWorkspaceTemplate(root, {
+      name: 'Broken Skills Co',
+      slug: 'broken-skills',
+      business_id: 'biz-broken-skills',
+      workspace_id: 'ws-broken-skills',
+    }, { templateName: 'business' }));
+
+    assert.ok(fs.lstatSync(path.join(root, '.claude', 'skills')).isDirectory());
+    assert.ok(fs.existsSync(path.join(root, '.claude', 'skills', 'aeo', 'SKILL.md')));
   } finally {
     cleanup(root);
   }
