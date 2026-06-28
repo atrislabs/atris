@@ -1414,6 +1414,10 @@ function codexGoalObjective(mission) {
 }
 
 function codexGoalNextCommand(mission) {
+  const taskSpine = missionTaskSpine(mission);
+  if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) {
+    return taskSpine.ensure_task_command;
+  }
   if (mission.status === 'ready') {
     const xpAction = missionXpReadyAction(mission, mission.receipt_path);
     if (xpAction) return xpAction.replace(/^queue AgentXP review: /, '');

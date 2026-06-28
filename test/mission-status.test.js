@@ -221,13 +221,15 @@ test('always-on mission next action does not suggest completion flag', () => {
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const goalPayload = JSON.parse(goal.stdout);
     assert.equal(goalPayload.goal.mission_id, mission.id);
-    assert.equal(goalPayload.goal.next_command, 'atris mission run --due --max-ticks 1');
+    assert.equal(goalPayload.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.doesNotMatch(goalPayload.goal.next_command, /--complete-on-pass/);
 
     const heartbeat = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir });
     assert.equal(heartbeat.status, 0, heartbeat.stderr || heartbeat.stdout);
     const heartbeatPayload = JSON.parse(heartbeat.stdout);
     assert.equal(heartbeatPayload.goal.mission_id, mission.id);
-    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, 'atris mission run --due --max-ticks 1');
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission attach-task ${mission.id} --json`);
+    assert.doesNotMatch(heartbeatPayload.heartbeat.next_heavy_command, /--complete-on-pass/);
 
     const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
@@ -660,7 +662,9 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(fs.realpathSync(payload.state_path), fs.realpathSync(path.join(dir, '.atris', 'state', 'codex_goal.json')));
     assert.equal(fs.realpathSync(payload.status_path), fs.realpathSync(path.join(dir, 'atris', 'status', 'codex-goal.md')));
     assert.match(payload.goal.objective, new RegExp(`Advance Atris mission ${mission.id}: codex visible goal mission`));
-    assert.equal(payload.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.equal(payload.goal.task_spine.has_task, false);
+    assert.equal(payload.goal.task_spine.ensure_task_command, `atris mission attach-task ${mission.id} --json`);
     assert.match(payload.goal.replace_after, /replace the Codex \/goal/);
     assert.deepEqual(payload.goal.codex_tool_contract, {
       current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
@@ -884,7 +888,7 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
     assert.equal(payload.heartbeat.seconds_until_due, 0);
     assert.equal(payload.heartbeat.recommended_sleep_seconds, 0);
     assert.equal(payload.heartbeat.heavy_work_performed, false);
-    assert.equal(payload.heartbeat.next_heavy_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.heartbeat.next_heavy_command, `atris mission attach-task ${mission.id} --json`);
 
     const state = JSON.parse(fs.readFileSync(payload.state_path, 'utf8'));
     assert.equal(state.action, 'codex_goal_heartbeat');
@@ -988,7 +992,7 @@ test('always-on missions become due again after cadence even after verifier pass
     assert.equal(heartbeatPayload.goal.mission_id, firstPayload.mission.id);
     assert.equal(heartbeatPayload.goal.reason, 'active');
     assert.equal(heartbeatPayload.heartbeat.due, false);
-    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission tick ${firstPayload.mission.id} --verify --summary "<what changed>"`);
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission attach-task ${firstPayload.mission.id} --json`);
 
     const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + (60 * 60 * 1000) + 1000);
     const dueAgain = selectDueMission(dir, afterCadence);
