@@ -107,6 +107,13 @@ test('mission claude ticks spawn the configured runner binary', () => {
   assert.match(MISSION_SRC, /resolveClaudeRunnerBin/);
 });
 
+test('mission runner help describes the configured runner binary', () => {
+  assert.doesNotMatch(MISSION_SRC, /Spawns `claude -p/);
+  assert.doesNotMatch(MISSION_SRC, /spawns local claude -p per tick/);
+  assert.match(MISSION_SRC, /configured local runner binary per tick/);
+  assert.match(MISSION_SRC, /Claude-compatible resume mode/);
+});
+
 test('console claude launcher uses the configured runner binary', () => {
   assert.doesNotMatch(CONSOLE_SRC, /spawnSync\('claude'/);
   assert.match(CONSOLE_SRC, /resolveClaudeRunnerBin\(\)/);

@@ -1345,7 +1345,7 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 
 // ---------------------------------------------------------------------------
 // `atris mission run <id>` — bounded local headless loop. v0.1.
-// Spawns `claude -p --resume <session>` per tick. Honors cadence, active-hours,
+// Spawns the configured local runner in Claude-compatible resume mode per tick. Honors cadence, active-hours,
 // rate-limit info, and a flock per mission. `max-ticks` bounds total attempts;
 // `ran_ticks` separately reports ticks that actually made progress.
 // ---------------------------------------------------------------------------
@@ -2840,7 +2840,7 @@ atris mission - durable goal + loop + owner + proof state
 
   atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree]
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
-                      (runner claude spawns local claude -p per tick, --model passes through;
+                      (runner claude spawns the configured local runner binary per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
