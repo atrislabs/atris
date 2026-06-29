@@ -7,6 +7,29 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { resolveInstallRunnerModel } = require('../commands/pulse');
+
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_CLAUDE_MODEL',
+];
+
+function withRunnerEnv(values, fn) {
+  const previous = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  try {
+    fn();
+  } finally {
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = previous.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -284,6 +307,20 @@ test('buildTickScript preserves configured runner profile for cron', () => {
   });
   assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
   assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
+});
+
+test('pulse install accepts --runner-model and keeps --model as a legacy alias', () => {
+  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'opus' }, () => {
+    assert.equal(resolveInstallRunnerModel(['--runner-model', 'glm-5.2']), 'glm-5.2');
+    assert.equal(resolveInstallRunnerModel(['--model', 'sonnet']), 'sonnet');
+    assert.equal(resolveInstallRunnerModel(['--model', 'sonnet', '--runner-model', 'glm-5.2']), 'glm-5.2');
+  });
+});
+
+test('pulse install model fallback prefers generic runner env over legacy env', () => {
+  withRunnerEnv({ ATRIS_RUNNER_MODEL: 'glm-5.2', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+    assert.equal(resolveInstallRunnerModel([]), 'glm-5.2');
+  });
 });
 
 test('buildTickScript escapes single quotes in the verify command', () => {
