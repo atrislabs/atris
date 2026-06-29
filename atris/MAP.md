@@ -746,6 +746,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Verify executor helper:** `commands/autopilot.js:939-951` (`getVerifyCommand`) — reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }` — no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:839-863` (`writeLesson`) — appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug** — pass/fail — explanation`
 - **Phase executor:** `commands/autopilot.js:449` (executePhaseDetailed function) — runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
+- **Runner failure contract:** `commands/autopilot.js` treats non-zero configured-runner output as failure even when stdout exists; `formatRunnerFailure()` keeps captured stdout/stderr in the thrown error for phase, plan-review, and optional Codex reviewer paths. Regression: `test/autopilot-plan-review.test.js`
 - **Approval gate:** `commands/autopilot.js:371` (askApproval function) — enter/skip/quit
 - **Human freshness check:** `commands/autopilot.js:389` (`askHuman`) — interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
 - **Idle-tick helper:** `commands/autopilot.js:2190` (`getIdleTickCount`) — counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`

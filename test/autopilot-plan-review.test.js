@@ -7,11 +7,39 @@ const os = require('node:os');
 const {
   runPlanReview,
   buildPrompt,
+  executePhaseDetailed,
   parseVerdict,
   runTaskOnce,
   suggestNextTask,
   shouldSkipAutoHumanGate,
 } = require('../commands/autopilot');
+
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_PROFILE',
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL',
+  'ATRIS_CLAUDE_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+];
+
+function withRunnerEnv(values, fn) {
+  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 function cleanup(cwd) {
   try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
@@ -157,6 +185,70 @@ test('codex agrees with validator → SIGNOFF with both signers', () => {
     });
     assert.strictEqual(result.verdict, 'SIGNOFF');
     assert.deepStrictEqual(result.signers, ['validator', 'codex']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('default codex plan-review runner fails non-zero output instead of signing partial stdout', () => {
+  const { cwd } = setupWorkspace();
+  try {
+    const cmdPath = path.join(cwd, 'fake-codex.sh');
+    fs.writeFileSync(cmdPath, '#!/bin/sh\necho codex-partial\nexit 7\n');
+    fs.chmodSync(cmdPath, 0o755);
+    const previous = process.env.ATRIS_CODEX_CMD;
+    process.env.ATRIS_CODEX_CMD = cmdPath;
+    try {
+      const result = runPlanReview({
+        cwd,
+        context: { task: 'Fixture task', kind: 'endgame', files: ['stub.txt'], tags: ['codex'] },
+        planOutput: 'candidate plan',
+        options: {
+          planReviewExec: () => 'SIGNOFF: Validator approves.',
+          hasCodex: true,
+        },
+      });
+      assert.strictEqual(result.verdict, 'SIGNOFF');
+      assert.deepStrictEqual(result.signers, ['validator']);
+      assert.match(result.notes || '', /codex invocation failed/);
+      assert.match(result.notes || '', /codex exited with status 7/);
+      assert.match(result.notes || '', /stdout:\ncodex-partial/);
+    } finally {
+      if (previous === undefined) delete process.env.ATRIS_CODEX_CMD;
+      else process.env.ATRIS_CODEX_CMD = previous;
+    }
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('executePhaseDetailed fails non-zero configured runner output instead of returning stdout', () => {
+  assert.throws(
+    () => executePhaseDetailed(
+      'plan',
+      { task: 'Fixture task', kind: 'endgame', files: ['stub.txt'] },
+      { cmdOverride: 'sh -c "echo phase-partial; exit 7"', timeout: 5000 }
+    ),
+    /plan phase failed:[\s\S]*stdout:\nphase-partial/
+  );
+});
+
+test('default plan-review runner fails non-zero output instead of signing partial stdout', () => {
+  const { cwd } = setupWorkspace();
+  try {
+    withRunnerEnv({
+      ATRIS_RUNNER_BIN: 'sh',
+      ATRIS_RUNNER_COMMAND_TEMPLATE: 'sh -c "echo review-partial; exit 7"',
+    }, () => {
+      assert.throws(
+        () => runPlanReview({
+          cwd,
+          context: { task: 'Fixture task', kind: 'endgame', files: ['stub.txt'] },
+          planOutput: 'candidate plan',
+        }),
+        /plan-review runner failed:[\s\S]*stdout:\nreview-partial/
+      );
+    });
   } finally {
     cleanup(cwd);
   }

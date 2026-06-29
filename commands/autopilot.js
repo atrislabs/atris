@@ -425,8 +425,8 @@ function isPhaseKillError(err) {
  * etimedout-error-shape, 2026-06-10). `detached: true` makes the wrapper a
  * process-group leader; on timeout we sweep the whole group via
  * `process.kill(-pid, 'SIGKILL')`. ESRCH on the sweep means the group already
- * died — fine. The original error is rethrown untouched so every call site
- * keeps its existing catch contract (err.stdout passthrough included).
+ * died — fine. The original error is rethrown untouched so call sites can
+ * decide whether to preserve stdout/stderr in a failure message.
  */
 function execPhaseCommandSync(cmd, opts = {}) {
   try {
@@ -441,6 +441,15 @@ function execPhaseCommandSync(cmd, opts = {}) {
     }
     throw err;
   }
+}
+
+function formatRunnerFailure(err) {
+  const parts = [err && err.message ? err.message : String(err || 'unknown error')];
+  const stdout = err && err.stdout ? String(err.stdout).trim() : '';
+  const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+  if (stdout) parts.push(`stdout:\n${stdout}`);
+  if (stderr) parts.push(`stderr:\n${stderr}`);
+  return parts.join('\n\n');
 }
 
 /**
@@ -477,10 +486,7 @@ function executePhaseDetailed(phase, context, options = {}) {
     if (isPhaseKillError(err)) {
       throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
     }
-    if (err.stdout) {
-      return { prompt, output: err.stdout };
-    }
-    throw err;
+    throw new Error(`${phase} phase failed: ${formatRunnerFailure(err)}`);
   }
 }
 
@@ -1217,8 +1223,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     });
     return output || '';
   } catch (err) {
-    if (err.stdout) return err.stdout;
-    throw err;
+    throw new Error(`plan-review runner failed: ${formatRunnerFailure(err)}`);
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }
@@ -1248,8 +1253,14 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       if (sweepErr.code !== 'ESRCH') throw sweepErr;
     }
   }
-  if (proc.status !== 0 && !proc.stdout) {
-    throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
+  if (proc.error) {
+    throw proc.error;
+  }
+  if (proc.status !== 0 || proc.signal) {
+    const failure = new Error(`codex exited with status ${proc.status == null ? 'unknown' : proc.status}${proc.signal ? ` signal ${proc.signal}` : ''}`);
+    failure.stdout = proc.stdout;
+    failure.stderr = proc.stderr;
+    throw new Error(formatRunnerFailure(failure));
   }
   return proc.stdout || '';
 }
