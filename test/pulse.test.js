@@ -7,11 +7,28 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { pulseCommand } = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   return dir;
+}
+
+function captureStdout(fn) {
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, encoding, callback) => {
+    output += String(chunk);
+    if (typeof encoding === 'function') encoding();
+    if (typeof callback === 'function') callback();
+    return true;
+  };
+  try {
+    return { result: fn(), stdout: output };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
 }
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
@@ -49,7 +66,14 @@ test('shouldFallbackToAutopilot fires only when no mission is due', () => {
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'error' }), false);
 });
 
-test('shouldFallbackToAutopilot is suppressed by --no-autopilot and --no-claude', () => {
+test('pulse help prefers --no-runner and keeps --no-claude as a legacy alias', () => {
+  const { stdout } = captureStdout(() => pulseCommand(['--help']));
+  assert.match(stdout, /--no-runner\s+Do not spawn configured mission runner work/);
+  assert.match(stdout, /--no-claude\s+Legacy alias for --no-runner/);
+  assert.doesNotMatch(stdout, /Claude-backed mission work/);
+});
+
+test('shouldFallbackToAutopilot is suppressed by --no-autopilot and no runner mode', () => {
   // no worker available → can't author a goal
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', noClaude: true }), false);
   // fallback explicitly disabled

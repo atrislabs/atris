@@ -520,16 +520,16 @@ test('mission run --due selects an active verifier mission for loop heartbeats',
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
 
-    const due = runCli(['mission', 'run', '--due', '--no-claude', '--complete-on-pass', '--json'], { cwd: dir });
+    const due = runCli(['mission', 'run', '--due', '--no-runner', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(due.status, 0, due.stderr || due.stdout);
     const payload = JSON.parse(due.stdout);
     assert.equal(payload.action, 'mission_run');
     assert.equal(payload.mission.id, mission.id);
     assert.equal(payload.mission.status, 'complete');
-    assert.equal(payload.ticks[0].reason, 'no-claude-mode');
+    assert.equal(payload.ticks[0].reason, 'no-runner-mode');
     assert.equal(payload.ticks[0].verifier_passed, true);
 
-    const next = runCli(['mission', 'run', '--due', '--no-claude', '--json'], { cwd: dir });
+    const next = runCli(['mission', 'run', '--due', '--no-runner', '--json'], { cwd: dir });
     assert.equal(next.status, 0, next.stderr || next.stdout);
     assert.deepEqual(JSON.parse(next.stdout), {
       ok: true,
@@ -962,7 +962,7 @@ test('mission goal-loop attaches task spine before due mission work', () => {
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
 
-    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-runner', '--json'], { cwd: dir, env });
     assert.equal(loop.status, 0, loop.stderr || loop.stdout);
     const payload = JSON.parse(loop.stdout);
     assert.equal(payload.action, 'codex_goal_loop');
@@ -1004,7 +1004,7 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
 
-    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-runner', '--json'], { cwd: dir, env });
     assert.equal(loop.status, 0, loop.stderr || loop.stdout);
     const payload = JSON.parse(loop.stdout);
     assert.equal(payload.action, 'codex_goal_loop');
@@ -1014,9 +1014,11 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
     assert.equal(payload.events[0].heartbeat.goal.mission_id, mission.id);
     assert.equal(payload.events[0].heartbeat.heartbeat.due, true);
     assert.equal(payload.events[0].run.action, 'mission_run_due');
+    assert.match(payload.events[0].run.command, /--no-runner/);
     assert.equal(payload.events[0].run.payload.action, 'mission_run');
     assert.equal(payload.events[0].run.payload.mission.id, mission.id);
     assert.equal(payload.events[0].run.payload.mission.status, 'ready');
+    assert.equal(payload.events[0].run.payload.ticks[0].reason, 'caller-session-runner');
     assert.equal(payload.final_state.action, 'codex_goal_heartbeat');
     assert.equal(payload.final_state.goal.mission_id, mission.id);
     assert.equal(payload.final_state.goal.mission_status, 'ready');
@@ -1180,11 +1182,12 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
-    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
+    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-runner\] \[--json\]/);
+    assert.match(help.stdout, /--no-claude remains a legacy alias for --no-runner/);
     assert.match(help.stdout, /Autonomy recipe:/);
     assert.match(help.stdout, /Codex sessions: atris mission goal --json, then set \/goal to goal\.objective/);
     assert.match(help.stdout, /Overnight controller: atris mission goal --heartbeat --json/);
-    assert.match(help.stdout, /Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json/);
+    assert.match(help.stdout, /Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-runner --json/);
     assert.match(help.stdout, /Headless: start with --runner claude --cadence "15m" --always-on/);
     assert.match(help.stdout, /Backend\/web agents:/);
     assert.match(help.stdout, /--status active shows planning\/running\/ready\/paused\/blocked missions/);
