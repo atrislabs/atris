@@ -167,6 +167,23 @@ test('buildRunnerAvailabilityCommand checks the configured runner binary', () =>
   });
 });
 
+test('buildRunnerAvailabilityCommand skips bin preflight for self-contained templates', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: 'node ./runner.js --prompt-file {promptFile}',
+  }, () => {
+    assert.equal(buildRunnerAvailabilityCommand(), ':');
+  });
+});
+
+test('buildRunnerAvailabilityCommand keeps bin preflight when template uses bin', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_BIN: '/opt/glm/runner',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --prompt-file {promptFile}',
+  }, () => {
+    assert.equal(buildRunnerAvailabilityCommand(), 'command -v /opt/glm/runner');
+  });
+});
+
 // Regression guard for retired-model-kills-loop-silently: the default must be a
 // bare alias, never a versioned claude-* id that can retire out from under the loop.
 test('default model is an alias, not a versioned claude-* id', () => {
