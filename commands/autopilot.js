@@ -443,6 +443,15 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+function formatRunnerFailure(err) {
+  const parts = [err && err.message ? err.message : String(err || 'unknown error')];
+  const stdout = err && err.stdout ? String(err.stdout).trim() : '';
+  const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+  if (stdout) parts.push(`stdout:\n${stdout}`);
+  if (stderr) parts.push(`stderr:\n${stderr}`);
+  return parts.join('\n\n');
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -477,10 +486,7 @@ function executePhaseDetailed(phase, context, options = {}) {
     if (isPhaseKillError(err)) {
       throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall — not a timeout; check memory pressure or an external supervisor`);
     }
-    if (err.stdout) {
-      return { prompt, output: err.stdout };
-    }
-    throw err;
+    throw new Error(`${phase} phase failed: ${formatRunnerFailure(err)}`);
   }
 }
 
@@ -1217,8 +1223,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     });
     return output || '';
   } catch (err) {
-    if (err.stdout) return err.stdout;
-    throw err;
+    throw new Error(`plan-review runner failed: ${formatRunnerFailure(err)}`);
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }

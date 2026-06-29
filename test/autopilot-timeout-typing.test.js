@@ -113,13 +113,15 @@ test('phase timeout kills the whole process group, not just the shell', () => {
   assert.ok(dead, `grandchild ${grandchildPid} survived the phase timeout — process group was not swept`);
 });
 
-test('non-timeout failure with stdout still returns partial output', () => {
-  const result = executePhaseDetailed(
-    'do',
-    { task: 'fixture', kind: 'endgame' },
-    { verbose: false, timeout: 5000, cmdOverride: 'echo partial; exit 1' }
+test('non-timeout failure with stdout throws and preserves partial output', () => {
+  assert.throws(
+    () => executePhaseDetailed(
+      'do',
+      { task: 'fixture', kind: 'endgame' },
+      { verbose: false, timeout: 5000, cmdOverride: 'echo partial; exit 1' }
+    ),
+    /do phase failed:[\s\S]*stdout:\npartial/
   );
-  assert.match(result.output, /partial/);
 });
 
 // Slug mangling: em-dashes leaked verbatim and `.slice(0, 40)` cut mid-word,
