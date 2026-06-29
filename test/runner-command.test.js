@@ -163,7 +163,19 @@ test('unknown runner profile throws a clear config error', () => {
 
 test('buildRunnerAvailabilityCommand checks the configured runner binary', () => {
   withBinEnv('/opt/atris/bin/claude-nightly', () => {
-    assert.equal(buildRunnerAvailabilityCommand(), 'command -v /opt/atris/bin/claude-nightly');
+    assert.equal(buildRunnerAvailabilityCommand(), 'test -x /opt/atris/bin/claude-nightly');
+  });
+});
+
+test('buildRunnerAvailabilityCommand uses command lookup for bare runner names', () => {
+  withRunnerEnv({ ATRIS_RUNNER_BIN: 'ax' }, () => {
+    assert.equal(buildRunnerAvailabilityCommand(), 'command -v ax');
+  });
+});
+
+test('buildRunnerAvailabilityCommand shell-quotes path runner binaries', () => {
+  withRunnerEnv({ ATRIS_RUNNER_BIN: '/Applications/Claude Nightly/bin/claude' }, () => {
+    assert.equal(buildRunnerAvailabilityCommand(), "test -x '/Applications/Claude Nightly/bin/claude'");
   });
 });
 
