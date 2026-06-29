@@ -778,6 +778,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Phase timing:** `commands/run.js:254-255,268` — collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
 - **Summary table:** `commands/run.js:363` (cycleTimings forEach) — per-cycle phase duration table
 - **Post-cycle clean:** `commands/run.js:451` (cleanAtris call) — self-heal MAP.md refs
+- **Improve fallback docs:** `atris/skills/improve/SKILL.md` documents the local fallback as `atris autopilot --auto --iterations=1` through the configured runner (`ATRIS_RUNNER_*`, default `claude` binary), with regression coverage in `test/autopilot-runner-model.test.js`.
 - **Post-cycle push:** `commands/run.js:321` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:326` (showHelp function)

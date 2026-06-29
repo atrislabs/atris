@@ -12,6 +12,7 @@ const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js')
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
 const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
+const IMPROVE_SKILL = fs.readFileSync(path.join(__dirname, '..', 'atris', 'skills', 'improve', 'SKILL.md'), 'utf8');
 
 const RUNNER_ENV_KEYS = [
   'ATRIS_RUNNER_PROFILE',
@@ -70,6 +71,12 @@ test('runtime runner wording is config-neutral', () => {
   assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|install Claude Code first/);
   assert.match(AUTOPILOT_SRC, /configured runner/);
   assert.match(RUN_SRC, /configured runner command/);
+});
+
+test('improve fallback docs describe configured local runner inference', () => {
+  assert.doesNotMatch(IMPROVE_SKILL, /local inference via `claude -p` subprocess/i);
+  assert.match(IMPROVE_SKILL, /local inference through the configured runner/i);
+  assert.match(IMPROVE_SKILL, /ATRIS_RUNNER_\*/);
 });
 
 test('run and autopilot sweep configured runner process groups on timeout', () => {

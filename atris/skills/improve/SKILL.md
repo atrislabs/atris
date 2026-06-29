@@ -58,7 +58,7 @@ The full-mode response does not echo `credits_deducted` (credits are still bille
 
 ## Fallback
 
-If the backend is unreachable (no auth, no network, localhost not running), fall back to local mode: run `atris autopilot --auto --iterations=1` instead. Same loop, just local inference via `claude -p` subprocess. Report that it ran locally.
+If the backend is unreachable (no auth, no network, localhost not running), fall back to local mode: run `atris autopilot --auto --iterations=1` instead. Same loop, just local inference through the configured runner (`ATRIS_RUNNER_*`, with `claude` as the default binary). Report that it ran locally.
 
 ## Output
 
