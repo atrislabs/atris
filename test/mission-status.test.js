@@ -476,7 +476,7 @@ test('mission required arguments are JSON-readable', () => {
   }
 });
 
-test('mission run terminal skips are JSON-readable', () => {
+test('mission run terminal skips are JSON-readable when mission is explicit', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -484,7 +484,7 @@ test('mission run terminal skips are JSON-readable', () => {
     const stop = runCli(['mission', 'stop', stopped.id, '--reason', 'done', '--json'], { cwd: dir });
     assert.equal(stop.status, 0, stop.stderr || stop.stdout);
 
-    const run = runCli(['mission', 'run', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', stopped.id, '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     assert.equal(run.stderr, '');
     const runPayload = JSON.parse(run.stdout);
@@ -522,6 +522,26 @@ test('mission run with an objective starts a visible-goal mission', () => {
     assert.equal(payload.codex_goal_state.action, 'codex_goal_candidate');
     assert.equal(payload.codex_goal_state.goal.objective, 'atris mission run');
     assert.equal(payload.codex_goal_state.goal.visible_goal.schema, 'atris.visible_chat_goal_bridge.v1');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bare mission run asks for input instead of resuming an old mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    startMission(dir, 'old saved mission');
+
+    const run = runCli(['mission', 'run', '--json'], { cwd: dir });
+    assert.equal(run.status, 1);
+    assert.equal(run.stderr, '');
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.action, 'mission_input_required');
+    assert.equal(payload.prompt, 'What mission should Atris run?');
+    assert.equal(payload.owner_prompt, 'Which team member should own it?');
+    assert.match(payload.example, /atris mission run "make onboarding magical"/);
   } finally {
     cleanupTempDir(dir);
   }
