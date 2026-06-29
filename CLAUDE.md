@@ -157,7 +157,7 @@ atris visualize
 # Generate a brainstorm conversation starter
 atris brainstorm
 
-# Autonomous plan → do → review loop (uses claude -p subprocesses)
+# Autonomous plan → do → review loop (uses the configured runner)
 atris run
 
 # Suggest → justify → execute, one task at a time (--auto runs unattended)
@@ -316,7 +316,7 @@ This is how the system is meant to be used:
 
 ## Autonomous Run Loop (`atris run`)
 
-Automates the plan → do → review loop end-to-end using `claude -p` subprocesses. No human in the loop — it reads inbox/backlog, plans tasks, builds them, reviews, then loops until work is done or max cycles hit.
+Automates the plan → do → review loop end-to-end using the configured local runner. No human in the loop — it reads inbox/backlog, plans tasks, builds them, reviews, then loops until work is done or max cycles hit.
 
 **Implementation:** `commands/run.js` (see the `atris run` entry in `atris/MAP.md` for the full breakdown)
 
@@ -330,11 +330,16 @@ Automates the plan → do → review loop end-to-end using `claude -p` subproces
 atris run                  # Up to 5 cycles (default)
 atris run --once           # Single plan→do→review cycle
 atris run --cycles=3       # Max 3 cycles
-atris run --verbose        # Show claude -p output in real-time
+atris run --verbose        # Show runner output in real-time
 atris run --timeout=300    # Set phase timeout to 300 seconds
 atris run --dry-run        # Preview context paths without executing
 atris run --no-push        # Skip auto-push after each cycle
+atris run --runner-profile atris-fast
+atris run --runner-bin /path/to/runner --runner-model opus
+atris run --runner-template '{bin} --model {model} --prompt-file {promptFile}'
 ```
+
+**Runner selection:** `claude` remains the default binary, but `atris run` and `atris autopilot` use the shared runner resolver. Configure swaps with `ATRIS_RUNNER_PROFILE`, `ATRIS_RUNNER_BIN`, `ATRIS_RUNNER_MODEL`, or `ATRIS_RUNNER_COMMAND_TEMPLATE`; legacy `ATRIS_CLAUDE_*` env vars still work.
 
 **Post-cycle behavior:**
 - **Self-heal:** Runs `cleanAtris()` after each REVIEW phase to auto-fix drifted MAP.md file:line references
@@ -359,7 +364,7 @@ atris run export --out /tmp/runs.json  # Export to specific file
 atris run diff file1.md file2.md       # Compare two run logs
 ```
 
-**Requirements:** `claude` CLI must be installed (Claude Code). No auth needed — runs entirely local.
+**Requirements:** A configured local runner must be installed and available. With no runner env set, that means the default `claude` CLI; with `ATRIS_RUNNER_*`, it can be `ax`, GLM, or another prompt-file-capable local runner.
 
 **Flow per cycle:**
 ```

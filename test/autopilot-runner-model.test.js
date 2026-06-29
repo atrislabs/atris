@@ -12,6 +12,7 @@ const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js')
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
 const BIN_SRC = fs.readFileSync(path.join(__dirname, '..', 'bin', 'atris.js'), 'utf8');
 const CONSOLE_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'console.js'), 'utf8');
+const CLAUDE_DOC = fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8');
 
 const RUNNER_ENV_KEYS = [
   'ATRIS_RUNNER_PROFILE',
@@ -70,6 +71,15 @@ test('runtime runner wording is config-neutral', () => {
   assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|install Claude Code first/);
   assert.match(AUTOPILOT_SRC, /configured runner/);
   assert.match(RUN_SRC, /configured runner command/);
+});
+
+test('developer docs describe autonomous loops as configured-runner first', () => {
+  assert.doesNotMatch(CLAUDE_DOC, /uses claude -p subprocesses/i);
+  assert.doesNotMatch(CLAUDE_DOC, /Show claude -p output/i);
+  assert.doesNotMatch(CLAUDE_DOC, /`claude` CLI must be installed/i);
+  assert.match(CLAUDE_DOC, /uses the configured runner/i);
+  assert.match(CLAUDE_DOC, /ATRIS_RUNNER_PROFILE/);
+  assert.match(CLAUDE_DOC, /ATRIS_RUNNER_COMMAND_TEMPLATE/);
 });
 
 test('run and autopilot sweep configured runner process groups on timeout', () => {
