@@ -2422,6 +2422,10 @@ function cappedClaudeReceiptText(text, limit = 4000) {
 
 async function runMission(args) {
   const asJson = wantsJson(args);
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    help();
+    return;
+  }
   const dueMode = hasFlag(args, '--due');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
