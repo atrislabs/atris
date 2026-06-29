@@ -40,6 +40,25 @@ test('createSpawnRequest builds a concrete next command for codex', () => {
   assert.match(commandForEngine({ ...request, engine: 'manual' }) || '', /^$/);
 });
 
+test('commandForEngine uses the configured runner binary for claude spawn requests', () => {
+  const previous = process.env.ATRIS_RUNNER_BIN;
+  process.env.ATRIS_RUNNER_BIN = '/opt/atris/bin/claude-nightly';
+  try {
+    const command = commandForEngine({
+      role: 'executor',
+      task: 'Use the configured runner',
+      engine: 'claude',
+      cwd: '/workspace/project',
+    });
+    assert.match(command, /^'\/opt\/atris\/bin\/claude-nightly' -p /);
+    assert.doesNotMatch(command, /^claude -p /);
+    assert.match(command, /Use the configured runner/);
+  } finally {
+    if (previous === undefined) delete process.env.ATRIS_RUNNER_BIN;
+    else process.env.ATRIS_RUNNER_BIN = previous;
+  }
+});
+
 test('createSpawnRequest builds GLM 5.2 commands for Devin and Droid', () => {
   const devin = createSpawnRequest('/workspace/project', {
     role: 'tester',

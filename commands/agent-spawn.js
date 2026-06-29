@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { resolveClaudeRunnerBin } = require('../lib/runner-command');
 
 const SPAWN_SCHEMA = 'atris.agent_spawn.v1';
 const DOGFOOD_SCHEMA = 'atris.agent_cli_dogfood.v1';
@@ -140,7 +141,7 @@ function buildDelegatePrompt({ role, task, cwd }) {
 function commandForEngine(request) {
   const prompt = buildDelegatePrompt(request);
   if (request.engine === 'codex') return `codex exec ${shellQuote(prompt)}`;
-  if (request.engine === 'claude') return `claude -p ${shellQuote(prompt)}`;
+  if (request.engine === 'claude') return `${shellQuote(resolveClaudeRunnerBin())} -p ${shellQuote(prompt)}`;
   if (request.engine === 'cursor') return `cursor-agent ${shellQuote(prompt)}`;
   if (request.engine === 'devin') return `devin --model glm-5.2 --permission-mode auto -p ${shellQuote(prompt)}`;
   if (request.engine === 'droid') return `droid exec --model glm-5.2 --reasoning-effort off ${shellQuote(prompt)}`;
