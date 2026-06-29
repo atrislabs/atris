@@ -151,7 +151,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task review <id> --reward <n> [--verify "<cmd>"]
                                            Write review event + RSI episode
   atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
-  atris task reviews --group-by <tag|owner|source>   Cluster the certified wall for fast triage
+  atris task reviews --group-by <tag|owner|source>   Cluster ready-to-land work for fast triage
   atris task accept-group <key>=<value> --spot-check K --confirm-human-accept --as <you> --verified <ids>
                                            Accept a whole cluster; career XP only on the K you verified
   atris task status [--json] [--history]   Compact live status for web/Swarlo
@@ -4175,13 +4175,13 @@ function cmdReviews(args) {
       printJson({ ok: true, action: 'review_groups', projection_path: outPath, groups });
       return;
     }
-    console.log(`CERTIFIED REVIEW — grouped by ${key}`);
-    console.log(`${groups.total_certified} certified across ${groups.group_count} ${key} group(s)`);
+    console.log(`READY TO LAND — grouped by ${key}`);
+    console.log(`${groups.total_certified} ready to land across ${groups.group_count} ${key} group(s)`);
     groups.groups.forEach((g, index) => {
       console.log('');
       console.log(`${index + 1}. ${g.value} — ${g.count} task${g.count === 1 ? '' : 's'}`);
       g.sample_titles.forEach(title => console.log(`   • ${title}`));
-      console.log(`   review then accept the cluster: ${g.accept_group_command} --confirm-human-accept --as <you>`);
+      console.log(`   land this group: ${g.accept_group_command} --confirm-human-accept --as <you>`);
     });
     return;
   }
