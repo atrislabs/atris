@@ -851,6 +851,94 @@ function inferRunObjectiveVerifier(objective, root = process.cwd()) {
   return missionRunSmokeVerifier();
 }
 
+function markMissionRunContinuation(mission) {
+  return {
+    ...mission,
+    started_from: 'mission_run_objective',
+    continue_on_complete: true,
+    continuation_policy: 'decide_and_start_next_useful_mission',
+  };
+}
+
+function continuationObjective(parent) {
+  return `Decide and start the next useful mission after: ${parent.objective}`;
+}
+
+function findActiveContinuationMission(parent, root = process.cwd()) {
+  return listMissions(root).find((mission) => (
+    mission.parent_mission_id === parent.id
+    && mission.started_from === 'mission_run_continuation'
+    && !TERMINAL_STATUSES.has(mission.status)
+  )) || null;
+}
+
+function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
+  if (!parent || parent.status !== 'complete') return null;
+  if (parent.continue_on_complete !== true) return null;
+  if (parent.continuation_seeded_mission_id) return {
+    inserted: false,
+    reason: 'already_seeded',
+    mission_id: parent.continuation_seeded_mission_id,
+  };
+
+  const existing = findActiveContinuationMission(parent, root);
+  if (existing) return { inserted: false, reason: 'active_continuation_exists', mission: existing };
+
+  const owner = parent.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const objective = continuationObjective(parent);
+  const mission = missionFromArgs([
+    objective,
+    '--owner',
+    owner,
+    '--runner',
+    'codex_goal',
+    '--lane',
+    parent.lane || 'workspace',
+    '--cadence',
+    'manual',
+    '--stop',
+    'next useful mission is started, or no useful next mission remains',
+  ]);
+  const nextMission = {
+    ...mission,
+    started_from: 'mission_run_continuation',
+    parent_mission_id: parent.id,
+    parent_objective: parent.objective,
+    continue_on_complete: false,
+    continuation_policy: 'choose_next_mission',
+    parent_proof: proof || parent.receipt_path || null,
+    next_action: `decide next mission, then run: atris mission run "<next useful mission>" --owner ${owner}`,
+  };
+
+  ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
+  const { mission: saved } = saveMission(nextMission, root, 'mission_continuation_started', {
+    parent_mission_id: parent.id,
+    parent_objective: parent.objective,
+    proof: proof || null,
+  });
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, root);
+  const seededAt = stampIso();
+  const { mission: updatedParent } = saveMission({
+    ...parent,
+    continuation_seeded_mission_id: saved.id,
+    continuation_seeded_at: seededAt,
+    continuation_seeded_objective: saved.objective,
+  }, root, 'mission_continuation_seeded', {
+    continuation_mission_id: saved.id,
+    continuation_objective: saved.objective,
+  });
+  return {
+    inserted: true,
+    mission: saved,
+    parent: updatedParent,
+    worktree_baseline: worktreeBaseline ? {
+      path: path.relative(root, missionBaselinePath(saved.id, root)),
+      dirty_count: worktreeBaseline.dirty_count,
+      dirty_hash: worktreeBaseline.dirty_hash,
+    } : null,
+  };
+}
+
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
@@ -931,7 +1019,7 @@ function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--always-on')) startArgs.push('--always-on');
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp')) startArgs.push('--xp-task');
 
-  const mission = missionFromArgs(startArgs);
+  const mission = markMissionRunContinuation(missionFromArgs(startArgs));
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
@@ -2345,6 +2433,7 @@ async function runMission(args) {
     const startedAt = Date.now();
     let backoffAttempt = 0;
     let lastRateLimit = null;
+    let continuationGoal = null;
 
     const sessionLabel = skipWorker
       ? 'caller-session'
@@ -2557,6 +2646,10 @@ async function runMission(args) {
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         receipt: receiptPath,
       });
+      if (newStatus === 'complete') {
+        continuationGoal = seedMissionRunContinuation(mission, cwd, receiptPath);
+        if (continuationGoal?.parent) mission = continuationGoal.parent;
+      }
       refreshCodexGoalController(cwd);
 
       console.error(`[tick ${tickIdx}] status=${result.status} reason=${result.reason} verifier=${verifierResult ? (verifierResult.passed ? 'pass' : 'fail') : 'skip'} -> ${receiptPath || '-'}`);
@@ -2634,7 +2727,7 @@ async function runMission(args) {
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, codex_goal_state: codexGoalState },
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
         `Ran mission ${mission.id}`,
         `  objective: ${mission.objective}`,
@@ -2643,6 +2736,7 @@ async function runMission(args) {
         pauseReason ? `  pause: ${pauseReason}` : null,
         `  session: ${sessionId || '(none)'}`,
         `  summary receipt: ${finalReceipt}`,
+        continuationGoal?.mission ? `  next goal: ${continuationGoal.mission.objective}` : null,
       ].filter(Boolean),
       asJson,
     );
@@ -2771,15 +2865,20 @@ function tickMission(args) {
       receipt: receiptPath,
       summary: summary || undefined,
     });
+    const continuationGoal = saved.status === 'complete'
+      ? seedMissionRunContinuation(saved, cwd, receiptPath)
+      : null;
+    const outputMission = continuationGoal?.parent || saved;
     const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: saved, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, codex_goal_state: codexGoalState },
+      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
-        `Ticked mission: ${saved.objective}`,
-        `State: ${saved.status}`,
+        `Ticked mission: ${outputMission.objective}`,
+        `State: ${outputMission.status}`,
         `Tick: ${tickIdx}`,
-        `Next: ${saved.next_action}`,
+        `Next: ${outputMission.next_action}`,
         ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
+        ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
       ],
       asJson,
     );
@@ -2861,24 +2960,28 @@ function completeMission(args) {
     result: completion.result,
   };
   const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof, completion_gate: next.completion_gate });
-  const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
+  const continuationGoal = seedMissionRunContinuation(saved, process.cwd(), proof);
+  const outputMission = continuationGoal?.parent || saved;
+  const logPath = appendMemberLog(outputMission.owner, 'Mission completed', { mission: outputMission.objective, proof });
   const codexGoalState = refreshCodexGoalController(process.cwd());
   printJsonOrText(
     {
       ok: true,
       action: 'mission_completed',
-      mission: saved,
+      mission: outputMission,
       landing: completion.landing,
       result: completion.result,
       log_path: logPath,
       codex_goal_state: codexGoalState,
       xp_next_command: xpNextCommand,
+      continuation_goal: continuationGoal,
     },
     [
-      `Completed mission: ${saved.objective}`,
+      `Completed mission: ${outputMission.objective}`,
       ...missionResultLines(completion),
       `Proof: ${proof}`,
       ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : []),
+      ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
     ],
     asJson,
   );
@@ -3059,6 +3162,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission run ["objective"|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
                        (bare run prompts for mission + owner; --due runs the saved queue)
+                       (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
 
