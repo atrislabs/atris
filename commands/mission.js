@@ -872,6 +872,61 @@ function findActiveContinuationMission(parent, root = process.cwd()) {
   )) || null;
 }
 
+function findActiveMissionRunContinuation(root = process.cwd(), excludeId = '') {
+  const excluded = String(excludeId || '');
+  const candidates = listMissions(root)
+    .filter((mission) => (
+      mission.id !== excluded
+      && mission.started_from === 'mission_run_continuation'
+      && mission.continuation_policy === 'choose_next_mission'
+      && !TERMINAL_STATUSES.has(mission.status)
+    ));
+  candidates.sort((a, b) => missionSortTime(b) - missionSortTime(a));
+  return candidates[0] || null;
+}
+
+function completeActiveContinuationForStartedMission(nextMission, root = process.cwd()) {
+  const continuation = findActiveMissionRunContinuation(root, nextMission?.id);
+  if (!continuation || !nextMission) return null;
+  if (continuation.objective === nextMission.objective) return null;
+
+  const proof = `Started next mission ${nextMission.id}: ${nextMission.objective}`;
+  const completionGate = { ok: true, source: 'mission_run_continuation', forced: false };
+  const baseNext = {
+    ...continuation,
+    status: 'complete',
+    completed_at: stampIso(),
+    proof,
+    completion_gate: completionGate,
+    continued_by_mission_id: nextMission.id,
+    continued_by_objective: nextMission.objective,
+    next_action: 'mission complete',
+  };
+  const completion = missionCompletionReceipt(baseNext, proof);
+  const { mission: saved } = saveMission({
+    ...baseNext,
+    landing: completion.landing,
+    result: completion.result,
+  }, root, 'mission_continuation_completed', {
+    proof,
+    continued_by_mission_id: nextMission.id,
+    continued_by_objective: nextMission.objective,
+  });
+  appendMemberLog(saved.owner, 'Mission continuation completed', {
+    mission: saved.objective,
+    continued_by: nextMission.id,
+    proof,
+  }, root);
+  return {
+    completed: true,
+    mission: saved,
+    continued_by: {
+      mission_id: nextMission.id,
+      objective: nextMission.objective,
+    },
+  };
+}
+
 function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
   if (!parent || parent.status !== 'complete') return null;
   if (parent.continue_on_complete !== true) return null;
@@ -1032,6 +1087,7 @@ function startMissionFromRunObjective(objective, args) {
     verifier: saved.verifier,
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
   const codexGoalState = refreshCodexGoalController(process.cwd());
   printJsonOrText(
     {
@@ -1047,6 +1103,7 @@ function startMissionFromRunObjective(objective, args) {
         dirty_count: worktreeBaseline.dirty_count,
         dirty_hash: worktreeBaseline.dirty_hash,
       } : null,
+      completed_continuation_goal: completedContinuationGoal,
       codex_goal_state: codexGoalState,
       next_command: codexGoalState.goal?.next_command || `atris mission tick ${saved.id} --verify`,
     },
