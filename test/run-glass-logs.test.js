@@ -192,6 +192,23 @@ test('run.js logs failed phases to run log for forensic value', () => {
   assert.match(RUN_SRC, /err\.message/);
 });
 
+test('run.js preserves runner stdout and stderr when formatting phase failures', () => {
+  assert.match(RUN_SRC, /function formatPhaseFailure\(err\)/);
+  assert.match(RUN_SRC, /stdout:\\n\$\{stdout\}/);
+  assert.match(RUN_SRC, /stderr:\\n\$\{stderr\}/);
+});
+
+test('run.js treats non-zero runner exits as failed phases, not successful stdout', () => {
+  assert.doesNotMatch(RUN_SRC, /if\s*\(\s*err\.stdout\s*\)\s*return\s+err\.stdout/);
+  assert.match(RUN_SRC, /throw new Error\(`\$\{phase\} failed: \$\{formatPhaseFailure\(err\)\}`\)/);
+});
+
+test('run.js bubbles failed cycles after writing forensic run logs', () => {
+  assert.match(RUN_SRC, /let failedCycleError = null/);
+  assert.match(RUN_SRC, /failedCycleError = err/);
+  assert.match(RUN_SRC, /throw new Error\(`run stopped after failed cycle: \$\{failedCycleError\.message\}`\)/);
+});
+
 // --- listRunLogs command ---
 
 test('listRunLogs shows no-logs message when runs dir is empty', () => {
