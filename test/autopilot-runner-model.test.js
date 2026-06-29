@@ -90,8 +90,9 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_MODEL = runnerModel/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_MODEL = runnerModel/);
-  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(args\)[\s\S]*runAtris/);
-  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(args\)[\s\S]*autopilotAtris/);
+  assert.match(BIN_SRC, /function applyRunnerFlagsOrExit\(args\)/);
+  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlagsOrExit\(args\)[\s\S]*runAtris/);
+  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlagsOrExit\(args\)[\s\S]*autopilotAtris/);
   assert.match(BIN_SRC, /--runner-bin/);
   assert.match(BIN_SRC, /--runner-template/);
   assert.match(BIN_SRC, /--runner-model/);

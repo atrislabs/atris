@@ -115,9 +115,18 @@ const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model'
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
   const inline = args.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
+  if (inline) {
+    const value = inline.slice(prefix.length);
+    if (!value) throw new Error(`${name} requires a value`);
+    return value;
+  }
   const index = args.indexOf(name);
-  if (index !== -1 && index < args.length - 1 && !String(args[index + 1]).startsWith('--')) return args[index + 1];
+  if (index !== -1) {
+    if (index >= args.length - 1 || String(args[index + 1]).startsWith('--')) {
+      throw new Error(`${name} requires a value`);
+    }
+    return args[index + 1];
+  }
   return null;
 }
 
@@ -142,6 +151,16 @@ function applyRunnerFlags(args) {
   if (runnerModel) {
     process.env.ATRIS_RUNNER_MODEL = runnerModel;
     process.env.ATRIS_CLAUDE_MODEL = runnerModel;
+  }
+}
+
+function applyRunnerFlagsOrExit(args) {
+  try {
+    applyRunnerFlags(args);
+  } catch (error) {
+    console.error(`✗ ${error.message || error}`);
+    console.error('  Use --runner-bin PATH, --runner-template CMD, --runner-model MODEL, or --runner-profile NAME.');
+    process.exit(1);
   }
 }
 
@@ -1690,7 +1709,7 @@ if (command === 'init') {
   const dryRun = args.includes('--dry-run');
   const once = args.includes('--once');
   const push = !args.includes('--no-push');
-  applyRunnerFlags(args);
+  applyRunnerFlagsOrExit(args);
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
   const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
   const timeoutArg = args.find(a => a.startsWith('--timeout='));
@@ -1713,7 +1732,7 @@ if (command === 'init') {
   const verbose = args.includes('--verbose') || args.includes('-v');
   const dryRun = args.includes('--dry-run');
   const auto = args.includes('--auto');
-  applyRunnerFlags(args);
+  applyRunnerFlagsOrExit(args);
   const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
   const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
   const durationArg = args.find(a => a.startsWith('--duration='));
