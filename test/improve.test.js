@@ -19,6 +19,7 @@ const {
   summarizeTickHistory,
   formatTickHistory,
   improveApiPath,
+  buildLocalFallbackEnv,
   SCORECARD_SCHEMA,
 } = require('../commands/improve');
 
@@ -115,6 +116,20 @@ test('buildScorecardRow: stable schema + fields', () => {
   assert.equal(row.ts, '2026-06-08T00:00:00.000Z');
 });
 
+test('buildLocalFallbackEnv: improve --model becomes the fallback runner model', () => {
+  const env = buildLocalFallbackEnv(
+    { model: 'glm-5.2' },
+    { ATRIS_RUNNER_MODEL: 'old-runner', ATRIS_CLAUDE_MODEL: 'old-claude', KEEP_ME: 'yes' }
+  );
+  assert.equal(env.ATRIS_RUNNER_MODEL, 'glm-5.2');
+  assert.equal(env.ATRIS_CLAUDE_MODEL, 'glm-5.2');
+  assert.equal(env.KEEP_ME, 'yes');
+
+  const inherited = buildLocalFallbackEnv({}, { ATRIS_RUNNER_MODEL: 'env-model', ATRIS_RUNNER_PROFILE: 'atris-fast' });
+  assert.equal(inherited.ATRIS_RUNNER_MODEL, 'env-model');
+  assert.equal(inherited.ATRIS_RUNNER_PROFILE, 'atris-fast');
+});
+
 test('appendScorecardRow: writes JSONL row to .atris/state/scorecards.jsonl', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-'));
   try {
@@ -196,22 +211,24 @@ test('appendTickToJournal: writes an Improve Tick block under ## Notes (local da
 
 test('runImprove: no auth falls back to local without calling the API', async () => {
   const { calls, deps } = fakeDeps({ loadCredentials: () => null });
-  const res = await runImprove({ workspace: '/ws', fallback: true }, deps);
+  const res = await runImprove({ workspace: '/ws', fallback: true, model: 'glm-5.2' }, deps);
   assert.equal(res.source, 'local');
   assert.equal(res.reason, 'no_auth');
   assert.equal(res.ok, true);
   assert.equal(calls.api.length, 0); // did not attempt a paid call without auth
   assert.equal(calls.local.length, 1);
+  assert.equal(calls.local[0].model, 'glm-5.2');
 });
 
 test('runImprove: unreachable backend falls back to local', async () => {
   const { calls, deps } = fakeDeps({
     apiRequestJson: async () => ({ ok: false, status: 0, error: 'Network error' }),
   });
-  const res = await runImprove({ workspace: '/ws', fallback: true }, deps);
+  const res = await runImprove({ workspace: '/ws', fallback: true, model: 'sonnet' }, deps);
   assert.equal(res.source, 'local');
   assert.equal(res.reason, 'unreachable');
   assert.equal(calls.local.length, 1);
+  assert.equal(calls.local[0].model, 'sonnet');
   assert.equal(calls.rows.length, 0); // no scorecard for a non-shipping tick
 });
 

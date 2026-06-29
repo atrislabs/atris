@@ -288,6 +288,16 @@ function resolveAtrisBin() {
   return process.env.ATRIS_BIN || 'atris';
 }
 
+function buildLocalFallbackEnv(opts = {}, baseEnv = process.env) {
+  const env = { ...baseEnv };
+  const model = opts.model != null ? String(opts.model).trim() : '';
+  if (model) {
+    env.ATRIS_RUNNER_MODEL = model;
+    env.ATRIS_CLAUDE_MODEL = model;
+  }
+  return env;
+}
+
 function runLocalFallback(opts = {}) {
   const bin = resolveAtrisBin();
   const isScript = bin.endsWith('.js');
@@ -296,7 +306,7 @@ function runLocalFallback(opts = {}) {
   const r = spawnSync(cmd, argv, {
     cwd: opts.workspace || process.cwd(),
     encoding: 'utf8',
-    env: process.env,
+    env: buildLocalFallbackEnv(opts),
     stdio: opts.json ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     timeout: Math.max(60, Number(opts.timeoutSec) || 600) * 1000,
   });
@@ -341,7 +351,7 @@ async function runImprove(opts = {}, deps = {}) {
       };
     }
     log('not logged in — falling back to a local autopilot tick');
-    const local = localFn({ workspace, json: opts.json, timeoutSec });
+    const local = localFn({ workspace, json: opts.json, timeoutSec, model: opts.model });
     return { ok: local.ok, source: 'local', reason: 'no_auth', local, startedAt, finishedAt: now() };
   }
 
@@ -384,7 +394,7 @@ async function runImprove(opts = {}, deps = {}) {
   const decide = shouldFallbackLocal({ creds, apiResult });
   if (decide.fallback && opts.fallback) {
     log(`backend ${decide.reason} — falling back to a local autopilot tick`);
-    const local = localFn({ workspace, json: opts.json, timeoutSec });
+    const local = localFn({ workspace, json: opts.json, timeoutSec, model: opts.model });
     return { ok: local.ok, source: 'local', reason: decide.reason, local, apiResult, startedAt, finishedAt: now() };
   }
 
@@ -497,5 +507,6 @@ module.exports = {
   improveApiPath,
   formatImproveReport,
   runLocalFallback,
+  buildLocalFallbackEnv,
   SCORECARD_SCHEMA,
 };
