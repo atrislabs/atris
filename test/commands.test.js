@@ -12306,6 +12306,12 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.match(html, /async function loadStream\(\)/);
 	    assert.match(html, /function requestJson\(path, options = \{\}\)/);
 	    assert.match(html, /new XMLHttpRequest\(\)/);
+	    assert.match(html, /function formatHeartbeatAge\(mins\)/);
+	    assert.match(html, /function heartbeatReasonLabel\(reason\)/);
+	    assert.match(html, /last tick is too old/);
+	    assert.match(html, /tick started but never finished/);
+	    assert.match(html, /stale heartbeat/);
+	    assert.match(html, /class="cmd">atris pulse tick/);
 	    assert.match(html, /async function loadReviewLane\(\)/);
 	    assert.match(html, /\/api\/tasks\/review-lane-drain\?limit=1/);
 	    assert.match(html, /\/api\/tasks\/review-lane-act/);

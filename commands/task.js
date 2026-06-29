@@ -8077,12 +8077,13 @@ function taskBoardHtml() {
     .full { grid-column:1 / -1; }
     .empty { color:var(--muted); font-size:12px; padding:10px; }
     /* heartbeat strip */
-    .beat { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); font-family:var(--mono); }
+    .beat { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; line-height:1.35; color:var(--muted); font-family:var(--mono); }
     .beat .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
     .beat.alive .dot { background:var(--accent); box-shadow:0 0 0 0 var(--accent-soft); animation:beat 2s cubic-bezier(0.25,1,0.5,1) infinite; }
     .beat.stale .dot { background:var(--bad); }
     .beat b { color:var(--accent); font-weight:600; }
     .beat .warn { color:var(--warn); }
+    .beat .cmd { color:var(--text); background:var(--input); border:1px solid var(--line); border-radius:6px; padding:1px 6px; }
     @keyframes beat { 0%{box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0.5)} 70%{box-shadow:0 0 0 8px oklch(74% 0.115 158 / 0)} 100%{box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0)} }
     @media (prefers-reduced-motion: reduce) { .beat.alive .dot { animation:none; } *, *::before, *::after { transition:none !important; } }
     /* activity feed */
@@ -8207,20 +8208,46 @@ function taskBoardHtml() {
       catch (e) { return ''; }
     }
 
+    function formatHeartbeatAge(mins) {
+      const n = Number(mins);
+      if (!Number.isFinite(n)) return '';
+      if (n <= 0) return 'just now';
+      const days = Math.floor(n / 1440);
+      const hours = Math.floor((n % 1440) / 60);
+      const minutes = n % 60;
+      if (days > 0) return days + 'd' + (hours ? ' ' + hours + 'h' : '') + ' ago';
+      if (hours > 0) return hours + 'h' + (minutes ? ' ' + minutes + 'm' : '') + ' ago';
+      return minutes + 'm ago';
+    }
+
+    function heartbeatReasonLabel(reason) {
+      const labels = {
+        last_tick_too_old: 'last tick is too old',
+        started_without_finish: 'tick started but never finished',
+        no_receipts: 'no ticks recorded'
+      };
+      return labels[reason] || String(reason || 'unknown heartbeat state').replace(/_/g, ' ');
+    }
+
     function renderHeartbeat(hb) {
       const el = $('heartbeat');
       el.className = 'beat ' + (hb.state || 'idle');
       if (hb.state === 'stale') {
-        el.innerHTML = '<span class="dot"></span><span class="warn">stale</span><span>· ' + esc(hb.stale_reason || '') + ' · ' + (hb.total_ticks || 0) + ' ticks</span>';
+        const age = formatHeartbeatAge(hb.last_tick_age_min);
+        const reason = heartbeatReasonLabel(hb.stale_reason);
+        el.innerHTML = '<span class="dot"></span><span class="warn">stale heartbeat</span>'
+          + '<span>· ' + esc(reason) + (age ? ' · last tick ' + esc(age) : '') + ' · ' + (hb.total_ticks || 0) + ' ticks</span>'
+          + (hb.last_what ? '<span>Last: ' + esc(hb.last_what) + '</span>' : '')
+          + '<span>Run:</span><span class="cmd">atris pulse tick</span>';
         return;
       }
       if (!hb.total_ticks) {
-        el.innerHTML = '<span class="dot"></span><span>idle · no ticks yet · run: atris pulse tick</span>';
+        el.innerHTML = '<span class="dot"></span><span>heartbeat idle · no ticks yet</span><span>Run:</span><span class="cmd">atris pulse tick</span>';
         return;
       }
-      const age = hb.last_tick_age_min == null ? '' : (hb.last_tick_age_min === 0 ? 'just now' : hb.last_tick_age_min + 'm ago');
+      const age = formatHeartbeatAge(hb.last_tick_age_min);
       el.innerHTML = '<span class="dot"></span><b>alive</b>'
-        + '<span>· last tick ' + age + '</span>'
+        + (age ? '<span>· last tick ' + esc(age) + '</span>' : '')
         + (hb.last_what ? '<span>· ' + esc(hb.last_what) + '</span>' : '')
         + '<span>· ' + hb.total_ticks + ' ticks, reward ' + (hb.reward_sum || 0) + '</span>';
     }
