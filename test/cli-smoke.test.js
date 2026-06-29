@@ -351,6 +351,44 @@ test('ax help stays local and does not start an agent turn', () => {
   assert.doesNotMatch(res.stdout, /Worked for/);
 });
 
+test('ax fast chat intercepts atris mission run before backend or model work', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'say hello world then set a new goal';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), '--fast', '--chat'], {
+      cwd: dir,
+      input: `atris mission run ${objective}\nexit\n`,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        AX_AUTO_LOG: '0',
+        ATRIS_AGENT_ID: 'mission-lead',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Mission: mission-.* · planning · atris2/);
+    assert.match(res.stdout, /Elapsed: \d+s/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.match(res.stdout, /Next: atris mission attach-task/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Start backend|Worked for|credit|Hello world/);
+
+    const goalState = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), 'utf8'));
+    assert.equal(goalState.goal.objective, objective);
+    assert.equal(goalState.goal.runner, 'atris2');
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('ax keeps chat context and file-operation proof readable', () => {
   const ax = require('../ax');
   // Hermetic: backendUrl()/buildRunProfile() read the backend env at call time.
@@ -655,6 +693,35 @@ test('bare ax shows usage instead of "Unknown command"', () => {
     assert.match(res.stdout + res.stderr, /atris ax fast/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('ax fast intercepts atris mission run as a local Atris goal', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'say hello world then set a new goal';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = runCli(['ax', 'fast', `atris mission run ${objective}`], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_AGENT_ID: 'mission-lead' },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Mission: mission-.* · planning · atris2/);
+    assert.match(res.stdout, /Elapsed: \d+s/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.match(res.stdout, /Next: atris mission attach-task/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Not logged in|Atris2 Fast|Worked for|credit/);
+
+    const goalState = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), 'utf8'));
+    assert.equal(goalState.goal.objective, objective);
+    assert.equal(goalState.goal.runner, 'atris2');
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
   }
 });
 

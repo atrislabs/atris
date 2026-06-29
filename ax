@@ -8,6 +8,7 @@ const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
 const { Readable } = require('stream');
+const { spawnSync } = require('child_process');
 const { loadCredentials } = require('./utils/auth');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
@@ -681,6 +682,199 @@ function formatDoneLine(ms, credits) {
     return `${base} · ${credits} ${credits === 1 ? 'credit' : 'credits'} —`;
   }
   return `${base} —`;
+}
+
+function stripMissionQuotes(value) {
+  const text = String(value || '').trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return text.slice(1, -1).trim();
+    }
+  }
+  return text;
+}
+
+function extractMissionFlag(text, flagName) {
+  const source = String(text || '');
+  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
+  if (inline) {
+    return {
+      value: inline[2],
+      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
+  if (split) {
+    return {
+      value: split[2],
+      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  return { value: null, text: source.trim() };
+}
+
+function missionRunIntentFromMessage(message) {
+  const text = String(message || '').trim();
+  const match = /^atris\s+mission\s+run(?:\s+([\s\S]+))?$/i.exec(text);
+  if (!match) return null;
+
+  let rest = String(match[1] || '').trim();
+  const ownerFlag = extractMissionFlag(rest, '--owner');
+  rest = ownerFlag.text.replace(/(^|\s)--json(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+
+  return {
+    objective: stripMissionQuotes(rest),
+    owner: ownerFlag.value || process.env.ATRIS_AGENT_ID || 'mission-lead',
+  };
+}
+
+function loadMissionRecord(cwd, missionId) {
+  if (!missionId) return null;
+  try {
+    const statePath = path.join(cwd || process.cwd(), '.atris', 'state', 'missions.jsonl');
+    if (!fs.existsSync(statePath)) return null;
+    const lines = fs.readFileSync(statePath, 'utf8').split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let record;
+      try {
+        record = JSON.parse(lines[i]);
+      } catch (_) {
+        continue;
+      }
+      const id = record && (record.id || record.mission_id);
+      if (id === missionId) return record;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
+function currentAtrisGoal(cwd = process.cwd()) {
+  try {
+    const statePath = path.join(cwd, '.atris', 'state', 'atris_goal.json');
+    if (!fs.existsSync(statePath)) return null;
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const goal = state && state.goal;
+    if (!goal || !goal.objective) return null;
+    const mission = loadMissionRecord(cwd, goal.mission_id);
+    return {
+      ...goal,
+      mission_status: mission?.status || goal.mission_status,
+      created_at: goal.created_at || mission?.created_at || null,
+      updated_at: goal.updated_at || mission?.updated_at || null,
+      completed_at: goal.completed_at || mission?.completed_at || null,
+      next_command: goal.next_command || mission?.next_action || null,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function goalElapsedSeconds(goal) {
+  const started = Date.parse(goal?.created_at || '');
+  if (!Number.isFinite(started)) return null;
+  const ended = Date.parse(goal?.completed_at || '') || Date.now();
+  return Math.max(0, Math.floor((ended - started) / 1000));
+}
+
+function goalAchieved(goal) {
+  return ['complete', 'completed', 'achieved'].includes(String(goal?.mission_status || goal?.status || '').toLowerCase());
+}
+
+function formatAtrisGoal(goal) {
+  if (!goal) return '';
+  const objective = String(goal.objective || '').length > 92
+    ? `${String(goal.objective).slice(0, 89)}...`
+    : String(goal.objective || '');
+  const elapsed = goalElapsedSeconds(goal);
+  const missionParts = [
+    goal.mission_id || '?',
+    goal.mission_status || '?',
+    goal.runner || 'mission',
+  ];
+  if (elapsed !== null) missionParts.push(`elapsed ${formatSeconds(elapsed)}`);
+  missionParts.push(`achieved ${goalAchieved(goal) ? 'yes' : 'no'}`);
+  return [
+    `Atris goal: ${objective}`,
+    `Mission: ${missionParts.join(' · ')}`,
+    goal.next_command ? `Next: ${goal.next_command}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function writeAtrisGoalBanner(output, cwd = process.cwd()) {
+  const text = formatAtrisGoal(currentAtrisGoal(cwd));
+  if (!text) return false;
+  output.write(`${text}\n\n`);
+  return true;
+}
+
+function formatMissionStartReceipt(payload) {
+  const mission = payload?.mission || {};
+  const goal = payload?.atris_goal_state?.goal || {};
+  const receiptGoal = {
+    ...goal,
+    objective: goal.objective || mission.objective,
+    mission_id: goal.mission_id || mission.id,
+    mission_status: goal.mission_status || mission.status,
+    runner: goal.runner || mission.runner,
+    created_at: goal.created_at || mission.created_at,
+    updated_at: goal.updated_at || mission.updated_at,
+    completed_at: goal.completed_at || mission.completed_at,
+    next_command: goal.next_command || payload?.next_command || mission.next_action,
+  };
+  const elapsed = goalElapsedSeconds(receiptGoal);
+  return [
+    'Atris mission started',
+    `Goal: ${receiptGoal.objective || '?'}`,
+    `Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`,
+    `Elapsed: ${elapsed === null ? '0s' : formatSeconds(elapsed)}`,
+    `Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`,
+    receiptGoal.next_command ? `Next: ${receiptGoal.next_command}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function runLocalMission(intent, options = {}) {
+  if (!intent?.objective) {
+    return { ok: false, status: 1, text: 'Usage: atris mission run "<objective>"' };
+  }
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(__dirname, 'bin', 'atris.js'),
+      'mission',
+      'run',
+      intent.objective,
+      '--runner',
+      'atris2',
+      '--owner',
+      intent.owner || 'mission-lead',
+      '--json',
+    ],
+    {
+      cwd: options.cwd || process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    },
+  );
+
+  if (result.error) {
+    return { ok: false, status: 1, text: `Error: ${result.error.message || result.error}` };
+  }
+  if (result.status !== 0) {
+    return { ok: false, status: result.status || 1, text: `${result.stdout || ''}${result.stderr || ''}`.trim() };
+  }
+  try {
+    const payload = JSON.parse(result.stdout);
+    return { ok: true, status: 0, payload, text: formatMissionStartReceipt(payload) };
+  } catch (_) {
+    return { ok: true, status: 0, payload: null, text: String(result.stdout || '').trim() };
+  }
 }
 
 function useColor(options = {}) {
@@ -1967,6 +2161,7 @@ async function chat(options = {}) {
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
+  writeAtrisGoalBanner(output, cwd);
 
   const runtimePreflight = { ready: false };
   const ensureRuntimeReady = async () => {
@@ -2014,6 +2209,16 @@ async function chat(options = {}) {
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
+
+    const missionIntent = missionRunIntentFromMessage(trimmed);
+    if (missionIntent) {
+      const result = runLocalMission(missionIntent, { cwd });
+      output.write(`${result.text || 'Mission command failed.'}\n\n`);
+      history.push({ role: 'user', content: trimmed });
+      history.push({ role: 'assistant', content: result.text || 'Mission command failed.' });
+      return false;
+    }
+
     const pendingApprovalRequest = latestPendingApprovalRequest(history);
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageCancelsPendingApproval(trimmed)) {
       const startedAt = Date.now();
@@ -2071,6 +2276,7 @@ async function chat(options = {}) {
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
+    writeAtrisGoalBanner(output, cwd);
     if (!(await ensureRuntimeReady())) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
@@ -2916,6 +3122,14 @@ async function main() {
     .join(' ')
     .trim();
 
+  const missionIntent = missionRunIntentFromMessage(prompt);
+  if (missionIntent) {
+    const result = runLocalMission(missionIntent, { cwd: process.cwd() });
+    console.log(result.text || 'Mission command failed.');
+    if (!result.ok) process.exit(result.status || 1);
+    return;
+  }
+
   let business = null;
   if (businessSlug) {
     if (normalizeMode(mode) === 'code-fast') {
@@ -2990,6 +3204,7 @@ async function main() {
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
+    writeAtrisGoalBanner(process.stdout, process.cwd());
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
