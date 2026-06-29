@@ -111,6 +111,8 @@ let command = process.argv[2];
 const commandArgs = process.argv.slice(3);
 const firstCommandArg = process.argv[3];
 const RUNNER_FLAG_NAMES = ['--runner-bin', '--runner-template', '--runner-model', '--runner-profile'];
+const AUTONOMY_VALUE_FLAG_NAMES = ['--cycles', '--timeout', '--iterations', '--duration'];
+const VALUE_FLAG_NAMES = [...RUNNER_FLAG_NAMES, ...AUTONOMY_VALUE_FLAG_NAMES];
 
 function readOptionArg(args, name) {
   const prefix = `${name}=`;
@@ -829,8 +831,8 @@ function showAutopilotHelp() {
   console.log('');
   console.log('Options:');
   console.log('  --auto           Execute without waiting for approval');
-  console.log('  --duration=TIME  Run for a time limit (e.g. 1h, 30m, 90m)');
-  console.log('  --iterations=N   Max tasks before stopping');
+  console.log('  --duration TIME  Run for a time limit (e.g. 1h, 30m, 90m; also supports --duration=TIME)');
+  console.log('  --iterations N   Max tasks before stopping (also supports --iterations=N)');
   console.log('  --verbose, -v    Show detailed runner output');
   console.log('  --dry-run        Show suggestions without executing');
   console.log('  --runner-bin PATH       Runner binary for this run');
@@ -1739,11 +1741,11 @@ if (command === 'init') {
     console.log('Reads inbox ideas, creates tasks, builds them, validates, repeats.');
     console.log('');
     console.log('Options:');
-    console.log('  --cycles=N    Max cycles (default: 5)');
+    console.log('  --cycles N    Max cycles (default: 5; also supports --cycles=N)');
     console.log('  --once        Single plan→do→review cycle');
     console.log('  --verbose     Show configured runner output');
     console.log('  --dry-run     Preview without executing');
-    console.log('  --timeout=N   Phase timeout in seconds (default: 600)');
+    console.log('  --timeout N   Phase timeout in seconds (default: 600; also supports --timeout=N)');
     console.log('  --runner-bin PATH       Runner binary for this run');
     console.log('  --runner-template CMD   Runner command template for this run');
     console.log('  --runner-model MODEL    Runner model for this run');
@@ -1769,10 +1771,8 @@ if (command === 'init') {
   const once = args.includes('--once');
   const push = !args.includes('--no-push');
   applyRunnerFlags(args);
-  const cyclesArg = args.find(a => a.startsWith('--cycles='));
-  const maxCycles = parsePositiveIntegerOption(cyclesArg ? cyclesArg.split('=')[1] : null, '--cycles', 5);
-  const timeoutArg = args.find(a => a.startsWith('--timeout='));
-  const timeoutSec = parsePositiveIntegerOption(timeoutArg ? timeoutArg.split('=')[1] : null, '--timeout', undefined);
+  const maxCycles = parsePositiveIntegerOption(readOptionArg(args, '--cycles'), '--cycles', 5);
+  const timeoutSec = parsePositiveIntegerOption(readOptionArg(args, '--timeout'), '--timeout', undefined);
   const timeout = timeoutSec !== undefined ? timeoutSec * 1000 : undefined;
 
   require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
@@ -1793,13 +1793,11 @@ if (command === 'init') {
   const dryRun = args.includes('--dry-run');
   const auto = args.includes('--auto');
   applyRunnerFlags(args);
-  const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const maxIterations = parsePositiveIntegerOption(maxIterationsArg ? maxIterationsArg.split('=')[1] : null, '--iterations', undefined);
-  const durationArg = args.find(a => a.startsWith('--duration='));
-  const duration = parseDurationOption(durationArg ? durationArg.split('=')[1] : null, '--duration');
+  const maxIterations = parsePositiveIntegerOption(readOptionArg(args, '--iterations'), '--iterations', undefined);
+  const duration = parseDurationOption(readOptionArg(args, '--duration'), '--duration');
 
   // Get description (non-flag args)
-  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;
+  const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, VALUE_FLAG_NAMES)).join(' ').trim() || null;
 
   const options = {
     ...(maxIterations !== undefined && { maxIterations }),

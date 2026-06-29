@@ -757,7 +757,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Staleness gate:** `commands/autopilot.js:3508` (`isStillTrue`) — takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only — no model calls.
 - **Model freshness check:** `commands/autopilot.js:3577` (`askModel`) — called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
 - **Staleness wiring:** `commands/autopilot.js:77` (suggestNextTask staleness gate) — after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
-- **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
+- **Flags:** `--auto` (no approval), `--iterations N` / `--iterations=N`, `--duration TIME` / `--duration=TIME`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
+- **Option parsing:** `bin/atris.js` accepts both equals and space forms for `--duration` / `--iterations`, and filters those option values out of the optional description so `atris autopilot --auto --duration 8h` cannot seed `8h` as inbox work. Regression: `test/autopilot-runner-model.test.js`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
 **Search:** `rg "autopilotAtris|suggestNextTask" commands/autopilot.js`
@@ -783,7 +784,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Post-cycle clean:** `commands/run.js:451` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:321` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
-- **Autonomy option parser:** `bin/atris.js` rejects invalid `run --cycles/--timeout` and `autopilot --iterations/--duration` values before execution, so bad limits cannot silently default or truncate. Regression: `test/autopilot-runner-model.test.js`
+- **Autonomy option parser:** `bin/atris.js` accepts both equals and space forms for `run --cycles/--timeout`, rejects invalid `run --cycles/--timeout` and `autopilot --iterations/--duration` values before execution, so bad limits cannot silently default or truncate. Regression: `test/autopilot-runner-model.test.js`
 - **Help text:** `bin/atris.js:326` (showHelp function)
 - **Known commands:** `bin/atris.js:824` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
@@ -791,8 +792,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
   - `--once` — Single plan→do→review cycle
   - `--verbose` / `-v` — Show configured runner output (stdio: inherit)
   - `--dry-run` — Preview context without executing
-  - `--cycles=N` — Max cycles (default: 5)
-  - `--timeout=N` — Phase timeout in seconds (default: 600)
+  - `--cycles N` / `--cycles=N` — Max cycles (default: 5)
+  - `--timeout N` / `--timeout=N` — Phase timeout in seconds (default: 600)
   - `--runner-bin PATH` — Runner binary for this run
   - `--runner-template CMD` — Runner command template for this run
   - `--runner-model MODEL` — Runner model for this run

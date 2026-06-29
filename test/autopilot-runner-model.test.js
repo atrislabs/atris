@@ -96,7 +96,7 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /--runner-template/);
   assert.match(BIN_SRC, /--runner-model/);
   assert.match(BIN_SRC, /--runner-profile/);
-  assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
+  assert.match(BIN_SRC, /!isOptionValue\(args, i, VALUE_FLAG_NAMES\)/);
 });
 
 test('run and autopilot reject invalid loop limit values before execution', () => {
@@ -109,6 +109,16 @@ test('run and autopilot reject invalid loop limit values before execution', () =
   assert.match(BIN_SRC, /const maxIterations = parsePositiveIntegerOption\(/);
   assert.match(BIN_SRC, /const duration = parseDurationOption\(/);
   assert.match(AUTOPILOT_SRC, /if \(duration && !durationMs\) \{[\s\S]*Invalid duration/);
+});
+
+test('run and autopilot parse space-form value flags without leaking descriptions', () => {
+  assert.match(BIN_SRC, /const AUTONOMY_VALUE_FLAG_NAMES = \['--cycles', '--timeout', '--iterations', '--duration'\]/);
+  assert.match(BIN_SRC, /const VALUE_FLAG_NAMES = \[\.\.\.RUNNER_FLAG_NAMES, \.\.\.AUTONOMY_VALUE_FLAG_NAMES\]/);
+  assert.match(BIN_SRC, /parsePositiveIntegerOption\(readOptionArg\(args, '--cycles'\), '--cycles', 5\)/);
+  assert.match(BIN_SRC, /parsePositiveIntegerOption\(readOptionArg\(args, '--timeout'\), '--timeout', undefined\)/);
+  assert.match(BIN_SRC, /parsePositiveIntegerOption\(readOptionArg\(args, '--iterations'\), '--iterations', undefined\)/);
+  assert.match(BIN_SRC, /parseDurationOption\(readOptionArg\(args, '--duration'\), '--duration'\)/);
+  assert.match(BIN_SRC, /isOptionValue\(args, i, VALUE_FLAG_NAMES\)/);
 });
 
 test('mission claude ticks spawn the configured runner binary', () => {
