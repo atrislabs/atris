@@ -13,6 +13,9 @@ const GENERATED_LOAD_ORDER_FILES = [
   'atris/brain/STATUS.md',
   'atris/brain/self_improvement_ledger.md',
 ];
+const OPTIONAL_STATE_LOAD_ORDER_FILES = [
+  '.atris/state/chat_scan.latest.json',
+];
 const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/wiki/concepts/agent-activation-contract.md',
   'atris/skills/atris/SKILL.md',
@@ -1128,7 +1131,65 @@ function taskEpisodeScorecard(root, episode, workspace, ts = new Date().toISOStr
     lesson: episode.lesson || '',
     proof: episode.proof || '',
     next_task_suggestion: episode.next_task_suggestion || null,
+    review_landing: episode.review_landing || null,
+    landing_quality: episode.landing_quality || null,
+    human_feedback: episode.human_feedback || null,
+    approval_status: episode.human_feedback && episode.human_feedback.approval_status || episode.rl && episode.rl.approval_status || null,
+    rl_label: episode.rl && episode.rl.label || null,
     episode_created_at: episode.created_at || episode.ts || null,
+  };
+}
+
+function landingQualityFromReviewLanding(landing) {
+  const normalized = {
+    happened: landing && landing.happened || null,
+    checked: landing && landing.checked || null,
+    tested: landing && landing.tested || null,
+    decision: landing && landing.decision || null,
+  };
+  const present = Object.entries(normalized)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+  const missing = Object.keys(normalized).filter(key => !normalized[key]);
+  return {
+    present,
+    missing,
+    completeness: present.length / Object.keys(normalized).length,
+    has_decision: Boolean(normalized.decision),
+  };
+}
+
+function taskProjectionByEpisodeId(root) {
+  const tasks = readTaskProjectionTasks(root) || [];
+  const byId = new Map();
+  for (const task of tasks) {
+    for (const key of [task.id, task.display_id, task.legacy_ref, task.ref].filter(Boolean)) {
+      byId.set(String(key), task);
+    }
+  }
+  return byId;
+}
+
+function enrichTaskEpisodeFromProjection(episode, taskById) {
+  if (episode.review_landing) return episode;
+  const task = taskById.get(String(episode.task_id || ''));
+  const landing = task?.review?.landing || null;
+  if (!landing) return episode;
+  const approvalStatus = task?.review?.approval_status || episode.human_feedback?.approval_status || episode.rl?.approval_status || null;
+  return {
+    ...episode,
+    review_landing: landing,
+    landing_quality: episode.landing_quality || landingQualityFromReviewLanding(landing),
+    human_feedback: episode.human_feedback || {
+      approval_status: approvalStatus,
+      human_revision_count: Number(task?.review?.human_revision_count || 0),
+      human_revision_note: task?.review?.human_revision_note || null,
+    },
+    rl: episode.rl ? {
+      ...episode.rl,
+      landing_completeness: episode.rl.landing_completeness ?? landingQualityFromReviewLanding(landing).completeness,
+      approval_status: episode.rl.approval_status || approvalStatus,
+    } : episode.rl,
   };
 }
 
@@ -1154,19 +1215,31 @@ function recordTaskEpisodeScorecards(options) {
     {};
   const taskEpisodes = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'task_episodes.jsonl')))
     .filter(row => row && row.schema === 'atris.task_episode.v1');
-  const scoreableEpisodes = latestTaskEpisodes(taskEpisodes);
+  const taskById = taskProjectionByEpisodeId(stateRoot);
+  if (stateRoot !== root) {
+    for (const [key, task] of taskProjectionByEpisodeId(root)) taskById.set(key, task);
+  }
+  const scoreableEpisodes = latestTaskEpisodes(taskEpisodes)
+    .map(episode => enrichTaskEpisodeFromProjection(episode, taskById));
   const existing = stateDirs.flatMap(item => readJsonlRows(path.join(item, 'scorecards.jsonl')));
-  const seenEpisodeIds = new Set(existing
-    .map(row => row.source_episode_id)
-    .filter(Boolean));
+  const existingByEpisodeId = new Map();
+  for (const row of existing) {
+    if (!row.source_episode_id) continue;
+    const rows = existingByEpisodeId.get(row.source_episode_id) || [];
+    rows.push(row);
+    existingByEpisodeId.set(row.source_episode_id, rows);
+  }
 
   const written = [];
   for (const episode of scoreableEpisodes) {
     const episodeId = episode.episode_id;
-    if (seenEpisodeIds.has(episodeId)) continue;
     const scorecard = taskEpisodeScorecard(root, episode, workspace);
+    const existingRows = existingByEpisodeId.get(episodeId) || [];
+    const existingHasLanding = existingRows.some(row => row.review_landing);
+    if (existingRows.length && (!scorecard.review_landing || existingHasLanding)) continue;
     appendJsonl(scorecardsPath, scorecard);
-    seenEpisodeIds.add(episodeId);
+    existingRows.push(scorecard);
+    existingByEpisodeId.set(episodeId, existingRows);
     written.push(scorecard);
   }
 
@@ -1212,9 +1285,11 @@ function verifyApproval(root, approvalId) {
 
 function brainLoadOrderFiles(state) {
   const root = state.root;
+  const existingState = OPTIONAL_STATE_LOAD_ORDER_FILES
+    .filter(rel => fs.existsSync(path.join(root, rel)));
   const existing = OPTIONAL_LOAD_ORDER_FILES
     .filter(rel => fs.existsSync(path.join(root, rel)));
-  return [...GENERATED_LOAD_ORDER_FILES, ...existing];
+  return [...GENERATED_LOAD_ORDER_FILES, ...existingState, ...existing];
 }
 
 function renderNumberedLoadOrder(state) {

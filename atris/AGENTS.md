@@ -14,6 +14,11 @@ task truth, proof, review, and backend/cloud sync all flow through Atris.
 4. Track work with `atris task`; use `atris/TODO.md` only as the rendered fallback view.
 5. Preferred loop: `atris plan` → `atris do` → `atris review`.
 
+Task owners are functional or feature members, not engines. Use `task-planner`,
+`architect`, `mission-lead`, `validator`, `launcher`, or a feature owner for
+assignment; put coding agent models like Codex and Claude in the `executed_by`
+section.
+
 ## Mission Autonomy
 
 Use `atris mission` when work should survive this chat or run as an autonomous loop.

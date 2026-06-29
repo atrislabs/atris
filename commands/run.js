@@ -1,5 +1,5 @@
 /**
- * Atris Run — Auto-chain plan → do → review cycles
+ * Atris Run - Auto-chain plan → do → review cycles
  *
  * The ignition switch. Reads inbox/backlog, loops autonomously
  * until work is done or max cycles reached.
@@ -52,7 +52,7 @@ function getRunLogPath(runStamp, cycle) {
  */
 function writePhaseToRunLog(runLogPath, cycle, phase, output, durationMs) {
   const now = new Date().toISOString();
-  const header = `# Run Log — Cycle ${cycle}\n\n> Generated: ${now}\n\n`;
+  const header = `# Run Log - Cycle ${cycle}\n\n> Generated: ${now}\n\n`;
   const phaseSection = `## ${phase.toUpperCase()} (${Math.round(durationMs / 1000)}s)\n\n${output || '(no output)'}\n\n---\n\n`;
 
   if (!fs.existsSync(runLogPath)) {
@@ -115,7 +115,7 @@ function execPhaseCommandSync(cmd, opts = {}) {
  * Build prompt for each phase with full context.
  * If priorCycleReview is provided (from the previous cycle's review phase),
  * it is injected into the plan prompt so the navigator can adjust based on
- * what the validator found — closing the try → notice → adjust loop.
+ * what the validator found - closing the try → notice → adjust loop.
  */
 function buildRunPrompt(phase, context, priorCycleReview) {
   const { mapPath, todoPath, personaPath, lessonsPath, journalPath } = context;
@@ -153,12 +153,12 @@ Workflow:
 1. Read the journal's ## Inbox section for ideas/tasks
 2. Read MAP.md for codebase navigation (file:line references)
 3. Read lessons.md for past learnings (if it exists)
-${(priorCycleReview && priorCycleReview.trim()) ? "4. Read the Previous Cycle's Review above — adjust planning based on what the validator found\n" : ""}5. For each inbox item, create a task in TODO.md under ## Backlog
+${(priorCycleReview && priorCycleReview.trim()) ? "4. Read the Previous Cycle's Review above - adjust planning based on what the validator found\n" : ""}5. For each inbox item, create a task in TODO.md under ## Backlog
    Format: - **T#:** Description [execute]
 6. Keep tasks small and specific (one function, one file, one fix)
 7. Do NOT write code. Planning only.
 
-If inbox is empty but TODO.md has backlog tasks, skip planning — tasks already exist.
+If inbox is empty but TODO.md has backlog tasks, skip planning - tasks already exist.
 If both inbox and backlog are empty, reply: [NOTHING_TO_DO]
 
 Reply [PLAN_COMPLETE] when done.`;
@@ -171,7 +171,7 @@ Read these files first:
 ${readFiles}
 
 Workflow:
-1. Read TODO.md — pick the first task from ## Backlog
+1. Read TODO.md - pick the first task from ## Backlog
 2. Move it to ## In Progress with: **Claimed by:** Executor at ${new Date().toISOString()}
 3. Read MAP.md to find exact file:line locations
 4. Implement the task step by step
@@ -191,7 +191,7 @@ Read these files first:
 ${readFiles}
 
 Workflow:
-1. Read TODO.md — find the task in ## In Progress
+1. Read TODO.md - find the task in ## In Progress
 2. Review the implementation:
    - Does it actually work? Test it if possible.
    - Does it follow existing patterns? (check MAP.md)
@@ -257,27 +257,45 @@ function executePhase(phase, context, options = {}) {
 /**
  * Check if there's work to do (inbox items or backlog tasks)
  */
-function hasWork(atrisDir) {
+function hasInboxOrBacklogWork(atrisDir) {
   // Check backlog tasks
   const todoPath = path.join(atrisDir, 'TODO.md');
   const todo = parseTodo(todoPath);
   if (todo.backlog.length > 0 || todo.inProgress.length > 0) return true;
 
-  // Check inbox
-  const { logFile } = getLogPath();
-  if (fs.existsSync(logFile)) {
-    const content = fs.readFileSync(logFile, 'utf8');
-    const inboxMatch = content.match(/## Inbox\r?\n([\s\S]*?)(?=\r?\n##|$)/);
-    if (inboxMatch && inboxMatch[1].trim()) {
-      const items = inboxMatch[1].trim().split('\n').filter(l => {
-        const t = l.trim();
-        return t.startsWith('- ') && t.length > 2;
-      });
-      if (items.length > 0) return true;
-    }
-  }
+  // Check today's inbox through the ONE shared parser, so the gate, the seed
+  // picker, and the seeder all read the same file with the same section bounds.
+  try {
+    if (require('../lib/next-moves').todayInboxItems(process.cwd()).length > 0) return true;
+  } catch { /* best-effort */ }
 
   return false;
+}
+
+// Raw count of unchecked ROADMAP open items. Utility for status/reporting; the
+// work gate below does NOT use it (a raw count and the seed picker can disagree
+// once items are handled/killed), it uses pickRoadmapSeed directly.
+function roadmapOpenCount(atrisDir) {
+  try {
+    return require('../lib/next-moves').readRoadmapOpenItems(path.dirname(atrisDir)).length;
+  } catch {
+    return 0;
+  }
+}
+
+// A seedable ROADMAP item (the exact thing the idle loop would pull) counts as
+// work. Using pickRoadmapSeed here means the work gate and the seed path are the
+// SAME signal, so the loop never spins on an empty inbox with nothing to seed.
+function hasSeedableRoadmapItem(atrisDir) {
+  try {
+    return require('../lib/next-moves').pickRoadmapSeed(path.dirname(atrisDir)) != null;
+  } catch {
+    return false;
+  }
+}
+
+function hasWork(atrisDir) {
+  return hasInboxOrBacklogWork(atrisDir) || hasSeedableRoadmapItem(atrisDir);
 }
 
 /**
@@ -331,7 +349,7 @@ function logRunCompletion(cycles, startTime, cycleTimings = []) {
     timingLines = '\n' + timingLines;
   }
 
-  const entry = `\n### Atris Run — ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s${timingLines}\n`;
+  const entry = `\n### Atris Run - ${new Date().toLocaleTimeString()}\n- Cycles: ${cycles}\n- Duration: ${duration}s${timingLines}\n`;
 
   if (content.includes('## Notes')) {
     content = content.replace(/(## Notes[^\n]*\n)/, `$1${entry}\n`);
@@ -343,7 +361,7 @@ function logRunCompletion(cycles, startTime, cycleTimings = []) {
 }
 
 /**
- * Main run function — the ignition switch
+ * Main run function - the ignition switch
  */
 async function runAtris(options = {}) {
   const {
@@ -374,7 +392,7 @@ async function runAtris(options = {}) {
   console.log('');
   if (verbose) {
     console.log('┌─────────────────────────────────────────────────────────────┐');
-    console.log(`│ Atris Run v${pkg.version} — autonomous plan → do → review       │`);
+    console.log(`│ Atris Run v${pkg.version} - autonomous plan → do → review       │`);
     console.log('└─────────────────────────────────────────────────────────────┘');
     console.log('');
     console.log(`Max cycles: ${cycles}`);
@@ -383,9 +401,9 @@ async function runAtris(options = {}) {
     console.log(`Run logs: atris/logs/runs/`);
     console.log('');
   } else {
-    console.log(`atris run v${pkg.version} — plan, do, review, repeat.`);
+    console.log(`atris run v${pkg.version} - plan, do, review, repeat.`);
     console.log(`i'll run up to ${cycles} cycle${cycles === 1 ? '' : 's'}, ${timeout / 1000}s per phase. next i'll check the backlog.`);
-    console.log(`phase reasoning will be saved to atris/logs/runs/ — you can read what i thought after.`);
+    console.log(`phase reasoning will be saved to atris/logs/runs/ - you can read what i thought after.`);
     console.log('');
   }
 
@@ -410,7 +428,7 @@ async function runAtris(options = {}) {
   const cycleTimings = [];
   const writtenRunLogs = [];
   let completedCycles = 0;
-  let lastReviewOutput = null; // Carried to next cycle's plan — closes the loop
+  let lastReviewOutput = null; // Carried to next cycle's plan - closes the loop
 
   for (let cycle = 1; cycle <= cycles; cycle++) {
     if (verbose) {
@@ -419,6 +437,28 @@ async function runAtris(options = {}) {
       console.log(`${'━'.repeat(60)}`);
     } else {
       console.log(`\ncycle ${cycle} of ${cycles}.`);
+    }
+
+    // If there's no inbox/backlog work, pull the top open ROADMAP item into the
+    // inbox so this cycle pursues the goal. This is how the loop reads ROADMAP.
+    if (!hasInboxOrBacklogWork(atrisDir)) {
+      try {
+        const { pickRoadmapSeed, seedInboxFromMove, claimRoadmapItem } = require('../lib/next-moves');
+        const pick = pickRoadmapSeed(process.cwd());
+        if (pick) {
+          // Seed THEN claim. A crash after the seed leaves the item in the inbox
+          // (carried as recoverable work) rather than claimed-but-lost; the seed
+          // is idempotent by title so a retry will not duplicate it. The claim
+          // ('- [~]' in the Open loop items section) then drops it from the open
+          // set so the next idle cycle advances. ROADMAP state is the one source
+          // of truth the work gate and the seed picker both read.
+          seedInboxFromMove(process.cwd(), { title: pick.title, source: 'roadmap' });
+          claimRoadmapItem(process.cwd(), pick.title);
+          console.log(verbose
+            ? `Seeded from ROADMAP: ${pick.title}`
+            : `no inbox or backlog work, so i pulled the top ROADMAP item: ${pick.title}`);
+        }
+      } catch { /* roadmap seeding is best-effort */ }
     }
 
     // Check if there's work
@@ -435,7 +475,7 @@ async function runAtris(options = {}) {
     try {
       // PLAN
       console.log(verbose
-        ? '\n[1/3] PLAN — reading inbox, creating tasks...'
+        ? '\n[1/3] PLAN - reading inbox, creating tasks...'
         : 'planning… reading inbox, turning ideas into tasks.');
       if (lastReviewOutput && verbose) {
         console.log('  [loop] carrying previous review into plan prompt');
@@ -462,7 +502,7 @@ async function runAtris(options = {}) {
       }
 
       // DO
-      console.log(verbose ? '\n[2/3] DO — building task...' : 'building the top task now.');
+      console.log(verbose ? '\n[2/3] DO - building task...' : 'building the top task now.');
       phaseStart = Date.now();
       const doOutput = executePhase('do', context, { verbose, timeout });
       timing.do = Date.now() - phaseStart;
@@ -473,13 +513,13 @@ async function runAtris(options = {}) {
         : `built in ${Math.round(timing.do / 1000)}s. next i'll review it.`);
 
       // REVIEW
-      console.log(verbose ? '\n[3/3] REVIEW — validating...' : 'reviewing the change against tests and validate.md.');
+      console.log(verbose ? '\n[3/3] REVIEW - validating...' : 'reviewing the change against tests and validate.md.');
       phaseStart = Date.now();
       const reviewOutput = executePhase('review', context, { verbose, timeout });
       timing.review = Date.now() - phaseStart;
       writePhaseToRunLog(runLogPath, cycle, 'review', reviewOutput, timing.review);
 
-      // Carry the review output into the next cycle's plan — closes the loop
+      // Carry the review output into the next cycle's plan - closes the loop
       lastReviewOutput = reviewOutput;
 
       // Persist the verdict durably so the brain can see the review actually ran.
@@ -503,7 +543,7 @@ async function runAtris(options = {}) {
 
       // Self-heal MAP.md refs after each cycle
       console.log(verbose
-        ? '\n[+] CLEAN — healing MAP.md refs...'
+        ? '\n[+] CLEAN - healing MAP.md refs...'
         : 'cleaning up drifted MAP.md refs.');
       try {
         cleanAtris({ dryRun: false });
@@ -513,7 +553,7 @@ async function runAtris(options = {}) {
 
       // Auto-push if not disabled
       if (push) {
-        console.log(verbose ? '\n[+] PUSH — pushing to remote...' : 'pushing to remote.');
+        console.log(verbose ? '\n[+] PUSH - pushing to remote...' : 'pushing to remote.');
         try {
           execSync('git push', { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
           console.log(verbose ? '✓ Pushed to remote' : 'pushed.');
@@ -653,7 +693,7 @@ function listRunLogs(args = []) {
     const filePath = path.join(runsDir, file);
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n');
-    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
     const phases = [...content.matchAll(/## (\w+)/g)].map(m => m[1]);
     return {
       file,
@@ -819,7 +859,7 @@ function searchRunLogs(args = []) {
   }
 
   console.log('');
-  console.log(`Search: "${keyword}" — ${results.length} match${results.length === 1 ? '' : 'es'} in ${files.length} run log${files.length === 1 ? '' : 's'}:`);
+  console.log(`Search: "${keyword}" - ${results.length} match${results.length === 1 ? '' : 'es'} in ${files.length} run log${files.length === 1 ? '' : 's'}:`);
   console.log('');
 
   const shown = results.slice(0, limit);
@@ -860,7 +900,7 @@ function statsRunLogs() {
     const filePath = path.join(runsDir, file);
     const content = fs.readFileSync(filePath, 'utf8');
 
-    const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+    const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
     if (cycleMatch) totalCycles++;
 
     // Extract phase headers with durations: ## PLAN (3s)
@@ -885,7 +925,7 @@ function statsRunLogs() {
     const count = phaseCounts[phase];
     const durs = phaseDurations[phase] || [];
     const avg = durs.length > 0 ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0;
-    console.log(`  ${phase.padEnd(7)} │ ${String(count).padStart(5)} │ ${avg > 0 ? avg + 's' : '—'}`);
+    console.log(`  ${phase.padEnd(7)} │ ${String(count).padStart(5)} │ ${avg > 0 ? avg + 's' : '-'}`);
   }
   console.log('');
 }
@@ -922,7 +962,7 @@ function exportRunLogs(args = []) {
     logs: files.map(file => {
       const filePath = path.join(runsDir, file);
       const content = fs.readFileSync(filePath, 'utf8');
-      const cycleMatch = content.match(/# Run Log — Cycle (\d+)/);
+      const cycleMatch = content.match(/# Run Log - Cycle (\d+)/);
       const phases = [...content.matchAll(/## (\w+)\s*\((\d+)s\)/g)].map(m => ({
         name: m[1],
         duration_s: parseInt(m[2]),
@@ -1022,4 +1062,4 @@ function diffRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
+module.exports = { runAtris, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };

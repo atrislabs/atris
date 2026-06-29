@@ -11,6 +11,10 @@ const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
+const {
+  normalizeOwnerSlug,
+  resolveFunctionalOwner: resolveFunctionalTaskOwner,
+} = require('../lib/functional-owner');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -102,6 +106,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            Show the plain Plan before work starts
   atris task ready <id> --proof "..." [--changed "..." --checked "..." --saved "..." --try "..."]
                                            Agent proof ready; records Result if needed
+  atris task ready <id> --proof "..." [--happened "..." --checked "..." --tested "..." --decision "..."]
+                                           Agent proof ready; writes the human result receipt
   atris task result <id> --changed "..." --checked "..." [--saved "..."] [--try "..."]
                                            Show the plain Result and store trace on the task
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
@@ -112,7 +118,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task revise <id> --note "..."      Send reviewed work back to Do
 
   atris task add "<title>" [--tag <tag>] [--goal-id <id>]  Create a task
-  atris task delegate "<title>" --to <id> [--goal-id <id>]  Create an assigned task
+  atris task delegate "<title>" [--to <member>] [--executed-by <engine>] [--goal-id <id>]  Create assigned work
   atris task plan <id> --goal "..." --exit "..." --proof-needed "..."
                                            Record a task-owned Plan stage
   atris task do <id> --as <owner> --first-move "..."
@@ -307,6 +313,15 @@ function textFlag(args, names) {
     if (typeof value === 'string') return value.trim();
   }
   return '';
+}
+
+function landingFlags(args) {
+  return {
+    happened: textFlag(args, ['--happened', '--what-happened']),
+    checked: textFlag(args, ['--checked', '--how-checked']),
+    tested: textFlag(args, ['--tested', '--what-tested']),
+    decision: textFlag(args, ['--decision', '--acceptance']),
+  };
 }
 
 function numericFlag(args, name) {
@@ -645,6 +660,10 @@ function reviewSummary(task, payload = {}) {
 
   const title = String(task.title || 'this task').replace(/\s+/g, ' ').trim();
   const plainTitle = title ? title.charAt(0).toLowerCase() + title.slice(1) : 'this task';
+  const approvalStatus = payload.approval_status || metadata.approval_status || null;
+  if (approvalStatus === 'revise') {
+    return `Rework requested for ${plainTitle}.`;
+  }
   const careerText = [
     task.tag,
     metadata.goal_id,
@@ -659,20 +678,122 @@ function reviewSummary(task, payload = {}) {
     || careerText.includes('agent xp')
   ) {
     if (task.status === 'done') {
-      return `This is accepted AgentXP work: ${plainTitle} is done and has a proof receipt.`;
+      return `Accepted AgentXP result for ${plainTitle}.`;
     }
     if (task.status === 'review') {
-      return `This is AgentXP review: ${plainTitle} is agent-complete; accept only if the proof is real.`;
+      return `Review the result for ${plainTitle}, then accept only if the proof is real.`;
     }
     return `This explains what accepting ${plainTitle} would make real for AgentXP.`;
   }
   if (task.status === 'done') {
-    return `This is the accepted outcome: ${plainTitle} is done and counted as real work.`;
+    return `Accepted result for ${plainTitle}.`;
   }
   if (task.status === 'review') {
-    return `This is the human checkpoint: ${plainTitle} is agent-complete and needs acceptance before it counts as done.`;
+    return `Review the result for ${plainTitle}, then accept or request changes.`;
   }
   return `This explains what accepting ${plainTitle} would make real.`;
+}
+
+function titleToResultText(title) {
+  const text = String(title || 'this task').replace(/\s+/g, ' ').trim();
+  if (!text) return 'This task is ready to review.';
+  const [first, ...restParts] = text.split(' ');
+  const rest = restParts.join(' ');
+  const past = {
+    add: 'Added',
+    approve: 'Prepared approval for',
+    build: 'Built',
+    clean: 'Cleaned',
+    create: 'Created',
+    design: 'Designed',
+    document: 'Documented',
+    fix: 'Fixed',
+    make: 'Made',
+    replace: 'Replaced',
+    route: 'Routed',
+    run: 'Ran',
+    ship: 'Shipped',
+    update: 'Updated',
+    validate: 'Validated',
+    wire: 'Wired',
+  }[String(first || '').toLowerCase()];
+  if (past && rest) return `${past} ${rest}.`;
+  return `${text} is ready to review.`;
+}
+
+function proofToHumanCheck(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'Proof is attached below.';
+  const lower = text.toLowerCase();
+  if (/\b(?:atris\s+)?task\s+(?:show|page)\b/.test(lower) && /\b(?:print|prints|printed|render|renders|rendered|show|shows|showed)\b/.test(lower)) {
+    return 'I opened the real task screen and checked the receipt renders before raw proof.';
+  }
+  if (/git\s+diff\s+--check/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) {
+    if (/node\s+--test/.test(lower)) return 'I ran the behavior check and the diff cleanliness check.';
+    return 'I ran the diff cleanliness check.';
+  }
+  if (/\btypecheck\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the typecheck.';
+  if (/\bbuild\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the build check.';
+  if (/\btest\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the verifier named in the proof.';
+  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the validation check.';
+  if (/\breview(?:ed)?\b/.test(lower)) return 'Review proof is attached below.';
+  return 'Proof is attached below.';
+}
+
+function taskReviewLandingTested(proof) {
+  const commands = taskReviewEvidenceCommands(proof, 3);
+  if (commands.length) return `I ran: ${commands.join(' | ')}.`;
+  const paths = taskReviewEvidencePaths(proof, 3);
+  if (paths.length) return `I inspected: ${paths.join(', ')}.`;
+  return String(proof || '').trim() ? 'I attached the proof below.' : 'No verifier command recorded yet.';
+}
+
+function landingPayloadValue(payload, metadata, key) {
+  const landing = payload && payload.landing && typeof payload.landing === 'object' ? payload.landing : {};
+  return landing[key]
+    || payload && payload[`landing_${key}`]
+    || metadata[`landing_${key}`]
+    || null;
+}
+
+function taskReviewLanding(task, review = {}, payload = {}) {
+  const metadata = task.metadata || {};
+  const proof = review.proof || payload.proof || metadata.latest_agent_proof || '';
+  const agentCertified = review.agent_certified === true || metadata.agent_certified === true;
+  const approvalStatus = review.approval_status || metadata.approval_status || null;
+  const explicitHappened = landingPayloadValue(payload, metadata, 'happened')
+    || payload.changed || metadata.result_changed || metadata.human_changed || metadata.changed;
+  const explicitChecked = landingPayloadValue(payload, metadata, 'checked')
+    || payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
+  const explicitTested = landingPayloadValue(payload, metadata, 'tested');
+  const explicitDecision = landingPayloadValue(payload, metadata, 'decision');
+  return {
+    happened: clipStatusText(explicitHappened || titleToResultText(task.title), 220),
+    checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 220),
+    tested: clipStatusText(explicitTested || taskReviewLandingTested(proof), 260),
+    decision: clipStatusText(explicitDecision || (task.status === 'done'
+      ? 'Accepted. No action needed unless this regresses.'
+      : approvalStatus === 'revise'
+        ? 'Rework requested. Fix the note, then send a new receipt.'
+        : approvalStatus === 'pending' && !agentCertified
+          ? 'Accept if this matches the request; rework if the receipt misses the point.'
+          : 'Accept if this matches the request; otherwise request changes.'), 220),
+  };
+}
+
+function taskReviewResult(task, review = {}, payload = {}) {
+  const metadata = task.metadata || {};
+  const ref = taskRef(task);
+  const landing = taskReviewLanding(task, review, payload);
+  const explicitSaved = payload.saved || metadata.result_saved || metadata.human_saved || metadata.saved;
+  return {
+    changed: landing.happened,
+    checked: landing.checked,
+    saved: clipStatusText(explicitSaved || (task.status === 'done'
+      ? `Accepted as ${ref}.`
+      : `Saved in Review as ${ref}.`), 180),
+    accept: landing.decision,
+  };
 }
 
 function taskReviewSummary(task) {
@@ -681,7 +802,7 @@ function taskReviewSummary(task) {
   const metadata = task.metadata || {};
   if (!reviewed && !metadata.approval_status && !metadata.agent_review_pass_count && !metadata.human_revision_count && !metadata.agent_certified) return null;
   if (reviewed && reviewed.event_type === 'revision_requested') {
-    return reviewSummaryWithVerificationChat(task, {
+    const review = {
       summary: reviewSummary(task, payload),
       reward: null,
       proof: null,
@@ -693,7 +814,10 @@ function taskReviewSummary(task) {
       agent_certification_policy: null,
       human_revision_count: metadata.human_revision_count || payload.revision_count || null,
       human_revision_note: metadata.human_revision_note || payload.note || null,
-    });
+    };
+    review.landing = taskReviewLanding(task, review, payload);
+    review.result = taskReviewResult(task, review, payload);
+    return reviewSummaryWithVerificationChat(task, review);
   }
   const reviewPassCount = Number(metadata.agent_review_pass_count || payload.review_pass_count || 0);
   const agentCertified = metadata.agent_certified === true
@@ -713,7 +837,7 @@ function taskReviewSummary(task) {
     }
     return payload[key] || metadata[metadataKey] || null;
   };
-  return reviewSummaryWithVerificationChat(task, {
+  const review = {
     summary: reviewSummary(task, payload),
     reward: reviewed && reviewed.event_type === 'reviewed' && payload.reward !== undefined ? payload.reward : null,
     proof: readyField('proof', 'latest_agent_proof'),
@@ -726,7 +850,10 @@ function taskReviewSummary(task) {
       || payload.agent_certification_policy
       || (agentCertified ? `${AGENT_CERTIFICATION_REVIEW_PASSES}_agent_review_passes` : null),
     human_revision_count: metadata.human_revision_count || null,
-  });
+  };
+  review.landing = taskReviewLanding(task, review, payload);
+  review.result = taskReviewResult(task, review, payload);
+  return reviewSummaryWithVerificationChat(task, review);
 }
 
 function reviewSummaryWithVerificationChat(task, review) {
@@ -951,6 +1078,14 @@ function taskDescriptionForCloud(task) {
       lines.push(`- ${message.actor || 'unknown'}: ${message.content}`);
     }
   }
+  const landing = reviewLandingForDisplay(task.review);
+  if (landing) {
+    lines.push('', 'Result:');
+    if (landing.happened) lines.push(`What happened: ${landing.happened}`);
+    if (landing.checked) lines.push(`How checked: ${landing.checked}`);
+    if (landing.tested) lines.push(`Tested: ${landing.tested}`);
+    if (landing.decision) lines.push(`Decision: ${landing.decision}`);
+  }
   const reviewed = (task.events || []).slice().reverse().find(e => e.event_type === 'reviewed');
   if (reviewed && reviewed.payload) {
     if (reviewed.payload.proof) lines.push('', `Proof: ${reviewed.payload.proof}`);
@@ -962,6 +1097,30 @@ function taskDescriptionForCloud(task) {
     if (task.review.next_task) lines.push(`Next: ${task.review.next_task}`);
   }
   return lines.join('\n').slice(0, 5000);
+}
+
+function reviewLandingForDisplay(review) {
+  if (!review) return null;
+  if (review.landing) return review.landing;
+  if (!review.result) return null;
+  return {
+    happened: review.result.changed || null,
+    checked: review.result.checked || null,
+    tested: review.proof ? taskReviewLandingTested(review.proof) : null,
+    decision: review.result.accept || null,
+  };
+}
+
+function printReviewLanding(review) {
+  const landing = reviewLandingForDisplay(review);
+  if (!landing) return false;
+  console.log('Result:');
+  if (landing.happened) console.log(`  What happened: ${landing.happened}`);
+  if (landing.checked) console.log(`  How I checked: ${landing.checked}`);
+  if (landing.tested) console.log(`  What I tested: ${landing.tested}`);
+  if (review.result && review.result.saved) console.log(`  Saved: ${review.result.saved}`);
+  if (landing.decision) console.log(`  Decision: ${landing.decision}`);
+  return true;
 }
 
 function cloudPayloadForTask(task, businessId) {
@@ -1381,6 +1540,8 @@ function compactTaskForStatus(task) {
     const review = {};
     if (typeof task.review.reward === 'number') review.reward = task.review.reward;
     else if (task.review.reward === null) review.reward = null;
+    if (task.review.landing) review.landing = task.review.landing;
+    if (task.review.result) review.result = task.review.result;
     if (task.review.summary) review.summary = clipStatusText(task.review.summary, 240);
     if (task.review.proof) review.proof = clipStatusText(task.review.proof, 180);
     if (task.review.lesson) review.lesson = clipStatusText(task.review.lesson, 180);
@@ -1404,7 +1565,7 @@ function compactTaskForStatus(task) {
     if (Object.keys(lineage).length) out.lineage = lineage;
   }
   const compactMetadata = {};
-  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'goal_id', 'task_goal', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
+  for (const key of ['todo_id', 'stage', 'verify', 'delegate_via', 'owner_resolution', 'requested_owner', 'executed_by', 'proposed_member', 'proposed_member_command', 'goal_id', 'task_goal', 'goal_objective', 'approval_status', 'agent_review_pass_count', 'agent_certified', 'agent_certification_policy', 'human_revision_count', 'human_revision_note']) {
     if (metadata[key]) compactMetadata[key] = key === 'verify' ? clipStatusText(metadata[key], 180) : metadata[key];
   }
   if (Object.keys(compactMetadata).length) out.metadata = compactMetadata;
@@ -1598,9 +1759,20 @@ function sortTasksNewestFirst(tasks) {
   });
 }
 
+function sortTasksOldestFirst(tasks) {
+  return [...tasks].sort((a, b) => {
+    const byUpdated = Number(a.updated_at || 0) - Number(b.updated_at || 0);
+    if (byUpdated) return byUpdated;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  });
+}
+
 function taskQueueItem(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const page = taskPageContract(task, { reviewer, hasExistingReviewFollowUp });
   const item = compactTaskForStatus(task) || {};
+  item.ref = taskRef(task);
+  item.display_id = item.display_id || task.display_id || null;
+  item.legacy_ref = item.legacy_ref || task.legacy_ref || taskRef(task.id);
   if (item.review && item.review.verification_chat) {
     item.review = { ...item.review };
     delete item.review.verification_chat;
@@ -2682,7 +2854,8 @@ function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, s
 }
 
 function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, hasExistingReviewFollowUp = null } = {}) {
-  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), scope, { hasExistingReviewFollowUp });
+  const normalizedScope = normalizeTaskQueueScope(scope);
+  const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope, { hasExistingReviewFollowUp });
   const columns = {
     backlog: [],
     plan: [],
@@ -2703,7 +2876,8 @@ function selectTaskForCurrent(projection, { owner = DEFAULT_OWNER, scope = {}, h
   if (reviewNeedsAgent) return { task: reviewNeedsAgent, reason: 'review_needs_agent_verification' };
   const reviewProofBoundaryBlocked = columns.review.find(task => reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })?.next_action === PROOF_BOUNDARY_BLOCKED_ACTION);
   if (reviewProofBoundaryBlocked) return { task: reviewProofBoundaryBlocked, reason: 'review_proof_boundary_blocked' };
-  const planReady = columns.plan[0];
+  const planQueue = normalizedScope.goal_id ? sortTasksOldestFirst(columns.plan) : columns.plan;
+  const planReady = planQueue[0];
   if (planReady) return { task: planReady, reason: 'plan_ready' };
   const backlogIdea = columns.backlog[0];
   if (backlogIdea) return { task: backlogIdea, reason: 'backlog_idea' };
@@ -3821,6 +3995,8 @@ function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
     tag: task.tag || null,
     updated_at: task.updated_at || null,
     review_pass_count: task.review?.agent_review_pass_count || null,
+    landing: reviewLandingForDisplay(task.review),
+    result: task.review?.result || null,
     proof: taskReviewClip(task.review?.proof, 500) || null,
     next_action: handoff?.next_action || null,
     accept_command: acceptCommand,
@@ -4000,6 +4176,14 @@ function cmdReviews(args) {
     const badge = item.evidence?.all_passing ? ' [evidence:passing]' : '';
     console.log('');
     console.log(`${index + 1}. ${item.display_id || taskRef(item.id)}${tag}${passes}: ${item.title}${badge}`);
+    if (item.landing) {
+      console.log('   Result:');
+      if (item.landing.happened) console.log(`     What happened: ${item.landing.happened}`);
+      if (item.landing.checked) console.log(`     How I checked: ${item.landing.checked}`);
+      if (item.landing.tested) console.log(`     What I tested: ${item.landing.tested}`);
+      if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
+      if (item.landing.decision) console.log(`     Decision: ${item.landing.decision}`);
+    }
     if (item.proof) console.log(`   proof: ${item.proof}`);
     if (item.evidence) {
       item.evidence.receipts.forEach((receipt) => {
@@ -4380,12 +4564,8 @@ function delegateHandoff(task, owner, via, tag) {
 function cmdDelegate(args) {
   const pos = positional(args);
   const title = pos.join(' ').trim();
-  const owner = flag(args, '--to') || flag(args, '--as');
   if (!title) {
     failTask('atris task delegate', 'missing_title', 'title required');
-  }
-  if (!owner || owner === true) {
-    failTask('atris task delegate', 'missing_owner', '--to <owner> required');
   }
   const viaFlag = flag(args, '--via');
   const via = viaFlag === 'swarlo' ? 'swarlo' : 'local';
@@ -4394,15 +4574,36 @@ function cmdDelegate(args) {
   const goalId = flag(args, '--goal-id');
   const goalObjective = flag(args, '--goal-objective') || flag(args, '--goal');
   const claimNow = hasFlag(args, '--claim');
+  const requestedOwner = flag(args, '--to') || flag(args, '--as');
+  const explicitExecutedBy = flag(args, '--executed-by');
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  const ownerResolution = resolveFunctionalTaskOwner({
+    requestedOwner: requestedOwner && requestedOwner !== true ? requestedOwner : null,
+    title,
+    tag,
+    note,
+    goal: goalObjective && goalObjective !== true ? goalObjective : '',
+    root: ws,
+  });
+  const owner = ownerResolution.owner;
+  const executedBy = explicitExecutedBy && explicitExecutedBy !== true
+    ? normalizeOwnerSlug(explicitExecutedBy)
+    : ownerResolution.executed_by;
   const metadata = {
-    assigned_to: String(owner),
+    assigned_to: owner,
     delegate_via: via,
     swarlo_channel: via === 'swarlo' ? String(tag || 'tasks') : null,
     created_for_day: new Date().toISOString().slice(0, 10),
+    owner_resolution: ownerResolution.reason,
   };
+  if (ownerResolution.requested_owner) metadata.requested_owner = ownerResolution.requested_owner;
+  if (executedBy) metadata.executed_by = executedBy;
+  if (ownerResolution.proposed_member) {
+    metadata.proposed_member = ownerResolution.proposed_member;
+    metadata.proposed_member_command = `atris member create ${ownerResolution.proposed_member} --role="${ownerResolution.proposed_member.replace(/-/g, ' ')}"`;
+  }
   if (goalId && goalId !== true) metadata.goal_id = String(goalId);
   if (goalObjective && goalObjective !== true) {
     metadata.task_goal = String(goalObjective);
@@ -4413,7 +4614,7 @@ function cmdDelegate(args) {
     tag: typeof tag === 'string' ? tag : null,
     workspaceRoot: ws,
     status: claimNow ? 'claimed' : 'open',
-    claimedBy: claimNow ? String(owner) : null,
+    claimedBy: claimNow ? owner : null,
     metadata,
   });
   if (typeof note === 'string' && note.trim()) {
@@ -4421,14 +4622,16 @@ function cmdDelegate(args) {
   }
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const task = compactTaskFromProjection(projection, result.id);
-  const handoff = delegateHandoff(task, String(owner), via, typeof tag === 'string' ? tag : null);
+  const handoff = delegateHandoff(task, owner, via, typeof tag === 'string' ? tag : null);
   if (wantsJson(args)) {
     printJson({
       ok: true,
       action: 'delegated',
       task_id: result.id,
       inserted: result.inserted !== false,
-      owner: String(owner),
+      owner,
+      owner_resolution: ownerResolution,
+      executed_by: executedBy || null,
       via,
       handoff,
       projection_path: outPath,
@@ -4438,6 +4641,8 @@ function cmdDelegate(args) {
   }
   const tagText = tag && tag !== true ? ` #${tag}` : '';
   console.log(`delegated ${taskRef(task)} -> ${owner}${tagText} via=${via}`);
+  if (executedBy) console.log(`executed_by: ${executedBy}`);
+  if (ownerResolution.proposed_member) console.log(`member: ${metadata.proposed_member_command}`);
   console.log(`claim: ${handoff.command}`);
   if (handoff.swarlo) console.log(`swarlo: ${handoff.swarlo.channel}/${handoff.swarlo.action}`);
 }
@@ -4528,7 +4733,7 @@ function cmdDay(args) {
     console.log(`stale   ${staleFailed.length} failed >7d hidden — atris task list --status failed`);
   }
   console.log('');
-  console.log('add: atris task delegate "..." --to codex --tag tasks');
+  console.log('add: atris task delegate "..." --to task-planner --tag tasks');
 }
 
 function cmdHome(args) {
@@ -5225,6 +5430,7 @@ function cmdShow(args) {
   console.log(task.title);
   if (task.review) {
     console.log('');
+    printReviewLanding(task.review);
     if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
     if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
@@ -5273,6 +5479,7 @@ function cmdPage(args) {
   console.log(`TASK PAGE ${taskRef(task)}`);
   console.log(`Goal: ${page.goal.text || '(none)'}`);
   console.log(`Stage: ${page.stage.current}`);
+  printReviewLanding(page.review);
   console.log(`Next: ${page.stage.next_action.command || page.stage.next_action.label}`);
   console.log(`Chat: ${page.chat.command}`);
   if (page.review.verification_chat) console.log(`Review chat: ${page.review.verification_chat.command}`);
@@ -6013,7 +6220,7 @@ function taskPageActions(task, { reviewer = 'codex-review', hasExistingReviewFol
     note_command: `atris task note ${ref} "<context>" --as ${owner}`,
     plan_command: `atris task plan ${ref} --goal ${taskCommandQuote(goal)} --exit "<exit condition>" --proof-needed "<verification command>" --first-move "<first move>"`,
     do_command: `atris task do ${ref} --as ${owner} --first-move "<first move>"`,
-    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>"`,
+    ready_command: `atris task ready ${ref} --as ${owner} --proof "<specific proof command/result>" --happened "<what happened>" --checked "<how you know>" --tested "<what you ran or inspected>" --decision "<accept/rework guidance>"`,
     review_command: `atris task review ${ref} --reward 0 --as ${actor} --proof "<specific proof command/result>" --verify "<safe verifier command>"`,
   };
   if (task && task.status === 'review') {
@@ -6092,6 +6299,7 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
   const metadata = task && task.metadata || {};
   const current = taskPageCurrentStage(task);
   const actions = taskPageActions(task, { reviewer, hasExistingReviewFollowUp });
+  const review = task && (task.review || taskReviewSummary(task));
   const recentMessages = (task && Array.isArray(task.messages) ? task.messages : []).slice(-10).map(message => ({
     version: message.version || null,
     actor: message.actor || null,
@@ -6135,9 +6343,13 @@ function taskPageContract(task, { reviewer = 'codex-review', hasExistingReviewFo
     },
     actions,
     review: {
-      approval_status: task.review && task.review.approval_status || metadata.approval_status || null,
-      agent_review_pass_count: task.review && task.review.agent_review_pass_count || metadata.agent_review_pass_count || null,
-      agent_certified: Boolean(task.review && task.review.agent_certified || metadata.agent_certified),
+      landing: review && review.landing || null,
+      result: review && review.result || null,
+      summary: review && review.summary || null,
+      proof: review && review.proof || null,
+      approval_status: review && review.approval_status || metadata.approval_status || null,
+      agent_review_pass_count: review && review.agent_review_pass_count || metadata.agent_review_pass_count || null,
+      agent_certified: Boolean(review && review.agent_certified || metadata.agent_certified),
       verification_chat: reviewChat,
       handoff: reviewHandoff,
       human_accept: {
@@ -6989,6 +7201,7 @@ function cmdReady(args) {
   requireMeaningfulTaskProof('atris task ready', proof);
   const lesson = flag(args, '--lesson') || '';
   const nextTaskInput = normalizeReviewNextTaskInput(typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '');
+  const landing = landingFlags(args);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const resultFields = {
     changed: textFlag(args, ['--changed', '--result', '--done']),
@@ -7017,6 +7230,7 @@ function cmdReady(args) {
     lesson: typeof lesson === 'string' ? lesson : '',
     nextTask: nextTaskInput.nextTask,
     resultTrace: resultTrace && resultTrace.trace,
+    landing,
   });
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
@@ -7361,6 +7575,7 @@ function cmdRevise(args) {
       version: result.event.version,
       approval_status: 'revise',
       revision_count: result.event.payload.revision_count,
+      episode: result.episode || null,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
@@ -8288,7 +8503,10 @@ function taskBoardHtml() {
         '<div class="meta"><span class="pill">' + task.status + '</span><span class="pill">' + (task.claimed_by || 'unowned') + '</span><span class="pill">v' + task.current_version + '</span></div>',
         '<div class="fact"><b>Goal</b><div id="taskGoal"></div></div>',
         '<div class="fact"><b>Lineage</b><div id="taskLineage"></div></div>',
-        '<div class="fact"><b>Summary</b><div id="taskSummary"></div></div>',
+        '<div class="fact"><b>Result</b><div id="taskHappened"></div></div>',
+        '<div class="fact"><b>How I checked</b><div id="taskChecked"></div></div>',
+        '<div class="fact"><b>What I tested</b><div id="taskTested"></div></div>',
+        '<div class="fact"><b>Decision</b><div id="taskDecision"></div></div>',
         '<div class="fact"><b>Proof / lesson</b><div id="taskProof"></div></div>',
         '<div class="thread">' + (messages || '<div class="empty">No thread yet.</div>') + '</div>',
         '<label>Add context</label><textarea id="note" placeholder="Decision, blocker, context, update..."></textarea>',
@@ -8300,9 +8518,17 @@ function taskBoardHtml() {
       room.querySelector('h3').textContent = task.title;
       $('taskGoal').textContent = task.objective || 'No matching goal yet.';
       $('taskLineage').textContent = 'parent: ' + parent + ' / next: ' + children;
-      $('taskSummary').textContent = task.review && task.review.summary
-        ? task.review.summary
-        : 'No review summary yet.';
+      const result = task.review && task.review.result || {};
+      const landing = task.review && task.review.landing || {
+        happened: result.changed,
+        checked: result.checked,
+        tested: task.review && task.review.proof ? 'Proof is attached below.' : '',
+        decision: result.accept,
+      };
+      $('taskHappened').textContent = landing.happened || (task.review && task.review.summary) || 'No review result yet.';
+      $('taskChecked').textContent = landing.checked || 'No check yet.';
+      $('taskTested').textContent = landing.tested || 'No test recorded yet.';
+      $('taskDecision').textContent = landing.decision || 'No accept action yet.';
       $('taskProof').textContent = task.review && (task.review.proof || task.review.lesson)
         ? ((task.review.proof || 'no proof') + ' / ' + (task.review.lesson || 'no lesson'))
         : 'No proof yet.';
@@ -8804,6 +9030,12 @@ async function handleTaskApi(req, res, taskDb, db) {
       lesson: String(body.lesson || ''),
       nextTask: nextTaskInput.nextTask,
       resultTrace: resultTrace && resultTrace.trace,
+      landing: body.landing || {
+        happened: body.happened,
+        checked: body.checked,
+        tested: body.tested,
+        decision: body.decision,
+      },
     });
     if (!result.ready) return sendJson(res, 409, { ok: false, reason: result.reason });
     const { projection, outPath } = writeDefaultProjection(taskDb, db);

@@ -671,6 +671,11 @@ Always-on agents should move proof-backed work to Review, complete their native
 goal, then continue the mission loop with the next goal. They must not run
 \`atris task accept\` or claim AgentXP unless a human approved the proof.
 
+Task owners are functional or feature members, not engines. Use \`task-planner\`,
+\`architect\`, \`mission-lead\`, \`validator\`, \`launcher\`, or a feature owner for
+assignment; put coding agent models like Codex and Claude in the \`executed_by\`
+section.
+
 ## Workflow
 
 \`\`\`
@@ -699,7 +704,7 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - [ ] Use ASCII visuals for planning
 - [ ] Check MAP.md before touching code
 - [ ] Run \`atris task list\` or \`atris task next\` before picking work
-- [ ] Claim tasks with \`atris task claim <id> --as <agent>\`
+- [ ] Claim tasks with \`atris task claim <id> --as <functional-member>\`
 - [ ] Move agent-completed work to Review via \`atris task ready <id> --proof "..."\`
 - [ ] Complete native Codex/Claude goals after proof is in Review, so always-on work can continue
 - [ ] Only use \`atris task accept <id>\` when the human has approved the proof

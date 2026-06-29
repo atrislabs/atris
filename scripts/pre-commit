@@ -13,3 +13,9 @@ if git diff --cached --name-only | grep -q '^lib/reward-config\.js$'; then
   echo "set ATRIS_REWARD_EDIT=1 to override."
   exit 1
 fi
+
+if git diff --cached --name-only --diff-filter=AM | grep -q '^atris/wiki/'; then
+  echo "error: atris/wiki/ is local-only workspace memory and must not be committed."
+  echo "each workspace creates their own wiki via atris init / atris ingest."
+  exit 1
+fi

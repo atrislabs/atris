@@ -946,6 +946,92 @@ function readTaskProjectionEvidence(name) {
   };
 }
 
+function taskGoalId(task) {
+  return task?.metadata?.goal_id
+    || task?.metadata?.goalId
+    || task?.goal_id
+    || task?.goalId
+    || task?.atrisContext?.goalId
+    || '';
+}
+
+function missionTaskStatusRank(task) {
+  const status = lowerCompact(task?.status || task?.state || '');
+  if (['claimed', 'doing', 'in_progress', 'in-progress', 'working'].includes(status)) return 0;
+  if (['open', 'todo', 'plan', 'planned'].includes(status)) return 1;
+  if (['review', 'ready'].includes(status)) return 2;
+  if (status === 'blocked') return 3;
+  return 4;
+}
+
+function missionTaskUpdatedAt(task) {
+  const numeric = Number(task?.updated_at || task?.updatedAt || task?.created_at || task?.createdAt || 0);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(task?.updated_at || task?.updatedAt || task?.created_at || task?.createdAt || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function taskOwnerLabel(task) {
+  return task?.claimed_by
+    || task?.claimedBy
+    || task?.assigned_to
+    || task?.assignedTo
+    || task?.metadata?.assigned_to
+    || task?.metadata?.owner
+    || task?.owner
+    || null;
+}
+
+function missionTaskContextForMember(name, missionId) {
+  const wanted = String(missionId || '').trim();
+  if (!wanted) return null;
+  const tasks = taskProjectionRows()
+    .filter((task) => String(taskGoalId(task) || '').trim() === wanted)
+    .filter((task) => !taskIsClosed(task));
+  if (!tasks.length) return null;
+  const selected = tasks.slice().sort((a, b) => {
+    const byOwner = (taskBelongsToMember(a, name) ? 0 : 1) - (taskBelongsToMember(b, name) ? 0 : 1);
+    if (byOwner) return byOwner;
+    const byStatus = missionTaskStatusRank(a) - missionTaskStatusRank(b);
+    if (byStatus) return byStatus;
+    const byUpdated = missionTaskUpdatedAt(a) - missionTaskUpdatedAt(b);
+    if (byUpdated) return byUpdated;
+    return String(a.title || '').localeCompare(String(b.title || ''));
+  })[0];
+  const ref = taskRef(selected);
+  return {
+    ref,
+    title: compactSentence(selected.title || selected.summary || ref || 'mission task', 140),
+    status: selected.status || selected.state || null,
+    owner: taskOwnerLabel(selected),
+    goal_id: wanted,
+    command: `atris task current-step --goal-id ${wanted} --as ${name} --proof "<proof>" --json`,
+  };
+}
+
+function nativeGoalFromMissionTask(name, goal, runtime, taskContext) {
+  const missionId = runtime?.id || goal?.mission_id || null;
+  const objective = taskContext
+    ? `${name}: complete ${taskContext.ref} - ${taskContext.title}`
+    : `${name}: ${goal.title}`;
+  return {
+    schema: 'atris.native_goal.v1',
+    owner: name,
+    runner: 'coding-agent',
+    objective,
+    slash_goal: objective,
+    member_goal_id: goal.id,
+    mission_id: missionId,
+    task: taskContext || null,
+    acceptance: taskContext ? [
+      `Move ${taskContext.ref} to Review with a human-readable Result receipt.`,
+      'Record the verifier/proof used to check the work.',
+      'Stop only when the task is in Review, blocked with a human ask, or accepted by a human.',
+    ] : goal.acceptance,
+    next_command: taskContext?.command || `atris member tick ${name} --goal ${goal.id}`,
+  };
+}
+
 function listThreadJsonFiles(root) {
   if (!root || !fs.existsSync(root)) return [];
   const out = [];
@@ -3099,6 +3185,9 @@ skills: []
 
 permissions:
   can-read: true
+  can-execute: true
+  can-approve: false
+  can-accept-task: false
   approval-required: []
 
 tools: []
@@ -3115,6 +3204,29 @@ tools: []
 1. Step one
 2. Step two
 3. Step three
+
+## Cadence
+
+- Wake cadence: define when this member may run unattended.
+- Lease: define the maximum time one tick may hold a task or worktree.
+- Stop condition: define the state that pauses the loop.
+
+## Ownership Contract
+
+- Own tasks by function or feature, never by execution engine.
+- If no existing member fits, create a member-creation task before assigning broad work.
+- Put coding agent models like Codex and Claude in the executed_by section.
+
+## Proof Standard
+
+- Move proof-backed work to Review with verifier output, receipt path, or concrete artifact proof.
+- Never run human accept or claim AgentXP without human approval.
+
+## Cleanup Contract
+
+- Use isolated worktrees for parallel work.
+- Ship or archive worktrees before the lease ends.
+- Leave task notes another member can resume without chat context.
 
 ## Rules
 
@@ -3693,6 +3805,10 @@ function memberGoalFromMission(name, ...args) {
   goal.now_file = fs.existsSync(path.join(paths.memberDir, 'now.md')) ? path.relative(process.cwd(), path.join(paths.memberDir, 'now.md')) : null;
   goal.mission_id = runtime.id || goal.mission_id || null;
   goal.mission_north_star = purpose.northStar;
+  const taskContext = missionTaskContextForMember(name, goal.mission_id);
+  const nativeGoal = nativeGoalFromMissionTask(name, goal, runtime, taskContext);
+  goal.task_context = taskContext;
+  goal.native_goal = nativeGoal;
   goal.history = Array.isArray(goal.history) ? goal.history : [];
   const historyEntry = {
     at: stampIso(),
@@ -3718,7 +3834,9 @@ function memberGoalFromMission(name, ...args) {
     goal: goal.title,
     north_star: purpose.northStar,
     runtime_mission: runtime.id || '',
-    next: `atris member tick ${name} --goal ${goal.id}`,
+    current_task: taskContext?.ref || '',
+    native_goal: nativeGoal.objective,
+    next: nativeGoal.next_command,
   });
   printJsonOrText(
     {
@@ -3732,15 +3850,18 @@ function memberGoalFromMission(name, ...args) {
         runtime_status: runtime.status || null,
         runtime_next: runtime.next || null,
       },
+      task: taskContext,
+      native_goal: nativeGoal,
       goals_path: paths.goalsJson,
       goals_md_path: paths.goalsMd,
       log_path: logPath,
-      next_command: `atris member tick ${name} --goal ${goal.id}`,
+      next_command: nativeGoal.next_command,
     },
     [
       `${existing ? 'Reused' : 'Created'} mission-derived goal for ${name}: ${goal.title}`,
       `Mission: ${purpose.northStar}`,
-      `Next: atris member tick ${name} --goal ${goal.id}`,
+      `Native goal: ${nativeGoal.slash_goal}`,
+      `Next: ${nativeGoal.next_command}`,
     ],
     asJson,
   );

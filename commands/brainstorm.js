@@ -321,29 +321,43 @@ async function brainstormAtris() {
       const nextSteps = nextStepsRaw
         ? nextStepsRaw.split(';').map((item) => item.trim()).filter(Boolean)
         : [];
-      recordBrainstormSession(
-        logFile,
-        sourceLabel,
-        topicSummary,
-        userStory,
-        [],
-        [],
-        constraints,
-        '',
-        feelingsVibe || '',
-        nextSteps,
-        sessionSummary
-      );
-      if (selectedInboxItem) {
-        const archive = await askYesNo('Archive this Inbox idea now? (y/n): ');
-        if (archive) {
-          let latestContent = fs.readFileSync(logFile, 'utf8');
-          latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
-          fs.writeFileSync(logFile, latestContent);
-          console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
+      try {
+        recordBrainstormSession(
+          logFile,
+          sourceLabel,
+          topicSummary,
+          userStory,
+          [],
+          [],
+          constraints,
+          '',
+          feelingsVibe || '',
+          nextSteps,
+          sessionSummary
+        );
+        if (selectedInboxItem) {
+          const archive = await askYesNo('Archive this Inbox idea now? (y/n): ');
+          if (archive) {
+            try {
+              let latestContent = fs.readFileSync(logFile, 'utf8');
+              latestContent = removeInboxItemFromContent(latestContent, selectedInboxItem.id);
+              if (typeof latestContent !== 'string') {
+                throw new Error('Archive operation produced invalid journal content.');
+              }
+              writeJournalFile(logFile, latestContent);
+              console.log(`✓ Archived I${selectedInboxItem.id} from Inbox.`);
+            } catch (error) {
+              console.log(`Could not archive I${selectedInboxItem.id}: ${error.message}`);
+            }
+          }
         }
+        console.log('✓ Brainstorm session logged.');
+      } catch (error) {
+        if (error && error.__brainstormAbort) {
+          throw error;
+        }
+        console.log(`Could not log brainstorm session: ${error.message}`);
       }
-      console.log('✓ Brainstorm session logged.');
     } else {
       console.log('Skipped journaling. Prompt is ready for your agent.');
     }
@@ -363,6 +377,32 @@ function brainstormAbortError() {
 function removeInboxItemFromContent(content, id) {
   const items = parseInboxItems(content).filter((item) => item.id !== id);
   return replaceInboxSection(content, items);
+}
+
+function writeJournalFile(logFile, content) {
+  if (typeof logFile !== 'string' || logFile.trim() === '') {
+    throw new Error('Journal log file path is required.');
+  }
+  if (typeof content !== 'string') {
+    throw new Error('Journal content must be a string.');
+  }
+  const logDir = path.dirname(logFile);
+  const tempFile = path.join(logDir, `.${path.basename(logFile)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  let tempFileWritten = false;
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(tempFile, content, { encoding: 'utf8', flag: 'wx' });
+    tempFileWritten = true;
+    fs.renameSync(tempFile, logFile);
+  } catch (error) {
+    if (tempFileWritten || !error || error.code !== 'EEXIST') {
+      try {
+        fs.unlinkSync(tempFile);
+      } catch {}
+    }
+    const message = error && error.message ? error.message : String(error);
+    throw new Error(`Could not write journal file: ${message}`);
+  }
 }
 
 function insertIntoNotesSection(content, block) {
@@ -437,7 +477,7 @@ function recordBrainstormSession(
 
   const block = lines.join('\n');
   content = insertIntoNotesSection(content, block);
-  fs.writeFileSync(logFile, content);
+  writeJournalFile(logFile, content);
 }
 
 

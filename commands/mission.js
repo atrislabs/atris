@@ -8,6 +8,10 @@ const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
+const {
+  normalizeOwnerSlug,
+  resolveFunctionalOwner,
+} = require('../lib/functional-owner');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -166,27 +170,33 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot(root);
   const title = `Mission XP: ${mission.objective}`;
+  const ownerResolution = resolveMissionOwner(mission, workspaceRoot);
+  const owner = ownerResolution.owner;
   const metadata = {
-    assigned_to: mission.owner,
+    assigned_to: owner,
     delegate_via: 'mission_goal_loop',
     created_for_day: todayName(),
     goal_id: mission.id,
     goal_objective: mission.objective,
     mission_id: mission.id,
     mission_objective: mission.objective,
-    mission_owner: mission.owner,
+    mission_owner: owner,
+    owner_resolution: ownerResolution.reason,
     mission_lane: mission.lane,
     mission_runner: mission.runner,
     verify: mission.verifier || null,
     stop_condition: mission.stop_condition || null,
   };
+  if (ownerResolution.requested_owner && ownerResolution.requested_owner !== owner) metadata.requested_owner = ownerResolution.requested_owner;
+  if (ownerResolution.executed_by) metadata.executed_by = normalizeOwnerSlug(ownerResolution.executed_by);
+  if (ownerResolution.proposed_member) metadata.proposed_member = ownerResolution.proposed_member;
   const result = taskDb.addTask(db, {
     title,
     tag: 'agent-xp',
     workspaceRoot,
     sourceKey: `mission-xp:${mission.id}`,
     status: 'claimed',
-    claimedBy: mission.owner,
+    claimedBy: owner,
     metadata,
   });
   const rows = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }));
@@ -194,7 +204,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
   if (task) {
     taskDb.noteTask(db, {
       id: task.id,
-      actor: process.env.ATRIS_AGENT_ID || mission.owner || 'mission-lead',
+      actor: process.env.ATRIS_AGENT_ID || owner,
       content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task current-step; AgentXP lands only after human accept.`,
     });
   }
@@ -204,7 +214,9 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     ref: missionTaskRef(task) || result.id,
     title,
     status: task?.status || 'claimed',
-    assigned_to: mission.owner,
+    assigned_to: owner,
+    owner_resolution: ownerResolution.reason,
+    executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
     inserted: result.inserted !== false,
     projection_path: outPath,
   };
@@ -221,6 +233,24 @@ function statePaths(root = process.cwd()) {
     statusNow: path.join(root, 'atris', 'status', 'now.md'),
     runsDir: path.join(root, 'atris', 'runs'),
   };
+}
+
+function readBusinessBinding(root = process.cwd()) {
+  const file = path.join(root, '.atris', 'business.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return {
+      business_id: parsed.business_id || '',
+      workspace_id: parsed.workspace_id || '',
+      slug: parsed.slug || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function businessIdForAtris2Mission(mission, cwd = process.cwd()) {
+  return mission?.business_id || readBusinessBinding(cwd)?.business_id || null;
 }
 
 function readJsonLines(file) {
@@ -424,6 +454,7 @@ function renderMemberNowMarkdown(owner, missions) {
     return lines.join('\n');
   }
   for (const mission of missions) {
+    const taskSpine = missionTaskSpine(mission);
     lines.push(`## ${mission.objective}`);
     lines.push('');
     lines.push(`- id: ${mission.id}`);
@@ -431,6 +462,9 @@ function renderMemberNowMarkdown(owner, missions) {
     lines.push(`- cadence: ${mission.cadence}`);
     lines.push(`- runner: ${mission.runner}${mission.model ? ` (${mission.model})` : ''}`);
     lines.push(`- lane: ${mission.lane}`);
+    if (taskSpine.task_ref) lines.push(`- task: ${taskSpine.task_ref}`);
+    if (taskSpine.current_step_command) lines.push(`- task next: ${taskSpine.current_step_command}`);
+    if (!taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`- task setup: ${taskSpine.ensure_task_command}`);
     if (mission.xp_task?.ref) lines.push(`- AgentXP task: ${mission.xp_task.ref}`);
     if (mission.verifier) lines.push(`- verifier: ${mission.verifier}`);
     if (mission.stop_condition) lines.push(`- stop: ${mission.stop_condition}`);
@@ -463,6 +497,52 @@ function completionGateLabel(gate) {
   return gate.forced ? `forced override (${gate.source})` : gate.source;
 }
 
+function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
+  const gate = mission.completion_gate || {};
+  const gateLabel = completionGateLabel(gate) || 'completion gate';
+  const checked = gate.source === 'receipt' && gate.receipt_path
+    ? `I checked the passing verifier receipt ${gate.receipt_path}.`
+    : gate.source === 'mission_state'
+      ? 'I checked mission state showing the verifier passed.'
+      : gate.source === 'no_verifier'
+        ? 'No verifier was configured, so completion used the no-verifier gate.'
+        : `I checked the ${gateLabel} completion gate.`;
+  const tested = mission.verifier_result?.passed
+    ? `Verifier passed: ${mission.verifier_result.command || mission.verifier || 'configured verifier'}.`
+    : mission.verifier
+      ? `Completion proof is attached for verifier: ${mission.verifier}.`
+      : 'No verifier command was recorded for this mission.';
+  const landing = {
+    happened: `Mission completed: ${mission.objective}.`,
+    checked,
+    tested,
+    saved: `Saved complete mission ${mission.id}${proof ? ` with proof ${proof}` : ''}.`,
+    decision: xpNextCommand
+      ? `Queue AgentXP next: ${xpNextCommand}`
+      : 'Mission is complete; start or resume the next mission if more work remains.',
+  };
+  const result = {
+    changed: landing.happened,
+    checked: landing.checked,
+    tested: landing.tested,
+    saved: landing.saved,
+    accept: landing.decision,
+  };
+  return { landing, result };
+}
+
+function missionResultLines(completion) {
+  const landing = completion?.landing || {};
+  const result = completion?.result || {};
+  const lines = ['Result:'];
+  if (landing.happened) lines.push(`  What happened: ${landing.happened}`);
+  if (landing.checked) lines.push(`  How I checked: ${landing.checked}`);
+  if (landing.tested) lines.push(`  What I tested: ${landing.tested}`);
+  if (result.saved) lines.push(`  Saved: ${result.saved}`);
+  if (landing.decision) lines.push(`  Decision: ${landing.decision}`);
+  return lines;
+}
+
 function renderMissionStatus(root = process.cwd()) {
   const paths = statePaths(root);
   const missions = listMissions(root);
@@ -478,10 +558,14 @@ function renderMissionStatus(root = process.cwd()) {
     lines.push('No missions yet.', '');
   } else {
     for (const mission of missions.slice(0, 12)) {
+      const taskSpine = missionTaskSpine(mission);
       lines.push(`- **${mission.id}** ${mission.objective}`);
       lines.push(`  - owner: ${mission.owner}`);
       lines.push(`  - state: ${mission.status}`);
       lines.push(`  - next: ${mission.next_action || 'tick or verify'}`);
+      if (taskSpine?.task_ref) lines.push(`  - task: ${taskSpine.task_ref}`);
+      if (taskSpine?.current_step_command) lines.push(`  - task next: ${taskSpine.current_step_command}`);
+      if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) lines.push(`  - task setup: ${taskSpine.ensure_task_command}`);
       if (mission.xp_task?.ref) lines.push(`  - AgentXP task: ${mission.xp_task.ref}`);
       if (mission.receipt_path) lines.push(`  - proof: ${mission.receipt_path}`);
       const gateLabel = completionGateLabel(mission.completion_gate);
@@ -501,11 +585,108 @@ function missionXpTaskRefFromMission(mission) {
   return '';
 }
 
+function resolveMissionOwner(mission, root = process.cwd()) {
+  const requestedOwner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const resolved = resolveFunctionalOwner({
+    requestedOwner,
+    title: mission?.objective || '',
+    tag: mission?.lane || 'mission',
+    note: mission?.next_action || '',
+    goal: mission?.objective || '',
+    root,
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const requested = mission?.requested_owner || (
+    resolved.requested_owner && resolved.requested_owner !== resolved.owner ? resolved.requested_owner : null
+  );
+  return {
+    ...resolved,
+    reason: mission?.owner_resolution || resolved.reason,
+    requested_owner: requested,
+    executed_by: mission?.executed_by || resolved.executed_by || null,
+  };
+}
+
+function applyMissionOwnerResolution(mission, root = process.cwd()) {
+  const ownerResolution = resolveMissionOwner(mission, root);
+  const next = {
+    ...mission,
+    owner: ownerResolution.owner,
+    owner_resolution: ownerResolution.reason,
+  };
+  if (ownerResolution.requested_owner && ownerResolution.requested_owner !== ownerResolution.owner) {
+    next.requested_owner = ownerResolution.requested_owner;
+  }
+  if (ownerResolution.executed_by) {
+    next.executed_by = normalizeOwnerSlug(ownerResolution.executed_by);
+  }
+  if (ownerResolution.proposed_member) {
+    next.proposed_member = ownerResolution.proposed_member;
+  }
+  return { mission: next, ownerResolution };
+}
+
 function missionXpReadyAction(mission, receiptPath) {
   const ref = missionXpTaskRefFromMission(mission);
   if (!ref || !receiptPath) return null;
-  const owner = mission.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  const owner = resolveMissionOwner(mission).owner;
   return `queue AgentXP review: atris task current-step --goal-id ${mission.id} --as ${owner} --proof "${receiptPath}" --json`;
+}
+
+function missionTaskSpine(mission) {
+  if (!mission || !mission.id) return null;
+  const ownerResolution = resolveMissionOwner(mission);
+  const taskIds = Array.isArray(mission.task_ids) ? mission.task_ids.filter(Boolean) : [];
+  const taskId = mission.xp_task?.task_id
+    || mission.current_task_id
+    || mission.task_id
+    || taskIds[0]
+    || null;
+  const taskRef = mission.xp_task?.ref
+    || mission.task_ref
+    || (taskId ? String(taskId) : null);
+  const owner = ownerResolution.owner;
+  return {
+    schema: 'atris.mission_task_spine.v1',
+    goal_id: mission.id,
+    owner,
+    requested_owner: ownerResolution.requested_owner || null,
+    owner_resolution: ownerResolution.reason,
+    executed_by: ownerResolution.executed_by ? normalizeOwnerSlug(ownerResolution.executed_by) : null,
+    lane: mission.lane || 'workspace',
+    runner: mission.runner || 'manual',
+    task_id: taskId,
+    current_task_id: taskId,
+    task_ref: taskRef,
+    has_task: Boolean(taskId || taskRef),
+    current_step_command: taskId || taskRef
+      ? `atris task current-step --goal-id ${mission.id} --as ${owner} --proof "<proof>" --json`
+      : null,
+    ensure_task_command: taskId || taskRef
+      ? null
+      : `atris mission attach-task ${mission.id} --json`,
+  };
+}
+
+function missionStatusView(mission) {
+  const taskSpine = missionTaskSpine(mission);
+  if (!taskSpine) return mission;
+  const requestedOwner = taskSpine.requested_owner
+    || mission.requested_owner
+    || (mission.owner && mission.owner !== taskSpine.owner ? mission.owner : null);
+  return {
+    ...mission,
+    owner: taskSpine.owner,
+    functional_owner: taskSpine.owner,
+    requested_owner: requestedOwner,
+    owner_resolution: taskSpine.owner_resolution,
+    executed_by: taskSpine.executed_by || mission.executed_by || null,
+    goal_id: taskSpine.goal_id,
+    task_id: taskSpine.task_id,
+    current_task_id: taskSpine.current_task_id,
+    task_ref: taskSpine.task_ref,
+    task_spine: taskSpine,
+  };
 }
 
 function missionFromArgs(args) {
@@ -524,11 +705,20 @@ function missionFromArgs(args) {
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
-  const owner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
   const model = readFlag(args, '--model', '') || (String(runner).toLowerCase() === 'atris2' ? 'atris:fast' : '');
   const lane = readFlag(args, '--lane', 'workspace');
+  const ownerResolution = resolveFunctionalOwner({
+    requestedOwner,
+    title: objective,
+    tag: lane,
+    goal: objective,
+    root: process.cwd(),
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const owner = ownerResolution.owner;
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
   const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
@@ -536,6 +726,7 @@ function missionFromArgs(args) {
   const humanAsks = readRepeatedFlag(args, '--ask');
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
+  const businessBinding = readBusinessBinding(process.cwd());
   const id = missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
@@ -543,10 +734,16 @@ function missionFromArgs(args) {
     slug: slugify(objective),
     objective,
     owner,
+    owner_resolution: ownerResolution.reason,
+    ...(ownerResolution.requested_owner && ownerResolution.requested_owner !== owner ? { requested_owner: ownerResolution.requested_owner } : {}),
+    ...(ownerResolution.executed_by ? { executed_by: normalizeOwnerSlug(ownerResolution.executed_by) } : {}),
+    ...(ownerResolution.proposed_member ? { proposed_member: ownerResolution.proposed_member } : {}),
     status: 'planning',
     cadence,
     runner,
     ...(model ? { model } : {}),
+    ...(businessBinding?.business_id ? { business_id: businessBinding.business_id } : {}),
+    ...(businessBinding?.workspace_id ? { workspace_id: businessBinding.workspace_id } : {}),
     lane,
     verifier,
     always_on: alwaysOn,
@@ -624,6 +821,68 @@ function startMission(args) {
   );
 }
 
+function attachMissionTask(args) {
+  const asJson = wantsJson(args);
+  const ref = stripKnownFlags(args, [], ['--json'])[0] || '';
+  if (!ref) {
+    exitMissionError('Usage: atris mission attach-task <id> [--json]', 1, asJson);
+  }
+  const mission = resolveMission(ref);
+  if (!mission) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+  }
+  if (TERMINAL_STATUSES.has(mission.status)) {
+    exitMissionError(`Mission "${ref}" is ${mission.status}; task spines attach only to active missions.`, 2, asJson);
+  }
+
+  const existingSpine = missionTaskSpine(mission);
+  if (existingSpine?.has_task) {
+    const view = missionStatusView(mission);
+    printJsonOrText(
+      { ok: true, action: 'mission_task_spine_exists', mission: view, task_spine: view.task_spine },
+      [
+        `Mission task spine already exists: ${mission.objective}`,
+        `Task: ${view.task_spine.task_ref}`,
+        `Next: ${view.task_spine.current_step_command}`,
+      ],
+      asJson,
+    );
+    return;
+  }
+
+  const ownership = applyMissionOwnerResolution(mission, process.cwd());
+  const baseMission = ownership.mission;
+  const xpTask = createMissionXpTask(baseMission, process.cwd(), asJson);
+  const nextMission = {
+    ...baseMission,
+    xp_task_enabled: true,
+    xp_task: xpTask,
+    task_ids: Array.from(new Set([...(baseMission.task_ids || []), xpTask.task_id])),
+  };
+  if (nextMission.status === 'ready' && nextMission.receipt_path) {
+    nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
+  } else if (!nextMission.verifier && !nextMission.always_on) {
+    nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
+  }
+
+  const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref });
+  const memberState = renderMemberMissionState(saved.owner);
+  const logPath = appendMemberLog(saved.owner, 'Mission task spine attached', {
+    mission: saved.objective,
+    task: xpTask.ref,
+  });
+  const view = missionStatusView(saved);
+  printJsonOrText(
+    { ok: true, action: 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
+    [
+      `Attached task spine: ${saved.objective}`,
+      `Task: ${xpTask.ref}`,
+      `Next: ${view.task_spine.current_step_command}`,
+    ],
+    asJson,
+  );
+}
+
 function statusMission(args) {
   const asJson = wantsJson(args);
   const localOnly = hasFlag(args, '--local');
@@ -648,14 +907,15 @@ function statusMission(args) {
   if (ref && !missions.length) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
+  const missionViews = missions.map(missionStatusView);
   // Member state renders are cwd-local writes; rolled-up missions stay read-only.
-  for (const owner of new Set(missions.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
+  for (const owner of new Set(missionViews.filter((mission) => !mission.worktree_root).map((mission) => mission.owner).filter(Boolean))) {
     renderMemberMissionState(owner);
   }
   const payload = {
     ok: true,
     action: 'mission_status',
-    missions,
+    missions: missionViews,
     state_path: statePaths().missionsJsonl,
     events_path: statePaths().eventsJsonl,
     status_path: renderMissionStatus(),
@@ -663,16 +923,122 @@ function statusMission(args) {
   printJsonOrText(
     payload,
     missions.length
-      ? missions.flatMap((mission) => [
+      ? missionViews.flatMap((mission) => [
         `Mission: ${mission.objective}`,
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
+        ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
         `  state: ${mission.status}`,
         ...missionHeartbeatLines(mission),
         ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
         `  next: ${mission.next_action || 'tick or verify'}`,
+        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
+        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
+        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
+      ])
+      : ['No missions yet. Run: atris mission start "..." --owner <member>'],
+    asJson,
+  );
+}
+
+function readMissionReceipt(receiptPath, root = process.cwd()) {
+  if (!receiptPath) return null;
+  const file = path.isAbsolute(receiptPath) ? receiptPath : path.join(root, receiptPath);
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function firstUsefulLine(text, fallback = '') {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*\s#]+/, '').trim())
+    .filter(Boolean)
+    .find((line) => !/^(receipt|summary|final|result)$/i.test(line))
+    || fallback;
+}
+
+function missionWorkerLabel(mission) {
+  const runner = String(mission && mission.runner || 'manual').toLowerCase();
+  if (runner === 'atris2') return `Remote Atris2 computer${mission.model ? ` using ${mission.model}` : ''}`;
+  if (runner === 'claude') return `Claude worker${mission.model ? ` using ${mission.model}` : ''}`;
+  if (runner === 'codex_goal') return 'Codex goal handoff';
+  return 'Local mission tick';
+}
+
+function missionWorkerSummary(mission, receipt) {
+  if (mission && mission.worker_summary) return mission.worker_summary;
+  const tick = receipt && receipt.result && (receipt.result.tick || (Array.isArray(receipt.result.ticks) ? receipt.result.ticks[receipt.result.ticks.length - 1] : null));
+  if (!tick) return mission && mission.last_tick_reason ? `Last tick: ${mission.last_tick_reason}` : 'No worker receipt yet.';
+  if (tick.atris2) {
+    return firstUsefulLine(tick.atris2.receipt_text, tick.atris2.ok ? 'Remote worker ran and returned a response.' : 'Remote worker failed.');
+  }
+  if (tick.claude) {
+    if (tick.claude.skipped) {
+      return tick.summary || `Worker step skipped: ${tick.claude.reason || tick.reason || 'not needed'}.`;
+    }
+    return tick.claude.summary || firstUsefulLine(tick.claude.receipt_text, tick.claude.ok ? 'Worker ran and returned a response.' : 'Worker failed.');
+  }
+  if (tick.summary) return tick.summary;
+  return tick.reason ? `Worker tick: ${tick.reason}` : 'Worker tick recorded.';
+}
+
+function missionReportFor(mission, root = process.cwd()) {
+  const verifierReceiptPath = mission.receipt_path || null;
+  const receipt = readMissionReceipt(verifierReceiptPath, root);
+  const workerReceiptPath = mission.worker_receipt_path || (receipt && verifierReceiptPath) || null;
+  const verifierPassed = mission.verifier_result && mission.verifier_result.passed === true;
+  const operatorOutcome = mission.operator_outcome
+    || (verifierPassed ? 'Verifier passed.' : mission.status === 'complete' ? 'Mission is complete.' : mission.status === 'blocked' ? 'Mission is blocked.' : 'Mission is still in progress.');
+  return {
+    id: mission.id,
+    objective: mission.objective,
+    status: mission.status,
+    operator_outcome: operatorOutcome,
+    worker: mission.worker || missionWorkerLabel(mission),
+    worker_summary: missionWorkerSummary(mission, receipt),
+    worker_receipt_path: workerReceiptPath,
+    verifier_receipt_path: verifierReceiptPath,
+    operator_next: mission.operator_next || mission.next_action || 'Review the mission state.',
+  };
+}
+
+function reportMission(args) {
+  const asJson = wantsJson(args);
+  const localOnly = hasFlag(args, '--local');
+  const ref = stripKnownFlags(args, ['--limit'], ['--json', '--local'])[0] || '';
+  const limit = readPositiveIntegerFlag(args, '--limit', ref ? 1 : 3, { json: asJson });
+  let missions = ref ? [resolveMission(ref)].filter(Boolean) : listMissions();
+  if (!ref && !localOnly) {
+    const seen = new Set(missions.map((mission) => mission.id));
+    for (const rolled of listWorktreeRollupMissions()) {
+      if (seen.has(rolled.id)) continue;
+      seen.add(rolled.id);
+      missions.push(rolled);
+    }
+    missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  }
+  if (ref && !missions.length) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+  }
+  missions = missions.slice(0, limit);
+  const reports = missions.map((mission) => missionReportFor(mission, mission.worktree_root || process.cwd()));
+  printJsonOrText(
+    { ok: true, action: 'mission_report', reports },
+    reports.length
+      ? reports.flatMap((report) => [
+        `Mission: ${report.objective}`,
+        `  state: ${report.status}`,
+        `  What happened: ${report.operator_outcome}`,
+        `  Worker: ${report.worker}`,
+        `  Worker summary: ${report.worker_summary}`,
+        ...(report.worker_receipt_path ? [`  Worker receipt: ${report.worker_receipt_path}`] : []),
+        ...(report.verifier_receipt_path ? [`  Verifier receipt: ${report.verifier_receipt_path}`] : []),
+        `  Next: ${report.operator_next}`,
       ])
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
     asJson,
@@ -1129,6 +1495,10 @@ function codexGoalObjective(mission) {
 }
 
 function codexGoalNextCommand(mission) {
+  const taskSpine = missionTaskSpine(mission);
+  if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) {
+    return taskSpine.ensure_task_command;
+  }
   if (mission.status === 'ready') {
     const xpAction = missionXpReadyAction(mission, mission.receipt_path);
     if (xpAction) return xpAction.replace(/^queue AgentXP review: /, '');
@@ -1219,11 +1589,16 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   }
 
   const { mission, reason } = selected;
+  const taskSpine = missionTaskSpine(mission);
+  const missionView = missionStatusView(mission);
   const goal = {
     objective: codexGoalObjective(mission),
     mission_id: mission.id,
     mission_objective: mission.objective,
     mission_status: mission.status,
+    owner: taskSpine?.owner || mission.owner,
+    executed_by: taskSpine?.executed_by || mission.executed_by || null,
+    task_spine: taskSpine,
     reason,
     next_command: codexGoalNextCommand(mission),
     replace_after: 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.',
@@ -1234,7 +1609,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     ok: true,
     action: heartbeatMode ? 'codex_goal_heartbeat' : 'codex_goal_candidate',
     goal,
-    mission,
+    mission: missionView,
     heartbeat,
   };
 }
@@ -1249,10 +1624,8 @@ function refreshCodexGoalController(root = process.cwd(), options = {}) {
   };
 }
 
-function runMissionRunDueOnce(root = process.cwd(), options = {}) {
+function runAtrisMissionJsonCommand(root, args, options = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
-  const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
-  if (options.noClaude) args.push('--no-claude');
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',
@@ -1264,13 +1637,77 @@ function runMissionRunDueOnce(root = process.cwd(), options = {}) {
     payload = JSON.parse(result.stdout || '{}');
   } catch {}
   return {
+    action: options.action || null,
     command: `atris ${args.join(' ')}`,
     status: result.status,
     ok: result.status === 0,
+    heavy_work: options.heavyWork === true,
+    setup_work: options.setupWork === true,
     stdout: String(result.stdout || '').slice(-4000),
     stderr: String(result.stderr || '').slice(-4000),
     payload,
   };
+}
+
+function runMissionRunDueOnce(root = process.cwd(), options = {}) {
+  const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
+  if (options.noClaude) args.push('--no-claude');
+  return runAtrisMissionJsonCommand(root, args, {
+    action: 'mission_run_due',
+    heavyWork: true,
+  });
+}
+
+function goalLoopNextCommandPlan(goal) {
+  const command = String(goal?.next_command || '').trim();
+  const attach = command.match(/^atris\s+mission\s+(attach-task|ensure-task|task-spine)\s+([A-Za-z0-9_.:-]+)\s+--json$/);
+  if (attach) {
+    return {
+      action: 'mission_attach_task',
+      command,
+      args: ['mission', 'attach-task', attach[2], '--json'],
+      heavy_work: false,
+      setup_work: true,
+      run_when_due_only: false,
+    };
+  }
+
+  const dueRun = command.match(/^atris\s+mission\s+run\s+--due\s+--max-ticks\s+([0-9]+)(\s+--complete-on-pass)?(?:\s+--json)?$/);
+  if (dueRun) {
+    const args = ['mission', 'run', '--due', '--max-ticks', dueRun[1]];
+    if (dueRun[2]) args.push('--complete-on-pass');
+    args.push('--json');
+    return {
+      action: 'mission_run_due',
+      command: `atris ${args.join(' ')}`,
+      args,
+      heavy_work: true,
+      setup_work: false,
+      run_when_due_only: true,
+    };
+  }
+
+  return null;
+}
+
+function shouldRunGoalLoopCommand(heartbeat, plan) {
+  if (!heartbeat?.goal) return false;
+  if (plan && plan.run_when_due_only === false) return true;
+  return heartbeat.heartbeat?.due === true;
+}
+
+function runMissionGoalNextCommand(root = process.cwd(), heartbeat, options = {}) {
+  const plan = goalLoopNextCommandPlan(heartbeat?.goal);
+  if (plan) {
+    const args = [...plan.args];
+    if (options.noClaude && plan.action === 'mission_run_due') args.push('--no-claude');
+    return runAtrisMissionJsonCommand(root, args, {
+      action: plan.action,
+      heavyWork: plan.heavy_work,
+      setupWork: plan.setup_work,
+    });
+  }
+  return runMissionRunDueOnce(root, options);
 }
 
 function sleep(ms, signal) {
@@ -1752,9 +2189,11 @@ async function runMission(args) {
       } else if (atris2Runner) {
         const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
         const { runAtris2Turn } = require('./probe');
+        const businessId = businessIdForAtris2Mission(mission, cwd);
         const turn = await runAtris2Turn({
           prompt,
           model: mission.model || 'atris:fast',
+          business: businessId,
           maxTurns: 16,
           signal: controller.signal,
         });
@@ -2201,22 +2640,43 @@ function completeMission(args) {
     exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
   }
   const baselineSummary = pruneMissionWorktreeBaseline(mission, process.cwd());
-  const next = {
+  const completionGate = { ...gate, forced: force && !gate.ok };
+  const baseNext = {
     ...mission,
     status: 'complete',
     completed_at: stampIso(),
     proof,
-    completion_gate: { ...gate, forced: force && !gate.ok },
+    completion_gate: completionGate,
     worktree_baseline: baselineSummary || mission.worktree_baseline || null,
     next_action: 'mission complete',
+  };
+  const xpNextCommand = missionXpReadyAction(baseNext, proof);
+  const completion = missionCompletionReceipt(baseNext, proof, xpNextCommand);
+  const next = {
+    ...baseNext,
+    landing: completion.landing,
+    result: completion.result,
   };
   const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof, completion_gate: next.completion_gate });
   const logPath = appendMemberLog(saved.owner, 'Mission completed', { mission: saved.objective, proof });
   const codexGoalState = refreshCodexGoalController(process.cwd());
-  const xpNextCommand = missionXpReadyAction(saved, proof);
   printJsonOrText(
-    { ok: true, action: 'mission_completed', mission: saved, log_path: logPath, codex_goal_state: codexGoalState, xp_next_command: xpNextCommand },
-    [`Completed mission: ${saved.objective}`, `Proof: ${proof}`, ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : [])],
+    {
+      ok: true,
+      action: 'mission_completed',
+      mission: saved,
+      landing: completion.landing,
+      result: completion.result,
+      log_path: logPath,
+      codex_goal_state: codexGoalState,
+      xp_next_command: xpNextCommand,
+    },
+    [
+      `Completed mission: ${saved.objective}`,
+      ...missionResultLines(completion),
+      `Proof: ${proof}`,
+      ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : []),
+    ],
     asJson,
   );
 }
@@ -2311,16 +2771,27 @@ async function goalLoopMission(args) {
       iteration: index + 1,
       heartbeat,
       ran_heavy_work: false,
+      ran_setup_work: false,
       dry_run: dryRun,
     };
 
-    if (heartbeat.heartbeat?.due && heartbeat.goal) {
+    const commandPlan = goalLoopNextCommandPlan(heartbeat.goal);
+    if (shouldRunGoalLoopCommand(heartbeat, commandPlan)) {
       if (dryRun) {
         event.ran_heavy_work = false;
-        event.run = { skipped: true, reason: 'dry-run', command: 'atris mission run --due --max-ticks 1 --complete-on-pass --json' };
+        event.ran_setup_work = false;
+        event.run = {
+          skipped: true,
+          reason: 'dry-run',
+          action: commandPlan?.action || 'mission_run_due',
+          command: commandPlan?.command || 'atris mission run --due --max-ticks 1 --complete-on-pass --json',
+          heavy_work: commandPlan?.heavy_work === true,
+          setup_work: commandPlan?.setup_work === true,
+        };
       } else {
-        event.run = runMissionRunDueOnce(root, { noClaude });
-        event.ran_heavy_work = event.run.ok === true;
+        event.run = runMissionGoalNextCommand(root, heartbeat, { noClaude });
+        event.ran_heavy_work = event.run.ok === true && event.run.heavy_work === true;
+        event.ran_setup_work = event.run.ok === true && event.run.setup_work === true;
         event.after_run = refreshCodexGoalController(root, { heartbeat: true });
       }
     }
@@ -2347,6 +2818,7 @@ async function goalLoopMission(args) {
     max_iterations: maxIterations,
     max_wall_seconds: maxWallSeconds,
     heavy_runs: events.filter((event) => event.ran_heavy_work).length,
+    setup_runs: events.filter((event) => event.ran_setup_work).length,
     events,
     final_state: finalState,
   };
@@ -2373,6 +2845,8 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission attach-task <id> [--json]   Create the missing task spine for an existing active mission
+  atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
@@ -2582,6 +3056,13 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'attach-task':
+    case 'ensure-task':
+    case 'task-spine':
+      return attachMissionTask(rest);
+    case 'report':
+    case 'debrief':
+      return reportMission(rest);
     case 'watch':
       return watchMission(rest);
     case 'layers':
@@ -2625,6 +3106,7 @@ module.exports = {
   classifyPathsByLayer,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
+  businessIdForAtris2Mission,
   detectUnavailableModel,
   missionPauseNextAction,
   consecutiveSameReasonErrors,

@@ -4,133 +4,302 @@
 //
 // Usage:
 //   atris deck themes                         list design themes
-//   atris deck build <spec.json> [--title T] [--theme terminal|paper] [--update ID]
-//   atris deck sample [--theme paper]         print a starter spec to stdout
+//   atris deck build <spec.json> [--title T] [--theme terminal|paper|ink|noir] [--review]
+//   atris deck lint <spec.json>               pre-build layout warnings
+//   atris deck review <id|url> [--spec path] [--confirm NOTE] [--json]
+//   atris deck sample [--theme paper]         print a starter spec
 //
 // A spec is JSON: { theme, brand:{name,accent}, slides:[ {type,...} ] }.
-// Slide types: title, statement, columns, panel, chips, bignumber, close.
+// Slide types: title, statement, columns, panel, chips, bignumber, close,
+//   timeline, versus, metricgrid, receipt, stack, quote, hero.
 
 const fs = require('fs');
 const https = require('https');
 const os = require('os');
-const { buildDeck, THEMES } = require('../lib/slides-deck');
-const { parseMarkdownToSpec } = require('../lib/deck-from-md');
-const { mergedThemes } = require('../lib/theme');
+const path = require('path');
+const { buildDeck, THEMES, notesRequests } = require('../lib/slides-deck');
+const {
+  lintSpec,
+  reviewDeck,
+  confirmReview,
+  extractPresentationId,
+  DEFAULT_OUT_ROOT,
+} = require('../lib/deck-review');
+const { validateSpec, checkSpec, hasErrors } = require('../lib/deck-schema');
+const { recordBuild, historyFor } = require('../lib/deck-history');
+const { composeSpec } = require('../lib/deck-compose');
 
 const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
 
 function token() {
-  try { return require(os.homedir() + '/.atris/credentials.json').token; }
+  try { return require(path.join(os.homedir(), '.atris/credentials.json')).token; }
   catch { return null; }
 }
-function api(method, path, body, tok) {
+
+function api(method, apiPath, body, tok) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
-    const req = https.request({ host: BASE, path: PFX + path, method,
-      headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
-        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}) } },
-      (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => {
-        let j; try { j = JSON.parse(b); } catch { j = b; }
-        if (res.statusCode >= 300) reject(new Error('HTTP ' + res.statusCode + ': ' + (typeof j === 'string' ? j : JSON.stringify(j)).slice(0, 600)));
-        else resolve(j); }); });
-    req.on('error', reject); if (data) req.write(data); req.end();
+    const req = https.request({
+      host: BASE,
+      path: PFX + apiPath,
+      method,
+      headers: {
+        Authorization: `Bearer ${tok}`,
+        'Content-Type': 'application/json',
+        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
+      },
+    }, (res) => {
+      let b = '';
+      res.on('data', (c) => { b += c; });
+      res.on('end', () => {
+        let j;
+        try { j = JSON.parse(b); } catch { j = b; }
+        if (res.statusCode >= 300) {
+          reject(new Error(`HTTP ${res.statusCode}: ${(typeof j === 'string' ? j : JSON.stringify(j)).slice(0, 600)}`));
+        } else {
+          resolve(j);
+        }
+      });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
   });
 }
+
+const THEME_HINTS = {
+  terminal: 'warm dark · investor / product wedge',
+  paper: 'warm light · editorial default',
+  ink: 'stark light · magazine / press',
+  noir: 'cool dark · podcast / interview',
+};
 
 const SAMPLE = {
   theme: 'terminal',
   brand: { name: 'Sentinel', accent: '.' },
   slides: [
-    { type: 'title', headline: 'Read your incidents in the **dark.**',
+    {
+      type: 'title',
+      headline: 'Read your incidents in the **dark.**',
       sub: "On-call shouldn't mean panic. Every alert ranked by blast radius, in one calm view.",
-      panel: { header: { title: 'Active incidents', meta: 'updated 12s ago' },
+      panel: {
+        header: { title: 'Active incidents', meta: 'updated 12s ago' },
         rows: [
           { title: 'Checkout latency spike', sub: 'api-gateway · us-east-1', value: '42%', valueSub: 'of traffic', sev: 0, active: true },
           { title: 'Stale read replica', sub: 'orders-db · eu-west-2', value: '8%', valueSub: 'of traffic', sev: 1 },
           { title: 'Elevated 4xx on search', sub: 'search-svc · global', value: '1.2%', valueSub: 'of traffic', sev: 2 },
-        ], footer: { left: '3 active, 1 worth a page', right: 'View all' } } },
-    { type: 'statement', text: "On-call shouldn't mean **panic.**",
-      sub: 'So the console is calm by default. One screen, ranked by real impact.' },
-    { type: 'columns', heading: 'What makes it calm', columns: [
-      { h: 'Ranked by impact', b: 'Severity comes from real blast radius, so the top of the list is the thing to fix.' },
-      { h: 'Quiet by default', b: 'One page-worthy signal per incident. The rest stays in the log until you ask.' },
-      { h: 'Built for 3am', b: 'High contrast, keyboard-first, and readable before you are fully awake.' } ] },
+        ],
+        footer: { left: '3 active, 1 worth a page', right: 'View all' },
+      },
+    },
+    { type: 'statement', text: "On-call shouldn't mean **panic.**", sub: 'So the console is calm by default. One screen, ranked by real impact.' },
+    {
+      type: 'columns',
+      heading: 'What makes it calm',
+      columns: [
+        { h: 'Ranked by impact', b: 'Severity comes from real blast radius, so the top of the list is the thing to fix.' },
+        { h: 'Quiet by default', b: 'One page-worthy signal per incident. The rest stays in the log until you ask.' },
+        { h: 'Built for 3am', b: 'High contrast, keyboard-first, and readable before you are fully awake.' },
+      ],
+    },
     { type: 'bignumber', number: '11 min', label: 'median time to first action', sub: 'down from 47 minutes before Sentinel.' },
-    { type: 'close', tagline: 'Read your incidents in the dark.',
-      buttons: [{ label: 'Open the console', primary: true }, { label: 'Read the docs' }], footer: 'sentinel.sh · 2026' },
+    {
+      type: 'close',
+      tagline: 'Read your incidents in the dark.',
+      buttons: [{ label: 'Open the console', primary: true }, { label: 'Read the docs' }],
+      footer: 'sentinel.sh · 2026',
+    },
   ],
 };
 
-// shared: spec -> live deck. Returns the URL.
-async function publishDeck(spec, { title, updateId, tok }) {
-  const { requests } = buildDeck(spec, { themes: mergedThemes(THEMES) });
-  let id, firstSlide;
-  if (updateId) {
-    id = updateId;
-    const got = await api('GET', `/presentations/${id}`, null, tok);
-    const slides = got.slides || (got.presentation && got.presentation.slides) || [];
-    firstSlide = slides[0] && slides[0].objectId;
-  } else {
-    const pres = await api('POST', '/presentations', { title }, tok);
-    id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
-    const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
-    firstSlide = slides[0] && slides[0].objectId;
-  }
-  const reqs = firstSlide ? [...requests, { deleteObject: { objectId: firstSlide } }] : requests;
-  console.log(`  building ${spec.slides.length} slides (${spec.theme}) · ${reqs.length} ops...`);
-  await api('POST', `/presentations/${id}/batch-update`, { requests: reqs }, tok);
-  return `https://docs.google.com/presentation/d/${id}/edit`;
+function flag(argv, name) {
+  const i = argv.indexOf(name);
+  return i !== -1 ? argv[i + 1] : null;
 }
 
-// beautiful HTML output (page or AppBlock JSON) from a content spec
-function outputHtml(spec, argv, srcLabel) {
-  const { renderHtml, renderBlock, THEMES: HTML_THEMES } = require('../lib/html-render');
-  const themes = mergedThemes(HTML_THEMES);
-  if (!themes[spec.theme]) spec.theme = 'atris';
-  const title = flag(argv, '--title');
-  if (hasFlag(argv, '--block')) {
-    console.log(JSON.stringify(renderBlock(spec, { title, themes }), null, 2));
-    return 0;
+function hasFlag(argv, name) {
+  return argv.includes(name);
+}
+
+// Flags that take a value, so their following token is consumed (not a path).
+const VALUE_FLAGS = new Set(['--theme', '--title', '--update', '--out', '--style', '--url', '--md']);
+
+// Positional args, skipping boolean flags and value-flag values. Lets batch
+// build collect real spec paths even when flags like `--theme noir` precede them.
+function positionals(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('-')) { if (VALUE_FLAGS.has(a)) i += 1; continue; }
+    out.push(a);
   }
-  const html = renderHtml(spec, { title, themes });
-  const out = flag(argv, '--out');
-  if (out) { fs.writeFileSync(out, html); console.log(`\n  ✓ html written: ${out}${srcLabel ? ` (from ${srcLabel})` : ''}\n`); }
-  else process.stdout.write(html + '\n');
+  return out;
+}
+
+function readSpec(specPath) {
+  return JSON.parse(fs.readFileSync(specPath, 'utf8'));
+}
+
+function printLint(findings) {
+  if (!findings.length) {
+    console.log('\n  ✓ spec lint clean\n');
+    return;
+  }
+  console.log('');
+  for (const f of findings) {
+    const icon = f.severity === 'error' ? '✗' : f.severity === 'warn' ? '⚠' : '·';
+    console.log(`  ${icon} slide ${f.slide}  ${f.rule.padEnd(22)} ${f.message}`);
+  }
+  console.log('');
+}
+
+async function runReviewFlow({ presentationId, spec, specPath, json, auto = false }) {
+  const tok = token();
+  if (!tok) {
+    console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+    return 1;
+  }
+  const { packet, manifestPath, outDir } = await reviewDeck({
+    presentationId,
+    spec,
+    specPath,
+    api,
+    token: tok,
+    auto,
+  });
+  if (json) {
+    console.log(JSON.stringify({ ...packet, manifestPath, outDir }, null, 2));
+  } else {
+    console.log(`\n  review packet: ${manifestPath}`);
+    console.log(`  thumbnails:    ${outDir}`);
+    console.log(`  status:          ${packet.status}`);
+    console.log(`  slides:          ${packet.slides.length}`);
+    if (packet.autoReview) {
+      const ar = packet.autoReview;
+      console.log(`  auto review:     ${ar.passed}/${ar.results.length} thumbnails ok${ar.failed ? ` · ${ar.failed} FLAGGED` : ''}`);
+      for (const r of ar.results.filter((x) => !x.ok)) {
+        console.log(`        ✗ slide ${r.index}${r.type ? ` (${r.type})` : ''}: ${r.reason}`);
+      }
+    }
+    if (packet.specLint.length) {
+      printLint(packet.specLint);
+    } else {
+      console.log('  spec lint:       clean');
+    }
+    console.log('  next: open PNGs, fix spec if needed, then:');
+    console.log(`        atris deck review ${packet.presentationId} --confirm "looks good"\n`);
+  }
   return 0;
+}
+
+// Pure: given the engine's build requests and what the API reports, produce the
+// final batch-update request list.
+//   - update: delete every existing slide first, then add the fresh ones. The
+//     engine reuses fixed objectIds (deck_slide_N), so a prior build's slides
+//     must be removed before recreating them or the API rejects duplicate IDs.
+//   - create: append a delete of the blank default slide a new deck ships with.
+function planBatch({ requests, updateId = null, existingSlides = [], newFirstSlideId = null }) {
+  if (updateId) {
+    const deletions = (existingSlides || [])
+      .filter((s) => s && s.objectId)
+      .map((s) => ({ deleteObject: { objectId: s.objectId } }));
+    return [...deletions, ...requests];
+  }
+  return newFirstSlideId ? [...requests, { deleteObject: { objectId: newFirstSlideId } }] : requests;
+}
+
+// Publish a deck via the Slides API (create or in-place update). api/token are
+// injected so this is unit-testable with a mock transport.
+async function publishDeck({ spec, title, updateId, api: apiFn, token: tok }) {
+  const { requests } = buildDeck(spec);
+  let id;
+  let batch;
+  if (updateId) {
+    id = updateId;
+    const got = await apiFn('GET', `/presentations/${id}`, null, tok);
+    const existing = got.slides || (got.presentation && got.presentation.slides) || [];
+    batch = planBatch({ requests, updateId, existingSlides: existing });
+  } else {
+    const pres = await apiFn('POST', '/presentations', { title }, tok);
+    id = pres.presentationId || pres.id || (pres.presentation && pres.presentation.presentationId);
+    const slides = pres.slides || (pres.presentation && pres.presentation.slides) || [];
+    batch = planBatch({ requests, newFirstSlideId: slides[0] && slides[0].objectId });
+  }
+  await apiFn('POST', `/presentations/${id}/batch-update`, { requests: batch }, tok);
+
+  // Second pass for speaker notes: the notes body objectIds only exist once the
+  // slides do, so re-read the deck and insert notes for slides that declare them.
+  let notes = 0;
+  if ((spec.slides || []).some((s) => s.notes)) {
+    const got = await apiFn('GET', `/presentations/${id}`, null, tok);
+    const apiSlides = got.slides || (got.presentation && got.presentation.slides) || [];
+    const nreqs = notesRequests(apiSlides, spec.slides);
+    if (nreqs.length) {
+      await apiFn('POST', `/presentations/${id}/batch-update`, { requests: nreqs }, tok);
+      notes = nreqs.length;
+    }
+  }
+  return { id, url: `https://docs.google.com/presentation/d/${id}/edit`, ops: batch.length, notes };
+}
+
+// One-shot: an analysis text -> composed spec -> lint gate -> published deck.
+// api/token injected so the orchestration is testable without the network.
+// Returns { ok:false, findings } if the composed spec fails the lint gate.
+async function videoToDeck({ analysisText, title, theme, style, url, api: apiFn, token: tok }) {
+  const spec = composeSpec(analysisText, { theme, style, title, url });
+  const findings = checkSpec(spec, lintSpec);
+  if (hasErrors(findings)) return { ok: false, spec, findings };
+  const published = await publishDeck({
+    spec,
+    title: title || (spec.brand && spec.brand.name) || 'Atris deck',
+    updateId: null,
+    api: apiFn,
+    token: tok,
+  });
+  return { ok: true, spec, findings, ...published };
+}
+
+// Build several specs in sequence (avoids rate-limit bursts). Plain build only.
+async function runBatch(specPaths, { themeOverride }) {
+  const tok = token();
+  if (!tok) {
+    console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+    return 1;
+  }
+  let failures = 0;
+  for (const specPath of specPaths) {
+    let spec;
+    try { spec = readSpec(specPath); }
+    catch (e) { console.error(`  ✗ ${specPath}: ${e.message}`); failures += 1; continue; }
+    if (themeOverride) spec.theme = themeOverride;
+    if (!THEMES[spec.theme]) { console.error(`  ✗ ${specPath}: unknown theme "${spec.theme}"`); failures += 1; continue; }
+    const findings = validateSpec(spec);
+    if (hasErrors(findings)) { console.error(`  ✗ ${specPath}: invalid spec`); printLint(findings); failures += 1; continue; }
+    try {
+      const { id, url, ops } = await publishDeck({ spec, title: (spec.brand && spec.brand.name) || 'Atris deck', updateId: null, api, token: tok });
+      try { recordBuild({ spec, specPath, presentationId: id, url, mode: 'create' }); } catch { /* ignore */ }
+      console.log(`  ✓ ${specPath}  ->  ${url}  (${ops} ops)`);
+    } catch (e) { console.error(`  ✗ ${specPath}: ${e.message}`); failures += 1; }
+  }
+  console.log(`\n  built ${specPaths.length - failures}/${specPaths.length} decks\n`);
+  return failures ? 1 : 0;
 }
 
 async function run(argv) {
   const sub = argv[0];
 
-  if (sub === 'from') {
-    const docPath = argv.slice(1).find((a) => !a.startsWith('-'));
-    if (!docPath) { console.error('  usage: atris deck from <doc.md> [--theme x] [--brand Name] [--build] [--title T]'); return 2; }
-    let md;
-    try { md = fs.readFileSync(docPath, 'utf8'); }
-    catch (e) { console.error(`  cannot read doc: ${e.message}`); return 2; }
-    const spec = parseMarkdownToSpec(md, { theme: flag(argv, '--theme'), brandName: flag(argv, '--brand') });
-    if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, docPath);
-    { const dt = mergedThemes(THEMES); if (!dt[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(dt).join(', ')}`); return 2; } }
-    if (!hasFlag(argv, '--build')) {
-      // default: print the spec so the PM can tweak before building
-      console.log(JSON.stringify(spec, null, 2));
-      return 0;
-    }
-    const tok = token();
-    if (!tok) { console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.'); return 1; }
-    const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
-    const url = await publishDeck(spec, { title, updateId: flag(argv, '--update'), tok });
-    console.log(`\n  ✓ deck from ${docPath} ready: ${url}\n`);
-    return 0;
-  }
-
   if (sub === 'themes') {
     console.log('\n  atris deck themes:\n');
     for (const [name, t] of Object.entries(THEMES)) {
-      console.log(`  ${name.padEnd(10)} ${t.fonts.display} + ${t.fonts.body}  ·  accent ${t.color.accent}  bg ${t.color.bg}`);
+      const hint = THEME_HINTS[name] || '';
+      console.log(`  ${name.padEnd(10)} ${hint}`);
+      console.log(`             ${t.fonts.display} + ${t.fonts.body}  ·  accent ${t.color.accent}  bg ${t.color.bg}`);
     }
-    console.log('\n  slide types: title, statement, columns, panel, chips, bignumber, close\n');
+    console.log('\n  pick one: spec.json "theme" field  OR  atris deck build spec.json --theme noir');
+    console.log('\n  slide types: title, statement, columns, panel, chips, bignumber, close,');
+    console.log('               timeline, versus, metricgrid, receipt, stack, quote, hero,');
+    console.log('               interstitial, lede, prose, split, bullets  (narrative / box-free)\n');
     return 0;
   }
 
@@ -140,45 +309,276 @@ async function run(argv) {
     return 0;
   }
 
-  if (sub === 'build') {
+  if (sub === 'history') {
+    const query = argv.slice(1).find((a) => !a.startsWith('-'));
+    const entries = historyFor(query);
+    if (hasFlag(argv, '--json')) {
+      console.log(JSON.stringify(entries, null, 2));
+      return 0;
+    }
+    if (!entries.length) {
+      console.log(`\n  no deck builds recorded${query ? ` for "${query}"` : ''} yet\n`);
+      return 0;
+    }
+    console.log('');
+    for (const e of entries) {
+      const when = (e.at || '').replace('T', ' ').slice(0, 16);
+      console.log(`  ${when}  ${String(e.mode).padEnd(6)} ${String(e.slideCount).padStart(2)}sl ${String(e.theme || '?').padEnd(8)} ${e.specHash}`);
+      console.log(`                    ${e.specPath || '(inline)'}  ->  ${e.url || e.presentationId}`);
+    }
+    console.log('');
+    return 0;
+  }
+
+  if (sub === 'compose') {
+    const out = flag(argv, '--out');
+    const url = flag(argv, '--url');
+    const mdPath = flag(argv, '--md');
+    const composeOpts = {
+      theme: flag(argv, '--theme'),
+      style: flag(argv, '--style'),
+      title: flag(argv, '--title'),
+      url,
+    };
+    if (!url && !mdPath) {
+      console.error('  usage: atris deck compose (--url <youtube> | --md <file.md>) [--out spec.json] [--theme ink] [--style narrative|dense|pitch]');
+      return 2;
+    }
+    let text;
+    if (mdPath) {
+      try { text = fs.readFileSync(mdPath, 'utf8'); }
+      catch (e) { console.error(`  cannot read ${mdPath}: ${e.message}`); return 2; }
+    } else {
+      // Network path: fetch a transcript analysis from the cloud, then compose.
+      try {
+        const { processYoutube } = require('./youtube');
+        console.error(`  fetching analysis for ${url} (this can take a minute)...`);
+        const data = await processYoutube({
+          youtubeUrl: url,
+          query: 'Summarize this video into a slide outline. Use markdown: one H1 title, then ## sections. Within a section use a bullet list for parallel points, a blockquote for a memorable line (with attribution), and short paragraphs for narrative. End with a ## Takeaway.',
+          timeoutMs: 300000,
+        });
+        text = data.video_analysis || data.analysis || data.result || (typeof data === 'string' ? data : '');
+      } catch (e) {
+        console.error(`  compose --url needs Atris cloud access (run \`atris login\`): ${e.message}`);
+        return 1;
+      }
+      if (!text) { console.error('  no analysis returned for that URL'); return 1; }
+    }
+    const spec = composeSpec(text, composeOpts);
+    const findings = checkSpec(spec, lintSpec);
+    if (out) {
+      fs.writeFileSync(out, `${JSON.stringify(spec, null, 2)}\n`);
+      console.error(`\n  ✓ composed ${spec.slides.length} slides (${spec.theme}) -> ${out}`);
+      printLint(findings);
+      console.error(`  next: atris deck build ${out} --review\n`);
+    } else {
+      // stdout stays clean JSON for piping; lint goes to stderr
+      console.log(JSON.stringify(spec, null, 2));
+      const errs = findings.filter((f) => f.severity === 'error').length;
+      const warns = findings.filter((f) => f.severity === 'warn').length;
+      console.error(`  composed ${spec.slides.length} slides (${spec.theme}) · lint: ${errs} errors, ${warns} warnings`);
+    }
+    return hasErrors(findings) ? 1 : 0;
+  }
+
+  if (sub === 'lint') {
     const specPath = argv.slice(1).find((a) => !a.startsWith('-'));
-    if (!specPath) { console.error('  usage: atris deck build <spec.json> [--title T] [--theme x] [--update ID]'); return 2; }
+    if (!specPath) {
+      console.error('  usage: atris deck lint <spec.json>');
+      return 2;
+    }
     let spec;
-    try { spec = JSON.parse(fs.readFileSync(specPath, 'utf8')); }
+    try { spec = readSpec(specPath); }
     catch (e) { console.error(`  cannot read spec: ${e.message}`); return 2; }
-    const themeOverride = flag(argv, '--theme'); if (themeOverride) spec.theme = themeOverride;
-    if (hasFlag(argv, '--html') || hasFlag(argv, '--block')) return outputHtml(spec, argv, specPath);
-    { const dt = mergedThemes(THEMES); if (!dt[spec.theme]) { console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(dt).join(', ')}`); return 2; } }
+    const findings = checkSpec(spec, lintSpec);
+    if (hasFlag(argv, '--json')) {
+      console.log(JSON.stringify({ ok: !hasErrors(findings), findings }, null, 2));
+    } else {
+      printLint(findings);
+    }
+    return hasErrors(findings) ? 1 : 0;
+  }
+
+  if (sub === 'review') {
+    const idArg = argv.slice(1).find((a) => !a.startsWith('-'));
+    if (!idArg) {
+      console.error('  usage: atris deck review <presentation-id|url> [--spec spec.json] [--confirm NOTE] [--json]');
+      return 2;
+    }
+    const confirmNote = flag(argv, '--confirm');
+    if (confirmNote) {
+      const { manifestPath, packet, alreadyConfirmed, receiptPath } = confirmReview(extractPresentationId(idArg), confirmNote);
+      if (hasFlag(argv, '--json')) {
+        console.log(JSON.stringify({ manifestPath, packet, alreadyConfirmed, receiptPath }, null, 2));
+      } else {
+        console.log(`\n  ✓ review confirmed: ${manifestPath}`);
+        if (receiptPath) console.log(`  receipt: ${receiptPath}`);
+        console.log(`  deck: ${packet.url}\n`);
+      }
+      return 0;
+    }
+    const specPath = flag(argv, '--spec');
+    let spec = null;
+    if (specPath) {
+      try { spec = readSpec(specPath); }
+      catch (e) { console.error(`  cannot read spec: ${e.message}`); return 2; }
+    }
+    return runReviewFlow({
+      presentationId: idArg,
+      spec,
+      specPath,
+      json: hasFlag(argv, '--json'),
+      auto: hasFlag(argv, '--auto') || hasFlag(argv, '--review-auto'),
+    });
+  }
+
+  if (sub === 'video') {
+    const url = positionals(argv.slice(1))[0] || flag(argv, '--url');
+    if (!url) {
+      console.error('  usage: atris deck video <youtube-url> [--title T] [--theme noir] [--style narrative] [--review]');
+      return 2;
+    }
+    const tok = token();
+    if (!tok) {
+      console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+      return 1;
+    }
+    let analysisText;
+    try {
+      const { processYoutube } = require('./youtube');
+      console.error(`  fetching analysis for ${url} (this can take a minute)...`);
+      const data = await processYoutube({
+        youtubeUrl: url,
+        query: 'Summarize this video into a slide outline. Use markdown: one H1 title, then ## sections. Within a section use a bullet list for parallel points, a blockquote for a memorable line (with attribution), and short paragraphs for narrative. End with a ## Takeaway.',
+        timeoutMs: 300000,
+      });
+      analysisText = data.video_analysis || data.analysis || data.result || (typeof data === 'string' ? data : '');
+    } catch (e) {
+      console.error(`  atris deck video needs Atris cloud access (run \`atris login\`): ${e.message}`);
+      return 1;
+    }
+    if (!analysisText) { console.error('  no analysis returned for that URL'); return 1; }
+    const result = await videoToDeck({
+      analysisText,
+      title: flag(argv, '--title'),
+      theme: flag(argv, '--theme'),
+      style: flag(argv, '--style'),
+      url,
+      api,
+      token: tok,
+    });
+    if (!result.ok) {
+      console.error('\n  ✗ composed spec failed lint — not building:');
+      printLint(result.findings);
+      return 1;
+    }
+    try { recordBuild({ spec: result.spec, presentationId: result.id, url: result.url, mode: 'create' }); } catch { /* ignore */ }
+    console.log(`\n  ✓ deck ready: ${result.url}  (${result.spec.slides.length} slides)\n`);
+    if (hasFlag(argv, '--review') || hasFlag(argv, '--review-auto')) {
+      return runReviewFlow({ presentationId: result.id, spec: result.spec, specPath: null, json: hasFlag(argv, '--json'), auto: hasFlag(argv, '--review-auto') });
+    }
+    return 0;
+  }
+
+  if (sub === 'build') {
+    const specPaths = positionals(argv.slice(1));
+    if (specPaths.length > 1) {
+      return runBatch(specPaths, { themeOverride: flag(argv, '--theme') });
+    }
+    const specPath = specPaths[0];
+    if (!specPath) {
+      console.error('  usage: atris deck build <spec.json> [<spec2.json> ...] [--title T] [--theme x] [--review]');
+      return 2;
+    }
+    let spec;
+    try { spec = readSpec(specPath); }
+    catch (e) { console.error(`  cannot read spec: ${e.message}`); return 2; }
+    const themeOverride = flag(argv, '--theme');
+    if (themeOverride) spec.theme = themeOverride;
+    if (!THEMES[spec.theme]) {
+      console.error(`  unknown theme "${spec.theme}". try: ${Object.keys(THEMES).join(', ')}`);
+      return 2;
+    }
+    // Hard schema gate: fail a malformed spec locally with a slide index,
+    // before spending a network round trip on a doomed batch-update.
+    const schemaFindings = validateSpec(spec);
+    if (hasErrors(schemaFindings)) {
+      printLint(schemaFindings);
+      console.error('\n  ✗ spec invalid — fix the errors above before building\n');
+      return 2;
+    }
     const title = flag(argv, '--title') || `${(spec.brand && spec.brand.name) || 'Atris'} deck`;
+    const reviewAuto = hasFlag(argv, '--review-auto');
+    const doReview = hasFlag(argv, '--review') || reviewAuto;
+    const updateId = flag(argv, '--update');
+    if (doReview) {
+      const findings = lintSpec(spec);
+      printLint(findings);
+      if (findings.some((f) => f.severity === 'error')) {
+        console.error('\n  ✗ lint failed — fix spec before building\n');
+        return 1;
+      }
+    }
 
     const tok = token();
-    if (!tok) { console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.'); return 1; }
+    if (!tok) {
+      console.error('  no credentials at ~/.atris/credentials.json — run `atris login` and connect Google Drive.');
+      return 1;
+    }
 
-    const url = await publishDeck(spec, { title, updateId: flag(argv, '--update'), tok });
-    console.log(`\n  ✓ deck ready: ${url}\n`);
+    console.log(`  ${updateId ? 'updating' : 'building'} ${spec.slides.length} slides (${spec.theme})...`);
+    const { id, url, ops } = await publishDeck({ spec, title, updateId, api, token: tok });
+    // Ledger the build; never let a history write failure break a build.
+    try { recordBuild({ spec, specPath, presentationId: id, url, mode: updateId ? 'update' : 'create' }); } catch { /* ignore */ }
+    console.log(`\n  ✓ deck ${updateId ? 'updated' : 'ready'}: ${url}  (${ops} ops)\n`);
+
+    if (doReview) {
+      return runReviewFlow({ presentationId: id, spec, specPath, json: hasFlag(argv, '--json'), auto: reviewAuto });
+    }
     return 0;
   }
 
   console.log(`
-  atris deck — premium Google Slides from a plain content spec or a markdown doc
+  atris deck — premium Google Slides from a plain content spec
 
-    atris deck from doc.md [--build] [--title T]   turn a markdown doc into a deck
-    atris deck from doc.md --html --out page.html  beautiful HTML page (theme: atris|terminal|paper)
-    atris deck from doc.md --block                 emit the AppBlock JSON for a web app
-    atris deck sample [--theme paper] > my.json    start from a sample spec
-    atris deck build my.json [--title "Q3 review"] create the deck, print the URL
-    atris deck build my.json --html --out p.html   render the spec as HTML instead of slides
-    atris deck themes                              list design themes
+    atris deck sample [--theme paper] > my.json
+    atris deck compose --md notes.md --out my.json [--style narrative]
+    atris deck compose --url <youtube> --out my.json [--theme ink]
+    atris deck video <youtube> [--theme noir] [--review]   compose+build in one shot
+    atris deck lint my.json
+    atris deck build my.json [more.json ...] [--title "Q3 review"] [--update ID] [--review]
+    atris deck review <id|url> [--spec my.json]
+    atris deck review <id> --confirm "looks good"
+    atris deck history [my.json]            builds recorded for a spec
+    atris deck themes
 
-  'from' maps headings to slides (## with bullets -> columns, "**X** label" -> a
-  big number, Close -> a closing slide). Without --build it prints the spec to tweak.
-  Design system is baked in: distinctive fonts, one accent, real data panels, and
-  no AI tells (em dashes sanitized, sentence-case labels, no gradient text).
+    --update ID replaces every slide in an existing deck in place, so the
+    presentation URL and id stay stable across rebuilds.
+
+  Review loop:
+    build --review -> downloads slide PNGs to ~/.atris/deck-review/<id>/
+    build --review-auto -> also auto-flags blank/failed thumbnails
+    agent inspects thumbnails -> fix spec/engine -> rebuild
+    review --confirm -> marks deck ready
+
+  Design system is baked in: distinctive fonts, one accent, real data panels,
+  and no AI tells (em dashes sanitized, sentence-case labels, no gradient text).
 `);
   return 0;
 }
 
-function flag(argv, name) { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; }
-function hasFlag(argv, name) { return argv.includes(name); }
-
-module.exports = { run, SAMPLE, publishDeck };
+module.exports = {
+  run,
+  SAMPLE,
+  api,
+  token,
+  lintSpec,
+  validateSpec,
+  checkSpec,
+  planBatch,
+  publishDeck,
+  videoToDeck,
+  positionals,
+  DEFAULT_OUT_ROOT,
+};

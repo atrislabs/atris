@@ -46,6 +46,10 @@ function promptUser(question) {
       let data = '';
       process.stdin.setEncoding('utf8');
       process.stdin.on('data', chunk => data += chunk);
+      process.stdin.on('error', () => {
+        inputLines = [];
+        resolve('');
+      });
       process.stdin.on('end', () => {
         inputLines = data.trim().split('\n');
         process.stdout.write(question);

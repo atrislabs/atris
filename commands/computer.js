@@ -13,6 +13,7 @@
  *   atris computer ls [path]        — List files
  *   atris computer cat <path>       — Read a file
  *   atris computer exec <prompt>    — Run with LLM (Claude Code)
+ *   atris computer recruiting       — Open the recruiting workflow shortcut
  */
 
 const fs = require('fs');
@@ -42,6 +43,19 @@ function sleep(ms) {
 
 const VALID_CLOUD_WORKERS = new Set(['claude', 'openai']);
 const LOCAL_BRIDGE_RECONNECT_MS = 2000;
+const VALID_COMPUTER_TYPES = new Set([
+  'general',
+  'business_ops',
+  'codeops',
+  'research',
+  'crm',
+  'reporting',
+  'recruiting',
+  'event_ops',
+  'support',
+]);
+const RECRUITING_BUSINESS_SLUG = 'atris-labs';
+const RECRUITING_LOCAL_SYNC_COMMANDS = new Set(['pull', 'push', 'publish', 'watch', 'review', 'doctor']);
 const KNOWN_CHAT_COMMANDS = new Set([
   '/audit',
   '/exit',
@@ -88,6 +102,21 @@ planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, mer
 
 Never hide failures.
 A blocked check or missing permission is evidence, not success.
+`.trim();
+
+const RECRUITING_WORKFLOW_PROMPT = `
+## Atris Recruiting Workflow
+
+You are running inside the recruiting computer.
+Optimize for recruiter throughput: pipeline clarity, candidate follow-up, role context, interview loops, and decision notes.
+Do not send outreach, DMs, emails, or calendar invites without explicit operator approval.
+
+For each work block, report:
+- role or pipeline touched
+- candidates or sources reviewed
+- artifact changed
+- follow-up owner
+- sync/proof status
 `.trim();
 
 function color(code, value) {
@@ -266,7 +295,8 @@ function printCloudStartPanel(ctx, worker, model, billingLabel, authSummary = nu
 
 function appendSystemPrompt(basePrompt, extraPrompt) {
   if (!extraPrompt) return basePrompt || null;
-  if (basePrompt && basePrompt.includes('## Atris CodeOps Workflow')) return basePrompt;
+  const marker = String(extraPrompt).split('\n', 1)[0];
+  if (basePrompt && marker && basePrompt.includes(marker)) return basePrompt;
   if (!basePrompt) return extraPrompt;
   return `${String(basePrompt).trim()}\n\n${extraPrompt}`;
 }
@@ -277,6 +307,15 @@ function codeOpsCloudOptions(options = {}) {
     worker: options.worker || 'claude',
     mode: 'codeops',
     systemPrompt: appendSystemPrompt(options.systemPrompt, CODEOPS_WORKFLOW_PROMPT),
+  };
+}
+
+function recruitingCloudOptions(options = {}) {
+  return {
+    ...options,
+    worker: options.worker || 'claude',
+    mode: 'recruiting',
+    systemPrompt: appendSystemPrompt(options.systemPrompt, RECRUITING_WORKFLOW_PROMPT),
   };
 }
 
@@ -304,6 +343,502 @@ function printCodeOpsWorkflowContract() {
   console.log('  Required final evidence: edited_files, commands_run, validation_result, pr_url, pr_state, merge_state, next_task.');
   console.log('  Allowed states: planned, executing, validated, pr_opened, merge_ready, merge_blocked_checks, merge_blocked_policy, merged, failed, needs_human.');
   console.log('  Full permissions stay on; the workflow contract controls how the computer uses them.');
+}
+
+function printRecruitingWorkflowContract() {
+  console.log('');
+  console.log(ui.bold('Recruiting workflow'));
+  console.log('  pipeline -> candidates -> next touch -> owner -> proof -> sync');
+  console.log('');
+  console.log('  No external outreach, DMs, emails, or calendar invites without explicit operator approval.');
+  console.log('  Required final evidence: pipeline touched, candidates reviewed, artifact changed, follow-up owner, sync/proof status.');
+}
+
+function printRecruitingComputerHelp() {
+  console.log('Usage: atris computer recruiting [chat|status|sync|doctor|pull|push|publish|watch|review|wake|sleep|run|grep|ls|cat|exec|audit|workflow|create]');
+  console.log('');
+  console.log('Examples:');
+  console.log('  atris computer recruiting');
+  console.log('  atris computer recruiting status');
+  console.log('  atris computer recruiting doctor');
+  console.log('  atris computer recruiting sync');
+  console.log('  atris computer recruiting pull');
+  console.log('  atris computer recruiting push --dry-run');
+  console.log('  atris computer recruiting publish --dry-run');
+  console.log('  atris computer recruiting watch');
+  console.log('  atris computer recruiting run "pwd && find . -maxdepth 2 -type f | head"');
+  console.log("  atris computer recruiting exec \"Summarize today's candidate follow-ups\"");
+  console.log('  atris computer recruiting create');
+}
+
+function displayHomeRelativePath(targetPath) {
+  const home = os.homedir();
+  if (targetPath && home && targetPath === home) return '~';
+  if (targetPath && home && targetPath.startsWith(`${home}${path.sep}`)) {
+    return `~${targetPath.slice(home.length)}`;
+  }
+  return targetPath;
+}
+
+function recruitingBusinessWorkspacePath(slug = RECRUITING_BUSINESS_SLUG) {
+  const root = process.env.ATRIS_BUSINESS_ROOT || path.join(os.homedir(), 'arena', 'atris-business');
+  return path.join(root, slug);
+}
+
+function normalizeBusinessSlug(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function bindingMatchesBusinessSlug(binding, slug) {
+  if (!binding) return false;
+  const wanted = normalizeBusinessSlug(slug);
+  return [binding.slug, binding.business_slug, binding.name]
+    .map(normalizeBusinessSlug)
+    .some((candidate) => candidate && candidate === wanted);
+}
+
+function bindingBusinessLabel(binding) {
+  return binding?.slug || binding?.business_slug || binding?.name || 'unknown';
+}
+
+function resolveRecruitingSyncWorkspace(slug = RECRUITING_BUSINESS_SLUG) {
+  const currentBinding = readBusinessBinding();
+  if (bindingMatchesBusinessSlug(currentBinding, slug)) {
+    return {
+      cwd: process.cwd(),
+      binding: currentBinding,
+      source: 'current',
+    };
+  }
+
+  const canonicalCwd = recruitingBusinessWorkspacePath(slug);
+  const canonicalBinding = readBusinessBinding(canonicalCwd);
+  if (bindingMatchesBusinessSlug(canonicalBinding, slug)) {
+    return {
+      cwd: canonicalCwd,
+      binding: canonicalBinding,
+      source: 'canonical',
+    };
+  }
+
+  return null;
+}
+
+function printRecruitingSyncNextSteps(slug = RECRUITING_BUSINESS_SLUG, workspacePath = null) {
+  const target = workspacePath || recruitingBusinessWorkspacePath(slug);
+  console.log('');
+  console.log('Recruiting sync commands');
+  console.log(`  cd ${displayHomeRelativePath(target)}`);
+  console.log('  atris computer recruiting doctor');
+  console.log('  atris computer recruiting pull');
+  console.log('  atris computer recruiting push --dry-run');
+  console.log('  atris computer recruiting publish --dry-run');
+  console.log('  atris sync --status');
+  console.log('  atris sync --dry-run');
+  console.log('  atris sync');
+  console.log('  atris sync --watch');
+}
+
+function recruitingLocalSyncCommand(action, slug = RECRUITING_BUSINESS_SLUG, args = []) {
+  const withFlag = (items, flag) => items.includes(flag) ? items : [...items, flag];
+  switch (action) {
+    case 'pull':
+      return ['pull', slug, '--keep-local', '--fail-on-conflict', ...args];
+    case 'push':
+      return ['push', slug, ...args];
+    case 'publish':
+      return ['push', slug, ...withFlag(args, '--allow-broad-workspace')];
+    case 'watch':
+      return ['sync', '--watch', ...args];
+    case 'review':
+      return ['sync', '--review', ...args];
+    case 'doctor':
+      return ['sync', '--status', ...args];
+    default:
+      return ['sync', ...args];
+  }
+}
+
+function printRecruitingLocalSyncCommandHelp(action, slug = RECRUITING_BUSINESS_SLUG) {
+  const command = recruitingLocalSyncCommand(action, slug, (action === 'push' || action === 'publish') ? ['--dry-run'] : []);
+  console.log(`Usage: atris computer recruiting ${action} [flags]`);
+  console.log('');
+  console.log('Runs from the current or canonical Atris Labs recruiting workspace.');
+  if (action === 'pull') {
+    console.log('Use --dry-run first; use --apply to write into a dirty local workspace.');
+  } else if (action === 'push') {
+    console.log('Use --dry-run first; after reviewing a broad publish, add --allow-broad-workspace.');
+  } else if (action === 'publish') {
+    console.log('Reviewed publish shortcut. Use --dry-run first, then run without --dry-run.');
+  }
+  console.log('');
+  console.log('Underlying command:');
+  console.log(`  atris ${command.join(' ')}`);
+  if (action === 'push') {
+    console.log('');
+    console.log('Reviewed broad publish:');
+    console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
+    console.log('  atris computer recruiting push --allow-broad-workspace');
+  } else if (action === 'publish') {
+    console.log('');
+    console.log('Reviewed publish:');
+    console.log('  atris computer recruiting publish --dry-run');
+    console.log('  atris computer recruiting publish');
+  }
+}
+
+function withoutRecruitingWrapperFlags(action, args = []) {
+  if (action !== 'pull') return args;
+  return args.filter((arg) => arg !== '--apply');
+}
+
+function gitDirtySummary(cwd) {
+  const result = spawnSync('git', ['-C', cwd, 'status', '--short'], {
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.status !== 0) return null;
+  const lines = String(result.stdout || '').split(/\r?\n/).filter(Boolean);
+  return {
+    count: lines.length,
+    sample: lines.slice(0, 5),
+  };
+}
+
+function gitOutput(cwd, args = []) {
+  const result = spawnSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.status !== 0) return '';
+  return String(result.stdout || '');
+}
+
+function recruitingCheckpointStamp() {
+  return (process.env.ATRIS_RECRUITING_CHECKPOINT_STAMP || new Date().toISOString())
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+}
+
+function listRecruitingUntrackedFiles(cwd) {
+  return gitOutput(cwd, ['ls-files', '--others', '--exclude-standard'])
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((filePath) => !filePath.startsWith('.atris/sync/checkpoints/'));
+}
+
+function copyRecruitingUntrackedFiles(cwd, checkpointDir, untrackedFiles = []) {
+  let copied = 0;
+  const targetRoot = path.join(checkpointDir, 'untracked');
+  for (const filePath of untrackedFiles) {
+    const source = path.join(cwd, filePath);
+    const target = path.join(targetRoot, filePath);
+    try {
+      if (!fs.statSync(source).isFile()) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(source, target);
+      copied++;
+    } catch {
+      // Some files move while tools write state; keep the checkpoint best-effort.
+    }
+  }
+  return copied;
+}
+
+function writeRecruitingPullCheckpoint(cwd, dirty) {
+  if (!dirty || dirty.count === 0) return null;
+
+  const stamp = recruitingCheckpointStamp();
+  const relDir = `.atris/sync/checkpoints/${stamp}`;
+  const checkpointDir = path.join(cwd, relDir);
+  const untrackedFiles = listRecruitingUntrackedFiles(cwd);
+  fs.mkdirSync(checkpointDir, { recursive: true });
+
+  const trackedPatch = gitOutput(cwd, ['diff', '--binary']);
+  const stagedPatch = gitOutput(cwd, ['diff', '--cached', '--binary']);
+  fs.writeFileSync(path.join(checkpointDir, 'tracked.patch'), trackedPatch, 'utf8');
+  fs.writeFileSync(path.join(checkpointDir, 'staged.patch'), stagedPatch, 'utf8');
+  fs.writeFileSync(path.join(checkpointDir, 'untracked.txt'), `${untrackedFiles.join('\n')}${untrackedFiles.length ? '\n' : ''}`, 'utf8');
+  const copiedUntracked = copyRecruitingUntrackedFiles(cwd, checkpointDir, untrackedFiles);
+
+  const summary = [
+    '# Recruiting Pull Checkpoint',
+    '',
+    `created_at: ${new Date().toISOString()}`,
+    `workspace: ${cwd}`,
+    `git_status_count: ${dirty.count}`,
+    `untracked_files_listed: ${untrackedFiles.length}`,
+    `untracked_files_copied: ${copiedUntracked}`,
+    '',
+    'Sample status:',
+    ...dirty.sample.map((line) => `- ${line}`),
+    '',
+    'Restore hints:',
+    `- git apply ${relDir}/tracked.patch`,
+    `- git apply --cached ${relDir}/staged.patch`,
+    `- cp -R ${relDir}/untracked/. .`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(checkpointDir, 'summary.md'), summary, 'utf8');
+
+  return {
+    relDir,
+    summary: `${relDir}/summary.md`,
+    untrackedFiles: untrackedFiles.length,
+    copiedUntracked,
+  };
+}
+
+function printRecruitingPullPreflight(summary) {
+  console.log('');
+  console.log('Recruiting pull preflight');
+  console.log(`  local git changes: ${summary.count}`);
+  summary.sample.forEach((line) => console.log(`  ${line}`));
+  console.log('');
+  console.log('Safe next step');
+  console.log('  atris computer recruiting pull --dry-run');
+  console.log('  atris computer recruiting pull --apply   # writes pull changes and conflict review packet');
+}
+
+function latestRecruitingConflictPacket(cwd) {
+  const conflictsRoot = path.join(cwd, '.atris', 'sync', 'conflicts');
+  const summaries = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name === 'summary.md') {
+        summaries.push(path.relative(cwd, full).replace(/\\/g, '/'));
+      }
+    }
+  }
+
+  walk(conflictsRoot);
+  summaries.sort();
+  return summaries[summaries.length - 1] || null;
+}
+
+function latestRecruitingCheckpoint(cwd) {
+  const checkpointRoot = path.join(cwd, '.atris', 'sync', 'checkpoints');
+  const summaries = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name === 'summary.md') {
+        summaries.push(path.relative(cwd, full).replace(/\\/g, '/'));
+      }
+    }
+  }
+
+  walk(checkpointRoot);
+  summaries.sort();
+  return summaries[summaries.length - 1] || null;
+}
+
+function printRecruitingSyncDoctor(workspace, slug = RECRUITING_BUSINESS_SLUG) {
+  const dirty = gitDirtySummary(workspace.cwd);
+  const latestPacket = latestRecruitingConflictPacket(workspace.cwd);
+  const latestCheckpoint = latestRecruitingCheckpoint(workspace.cwd);
+  console.log('Recruiting sync doctor');
+  console.log(`  workspace: ${displayHomeRelativePath(workspace.cwd)}`);
+  console.log(`  business: ${bindingBusinessLabel(workspace.binding) || slug}`);
+  if (dirty) {
+    console.log(`  local git changes: ${dirty.count}`);
+    dirty.sample.forEach((line) => console.log(`  ${line}`));
+  } else {
+    console.log('  local git changes: unknown');
+  }
+  console.log(`  review packet: ${latestPacket || 'none'}`);
+  console.log(`  latest checkpoint: ${latestCheckpoint || 'none'}`);
+  console.log('');
+  console.log('Next command');
+  if (latestPacket) {
+    console.log('  atris computer recruiting review');
+  } else if (dirty && dirty.count > 0) {
+    console.log('  atris computer recruiting pull --dry-run');
+  } else {
+    console.log('  atris computer recruiting pull --dry-run');
+  }
+}
+
+function runAtrisCliCommand(cliArgs, cwd) {
+  const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...cliArgs], {
+    cwd,
+    stdio: 'inherit',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (result.error) throw result.error;
+  if (result.signal) {
+    process.exitCode = 1;
+    return 1;
+  }
+  process.exitCode = result.status || 0;
+  return process.exitCode;
+}
+
+function printRecruitingLocalSyncOutcome(action, status = 0, args = []) {
+  const isPublishLike = action === 'push' || action === 'publish';
+
+  if (action === 'pull') {
+    console.log('');
+    console.log('Recruiting next step');
+    if (args.includes('--dry-run')) {
+      console.log('  atris computer recruiting pull --apply   # writes review packet if conflicts were reported');
+      console.log('  atris computer recruiting review');
+      console.log('  atris computer recruiting push --dry-run');
+      return;
+    }
+    console.log('  atris computer recruiting review   # if conflicts were reported');
+    console.log('  atris computer recruiting push --dry-run');
+    return;
+  }
+
+  if (isPublishLike && status !== 0) {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  If the output says review before publish:');
+    console.log('  atris computer recruiting publish --dry-run');
+    console.log('  atris computer recruiting publish');
+    console.log('  Otherwise:');
+    console.log('  atris computer recruiting pull --dry-run');
+    console.log('  atris computer recruiting review   # if conflicts were reported');
+    return;
+  }
+
+  if (action === 'publish' && args.includes('--dry-run')) {
+    console.log('');
+    console.log('Recruiting next step');
+    console.log('  atris computer recruiting publish');
+    return;
+  }
+
+  if (action === 'push' && args.includes('--dry-run')) {
+    console.log('');
+    console.log('Recruiting next step');
+    if (args.includes('--allow-broad-workspace')) {
+      console.log('  atris computer recruiting push --allow-broad-workspace');
+      return;
+    }
+    console.log('  If the dry-run showed review before publish:');
+    console.log('  atris computer recruiting push --dry-run --allow-broad-workspace');
+    console.log('  atris computer recruiting push --allow-broad-workspace');
+    console.log('  Otherwise:');
+    console.log('  atris computer recruiting push');
+  }
+
+  if (action === 'review') {
+    console.log('');
+    console.log('Review note');
+    console.log('  If pull --dry-run reported conflicts but no packet appears:');
+    console.log('  atris computer recruiting pull --apply');
+  }
+}
+
+async function runRecruitingLocalSyncCommand(action, args = [], cloudOptions = {}) {
+  const slug = cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG;
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    printRecruitingLocalSyncCommandHelp(action, slug);
+    return;
+  }
+
+  const workspace = resolveRecruitingSyncWorkspace(slug);
+  console.log(`Recruiting local ${action}`);
+  if (!workspace) {
+    const currentBinding = readBusinessBinding();
+    if (currentBinding && !bindingMatchesBusinessSlug(currentBinding, slug)) {
+      console.log(`  current workspace: ${bindingBusinessLabel(currentBinding)} (not ${slug})`);
+    } else {
+      console.log('  local workspace: not detected in this folder');
+    }
+    printRecruitingLocalSyncCommandHelp(action, slug);
+    printRecruitingSyncNextSteps(slug);
+    return;
+  }
+
+  if (workspace.source === 'canonical') {
+    console.log(`  folder: ${displayHomeRelativePath(workspace.cwd)} (auto-detected)`);
+  }
+
+  if (action === 'doctor') {
+    printRecruitingSyncDoctor(workspace, slug);
+    return;
+  }
+
+  const commandArgs = withoutRecruitingWrapperFlags(action, args);
+  if (action === 'pull' && !args.includes('--dry-run') && !args.includes('--apply')) {
+    const dirty = gitDirtySummary(workspace.cwd);
+    if (dirty && dirty.count > 0) {
+      printRecruitingPullPreflight(dirty);
+      process.exitCode = 1;
+      return;
+    }
+  }
+  if (action === 'pull' && args.includes('--apply')) {
+    const dirty = gitDirtySummary(workspace.cwd);
+    const checkpoint = writeRecruitingPullCheckpoint(workspace.cwd, dirty);
+    if (checkpoint) {
+      console.log('');
+      console.log('Recruiting checkpoint');
+      console.log(`  wrote: ${checkpoint.summary}`);
+      console.log(`  untracked copied: ${checkpoint.copiedUntracked}/${checkpoint.untrackedFiles}`);
+    }
+  }
+
+  const command = recruitingLocalSyncCommand(action, workspace.binding.slug || slug, commandArgs);
+  const status = runAtrisCliCommand(command, workspace.cwd);
+  printRecruitingLocalSyncOutcome(action, status, commandArgs);
+}
+
+async function runRecruitingSyncHelper(args = [], cloudOptions = {}) {
+  const slug = cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG;
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('Usage: atris computer recruiting sync [--status|--dry-run|--watch|--review|--resolve local|cloud|merge]');
+    console.log('');
+    console.log('Runs local recruiting workspace sync from the current or canonical Atris Labs folder.');
+    printRecruitingSyncNextSteps(slug);
+    return;
+  }
+
+  const workspace = resolveRecruitingSyncWorkspace(slug);
+  console.log('Recruiting local sync');
+  if (!workspace) {
+    const currentBinding = readBusinessBinding();
+    if (currentBinding && !bindingMatchesBusinessSlug(currentBinding, slug)) {
+      console.log(`  current workspace: ${bindingBusinessLabel(currentBinding)} (not ${slug})`);
+    } else {
+      console.log('  local workspace: not detected in this folder');
+    }
+    printRecruitingSyncNextSteps(slug);
+    return;
+  }
+
+  if (workspace.source === 'canonical') {
+    console.log(`  folder: ${displayHomeRelativePath(workspace.cwd)} (auto-detected)`);
+  }
+
+  const { businessSync } = require('./business-sync');
+  await businessSync(args.length > 0 ? args : ['--status'], workspace.cwd);
+  printRecruitingSyncNextSteps(workspace.binding.slug || slug, workspace.cwd);
 }
 
 function buildLocalBridgeSystemPrompt(sessionId, localRoot, allowBash) {
@@ -589,6 +1124,7 @@ function parseComputerCreateArgs(argv = []) {
   let businessSlug = null;
   let help = false;
   let setDefault = false;
+  let computerType = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -605,6 +1141,15 @@ function parseComputerCreateArgs(argv = []) {
       businessSlug = arg.split('=', 2)[1] || null;
       continue;
     }
+    if ((arg === '--type' || arg === '-t') && argv[i + 1] && !argv[i + 1].startsWith('-')) {
+      computerType = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--type=')) {
+      computerType = arg.split('=', 2)[1] || null;
+      continue;
+    }
     if (arg === '--set-default') {
       setDefault = true;
       continue;
@@ -615,9 +1160,39 @@ function parseComputerCreateArgs(argv = []) {
   return {
     name: nameParts.join(' ').trim(),
     businessSlug: businessSlug ? String(businessSlug).trim() : null,
+    computerType: computerType ? normalizeComputerType(computerType) : null,
     help,
     setDefault,
   };
+}
+
+function computerCreateArgsHaveName(argv = []) {
+  const flagsWithValues = new Set(['--business', '-b', '--type', '-t']);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (flagsWithValues.has(arg)) {
+      i++;
+      continue;
+    }
+    if (!arg || arg.startsWith('-') || arg === 'help') continue;
+    return true;
+  }
+  return false;
+}
+
+function normalizeComputerType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (normalized === 'business') return 'business_ops';
+  if (normalized === 'event') return 'event_ops';
+  return normalized || 'general';
+}
+
+function formatComputerTypeList() {
+  return [...VALID_COMPUTER_TYPES].join(', ');
 }
 
 function parseComputerDeleteArgs(argv = []) {
@@ -664,6 +1239,7 @@ function findAtrisCodeTerminal() {
     envPath,
     path.join(__dirname, '..', 'cli', 'atris_code.py'),
     path.join(process.cwd(), 'cli', 'atris_code.py'),
+    path.join(os.homedir(), 'arena', 'atrisos-backend', 'cli', 'atris_code.py'),
   ].filter(Boolean);
 
   let dir = process.cwd();
@@ -1077,6 +1653,41 @@ async function resolveComputerCommandContext(token, options = {}) {
   return resolveBusinessContext(token);
 }
 
+async function resolveTypedBusinessComputerContext(token, options = {}, defaults = {}) {
+  const businessSlug = options.businessSlug || defaults.businessSlug;
+  const computerType = normalizeComputerType(defaults.computerType);
+  if (options.workspaceId) {
+    return resolveComputerCommandContext(token, { ...options, businessSlug });
+  }
+
+  const ctx = await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
+  if (!ctx?.businessId) return null;
+  const workspaces = await listBusinessWorkspaces(token, ctx);
+  const workspace = resolveWorkspaceByComputerType(workspaces, computerType);
+  if (!workspace?.id) {
+    return {
+      ...ctx,
+      workspaceId: null,
+      missingComputerType: computerType,
+    };
+  }
+  return {
+    ...ctx,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name || null,
+    computerType,
+  };
+}
+
+function printMissingTypedComputer(ctx, computerType, options = {}) {
+  const label = options.label || computerType;
+  const businessSlug = options.businessSlug || ctx?.slug || RECRUITING_BUSINESS_SLUG;
+  console.error(`No ${label} computer found for ${ctx?.businessName || businessSlug}.`);
+  console.error(`Create it: atris computer ${label} create`);
+  console.error(`Or explicitly create one: atris computer create "${label[0].toUpperCase()}${label.slice(1)} Computer" --business ${businessSlug} --type ${computerType}`);
+  process.exitCode = 1;
+}
+
 function looksLikeWorkspaceId(input) {
   const value = String(input || '').trim();
   if (!value) return false;
@@ -1176,6 +1787,7 @@ function rememberCreatedComputer(ctx, workspace, endpoint = null, options = {}) 
     name: ctx.businessName,
     slug,
     computer_name: shouldSetDefault ? workspace.name : existing.computer_name,
+    computer_type: shouldSetDefault ? (options.computerType || existing.computer_type) : existing.computer_type,
     endpoint: shouldSetDefault ? (endpoint || existing.endpoint) : existing.endpoint,
     added_at: existing.added_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -1229,6 +1841,23 @@ function workspaceMatchesInput(workspace, input) {
 
 function resolveWorkspaceFromList(workspaces, input) {
   return (workspaces || []).find((workspace) => workspaceMatchesInput(workspace, input)) || null;
+}
+
+function workspaceComputerType(workspace) {
+  return normalizeComputerType(workspace?.type || workspace?.computer_type || workspace?.workspace_type || '');
+}
+
+function workspaceMatchesComputerType(workspace, type) {
+  if (!workspace || !type) return false;
+  const wanted = normalizeComputerType(type);
+  if (workspaceComputerType(workspace) === wanted) return true;
+  const compactWanted = wanted.replace(/_/g, '');
+  const name = String(workspace.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return Boolean(compactWanted && name.includes(compactWanted));
+}
+
+function resolveWorkspaceByComputerType(workspaces, type) {
+  return (workspaces || []).find((workspace) => workspaceMatchesComputerType(workspace, type)) || null;
 }
 
 function formatLeaseAge(seconds) {
@@ -1595,15 +2224,27 @@ async function computerCreate(token, args = [], defaults = {}) {
   if (!options.businessSlug && defaults.businessSlug) {
     options.businessSlug = defaults.businessSlug;
   }
+  if (!options.computerType && defaults.computerType) {
+    options.computerType = normalizeComputerType(defaults.computerType);
+  }
+  const computerType = options.computerType || 'general';
   if (options.help || !options.name) {
-    console.log('Usage: atris computer create <name> --business <slug> [--set-default]');
+    console.log('Usage: atris computer create <name> --business <slug> [--type <type>] [--set-default]');
     console.log('');
     console.log('Create a business computer, activate it, and wake it in one command.');
+    console.log(`Types: ${formatComputerTypeList()}`);
     console.log('');
     console.log('Examples:');
-    console.log('  atris computer create "My Business Computer" --business <business>');
-    console.log('  atris computer create "Support Computer"');
+    console.log('  atris computer create "My Business Computer" --business atris-labs');
+    console.log('  atris computer create "Recruiting Computer" --business atris-labs --type recruiting');
     if (!options.name && !options.help) process.exitCode = 1;
+    return;
+  }
+
+  if (!VALID_COMPUTER_TYPES.has(computerType)) {
+    console.error(`Invalid computer type: ${computerType}`);
+    console.error(`Expected one of: ${formatComputerTypeList()}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -1619,7 +2260,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   const created = await apiRequestJson(`/business/${ctx.businessId}/workspaces`, {
     method: 'POST',
     token,
-    body: { name: options.name, type: 'general' },
+    body: { name: options.name, type: computerType },
   });
   if (!created.ok) {
     console.error(`Failed to create workspace: ${created.errorMessage || created.error || created.status}`);
@@ -1663,6 +2304,7 @@ async function computerCreate(token, args = [], defaults = {}) {
     : (wake.data?.status || (activate.ok ? 'activated' : 'warming_up'));
   rememberCreatedComputer(ctx, { ...workspace, id: workspaceId, name: workspace.name || options.name }, endpoint, {
     setDefault: options.setDefault,
+    computerType,
   });
   await bootstrapBusinessComputerRuntime(token, { ...ctx, workspaceId }, 'computer-create');
 
@@ -1670,6 +2312,7 @@ async function computerCreate(token, args = [], defaults = {}) {
   console.log('');
   console.log(`Computer created: ${workspaceId}`);
   console.log(`  Name:      ${workspace.name || options.name}`);
+  console.log(`  Type:      ${computerType}`);
   console.log(`  Business:  ${ctx.businessName}`);
   console.log(`  Status:    ${status}`);
   if (endpoint) console.log(`  Endpoint:  ${endpoint}`);
@@ -1810,8 +2453,8 @@ async function computerDelete(token, ctx, options = {}, args = []) {
     console.log('Sleeps the computer first, then deletes the non-default workspace after confirmation.');
     console.log('');
     console.log('Examples:');
-    console.log('  atris computer delete --business <business> --workspace ws_123');
-    console.log('  atris computer delete --business <business> --workspace ws_123 --confirm "delete ws_123"');
+    console.log('  atris computer delete --business atris-labs --workspace ws_123');
+    console.log('  atris computer delete --business atris-labs --workspace ws_123 --confirm "delete ws_123"');
     return;
   }
 
@@ -2614,9 +3257,12 @@ async function computerChat(token, ctx, initialOptions = {}) {
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
+  const isRecruiting = initialOptions.mode === 'recruiting';
   const oneShotMessage = initialOptions.message != null;
   const chatSystemPrompt = isCodeOps
     ? appendSystemPrompt(initialOptions.systemPrompt, CODEOPS_WORKFLOW_PROMPT)
+    : isRecruiting
+    ? appendSystemPrompt(initialOptions.systemPrompt, RECRUITING_WORKFLOW_PROMPT)
     : initialOptions.systemPrompt;
   let sessionId = `biz-${ctx.businessId.slice(0, 8)}-${Date.now().toString(36)}`;
   const pipedInput = initialOptions.message != null ? null : await readPipedStdin();
@@ -2641,6 +3287,9 @@ async function computerChat(token, ctx, initialOptions = {}) {
   if (!oneShotMessage) {
     if (isCodeOps) {
       printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+    } else if (isRecruiting) {
+      printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+      printRecruitingWorkflowContract();
     } else {
       printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
     }
@@ -2687,7 +3336,7 @@ async function computerChat(token, ctx, initialOptions = {}) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: isCodeOps ? 'codeops> ' : 'cloud> ',
+    prompt: isCodeOps ? 'codeops> ' : (isRecruiting ? 'recruiting> ' : 'cloud> '),
   });
 
   rl.prompt();
@@ -2708,6 +3357,9 @@ async function computerChat(token, ctx, initialOptions = {}) {
         authSummary = activeWorker(worker) === 'claude' ? await describeClaudeAuth(token, ctx) : null;
         if (isCodeOps) {
           printCodeOpsStartPanel(ctx, worker, model, billingLabel, authSummary);
+        } else if (isRecruiting) {
+          printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
+          printRecruitingWorkflowContract();
         } else {
           printCloudStartPanel(ctx, worker, model, billingLabel, authSummary);
         }
@@ -2725,7 +3377,8 @@ async function computerChat(token, ctx, initialOptions = {}) {
         continue;
       }
       if (line === '/workflow') {
-        printCodeOpsWorkflowContract();
+        if (isRecruiting) printRecruitingWorkflowContract();
+        else printCodeOpsWorkflowContract();
         rl.prompt();
         continue;
       }
@@ -3203,6 +3856,79 @@ async function computerProof(token, ctx, initialOptions = {}) {
   }
 }
 
+async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
+  const recruitingOptions = recruitingCloudOptions(cloudOptions);
+  const sub = args[1];
+  const rest = args.slice(2).join(' ');
+
+  if (sub === '--help' || sub === 'help') {
+    printRecruitingComputerHelp();
+    return;
+  }
+
+  if (sub === 'create') {
+    const createArgs = args.slice(2);
+    const finalArgs = computerCreateArgsHaveName(createArgs)
+      ? createArgs
+      : ['Recruiting Computer', ...createArgs];
+    return computerCreate(token, finalArgs, {
+      businessSlug: cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG,
+      computerType: 'recruiting',
+    });
+  }
+
+  if (sub === 'sync') {
+    return runRecruitingSyncHelper(args.slice(2), recruitingOptions);
+  }
+
+  if (RECRUITING_LOCAL_SYNC_COMMANDS.has(sub)) {
+    return runRecruitingLocalSyncCommand(sub, args.slice(2), recruitingOptions);
+  }
+
+  const ctx = await resolveTypedBusinessComputerContext(token, recruitingOptions, {
+    businessSlug: RECRUITING_BUSINESS_SLUG,
+    computerType: 'recruiting',
+  });
+  if (!ctx?.businessId) {
+    console.error('Atris Recruiting is not available for this account.');
+    console.error('Ask an Atris Labs admin to add you, or pass --business <slug>.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!ctx.workspaceId) {
+    printMissingTypedComputer(ctx, 'recruiting', {
+      label: 'recruiting',
+      businessSlug: recruitingOptions.businessSlug || RECRUITING_BUSINESS_SLUG,
+    });
+    return;
+  }
+
+  if (!sub || sub === 'chat') return computerChat(token, ctx, recruitingOptions);
+
+  switch (sub) {
+    case 'status': return computerStatus(token, ctx);
+    case 'up':
+    case 'wake': return computerWake(token, ctx);
+    case 'sleep': return computerSleep(token, ctx);
+    case 'run': return computerRun(token, rest, ctx);
+    case 'grep': return computerGrep(token, rest, ctx);
+    case 'ls': return computerLs(token, rest || undefined, ctx);
+    case 'cat': return computerCat(token, rest, ctx);
+    case 'exec': return computerExec(token, rest, ctx, recruitingOptions);
+    case 'audit': {
+      const limit = rest ? Number.parseInt(rest, 10) : 10;
+      return computerAudit(token, ctx, Number.isFinite(limit) ? limit : 10);
+    }
+    case 'workflow':
+      printRecruitingWorkflowContract();
+      return;
+    default:
+      console.error(`Unknown recruiting subcommand: ${sub}`);
+      console.log('Run: atris computer recruiting help');
+      process.exitCode = 1;
+  }
+}
+
 async function runComputer() {
   const parsed = parseComputerOptions(process.argv.slice(3));
   const args = parsed.positional;
@@ -3282,6 +4008,19 @@ async function runComputer() {
     }
   }
 
+  if (sub === 'recruiting' && (args[1] === '--help' || args[1] === 'help')) {
+    printRecruitingComputerHelp();
+    return;
+  }
+
+  if (sub === 'recruiting' && args[1] === 'sync') {
+    return runRecruitingSyncHelper(args.slice(2), cloudOptions);
+  }
+
+  if (sub === 'recruiting' && RECRUITING_LOCAL_SYNC_COMMANDS.has(args[1])) {
+    return runRecruitingLocalSyncCommand(args[1], args.slice(2), cloudOptions);
+  }
+
   if (sub === '--help') {
     console.log('Usage: atris computer [mode|command]');
     console.log('');
@@ -3291,7 +4030,7 @@ async function runComputer() {
     console.log('  Owner has many Computers');
     console.log('  Computer = workspace + files + tools + secrets + memory + agents + validation');
     console.log('');
-    console.log('Common types: codeops, research, CRM, reporting, event ops, support, business ops.');
+    console.log('Common types: codeops, research, CRM, reporting, recruiting, event ops, support, business ops.');
     console.log('A business can be a company, lab, collective, community, artist, team, or project.');
     console.log('');
     console.log('First use:');
@@ -3316,7 +4055,7 @@ async function runComputer() {
     console.log('  claude|codex    Legacy local console backends');
     console.log('');
     console.log('Cloud commands:');
-    console.log('  create <name>    Create and wake an extra business computer');
+    console.log('  create <name>    Create and wake an extra business computer; add --type recruiting|codeops|research|crm');
     console.log('  activate         Attach EC2 to --workspace and remember it as the default');
     console.log('  chat            Interactive cloud workspace chat');
     console.log('  chat --message  Send one non-interactive message and print the reply');
@@ -3342,10 +4081,10 @@ async function runComputer() {
     console.log('  atris computer');
     console.log('  atris computer card --write');
     console.log('  atris business init "My Lab"     # first/default computer with Atris + operator');
-    console.log('  atris computer create "Support Computer" --business <business>');
-    console.log('  atris computer --business <business> --workspace <workspace-id>');
-    console.log('  atris computer sleep --business <business> --workspace <workspace-id>');
-    console.log('  atris computer delete --business <business> --workspace <workspace-id>');
+    console.log('  atris computer create "Hiring Computer" --business my-lab --type recruiting');
+    console.log('  atris computer --business my-lab --workspace <workspace-id>');
+    console.log('  atris computer sleep --business my-lab --workspace <workspace-id>');
+    console.log('  atris computer delete --business my-lab --workspace <workspace-id>');
     console.log('  atris computer proof');
     console.log('  atris computer local');
     console.log('  atris computer codex');
@@ -3368,6 +4107,9 @@ async function runComputer() {
   const token = getToken();
   if (sub === 'create') {
     return computerCreate(token, args.slice(1), cloudOptions);
+  }
+  if (sub === 'recruiting') {
+    return runRecruitingComputerShortcut(token, args, cloudOptions);
   }
 
   const ctx = await resolveComputerCommandContext(token, cloudOptions);
@@ -3463,4 +4205,5 @@ module.exports = {
   renderComputerCardMarkdown,
   extractAttachedWorkspaceMismatch,
   contextForAttachedWorkspaceMismatch,
+  printRecruitingLocalSyncOutcome,
 };

@@ -1,0 +1,74 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Reward the **outcome.**",
+      "sub": "The business computer that closes loops with proof. Periphery prepares. You judge. The result gets scored.",
+      "panel": {
+        "header": { "title": "Recovery loop", "meta": "wedge" },
+        "rows": [
+          { "title": "Silent customer", "sub": "churn signal", "value": "in", "sev": 1 },
+          { "title": "Member prepares", "sub": "context + draft", "value": "prep", "sev": 0, "active": true },
+          { "title": "You approve", "sub": "judgment packet", "value": "you", "sev": 2 },
+          { "title": "Receipt lands", "sub": "trust back?", "value": "proof", "sev": 0 }
+        ],
+        "footer": { "left": "one loop", "right": "then expand" }
+      }
+    },
+    {
+      "type": "timeline",
+      "heading": "One micro-juridical loop",
+      "steps": [
+        { "label": "question", "sub": "what now?" },
+        { "label": "command", "sub": "member acts" },
+        { "label": "case", "sub": "evidence", "active": true },
+        { "label": "judgment", "sub": "you decide" },
+        { "label": "receipt", "sub": "proof out" }
+      ],
+      "sub": "Every irreversible act ships with a packet first."
+    },
+    {
+      "type": "stack",
+      "heading": "Three layers, one scene",
+      "layers": [
+        { "title": "Periphery", "sub": "Atris2 Fast prepares. Reversible." },
+        { "title": "Deferral", "sub": "Sends pause for your judgment." },
+        { "title": "Outcome", "sub": "Reward ties to the business end-state." }
+      ],
+      "sub": "The center stays the center. The periphery earns trust with proof."
+    },
+    {
+      "type": "receipt",
+      "heading": "Deferral preserves judgment.",
+      "sub": "Every packet shows evidence, draft, and expected outcome before you act.",
+      "receiptTitle": "packet #042 · recovery",
+      "fields": [
+        { "k": "action", "v": "send recovery email" },
+        { "k": "risk", "v": "medium · outbound" },
+        { "k": "evidence", "v": "3 threads, churn 0.82" },
+        { "k": "draft", "v": "ready for your edit" },
+        { "k": "outcome", "v": "customer replies in 48h" }
+      ],
+      "stamp": "awaiting keshav"
+    },
+    {
+      "type": "metricgrid",
+      "heading": "The gap is measurable",
+      "metrics": [
+        { "value": "98%", "label": "of agents act with no verification" },
+        { "value": "74%", "label": "of enterprises rolled agents back" },
+        { "value": "14%", "label": "of top models pass reward benchmarks" },
+        { "value": "1", "label": "loop to prove the whole company" }
+      ]
+    },
+    {
+      "type": "hero",
+      "headline": "Single-shot decks. **Reviewed before you see them.**",
+      "sub": "Spec, lint, build, thumbnail review, confirm. One pass. No slop.",
+      "mono": "atris deck build --review",
+      "footer": "atris.ai · review proof · 2026"
+    }
+  ]
+}

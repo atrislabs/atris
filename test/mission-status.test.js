@@ -37,6 +37,14 @@ function runCli(args, { cwd, env = {} } = {}) {
   return result;
 }
 
+function hasNodeSqlite() {
+  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
+  });
+  return result.status === 0;
+}
+
 function startMission(dir, title) {
   const res = runCli(['mission', 'start', title, '--owner', 'mission-lead', '--json'], { cwd: dir });
   assert.equal(res.status, 0, res.stderr || res.stdout);
@@ -221,13 +229,15 @@ test('always-on mission next action does not suggest completion flag', () => {
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const goalPayload = JSON.parse(goal.stdout);
     assert.equal(goalPayload.goal.mission_id, mission.id);
-    assert.equal(goalPayload.goal.next_command, 'atris mission run --due --max-ticks 1');
+    assert.equal(goalPayload.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.doesNotMatch(goalPayload.goal.next_command, /--complete-on-pass/);
 
     const heartbeat = runCli(['mission', 'goal', '--heartbeat', '--json'], { cwd: dir });
     assert.equal(heartbeat.status, 0, heartbeat.stderr || heartbeat.stdout);
     const heartbeatPayload = JSON.parse(heartbeat.stdout);
     assert.equal(heartbeatPayload.goal.mission_id, mission.id);
-    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, 'atris mission run --due --max-ticks 1');
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission attach-task ${mission.id} --json`);
+    assert.doesNotMatch(heartbeatPayload.heartbeat.next_heavy_command, /--complete-on-pass/);
 
     const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
@@ -269,6 +279,130 @@ test('mission status normalizes stale terminal next actions', () => {
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.mission.status, 'complete');
     assert.equal(tickPayload.mission.next_action, 'mission complete');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission complete emits a human-readable Result receipt', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'json complete receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+    const tick = runCli(['mission', 'tick', mission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receiptPath = JSON.parse(tick.stdout).receipt_path;
+
+    const completed = runCli(['mission', 'complete', mission.id, '--proof', receiptPath, '--json'], { cwd: dir });
+    assert.equal(completed.status, 0, completed.stderr || completed.stdout);
+    const payload = JSON.parse(completed.stdout);
+    assert.equal(payload.action, 'mission_completed');
+    assert.equal(payload.mission.status, 'complete');
+    assert.equal(payload.landing.happened, 'Mission completed: json complete receipt mission.');
+    assert.match(payload.landing.checked, /passing verifier receipt/);
+    assert.match(payload.landing.tested, /Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(payload.result.saved, new RegExp(`Saved complete mission ${mission.id}`));
+    assert.equal(payload.mission.landing.happened, payload.landing.happened);
+    assert.equal(payload.mission.result.saved, payload.result.saved);
+
+    const humanStarted = runCli([
+      'mission',
+      'start',
+      'human complete receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(humanStarted.status, 0, humanStarted.stderr || humanStarted.stdout);
+    const humanMission = JSON.parse(humanStarted.stdout).mission;
+    const humanTick = runCli(['mission', 'tick', humanMission.id, '--verify', '--json'], { cwd: dir });
+    assert.equal(humanTick.status, 0, humanTick.stderr || humanTick.stdout);
+    const humanReceiptPath = JSON.parse(humanTick.stdout).receipt_path;
+
+    const humanCompleted = runCli(['mission', 'complete', humanMission.id, '--proof', humanReceiptPath], { cwd: dir });
+    assert.equal(humanCompleted.status, 0, humanCompleted.stderr || humanCompleted.stdout);
+    assert.match(humanCompleted.stdout, /Result:/);
+    assert.match(humanCompleted.stdout, /What happened: Mission completed: human complete receipt mission\./);
+    assert.match(humanCompleted.stdout, /How I checked: I checked the passing verifier receipt/);
+    assert.match(humanCompleted.stdout, /What I tested: Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(humanCompleted.stdout, /Saved: Saved complete mission/);
+    assert.match(humanCompleted.stdout, /Decision: Mission is complete/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission report keeps worker debrief separate from verifier proof', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const receiptPath = path.join('atris', 'runs', 'mission-atris2-ready.json');
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, receiptPath), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'mission-atris2-ready',
+      objective: 'remote worker proof',
+      owner: 'mission-lead',
+      at: '2026-06-26T12:00:00.000Z',
+      verifier: 'true',
+      result: {
+        kind: 'mission_run_tick',
+        tick: {
+          status: 'ran',
+          reason: 'tick-ok',
+          atris2: {
+            ok: true,
+            engine: 'atris2',
+            tools_run: ['local_file_op'],
+            receipt_text: 'ATRIS2_MISSION_WORKER_READY\nRemote worker ran tools and returned a useful receipt.',
+          },
+        },
+        verifier_result: { passed: true, command: 'true', status: 0 },
+      },
+    }, null, 2), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-atris2-ready',
+      slug: 'mission-atris2-ready',
+      objective: 'remote worker proof',
+      runner: 'atris2',
+      model: 'atris:fast',
+      status: 'ready',
+      verifier: 'true',
+      verifier_result: { passed: true, command: 'true', status: 0 },
+      receipt_path: receiptPath,
+      next_action: 'review proof then complete mission',
+      created_at: '2026-06-26T12:00:00.000Z',
+      updated_at: '2026-06-26T12:01:00.000Z',
+    });
+
+    const report = runCli(['mission', 'report', '--limit', '1'], { cwd: dir });
+    assert.equal(report.status, 0, report.stderr || report.stdout);
+    assert.match(report.stdout, /What happened: Verifier passed\./);
+    assert.match(report.stdout, /Worker: Remote Atris2 computer using atris:fast/);
+    assert.match(report.stdout, /Worker summary: ATRIS2_MISSION_WORKER_READY/);
+    assert.match(report.stdout, /Worker receipt: atris\/runs\/mission-atris2-ready\.json/);
+    assert.match(report.stdout, /Verifier receipt: atris\/runs\/mission-atris2-ready\.json/);
+    assert.doesNotMatch(report.stdout, /atris mission - durable goal/);
+
+    const json = runCli(['mission', 'report', 'mission-atris2-ready', '--json'], { cwd: dir });
+    assert.equal(json.status, 0, json.stderr || json.stdout);
+    const payload = JSON.parse(json.stdout);
+    assert.equal(payload.action, 'mission_report');
+    assert.equal(payload.reports[0].worker, 'Remote Atris2 computer using atris:fast');
+    assert.equal(payload.reports[0].operator_next, 'review proof then complete mission');
   } finally {
     cleanupTempDir(dir);
   }
@@ -536,7 +670,9 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(fs.realpathSync(payload.state_path), fs.realpathSync(path.join(dir, '.atris', 'state', 'codex_goal.json')));
     assert.equal(fs.realpathSync(payload.status_path), fs.realpathSync(path.join(dir, 'atris', 'status', 'codex-goal.md')));
     assert.match(payload.goal.objective, new RegExp(`Advance Atris mission ${mission.id}: codex visible goal mission`));
-    assert.equal(payload.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.equal(payload.goal.task_spine.has_task, false);
+    assert.equal(payload.goal.task_spine.ensure_task_command, `atris mission attach-task ${mission.id} --json`);
     assert.match(payload.goal.replace_after, /replace the Codex \/goal/);
     assert.deepEqual(payload.goal.codex_tool_contract, {
       current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
@@ -760,7 +896,7 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
     assert.equal(payload.heartbeat.seconds_until_due, 0);
     assert.equal(payload.heartbeat.recommended_sleep_seconds, 0);
     assert.equal(payload.heartbeat.heavy_work_performed, false);
-    assert.equal(payload.heartbeat.next_heavy_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.heartbeat.next_heavy_command, `atris mission attach-task ${mission.id} --json`);
 
     const state = JSON.parse(fs.readFileSync(payload.state_path, 'utf8'));
     assert.equal(state.action, 'codex_goal_heartbeat');
@@ -771,8 +907,85 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
   }
 });
 
-test('mission goal-loop runs due mission work once and refreshes final state', () => {
+test('mission goal normalizes engine mission owners into functional owners', () => {
   const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-engine-owned-signals',
+      objective: 'Watch chat log task signals and infer the next bounded action',
+      owner: 'codex',
+      runner: 'codex_goal',
+      lane: 'code',
+      status: 'planning',
+      verifier: 'node -e "process.exit(0)"',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.goal.owner, 'signal-scout');
+    assert.equal(payload.goal.executed_by, 'codex');
+    assert.equal(payload.goal.task_spine.owner, 'signal-scout');
+    assert.equal(payload.goal.task_spine.requested_owner, 'codex');
+    assert.equal(payload.goal.task_spine.executed_by, 'codex');
+    assert.equal(payload.goal.task_spine.owner_resolution, 'engine_owner_resolved_by_task_signal');
+    assert.equal(payload.mission.owner, 'signal-scout');
+    assert.equal(payload.mission.requested_owner, 'codex');
+    assert.equal(payload.mission.executed_by, 'codex');
+    assert.equal(payload.goal.next_command, 'atris mission attach-task mission-engine-owned-signals --json');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal-loop attaches task spine before due mission work', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'mission-lead' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'loop setup codex goal mission',
+      '--owner',
+      'mission-lead',
+      '--runner',
+      'codex_goal',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
+    assert.equal(loop.status, 0, loop.stderr || loop.stdout);
+    const payload = JSON.parse(loop.stdout);
+    assert.equal(payload.action, 'codex_goal_loop');
+    assert.equal(payload.iterations, 1);
+    assert.equal(payload.heavy_runs, 0);
+    assert.equal(payload.setup_runs, 1);
+    assert.equal(payload.events[0].heartbeat.goal.next_command, `atris mission attach-task ${mission.id} --json`);
+    assert.equal(payload.events[0].run.action, 'mission_attach_task');
+    assert.equal(payload.events[0].run.payload.action, 'mission_task_spine_attached');
+    assert.equal(payload.events[0].run.payload.task_spine.goal_id, mission.id);
+    assert.equal(payload.events[0].after_run.goal.task_spine.has_task, true);
+    assert.equal(payload.events[0].after_run.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+    assert.equal(payload.final_state.goal.task_spine.has_task, true);
+    assert.equal(payload.final_state.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal-loop runs due mission work once and refreshes final state', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'mission-lead' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const started = runCli([
@@ -785,24 +998,29 @@ test('mission goal-loop runs due mission work once and refreshes final state', (
       'codex_goal',
       '--verify',
       'node -e "process.exit(0)"',
+      '--xp-task',
       '--json',
-    ], { cwd: dir });
+    ], { cwd: dir, env });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
 
-    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir });
+    const loop = runCli(['mission', 'goal-loop', '--max-iterations', '1', '--no-claude', '--json'], { cwd: dir, env });
     assert.equal(loop.status, 0, loop.stderr || loop.stdout);
     const payload = JSON.parse(loop.stdout);
     assert.equal(payload.action, 'codex_goal_loop');
     assert.equal(payload.iterations, 1);
     assert.equal(payload.heavy_runs, 1);
+    assert.equal(payload.setup_runs, 0);
     assert.equal(payload.events[0].heartbeat.goal.mission_id, mission.id);
     assert.equal(payload.events[0].heartbeat.heartbeat.due, true);
+    assert.equal(payload.events[0].run.action, 'mission_run_due');
     assert.equal(payload.events[0].run.payload.action, 'mission_run');
     assert.equal(payload.events[0].run.payload.mission.id, mission.id);
-    assert.equal(payload.events[0].run.payload.mission.status, 'complete');
+    assert.equal(payload.events[0].run.payload.mission.status, 'ready');
     assert.equal(payload.final_state.action, 'codex_goal_heartbeat');
-    assert.equal(payload.final_state.mission, null);
+    assert.equal(payload.final_state.goal.mission_id, mission.id);
+    assert.equal(payload.final_state.goal.mission_status, 'ready');
+    assert.match(payload.final_state.goal.next_command, new RegExp(`^atris task current-step --goal-id ${mission.id}`));
   } finally {
     cleanupTempDir(dir);
   }
@@ -864,7 +1082,7 @@ test('always-on missions become due again after cadence even after verifier pass
     assert.equal(heartbeatPayload.goal.mission_id, firstPayload.mission.id);
     assert.equal(heartbeatPayload.goal.reason, 'active');
     assert.equal(heartbeatPayload.heartbeat.due, false);
-    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission tick ${firstPayload.mission.id} --verify --summary "<what changed>"`);
+    assert.equal(heartbeatPayload.heartbeat.next_heavy_command, `atris mission attach-task ${firstPayload.mission.id} --json`);
 
     const afterCadence = new Date(Date.parse(firstPayload.mission.last_tick_at) + (60 * 60 * 1000) + 1000);
     const dueAgain = selectDueMission(dir, afterCadence);
@@ -958,6 +1176,8 @@ test('mission help documents status filters', () => {
     const help = runCli(['mission', '--help'], { cwd: dir });
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /mission status \[id\] \[--status <state>\] \[--limit <n>\] \[--local\] \[--json\]/);
+    assert.match(help.stdout, /mission attach-task <id> \[--json\]/);
+    assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);

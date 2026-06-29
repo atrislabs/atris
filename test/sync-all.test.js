@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { buildSyncAllPlan, SYNC_ALL_FILES } = require('../commands/sync');
+const { buildSyncAllPlan, syncWorkspaceTemplate, SYNC_ALL_FILES } = require('../commands/sync');
 
 // The atris-cli package root is the real source of truth. We pass it in
 // as pkgRoot so tests use the live canonical files for content comparison.
@@ -202,8 +202,8 @@ test('changes list is empty when target matches source exactly', () => {
     const entry = findPlan(plan, repo);
     assert.ok(!entry.isBusiness);
     assert.ok(!entry.isCustomized);
-    // atris.md should NOT be in changes (identical); other files (atrisDev.md,
-    // PERSONA.md, etc.) ARE missing so they WILL be in changes.
+    // atris.md should NOT be in changes (identical); other files (PERSONA.md,
+    // CLAUDE.md, etc.) ARE missing so they WILL be in changes.
     assert.ok(!entry.changes.includes('atris.md'), 'identical atris.md should not be in changes');
   } finally {
     cleanup(root);
@@ -227,15 +227,34 @@ test('node_modules and .git subtrees are not scanned', () => {
   }
 });
 
+test('workspace template sync repairs broken .claude skills link', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-broken-claude-'));
+  try {
+    fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+    fs.symlinkSync(path.join(root, 'missing-skills-target'), path.join(root, '.claude', 'skills'));
+
+    assert.doesNotThrow(() => syncWorkspaceTemplate(root, {
+      name: 'Broken Skills Co',
+      slug: 'broken-skills',
+      business_id: 'biz-broken-skills',
+      workspace_id: 'ws-broken-skills',
+    }, { templateName: 'business' }));
+
+    assert.ok(fs.lstatSync(path.join(root, '.claude', 'skills')).isDirectory());
+    assert.ok(fs.existsSync(path.join(root, '.claude', 'skills', 'aeo', 'SKILL.md')));
+  } finally {
+    cleanup(root);
+  }
+});
+
 // --- constants ---
 
-test('SYNC_ALL_FILES covers the 5 canonical docs', () => {
+test('SYNC_ALL_FILES covers the 4 canonical docs', () => {
   const targets = SYNC_ALL_FILES.map((f) => f.target).sort();
   assert.deepStrictEqual(targets, [
     'CLAUDE.md',
     'GETTING_STARTED.md',
     'PERSONA.md',
     'atris.md',
-    'atrisDev.md',
   ]);
 });

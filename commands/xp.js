@@ -2048,6 +2048,7 @@ async function syncAgentXp(args = []) {
   if (dryRun) return preview;
 
   const token = readFlag(args, '--token', process.env.ATRIS_AGENTXP_SYNC_TOKEN || process.env.AGENTXP_SYNC_TOKEN || '');
+  const envToken = process.env.ATRIS_TOKEN && process.env.ATRIS_TOKEN.trim() ? process.env.ATRIS_TOKEN.trim() : '';
   const options = {
     method: 'POST',
     body: preview.packet,
@@ -2055,6 +2056,8 @@ async function syncAgentXp(args = []) {
   };
   if (token) {
     options.headers = { 'X-AgentXP-Sync-Token': token };
+  } else if (envToken) {
+    options.token = envToken;
   } else {
     const ensured = await ensureValidCredentials(apiRequestJson);
     if (ensured.error) {
