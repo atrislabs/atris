@@ -544,6 +544,28 @@ test('mission run accepts one-word fuzzy intent as a new mission', () => {
   }
 });
 
+test('mission objective shorthand starts a visible-goal mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'fix', 'the', 'issue', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'fix the issue');
+    assert.equal(payload.mission.runner, 'codex_goal');
+    assert.equal(payload.codex_goal_state.goal.objective, 'fix the issue');
+    assert.equal(
+      payload.codex_goal_state.goal.visible_goal.operations.refresh_on_phase_change,
+      'atris mission goal --json before continuing changed work',
+    );
+    assert.match(payload.codex_goal_state.goal.codex_tool_contract.phase_change_refresh, /before changed follow-up work/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run --help prints help instead of starting a mission', () => {
   const dir = makeTempDir();
   try {

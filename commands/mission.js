@@ -1888,11 +1888,13 @@ function codexVisibleGoalBridge(mission, goalObjective) {
       keep_if_matching: 'if current goal objective equals goal.objective, continue the mission',
       create_when_empty_or_completed: 'create_goal({ objective: goal.objective })',
       complete_after_proof: 'update_goal({ status: "complete" })',
+      refresh_on_phase_change: 'atris mission goal --json before continuing changed work',
       refresh_next_candidate: 'atris mission goal --json',
     },
     guardrails: [
       'Do not complete a human-set active goal unless it matches this mission goal or the mission receipt proves handoff.',
       'If create_goal fails because another goal is active, keep this bridge waiting for the visible goal slot.',
+      'When the work changes phase or objective, refresh the mission goal before continuing.',
     ],
   };
 }
@@ -1906,7 +1908,8 @@ function codexGoalToolContract(mission) {
     set_next_goal: 'use goal.visible_goal: create_goal({ objective: goal.objective }) when no active goal blocks the slot',
     visible_goal_bridge: 'goal.visible_goal',
     platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow update_goal({ status: "complete" }) followed by create_goal({ objective }).',
-    runtime_tool_sequence: 'get_goal -> update_goal({ status: "complete" }) after proof -> atris mission goal --json -> create_goal({ objective: goal.objective })',
+    phase_change_refresh: 'before changed follow-up work, run atris mission goal --json and mirror the returned visible goal',
+    runtime_tool_sequence: 'get_goal -> update_goal({ status: "complete" }) after proof or phase change -> atris mission goal --json -> create_goal({ objective: goal.objective })',
     blocked_without_platform_goal_write: true,
     mission_id: mission.id,
   };
@@ -3281,6 +3284,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
+  atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
@@ -3517,6 +3521,7 @@ function missionCommand(args) {
     case '-h':
       return help();
     default:
+      if (subcommand && !String(subcommand).startsWith('-')) return runMission(args);
       return help();
   }
 }
