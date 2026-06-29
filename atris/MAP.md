@@ -824,7 +824,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Routing:** `bin/atris.js` (`command === 'pulse'` dispatch) + `knownCommands` array + `showHelp`
 - **Tests:** `test/pulse.test.js` (29 tests — scoring, ghost detection, lock, cron-script generation)
 - **Cron template lineage:** modeled on the proven `~/.atris/overnight/commander-obelisk-swarlo/tick.sh` (deadline self-removal + lock + run + proof), but all real logic lives in JS (`atris pulse tick`), not duplicated shell
-- **Flags:** `pulse install [--cadence "11,40 * * * *"] [--days 7] [--verify "npm test"] [--model opus|glm-5.2] [--runner-profile atris-fast] [--runner-bin /path/to/runner] [--runner-template "{bin} ..."]` exports `ATRIS_RUNNER_*`, `ATRIS_RUNNER_PROFILE`, and legacy aliases into cron; `pulse tick [--no-claude] [--no-verify] [--verify "<cmd>"]`; `pulse run [--max-ticks N]`
+- **Flags:** `pulse install [--cadence "11,40 * * * *"] [--days 7] [--verify "npm test"] [--model opus|glm-5.2] [--runner-profile atris-fast] [--runner-bin /path/to/runner] [--runner-template "{bin} ..."]` exports `ATRIS_RUNNER_*`, `ATRIS_RUNNER_PROFILE`, and legacy aliases into cron; profile installs default model metadata from the profile unless `--model`/env overrides it; `pulse tick [--no-claude] [--no-verify] [--verify "<cmd>"]`; `pulse run [--max-ticks N]`
 - **Value:** Closes the open self-improvement loop — durable ignition (was: `/loop` dies with the session), real executor (was: auto-improver stuck dry-run), reward feedback (was: scorecards flatlined). Does NOT auto-push; work lands in review behind the human gate.
 
 **Search:** `rg "pulseCommand" commands/pulse.js` · `rg "buildTickScript" lib/pulse.js`

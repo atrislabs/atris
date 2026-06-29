@@ -286,6 +286,34 @@ test('buildTickScript preserves configured runner profile for cron', () => {
   assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
 });
 
+test('buildTickScript defaults the runner model from the runner profile', () => {
+  const script = pulse.buildTickScript({
+    root: '/r',
+    stateHome: '/s',
+    deadlineEpoch: 123,
+    runnerProfile: 'atris-fast',
+  });
+  assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
+  assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
+  assert.doesNotMatch(script, /export ATRIS_RUNNER_MODEL='opus'/);
+});
+
+test('buildTickScript lets an explicit model override the runner profile model', () => {
+  const script = pulse.buildTickScript({
+    root: '/r',
+    stateHome: '/s',
+    deadlineEpoch: 123,
+    model: 'opus',
+    runnerProfile: 'atris-fast',
+  });
+  assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
+  assert.ok(script.includes("export ATRIS_RUNNER_MODEL='opus'"));
+});
+
+test('modelForRunnerProfile rejects unknown pulse runner profiles early', () => {
+  assert.throws(() => pulse.modelForRunnerProfile('atris-9'), /Unknown runner profile "atris-9"/);
+});
+
 test('buildTickScript escapes single quotes in the verify command', () => {
   const script = pulse.buildTickScript({
     root: '/r',
