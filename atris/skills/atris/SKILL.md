@@ -31,6 +31,7 @@ Key behaviors:
 - Read PERSONA.md (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
 - Use `atris task` for claims, proof, ready, and accept
+- Use functional/feature members as task owners; record engines only as `executed_by`
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 
 ## Steps
@@ -38,5 +39,5 @@ Key behaviors:
 1. Run `atris atris.md` on first interaction to show workspace status
 2. Read `atris/MAP.md` before any file search to find file:line refs
 3. Run `atris task list` or `atris task next` to find current work
-4. Claim tasks with `atris task claim <id> --as <agent>`
+4. Claim tasks with `atris task claim <id> --as <functional-member>`
 5. Move completed work to review with `atris task ready <id> --proof "..."`

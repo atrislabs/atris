@@ -102,17 +102,23 @@ test('renderMissionStatus emits xp/proof/gate lines only when those fields are p
     seedMissions(dir, [
       {
         id: 'm-full', objective: 'rich mission', owner: 'a', status: 'running',
-        xp_task: { ref: 'CLI-999' }, receipt_path: 'atris/runs/proof.json',
+        xp_task: { ref: 'CLI-999', task_id: 'task-999' }, receipt_path: 'atris/runs/proof.json',
         completion_gate: { source: 'human-accept', forced: false },
         updated_at: '2026-06-13T03:00:00Z',
       },
       { id: 'm-bare', objective: 'sparse mission', owner: 'a', status: 'running', updated_at: '2026-06-13T02:00:00Z' },
     ]);
     const text = fs.readFileSync(renderMissionStatus(dir), 'utf8');
+    assert.match(text, /task: CLI-999/);
+    assert.match(text, /task next: atris task current-step --goal-id m-full --as a --proof "<proof>" --json/);
+    assert.match(text, /task setup: atris mission attach-task m-bare --json/);
     assert.match(text, /AgentXP task: CLI-999/);
     assert.match(text, /proof: atris\/runs\/proof\.json/);
     assert.match(text, /gate: human-accept/);
     // the bare mission contributes no optional lines
+    assert.equal((text.match(/^  - task:/gm) || []).length, 1);
+    assert.equal((text.match(/^  - task next:/gm) || []).length, 1);
+    assert.equal((text.match(/^  - task setup:/gm) || []).length, 1);
     assert.equal((text.match(/AgentXP task:/g) || []).length, 1);
     assert.equal((text.match(/proof:/g) || []).length, 1);
   } finally {

@@ -4,6 +4,8 @@ const {
   DEFAULT_QUERY,
   parseYoutubeArgs,
   buildYoutubePayload,
+  extractLocalTranscript,
+  shouldRetryWithLocalTranscript,
   formatYoutubeResult,
   youtubeCommand,
 } = require('../commands/youtube');
@@ -38,9 +40,27 @@ test('buildYoutubePayload defaults to the documented takeaway query', () => {
   });
 });
 
+test('buildYoutubePayload can include client transcript fields', () => {
+  const options = parseYoutubeArgs(['https://youtube.com/watch?v=abc123']);
+  options.localTranscript = {
+    transcriptText: 'caption text',
+    language: 'en',
+    durationSeconds: 12,
+  };
+
+  assert.deepEqual(buildYoutubePayload(options), {
+    youtube_url: 'https://youtube.com/watch?v=abc123',
+    query: DEFAULT_QUERY,
+    transcript_text: 'caption text',
+    transcript_language: 'en',
+    duration_seconds: 12,
+  });
+});
+
 test('youtubeCommand calls the process_youtube endpoint without curl', async () => {
   const calls = [];
   const output = [];
+  let extractorCalls = 0;
 
   const status = await youtubeCommand([
     'https://youtube.com/watch?v=abc123',
@@ -49,6 +69,10 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
   ], {
     output: (line) => output.push(line),
     ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => {
+      extractorCalls += 1;
+      return null;
+    },
     apiRequestJson: async (pathname, options) => {
       calls.push({ pathname, options });
       return {
@@ -76,8 +100,114 @@ test('youtubeCommand calls the process_youtube endpoint without curl', async () 
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.token, 'token-123');
   assert.equal(calls[0].options.timeoutMs, 300000);
+  assert.equal(calls[0].options.retries, 0);
+  assert.equal(extractorCalls, 1);
   assert.match(output.join('\n'), /Video title/);
   assert.match(output.join('\n'), /Main insight/);
+});
+
+test('youtubeCommand sends local transcript first without caching it', async () => {
+  const calls = [];
+
+  const status = await youtubeCommand([
+    'https://youtube.com/watch?v=abc123',
+  ], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => ({
+      transcriptText: 'local captions',
+      language: 'en',
+      durationSeconds: 33,
+    }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      return {
+        ok: true,
+        status: 200,
+        data: { status: 'success', message: 'ok', video_analysis: 'done' },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.body.transcript_text, 'local captions');
+  assert.equal(calls[0].options.body.transcript_language, 'en');
+  assert.equal(calls[0].options.body.duration_seconds, 33);
+  assert.equal(calls[0].options.body.cache_transcript, false);
+});
+
+test('youtubeCommand falls back to cloud video after local transcript failure', async () => {
+  const calls = [];
+
+  const status = await youtubeCommand([
+    'https://youtube.com/watch?v=abc123',
+  ], {
+    output: () => {},
+    ensureValidCredentials: async () => ({ credentials: { token: 'token-123' } }),
+    extractLocalTranscript: async () => ({
+      transcriptText: 'local captions',
+      language: 'en',
+      durationSeconds: 33,
+    }),
+    apiRequestJson: async (pathname, options) => {
+      calls.push({ pathname, options });
+      if (calls.length === 1) {
+        return {
+          ok: false,
+          status: 502,
+          error: { error: 'Transcript summarization failed' },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: { status: 'success', message: 'ok', video_analysis: 'cloud done' },
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.body.transcript_text, 'local captions');
+  assert.equal(calls[0].options.body.cache_transcript, false);
+  assert.equal(calls[1].options.body.transcript_text, undefined);
+  assert.equal(calls[1].options.body.cache_transcript, undefined);
+});
+
+test('shouldRetryWithLocalTranscript only retries YouTube extraction failures', () => {
+  assert.equal(shouldRetryWithLocalTranscript({ ok: false, status: 502, error: 'failed' }), true);
+  assert.equal(shouldRetryWithLocalTranscript({
+    ok: false,
+    status: 400,
+    error: { error: 'YouTube video is not publicly accessible', reason: 'oEmbed blocked' },
+  }), true);
+  assert.equal(shouldRetryWithLocalTranscript({ ok: false, status: 400, error: 'Invalid YouTube URL' }), false);
+  assert.equal(shouldRetryWithLocalTranscript({ ok: false, status: 402, error: 'Insufficient credits' }), false);
+});
+
+test('extractLocalTranscript parses yt-dlp json3 captions', async () => {
+  const result = await extractLocalTranscript('https://youtube.com/watch?v=abc123', {
+    spawnSync: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        duration: 44,
+        automatic_captions: {
+          en: [{ ext: 'json3', url: 'https://www.youtube.com/api/timedtext?v=abc123' }],
+        },
+      }),
+    }),
+    fetchCaptionText: async () => JSON.stringify({
+      events: [
+        { segs: [{ utf8: 'Hello ' }, { utf8: 'world' }] },
+        { segs: [{ utf8: 'Next idea' }] },
+      ],
+    }),
+  });
+
+  assert.equal(result.transcriptText, 'Hello world Next idea');
+  assert.equal(result.language, 'en');
+  assert.equal(result.durationSeconds, 44);
 });
 
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {

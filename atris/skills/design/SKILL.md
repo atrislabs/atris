@@ -16,8 +16,9 @@ Part of the Atris policy system. Prevents ai-generated frontend from looking gen
 
 This skill uses the Atris workflow:
 1. Check `atris/MAP.md` for existing patterns before building
-2. Reference `atris/policies/atris-design.md` for full guidance
-3. After building, run `atris review` to validate against this policy
+2. **Read `atris/policies/design-seed.md` first** — it has the project's unique visual identity (fonts, colors, spacing, motion). This is the design DNA. Do not override it with defaults.
+3. Reference `atris/policies/atris-design.md` for full anti-slop guidance
+4. After building, run `atris review` to validate against this policy
 
 ## Quick Reference
 

@@ -28,6 +28,12 @@ test('npm package includes runtime workspace templates', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
 });
 
+test('npm package must not ship local workspace wiki', () => {
+  const files = packageJson.files || [];
+  const wikiEntries = files.filter((entry) => String(entry).startsWith('atris/wiki'));
+  assert.deepEqual(wikiEntries, [], 'atris/wiki/ is local-only; users scaffold their own via init/ingest');
+});
+
 test('detectDefaultVerify returns npm test for Node package with real test script', () => {
   const dir = makeTempRepo();
   try {

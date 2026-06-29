@@ -4,14 +4,15 @@ Use this when a collaborator opens the shared business workspace for the first t
 
 ## Default Path
 
-1. Run `atris business start` from the workspace root.
-2. Run `atris radar` to see agents, tasks, missions, XP, team lanes, and proof state.
-3. Claim the seeded first task with `atris task next`.
-4. Wake `operator` with `atris member activate operator`.
-5. Resume an active mission, or start the first bounded loop if none exists.
-6. Execute the loop with `atris do`.
-7. Use `ops`, `research`, or `comms` only when the next loop needs that lens.
-8. Ask `validator` to check proof before reward, launch, external send, or spend.
+1. Run `atris sync --dry-run` if this workspace has cloud IDs.
+2. Run `atris business start` from the workspace root.
+3. Run `atris radar` to see agents, tasks, missions, XP, team lanes, and proof state.
+4. Claim the seeded first task with `atris task next`.
+5. Wake `operator` with `atris member activate operator`.
+6. Resume an active mission, or start the first bounded loop if none exists.
+7. Execute the loop with `atris do`.
+8. Use `ops`, `research`, or `comms` only when the next loop needs that lens.
+9. Ask `validator` to check proof before reward, launch, external send, or spend.
 
 ## Mission Loop
 
@@ -40,6 +41,9 @@ Record the first real run with:
 ```bash
 atris business record atris/reports/<recap>.md --outcome mixed --metric "operator speed"
 atris business share --write
+atris sync
 ```
+
+Use `atris sync --watch` while actively collaborating in a cloud-backed workspace.
 
 No XP or external action until a human approves the proof.

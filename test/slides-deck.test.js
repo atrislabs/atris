@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES } = require('../lib/slides-deck');
+const { buildDeck, THEMES, sanitize, parseEmph, COLOR_ROLES, fitSize, estLines, notesRequests, findNotesBodyId } = require('../lib/slides-deck');
 const { SAMPLE } = require('../commands/deck');
 
 test('every theme defines all color roles + three fonts', () => {
@@ -42,6 +42,23 @@ test('columns archetype renders a heading + body per column', () => {
   for (const t of ['A', 'B', 'C', 'a', 'b', 'c']) assert.ok(texts.includes(t), `missing column text ${t}`);
 });
 
+test('chips wrap to a second row instead of running off-slide', () => {
+  const spec = { theme: 'paper', brand: { name: 'X' }, slides: [{
+    type: 'chips',
+    chips: [
+      '$200/mo business computer',
+      'Unlimited Members',
+      'Usage credits',
+      'Managed loop setup',
+      'Enterprise controls',
+    ],
+  }] };
+  const { requests } = buildDeck(spec);
+  const shapes = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ROUND_RECTANGLE');
+  const ys = shapes.map((r) => r.createShape.elementProperties.transform.translateY);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 20, 'chips should wrap to multiple rows');
+});
+
 test('unknown slide type falls back to statement, unknown theme to terminal', () => {
   const { requests } = buildDeck({ theme: 'nope', slides: [{ type: 'mystery', text: 'hi' }] });
   assert.ok(requests.some((r) => r.insertText && r.insertText.text === 'hi'));
@@ -50,4 +67,163 @@ test('unknown slide type falls back to statement, unknown theme to terminal', ()
 test('sanitize collapses spaced hyphen separators too', () => {
   assert.equal(sanitize('on - call'), 'on, call');
   assert.equal(sanitize('on-call'), 'on-call'); // real hyphenated word survives
+});
+
+test('v2 archetypes render without falling back to statement', () => {
+  const spec = {
+    theme: 'terminal',
+    brand: { name: 'X' },
+    slides: [
+      { type: 'timeline', heading: 'Flow', steps: [{ label: 'a' }, { label: 'b', active: true }] },
+      { type: 'versus', heading: 'Vs', left: { label: 'L', items: ['one'] }, right: { label: 'R', items: ['two'] } },
+      { type: 'metricgrid', metrics: [{ value: '1', label: 'a' }, { value: '2', label: 'b' }] },
+      { type: 'receipt', fields: [{ k: 'x', v: 'y' }], stamp: 'ok' },
+      { type: 'stack', layers: [{ title: 'A', sub: 'a' }] },
+      { type: 'quote', text: 'hello', author: 'me' },
+      { type: 'hero', headline: 'done', mono: 'cmd' },
+    ],
+  };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 7);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('Flow'));
+  assert.ok(texts.includes('ok'));
+  assert.ok(texts.includes('hello'));
+  assert.ok(texts.includes('cmd'));
+});
+
+test('fitSize shrinks the font for longer text and never goes below the floor', () => {
+  const w = 560;
+  const maxH = 110;
+  const short = fitSize('A short sub.', w, maxH, 12.5, 10, 120);
+  const long = fitSize('y'.repeat(600), w, maxH, 12.5, 10, 120);
+  assert.equal(short, 12.5, 'short text keeps the base size');
+  assert.ok(long < short, 'long text shrinks');
+  assert.ok(long >= 10, 'never below the min size');
+  assert.ok(estLines('a'.repeat(200), w, 12) > estLines('a'.repeat(20), w, 12));
+});
+
+test('density tuning shrinks a long statement headline but leaves a short one at base', () => {
+  const headlineSize = (text) => {
+    const { requests } = buildDeck({ theme: 'paper', brand: { name: 'X' }, slides: [{ type: 'statement', text }] });
+    const styled = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize);
+    return Math.max(...styled.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  const long = 'This is a long statement headline that spans well beyond a single line and even a second line so it has to shrink to fit the box.';
+  assert.equal(headlineSize('Short.'), 38, 'a short headline keeps the base display size');
+  assert.ok(headlineSize(long) < 38, 'a long headline shrinks to stay on-slide');
+});
+
+test('prose with three long paragraphs shrinks below the two-paragraph size', () => {
+  const longPara = 'This paragraph is long enough to wrap multiple times across the full content width of the slide and so it consumes real vertical space that must be shared.';
+  const proseSize = (paras) => {
+    const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'prose', heading: 'Section heading here', paragraphs: paras }] });
+    const styled = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize && r.updateTextStyle.style.fontSize.magnitude <= 14);
+    return Math.max(...styled.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  assert.ok(proseSize([longPara, longPara, longPara]) <= proseSize([longPara, longPara]));
+});
+
+test('buildDeck never throws on malformed-but-plausible specs (engine is self-defensive)', () => {
+  const cases = [
+    { slides: [{ type: 'metricgrid', metrics: [null, { value: '1', label: 'a' }] }] },
+    { slides: [{ type: 'panel', panel: { rows: 'oops' } }] },
+    { slides: [{ type: 'versus', left: { items: 'x' }, right: { items: ['y'] } }] },
+    { slides: [{ type: 'columns', columns: 'nope' }] },
+    { slides: [null, { type: 'statement', text: 'ok' }] },
+    undefined,
+    {},
+  ];
+  for (const spec of cases) {
+    assert.doesNotThrow(() => buildDeck(spec), `buildDeck threw on ${JSON.stringify(spec)}`);
+  }
+});
+
+test('bignumber renders a literal 0 instead of dropping it (no falsy coalescing)', () => {
+  const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'bignumber', number: 0, label: 'zero defects' }] });
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('0'), 'the big number 0 must render');
+});
+
+test('narrative archetypes shrink long copy to stay on-slide (lede, quote)', () => {
+  const maxSize = (spec) => {
+    const { requests } = buildDeck(spec);
+    const st = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize).map((r) => r.updateTextStyle.style.fontSize.magnitude);
+    return Math.max(...st);
+  };
+  const longHead = 'A very long lede headline that runs well past one line '.repeat(4);
+  assert.ok(maxSize({ slides: [{ type: 'lede', headline: longHead }] }) < 40, 'long lede headline shrinks below base 40');
+  const longQuote = 'word '.repeat(80);
+  assert.ok(maxSize({ slides: [{ type: 'quote', text: longQuote }] }) < 28, 'long quote shrinks below base 28');
+});
+
+test('notesRequests targets the notes body of slides that declare notes', () => {
+  const apiSlides = [
+    { objectId: 'deck_slide_1', slideProperties: { notesPage: { pageElements: [
+      { objectId: 'notes_1', shape: { placeholder: { type: 'BODY' } } },
+    ] } } },
+    { objectId: 'deck_slide_2', slideProperties: { notesPage: { pageElements: [
+      { objectId: 'img_2', shape: { placeholder: { type: 'SLIDE_IMAGE' } } },
+      { objectId: 'notes_2', shape: { placeholder: { type: 'BODY' } } },
+    ] } } },
+  ];
+  const specSlides = [
+    { type: 'title', notes: 'source 00:00' },
+    { type: 'statement' }, // no notes -> skipped
+  ];
+  const reqs = notesRequests(apiSlides, specSlides);
+  assert.equal(reqs.length, 1);
+  assert.deepEqual(reqs[0], { insertText: { objectId: 'notes_1', text: 'source 00:00' } });
+  assert.equal(findNotesBodyId(apiSlides[1]), 'notes_2', 'picks the BODY placeholder, not the image');
+});
+
+test('bullets archetype renders a typography list with no card boxes', () => {
+  const spec = { theme: 'paper', brand: { name: 'X' }, slides: [{
+    type: 'bullets',
+    heading: 'Points',
+    items: ['one', 'two', { text: 'three', sub: 'note' }],
+  }] };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 1);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  for (const t of ['Points', 'one', 'two', 'three', 'note']) {
+    assert.ok(texts.includes(t), `missing bullet text ${t}`);
+  }
+  // the box-free promise: bullets must not draw rounded-rectangle cards
+  const cards = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ROUND_RECTANGLE').length;
+  assert.equal(cards, 0, 'bullets must not draw card boxes');
+  // accent dots mark each item
+  const dots = requests.filter((r) => r.createShape && r.createShape.shapeType === 'ELLIPSE').length;
+  assert.equal(dots, 3, 'one accent dot per bullet');
+});
+
+test('bullets list shrinks font as it grows (dense lists still fit)', () => {
+  const sizeFor = (count) => {
+    const items = Array.from({ length: count }, (_, i) => `item ${i}`);
+    const { requests } = buildDeck({ theme: 'ink', brand: { name: 'X' }, slides: [{ type: 'bullets', items }] });
+    // the bullet body text style carries the font size
+    const styles = requests.filter((r) => r.updateTextStyle && r.updateTextStyle.style.fontSize);
+    return Math.max(...styles.map((r) => r.updateTextStyle.style.fontSize.magnitude));
+  };
+  assert.ok(sizeFor(7) < sizeFor(3), 'a 7-item list should use a smaller font than a 3-item list');
+});
+
+test('narrative archetypes render typography-first slides', () => {
+  const spec = {
+    theme: 'ink',
+    brand: { name: 'X' },
+    slides: [
+      { type: 'interstitial', kicker: 'k', text: 'Chapter **one.**', sub: 'sub' },
+      { type: 'lede', headline: 'Big **headline.**', dek: 'dek line', byline: 'by me' },
+      { type: 'prose', heading: 'Section', paragraphs: ['para one', 'para two'] },
+      { type: 'split', heading: 'Split', body: 'left body', accent: '99%', accentSub: 'stat note' },
+    ],
+  };
+  const { requests, slideIds } = buildDeck(spec);
+  assert.equal(slideIds.length, 4);
+  const texts = requests.filter((r) => r.insertText).map((r) => r.insertText.text);
+  assert.ok(texts.includes('Chapter one.'));
+  assert.ok(texts.includes('Big headline.'));
+  assert.ok(texts.includes('para one'));
+  assert.ok(texts.includes('99%'));
 });

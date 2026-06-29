@@ -17,6 +17,32 @@ this is the "distribution center" — statistically average, aesthetically dead.
 
 ---
 
+## vocabulary is the lever
+
+designers get better results from AI than engineers do. not because they're more creative — because they own the **language of craft**. an engineer says "make it look nice." a designer says "tighten the vertical rhythm, increase negative space, make the hierarchy bolder here and quieter there."
+
+the model can only aim at the words you give it. **name the move you want, precisely, in craft vocabulary.** vague prompts produce vague output.
+
+core terms to use when directing AI:
+- **vertical rhythm** — spacing consistency down the page, locked to a baseline grid
+- **negative space** — intentional emptiness as a design element, not absence
+- **bolder / quieter** — relative emphasis, not absolute size
+- **affordances** — visual cues that signal interaction (and now: agentic affordances for AI users)
+- **meta-design** — designing the *system* of design, not just one screen
+- **conviction** — committing to a global maximum instead of iterating toward a local one
+
+---
+
+## raising the floor vs raising the ceiling
+
+AI is best used to **raise the floor** — automate the mechanical 80% (layout scaffolding, responsive grids, state matrices, boilerplate). this frees human attention for **raising the ceiling** — the last 10-20% that requires taste, instinct, and conviction.
+
+don't use AI to make the final call. use it to clear the drudgery so you can spend your time on the part that matters: the unique spin, the unexpected choice, the thing a model would never pick on its own.
+
+**cognitive delegation, not cognitive surrender.** AI routes you to the destination (like Google Maps). you keep the viewpoint and make the final decision. accepting an 8-page AI plan without reading it is cognitive surrender — that's how everything starts looking the same.
+
+---
+
 ## typography
 
 **avoid:** inter, roboto, open sans, lato, arial, montserrat, system defaults. also avoid monospace as lazy shorthand for "technical/developer" vibes.
@@ -342,8 +368,53 @@ the fingerprints of AI-generated work:
 - sparklines as decoration
 - rounded rectangles with drop shadows
 - large icons with rounded corners above headings
+- **"claude beige"** — the generic off-white/off-gray background every AI site defaults to
+- **instrument serif** overuse — the italicized serif headline that now signals "AI-generated" the way inter once did
+- **generic tinted backgrounds** — flat color-tinted sections with no texture, depth, or intention
 
 a distinctive interface should make someone ask "how was this made?" not "which AI made this?"
+
+### anti-attractors
+
+models have attractor states — defaults they fall into because training data is weighted toward them. purple gradients, instrument serif, "claude beige" — these are gravity wells. to escape them you need **anti-attractors**: deliberate constraints that force the model off its well-trodden path.
+
+techniques:
+- **name the thing you don't want** — "no purple, no serif headline, no off-white background" closes the attractor
+- **seed with a reference** — point at a specific site, era, or designer's work as the target aesthetic
+- **inject a constraint** — "monochrome only," "no rounded corners," "one font weight" — scarcity forces creativity
+- **rotate your defaults** — if your last three projects used dark mode, force light. if they used sans, force serif. the convergence trap is real.
+
+---
+
+## ax — agentic experience
+
+UX is design for humans. **AX is design for AI agents** that are becoming primary users of software. when an agent interacts with your CLI, API, or surface, visual affordances don't help — it can't see your button. what it needs:
+
+- **speed** — fast responses, low latency, no unnecessary round trips
+- **clarity** — unambiguous output, structured data, predictable shapes
+- **verbosity where needed** — error messages that tell the agent what to do next, not just what failed
+- **edge case coverage** — agents will hit paths humans never touch; handle them explicitly
+- **agentic affordances** — `llms.txt`, `robots.txt`, clear `--help`, machine-readable status, stable exit codes
+
+AX is not optional anymore. if your tool is agent-facing, design the agent's experience as deliberately as the human's.
+
+---
+
+## conviction over local maxima
+
+good design is a bet. iterating toward "slightly better" produces a **local maximum** — safe, defensible, forgettable. great design requires **conviction**: choosing a global maximum that might look wrong at first but is a superior endpoint.
+
+the engineer's instinct is to optimize incrementally. the designer's job is to make a bet and commit. AI accelerates iteration, which makes the local-maximum trap *worse* — you can now converge on average faster than ever.
+
+**subtraction over addition.** the strongest design move is often removing something. steve jobs as editor, not steve jobs as builder. when a screen feels cluttered, don't add structure — delete until it breathes.
+
+---
+
+## the scarcity principle
+
+taste emerges from constraints. the european and japanese craft traditions produced distinctive work because materials were scarce — you had to choose carefully. in an era of infinite digital materials (every color, every font, every layout is free), taste must be **intentionally cultivated through self-imposed scarcity**.
+
+pick constraints before you start: one font, two colors, three spacing values. scarcity forces decisions. infinite options produce the distribution center.
 
 ---
 

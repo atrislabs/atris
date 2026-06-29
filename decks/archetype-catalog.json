@@ -1,0 +1,180 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "The deck **archetype** catalog",
+      "sub": "Every slide type Atris renders, shown once, so writers can pick the right one by eye.",
+      "panel": {
+        "header": { "title": "Reference deck", "meta": "19 types" },
+        "rows": [
+          { "title": "Narrative", "sub": "story slides", "value": "7" },
+          { "title": "Structured", "sub": "data slides", "value": "8" },
+          { "title": "Framing", "sub": "open and close", "value": "4" }
+        ],
+        "footer": { "left": "one of each", "right": "paper" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "Pick the **shape** before you write the words.",
+      "sub": "A statement is one sentence that earns the whole slide. Keep the sub short and it carries the claim."
+    },
+    {
+      "type": "columns",
+      "heading": "When to reach for columns",
+      "columns": [
+        { "h": "Compare", "b": "Set two or three peers side by side so the reader scans the difference fast." },
+        { "h": "Group", "b": "Bucket related ideas under short headers instead of one long paragraph." },
+        { "h": "Balance", "b": "Give each idea equal weight when no single one should win the slide." }
+      ]
+    },
+    {
+      "type": "panel",
+      "heading": "Panel reads like a status board",
+      "sub": "Use it for rows of named items with a value and a state dot. Header and footer are optional.",
+      "panel": {
+        "header": { "title": "Loop health", "meta": "live" },
+        "rows": [
+          { "title": "Plan", "sub": "navigator", "value": "ok", "sev": 0 },
+          { "title": "Build", "sub": "executor", "value": "ok", "active": true },
+          { "title": "Review", "sub": "validator", "value": "queue", "sev": 1 },
+          { "title": "Ship", "sub": "launcher", "value": "hold", "sev": 2 }
+        ],
+        "footer": { "left": "four rows max", "right": "verified" }
+      }
+    },
+    {
+      "type": "chips",
+      "heading": "Chips for a quick taxonomy",
+      "sub": "Drop a row of short labels when the point is breadth, not depth.",
+      "chips": ["title", "statement", "columns", "panel", "timeline", "versus", "receipt", "stack", "quote", "hero"],
+      "mono": "one accent, sentence case, no shouting"
+    },
+    {
+      "type": "bignumber",
+      "number": "19",
+      "label": "slide types in one design system",
+      "sub": "Bignumber exists for the single figure that should land before anything else on the slide."
+    },
+    {
+      "type": "timeline",
+      "heading": "Timeline walks a process",
+      "steps": [
+        { "label": "spec", "sub": "write json" },
+        { "label": "lint", "sub": "cheap check" },
+        { "label": "build", "sub": "publish", "active": true },
+        { "label": "review", "sub": "thumbnails" },
+        { "label": "confirm", "sub": "mark ready" }
+      ],
+      "sub": "Five steps fit cleanly. More than that and the labels start to crowd the edges."
+    },
+    {
+      "type": "versus",
+      "heading": "Versus splits two stances",
+      "left": {
+        "label": "Default slop",
+        "items": ["arial on white", "purple gradients", "em dash everywhere", "five accent colors"]
+      },
+      "right": {
+        "label": "Atris deck",
+        "items": ["committed type", "one warm accent", "sanitized copy", "real data panels"]
+      }
+    },
+    {
+      "type": "metricgrid",
+      "heading": "Metricgrid for four headline figures",
+      "metrics": [
+        { "value": "4", "label": "cards is the cap before the grid gets cramped" },
+        { "value": "2x2", "label": "fixed layout keeps the eye moving in a square" },
+        { "value": "32pt", "label": "value type so the number reads from the back row" },
+        { "value": "1", "label": "accent hue across every card on the slide" }
+      ]
+    },
+    {
+      "type": "receipt",
+      "heading": "Receipt makes a claim auditable",
+      "sub": "Use it when the slide needs evidence fields, not prose. Up to six rows plus a stamp.",
+      "receiptTitle": "catalog build #001",
+      "fields": [
+        { "k": "spec", "v": "archetype-catalog.json" },
+        { "k": "theme", "v": "paper, warm editorial" },
+        { "k": "types", "v": "all 19, one each" },
+        { "k": "lint", "v": "zero errors, zero truncation" },
+        { "k": "use", "v": "design reference for writers" }
+      ],
+      "stamp": "lint clean"
+    },
+    {
+      "type": "stack",
+      "heading": "Stack shows layers in order",
+      "layers": [
+        { "title": "Read the catalog", "sub": "find the type that fits the content" },
+        { "title": "Copy the fields", "sub": "match the names the engine expects" },
+        { "title": "Lint before build", "sub": "catch clips and caps locally" }
+      ],
+      "sub": "Three layers leave room for a closing line beneath the cards."
+    },
+    {
+      "type": "quote",
+      "text": "Write the slide the reader **already wishes** they had.",
+      "author": "Atris deck engine",
+      "role": "design note"
+    },
+    {
+      "type": "hero",
+      "headline": "Hero centers one **big idea**",
+      "sub": "Reach for it when the slide is a moment, not a table. Everything centers under one rule.",
+      "mono": "atris deck build decks/archetype-catalog.json --review",
+      "footer": "atris.ai · archetype catalog · 2026"
+    },
+    {
+      "type": "interstitial",
+      "kicker": "section break",
+      "text": "Now the **narrative** types",
+      "sub": "Interstitial is a chapter card. Big type, lots of air, a kicker to mark the turn."
+    },
+    {
+      "type": "lede",
+      "headline": "Lede opens like a feature story",
+      "dek": "A magazine intro slide: one strong headline, a deck of supporting text, and a byline that grounds it.",
+      "byline": "atris-cli · deck-compose · paper theme"
+    },
+    {
+      "type": "prose",
+      "heading": "Prose is for paragraphs",
+      "paragraphs": [
+        "When the content is genuinely a few sentences of argument, do not force it into cards. Prose gives the reader room to follow a line of thought without a widget in the way.",
+        "The engine fits one font size across every paragraph and floats them down to the slide floor, so two or three short paragraphs stay readable and balanced."
+      ]
+    },
+    {
+      "type": "split",
+      "heading": "Split pairs text with one figure",
+      "body": "Put the explanation on the left and let a single number or short phrase carry the right side. It reads as claim plus proof without a full panel.",
+      "accent": "60%",
+      "accentSub": "of the slide is text; the accent is the punchline the reader remembers."
+    },
+    {
+      "type": "bullets",
+      "heading": "Bullets, done with restraint",
+      "items": [
+        { "text": "Keep it to seven or fewer", "sub": "the engine shrinks type as the list grows" },
+        { "text": "Lead each item with a verb or a noun", "sub": "not a full sentence" },
+        { "text": "Add a sub only when it earns its line", "sub": "optional second tier per item" },
+        { "text": "Prefer a real list over a wall of cards", "sub": "typography, not boxes" }
+      ],
+      "sub": "A true bullet list: accent dot, text, no card around each line."
+    },
+    {
+      "type": "close",
+      "tagline": "One design system, nineteen ways to say it well.",
+      "buttons": [
+        { "label": "Read the engine", "primary": true },
+        { "label": "Lint your spec" }
+      ],
+      "footer": "atris.ai · archetype catalog · 2026"
+    }
+  ]
+}

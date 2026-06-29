@@ -100,6 +100,19 @@ function buildPullConflictReviewPacket(outputDir, conflictChanges, remoteContent
   });
 }
 
+function mergePulledManifestFiles(remoteFiles = {}, onlyPrefixes = null, manifest = null) {
+  if (!onlyPrefixes || !manifest || !manifest.files) return remoteFiles;
+  const merged = {};
+  for (const [p, info] of Object.entries(manifest.files)) {
+    const inScope = onlyPrefixes.some((pref) => p.replace(/^\//, '').startsWith(pref));
+    if (!inScope) merged[p] = info;
+  }
+  for (const [p, info] of Object.entries(remoteFiles)) {
+    merged[p] = info;
+  }
+  return merged;
+}
+
 async function pullAtris() {
   let arg = process.argv[3];
 
@@ -819,9 +832,32 @@ async function pullBusiness(slug) {
   if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
   if (conflictCount > 0) parts.push(`${conflictCount} conflict${conflictCount > 1 ? 's' : ''}`);
   if (parts.length > 0) console.log(`  ${parts.join(', ')}.`);
+
+  let commitHash = null;
+  try {
+    const headResult = await apiRequestJson(
+      `/business/${businessId}/workspaces/${workspaceId}/git/head`,
+      { method: 'GET', token: creds.token }
+    );
+    if (headResult.ok && headResult.data && headResult.data.commit) {
+      commitHash = headResult.data.commit;
+    }
+  } catch {
+    // Git might not be initialized yet — that's fine
+  }
+
   if (failOnConflict && conflictCount > 0) {
     const timestamp = syncTimestamp();
     const packet = buildPullConflictReviewPacket(outputDir, conflictChanges, conflictRemoteContents, timestamp);
+    if (!noManifest) {
+      const manifestFiles = mergePulledManifestFiles(remoteFiles, onlyPrefixes, manifest);
+      packet.files[`.atris/sync/conflicts/${timestamp}/manifest.json`] = `${JSON.stringify({
+        slug: resolvedSlug || slug,
+        manifest: buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir }),
+        baseContents: remoteContent,
+        deletedRemote: diff.deletedRemote,
+      }, null, 2)}\n`;
+    }
     writeConflictReviewPacket(outputDir, packet);
     console.log('');
     console.log(`  Sync paused: ${conflictCount} conflict${conflictCount === 1 ? '' : 's'} need review before publishing.`);
@@ -834,20 +870,6 @@ async function pullBusiness(slug) {
     if (fs.existsSync(nowLocal)) {
       console.log('  now: atris/now.md is current.');
     }
-  }
-
-  // Get current commit hash from remote (for manifest)
-  let commitHash = null;
-  try {
-    const headResult = await apiRequestJson(
-      `/business/${businessId}/workspaces/${workspaceId}/git/head`,
-      { method: 'GET', token: creds.token }
-    );
-    if (headResult.ok && headResult.data && headResult.data.commit) {
-      commitHash = headResult.data.commit;
-    }
-  } catch {
-    // Git might not be initialized yet — that's fine
   }
 
   // ANTI-WIPE GUARD: if cloud reported zero in-scope files but local still
@@ -874,20 +896,7 @@ async function pullBusiness(slug) {
   // since the last sync get evicted from the manifest. Without this, the
   // push freshness check would forever flag those paths as "deleted on
   // cloud" drift, blocking pushes for no reason.
-  let manifestFiles = remoteFiles;
-  if (onlyPrefixes && manifest && manifest.files) {
-    const merged = {};
-    // 1. Keep paths from old manifest that are OUTSIDE the scoped prefix.
-    for (const [p, info] of Object.entries(manifest.files)) {
-      const inScope = onlyPrefixes.some((pref) => p.replace(/^\//, '').startsWith(pref));
-      if (!inScope) merged[p] = info;
-    }
-    // 2. Overwrite the in-scope subtree with what we just pulled (cloud truth).
-    for (const [p, info] of Object.entries(remoteFiles)) {
-      merged[p] = info;
-    }
-    manifestFiles = merged;
-  }
+  const manifestFiles = mergePulledManifestFiles(remoteFiles, onlyPrefixes, manifest);
   if (!noManifest) {
     const newManifest = buildManifest(manifestFiles, commitHash, { workspaceRoot: outputDir });
     saveManifest(resolvedSlug || slug, newManifest);

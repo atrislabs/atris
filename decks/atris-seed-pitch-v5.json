@@ -1,0 +1,109 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "Every business owner has two real problems.",
+      "sub": "The work they hate doing. The work they can't afford to hire for. Atris does both — inside their company, with a receipt every time.",
+      "panel": {
+        "header": { "title": "Closed loop", "meta": "every action" },
+        "rows": [
+          { "title": "context", "sub": "memory in", "value": "1", "valueSub": "step", "sev": 2 },
+          { "title": "action", "sub": "member acts", "value": "2", "valueSub": "step", "sev": 1 },
+          { "title": "receipt", "sub": "proof out", "value": "3", "valueSub": "step", "sev": 0, "active": true },
+          { "title": "outcome", "sub": "result", "value": "4", "valueSub": "step", "sev": 2 }
+        ],
+        "footer": { "left": "perimeter-resident", "right": "outcome-graded" }
+      }
+    },
+    {
+      "type": "columns",
+      "heading": "Three operators. Three jobs. One product.",
+      "columns": [
+        {
+          "h": "DoorDash",
+          "b": "Forecasting, weekly business review, internal Atris adoption. The workflow became a process. The process became a religion."
+        },
+        {
+          "h": "Pallet",
+          "b": "Recruiting team. Atris learns the non-engineering workflow and converts it to a coding problem."
+        },
+        {
+          "h": "[Customer 3]",
+          "b": "Bookkeeping or finance ops. Hours of human grunt work compressed to minutes, with a receipt per close."
+        }
+      ]
+    },
+    {
+      "type": "bignumber",
+      "number": "$250k",
+      "label": "run rate · 1–3 FDEs · operator workflows at $10M–$5B companies",
+      "sub": "We start in the room nobody else is in. Then ten more rooms exactly like it."
+    },
+    {
+      "type": "statement",
+      "text": "They store **facts.** We learn the **outcome.**",
+      "sub": "Mem0 stores facts. Letta stores context. Glean indexes docs. Atris is the only one where the customer's runtime ships back a reward signal so the agent gets measurably better at their work — with the data never leaving their perimeter."
+    },
+    {
+      "type": "panel",
+      "heading": "One machine, N customers.",
+      "sub": "Each with their own disk, own behavior, own reward signal. Same code everywhere. No data crosses.",
+      "panel": {
+        "header": { "title": "Architecture", "meta": "perimeter-resident" },
+        "rows": [
+          { "title": "Disk", "sub": "per-customer memory", "value": "in", "valueSub": "perimeter", "sev": 1 },
+          { "title": "Behavior", "sub": "per-customer policies", "value": "in", "valueSub": "perimeter", "sev": 1 },
+          { "title": "Reward signal", "sub": "verifiable outcomes", "value": "out", "valueSub": "to us", "sev": 0, "active": true },
+          { "title": "Weights", "sub": "trained on reward stream", "value": "back", "valueSub": "each release", "sev": 2 }
+        ],
+        "footer": { "left": "data plane stays", "right": "reward plane streams" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "The labs are becoming the new **oil companies.**",
+      "sub": "Frontier models are being rate-limited, regulated, gated customer-by-customer. Standard Oil didn't lose to a better well — it lost to the refinery. The next trillion-dollar company owns the layer between raw intelligence and the work."
+    },
+    {
+      "type": "columns",
+      "heading": "Why now",
+      "columns": [
+        {
+          "h": "Labs gated",
+          "b": "Tokens regulated. Frontier access limited. Customer-by-customer approval. The race for the smartest brain is becoming a utility."
+        },
+        {
+          "h": "Wrappers dead",
+          "b": "Thin GPT wrappers are over. What's alive is the layer beneath — memory, taste, approval, proof, on the customer's perimeter."
+        },
+        {
+          "h": "Window open",
+          "b": "Installation phase. History says the next decade's winners are not the rail-layers. Amazon over Cisco. Google over WorldCom. Walmart over the railroads."
+        }
+      ]
+    },
+    {
+      "type": "statement",
+      "text": "The **Shadow Center.**",
+      "sub": "Every system has a center. The labs occupy the one beneath every AI-native business today. The seat is open. Atris is the architecture for the next occupant — memory, taste, approval, proof, running inside the customer's perimeter, getting sharper every week."
+    },
+    {
+      "type": "chips",
+      "heading": "Business model",
+      "sub": "Base + services + outcomes. We do not tax Members.",
+      "chips": ["$200/mo computer", "Unlimited Members", "$5–25k/mo FDE-embedded", "Outcome upside", "Enterprise"],
+      "mono": "Sierra-shaped: 18 months behind their arc"
+    },
+    {
+      "type": "close",
+      "tagline": "In 2030, every serious AI business runs on a Shadow Center. We are the one underneath.",
+      "buttons": [
+        { "label": "See the demo", "primary": true },
+        { "label": "Talk to us" }
+      ],
+      "footer": "Raising $10M seed · atris.ai · 2026"
+    }
+  ]
+}

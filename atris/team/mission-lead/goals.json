@@ -1,11 +1,11 @@
 {
   "schema": "atris.member_goals.v1",
   "member": "mission-lead",
-  "updated_at": "2026-05-07T09:03:15.315Z",
+  "updated_at": "2026-06-28T21:14:08.931Z",
   "goals": [
     {
       "id": "goal-2026-05-07-fbee1969",
-      "title": "Prove one bounded step toward: Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug...",
+      "title": "Open-world self-improvement game loop: mission creates focused member goals, splits...",
       "status": "active",
       "cadence": "manual",
       "why": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
@@ -16,8 +16,8 @@
       ],
       "source": "mission",
       "mission_file": "atris/team/mission-lead/MISSION.md",
-      "now_file": null,
-      "mission_id": null,
+      "now_file": "atris/team/mission-lead/now.md",
+      "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
       "mission_north_star": "Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.",
       "created_at": "2026-05-07T09:03:15.315Z",
       "experiments": [],
@@ -27,8 +27,45 @@
           "event": "goal_from_mission_created",
           "mission_id": null,
           "mission_status": null
+        },
+        {
+          "at": "2026-06-28T21:09:38.887Z",
+          "event": "goal_from_mission_reused",
+          "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
+          "mission_status": "complete"
         }
-      ]
+      ],
+      "task_context": {
+        "ref": "CLI-507",
+        "title": "Activate member /goal from mission-owned task context",
+        "status": "claimed",
+        "owner": "mission-lead",
+        "goal_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
+        "command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
+      },
+      "native_goal": {
+        "schema": "atris.native_goal.v1",
+        "owner": "mission-lead",
+        "runner": "coding-agent",
+        "objective": "mission-lead: complete CLI-507 - Activate member /goal from mission-owned task context",
+        "slash_goal": "mission-lead: complete CLI-507 - Activate member /goal from mission-owned task context",
+        "member_goal_id": "goal-2026-05-07-fbee1969",
+        "mission_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
+        "task": {
+          "ref": "CLI-507",
+          "title": "Activate member /goal from mission-owned task context",
+          "status": "claimed",
+          "owner": "mission-lead",
+          "goal_id": "mission-2026-06-28-open-world-self-improvement--73264f05",
+          "command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
+        },
+        "acceptance": [
+          "Move CLI-507 to Review with a human-readable Result receipt.",
+          "Record the verifier/proof used to check the work.",
+          "Stop only when the task is in Review, blocked with a human ask, or accepted by a human."
+        ],
+        "next_command": "atris task current-step --goal-id mission-2026-06-28-open-world-self-improvement--73264f05 --as mission-lead --proof \"<proof>\" --json"
+      }
     }
   ]
 }

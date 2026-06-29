@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const {
   contextForAttachedWorkspaceMismatch,
   extractAttachedWorkspaceMismatch,
+  printRecruitingLocalSyncOutcome,
 } = require('../commands/computer');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -19,6 +20,16 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout;
 }
 
 function writeCredentials(home) {
@@ -60,6 +71,7 @@ function startApiServer(requests) {
         send(200, [
           { id: 'ws-old', business_id: 'biz-1', name: 'Main', type: 'general', status: 'active', is_default: true },
           { id: 'ws-new', business_id: 'biz-1', name: 'My Business Computer', type: 'general', status: 'active', is_default: false },
+          { id: 'ws-recruiting', business_id: 'biz-1', name: 'Recruiting Computer', type: 'recruiting', status: 'active', is_default: false },
           { id: 'ws-mismatch', business_id: 'biz-1', name: 'Mismatch', type: 'general', status: 'active', is_default: false },
         ]);
         return;
@@ -156,6 +168,7 @@ function startApiServer(requests) {
         (
           req.url === '/api/business/biz-1/workspaces/ws-new/terminal' ||
           req.url === '/api/business/biz-1/workspaces/ws-old/terminal' ||
+          req.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal' ||
           req.url === '/api/business/biz-1/workspaces/ws-mismatch/terminal'
         )
       ) {
@@ -244,6 +257,20 @@ function runCliAsync(args, { cwd, env, input = null }) {
   });
 }
 
+function captureStdout(fn) {
+  const original = console.log;
+  const lines = [];
+  console.log = (...args) => {
+    lines.push(args.join(' '));
+  };
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 test('computer proof can parse active workspace mismatch errors', () => {
   const message = 'AI computer is attached to workspace 51803cee-f153-4ac1-9cd4-eab97fd4aa3a. Activate workspace 89e8432e-e796-4e7b-9a40-e536c454fa9a to switch.';
 
@@ -272,6 +299,477 @@ test('computer proof can retry against attached workspace context', () => {
     workspaceId: '51803cee-f153-4ac1-9cd4-eab97fd4aa3a',
   });
   assert.equal(contextForAttachedWorkspaceMismatch(ctx, { fallback: { error: 'other' } }), null);
+});
+
+test('computer recruiting pull dry-run outcome explains that real pull writes review packet', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('pull', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /atris computer recruiting pull --apply\s+# writes review packet if conflicts were reported/);
+  assert.match(output, /atris computer recruiting review/);
+  assert.match(output, /atris computer recruiting push --dry-run/);
+});
+
+test('computer recruiting push failure names reviewed broad publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('push', 1, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /If the output says review before publish/);
+  assert.match(output, /atris computer recruiting publish --dry-run/);
+  assert.match(output, /atris computer recruiting publish/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting pull --dry-run/);
+});
+
+test('computer recruiting push dry-run names reviewed broad publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('push', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /If the dry-run showed review before publish/);
+  assert.match(output, /atris computer recruiting push --dry-run --allow-broad-workspace/);
+  assert.match(output, /atris computer recruiting push --allow-broad-workspace/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting push/);
+});
+
+test('computer recruiting allowed broad dry-run names live publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('push', 0, ['--dry-run', '--allow-broad-workspace']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /atris computer recruiting push --allow-broad-workspace/);
+  assert.doesNotMatch(output, /Otherwise:/);
+  assert.doesNotMatch(output, /atris computer recruiting push$/m);
+});
+
+test('computer recruiting publish dry-run names publish command', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('publish', 0, ['--dry-run']));
+
+  assert.match(output, /Recruiting next step/);
+  assert.match(output, /atris computer recruiting publish/);
+  assert.doesNotMatch(output, /atris computer recruiting push/);
+});
+
+test('computer recruiting publish dry-run failure does not name live publish first', () => {
+  const output = captureStdout(() => printRecruitingLocalSyncOutcome('publish', 1, ['--dry-run']));
+
+  assert.match(output, /If the output says review before publish/);
+  assert.match(output, /atris computer recruiting publish --dry-run/);
+  assert.match(output, /Otherwise:/);
+  assert.match(output, /atris computer recruiting pull --dry-run/);
+});
+
+test('computer help keeps recruiting shortcut out of broad help without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const help = await runCliAsync(['computer', '--help'], { cwd, env });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.doesNotMatch(help.stdout, /Open the Atris Labs recruiting computer/);
+    assert.doesNotMatch(help.stdout, /atris computer recruiting\b/);
+    assert.doesNotMatch(help.stdout, /--business atris-labs --type recruiting/);
+
+    const shortcutHelp = await runCliAsync(['computer', 'recruiting', 'help'], { cwd, env });
+    assert.equal(shortcutHelp.status, 0, shortcutHelp.stderr || shortcutHelp.stdout);
+    assert.match(shortcutHelp.stdout, /Usage: atris computer recruiting/);
+    assert.match(shortcutHelp.stdout, /publish/);
+    assert.match(shortcutHelp.stdout, /doctor/);
+    assert.match(shortcutHelp.stdout, /sync/);
+    assert.match(shortcutHelp.stdout, /pull/);
+    assert.match(shortcutHelp.stdout, /push --dry-run/);
+    assert.match(shortcutHelp.stdout, /publish --dry-run/);
+
+    const syncHelp = await runCliAsync(['computer', 'recruiting', 'sync', '--help'], { cwd, env });
+    assert.equal(syncHelp.status, 0, syncHelp.stderr || syncHelp.stdout);
+    assert.match(syncHelp.stdout, /Usage: atris computer recruiting sync/);
+    assert.match(syncHelp.stdout, /atris sync --watch/);
+
+    const pullHelp = await runCliAsync(['computer', 'recruiting', 'pull', '--help'], { cwd, env });
+    assert.equal(pullHelp.status, 0, pullHelp.stderr || pullHelp.stdout);
+    assert.match(pullHelp.stdout, /Usage: atris computer recruiting pull/);
+    assert.match(pullHelp.stdout, /atris pull atris-labs --keep-local --fail-on-conflict/);
+
+    const pushHelp = await runCliAsync(['computer', 'recruiting', 'push', '--help'], { cwd, env });
+    assert.equal(pushHelp.status, 0, pushHelp.stderr || pushHelp.stdout);
+    assert.match(pushHelp.stdout, /Usage: atris computer recruiting push/);
+    assert.match(pushHelp.stdout, /atris push atris-labs --dry-run/);
+    assert.match(pushHelp.stdout, /atris computer recruiting push --dry-run --allow-broad-workspace/);
+    assert.match(pushHelp.stdout, /atris computer recruiting push --allow-broad-workspace/);
+
+    const publishHelp = await runCliAsync(['computer', 'recruiting', 'publish', '--help'], { cwd, env });
+    assert.equal(publishHelp.status, 0, publishHelp.stderr || publishHelp.stdout);
+    assert.match(publishHelp.stdout, /Usage: atris computer recruiting publish/);
+    assert.match(publishHelp.stdout, /atris push atris-labs --dry-run --allow-broad-workspace/);
+    assert.match(publishHelp.stdout, /atris computer recruiting publish --dry-run/);
+    assert.match(publishHelp.stdout, /atris computer recruiting publish/);
+
+    const watchHelp = await runCliAsync(['computer', 'recruiting', 'watch', '--help'], { cwd, env });
+    assert.equal(watchHelp.status, 0, watchHelp.stderr || watchHelp.stdout);
+    assert.match(watchHelp.stdout, /Usage: atris computer recruiting watch/);
+    assert.match(watchHelp.stdout, /atris sync --watch/);
+
+    const doctorHelp = await runCliAsync(['computer', 'recruiting', 'doctor', '--help'], { cwd, env });
+    assert.equal(doctorHelp.status, 0, doctorHelp.stderr || doctorHelp.stdout);
+    assert.match(doctorHelp.stdout, /Usage: atris computer recruiting doctor/);
+    assert.match(doctorHelp.stdout, /atris sync --status/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync prints local sync commands outside a business workspace', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local sync/);
+    assert.match(res.stdout, /local workspace: not detected/);
+    assert.match(res.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting pull, push, and publish explain canonical commands without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const pull = await runCliAsync(['computer', 'recruiting', 'pull'], { cwd, env });
+    assert.equal(pull.status, 0, pull.stderr || pull.stdout);
+    assert.match(pull.stdout, /Recruiting local pull/);
+    assert.match(pull.stdout, /local workspace: not detected/);
+    assert.match(pull.stdout, /atris pull atris-labs --keep-local --fail-on-conflict/);
+    assert.match(pull.stdout, /cd ~\/arena\/atris-business\/atris-labs/);
+
+    const push = await runCliAsync(['computer', 'recruiting', 'push'], { cwd, env });
+    assert.equal(push.status, 0, push.stderr || push.stdout);
+    assert.match(push.stdout, /Recruiting local push/);
+    assert.match(push.stdout, /local workspace: not detected/);
+    assert.match(push.stdout, /atris push atris-labs --dry-run/);
+    assert.match(push.stdout, /atris computer recruiting push --dry-run/);
+
+    const publish = await runCliAsync(['computer', 'recruiting', 'publish'], { cwd, env });
+    assert.equal(publish.status, 0, publish.stderr || publish.stdout);
+    assert.match(publish.stdout, /Recruiting local publish/);
+    assert.match(publish.stdout, /local workspace: not detected/);
+    assert.match(publish.stdout, /atris push atris-labs --dry-run --allow-broad-workspace/);
+    assert.match(publish.stdout, /atris computer recruiting publish --dry-run/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting doctor reports canonical sync state without mutating', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris', 'sync', 'conflicts', '20260623T120000Z'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'sync', 'conflicts', '20260623T120000Z', 'summary.md'), 'conflict packet\n', 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'doctor'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local doctor/);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stdout, /Recruiting sync doctor/);
+    assert.match(res.stdout, /workspace: ~\/arena\/atris-business\/atris-labs/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.match(res.stdout, /local git changes:/);
+    assert.match(res.stdout, /review packet: \.atris\/sync\/conflicts\/20260623T120000Z\/summary\.md/);
+    assert.match(res.stdout, /Next command/);
+    assert.match(res.stdout, /atris computer recruiting review/);
+    assert.doesNotMatch(res.stdout, /Pulling Atris Labs/);
+    assert.doesNotMatch(res.stdout, /Pushing to Atris Labs/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting push failure keeps recovery in the recruiting lane', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'push', '--dry-run'], { cwd, env });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local push/);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stderr, /Not logged in\. Run: atris login/);
+    assert.match(res.stdout, /Recruiting next step/);
+    assert.match(res.stdout, /atris computer recruiting pull --dry-run/);
+    assert.match(res.stdout, /atris computer recruiting review/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting pull blocks dirty workspace writes without apply', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'pull'], { cwd, env });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local pull/);
+    assert.match(res.stdout, /Recruiting pull preflight/);
+    assert.match(res.stdout, /local git changes:/);
+    assert.match(res.stdout, /atris computer recruiting pull --dry-run/);
+    assert.match(res.stdout, /atris computer recruiting pull --apply/);
+    assert.doesNotMatch(res.stderr, /Not logged in/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting pull apply checkpoints dirty workspace before running pull', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    fs.writeFileSync(path.join(recruitingRoot, 'local-note.md'), 'local dirty note\n', 'utf8');
+    runGit(['init'], recruitingRoot);
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_RECRUITING_CHECKPOINT_STAMP: '20260623T120000Z',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'pull', '--apply'], { cwd, env });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting checkpoint/);
+    assert.match(res.stdout, /wrote: \.atris\/sync\/checkpoints\/20260623T120000Z\/summary\.md/);
+    assert.match(res.stderr, /Not logged in\. Run: atris login/);
+
+    const checkpointDir = path.join(recruitingRoot, '.atris', 'sync', 'checkpoints', '20260623T120000Z');
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'summary.md')));
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'tracked.patch')));
+    assert.ok(fs.existsSync(path.join(checkpointDir, 'staged.patch')));
+    assert.match(fs.readFileSync(path.join(checkpointDir, 'untracked.txt'), 'utf8'), /local-note\.md/);
+    assert.equal(
+      fs.readFileSync(path.join(checkpointDir, 'untracked', 'local-note.md'), 'utf8'),
+      'local dirty note\n'
+    );
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting review explains pull apply when no packet exists', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'review'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /No sync conflicts need review/);
+    assert.match(res.stdout, /Review note/);
+    assert.match(res.stdout, /pull --dry-run reported conflicts/);
+    assert.match(res.stdout, /atris computer recruiting pull --apply/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync auto-detects the canonical business workspace without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local sync/);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stdout, /Business workspace sync status/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync ignores non-recruiting current business bindings', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  const recruitingRoot = path.join(home, 'arena', 'atris-business', 'atris-labs');
+  try {
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-other',
+      workspace_id: 'ws-other',
+      slug: 'other-co',
+      name: 'Other Co',
+    }), 'utf8');
+
+    fs.mkdirSync(path.join(recruitingRoot, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(recruitingRoot, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(recruitingRoot, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /folder: ~\/arena\/atris-business\/atris-labs \(auto-detected\)/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.doesNotMatch(res.stdout, /business: other-co/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting sync shows local business sync status without auth', async () => {
+  const cwd = makeTempDir();
+  const home = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.atris', 'business.json'), JSON.stringify({
+      business_id: 'biz-recruiting',
+      workspace_id: 'ws-recruiting',
+      slug: 'atris-labs',
+      name: 'Atris Labs',
+    }), 'utf8');
+    const env = {
+      ...process.env,
+      HOME: home,
+      ATRIS_NO_INTERACTIVE: '1',
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+    };
+    const res = await runCliAsync(['computer', 'recruiting', 'sync'], { cwd, env });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Recruiting local sync/);
+    assert.match(res.stdout, /Business workspace sync status/);
+    assert.match(res.stdout, /business: atris-labs/);
+    assert.match(res.stdout, /atris sync --status/);
+    assert.match(res.stdout, /atris sync --watch/);
+  } finally {
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
 });
 
 test('top-level wake and sleep use business computer lifecycle for business slugs', async () => {
@@ -452,6 +950,120 @@ test('computer create --set-default updates the cached workspace', async () => {
     const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
     assert.equal(cache['acme'].workspace_id, 'ws-new');
     assert.equal(cache['acme'].computer_name, 'My Business Computer');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting create seeds a typed recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'create',
+      '--set-default',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Computer created: ws-new/);
+    assert.match(res.stdout, /Name:\s+Recruiting Computer/);
+    assert.match(res.stdout, /Type:\s+recruiting/);
+    assert.match(res.stdout, /Default:\s+now ws-new/);
+    const createRequest = requests.find((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces');
+    assert.deepEqual(createRequest.body, { name: 'Recruiting Computer', type: 'recruiting' });
+    const cache = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses.json'), 'utf8'));
+    assert.equal(cache['atris-labs'].workspace_id, 'ws-new');
+    assert.equal(cache['atris-labs'].computer_type, 'recruiting');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting status targets the recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'status',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Business:\s+Atris Labs/);
+    assert.match(res.stdout, /Target workspace:\s+Recruiting Computer \(ws-recruiting\)/);
+    assert.match(res.stdout, /Health:\s+ready/);
+    assert.ok(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal'));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
+test('computer recruiting run routes shell commands to the recruiting workspace', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'recruiting',
+      'run',
+      'echo RECRUITING_OK',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.ok(requests.some((request) => (
+      request.method === 'POST' &&
+      request.url === '/api/business/biz-1/workspaces/ws-recruiting/terminal' &&
+      request.body?.command === 'echo RECRUITING_OK'
+    )));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     cleanupTempDir(home);
@@ -957,7 +1569,8 @@ test('business init seeds Atris operator onboarding as the first computer path',
     assert.match(res.stdout, /atris member activate operator/);
     assert.match(res.stdout, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
     assert.match(res.stdout, /Sync when ready:/);
-    assert.match(res.stdout, /atris align acme-corp --fix/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync/);
 
     const workspaceRoot = path.join(home, 'arena', 'atris-business', 'acme-corp');
     assert.ok(fs.existsSync(path.join(workspaceRoot, '.atris', 'business.json')));

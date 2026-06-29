@@ -1,0 +1,106 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "columns",
+      "heading": "1 · The gate",
+      "sub": "Models regulated, access unequal, AI narrative toxic.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "2 · The trap",
+      "sub": "Everyone is building the same mimetic slop on rented intelligence.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "3 · The shift",
+      "sub": "Early adopters want an owned center, not another chatbot.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "4 · The sovereign individual",
+      "sub": "At the center. Ecosystem around them — software, school, community, capital.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "5 · The product",
+      "sub": "Self-improving environment, swappable models, agent-native system of record.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "6 · The proof",
+      "sub": "Center Study and businesses that improve overnight. Live loops, not demos.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "7 · First business",
+      "sub": "Education / transformation. ~$250k run rate. 1–3 FDEs per cluster.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "8 · Customers",
+      "sub": "DoorDash and Pallet — what actually runs today.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "9 · Growth",
+      "sub": "Founder-first distribution. Mimetic spread. Clone the machine.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    },
+    {
+      "type": "columns",
+      "heading": "10 · The ask",
+      "sub": "$10M — FDE team, narrative, run more businesses, own the layer beneath the gate.",
+      "columns": [
+        { "h": "bullet 1", "b": "(your words)" },
+        { "h": "bullet 2", "b": "(your words)" },
+        { "h": "bullet 3", "b": "(your words)" }
+      ]
+    }
+  ]
+}

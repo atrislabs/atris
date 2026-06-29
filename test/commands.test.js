@@ -675,11 +675,23 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
-    assert.equal(runCli([
+    const startedMission = runCli([
       'mission', 'start', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
       '--json',
-    ], { cwd: dir }).status, 0);
+    ], { cwd: dir });
+    assert.equal(startedMission.status, 0, startedMission.stderr || startedMission.stdout);
+    const mission = JSON.parse(startedMission.stdout).mission;
+    const missionTaskAdd = runCli([
+      'task', 'add', 'Build the mission-owned task loop',
+      '--tag', 'mission',
+      '--goal-id', mission.id,
+      '--json',
+    ], { cwd: dir });
+    assert.equal(missionTaskAdd.status, 0, missionTaskAdd.stderr || missionTaskAdd.stdout);
+    const missionTask = JSON.parse(missionTaskAdd.stdout).task;
+    const missionTaskClaim = runCli(['task', 'claim', missionTask.display_id, '--as', 'mission-lead'], { cwd: dir });
+    assert.equal(missionTaskClaim.status, 0, missionTaskClaim.stderr || missionTaskClaim.stdout);
 
     const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
@@ -692,7 +704,14 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     assert.equal(payload.goal.mission_file, 'atris/team/mission-lead/MISSION.md');
     assert.equal(payload.goal.now_file, 'atris/team/mission-lead/now.md');
     assert.ok(payload.goal.mission_id);
-    assert.match(payload.next_command, /atris member tick mission-lead --goal/);
+    assert.equal(payload.task.ref, missionTask.display_id);
+    assert.equal(payload.native_goal.task.ref, missionTask.display_id);
+    assert.match(payload.native_goal.objective, /mission-lead: complete/);
+    assert.match(payload.native_goal.objective, /Build the mission-owned task loop/);
+    assert.equal(payload.native_goal.slash_goal, payload.native_goal.objective);
+    assert.match(payload.native_goal.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
+    assert.equal(payload.goal.native_goal.objective, payload.native_goal.objective);
+    assert.match(payload.next_command, new RegExp(`atris task current-step --goal-id ${mission.id}`));
 
     const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
     const goalsMdPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.md');
@@ -3692,6 +3711,7 @@ test('business sync plan pulls safely then pushes wiki scope through normal push
     status: false,
     review: false,
     resolve: null,
+    resolvePath: null,
     help: false,
   });
   assert.deepEqual(buildBusinessSyncPlan(options), {
@@ -3731,38 +3751,55 @@ test('business sync plan supports dry-run and explicit delete opt-in', () => {
 test('business sync resolve applies local or cloud conflict artifacts to workspace files', () => {
   const dir = makeTempDir();
   try {
-    const packetDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'atris', 'wiki');
-    fs.mkdirSync(packetDir, { recursive: true });
-    fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'base copy\n', 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'local copy\n', 'utf8');
-	    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'cloud copy\n', 'utf8');
-	    const rootPacketDir = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z');
-	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.base'), 'base readme\n', 'utf8');
-	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.local'), 'local readme\n', 'utf8');
-	    fs.writeFileSync(path.join(rootPacketDir, 'README.md.remote'), 'cloud readme\n', 'utf8');
-	    fs.writeFileSync(path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z', 'summary.md'), '# Review\n', 'utf8');
-	    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
-	    for (const rel of ['atris/wiki/a.md.remote', 'atris/wiki/a.md.local', 'README.md.remote']) {
-	      fs.writeFileSync(path.join(dir, rel), 'workspace sidecar\n', 'utf8');
-	    }
+    const conflictRoot = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z');
+    const packetDir = path.join(conflictRoot, 'atris', 'wiki');
 
+    function writePacket(overrides = {}) {
+      const packet = {
+        aBase: 'base copy\n',
+        aLocal: 'local copy\n',
+        aRemote: 'cloud copy\n',
+        readmeBase: 'base readme\n',
+        readmeLocal: 'local readme\n',
+        readmeRemote: 'cloud readme\n',
+        ...overrides,
+      };
+      fs.rmSync(conflictRoot, { recursive: true, force: true });
+      fs.mkdirSync(packetDir, { recursive: true });
+      fs.writeFileSync(path.join(packetDir, 'a.md.base'), packet.aBase, 'utf8');
+      fs.writeFileSync(path.join(packetDir, 'a.md.local'), packet.aLocal, 'utf8');
+      fs.writeFileSync(path.join(packetDir, 'a.md.remote'), packet.aRemote, 'utf8');
+      fs.writeFileSync(path.join(conflictRoot, 'README.md.base'), packet.readmeBase, 'utf8');
+      fs.writeFileSync(path.join(conflictRoot, 'README.md.local'), packet.readmeLocal, 'utf8');
+      fs.writeFileSync(path.join(conflictRoot, 'README.md.remote'), packet.readmeRemote, 'utf8');
+      fs.writeFileSync(path.join(conflictRoot, 'summary.md'), '# Review\n', 'utf8');
+      fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+      for (const rel of ['atris/wiki/a.md.remote', 'atris/wiki/a.md.local', 'README.md.remote']) {
+        fs.writeFileSync(path.join(dir, rel), 'workspace sidecar\n', 'utf8');
+      }
+    }
+
+    writePacket();
     const entries = collectConflictResolutionEntries(dir);
-    assert.deepEqual(entries.map(entry => entry.targetRel).sort(), ['README.md', 'atris/wiki/a.md']);
+    assert.deepEqual(entries.map((entry) => entry.targetRel).sort(), ['README.md', 'atris/wiki/a.md']);
 
     const local = resolveLatestConflict(dir, 'local');
-	    assert.deepEqual(local.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
-	    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
-	    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'local readme\n');
-	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.remote')), false);
-	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.local')), false);
-	    assert.equal(fs.existsSync(path.join(dir, 'README.md.remote')), false);
+    assert.deepEqual(local.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'local readme\n');
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.remote')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'wiki', 'a.md.local')), false);
+    assert.equal(fs.existsSync(path.join(dir, 'README.md.remote')), false);
+    assert.equal(fs.existsSync(path.join(conflictRoot, 'summary.md')), false);
 
+    writePacket();
     const cloud = resolveLatestConflict(dir, 'cloud');
     assert.deepEqual(cloud.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'cloud copy\n');
     assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), 'cloud readme\n');
     assert.match(cloud.message, /atris sync --dry-run/);
 
+    writePacket();
     const both = resolveLatestConflict(dir, 'both');
     assert.deepEqual(both.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'local copy\n');
@@ -3771,12 +3808,14 @@ test('business sync resolve applies local or cloud conflict artifacts to workspa
     assert.equal(fs.readFileSync(path.join(dir, 'README.md.cloud'), 'utf8'), 'cloud readme\n');
     assert.match(both.message, /both versions/);
 
-    fs.writeFileSync(path.join(packetDir, 'a.md.base'), 'A\nB\nC\n', 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'A\nB local\nC\n', 'utf8');
-    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'A\nB\nC cloud\n', 'utf8');
-    fs.writeFileSync(path.join(rootPacketDir, 'README.md.base'), 'A\nB\nC\n', 'utf8');
-    fs.writeFileSync(path.join(rootPacketDir, 'README.md.local'), 'A\nB local\nC\n', 'utf8');
-    fs.writeFileSync(path.join(rootPacketDir, 'README.md.remote'), 'A\nB\nC cloud\n', 'utf8');
+    writePacket({
+      aBase: 'A\nB\nC\n',
+      aLocal: 'A\nB local\nC\n',
+      aRemote: 'A\nB\nC cloud\n',
+      readmeBase: 'A\nB\nC\n',
+      readmeLocal: 'A\nB local\nC\n',
+      readmeRemote: 'A\nB\nC cloud\n',
+    });
     const merge = resolveLatestConflict(dir, 'merge');
     assert.deepEqual(merge.resolved.sort(), ['README.md', 'atris/wiki/a.md']);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'A\nB local\nC cloud\n');
@@ -3834,6 +3873,97 @@ test('business sync resolve command is local-only and works without credentials'
     assert.match(res.stdout, /Resolved 1 conflict/);
     assert.match(res.stdout, /safe merge/);
     assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'A\nB local\nC cloud\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync resolve can target one conflict path at a time', () => {
+  const dir = makeTempDir();
+  try {
+    const conflictRoot = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z');
+    const packetDir = path.join(conflictRoot, 'atris', 'wiki');
+    fs.mkdirSync(packetDir, { recursive: true });
+    fs.writeFileSync(path.join(conflictRoot, 'summary.md'), '# Review\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'a local\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'a cloud\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'b.md.local'), 'b local\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'b.md.remote'), 'b cloud\n', 'utf8');
+
+    const cloud = runCli(['sync', '--resolve', 'cloud', '--path', 'atris/wiki/a.md'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(cloud.status, 0, cloud.stderr);
+    assert.match(cloud.stdout, /Resolved 1 conflict/);
+    assert.match(cloud.stdout, /atris\/wiki\/a\.md/);
+    assert.doesNotMatch(cloud.stdout, /atris\/wiki\/b\.md/);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'a.md'), 'utf8'), 'a cloud\n');
+    assert.equal(fs.existsSync(path.join(packetDir, 'a.md.local')), false);
+    assert.equal(fs.existsSync(path.join(packetDir, 'a.md.remote')), false);
+    assert.ok(fs.existsSync(path.join(packetDir, 'b.md.local')));
+    assert.ok(fs.existsSync(path.join(conflictRoot, 'summary.md')));
+    assert.match(renderLatestConflictReview(dir), /Latest sync conflict review/);
+
+    const local = runCli(['sync', '--resolve', 'local', '--path', 'atris/wiki/b.md'], { cwd: dir, env: { ATRIS_TOKEN: '' } });
+    assert.equal(local.status, 0, local.stderr);
+    assert.match(local.stdout, /Resolved 1 conflict/);
+    assert.match(local.stdout, /atris\/wiki\/b\.md/);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'wiki', 'b.md'), 'utf8'), 'b local\n');
+    assert.equal(fs.existsSync(path.join(conflictRoot, 'summary.md')), false);
+    assert.equal(renderLatestConflictReview(dir), 'No sync conflicts need review.\n');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('business sync final resolve records pending pull manifest', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  try {
+    const conflictRoot = path.join(dir, '.atris', 'sync', 'conflicts', '2026-05-01T12-00-00Z');
+    const packetDir = path.join(conflictRoot, 'atris', 'wiki');
+    fs.mkdirSync(packetDir, { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'business.json'), JSON.stringify({ slug: 'acme' }), 'utf8');
+    fs.writeFileSync(path.join(conflictRoot, 'summary.md'), '# Review\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.local'), 'a local\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'a.md.remote'), 'a cloud\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'b.md.local'), 'b local\n', 'utf8');
+    fs.writeFileSync(path.join(packetDir, 'b.md.remote'), 'b cloud\n', 'utf8');
+    fs.writeFileSync(path.join(conflictRoot, 'manifest.json'), `${JSON.stringify({
+      slug: 'acme',
+      manifest: {
+        last_sync: '2026-05-01T12:00:00.000Z',
+        last_commit: 'commit123',
+        workspace_root: dir,
+        files: {
+          '/atris/wiki/a.md': { hash: 'cloud-a', size: 8 },
+          '/atris/wiki/b.md': { hash: 'cloud-b', size: 8 },
+        },
+      },
+      baseContents: {
+        '/atris/wiki/a.md': 'a cloud\n',
+        '/atris/wiki/b.md': 'b cloud\n',
+      },
+      deletedRemote: ['/atris/wiki/old.md'],
+    }, null, 2)}\n`, 'utf8');
+    const oldBase = path.join(dir, '.atris', 'sync', 'base', 'atris', 'wiki', 'old.md');
+    fs.mkdirSync(path.dirname(oldBase), { recursive: true });
+    fs.writeFileSync(oldBase, 'old base\n', 'utf8');
+
+    const first = runCli(['sync', '--resolve', 'cloud', '--path', 'atris/wiki/a.md'], { cwd: dir, env: { HOME: home, ATRIS_TOKEN: '' } });
+    assert.equal(first.status, 0, first.stderr);
+    assert.ok(fs.existsSync(path.join(conflictRoot, 'summary.md')));
+    assert.equal(fs.existsSync(path.join(home, '.atris', 'businesses', 'acme', 'manifest.json')), false);
+
+    const second = runCli(['sync', '--resolve', 'local', '--path', 'atris/wiki/b.md'], { cwd: dir, env: { HOME: home, ATRIS_TOKEN: '' } });
+    assert.equal(second.status, 0, second.stderr);
+    assert.match(second.stdout, /Updated sync manifest for acme/);
+    assert.equal(fs.existsSync(path.join(conflictRoot, 'summary.md')), false);
+    const manifest = JSON.parse(fs.readFileSync(path.join(home, '.atris', 'businesses', 'acme', 'manifest.json'), 'utf8'));
+    assert.equal(manifest.files['/atris/wiki/a.md'].hash, 'cloud-a');
+    assert.equal(manifest.files['/atris/wiki/b.md'].hash, 'cloud-b');
+    assert.equal(fs.readFileSync(path.join(dir, '.atris', 'sync', 'base', 'atris', 'wiki', 'a.md'), 'utf8'), 'a cloud\n');
+    assert.equal(fs.readFileSync(path.join(dir, '.atris', 'sync', 'base', 'atris', 'wiki', 'b.md'), 'utf8'), 'b cloud\n');
+    assert.equal(fs.existsSync(oldBase), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -4195,6 +4325,25 @@ test('brain compile writes loadable status and ledger artifacts', () => {
   }
 });
 
+test('brain compile includes chat scan load pointer when present', () => {
+  const dir = makeTempDir();
+  try {
+    seedBrainWorkspace(dir);
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'chat_scan.latest.json'), JSON.stringify({
+      generated_at: '2026-06-28T00:00:00.000Z',
+      next_command: 'atris member wake auto-improver --execute --confirm-autonomy-policy',
+    }) + '\n', 'utf8');
+    const res = runCli(['brain', 'compile', '--root', dir, '--verify'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const claude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    assert.match(claude, /`\.atris\/state\/chat_scan\.latest\.json`/);
+    const agents = fs.readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /`\.atris\/state\/chat_scan\.latest\.json`/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile refreshes stale now.md before collecting state', () => {
   const dir = makeTempDir();
   try {
@@ -4459,6 +4608,90 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
     assert.equal(compile.status, 0, compile.stderr);
     assert.match(compile.stdout, /State rows: \d+ raw \/ \d+ valid/);
     assert.doesNotMatch(compile.stdout, /Turn existing episode rows into the first scorecard/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('brain scorecard carries task landing quality and human outcome', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    seedBrainWorkspace(dir);
+    fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
+
+    const acceptedAdd = runCli(['task', 'add', 'Landing accepted task', '--tag', 'approval', '--json'], { cwd: dir, env });
+    assert.equal(acceptedAdd.status, 0, acceptedAdd.stderr);
+    const acceptedRef = JSON.parse(acceptedAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', acceptedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const acceptedReady = runCli([
+      'task', 'ready', acceptedRef,
+      '--proof', 'node --test test/commands.test.js passed and diff reviewed',
+      '--happened', 'Made the approval receipt readable.',
+      '--checked', 'I checked the task page Result block.',
+      '--tested', 'I ran the focused regression.',
+      '--decision', 'Accept if the receipt is clear.',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(acceptedReady.status, 0, acceptedReady.stderr);
+    const accepted = runCli(['task', 'accept', acceptedRef, '--as', 'keshav', '--json'], { cwd: dir, env });
+    assert.equal(accepted.status, 0, accepted.stderr);
+    const acceptedPayload = JSON.parse(accepted.stdout);
+    assert.equal(acceptedPayload.episode.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedPayload.episode.landing_quality.completeness, 1);
+    assert.equal(acceptedPayload.episode.human_feedback.approval_status, 'accepted');
+    const episodePath = path.join(dir, '.atris', 'state', 'task_episodes.jsonl');
+    const episodeRows = fs.readFileSync(episodePath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
+    for (const row of episodeRows) {
+      if (row.task_id !== acceptedPayload.task_id) continue;
+      delete row.review_landing;
+      delete row.landing_quality;
+      delete row.human_feedback;
+      if (row.rl) {
+        delete row.rl.landing_completeness;
+        delete row.rl.approval_status;
+      }
+    }
+    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+
+    const revisedAdd = runCli(['task', 'add', 'Landing reworked task', '--tag', 'approval', '--json'], { cwd: dir, env });
+    assert.equal(revisedAdd.status, 0, revisedAdd.stderr);
+    const revisedRef = JSON.parse(revisedAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const revisedReady = runCli([
+      'task', 'ready', revisedRef,
+      '--proof', 'node --test test/commands.test.js passed but receipt was vague',
+      '--happened', 'Updated the result.',
+      '--checked', 'I checked something.',
+      '--tested', 'I ran tests.',
+      '--decision', 'Accept if useful.',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(revisedReady.status, 0, revisedReady.stderr);
+    const revised = runCli(['task', 'revise', revisedRef, '--as', 'keshav', '--note', 'Decision line was too vague', '--json'], { cwd: dir, env });
+    assert.equal(revised.status, 0, revised.stderr);
+    const revisedPayload = JSON.parse(revised.stdout);
+    assert.equal(revisedPayload.episode.rl.label, 'rework_requested');
+    assert.equal(revisedPayload.episode.review_landing.decision, 'Accept if useful.');
+    assert.equal(revisedPayload.episode.human_feedback.human_revision_note, 'Decision line was too vague');
+
+    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+    assert.equal(scorecard.status, 0, scorecard.stderr);
+    const payload = JSON.parse(scorecard.stdout);
+    const acceptedCard = payload.scorecards.find(row => row.task_title === 'Landing accepted task');
+    const revisedCard = payload.scorecards.find(row => row.task_title === 'Landing reworked task');
+    assert.equal(acceptedCard.review_landing.happened, 'Made the approval receipt readable.');
+    assert.equal(acceptedCard.landing_quality.completeness, 1);
+    assert.equal(acceptedCard.approval_status, 'accepted');
+    assert.equal(acceptedCard.rl_label, 'accepted');
+    assert.equal(revisedCard.review_landing.decision, 'Accept if useful.');
+    assert.equal(revisedCard.human_feedback.human_revision_note, 'Decision line was too vague');
+    assert.equal(revisedCard.approval_status, 'revise');
+    assert.equal(revisedCard.rl_label, 'rework_requested');
   } finally {
     cleanupTempDir(dir);
   }
@@ -7227,6 +7460,34 @@ test('task delegate creates assigned work and day view groups by owner', () => {
   }
 });
 
+test('task delegate infers a functional owner when none is supplied', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const delegated = runCli([
+      'task',
+      'delegate',
+      'Design 24/7 functional team member factory',
+      '--tag',
+      'team-members',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(delegated.status, 0, delegated.stderr);
+    const body = JSON.parse(delegated.stdout);
+    assert.equal(body.owner, 'architect');
+    assert.equal(body.task.assigned_to, 'architect');
+    assert.equal(body.task.metadata.owner_resolution, 'inferred_by_task_signal');
+    assert.equal(body.executed_by, null);
+    assert.match(body.handoff.command, /^atris task claim [A-Z0-9]{3}-1 --as architect$/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task delegate can prepare a Swarlo handoff without changing task truth', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -7249,7 +7510,12 @@ test('task delegate can prepare a Swarlo handoff without changing task truth', (
     ], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
     const body = JSON.parse(delegated.stdout);
-    assert.equal(body.task.assigned_to, 'codex');
+    assert.equal(body.owner, 'mission-lead');
+    assert.equal(body.executed_by, 'codex');
+    assert.equal(body.task.assigned_to, 'mission-lead');
+    assert.equal(body.task.metadata.executed_by, 'codex');
+    assert.equal(body.task.metadata.requested_owner, 'codex');
+    assert.equal(body.task.metadata.owner_resolution, 'engine_owner_resolved_by_task_signal');
     assert.equal(body.task.metadata.delegate_via, 'swarlo');
     assert.equal(body.handoff.swarlo.action, 'claim');
     assert.equal(body.handoff.swarlo.channel, 'tasks');
@@ -7496,6 +7762,8 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
       has_proof: true,
       has_lesson: true,
       has_next_task: true,
+      landing_completeness: 0,
+      approval_status: 'accepted',
     });
   } finally {
     cleanupTempDir(dir);
@@ -8609,6 +8877,14 @@ test('task current returns read-only selected page and queue lanes', () => {
     ], { cwd: dir, env });
     assert.equal(scopedPlanAdd.status, 0, scopedPlanAdd.stderr);
     const scopedPlanTask = JSON.parse(scopedPlanAdd.stdout).task;
+    const scopedParallelAdd = runCli([
+      'task', 'add', 'Scoped OBL-928 validator task should wait',
+      '--tag', 'agent',
+      '--goal-id', 'OBL-928',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(scopedParallelAdd.status, 0, scopedParallelAdd.stderr);
+    const scopedParallelTask = JSON.parse(scopedParallelAdd.stdout).task;
 
     const backlogAdd = runCli(['task', 'add', 'Raw inbox idea', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(backlogAdd.status, 0, backlogAdd.stderr);
@@ -8665,7 +8941,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(capabilitiesPayload.safety.read_only, true);
 	    assert.equal(capabilitiesPayload.safety.claims_work, false);
 	    assert.equal(payload.queue.counts.review, 1);
-	    assert.equal(payload.queue.counts.plan, 2);
+	    assert.equal(payload.queue.counts.plan, 3);
 	    assert.equal(payload.queue.counts.backlog, 1);
 	    assert.equal(payload.current.review_state_counts.total, 1);
 	    assert.equal(payload.current.review_state_counts.needs_agent, 1);
@@ -8686,8 +8962,12 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.match(payload.current.review_state_actions.needs_agent.human_accept.command, new RegExp(`atris task accept ${reviewTask.display_id}`));
 	    assert.equal(payload.current.review_state_actions.continue_work, null);
 	    assert.equal(payload.current.review_state_actions.human_accept_waiting, null);
-	    assert.equal(payload.queue.columns.find(column => column.key === 'review').items[0].id, reviewTask.id);
-	    assert.equal(payload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, undefined);
+	    const reviewQueueItem = payload.queue.columns.find(column => column.key === 'review').items[0];
+	    assert.equal(reviewQueueItem.id, reviewTask.id);
+	    assert.equal(reviewQueueItem.ref, reviewTask.display_id);
+	    assert.equal(reviewQueueItem.display_id, reviewTask.display_id);
+	    assert.ok(reviewQueueItem.legacy_ref);
+	    assert.equal(reviewQueueItem.continue_work_command, undefined);
 
 	    const needsAgentCurrent = runCli(['task', 'current', '--as', 'codex', '--review-state', 'needs-agent', '--json'], { cwd: dir, env });
 	    assert.equal(needsAgentCurrent.status, 0, needsAgentCurrent.stderr);
@@ -8718,16 +8998,16 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(scopedPayload.current.selected_ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.page.task.ref, scopedPlanTask.display_id);
     assert.equal(scopedPayload.queue.scope.goal_id, 'OBL-928');
-    assert.equal(scopedPayload.queue.counts.total, 1);
+    assert.equal(scopedPayload.queue.counts.total, 2);
     assert.equal(scopedPayload.queue.counts.review, 0);
-    assert.equal(scopedPayload.queue.counts.plan, 1);
+    assert.equal(scopedPayload.queue.counts.plan, 2);
 
     const scopedQueue = runCli(['task', 'queue', '--as', 'codex', '--goal-id', 'OBL-928', '--limit', '1', '--json'], { cwd: dir, env });
     assert.equal(scopedQueue.status, 0, scopedQueue.stderr);
     const scopedQueuePayload = JSON.parse(scopedQueue.stdout);
     assert.equal(scopedQueuePayload.queue.scope.goal_id, 'OBL-928');
-    assert.equal(scopedQueuePayload.queue.counts.total, 1);
-    assert.equal(scopedQueuePayload.queue.columns.find(column => column.key === 'plan').items[0].id, scopedPlanTask.id);
+    assert.equal(scopedQueuePayload.queue.counts.total, 2);
+    assert.equal(scopedQueuePayload.queue.columns.find(column => column.key === 'plan').items[0].id, scopedParallelTask.id);
 
     const tagQueue = runCli(['task', 'queue', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(tagQueue.status, 0, tagQueue.stderr);
@@ -9041,6 +9321,10 @@ test('task ready holds work in review until human accept', () => {
     const ready = runCli([
       'task', 'ready', ref,
       '--proof', 'typecheck passed and diff reviewed',
+      '--happened', 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      '--checked', 'I checked the task stayed in Review and did not mint XP.',
+      '--tested', 'I ran the typecheck proof and inspected the diff.',
+      '--decision', 'Accept if XP should land; rework if proof is missing.',
       '--as', 'codex',
       '--json',
     ], { cwd: dir, env });
@@ -9059,7 +9343,19 @@ test('task ready holds work in review until human accept', () => {
     assert.match(readyPayload.handoff.codex_prompt, /Approve autonomous work before XP/);
     assert.match(readyPayload.handoff.codex_prompt, /Proof: typecheck passed and diff reviewed/);
     assert.equal(readyPayload.task.status, 'review');
-    assert.equal(readyPayload.task.review.summary, 'This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real.');
+    assert.equal(readyPayload.task.review.summary, 'Review the result for approve autonomous work before XP, then accept only if the proof is real.');
+    assert.deepEqual(readyPayload.task.review.landing, {
+      happened: 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      checked: 'I checked the task stayed in Review and did not mint XP.',
+      tested: 'I ran the typecheck proof and inspected the diff.',
+      decision: 'Accept if XP should land; rework if proof is missing.',
+    });
+    assert.deepEqual(readyPayload.task.review.result, {
+      changed: 'Prepared the XP approval gate so autonomous work waits for human accept.',
+      checked: 'I checked the task stayed in Review and did not mint XP.',
+      saved: `Saved in Review as ${ref}.`,
+      accept: 'Accept if XP should land; rework if proof is missing.',
+    });
     assert.equal(readyPayload.task.review.proof, 'typecheck passed and diff reviewed');
     assert.equal(readyPayload.task.review.reward, null);
     assert.equal(readyPayload.task.review.approval_status, 'pending');
@@ -9069,7 +9365,13 @@ test('task ready holds work in review until human accept', () => {
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /Summary: This is AgentXP review: approve autonomous work before XP is agent-complete; accept only if the proof is real\./);
+    assert.match(readyShow.stdout, /Result:/);
+    assert.match(readyShow.stdout, /What happened: Prepared the XP approval gate so autonomous work waits for human accept\./);
+    assert.match(readyShow.stdout, /How I checked: I checked the task stayed in Review and did not mint XP\./);
+    assert.match(readyShow.stdout, /What I tested: I ran the typecheck proof and inspected the diff\./);
+    assert.match(readyShow.stdout, new RegExp(`Saved: Saved in Review as ${ref}\\.`));
+    assert.match(readyShow.stdout, /Decision: Accept if XP should land; rework if proof is missing\./);
+    assert.match(readyShow.stdout, /Summary: Review the result for approve autonomous work before XP, then accept only if the proof is real\./);
     assert.match(readyShow.stdout, /Proof: typecheck passed and diff reviewed/);
     assert.match(readyShow.stdout, /Approval: pending/);
     assert.match(readyShow.stdout, new RegExp(`Review chat: atris task review-chat ${ref} --as codex-review`));
@@ -9222,7 +9524,8 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.action, 'accepted');
     assert.equal(acceptPayload.task.status, 'done');
     assert.equal(acceptPayload.task.review.reward, 1);
-    assert.equal(acceptPayload.task.review.summary, 'This is accepted AgentXP work: approve autonomous work before XP is done and has a proof receipt.');
+    assert.equal(acceptPayload.task.review.summary, 'Accepted AgentXP result for approve autonomous work before XP.');
+    assert.equal(acceptPayload.task.review.result.saved, `Accepted as ${ref}.`);
     assert.equal(acceptPayload.task.review.proof, 'typecheck passed and diff reviewed again');
     assert.equal(acceptPayload.task.review.lesson, 'Double-check proof before awarding XP');
     assert.equal(acceptPayload.task.review.next_task, 'Queue the next proof loop');
@@ -10038,12 +10341,25 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
-    assert.equal(readyPayload.task.review.summary, 'This is the human checkpoint: clean stale claimed task queue after XP review is agent-complete and needs acceptance before it counts as done.');
+    assert.equal(readyPayload.task.review.summary, 'Review the result for clean stale claimed task queue after XP review, then accept or request changes.');
+    assert.deepEqual(readyPayload.task.review.landing, {
+      happened: 'Cleaned stale claimed task queue after XP review.',
+      checked: 'I ran the validation check.',
+      tested: 'I attached the proof below.',
+      decision: 'Accept if this matches the request; rework if the receipt misses the point.',
+    });
+    assert.equal(readyPayload.task.review.result.changed, 'Cleaned stale claimed task queue after XP review.');
+    assert.equal(readyPayload.task.review.result.checked, 'I ran the validation check.');
     assert.equal(readyPayload.task.review.proof, 'closed stale duplicate scheduler claims; validation passed reward 0');
 
     const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(readyShow.status, 0, readyShow.stderr);
-    assert.match(readyShow.stdout, /Summary: This is the human checkpoint/);
+    assert.match(readyShow.stdout, /Result:/);
+    assert.match(readyShow.stdout, /What happened: Cleaned stale claimed task queue after XP review\./);
+    assert.match(readyShow.stdout, /How I checked: I ran the validation check\./);
+    assert.match(readyShow.stdout, /What I tested: I attached the proof below\./);
+    assert.match(readyShow.stdout, /Decision: Accept if this matches the request; rework if the receipt misses the point\./);
+    assert.match(readyShow.stdout, /Summary: Review the result for clean stale claimed task queue after XP review, then accept or request changes\./);
     assert.match(readyShow.stdout, /Proof: closed stale duplicate scheduler claims; validation passed reward 0/);
     assert.doesNotMatch(readyShow.stdout, /AgentXP a real local scoreboard/);
   } finally {
@@ -10979,7 +11295,15 @@ test('task reviews gives a compact certified accept queue', () => {
     const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const certifiedProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, focused node --test review queue test, live atris task reviews json showing rows, git diff --check -- commands/task.js test/commands.test.js clean`;
-    assert.equal(runCli(['task', 'ready', certifiedTask.display_id, '--proof', certifiedProof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'ready', certifiedTask.display_id,
+      '--proof', certifiedProof,
+      '--happened', 'Certified proof packet is ready for human approval.',
+      '--checked', 'I checked the verifier claims and review thread.',
+      '--tested', 'I ran the focused review queue test.',
+      '--decision', 'Accept if the packet is readable; rework if proof is vague.',
+      '--as', 'codex',
+    ], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
     const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
@@ -10998,6 +11322,13 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(payload.queue.counts.blocking, 1);
     assert.equal(payload.queue.items.length, 1);
     assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
+    assert.deepEqual(payload.queue.items[0].landing, {
+      happened: 'Certified proof packet is ready for human approval.',
+      checked: 'I checked the verifier claims and review thread.',
+      tested: 'I ran the focused review queue test.',
+      decision: 'Accept if the packet is readable; rework if proof is vague.',
+    });
+    assert.equal(payload.queue.items[0].result.saved, `Saved in Review as ${certifiedTask.display_id}.`);
     assert.equal(payload.queue.items[0].accept_command, `atris task accept ${certifiedTask.display_id}`);
     assert.equal(payload.queue.items[0].revise_command, `atris task revise ${certifiedTask.display_id} --note "<what must change>"`);
     assert.equal(payload.queue.items[0].review_chat_command, `atris task review-chat ${certifiedTask.display_id} --as codex-review`);
@@ -11012,6 +11343,13 @@ test('task reviews gives a compact certified accept queue', () => {
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /CERTIFIED REVIEW QUEUE/);
+    assert.match(text.stdout, /Result:/);
+    assert.match(text.stdout, /What happened: Certified proof packet is ready for human approval\./);
+    assert.match(text.stdout, /How I checked: I checked the verifier claims and review thread\./);
+    assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
+    assert.match(text.stdout, /Saved: Saved in Review as .*?\./);
+    assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
+    assert.ok(text.stdout.indexOf('   Result:') < text.stdout.indexOf('   proof:'), 'Result should appear before raw proof');
     assert.match(text.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
     assert.match(text.stdout, new RegExp(`accept: atris task accept ${certifiedTask.display_id}`));
     assert.doesNotMatch(text.stdout, new RegExp(`accept: atris task accept ${blockingTask.display_id}`));
@@ -11678,8 +12016,12 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.api, null);
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.continue_work_command, undefined);
     assert.equal(continuePayload.queue.review_state_actions.human_accept_waiting.human_accept.human_only, true);
-    assert.equal(continuePayload.queue.columns.find(column => column.key === 'review').items[0].id, continueTask.id);
-    assert.equal(continuePayload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, continueCommand);
+    const continueQueueItem = continuePayload.queue.columns.find(column => column.key === 'review').items[0];
+    assert.equal(continueQueueItem.id, continueTask.id);
+    assert.equal(continueQueueItem.ref, continueTask.display_id);
+    assert.equal(continueQueueItem.display_id, continueTask.display_id);
+    assert.ok(continueQueueItem.legacy_ref);
+    assert.equal(continueQueueItem.continue_work_command, continueCommand);
 
     const waitingQueue = runCli([
       'task', 'queue',
@@ -11710,8 +12052,12 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.next_action, 'human_accept_waiting');
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.command, null);
     assert.equal(waitingPayload.queue.review_state_actions.human_accept_waiting.api, null);
-    assert.equal(waitingPayload.queue.columns.find(column => column.key === 'review').items[0].id, waitingTask.id);
-    assert.equal(waitingPayload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, undefined);
+    const waitingQueueItem = waitingPayload.queue.columns.find(column => column.key === 'review').items[0];
+    assert.equal(waitingQueueItem.id, waitingTask.id);
+    assert.equal(waitingQueueItem.ref, waitingTask.display_id);
+    assert.equal(waitingQueueItem.display_id, waitingTask.display_id);
+    assert.ok(waitingQueueItem.legacy_ref);
+    assert.equal(waitingQueueItem.continue_work_command, undefined);
 
     const waitingCurrent = runCli([
       'task', 'current',
@@ -13597,7 +13943,7 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
     assert.equal(unrelatedTask.objective, null);
     assert.equal(genericLoopTask.objective, null);
-    assert.equal(parent.review.summary, 'This is the accepted outcome: improve task factory lineage view is done and counted as real work.');
+    assert.equal(parent.review.summary, 'Accepted result for improve task factory lineage view.');
     assert.equal(parent.review.proof, 'board lineage validation passed');
     assert.equal(parent.review.lesson, 'Visual tasks need goal and proof context');
     assert.deepEqual(parent.lineage.child_task_ids, [nextId]);
@@ -13799,6 +14145,7 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['soul', '-h'],
     ['soul', 'help'],
     ['activate', '--help'],
+    ['launchpad', '--help'],
     ['next', '--help'],
     ['now', '--help'],
     ['radar', '--help'],
@@ -13845,6 +14192,124 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  }
+});
+
+test('launchpad --json picks the current actor claimed task first', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), [
+      '# Atris Brain Status',
+      '',
+      '## Next Move',
+      '',
+      'Pick the highest-leverage open TODO item.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      surface: { hidden_done_count: 7 },
+      tasks: [
+        {
+          id: 'task-codex',
+          display_id: 'CLI-9',
+          title: 'Ship launchpad',
+          status: 'claimed',
+          claimed_by: 'codex',
+          updated_at: 30,
+          metadata: {},
+        },
+        {
+          id: 'task-review',
+          display_id: 'CLI-8',
+          title: 'Check finished work',
+          status: 'review',
+          claimed_by: 'claude',
+          updated_at: 20,
+          metadata: { agent_review_pass_count: 1 },
+          review: { agent_review_pass_count: 1 },
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      id: 'mission-live',
+      objective: 'Keep loop alive',
+      status: 'running',
+      verifier: 'npm test',
+    })}\n`, 'utf8');
+
+    const res = runCli(['launchpad', '--json', '--as', 'codex'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.schema, 'atris.launchpad.v1');
+    assert.equal(payload.next_action.kind, 'continue_claimed_task');
+    assert.equal(payload.next_action.command, 'atris task step CLI-9');
+    assert.equal(payload.counts.review_needs_agent, 1);
+    assert.equal(payload.counts.missions_need_tick, 1);
+    assert.deepEqual(payload.suggestions.map(item => item.title), [
+      'Finish current work',
+      'Run the paused live job',
+      'Check a finished change',
+    ]);
+    assert.equal(payload.suggestions[0].subject, 'Ship launchpad');
+    assert.equal(payload.suggestions[0].ref, 'CLI-9');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('launchpad chooses a verifier mission when there is no owned claimed task', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), '# Status\n\n## Next Move\n\nSeed work.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [
+        {
+          id: 'task-review',
+          display_id: 'CLI-10',
+          title: 'Check finished work',
+          status: 'review',
+          claimed_by: 'claude',
+          updated_at: 20,
+          metadata: { agent_review_pass_count: 1 },
+          review: { agent_review_pass_count: 1 },
+        },
+      ],
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify({
+      id: 'mission-verify',
+      objective: 'Ship one checked loop',
+      status: 'ready',
+      verifier: 'node --test',
+    })}\n`, 'utf8');
+
+    const res = runCli(['launchpad', '--as', 'codex'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Live job waiting on a check/);
+    assert.match(res.stdout, /Ship one checked loop/);
+    assert.match(res.stdout, /RUN THIS\n\s+atris mission tick mission-verify --verify --complete-on-pass/);
+    assert.match(res.stdout, /WHAT HAPPENED\n\s+Ship one checked loop/);
+    assert.match(res.stdout, /WHAT TO WORK ON NEXT\n\s+1\. Run the paused live job/);
+    assert.match(res.stdout, /2\. Check a finished change/);
+    assert.match(res.stdout, /An always-on job is paused until its check runs\./);
+    assert.doesNotMatch(res.stdout, /proof|review-chat|agent review/i);
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
@@ -13906,6 +14371,28 @@ test('agent doctor verifies local AI CLI wiring without auth', () => {
   } finally {
     cleanupTempDir(dir);
   }
+});
+
+test('agent help hides internal dogfood diagnostic', () => {
+  const res = runCli(['agent', '--help']);
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  assert.doesNotMatch(res.stdout, /dogfood/);
+  assert.match(res.stdout, /Usage: atris agent \[doctor\|spawn\|spawns\|spawn-status\]/);
+});
+
+test('agent dogfood is gated from public CLI', () => {
+  const res = runCli(['agent', 'dogfood', '--help']);
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /internal diagnostic/);
+  assert.match(res.stderr, /atris agent doctor/);
+});
+
+test('agent dogfood help is available only behind internal gate', () => {
+  const res = runCli(['agent', 'dogfood', '--help'], {
+    env: { ...process.env, ATRIS_INTERNAL_AGENT_DOGFOOD: '1' },
+  });
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  assert.match(res.stdout, /Internal usage: atris agent dogfood/);
 });
 
 test('agent spawn creates a durable worker request without auth', () => {
@@ -14758,6 +15245,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(rootAgents, /atris task ready <id> --proof/);
     assert.match(rootAgents, /Do not run `atris task accept` or claim XP unless a human approved the proof/);
     assert.match(rootAgents, /atris business share --write/);
+    assert.match(rootAgents, /atris sync --dry-run/);
+    assert.match(rootAgents, /atris sync --watch/);
 
     const map = fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8');
     assert.match(map, /Example Co/);
@@ -14772,6 +15261,8 @@ test('createCanonicalBusinessWorkspace writes business metadata and canonical at
     assert.match(teamStart, /atris member goal-from-mission operator/);
     assert.match(teamStart, /Execute the loop with `atris do`/);
     assert.match(teamStart, /Ask `validator` to check proof/);
+    assert.match(teamStart, /atris sync --dry-run/);
+    assert.match(teamStart, /atris sync --watch/);
 
     const persona = fs.readFileSync(path.join(dir, 'atris', 'PERSONA.md'), 'utf8');
     assert.match(persona, /Example Co/);
@@ -14938,7 +15429,8 @@ test('business quickstart includes the full first-loop operating path', () => {
     assert.match(res.stdout, /atris business record atris\/reports\/YYYY-MM-DD-your-recap\.md --outcome mixed --metric "operator speed"/);
     assert.match(res.stdout, /Write the handoff before sharing/);
     assert.match(res.stdout, /atris business share --write/);
-    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /atris sync --dry-run/);
+    assert.match(res.stdout, /atris sync --watch/);
     assert.match(res.stdout, /Repeat:[\s\S]*atris radar -> atris task next -> atris do -> record -> share/);
   } finally {
     cleanupTempDir(dir);
@@ -14963,7 +15455,8 @@ test('business init next steps include start task mission record share and sync'
   assert.match(rendered, /atris business onboard --website <url> --contact "Name" --note "what they do"/);
   assert.match(rendered, /atris business record atris\/reports\/<recap>\.md --outcome mixed --metric "operator speed"/);
   assert.match(rendered, /atris business share --write/);
-  assert.match(rendered, /atris align loop-works --fix/);
+  assert.match(rendered, /atris sync --dry-run/);
+  assert.match(rendered, /atris sync/);
 });
 
 test('fresh business environment starter exposes an endgame task with explicit verify', async () => {
@@ -15261,8 +15754,8 @@ test('business share prints and writes a collaborator handoff from workspace sta
     assert.match(body, /atris mission start "Run the first useful loop for Share Co"/);
     assert.match(body, /atris member goal-from-mission operator/);
     assert.match(body, /Team start: atris\/team\/START_HERE\.md/);
-    assert.match(body, /atris pull --dry-run/);
-    assert.match(body, /atris align --fix/);
+    assert.match(body, /atris sync --dry-run/);
+    assert.match(body, /atris sync --watch/);
     assert.match(body, /atris business record atris\/reports\/<recap>\.md/);
     assert.match(body, /Starter brief: atris\/wiki\/briefs\/share-co-starter-brief\.md/);
     assert.match(body, /First loop: atris\/wiki\/concepts\/share-co-first-loop\.md/);
@@ -15317,7 +15810,7 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /Remote pull: available/);
     assert.match(res.stdout, /atris\/team\/START_HERE\.md/);
     assert.match(res.stdout, /atris\/wiki\/briefs\/start-co-starter-brief\.md/);
-    assert.match(res.stdout, /atris pull --dry-run/);
+    assert.match(res.stdout, /atris sync --dry-run/);
     assert.match(res.stdout, /atris business start/);
     assert.match(res.stdout, /atris radar/);
     assert.match(res.stdout, /atris task next/);
@@ -15325,7 +15818,7 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /atris member goal-from-mission operator/);
     assert.match(res.stdout, /atris do/);
     assert.match(res.stdout, /atris business record atris\/reports\/<recap>\.md/);
-    assert.match(res.stdout, /atris align --fix/);
+    assert.match(res.stdout, /atris sync --watch/);
     assert.match(res.stdout, /OS:/);
     assert.match(res.stdout, /Tasks: 1 open, 1 claimed, 1 review \(1 certified\), 0 blocked/);
     assert.match(res.stdout, /Missions: 1 active, 1 running, 1 always-on, 0 stale\/no-verifier/);
@@ -15610,7 +16103,7 @@ test('business share is honest for local-only workspaces without cloud ids', asy
     const res = runCli(['business', 'start'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Remote pull: local-only/);
-    assert.match(res.stdout, /local-only: no cloud pull is available yet/);
+    assert.match(res.stdout, /local-only: no cloud sync is available yet/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -16212,7 +16705,7 @@ test('loop flags stale wiki pages and refreshes status/log', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const res = runCli(['loop'], { cwd: dir });
+    const res = runCli(['loop', 'wiki'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
     assert.match(res.stdout, /Stale: 1/);
@@ -16234,7 +16727,7 @@ test('loop suggests next ingest candidates when wiki is clean', () => {
   try {
     initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
-    const res = runCli(['loop', '--json'], { cwd: dir });
+    const res = runCli(['loop', 'wiki', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const report = JSON.parse(res.stdout);
     assert.ok(report.nextSources.includes('README.md'));

@@ -16,6 +16,7 @@ const {
   saveContextProfile,
   shouldGatherContext,
   starterTaskTitle,
+  isAtrisMetaQuestion,
 } = require('../lib/context-gatherer');
 
 function hasNodeSqlite() {
@@ -71,6 +72,24 @@ test('context gatherer creates an onboarding task when Atris workspace exists', 
     else process.env.ATRIS_TASKS_DB = previousDb;
     cleanupTempDir(dir);
   }
+});
+
+test('isAtrisMetaQuestion distinguishes questions about Atris from task requests', () => {
+  // Questions about the product itself → show the overview.
+  assert.equal(isAtrisMetaQuestion('what is atris'), true);
+  assert.equal(isAtrisMetaQuestion('what is atris?'), true);
+  assert.equal(isAtrisMetaQuestion('what can you do'), true);
+  assert.equal(isAtrisMetaQuestion('who are you'), true);
+  assert.equal(isAtrisMetaQuestion('how does this work'), true);
+  assert.equal(isAtrisMetaQuestion('explain atris'), true);
+
+  // Real work, even when phrased as a question, is never a meta-question.
+  assert.equal(isAtrisMetaQuestion('build a website'), false);
+  assert.equal(isAtrisMetaQuestion('what is my status'), false);
+  assert.equal(isAtrisMetaQuestion('fix the login bug'), false);
+  assert.equal(isAtrisMetaQuestion('update atris docs'), false);
+  assert.equal(isAtrisMetaQuestion(''), false);
+  assert.equal(isAtrisMetaQuestion(null), false);
 });
 
 test('context gatherer only interrupts when first-contact context is missing', () => {

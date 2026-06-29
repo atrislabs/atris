@@ -8,6 +8,34 @@ const { ensureValidCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { promptUser } = require('../utils/auth');
 
+class LogSyncWriteError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'LogSyncWriteError';
+  }
+}
+
+function formatWriteError(error) {
+  return error && error.message ? error.message : String(error);
+}
+
+function writeLogFile(logFile, content) {
+  try {
+    fs.writeFileSync(logFile, content, 'utf8');
+  } catch (error) {
+    const relativePath = path.relative(process.cwd(), logFile);
+    throw new LogSyncWriteError(`Could not write local journal "${relativePath}": ${formatWriteError(error)}. Check disk space and file permissions.`);
+  }
+}
+
+function saveLogSyncStateSafely(state) {
+  try {
+    saveLogSyncState(state);
+  } catch (error) {
+    throw new LogSyncWriteError(`Could not save log sync state: ${formatWriteError(error)}. Check disk space and file permissions.`);
+  }
+}
+
 async function logSyncAtris() {
   const targetDir = path.join(process.cwd(), 'atris');
 
@@ -110,7 +138,7 @@ async function logSyncAtris() {
               updated_at: remoteUpdatedAt,
               hash: remoteHash || knownRemoteHash || computeContentHash(remoteContent || ''),
             };
-            saveLogSyncState(state);
+            saveLogSyncStateSafely(state);
           }
           console.log('✓ Already synced (timestamps aligned with web)');
           return;
@@ -124,7 +152,7 @@ async function logSyncAtris() {
           if (conflicts.length === 0) {
             // Clean merge - auto-merge and continue
             const mergedContent = reconstructJournal(merged);
-            fs.writeFileSync(logFile, mergedContent, 'utf8');
+            writeLogFile(logFile, mergedContent);
             console.log('✓ Auto-merged web and local changes');
             console.log(`   Merged sections: ${Object.keys(merged).filter(k => k !== '__header__').join(', ')}`);
             finalLocalContent = mergedContent;
@@ -143,7 +171,7 @@ async function logSyncAtris() {
                 updated_at: remoteUpdatedAt,
                 hash: computeContentHash(mergedContent),
               };
-              saveLogSyncState(state);
+              saveLogSyncStateSafely(state);
               return;
             }
           } else {
@@ -168,7 +196,7 @@ async function logSyncAtris() {
             if (answer === '1') {
               // Use web version
               const pulledContent = existing.data?.content || '';
-              fs.writeFileSync(logFile, pulledContent, 'utf8');
+              writeLogFile(logFile, pulledContent);
               remoteHash = computeContentHash(pulledContent);
               finalLocalContent = pulledContent;
               console.log('✓ Local journal updated from web');
@@ -183,7 +211,7 @@ async function logSyncAtris() {
                   updated_at: remoteUpdatedAt,
                   hash: remoteHash || computeContentHash(pulledContent),
                 };
-                saveLogSyncState(state);
+                saveLogSyncStateSafely(state);
               }
               // Don't push - web already has the correct version
               shouldPush = false;
@@ -194,7 +222,7 @@ async function logSyncAtris() {
             } else if (answer === '3') {
               // Merge both
               const mergedContent = reconstructJournal(merged);
-              fs.writeFileSync(logFile, mergedContent, 'utf8');
+              writeLogFile(logFile, mergedContent);
               finalLocalContent = mergedContent;
               console.log('✓ Merged both versions (check for duplicates)');
               console.log(`   Merged sections: ${Object.keys(merged).filter(k => k !== '__header__').join(', ')}`);
@@ -205,6 +233,9 @@ async function logSyncAtris() {
             }
           }
         } catch (parseError) {
+          if (parseError instanceof LogSyncWriteError) {
+            throw parseError;
+          }
           // Fallback to simple prompt
           console.log('⚠️  Web version is newer than local version');
           console.log(`   Remote updated: ${remoteUpdatedAt}`);
@@ -223,7 +254,7 @@ async function logSyncAtris() {
 
           if (answer === '1') {
             const pulledContent = existing.data?.content || '';
-            fs.writeFileSync(logFile, pulledContent, 'utf8');
+            writeLogFile(logFile, pulledContent);
             remoteHash = computeContentHash(pulledContent);
             finalLocalContent = pulledContent;
             console.log('✓ Local journal updated from web');
@@ -238,7 +269,7 @@ async function logSyncAtris() {
                 updated_at: remoteUpdatedAt,
                 hash: remoteHash || computeContentHash(pulledContent),
               };
-              saveLogSyncState(state);
+              saveLogSyncStateSafely(state);
             }
             // Don't push - web already has the correct version
             shouldPush = false;
@@ -265,14 +296,14 @@ async function logSyncAtris() {
             updated_at: remoteUpdatedAt,
             hash: remoteHash || knownRemoteHash || computeContentHash(remoteContent || ''),
           };
-          saveLogSyncState(state);
+          saveLogSyncStateSafely(state);
         }
         return;
       } else if (localMatchesKnown && !remoteMatchesKnown) {
         // Local unchanged, web has updates - just pull
         console.log('📥 Web has updates, local unchanged - pulling...');
         const pulledContent = existing.data?.content || '';
-        fs.writeFileSync(logFile, pulledContent, 'utf8');
+        writeLogFile(logFile, pulledContent);
         const pulledHash = computeContentHash(pulledContent);
         if (remoteUpdatedAt) {
           const remoteDate = new Date(remoteUpdatedAt);
@@ -284,7 +315,7 @@ async function logSyncAtris() {
             updated_at: remoteUpdatedAt,
             hash: pulledHash,
           };
-          saveLogSyncState(state);
+          saveLogSyncStateSafely(state);
         }
         console.log('✓ Local journal updated from web');
         console.log(`🗒️  File: ${path.relative(process.cwd(), logFile)}`);
@@ -304,7 +335,7 @@ async function logSyncAtris() {
 
   // Update local file with final content if it changed
   if (finalLocalContent !== localContent) {
-    fs.writeFileSync(logFile, finalLocalContent, 'utf8');
+    writeLogFile(logFile, finalLocalContent);
   }
 
   const payload = {
@@ -350,7 +381,7 @@ async function logSyncAtris() {
     updated_at: updatedAt,
     hash: finalHash,
   };
-  saveLogSyncState(finalState);
+  saveLogSyncStateSafely(finalState);
 }
 
 module.exports = { logSyncAtris };

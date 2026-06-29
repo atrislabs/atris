@@ -1,0 +1,118 @@
+{
+  "theme": "paper",
+  "brand": { "name": "Atris", "accent": "." },
+  "slides": [
+    {
+      "type": "title",
+      "headline": "The self-improving **business computer.**",
+      "sub": "Work closes its own loop. Memory, authority, receipts, outcomes. One standard for humans and agents.",
+      "panel": {
+        "header": { "title": "Closed loop", "meta": "every action" },
+        "rows": [
+          { "title": "context", "sub": "memory in", "value": "1", "valueSub": "step", "sev": 2 },
+          { "title": "action", "sub": "member acts", "value": "2", "valueSub": "step", "sev": 1 },
+          { "title": "receipt", "sub": "proof out", "value": "3", "valueSub": "step", "sev": 0, "active": true },
+          { "title": "outcome", "sub": "result", "value": "4", "valueSub": "step", "sev": 2 }
+        ],
+        "footer": { "left": "environment first", "right": "model later" }
+      }
+    },
+    {
+      "type": "statement",
+      "text": "Work used to **end.** Now every action can become memory.",
+      "sub": "Stored work becomes acted work, then remembered work. Context, action, receipt, outcome, reward, better next action."
+    },
+    {
+      "type": "columns",
+      "heading": "A business computer, not a chatbot",
+      "columns": [
+        {
+          "h": "Memory",
+          "b": "Receipts compress into lessons and return as minimum useful context."
+        },
+        {
+          "h": "Members",
+          "b": "Humans and agents with owner, tools, authority, trail, and score."
+        },
+        {
+          "h": "Receipts",
+          "b": "Who authorized, who acted, what proof confirms it, what the business got."
+        }
+      ]
+    },
+    {
+      "type": "statement",
+      "text": "They learn the **click.** We learn the outcome.",
+      "sub": "Others reward the draft interaction. Atris rewards the business result: reply, booking, deal, recovery."
+    },
+    {
+      "type": "panel",
+      "heading": "The market proved the gap.",
+      "sub": "Agents act everywhere. Almost none verify the result.",
+      "panel": {
+        "header": { "title": "Why now", "meta": "2026" },
+        "rows": [
+          { "title": "No verification", "sub": "AIRQ audit", "value": "98%", "valueSub": "of agents", "sev": 0, "active": true },
+          { "title": "Self-grader cheats", "sub": "Reward benchmark", "value": "14%", "valueSub": "top models", "sev": 0 },
+          { "title": "Agent rollback", "sub": "Sinch survey", "value": "74%", "valueSub": "enterprises", "sev": 1 }
+        ],
+        "footer": { "left": "guardrails gate behavior", "right": "not results" }
+      }
+    },
+    {
+      "type": "columns",
+      "heading": "Product today",
+      "columns": [
+        {
+          "h": "Atris2 Fast",
+          "b": "Open tool harness. Periphery prepares work without usurping judgment."
+        },
+        {
+          "h": "Deferral queue",
+          "b": "Sends, money, and public acts pause for your approval with a judgment packet."
+        },
+        {
+          "h": "Antislop gates",
+          "b": "Deterministic block on AI UI tells, hype copy, and raw outbound artifacts."
+        }
+      ]
+    },
+    {
+      "type": "bignumber",
+      "number": "+3.35",
+      "label": "RL readiness lift after verified episodes",
+      "sub": "Diff, receipt, verifier, outcome. Atris runs on Atris."
+    },
+    {
+      "type": "panel",
+      "heading": "Customer recovery first.",
+      "sub": "Close one painful loop. Prove the outcome. Expand.",
+      "panel": {
+        "header": { "title": "Wedge", "meta": "expand" },
+        "rows": [
+          { "title": "Customer silent", "sub": "churn or complaint", "value": "in", "sev": 1 },
+          { "title": "Member acts", "sub": "draft recovery", "value": "act", "sev": 0, "active": true },
+          { "title": "Receipt", "sub": "trust or revenue?", "value": "proof", "sev": 2 },
+          { "title": "Expand", "sub": "sales, ops, finance", "value": "out", "sev": 1 }
+        ],
+        "footer": { "left": "one loop proven", "right": "then expand" }
+      }
+    },
+    {
+      "type": "chips",
+      "heading": "Business model",
+      "sub": "We do not tax Members. Members close loops.",
+      "chips": ["$200/mo computer", "Unlimited Members", "Usage credits", "Managed setup", "Enterprise"],
+      "mono": "base + verified outcomes"
+    },
+    {
+      "type": "close",
+      "tagline": "Ambition and freedom should not cancel each other out.",
+      "buttons": [
+        { "label": "See the demo", "primary": true },
+        { "label": "Talk to us" }
+      ],
+      "footer": "Raising $10M seed · atris.ai · 2026"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 .atris/
 .claude/
 atris/brain/
+atris/VALHALLA.md
 
 # Local scratch workspaces (created by `atris init` in subdirs for testing)
 business-*/
@@ -35,6 +36,7 @@ Thumbs.db
 
 # Atris runtime files (user-specific, not for repo)
 atris/logs/
+atris/wiki/
 atris/customers/
 atris/.config
 atris/.log_sync_state.json
