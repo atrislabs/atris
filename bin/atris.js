@@ -369,6 +369,7 @@ function showHelp() {
   console.log('  activate   - Load Atris context');
   console.log('  radar      - Show live agents joined with tasks, missions, and worktrees');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
+  console.log('  launchpad  - Show the next action from local brain, task, mission, and proof state');
   console.log('  status     - See local work and completions (`atris status <business>` for remote)');
   console.log('  recap      - What your AI team did, in plain English (--share for paste-ready)');
   console.log('  xp         - Show Career XP and contribution graph');
@@ -820,7 +821,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
@@ -1702,6 +1703,9 @@ if (command === 'init') {
       console.error(`\u2717 Run failed: ${error.message || error}`);
       process.exit(1);
     });
+} else if (command === 'launchpad') {
+  const code = require('../commands/launchpad').launchpadCommand(process.argv.slice(3));
+  process.exit(code);
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

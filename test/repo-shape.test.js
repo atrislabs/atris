@@ -6,6 +6,7 @@ const path = require('node:path');
 const { detectDefaultVerify, getVerifyCommand } = require('../commands/autopilot');
 
 const packageJson = require('../package.json');
+const packageLock = require('../package-lock.json');
 
 function makeTempRepo() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-shape-'));
@@ -26,6 +27,20 @@ test('npm package includes runtime workspace templates', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'business-starter', 'MAP.md')));
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'business-starter', 'team', 'START_HERE.md')));
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
+});
+
+test('npm package metadata matches the reviewed release version', () => {
+  assert.equal(packageJson.version, '3.30.2');
+  assert.equal(packageLock.version, packageJson.version);
+  assert.equal(packageLock.packages[''].version, packageJson.version);
+});
+
+test('npm package includes launchpad and deck assets', () => {
+  const files = packageJson.files || [];
+  assert.ok(files.includes('commands/'), 'package.json files must include commands/ for launchpad');
+  assert.ok(files.includes('decks/'), 'package.json files must include decks/ for deck artifacts');
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'commands', 'launchpad.js')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'decks', 'atris-seed-pitch-v7.json')));
 });
 
 test('npm package must not ship local workspace wiki', () => {
