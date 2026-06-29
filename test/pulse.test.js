@@ -7,11 +7,29 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const pulseCommand = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   return dir;
+}
+
+function captureStdout(fn) {
+  const original = process.stdout.write;
+  const chunks = [];
+  process.stdout.write = (chunk, ...args) => {
+    chunks.push(String(chunk));
+    const cb = args.find((arg) => typeof arg === 'function');
+    if (cb) cb();
+    return true;
+  };
+  try {
+    const result = fn();
+    return { result, stdout: chunks.join('') };
+  } finally {
+    process.stdout.write = original;
+  }
 }
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
@@ -54,6 +72,25 @@ test('shouldFallbackToAutopilot is suppressed by --no-autopilot and --no-claude'
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', noClaude: true }), false);
   // fallback explicitly disabled
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', autopilotFallback: false }), false);
+});
+
+test('pulse run --json emits one parseable JSON payload without inner tick chatter', () => {
+  const root = tmpRoot();
+  try {
+    fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+    const { stdout } = captureStdout(() => pulseCommand.runCommand(
+      ['--max-ticks', '2', '--json', '--no-claude', '--no-verify'],
+      root
+    ));
+    assert.doesNotMatch(stdout, /^pulse tick #/m);
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'pulse_run');
+    assert.equal(payload.ticks, 2);
+    assert.equal(payload.results.length, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // --- ghost / stale detection: the silent-runner-death failure mode ---

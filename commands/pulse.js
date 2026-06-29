@@ -30,6 +30,12 @@ function readFlag(args, name, fallback = null) {
 function wantsJson(args) {
   return hasFlag(args, '--json');
 }
+function wantsJsonSilent(args) {
+  return hasFlag(args, '--json-silent');
+}
+function wantsHumanOutput(args) {
+  return !wantsJson(args) && !wantsJsonSilent(args);
+}
 
 function helpText() {
   return `
@@ -180,6 +186,7 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
 
 function tickCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
+  const asHuman = wantsHumanOutput(args);
   const noClaude = hasFlag(args, '--no-claude');
   const noVerify = hasFlag(args, '--no-verify');
   const verifyCmd = noVerify ? null : readFlag(args, '--verify', 'npm test');
@@ -192,7 +199,7 @@ function tickCommand(args, root = process.cwd()) {
   const lock = pulse.acquireLock(root);
   if (!lock.acquired) {
     const out = { ok: false, action: 'pulse_tick', skipped: true, reason: 'locked', age_ms: lock.ageMs };
-    if (!asJson) process.stdout.write('pulse: previous tick still running; skipped.\n');
+    if (asHuman) process.stdout.write('pulse: previous tick still running; skipped.\n');
     return emit(out, asJson);
   }
 
@@ -279,7 +286,7 @@ function tickCommand(args, root = process.cwd()) {
       elapsed_ms: elapsedMs,
       receipts_path: pulse.pulseReceiptsPath(root),
     };
-    if (!asJson) {
+    if (asHuman) {
       const ghost = priorStale.stale ? ` (recovered ghost tick #${priorStale.tick_index || '?'})` : '';
       const r = reward > 0 ? `+${reward}` : String(reward);
       process.stdout.write(`pulse tick #${tickIndex}: ${what} - verify ${verify.passed === null ? 'n/a' : verify.passed ? 'pass' : 'FAIL'} - reward ${r}${ghost}\n`);
@@ -298,7 +305,7 @@ function tickCommand(args, root = process.cwd()) {
       reward: -1,
     }));
     const out = { ok: false, action: 'pulse_tick', tick_index: tickIndex, error: err && err.message ? err.message : String(err) };
-    if (!asJson) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
+    if (asHuman) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
     return emit(out, asJson);
   } finally {
     pulse.releaseLock(root);
@@ -503,5 +510,7 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  wantsJsonSilent,
+  wantsHumanOutput,
   STATE_HOME,
 };
