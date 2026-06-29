@@ -8,8 +8,8 @@ const path = require('path');
 const readline = require('readline');
 const crypto = require('crypto');
 const { Readable } = require('stream');
-const { spawnSync } = require('child_process');
 const { loadCredentials } = require('./utils/auth');
+const missionRuntime = require('./lib/mission-runtime-loop');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -716,18 +716,7 @@ function extractMissionFlag(text, flagName) {
 }
 
 function missionRunIntentFromMessage(message) {
-  const text = String(message || '').trim();
-  const match = /^atris\s+mission\s+run(?:\s+([\s\S]+))?$/i.exec(text);
-  if (!match) return null;
-
-  let rest = String(match[1] || '').trim();
-  const ownerFlag = extractMissionFlag(rest, '--owner');
-  rest = ownerFlag.text.replace(/(^|\s)--json(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
-
-  return {
-    objective: stripMissionQuotes(rest),
-    owner: ownerFlag.value || process.env.ATRIS_AGENT_ID || 'mission-lead',
-  };
+  return missionRuntime.missionRunIntentFromMessage(message);
 }
 
 function loadMissionRecord(cwd, missionId) {
@@ -759,6 +748,7 @@ function currentAtrisGoal(cwd = process.cwd()) {
     const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     const goal = state && state.goal;
     if (!goal || !goal.objective) return null;
+    if (String(goal.runner || '').trim().toLowerCase() === 'codex_goal') return null;
     const mission = loadMissionRecord(cwd, goal.mission_id);
     return {
       ...goal,
@@ -836,45 +826,12 @@ function formatMissionStartReceipt(payload) {
   ].filter(Boolean).join('\n');
 }
 
-function runLocalMission(intent, options = {}) {
-  if (!intent?.objective) {
-    return { ok: false, status: 1, text: 'Usage: atris mission run "<objective>"' };
-  }
-  const result = spawnSync(
-    process.execPath,
-    [
-      path.join(__dirname, 'bin', 'atris.js'),
-      'mission',
-      'run',
-      intent.objective,
-      '--runner',
-      'atris2',
-      '--owner',
-      intent.owner || 'mission-lead',
-      '--json',
-    ],
-    {
-      cwd: options.cwd || process.cwd(),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        ATRIS_SKIP_UPDATE_CHECK: '1',
-      },
-    },
-  );
-
-  if (result.error) {
-    return { ok: false, status: 1, text: `Error: ${result.error.message || result.error}` };
-  }
-  if (result.status !== 0) {
-    return { ok: false, status: result.status || 1, text: `${result.stdout || ''}${result.stderr || ''}`.trim() };
-  }
-  try {
-    const payload = JSON.parse(result.stdout);
-    return { ok: true, status: 0, payload, text: formatMissionStartReceipt(payload) };
-  } catch (_) {
-    return { ok: true, status: 0, payload: null, text: String(result.stdout || '').trim() };
-  }
+async function runLocalMission(intent, options = {}) {
+  return missionRuntime.runRuntimeMissionLoop(intent, {
+    cwd: options.cwd || process.cwd(),
+    cliPath: path.join(__dirname, 'bin', 'atris.js'),
+    onProgress: options.onProgress,
+  });
 }
 
 function useColor(options = {}) {
@@ -2212,7 +2169,13 @@ async function chat(options = {}) {
 
     const missionIntent = missionRunIntentFromMessage(trimmed);
     if (missionIntent) {
-      const result = runLocalMission(missionIntent, { cwd });
+      const result = await runLocalMission(missionIntent, {
+        cwd,
+        onProgress: (line) => {
+          if (/^pursuing /.test(line)) output.write('Pursuing goal...\n');
+          else if (/^\[tick /.test(line)) output.write(`${line}\n`);
+        },
+      });
       output.write(`${result.text || 'Mission command failed.'}\n\n`);
       history.push({ role: 'user', content: trimmed });
       history.push({ role: 'assistant', content: result.text || 'Mission command failed.' });
@@ -3124,7 +3087,13 @@ async function main() {
 
   const missionIntent = missionRunIntentFromMessage(prompt);
   if (missionIntent) {
-    const result = runLocalMission(missionIntent, { cwd: process.cwd() });
+    const result = await runLocalMission(missionIntent, {
+      cwd: process.cwd(),
+      onProgress: (line) => {
+        if (/^pursuing /.test(line)) console.log('Pursuing goal...');
+        else if (/^\[tick /.test(line)) console.log(line);
+      },
+    });
     console.log(result.text || 'Mission command failed.');
     if (!result.ok) process.exit(result.status || 1);
     return;
