@@ -31,7 +31,12 @@ jobs:
 
       - run: npm run build --if-present
 
-      - run: npm test
+      - name: Release gate
+        run: |
+          node -c commands/mission.js
+          node --test test/mission-status.test.js test/check-command-regression.test.js test/repo-shape.test.js
+          node scripts/check-command-regression.js
+          npm run publish:release -- --dry-run
 
       - name: Restore clean release tree
         run: |
@@ -45,9 +50,6 @@ jobs:
             echo "atris@$VERSION is already published"
             exit 1
           fi
-
-      - name: Block command regressions vs published latest
-        run: node scripts/check-command-regression.js
 
       - name: Publish with npm trusted publishing
         run: |
