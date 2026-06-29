@@ -244,6 +244,28 @@ test('buildRunnerCommand template supports prompt substitution and optional tool
   });
 });
 
+test('buildRunnerCommand rejects unknown runner template placeholders', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --prompt-file {promptPath} {modelFlag}',
+  }, () => {
+    assert.throws(
+      () => buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' }),
+      /Unknown runner command template placeholder "\{promptPath\}"/
+    );
+  });
+});
+
+test('buildRunnerCommand rejects templates that do not pass the prompt', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model}',
+  }, () => {
+    assert.throws(
+      () => buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus' }),
+      /must include \{prompt\} or \{promptFile\}/
+    );
+  });
+});
+
 test('buildRunnerCommand template shell-quotes substituted values', () => {
   withRunnerEnv({
     ATRIS_CLAUDE_BIN: '/Applications/Claude Nightly/bin/claude',
