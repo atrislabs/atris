@@ -605,6 +605,45 @@ test('mission run accepts one-word fuzzy intent as a new mission', () => {
   }
 });
 
+test('mission run with atris2 runner writes Atris-owned goal state without Codex ack', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'ax fast visible goal', '--runner', 'atris2', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.runner, 'atris2');
+    assert.equal(payload.mission.model, 'atris:fast');
+    assert.equal(payload.requires_native_goal_start, false);
+    assert.equal(payload.native_goal_action, null);
+    assert.equal(payload.codex_goal_state, null);
+    assert.equal(payload.atris_goal_state.action, 'atris_goal_candidate');
+    assert.equal(payload.atris_goal_state.goal.objective, 'ax fast visible goal');
+    assert.equal(payload.atris_goal_state.goal.runner, 'atris2');
+    assert.equal(payload.atris_goal_state.goal.visible_goal.status, 'active');
+    assert.equal(payload.atris_goal_state.goal.requires_native_goal_start, false);
+    assert.equal(payload.atris_goal_state.goal.atris_tool_contract.blocked_without_platform_goal_write, false);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'atris_goal.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'status', 'atris-goal.md')), true);
+
+    const atrisGoal = runCli(['mission', 'goal', '--runtime', 'atris', '--json'], { cwd: dir });
+    assert.equal(atrisGoal.status, 0, atrisGoal.stderr || atrisGoal.stdout);
+    const atrisGoalPayload = JSON.parse(atrisGoal.stdout);
+    assert.equal(atrisGoalPayload.action, 'atris_goal_candidate');
+    assert.equal(atrisGoalPayload.goal.mission_id, payload.mission.id);
+    assert.equal(atrisGoalPayload.goal.objective, 'ax fast visible goal');
+    assert.equal(atrisGoalPayload.requires_native_goal_start, false);
+
+    const codexGoal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(codexGoal.status, 0, codexGoal.stderr || codexGoal.stdout);
+    assert.equal(JSON.parse(codexGoal.stdout).action, 'no_goal_candidate');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission objective shorthand starts a visible-goal mission', () => {
   const dir = makeTempDir();
   try {
@@ -1475,7 +1514,7 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission attach-task <id> \[--json\]/);
     assert.match(help.stdout, /mission report \[id\] \[--limit <n>\] \[--local\] \[--json\]/);
     assert.match(help.stdout, /rolls up sibling git-worktree missions/);
-    assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
+    assert.match(help.stdout, /mission goal \[--runtime codex\|atris\] \[--heartbeat\] \[--json\]/);
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
     assert.match(help.stdout, /Autonomy recipe:/);
