@@ -1538,8 +1538,26 @@ function messageCancelsPendingApproval(message) {
   return new Set(['no', 'nope', 'cancel', 'cancel it', 'stop', 'never mind', 'nevermind', 'do not', "don't"]).has(normalized);
 }
 
-function buildMessage(message, history = []) {
-  return String(message || '').trim();
+function compactHistory(history, limit = 8) {
+  return (Array.isArray(history) ? history : [])
+    .slice(-limit)
+    .map(turn => `${turn.role}: ${String(turn.content || '').slice(0, 1200)}`)
+    .join('\n');
+}
+
+function buildMessage(message, history = [], options = {}) {
+  const trimmed = String(message || '').trim();
+  if (!options.includeReadableHistory || !history.length) return trimmed;
+  return [
+    'Continue this terminal coding-agent conversation in the same workspace.',
+    'Use local tools when the user asks about files, code, tests, or edits.',
+    '',
+    'Recent conversation:',
+    compactHistory(history),
+    '',
+    '# Current user message',
+    trimmed,
+  ].join('\n');
 }
 
 function buildPayload(message, options = {}) {
@@ -1549,7 +1567,7 @@ function buildPayload(message, options = {}) {
   const verifyCommand = String(options.verify || '').trim();
   const previousMessages = structuredHistory(options.history || []);
   const payload = {
-    message: buildMessage(message, options.history || []),
+    message: buildMessage(message, options.history || [], { includeReadableHistory: local }),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
     verify_command: verifyCommand || 'true'
