@@ -81,6 +81,11 @@ test('compile build uses the shared runner command instead of raw claude', () =>
   assert.match(COMPILE_SRC, /buildRunnerCommand\(/);
 });
 
+test('compile build prompt uses unique temp files instead of a checkout-fixed path', () => {
+  assert.doesNotMatch(COMPILE_SRC, /\.compile-prompt\.tmp/);
+  assert.match(COMPILE_SRC, /writePromptTempFile\('compile-prompt'/);
+});
+
 test('records: append + read round-trip with timestamps', () => {
   const root = makeRoot();
   appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
