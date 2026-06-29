@@ -11,12 +11,14 @@
 
 ## Backlog
 
-(Empty)
+- **T3:** Fixture timeout task — verify navigator appends a well-formed Backlog task within the harness timeout window [explore]
+  - **Exit:** This task exists under `## Backlog` in the navigator format (`T#`, tagged `[explore]`), written in a single bounded planning pass, confirming the plan→backlog write path completes before the phase timeout.
+  - **Verify:** grep -q 'T3:' atris/TODO.md
 
 ## In Progress
 
 - **T2:** Fixture task — verify navigator can read context and append a well-formed Backlog task [explore]
-  **Claimed by:** Executor at 2026-06-29T10:40:07.742Z
+  **Claimed by:** Executor at 2026-06-29T10:40:19.441Z
   **Stage:** DO
   - **Exit:** This task exists under `## Backlog` in the navigator format (`T#`, tagged `[explore]`), confirming the plan→backlog write path works end-to-end.
   - **Verify:** grep -q 'T2:' atris/TODO.md
