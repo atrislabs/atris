@@ -13,6 +13,19 @@
 
 ## In Progress
 
+- **T5:** Fixture timeout task — verify navigator appends a well-formed Backlog task within the harness timeout window [explore]
+  **Claimed by:** Executor at 2026-06-29T18:56:24.299Z
+  **Stage:** DO
+  - **Exit:** This task exists under `## Backlog` in navigator format (`T#`, tagged `[explore]`, with Exit + Verify + Rollback), written in a single bounded planning pass, confirming the plan→backlog write path completes before the phase timeout.
+  - **Verify:** grep -q 'T5:' atris/TODO.md
+  - **Rollback:** git checkout -- atris/TODO.md
+
+- **T4:** Fixture task — verify navigator reads context (MEMBER/MAP/lessons/journal) and appends a well-formed Backlog task [explore]
+  **Claimed by:** Executor at 2026-06-29T18:56:01.331Z
+  **Stage:** DO
+  - **Exit:** This task exists under `## Backlog` in the navigator format (`T#`, tagged `[explore]`, with Exit + Verify), confirming the plan→backlog write path works end-to-end after reading the required context files.
+  - **Verify:** grep -q 'T4:' atris/TODO.md
+
 - **T3:** Fixture timeout task — verify navigator appends a well-formed Backlog task within the harness timeout window [explore]
   **Claimed by:** Executor at 2026-06-29T10:42:21.975Z
   **Stage:** DO
