@@ -783,6 +783,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Post-cycle clean:** `commands/run.js:451` (cleanAtris call) — self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:321` (execSync git push) — disabled with `--no-push`
 - **Routing:** `bin/atris.js:113-138` (command dispatch + flag parsing)
+- **Autonomy option parser:** `bin/atris.js` rejects invalid `run --cycles/--timeout` and `autopilot --iterations/--duration` values before execution, so bad limits cannot silently default or truncate. Regression: `test/autopilot-runner-model.test.js`
 - **Help text:** `bin/atris.js:326` (showHelp function)
 - **Known commands:** `bin/atris.js:824` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)

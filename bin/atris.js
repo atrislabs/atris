@@ -135,6 +135,28 @@ function readRequiredOptionArg(args, name) {
   return value;
 }
 
+function exitUsageError(message) {
+  console.error(`✗ ${message}`);
+  process.exit(1);
+}
+
+function parsePositiveIntegerOption(raw, name, fallback) {
+  if (raw == null) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    exitUsageError(`${name} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function parseDurationOption(raw, name) {
+  if (raw == null) return null;
+  if (!/^[1-9]\d*(h|m|s)?$/i.test(String(raw))) {
+    exitUsageError(`${name} must be a duration like 30m, 1h, or 90s.`);
+  }
+  return raw;
+}
+
 function isOptionValue(args, index, optionNames) {
   return index > 0 && optionNames.includes(args[index - 1]);
 }
@@ -1748,11 +1770,10 @@ if (command === 'init') {
   const push = !args.includes('--no-push');
   applyRunnerFlags(args);
   const cyclesArg = args.find(a => a.startsWith('--cycles='));
-  const cyclesValue = cyclesArg ? cyclesArg.split('=')[1] : '';
-  const maxCycles = cyclesValue && !isNaN(parseInt(cyclesValue, 10)) ? parseInt(cyclesValue, 10) : 5;
+  const maxCycles = parsePositiveIntegerOption(cyclesArg ? cyclesArg.split('=')[1] : null, '--cycles', 5);
   const timeoutArg = args.find(a => a.startsWith('--timeout='));
-  const timeoutValue = timeoutArg ? timeoutArg.split('=')[1] : '';
-  const timeout = timeoutValue && !isNaN(parseInt(timeoutValue, 10)) ? parseInt(timeoutValue, 10) * 1000 : undefined;
+  const timeoutSec = parsePositiveIntegerOption(timeoutArg ? timeoutArg.split('=')[1] : null, '--timeout', undefined);
+  const timeout = timeoutSec !== undefined ? timeoutSec * 1000 : undefined;
 
   require('../commands/run').runAtris({ maxCycles, verbose, dryRun, once, push, timeout })
     .then(() => process.exit(0))
@@ -1773,10 +1794,9 @@ if (command === 'init') {
   const auto = args.includes('--auto');
   applyRunnerFlags(args);
   const maxIterationsArg = args.find(a => a.startsWith('--iterations='));
-  const iterValue = maxIterationsArg ? maxIterationsArg.split('=')[1] : '';
-  const maxIterations = iterValue && !isNaN(parseInt(iterValue, 10)) ? parseInt(iterValue, 10) : undefined;
+  const maxIterations = parsePositiveIntegerOption(maxIterationsArg ? maxIterationsArg.split('=')[1] : null, '--iterations', undefined);
   const durationArg = args.find(a => a.startsWith('--duration='));
-  const duration = durationArg ? durationArg.split('=')[1] : null;
+  const duration = parseDurationOption(durationArg ? durationArg.split('=')[1] : null, '--duration');
 
   // Get description (non-flag args)
   const description = args.filter((a, i) => !a.startsWith('-') && !isOptionValue(args, i, RUNNER_FLAG_NAMES)).join(' ').trim() || null;

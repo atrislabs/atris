@@ -3028,6 +3028,10 @@ async function autopilotAtris(description, options = {}) {
   }
 
   const durationMs = parseDuration(duration);
+  if (duration && !durationMs) {
+    console.error(`Invalid duration "${duration}". Use a value like 30m, 1h, or 90s.`);
+    process.exit(1);
+  }
   const durationLabel = duration
     ? duration
     : (maxIterations < 100 ? `${maxIterations} task${maxIterations === 1 ? '' : 's'}` : 'until clean');
