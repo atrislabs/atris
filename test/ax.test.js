@@ -11,6 +11,8 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
   assert.equal(ax.resolveRoute('what files are here?'), 'local');
   assert.equal(ax.resolveRoute('search src for the input component'), 'local');
   assert.equal(ax.resolveRoute('fix the xp game tests'), 'local');
+  assert.equal(ax.resolveRoute('hi'), 'cloud');
+  assert.equal(ax.resolveRoute('thanks'), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -108,11 +110,11 @@ test('ax doctor formats runtime readiness without model ids or secrets', async (
 
   assert.equal(offline.backend.reachable, false);
   assert.match(offlineText, /backend\s+offline/);
-  assert.match(offlineText, /start local backend/);
+  assert.match(offlineText, /local backend offline/);
   assert.doesNotMatch(offlineText, modelPattern);
 });
 
-test('ax chat fails fast when the Atris2 backend is offline', async () => {
+test('ax chat fails fast when explicit local mode is offline', async () => {
   const previousAuto = process.env.AX_AUTO_LOG;
   process.env.AX_AUTO_LOG = '0';
   const chunks = [];
@@ -127,6 +129,7 @@ test('ax chat fails fast when the Atris2 backend is offline', async () => {
   try {
     await ax.chat({
       mode: 'fast',
+      route: 'local',
       cwd: os.tmpdir(),
       input: Readable.from(['hi\n', 'exit\n']),
       output,
@@ -148,9 +151,51 @@ test('ax chat fails fast when the Atris2 backend is offline', async () => {
   const text = chunks.join('');
   assert.equal(healthCalls, 1);
   assert.match(text, /backend\s+offline/);
-  assert.match(text, /Start backend:/);
-  assert.match(text, /uvicorn main:app/);
+  assert.match(text, /Local workspace mode needs a running AtrisOS backend:/);
+  assert.match(text, /Run without --local for hosted chat/);
+  assert.doesNotMatch(text, /\/Users\/keshavrao/);
   assert.doesNotMatch(text, /secret-token/);
+});
+
+test('ax chat sends simple default turns to hosted route without local preflight', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  let healthCalls = 0;
+  let turnRoute = '';
+  try {
+    await ax.chat({
+      mode: 'fast',
+      cwd: os.tmpdir(),
+      input: Readable.from(['hi\n', 'exit\n']),
+      output,
+      runtimeHealth: async () => {
+        healthCalls += 1;
+        throw new Error('default cloud chat should not preflight local backend');
+      },
+      turnFunction: async (_message, options) => {
+        turnRoute = options.route;
+        options.output.write('Hello.');
+        return { events: [], output: 'Hello.', durationMs: 3 };
+      },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  const text = chunks.join('');
+  assert.equal(healthCalls, 0);
+  assert.equal(turnRoute, 'cloud');
+  assert.match(text, /Hello\./);
+  assert.doesNotMatch(text, /backend\s+offline|Start backend|uvicorn/);
 });
 
 test('ax self-test verifies harness invariants without backend calls', async () => {
@@ -381,6 +426,9 @@ test('ax can force local or cloud routing', () => {
   assert.equal(ax.resolveRoute('what is on my calendar?', { route: 'local' }), 'local');
   assert.equal(ax.buildPayload('what is on my calendar?', { route: 'local', cwd: '/tmp/project' }).workspace_path, '/tmp/project');
   assert.equal(ax.buildPayload('what files are here?', { route: 'cloud', cwd: '/tmp/project' }).workspace_path, undefined);
+  assert.equal(ax.backendUrl({ route: 'cloud' }), 'https://api.atris.ai/api/atris2/turn');
+  assert.equal(ax.shouldPreflightRuntime('cloud', {}, 'fast'), false);
+  assert.equal(ax.shouldPreflightRuntime('local', {}, 'fast'), true);
 });
 
 test('ax sends a no-op verify_command unless --verify opts in', () => {

@@ -91,7 +91,7 @@ Integrates with any agent.
 
 ```bash
 cd your-project
-ax chat ax --fast
+ax --fast --chat
 ax --fast "hello"
 ax --pro "help me plan this task"
 ax --max "reason through this hard decision"

@@ -17,6 +17,7 @@ const BACKEND = {
   path: '/api/atris2/turn'
 };
 const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
+const CLOUD_BACKEND_BASE = 'https://api.atris.ai';
 const CODE_FAST = {
   path: '/api/cursor/turn',
   model: 'composer-2-5-fast',
@@ -124,11 +125,11 @@ function formatUsage() {
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
-    '  --max   local workspace agent, highest reasoning, slowest turns',
-    '  --pro   local workspace agent, deeper tool loop',
-    '  --fast  local workspace agent, faster low-latency turns',
+    '  --max   highest reasoning, slowest turns',
+    '  --pro   deeper tool loop',
+    '  --fast  faster low-latency turns',
     '  --code-fast  Atris Code Fast public lane',
-    '  --local force local workspace tools',
+    '  --local force local workspace tools with your own AtrisOS backend',
     '  --cloud force authenticated cloud connectors/chat',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
@@ -209,19 +210,20 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
   };
 }
 
-function backendBaseUrl() {
-  return (process.env.AX_BACKEND_URL
+function backendBaseUrl(options = {}) {
+  const explicitBase = process.env.AX_BACKEND_URL
     || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL
-    || process.env.OBELISK_ATRIS2_BACKEND_URL
-    || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
+    || process.env.OBELISK_ATRIS2_BACKEND_URL;
+  if (explicitBase) return explicitBase.replace(/\/$/, '');
+  return options.route === 'cloud' ? CLOUD_BACKEND_BASE : DEFAULT_BACKEND_BASE;
 }
 
-function backendUrl() {
-  return new URL(BACKEND.path, backendBaseUrl()).toString();
+function backendUrl(options = {}) {
+  return new URL(BACKEND.path, backendBaseUrl(options)).toString();
 }
 
-function backendPathUrl(pathname) {
-  return new URL(pathname, backendBaseUrl()).toString();
+function backendPathUrl(pathname, options = {}) {
+  return new URL(pathname, backendBaseUrl(options)).toString();
 }
 
 function codeFastBaseUrl() {
@@ -266,10 +268,11 @@ function buildRunProfile(options = {}) {
       reasoning: 'Composer 2.5 fast lane; charges 10 credits per public turn'
     };
   }
-  const route = resolveRoute(options.message || 'doctor', options);
-  const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
+  const profileMessage = options.message || 'what files are here?';
+  const route = resolveRoute(profileMessage, options);
+  const payload = buildPayload(profileMessage, { mode, cwd, route });
   return {
-    endpoint: backendUrl(),
+    endpoint: backendUrl({ route }),
     mode,
     route,
     model: payload.model,
@@ -302,7 +305,7 @@ function formatRunProfile(profile, options = {}) {
 async function buildRuntimeHealth(options = {}) {
   const healthRes = options.healthRes
     ? await Promise.resolve(options.healthRes)
-    : await requestJson(ATRIS2_HEALTH_PATH, { token: '', timeoutMs: options.timeoutMs || 1500 });
+    : await requestJson(ATRIS2_HEALTH_PATH, { token: '', timeoutMs: options.timeoutMs || 1500, route: options.route || 'local' });
   const data = healthRes.ok && healthRes.data && typeof healthRes.data === 'object' ? healthRes.data : {};
   const models = Array.isArray(data.models) ? data.models : [];
   const fast = models.find(row => row && row.id === 'atris:fast') || null;
@@ -335,7 +338,7 @@ function formatRuntimeHealth(health, options = {}) {
     ['fast', fastReady ? 'ready' : 'not ready'],
     ['approvals', permissionReady ? 'ready' : 'offline'],
   ];
-  if (!backendReachable) rows.push(['fix', 'start local backend, then rerun ax --doctor']);
+  if (!backendReachable) rows.push(['fix', 'local backend offline; use hosted mode or start your AtrisOS backend']);
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
 }
 
@@ -378,17 +381,17 @@ function authUserId() {
   }
 }
 
-function isLoopbackBackend() {
+function isLoopbackBackend(options = {}) {
   try {
-    const parsed = new URL(backendBaseUrl());
+    const parsed = new URL(backendBaseUrl(options));
     return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
   } catch (_) {
     return false;
   }
 }
 
-function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
-  const url = backendPathUrl(pathname);
+function requestJson(pathname, { token = authToken(), timeoutMs = 6000, route } = {}) {
+  const url = backendPathUrl(pathname, { route });
   const parsed = new URL(url);
   const transport = parsed.protocol === 'https:' ? https : http;
   return new Promise((resolve) => {
@@ -422,8 +425,8 @@ function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
   });
 }
 
-function postJson(pathname, body, { token = authToken(), timeoutMs = 30000 } = {}) {
-  const url = backendPathUrl(pathname);
+function postJson(pathname, body, { token = authToken(), timeoutMs = 30000, route } = {}) {
+  const url = backendPathUrl(pathname, { route });
   const parsed = new URL(url);
   const transport = parsed.protocol === 'https:' ? https : http;
   const postData = JSON.stringify(body || {});
@@ -524,7 +527,7 @@ function cachedIntegrationStatus(options = {}) {
 
 async function buildConnectionContext(options = {}) {
   const token = options.token || authToken();
-  const localStatusUserId = isLoopbackBackend() ? authUserId() : '';
+  const localStatusUserId = isLoopbackBackend({ route: options.route }) ? authUserId() : '';
   const statusPath = localStatusUserId
     ? `${ATRIS2_CONNECTION_STATUS_PATH}?connection_user_id=${encodeURIComponent(localStatusUserId)}`
     : CONNECTION_STATUS_PATH;
@@ -532,9 +535,9 @@ async function buildConnectionContext(options = {}) {
     options.statusRes
       ? Promise.resolve(options.statusRes)
       : localStatusUserId || token
-        ? requestJson(statusPath, { token: localStatusUserId ? '' : token })
+        ? requestJson(statusPath, { token: localStatusUserId ? '' : token, route: options.route })
         : Promise.resolve({ ok: false, data: null }),
-    options.contractRes ? Promise.resolve(options.contractRes) : requestJson(CONNECTION_CAPABILITIES_PATH, { token: '' })
+    options.contractRes ? Promise.resolve(options.contractRes) : requestJson(CONNECTION_CAPABILITIES_PATH, { token: '', route: options.route })
   ]);
   const statusData = statusRes.ok && statusRes.data && typeof statusRes.data === 'object' ? statusRes.data : {};
   const backendStatuses = statusData.statuses && typeof statusData.statuses === 'object' ? statusData.statuses : statusData;
@@ -609,7 +612,13 @@ function resolveRoute(message, options = {}) {
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
   if (githubWorkspaceIntent(message)) return 'local';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
-  return 'local';
+  if (workspaceIntent(message)) return 'local';
+  return 'cloud';
+}
+
+function shouldPreflightRuntime(route, options = {}, mode = 'fast') {
+  if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') return false;
+  return route !== 'cloud';
 }
 
 function normalizeMode(mode) {
@@ -1323,11 +1332,11 @@ function creditsFromApprovalExecution(response) {
   return Number.isFinite(credits) && credits > 0 ? credits : null;
 }
 
-async function postApprovalExecution(approvalRequest, { model = 'atris:fast', token = authToken() } = {}) {
+async function postApprovalExecution(approvalRequest, { model = 'atris:fast', token = authToken(), route = 'cloud' } = {}) {
   return postJson(APPROVAL_EXECUTE_PATH, {
     model,
     approval_request: approvalRequest,
-  }, { token });
+  }, { token, route });
 }
 
 async function executeApprovalRequest(approvalRequest, {
@@ -1716,9 +1725,9 @@ async function postTurn(message, options = {}) {
     || mentionsConnector(message)
     || /\b(can you use|can you access|connected|connections?|integrations?|tools?|capabilities)\b/i.test(message || '');
   const connectionContext = options.connectionContext || (shouldSendConnectionContext
-    ? await buildConnectionContext({ token, localWorkspace: local })
+    ? await buildConnectionContext({ token, localWorkspace: local, route })
     : null);
-  const connectionUserId = !local && isLoopbackBackend() ? authUserId() : '';
+  const connectionUserId = !local && isLoopbackBackend({ route }) ? authUserId() : '';
   const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
@@ -1726,7 +1735,7 @@ async function postTurn(message, options = {}) {
   // SSE traffic in between, so the socket-idle timeout needs more headroom.
   const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
   const timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
-  const turnUrl = new URL(backendUrl());
+  const turnUrl = new URL(backendUrl({ route }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
     events: [],
@@ -1968,19 +1977,18 @@ async function chat(options = {}) {
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
 
-  const runtimePreflight = { ready: false };
-  const ensureRuntimeReady = async () => {
-    if (runtimePreflight.ready) return true;
-    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') {
-      runtimePreflight.ready = true;
+  const runtimePreflight = { localReady: false };
+  const ensureRuntimeReady = async (routeForTurn = 'local') => {
+    if (!shouldPreflightRuntime(routeForTurn, options, mode)) {
       return true;
     }
+    if (runtimePreflight.localReady) return true;
     const startedAt = Date.now();
     const health = options.runtimeHealth
       ? await Promise.resolve(options.runtimeHealth({ mode }))
-      : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200 });
+      : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200, route: 'local' });
     if (runtimeReadyForChat(health, mode)) {
-      runtimePreflight.ready = true;
+      runtimePreflight.localReady = true;
       return true;
     }
     output.write(`${formatRuntimeHealth(health, output)}\n\n`);
@@ -2025,7 +2033,7 @@ async function chat(options = {}) {
       return false;
     }
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageApprovesPendingApproval(trimmed)) {
-      if (!(await ensureRuntimeReady())) return false;
+      if (!(await ensureRuntimeReady('cloud'))) return false;
       const startedAt = Date.now();
       const approvalState = {
         events: [],
@@ -2070,8 +2078,8 @@ async function chat(options = {}) {
     }
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
-    const route = pendingTaskPreview ? 'cloud' : options.route;
-    if (!(await ensureRuntimeReady())) return false;
+    const route = pendingTaskPreview ? 'cloud' : resolveRoute(trimmed, { route: options.route });
+    if (!(await ensureRuntimeReady(route))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
@@ -2135,11 +2143,11 @@ function printBackendHint() {
 }
 
 function backendStartCommand() {
-  return `cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`;
+  return 'Run without --local for hosted chat, or set AX_BACKEND_URL to your AtrisOS backend.';
 }
 
 function formatBackendHint() {
-  return `Start backend:\n${backendStartCommand()}`;
+  return `Local workspace mode needs a running AtrisOS backend:\n${backendStartCommand()}`;
 }
 
 function bufferedOutput() {
@@ -2257,6 +2265,7 @@ async function runSelfTest(options = {}) {
     try {
       await chat({
         mode: 'fast',
+        route: 'local',
         cwd: os.tmpdir(),
         input: Readable.from(['hi\n', 'exit\n']),
         output: chatOutput,
@@ -2277,7 +2286,8 @@ async function runSelfTest(options = {}) {
     const text = chunks.join('');
     assertSelfTest(healthCalls === 1, 'offline preflight repeated unexpectedly');
     assertSelfTest(/backend\s+offline/.test(text), 'offline backend status missing');
-    assertSelfTest(/Start backend:/.test(text) && /uvicorn main:app/.test(text), 'start-backend command missing');
+    assertSelfTest(/Local workspace mode needs a running AtrisOS backend:/.test(text), 'local backend hint missing');
+    assertSelfTest(!/\/Users\/keshavrao/.test(text), 'local backend hint leaked a developer path');
     assertSelfTest(!/secret-token/.test(text), 'offline preflight leaked error detail');
   }, results, output);
 
@@ -3001,7 +3011,8 @@ async function main() {
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
-    printBackendHint();
+    const shouldShowBackendHint = forceLocal || (prompt && route !== 'cloud' && resolveRoute(prompt, { route: route === 'auto' ? undefined : route }) === 'local');
+    if (shouldShowBackendHint) printBackendHint();
     process.exit(1);
   }
 }
@@ -3071,6 +3082,7 @@ module.exports = {
   renderStreamingMarkdown,
   renderTerminalMarkdown,
   resolveRoute,
+  shouldPreflightRuntime,
   runBenchmark,
   runSelfTest,
   runtimeReadyForChat,

@@ -122,7 +122,11 @@ console.log(JSON.stringify({
     const mission = JSON.parse(started.stdout).mission;
     const run = runCli(['mission', 'run', mission.id, '--max-ticks', '1', '--json'], {
       cwd: dir,
-      env: { PATH: `${binDir}:${process.env.PATH}` },
+      env: {
+        PATH: `${binDir}:${process.env.PATH}`,
+        ATRIS_RUNNER_BIN: fakeClaude,
+        ATRIS_CLAUDE_BIN: fakeClaude,
+      },
     });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
@@ -901,7 +905,8 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
       set_next_goal: 'use goal.visible_goal: create_goal({ objective: goal.objective }) when no active goal blocks the slot',
       visible_goal_bridge: 'goal.visible_goal',
       platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow update_goal({ status: "complete" }) followed by create_goal({ objective }).',
-      runtime_tool_sequence: 'get_goal -> update_goal({ status: "complete" }) after proof -> atris mission goal --json -> create_goal({ objective: goal.objective })',
+      phase_change_refresh: 'before changed follow-up work, run atris mission goal --json and mirror the returned visible goal',
+      runtime_tool_sequence: 'get_goal -> update_goal({ status: "complete" }) after proof or phase change -> atris mission goal --json -> create_goal({ objective: goal.objective })',
       blocked_without_platform_goal_write: true,
       mission_id: mission.id,
     });
