@@ -527,6 +527,51 @@ test('mission run with an objective starts a visible-goal mission', () => {
   }
 });
 
+test('completed mission run seeds the next useful goal', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'ship fuzzy intent',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const started = JSON.parse(run.stdout);
+    assert.equal(started.mission.started_from, 'mission_run_objective');
+    assert.equal(started.mission.continue_on_complete, true);
+
+    const tick = runCli(['mission', 'tick', started.mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const payload = JSON.parse(tick.stdout);
+    assert.equal(payload.mission.status, 'complete');
+    assert.equal(payload.continuation_goal.inserted, true);
+    assert.equal(payload.continuation_goal.mission.started_from, 'mission_run_continuation');
+    assert.equal(payload.continuation_goal.mission.parent_mission_id, started.mission.id);
+    assert.equal(
+      payload.continuation_goal.mission.objective,
+      'Decide and start the next useful mission after: ship fuzzy intent',
+    );
+    assert.equal(payload.codex_goal_state.action, 'codex_goal_candidate');
+    assert.equal(payload.codex_goal_state.goal.mission_id, payload.continuation_goal.mission.id);
+    assert.equal(payload.codex_goal_state.goal.objective, payload.continuation_goal.mission.objective);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'codex_goal_candidate');
+    assert.equal(goalPayload.goal.mission_id, payload.continuation_goal.mission.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('bare mission run asks for input instead of resuming an old mission', () => {
   const dir = makeTempDir();
   try {
