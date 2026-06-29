@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  compileCommand,
   appendRecord,
   readRecords,
   readManifest,
@@ -44,6 +45,28 @@ function seedRecords(root, name, count, { badFrom = Infinity } = {}) {
   }
 }
 
+async function withCwd(root, fn) {
+  const prev = process.cwd();
+  process.chdir(root);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(prev);
+  }
+}
+
+async function captureStdout(fn) {
+  const lines = [];
+  const prevLog = console.log;
+  console.log = (...parts) => { lines.push(parts.join(' ')); };
+  try {
+    await fn();
+  } finally {
+    console.log = prevLog;
+  }
+  return lines.join('\n');
+}
+
 test('deepEqual: primitives, objects, arrays, NaN, null', () => {
   assert.equal(deepEqual(1, 1), true);
   assert.equal(deepEqual('a', 'a'), true);
@@ -71,6 +94,35 @@ test('parseFlags: --k v, --k=v, boolean flags, positionals', () => {
   assert.equal(flags.input, '{"n":1}');
   assert.equal(flags.threshold, '0.9');
   assert.equal(flags.record, true);
+});
+
+test('compile exec --json wraps output and record metadata for agents', async () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+
+  const stdout = await withCwd(root, () => captureStdout(() => compileCommand('exec', 'demo', '--input', '{"n":4}', '--record', '--json')));
+  const payload = JSON.parse(stdout);
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.name, 'demo');
+  assert.deepEqual(payload.output, { doubled: 8 });
+  assert.equal(path.normalize(payload.record.path), path.join('.atris', 'state', 'processes', 'demo', 'records.jsonl'));
+  assert.equal(payload.record.records, 1);
+
+  const records = readRecords(root, 'demo');
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].input, { n: 4 });
+  assert.deepEqual(records[0].output, { doubled: 8 });
+  assert.equal(records[0].source, 'exec');
+});
+
+test('compile exec keeps default raw output shape', async () => {
+  const root = makeRoot();
+  writeRunner(root, 'demo', DOUBLER);
+
+  const stdout = await withCwd(root, () => captureStdout(() => compileCommand('exec', 'demo', '--input', '{"n":5}')));
+  assert.deepEqual(JSON.parse(stdout), { doubled: 10 });
+  assert.equal(readRecords(root, 'demo').length, 0);
 });
 
 test('compile build uses the shared runner command instead of raw claude', () => {

@@ -392,8 +392,9 @@ function showCompileHelp() {
   console.log('  promote <name> [--gate 0.99]');
   console.log('                            mark active (gate: backtest accuracy >= threshold);');
   console.log('                            --gate is the only way to change the standing threshold');
-  console.log('  exec <name> --input <json|@file> [--record]');
+  console.log('  exec <name> --input <json|@file> [--record] [--json]');
   console.log('                            run the compiled process on new input');
+  console.log('                            --json wraps output + record metadata for agents');
   console.log('  status [<name>] [--json]  list processes, versions, accuracy, drift');
   console.log('');
   console.log('Loop: record real runs -> build -> backtest -> promote -> exec --record');
@@ -543,10 +544,19 @@ async function compileCommand(subcommand, ...rawArgs) {
     }
     const runner = loadRunner(root, name);
     const output = await runner.run(input);
-    console.log(JSON.stringify(output, null, 2));
+    let record = null;
     if (flags.record) {
       appendRecord(root, name, { input, output, source: 'exec' });
+      record = {
+        path: path.relative(root, recordsPath(root, name)),
+        records: readRecords(root, name).length,
+      };
     }
+    if (flags.json) {
+      console.log(JSON.stringify({ ok: true, name, output, record }, null, 2));
+      return;
+    }
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
 }
