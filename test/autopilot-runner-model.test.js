@@ -66,10 +66,12 @@ test('runner availability checks use the shared configured binary', () => {
 
 test('runtime runner wording is config-neutral', () => {
   assert.doesNotMatch(AUTOPILOT_SRC, /claude -p (hit the wall|returned no JSON|subprocess|call|to inspect)/);
-  assert.doesNotMatch(AUTOPILOT_SRC, /install Claude Code first/);
-  assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|install Claude Code first/);
+  assert.doesNotMatch(AUTOPILOT_SRC, /CLI not found|install Claude Code first/);
+  assert.doesNotMatch(RUN_SRC, /Uses claude -p|Execute a phase using claude -p|Claude runner CLI|CLI not found|install Claude Code first/);
   assert.match(AUTOPILOT_SRC, /configured runner/);
   assert.match(RUN_SRC, /configured runner command/);
+  assert.match(AUTOPILOT_SRC, /runner not found/);
+  assert.match(RUN_SRC, /runner not found/);
 });
 
 test('run and autopilot sweep configured runner process groups on timeout', () => {

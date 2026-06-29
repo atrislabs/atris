@@ -16,7 +16,7 @@ const BACKEND = {
   port: 8000,
   path: '/api/atris2/turn'
 };
-const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
+const DEFAULT_BACKEND_BASE = 'https://api.atris.ai';
 const CODE_FAST = {
   path: '/api/cursor/turn',
   model: 'composer-2-5-fast',
@@ -113,8 +113,8 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] <message>',
-    '  ax [--max|--pro|--fast|--code-fast] [--local|--cloud] --chat',
+    '  ax [--fast|--pro|--max|--code-fast] [--local|--cloud] [--bypass|--safe] <message>',
+    '  ax [--fast|--pro|--max|--code-fast] [--local|--cloud] [--bypass|--safe] --chat',
     '  ax [--max|--pro|--fast] --business <slug> [<message>|--chat]',
     '  ax [--max|--pro|--fast|--code-fast] --doctor',
     '  ax --approvals',
@@ -124,12 +124,14 @@ function formatUsage() {
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
-    '  --max   local workspace agent, highest reasoning, slowest turns',
+    '  --max   hosted Atris 2, highest reasoning',
     '  --pro   local workspace agent, deeper tool loop',
     '  --fast  local workspace agent, faster low-latency turns',
     '  --code-fast  Atris Code Fast public lane',
     '  --local force local workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
+    '  --safe  keep write actions behind approval rails (default)',
+    '  --bypass  reserved for trusted internal runs',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
     '',
@@ -266,8 +268,10 @@ function buildRunProfile(options = {}) {
       reasoning: 'Composer 2.5 fast lane; charges 10 credits per public turn'
     };
   }
-  const route = resolveRoute(options.message || 'doctor', options);
-  const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
+  const defaultMessage = mode === 'max' ? 'refactor this module and verify the tests' : 'doctor';
+  const message = options.message || defaultMessage;
+  const route = resolveRoute(message, options);
+  const payload = buildPayload(message, { mode, cwd, route });
   return {
     endpoint: backendUrl(),
     mode,
@@ -275,13 +279,15 @@ function buildRunProfile(options = {}) {
     model: payload.model,
     workspace_path: payload.workspace_path || 'cloud',
     max_turns: payload.max_turns,
+    member_slug: 'ax',
+    bypass_permissions: false,
     streaming: true,
     runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
     reasoning: mode === 'max'
-      ? 'backend reports run row; Max workspace tool loop uses high reasoning effort'
+      ? 'Atris cloud service; Max workspace tool loop uses high reasoning effort'
       : mode === 'pro'
-        ? 'backend reports run row; Pro workspace tool loop uses API default medium'
-        : 'backend reports run row; Fast workspace tool loop uses provider default'
+        ? 'Atris cloud service; Pro workspace tool loop uses API default medium'
+        : 'Atris cloud service; Fast workspace tool loop uses provider default'
   };
 }
 
@@ -595,7 +601,7 @@ function connectorWriteIntent(message) {
 }
 
 function workspaceIntent(message) {
-  return /\b(files?|folders?|repo|workspace|project|directory|tree|read|open|inspect|search|grep|find|locate|where|edit|write|change|modify|patch|fix|test|tests?|build|src|source|code|diff|git|backend|frontend|atris task|atris xp|xp game|career xp|agentxp|todo|map)\b/i.test(message || '');
+  return /\b(files?|folders?|repo|workspace|project|directory|tree|read|open|inspect|search|grep|find|locate|where|patch|fix|test|tests?|build|src|source|code|diff|git|backend|frontend|refactor|module|atris task|atris xp|xp game|career xp|agentxp|todo|map)\b/i.test(message || '');
 }
 
 function githubWorkspaceIntent(message) {
@@ -609,7 +615,8 @@ function resolveRoute(message, options = {}) {
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
   if (githubWorkspaceIntent(message)) return 'local';
   if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
-  return 'local';
+  if (workspaceIntent(message)) return 'local';
+  return 'cloud';
 }
 
 function normalizeMode(mode) {
@@ -663,7 +670,7 @@ function chatCompleter(line) {
 function formatWorkingLine(ms, verb, frame) {
   const totalSeconds = Math.max(1, Math.round((Number(ms) || 0) / 1000));
   if (verb) return `${frame || '•'} ${verb}… (${formatSeconds(totalSeconds)} · ctrl-c to interrupt)`;
-  return `• Working (${formatSeconds(totalSeconds)} • ctrl-c to interrupt)`;
+  return `• Thinking… (${formatSeconds(totalSeconds)} · ctrl-c to interrupt)`;
 }
 
 function verbForTool(tool) {
@@ -1539,7 +1546,14 @@ function messageCancelsPendingApproval(message) {
 }
 
 function buildMessage(message, history = []) {
-  return String(message || '').trim();
+  const current = String(message || '').trim();
+  if (!Array.isArray(history) || history.length === 0 || mentionsConnector(current)) return current;
+  const recent = history
+    .map((entry) => `${entry.role || 'user'}: ${entry.content || ''}`.trim())
+    .filter(Boolean)
+    .join('\n');
+  if (!recent) return current;
+  return `Recent conversation:\n${recent}\n\nCurrent user message:\n${current}`;
 }
 
 function buildPayload(message, options = {}) {
@@ -1551,7 +1565,7 @@ function buildPayload(message, options = {}) {
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
-    max_turns: local ? (mode === 'fast' ? 8 : 14) : 1,
+    max_turns: options.goalEval ? 1 : (local ? (mode === 'fast' ? 8 : 14) : 1),
     verify_command: verifyCommand || 'true'
   };
   if (previousMessages.length) {
