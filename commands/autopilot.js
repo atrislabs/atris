@@ -15,7 +15,7 @@ const { parseTodo } = require('../lib/todo');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
-  resolveClaudeRunnerBin,
+  resolveRunnerBin,
 } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 const {
@@ -420,7 +420,7 @@ function isPhaseKillError(err) {
 
 /**
  * execSync with the phase-timeout orphan fix. Node's sync-exec timeout signals
- * only the direct child pid — the `/bin/sh -c` wrapper — so the `claude` it
+ * only the direct child pid — the `/bin/sh -c` wrapper — so the runner it
  * spawned kept committing 160–296s past the 600s wall (lesson:
  * etimedout-error-shape, 2026-06-10). `detached: true` makes the wrapper a
  * process-group leader; on timeout we sweep the whole group via
@@ -3023,7 +3023,7 @@ async function autopilotAtris(description, options = {}) {
   }
 
   try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+    console.error(`${resolveRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
     process.exit(1);
   }
 

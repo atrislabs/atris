@@ -60,6 +60,10 @@ test('autopilot.js and run.js build their spawn command via buildRunnerCommand',
 test('runner availability checks use the shared configured binary', () => {
   assert.doesNotMatch(AUTOPILOT_SRC, /which claude/);
   assert.doesNotMatch(RUN_SRC, /which claude/);
+  assert.doesNotMatch(AUTOPILOT_SRC, /resolveClaudeRunnerBin/);
+  assert.doesNotMatch(RUN_SRC, /resolveClaudeRunnerBin/);
+  assert.match(AUTOPILOT_SRC, /resolveRunnerBin/);
+  assert.match(RUN_SRC, /resolveRunnerBin/);
   assert.match(AUTOPILOT_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(RUN_SRC, /buildRunnerAvailabilityCommand\(/);
 });

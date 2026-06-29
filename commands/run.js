@@ -15,7 +15,7 @@ const { parseTodo } = require('../lib/todo');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
-  resolveClaudeRunnerBin,
+  resolveRunnerBin,
 } = require('../lib/runner-command');
 const { cleanAtris } = require('./clean');
 
@@ -385,7 +385,7 @@ async function runAtris(options = {}) {
   try {
     execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
   } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+    console.error(`${resolveRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
     process.exit(1);
   }
 
