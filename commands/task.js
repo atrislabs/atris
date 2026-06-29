@@ -5021,7 +5021,7 @@ function cmdNext(args) {
         }
         console.log(`created ${taskRef(createdTask)} @${owner}`);
         console.log(createdTask.title);
-        console.log(`Noted v${created.note_version}. Human accept remains pending on ${taskRef(reviewTask)}.`);
+        console.log(`Noted v${created.note_version}. Landing remains pending on ${taskRef(reviewTask)}.`);
         console.log(`Verify: ${nextAgentAction.task_seed.verifier}`);
         return;
       }
@@ -5042,12 +5042,12 @@ function cmdNext(args) {
       }
       console.log('No open tasks.');
       console.log(handoff.next_action === 'agent_review_again'
-        ? `${taskRef(reviewTask)} needs one more agent review before continuation.`
-        : `${taskRef(reviewTask)} is agent-certified and waiting for human accept.`);
+        ? `${taskRef(reviewTask)} needs one more agent check before landing.`
+        : `${taskRef(reviewTask)} is ready to land.`);
       console.log(handoff.next_action === 'continue_work'
-        ? 'Continue work elsewhere; AgentXP waits for human accept.'
+        ? 'Continue work elsewhere; XP lands after the human lands this task.'
         : handoff.next_action === 'human_accept_waiting'
-        ? (nextAgentAction ? nextAgentAction.message : 'No concrete next agent task is attached; AgentXP waits for human accept.')
+        ? (nextAgentAction ? nextAgentAction.message : 'No next agent task is attached; this task is ready to land when the human decides.')
         : 'Review this task again before continuing.');
       if (nextAgentAction) console.log(`Command: ${nextAgentAction.command}`);
       if (nextAgentAction && nextAgentAction.task_seed) {
@@ -6322,7 +6322,7 @@ function taskPageNextAction(task, current, actions, { hasExistingReviewFollowUp 
     if (handoff && handoff.next_action === 'human_accept_waiting') {
       return {
         key: 'human_accept_waiting',
-        label: 'Waiting for human accept',
+        label: 'Ready to land',
         command: null,
         api: null,
         human_accept_command: actions.human_accept_command || null,
@@ -6444,7 +6444,7 @@ function appendTaskReviewChat(taskDb, db, taskId, { reviewer = 'codex-review', d
     throw taskReviewChatError(`not_reviewable_${task.status}`, `review chat requires a task in Review; current status is ${task.status}`, { status: 409, exitCode: 1 });
   }
   if (!taskAllowsReviewChat(task, { allowCertified: true })) {
-    throw taskReviewChatError('agent_certified_continue_work', 'review chat is closed after agent certification; continue other work or wait for human accept', { status: 409, exitCode: 1 });
+    throw taskReviewChatError('agent_certified_continue_work', 'review chat is closed after agent certification; continue other work or land/send back this task', { status: 409, exitCode: 1 });
   }
   const contract = taskReviewChatContract(task, { reviewer: actor, allowCertified: true });
   let event = null;
@@ -6623,7 +6623,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const reason = initialHandoffState.next_action === 'continue_work'
       ? 'agent_certified_continue_work'
       : 'agent_certified_waiting_human';
-    throw taskStepError(reason, 'atris task step: agent-certified Review rows have no safe agent step; continue other work or wait for human accept', { status: 409, exitCode: 1, page: initialPage });
+    throw taskStepError(reason, 'atris task step: ready-to-land rows have no safe agent step; continue other work or land/send back this task', { status: 409, exitCode: 1, page: initialPage });
   }
   let chat = null;
   const message = String(options.message || '').trim();
@@ -6725,7 +6725,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
       const reason = handoffState.next_action === 'continue_work'
         ? 'agent_certified_continue_work'
         : 'agent_certified_waiting_human';
-      throw taskStepError(reason, 'atris task step: agent-certified Review rows have no safe agent step; continue other work or wait for human accept', { status: 409, exitCode: 1, page: actionPage });
+      throw taskStepError(reason, 'atris task step: ready-to-land rows have no safe agent step; continue other work or land/send back this task', { status: 409, exitCode: 1, page: actionPage });
     }
     const reviewed = appendTaskReviewChat(taskDb, db, taskId, { reviewer, dryRun: Boolean(options.dryRun) });
     stepAction = 'review_chat';
@@ -6833,7 +6833,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
   if (nextActionKey === 'human_accept_waiting') {
     const error = taskStepError(
       'agent_certified_waiting_human',
-      'atris task current-step: selected Review row is agent-certified and waiting for human accept; no agent mutation is safe',
+      'atris task current-step: selected row is ready to land; no agent mutation is safe',
       {
         status: 409,
         exitCode: 1,
