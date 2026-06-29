@@ -502,6 +502,31 @@ test('mission run terminal skips are JSON-readable', () => {
   }
 });
 
+test('mission run with an objective starts a visible-goal mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'atris mission run', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'atris mission run');
+    assert.equal(payload.mission.runner, 'codex_goal');
+    assert.match(payload.mission.verifier, /atris-mission-run-verifier/);
+    assert.match(payload.mission.verifier, /verifier smoke objective/);
+    assert.equal(payload.mission.stop_condition, 'verifier passes and visible goal lands');
+    assert.equal(payload.warnings.length, 0);
+    assert.equal(payload.codex_goal_state.action, 'codex_goal_candidate');
+    assert.equal(payload.codex_goal_state.goal.objective, 'atris mission run');
+    assert.equal(payload.codex_goal_state.goal.visible_goal.schema, 'atris.visible_chat_goal_bridge.v1');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run --due selects an active verifier mission for loop heartbeats', () => {
   const dir = makeTempDir();
   try {
@@ -669,18 +694,36 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(payload.goal.reason, 'due');
     assert.equal(fs.realpathSync(payload.state_path), fs.realpathSync(path.join(dir, '.atris', 'state', 'codex_goal.json')));
     assert.equal(fs.realpathSync(payload.status_path), fs.realpathSync(path.join(dir, 'atris', 'status', 'codex-goal.md')));
-    assert.match(payload.goal.objective, new RegExp(`Advance Atris mission ${mission.id}: codex visible goal mission`));
+    assert.equal(payload.goal.objective, 'codex visible goal mission');
     assert.equal(payload.goal.next_command, `atris mission attach-task ${mission.id} --json`);
     assert.equal(payload.goal.task_spine.has_task, false);
     assert.equal(payload.goal.task_spine.ensure_task_command, `atris mission attach-task ${mission.id} --json`);
     assert.match(payload.goal.replace_after, /replace the Codex \/goal/);
+    assert.equal(payload.goal.visible_goal.schema, 'atris.visible_chat_goal_bridge.v1');
+    assert.equal(payload.goal.visible_goal.runtime, 'codex');
+    assert.equal(payload.goal.visible_goal.source, 'atris_mission');
+    assert.equal(payload.goal.visible_goal.mission_id, mission.id);
+    assert.equal(payload.goal.visible_goal.desired_objective, payload.goal.objective);
+    assert.equal(payload.goal.visible_goal.status, 'needs_runtime_write');
+    assert.equal(payload.goal.visible_goal.operations.read_current_goal, 'get_goal');
+    assert.equal(
+      payload.goal.visible_goal.operations.create_when_empty_or_completed,
+      'create_goal({ objective: goal.objective })',
+    );
+    assert.equal(
+      payload.goal.visible_goal.operations.complete_after_proof,
+      'update_goal({ status: "complete" })',
+    );
+    assert.equal(payload.goal.visible_goal.operations.refresh_next_candidate, 'atris mission goal --json');
     assert.deepEqual(payload.goal.codex_tool_contract, {
       current_policy: 'keep one visible Codex /goal active for the selected Atris mission',
       read_current_goal: 'get_goal',
       complete_current_goal: 'update_goal({ status: "complete" })',
       select_next_goal: 'atris mission goal --json',
-      set_next_goal: 'replace_goal(goal.objective) or create_goal(goal.objective) after the completed goal slot is reusable',
-      platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow create_goal after update_goal completes the prior goal.',
+      set_next_goal: 'use goal.visible_goal: create_goal({ objective: goal.objective }) when no active goal blocks the slot',
+      visible_goal_bridge: 'goal.visible_goal',
+      platform_requirement: 'Codex runtime must expose replace_goal/set_goal, or allow update_goal({ status: "complete" }) followed by create_goal({ objective }).',
+      runtime_tool_sequence: 'get_goal -> update_goal({ status: "complete" }) after proof -> atris mission goal --json -> create_goal({ objective: goal.objective })',
       blocked_without_platform_goal_write: true,
       mission_id: mission.id,
     });
@@ -688,7 +731,10 @@ test('mission goal emits the Codex goal candidate from mission state', () => {
     assert.equal(state.schema, 'atris.codex_goal_controller.v1');
     assert.equal(state.action, 'codex_goal_candidate');
     assert.equal(state.goal.mission_id, mission.id);
-    assert.match(fs.readFileSync(payload.status_path, 'utf8'), /Codex Goal Controller/);
+    const status = fs.readFileSync(payload.status_path, 'utf8');
+    assert.match(status, /Codex Goal Controller/);
+    assert.match(status, /visible goal: needs_runtime_write/);
+    assert.match(status, /visible goal create: create_goal\(\{ objective: goal\.objective \}\)/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -902,6 +948,7 @@ test('mission goal heartbeat refreshes controller state without heavy work', () 
     assert.equal(state.action, 'codex_goal_heartbeat');
     assert.equal(state.heartbeat.heavy_work_performed, false);
     assert.equal(state.goal.mission_id, mission.id);
+    assert.equal(state.goal.visible_goal.status, 'needs_runtime_write');
   } finally {
     cleanupTempDir(dir);
   }
@@ -1182,7 +1229,7 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission goal \[--heartbeat\] \[--json\]/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
     assert.match(help.stdout, /Autonomy recipe:/);
-    assert.match(help.stdout, /Codex sessions: atris mission goal --json, then set \/goal to goal\.objective/);
+    assert.match(help.stdout, /Codex sessions: atris mission goal --json, then mirror goal\.visible_goal into the native chat goal/);
     assert.match(help.stdout, /Overnight controller: atris mission goal --heartbeat --json/);
     assert.match(help.stdout, /Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json/);
     assert.match(help.stdout, /Headless: start with --runner claude --cadence "15m" --always-on/);
