@@ -678,20 +678,20 @@ function reviewSummary(task, payload = {}) {
     || careerText.includes('agent xp')
   ) {
     if (task.status === 'done') {
-      return `Accepted AgentXP result for ${plainTitle}.`;
+      return `Landed AgentXP result for ${plainTitle}.`;
     }
     if (task.status === 'review') {
-      return `Review the result for ${plainTitle}, then accept only if the proof is real.`;
+      return `${plainTitle} is ready to land; land only if the proof is real.`;
     }
-    return `This explains what accepting ${plainTitle} would make real for AgentXP.`;
+    return `This explains what landing ${plainTitle} would make real for AgentXP.`;
   }
   if (task.status === 'done') {
-    return `Accepted result for ${plainTitle}.`;
+    return `Landed result for ${plainTitle}.`;
   }
   if (task.status === 'review') {
-    return `Review the result for ${plainTitle}, then accept or request changes.`;
+    return `${plainTitle} is ready to land; land it or send it back.`;
   }
-  return `This explains what accepting ${plainTitle} would make real.`;
+  return `This explains what landing ${plainTitle} would make real.`;
 }
 
 function titleToResultText(title) {
@@ -719,6 +719,27 @@ function titleToResultText(title) {
   }[String(first || '').toLowerCase()];
   if (past && rest) return `${past} ${rest}.`;
   return `${text} is ready to review.`;
+}
+
+function titleToReasonText(task, proof = '') {
+  const title = String(task?.title || '').replace(/\s+/g, ' ').trim();
+  const text = `${title} ${proof || ''}`.toLowerCase();
+  if (/\b(priv(?:ate|acy)|secret|payload|leak|redact)\b/.test(text)) {
+    return 'It keeps private data out of the fast human decision screen.';
+  }
+  if (/\bapprove\b/.test(text) && /\b(command|exact|preview|ux)\b/.test(text)) {
+    return 'It lets the operator see the next command without hunting.';
+  }
+  if (/\b(stale|expire|expired)\b/.test(text) && /\bapproval/.test(text)) {
+    return 'It stops old approvals from running after their context has gone stale.';
+  }
+  if (/\bapproval|approve|permission\b/.test(text)) {
+    return 'It keeps real-world side effects behind a clear human decision.';
+  }
+  if (/\btest|self-test|harness|verifier|proof\b/.test(text)) {
+    return 'It makes the check repeatable before the work lands.';
+  }
+  return 'It closes the user-visible gap named by the task.';
 }
 
 function proofToHumanCheck(proof) {
@@ -767,17 +788,21 @@ function taskReviewLanding(task, review = {}, payload = {}) {
     || payload.checked || metadata.result_checked || metadata.human_checked || metadata.checked;
   const explicitTested = landingPayloadValue(payload, metadata, 'tested');
   const explicitDecision = landingPayloadValue(payload, metadata, 'decision');
+  const explicitReason = landingPayloadValue(payload, metadata, 'reason')
+    || landingPayloadValue(payload, metadata, 'why')
+    || payload.reason || payload.why || metadata.result_reason || metadata.review_reason || metadata.why_it_matters;
   return {
     happened: clipStatusText(explicitHappened || titleToResultText(task.title), 220),
+    reason: clipStatusText(explicitReason || titleToReasonText(task, proof), 220),
     checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 220),
     tested: clipStatusText(explicitTested || taskReviewLandingTested(proof), 260),
     decision: clipStatusText(explicitDecision || (task.status === 'done'
-      ? 'Accepted. No action needed unless this regresses.'
+      ? 'Landed. No action needed unless this regresses.'
       : approvalStatus === 'revise'
         ? 'Rework requested. Fix the note, then send a new receipt.'
         : approvalStatus === 'pending' && !agentCertified
-          ? 'Accept if this matches the request; rework if the receipt misses the point.'
-          : 'Accept if this matches the request; otherwise request changes.'), 220),
+          ? 'Needs one more check before landing; send it back if the receipt misses the point.'
+          : 'Land it if this matches the request; send it back if not.'), 220),
   };
 }
 
@@ -788,10 +813,11 @@ function taskReviewResult(task, review = {}, payload = {}) {
   const explicitSaved = payload.saved || metadata.result_saved || metadata.human_saved || metadata.saved;
   return {
     changed: landing.happened,
+    reason: landing.reason,
     checked: landing.checked,
     saved: clipStatusText(explicitSaved || (task.status === 'done'
-      ? `Accepted as ${ref}.`
-      : `Saved in Review as ${ref}.`), 180),
+      ? `Landed as ${ref}.`
+      : `Ready to land as ${ref}.`), 180),
     accept: landing.decision,
   };
 }
@@ -1082,6 +1108,7 @@ function taskDescriptionForCloud(task) {
   if (landing) {
     lines.push('', 'Result:');
     if (landing.happened) lines.push(`What happened: ${landing.happened}`);
+    if (landing.reason) lines.push(`Why it matters: ${landing.reason}`);
     if (landing.checked) lines.push(`How checked: ${landing.checked}`);
     if (landing.tested) lines.push(`Tested: ${landing.tested}`);
     if (landing.decision) lines.push(`Decision: ${landing.decision}`);
@@ -1105,6 +1132,7 @@ function reviewLandingForDisplay(review) {
   if (!review.result) return null;
   return {
     happened: review.result.changed || null,
+    reason: review.result.reason || null,
     checked: review.result.checked || null,
     tested: review.proof ? taskReviewLandingTested(review.proof) : null,
     decision: review.result.accept || null,
@@ -1116,6 +1144,7 @@ function printReviewLanding(review) {
   if (!landing) return false;
   console.log('Result:');
   if (landing.happened) console.log(`  What happened: ${landing.happened}`);
+  if (landing.reason) console.log(`  Why it matters: ${landing.reason}`);
   if (landing.checked) console.log(`  How I checked: ${landing.checked}`);
   if (landing.tested) console.log(`  What I tested: ${landing.tested}`);
   if (review.result && review.result.saved) console.log(`  Saved: ${review.result.saved}`);
@@ -4000,7 +4029,9 @@ function reviewQueueItem(task, root = process.cwd(), evidence = undefined) {
     proof: taskReviewClip(task.review?.proof, 500) || null,
     next_action: handoff?.next_action || null,
     accept_command: acceptCommand,
+    land_command: acceptCommand,
     revise_command: `atris task revise ${ref} --note "<what must change>"`,
+    send_back_command: `atris task revise ${ref} --note "<what must change>"`,
   };
   const resolvedEvidence = evidence === undefined ? extractReceiptEvidence(task.review?.proof, root) : evidence;
   if (resolvedEvidence) item.evidence = resolvedEvidence;
@@ -4164,10 +4195,10 @@ function cmdReviews(args) {
     });
     return;
   }
-  console.log('CERTIFIED REVIEW QUEUE');
-  console.log(`${queue.counts.certified} certified / ${queue.counts.blocking} need agent review / ${queue.counts.review} total review`);
+  console.log('READY TO LAND');
+  console.log(`${queue.counts.certified} ready to land / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
   if (!queue.items.length) {
-    console.log('No certified review items.');
+    console.log('Nothing is ready to land.');
     return;
   }
   queue.items.forEach((item, index) => {
@@ -4179,12 +4210,13 @@ function cmdReviews(args) {
     if (item.landing) {
       console.log('   Result:');
       if (item.landing.happened) console.log(`     What happened: ${item.landing.happened}`);
+      if (item.landing.reason) console.log(`     Why it matters: ${item.landing.reason}`);
       if (item.landing.checked) console.log(`     How I checked: ${item.landing.checked}`);
       if (item.landing.tested) console.log(`     What I tested: ${item.landing.tested}`);
       if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
       if (item.landing.decision) console.log(`     Decision: ${item.landing.decision}`);
     }
-    if (item.proof) console.log(`   proof: ${item.proof}`);
+    if (item.proof) console.log(`   details: ${item.proof}`);
     if (item.evidence) {
       item.evidence.receipts.forEach((receipt) => {
         const verdict = receipt.verifier_passed === true ? ' verifier:passed'
@@ -4195,9 +4227,9 @@ function cmdReviews(args) {
     }
     if (item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
     if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
-    if (item.accept_command) console.log(`   accept: ${item.accept_command}`);
-    else if (item.blocked_accept_reason) console.log(`   accept: blocked (${item.blocked_accept_reason})`);
-    console.log(`   revise: ${item.revise_command}`);
+    if (item.accept_command) console.log(`   land: ${item.accept_command}`);
+    else if (item.blocked_accept_reason) console.log(`   land: blocked (${item.blocked_accept_reason})`);
+    console.log(`   send back: ${item.revise_command}`);
   });
   if (queue.counts.shown < queue.counts.certified) {
     console.log('');
@@ -5426,18 +5458,30 @@ function cmdShow(args) {
   }
   const owner = task.claimed_by ? ` / ${task.claimed_by}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
-  console.log(`${task.status.toUpperCase()} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
+  const statusLabel = task.status === 'review'
+    ? 'READY TO LAND'
+    : task.status === 'done'
+      ? 'LANDED'
+      : task.status.toUpperCase();
+  console.log(`${statusLabel} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
   if (task.review) {
     console.log('');
     printReviewLanding(task.review);
-    if (task.review.summary) console.log(`Summary: ${task.review.summary}`);
-    if (task.review.proof) console.log(`Proof: ${task.review.proof}`);
+    if (task.review.summary) console.log(`Short version: ${task.review.summary}`);
+    if (task.review.proof) console.log(`Details: ${task.review.proof}`);
     if (task.review.lesson) console.log(`Lesson: ${task.review.lesson}`);
     if (task.review.next_task) console.log(`Next: ${task.review.next_task}`);
-    if (task.review.approval_status) console.log(`Approval: ${task.review.approval_status}`);
-    if (task.review.verification_chat) console.log(`Review chat: ${task.review.verification_chat.command}`);
-    if (task.review.agent_certified) console.log(`Agent certified: yes (${task.review.agent_review_pass_count || AGENT_CERTIFICATION_REVIEW_PASSES} reviews)`);
+    if (task.review.approval_status) {
+      const landingStatus = task.review.approval_status === 'pending'
+        ? 'waiting on human'
+        : task.review.approval_status === 'revise'
+          ? 'sent back'
+          : task.review.approval_status;
+      console.log(`Landing: ${landingStatus}`);
+    }
+    if (task.review.verification_chat) console.log(`Check command: ${task.review.verification_chat.command}`);
+    if (task.review.agent_certified) console.log(`Checked: yes (${task.review.agent_review_pass_count || AGENT_CERTIFICATION_REVIEW_PASSES} agent checks)`);
   }
   if (task.messages.length) {
     console.log('');
@@ -5482,8 +5526,8 @@ function cmdPage(args) {
   printReviewLanding(page.review);
   console.log(`Next: ${page.stage.next_action.command || page.stage.next_action.label}`);
   console.log(`Chat: ${page.chat.command}`);
-  if (page.review.verification_chat) console.log(`Review chat: ${page.review.verification_chat.command}`);
-  if (page.review.human_accept.enabled) console.log(`Human accept: ${page.review.human_accept.command}`);
+  if (page.review.verification_chat) console.log(`Check command: ${page.review.verification_chat.command}`);
+  if (page.review.human_accept.enabled) console.log(`Land: ${page.review.human_accept.command}`);
 }
 
 function cmdReviewChat(args) {
@@ -6557,8 +6601,8 @@ function readyHandoffForStep(task, proof, lesson, nextTask, agentCertified) {
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? certifiedReviewNextAction(nextTask) : 'agent_review_again',
     rule: agentCertified
-      ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
-      : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
+      ? 'Double-check complete; ready to keep moving. XP lands only after the human lands the task.'
+      : 'Proof is ready; one more agent check before landing. XP waits for the human.',
   };
   if (reviewChat) {
     handoff.review_chat_command = reviewChat.command;
@@ -7252,8 +7296,8 @@ function cmdReady(args) {
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? certifiedReviewNextAction(nextTaskInput.nextTask) : 'agent_review_again',
     rule: agentCertified
-      ? 'Agent double-check complete; continue work. AgentXP waits for human accept.'
-      : 'Proof is in Review; one more agent review pass certifies continuation. AgentXP waits for human accept.',
+      ? 'Double-check complete; ready to keep moving. XP lands only after the human lands the task.'
+      : 'Proof is ready; one more agent check before landing. XP waits for the human.',
   };
   if (reviewChat) {
     handoff.review_chat_command = reviewChat.command;
@@ -7283,7 +7327,7 @@ function cmdReady(args) {
     });
     return;
   }
-  console.log(`ready ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version} pending approval`);
+  console.log(`ready to land ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
   if (resultTrace) console.log('Result trace recorded.');
   console.log(handoff.rule);
   for (const hint of policyHints) {
