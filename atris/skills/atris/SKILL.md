@@ -28,12 +28,31 @@ Detect: Project has `atris/` folder with MAP.md, TODO.md, PERSONA.md
 Commands: plan → do → review
 
 Key behaviors:
+- Mission-shaped intent wins: run `atris mission run ...` before normal task selection when the user invokes it or asks for a loop.
 - Read PERSONA.md (3-4 sentences, ASCII visuals)
 - Check MAP.md for file:line refs
 - Use `atris task` for claims, proof, ready, and accept
 - Use functional/feature members as task owners; record engines only as `executed_by`
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 - In Codex runtimes with native goal tools, mirror `atris mission goal --json` into the visible chat goal via `goal.visible_goal`
+
+## Mission Intent Intercept
+
+Before checking existing tasks, inspect the user's message. If it starts with
+`atris mission run`, execute that command first. Then run
+`atris mission goal --json` and mirror `goal.visible_goal` into the runtime's
+native goal when available.
+
+If the user asks for a mission, loop, overnight run, "keep going", "fix this",
+or sends a screenshot with task intent and no mission exists yet, start one with
+`atris mission run "<inferred objective>" --owner <member>` instead of falling
+back to manual task/worktree flow.
+
+Worktrees are not the default. Stay in the current checkout for small, clean,
+single-agent fixes. Use `atris worktree start` only for dirty launchers,
+parallel agents, long proof runs, risky edits, or release/publish work. Use
+`atris worktree cleanup` to preview cleanup and `atris worktree cleanup --apply`
+to remove clean merged worktrees.
 
 ## Visible Chat Goal Mirror
 
@@ -59,7 +78,8 @@ goal after proof is ready; only a human should run `atris task accept`.
 
 1. Run `atris atris.md` on first interaction to show workspace status
 2. Read `atris/MAP.md` before any file search to find file:line refs
-3. Run `atris mission goal --json` and mirror `goal.visible_goal` into the native chat goal when the runtime supports it
-4. Run `atris task list` or `atris task next` to find current work
-5. Claim tasks with `atris task claim <id> --as <functional-member>`
-6. Move completed work to review with `atris task ready <id> --proof "..."`
+3. If user intent is mission-shaped, run `atris mission run ...` before task flow
+4. Run `atris mission goal --json` and mirror `goal.visible_goal` into the native chat goal when the runtime supports it
+5. Run `atris task list` or `atris task next` only after mission intent is handled
+6. Claim tasks with `atris task claim <id> --as <functional-member>`
+7. Move completed work to review with `atris task ready <id> --proof "..."`
