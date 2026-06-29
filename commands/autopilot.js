@@ -15,6 +15,8 @@ const { parseTodo } = require('../lib/todo');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
+  describeRunnerSelection,
+  formatRunnerSelection,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
@@ -3022,9 +3024,14 @@ async function autopilotAtris(description, options = {}) {
     process.exit(1);
   }
 
-  try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
-    process.exit(1);
+  const runnerSelection = describeRunnerSelection();
+
+  if (!dryRun) {
+    try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
+      console.error(formatRunnerSelection(runnerSelection));
+      console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+      process.exit(1);
+    }
   }
 
   const durationMs = parseDuration(duration);
@@ -3042,6 +3049,12 @@ async function autopilotAtris(description, options = {}) {
     console.log('');
   } else {
     printTickStatus(cwd, { auto, durationLabel });
+  }
+  if (verbose) {
+    console.log(formatRunnerSelection(runnerSelection));
+    console.log('');
+  } else {
+    printPlainBlock(formatRunnerSelection(runnerSelection));
   }
 
   // Seed inbox if a description was given

@@ -15,6 +15,8 @@ const { parseTodo } = require('../lib/todo');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
+  describeRunnerSelection,
+  formatRunnerSelection,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
 const { cleanAtris } = require('./clean');
@@ -363,12 +365,18 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check configured runner CLI is available.
-  try {
-    execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
-  } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
-    process.exit(1);
+  const runnerSelection = describeRunnerSelection();
+
+  // Check configured runner CLI is available before a live run. Dry-run is a
+  // preflight surface and must still work on machines without the runner.
+  if (!dryRun) {
+    try {
+      execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
+    } catch {
+      console.error(formatRunnerSelection(runnerSelection));
+      console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+      process.exit(1);
+    }
   }
 
   console.log('');
@@ -388,6 +396,8 @@ async function runAtris(options = {}) {
     console.log(`phase reasoning will be saved to atris/logs/runs/ — you can read what i thought after.`);
     console.log('');
   }
+  console.log(formatRunnerSelection(runnerSelection));
+  console.log('');
 
   // Build context paths
   const context = {

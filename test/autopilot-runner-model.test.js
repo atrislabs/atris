@@ -3,10 +3,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
+const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 const AUTOPILOT_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'autopilot.js'), 'utf8');
 const RUN_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'run.js'), 'utf8');
 const MISSION_SRC = fs.readFileSync(path.join(__dirname, '..', 'commands', 'mission.js'), 'utf8');
@@ -40,6 +44,31 @@ function withRunnerEnv(values, fn) {
   }
 }
 
+function makeAtrisWorkspace() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-preflight-'));
+  const atrisDir = path.join(dir, 'atris');
+  fs.mkdirSync(atrisDir, { recursive: true });
+  fs.writeFileSync(path.join(atrisDir, 'TODO.md'), '# TODO\n\n## Backlog\n\n## In Progress\n\n## Completed\n');
+  fs.writeFileSync(path.join(atrisDir, 'MAP.md'), '# MAP\n');
+  fs.writeFileSync(path.join(atrisDir, 'PERSONA.md'), 'Test operator.\n');
+  return dir;
+}
+
+function runCli(args, { cwd, env = {} } = {}) {
+  const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: {
+      ...scrubAgentEnv(),
+      ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
+    },
+  });
+  if (result.error) throw result.error;
+  return result;
+}
+
 // --- T2/T3 wiring: the heartbeat paths route through the shared builder ---
 // (no raw `claude -p "$(cat ...)"` literal may survive, or the spawn would bypass
 // model resolution and inherit the CLI's mutable selection — retired-model-kills-loop-silently)
@@ -62,6 +91,58 @@ test('runner availability checks use the shared configured binary', () => {
   assert.doesNotMatch(RUN_SRC, /which claude/);
   assert.match(AUTOPILOT_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(RUN_SRC, /buildRunnerAvailabilityCommand\(/);
+});
+
+test('run and autopilot print runner preflight before dry-run work', () => {
+  assert.match(AUTOPILOT_SRC, /describeRunnerSelection\(/);
+  assert.match(AUTOPILOT_SRC, /formatRunnerSelection\(runnerSelection\)/);
+  assert.match(RUN_SRC, /describeRunnerSelection\(/);
+  assert.match(RUN_SRC, /formatRunnerSelection\(runnerSelection\)/);
+});
+
+test('run --dry-run prints runner selection without requiring the runner binary', () => {
+  const cwd = makeAtrisWorkspace();
+  try {
+    const result = runCli(['run', '--dry-run', '--cycles=1'], {
+      cwd,
+      env: {
+        ATRIS_RUNNER_BIN: '/definitely/missing/runner',
+        ATRIS_RUNNER_MODEL: 'glm-5.2',
+        ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /Runner preflight:/);
+    assert.match(result.stdout, /binary: \/definitely\/missing\/runner \(ATRIS_RUNNER_BIN\)/);
+    assert.match(result.stdout, /model: glm-5\.2 \(ATRIS_RUNNER_MODEL\)/);
+    assert.match(result.stdout, /template: ATRIS_RUNNER_COMMAND_TEMPLATE: \{bin\} --model \{model\} --prompt-file \{promptFile\}/);
+    assert.match(result.stdout, /availability: command -v \/definitely\/missing\/runner/);
+    assert.match(result.stdout, /\[DRY RUN\] Would execute:/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('autopilot --dry-run prints profile preflight without requiring the runner binary', () => {
+  const cwd = makeAtrisWorkspace();
+  try {
+    const result = runCli(['autopilot', '--dry-run', '--auto', '--iterations=1'], {
+      cwd,
+      env: {
+        ATRIS_RUNNER_PROFILE: 'atris-fast',
+        ATRIS_RUNNER_BIN: '/definitely/missing/runner',
+      },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /Runner preflight:/);
+    assert.match(result.stdout, /profile: atris-fast/);
+    assert.match(result.stdout, /binary: \/definitely\/missing\/runner \(ATRIS_RUNNER_BIN\)/);
+    assert.match(result.stdout, /model: atris:fast \(profile:atris-fast\)/);
+    assert.match(result.stdout, /template: profile:atris-fast: \{bin\} --fast \{prompt\}/);
+    assert.match(result.stdout, /availability: command -v \/definitely\/missing\/runner/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test('runtime runner wording is config-neutral', () => {

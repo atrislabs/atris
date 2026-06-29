@@ -11,6 +11,8 @@ const {
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
+  describeRunnerSelection,
+  formatRunnerSelection,
   buildRunnerAvailabilityCommand,
   buildRunnerCommand,
 } = require('../lib/runner-command');
@@ -157,7 +159,56 @@ test('generic runner env overrides the Atris Fast profile', () => {
 test('unknown runner profile throws a clear config error', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-9' }, () => {
     assert.throws(() => resolveRunnerProfile(), /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
+    assert.throws(() => describeRunnerSelection(), /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
     assert.throws(() => buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
+  });
+});
+
+test('describeRunnerSelection exposes the effective default runner preflight', () => {
+  withRunnerEnv({}, () => {
+    assert.deepEqual(describeRunnerSelection(), {
+      profile: null,
+      profileKnown: false,
+      bin: 'claude',
+      binSource: 'default',
+      model: 'opus',
+      modelSource: 'default',
+      commandTemplate: '',
+      commandTemplateSource: 'default',
+      commandTemplateActive: false,
+      availabilityCommand: 'command -v claude',
+    });
+  });
+});
+
+test('describeRunnerSelection shows profile values and generic env overrides', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_RUNNER_BIN: '/opt/glm/runner',
+    ATRIS_RUNNER_MODEL: 'glm-5.2',
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
+  }, () => {
+    const selection = describeRunnerSelection();
+    assert.equal(selection.profile, 'atris-fast');
+    assert.equal(selection.bin, '/opt/glm/runner');
+    assert.equal(selection.binSource, 'ATRIS_RUNNER_BIN');
+    assert.equal(selection.model, 'glm-5.2');
+    assert.equal(selection.modelSource, 'ATRIS_RUNNER_MODEL');
+    assert.equal(selection.commandTemplate, '{bin} --model {model} --prompt-file {promptFile}');
+    assert.equal(selection.commandTemplateSource, 'ATRIS_RUNNER_COMMAND_TEMPLATE');
+    assert.equal(selection.availabilityCommand, 'command -v /opt/glm/runner');
+  });
+});
+
+test('formatRunnerSelection gives dry-runs a readable preflight receipt', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-fast' }, () => {
+    const text = formatRunnerSelection(describeRunnerSelection());
+    assert.match(text, /Runner preflight:/);
+    assert.match(text, /profile: atris-fast/);
+    assert.match(text, /binary: ax \(profile:atris-fast\)/);
+    assert.match(text, /model: atris:fast \(profile:atris-fast\)/);
+    assert.match(text, /template: profile:atris-fast: \{bin\} --fast \{prompt\}/);
+    assert.match(text, /availability: command -v ax/);
   });
 });
 
