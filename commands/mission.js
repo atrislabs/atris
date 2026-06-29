@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const {
   resolveClaudeRunnerModel,
@@ -139,6 +140,58 @@ function printJsonOrText(payload, lines, asJson) {
     return;
   }
   for (const line of lines) console.log(line);
+}
+
+function missionRunInputRequired(asJson = false) {
+  const payload = {
+    ok: false,
+    action: 'mission_input_required',
+    prompt: 'What mission should Atris run?',
+    owner_prompt: 'Which team member should own it?',
+    example: 'atris mission run "make onboarding magical" --owner mission-lead',
+  };
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.error('What mission should Atris run?');
+    console.error('Try: atris mission run "make onboarding magical" --owner mission-lead');
+  }
+  process.exit(1);
+}
+
+function askLine(rl, question) {
+  return new Promise((resolve) => rl.question(question, (answer) => resolve(String(answer || '').trim())));
+}
+
+function removeValueFlag(args, name) {
+  const out = [];
+  const prefix = `${name}=`;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    if (arg === name) {
+      if (args[i + 1] && !String(args[i + 1]).startsWith('--')) i += 1;
+      continue;
+    }
+    if (arg.startsWith(prefix)) continue;
+    out.push(args[i]);
+  }
+  return out;
+}
+
+async function promptMissionRunInput(args) {
+  const defaultOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const objective = await askLine(rl, 'Mission: ');
+    if (!objective) missionRunInputRequired(false);
+    const owner = await askLine(rl, `Team member [${defaultOwner}]: `);
+    return {
+      objective,
+      args: [...removeValueFlag(args, '--owner'), '--owner', owner || defaultOwner],
+    };
+  } finally {
+    rl.close();
+  }
 }
 
 function loadTaskDb(asJson = false) {
@@ -2176,6 +2229,15 @@ async function runMission(args) {
     ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass', '--no-drain', '--always-on', '--xp-task', '--agent-xp'],
   ).join(' ').trim();
 
+  if (!dueMode && !ref) {
+    if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) {
+      missionRunInputRequired(asJson);
+    }
+    const prompted = await promptMissionRunInput(args);
+    startMissionFromRunObjective(prompted.objective, prompted.args);
+    return;
+  }
+
   let mission = dueMode && !ref ? selectDueMission() : resolveMission(ref);
   if (!mission && dueMode && !ref) {
     printJsonOrText(
@@ -2994,9 +3056,9 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
-  atris mission run <id|--due> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
+  atris mission run ["objective"|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
-                       (always-on runs drain the review lane each tick; --no-drain skips)
+                       (bare run prompts for mission + owner; --due runs the saved queue)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
 
