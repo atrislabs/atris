@@ -443,6 +443,15 @@ function execPhaseCommandSync(cmd, opts = {}) {
   }
 }
 
+function formatRunnerFailure(err) {
+  const parts = [err && err.message ? err.message : String(err || 'unknown error')];
+  const stdout = err && err.stdout ? String(err.stdout).trim() : '';
+  const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+  if (stdout) parts.push(`stdout:\n${stdout}`);
+  if (stderr) parts.push(`stderr:\n${stderr}`);
+  return parts.join('\n\n');
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -2919,7 +2928,7 @@ Reply with the JSON array and nothing else.`;
     if (isPhaseKillError(err)) {
       throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall — not a timeout`);
     }
-    throw err;
+    throw new Error(`horizon-proposal runner failed: ${formatRunnerFailure(err)}`);
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }
@@ -3612,7 +3621,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     // On timeout or crash, treat as unverifiable — conservative default
-    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+    return { fresh: false, reasoning: `Model check failed: ${formatRunnerFailure(err).slice(0, 500)}` };
   }
 }
 
@@ -3678,6 +3687,7 @@ module.exports = {
   isPhaseTimeoutError,
   isPhaseKillError,
   execPhaseCommandSync,
+  formatRunnerFailure,
   executePhaseDetailed,
   lessonSlug
 };
