@@ -77,8 +77,10 @@ test('compile build uses the shared runner command instead of raw claude', () =>
   assert.doesNotMatch(COMPILE_SRC, /which claude/);
   assert.doesNotMatch(COMPILE_SRC, /claude -p "\$\(cat/);
   assert.doesNotMatch(COMPILE_SRC, /install Claude Code first/);
+  assert.doesNotMatch(COMPILE_SRC, /CLI not found/);
   assert.match(COMPILE_SRC, /buildRunnerAvailabilityCommand\(/);
   assert.match(COMPILE_SRC, /buildRunnerCommand\(/);
+  assert.match(COMPILE_SRC, /runner not found/);
 });
 
 test('records: append + read round-trip with timestamps', () => {
@@ -233,6 +235,17 @@ test('rebuild: an active process drops to draft and must re-earn the gate', asyn
   assert.equal(rebuilt.backtest, null);
   assert.equal(rebuilt.version, 2);
   assert.throws(() => promoteProcess(root, 'demo'), /no backtest/);
+});
+
+test('executeBuild fails non-zero runner output and preserves stdout stderr', () => {
+  const root = makeRoot();
+  seedRecords(root, 'demo', 1);
+  assert.throws(
+    () => executeBuild(root, 'demo', {
+      cmdOverride: 'sh -c "echo compile-out; echo compile-err >&2; exit 7"',
+    }),
+    /compile runner failed:[\s\S]*stdout:\ncompile-out[\s\S]*stderr:\ncompile-err/
+  );
 });
 
 test('executeBuild honors ATRIS_CLAUDE_BIN when no cmdOverride is provided', () => {

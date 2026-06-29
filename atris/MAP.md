@@ -178,6 +178,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris compile promote <name>` activates only if the current version's backtest accuracy meets the gate
 - `atris compile exec <name> --input ... [--record]` runs the artifact token-free; `--record` feeds the run back into the ledger
 - Drift detection: an active process whose backtest falls below its gate is marked `drifted` (self-healing against process drift)
+- **Runner failure contract:** `commands/compile.js` wraps non-zero build runner exits as `compile runner failed` and preserves captured stdout/stderr in the error message; regression: `test/compile.test.js`
 - **Tests:** `test/compile.test.js` (20 tests: records, deep-equal, backtest, promote gate, stale-version guard, drift, async runners, runner command, prompt contract)
 - **Search:** `rg "runBacktest|promoteProcess|executeBuild" commands/compile.js`
 

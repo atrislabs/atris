@@ -21,7 +21,7 @@ const { execSync } = require('child_process');
 const {
   buildRunnerAvailabilityCommand,
   buildRunnerCommand,
-  resolveClaudeRunnerBin,
+  resolveRunnerBin,
 } = require('../lib/runner-command');
 
 const DEFAULT_THRESHOLD = 0.99;
@@ -271,6 +271,15 @@ The artifact will be verified by replaying every execution record through run() 
 Reply [COMPILE_COMPLETE] when ${runRel} is written.`;
 }
 
+function formatRunnerFailure(err) {
+  const parts = [err && err.message ? err.message : String(err || 'unknown error')];
+  const stdout = err && err.stdout ? String(err.stdout).trim() : '';
+  const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+  if (stdout) parts.push(`stdout:\n${stdout}`);
+  if (stderr) parts.push(`stderr:\n${stderr}`);
+  return parts.join('\n\n');
+}
+
 function executeBuild(root, name, options = {}) {
   const { verbose = false, timeout = 600000, notes = '', cmdOverride } = options;
   const records = readRecords(root, name);
@@ -282,7 +291,7 @@ function executeBuild(root, name, options = {}) {
     try {
       execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
     } catch {
-      throw new Error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+      throw new Error(`${resolveRunnerBin()} runner not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
     }
   }
 
@@ -303,6 +312,8 @@ function executeBuild(root, name, options = {}) {
       maxBuffer: 10 * 1024 * 1024,
       env,
     });
+  } catch (err) {
+    throw new Error(`compile runner failed: ${formatRunnerFailure(err)}`);
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }

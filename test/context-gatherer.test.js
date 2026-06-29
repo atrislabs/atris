@@ -16,7 +16,6 @@ const {
   saveContextProfile,
   shouldGatherContext,
   starterTaskTitle,
-  isAtrisMetaQuestion,
 } = require('../lib/context-gatherer');
 
 function hasNodeSqlite() {
