@@ -1313,7 +1313,7 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'mission') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pulse') {
   // Pulse: durable overnight self-improvement heartbeat (OS cron) for atris-cli.
