@@ -21,7 +21,7 @@ const { execSync } = require('child_process');
 const {
   buildRunnerAvailabilityCommand,
   buildRunnerCommand,
-  resolveClaudeRunnerBin,
+  resolveRunnerBin,
 } = require('../lib/runner-command');
 
 const DEFAULT_THRESHOLD = 0.99;
@@ -282,7 +282,7 @@ function executeBuild(root, name, options = {}) {
     try {
       execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
     } catch {
-      throw new Error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+      throw new Error(`${resolveRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
     }
   }
 

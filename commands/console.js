@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const readline = require('readline');
-const { resolveClaudeRunnerBin } = require('../lib/runner-command');
+const { resolveRunnerBin } = require('../lib/runner-command');
 
 // ── Context Gathering ──────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ function renderSkillsBar(ctx) {
 // ── Backend Detection & Auth ───────────────────────────────────────
 
 function detectBackend(requested) {
-  const claudeBin = resolveClaudeRunnerBin();
+  const claudeBin = resolveRunnerBin();
   const hasClaude = claudeBin.includes(path.sep)
     ? fs.existsSync(claudeBin)
     : spawnSync('which', [claudeBin], { stdio: 'pipe' }).status === 0;
@@ -281,7 +281,7 @@ function checkAuth(backend) {
 // ── Launch ──────────────────────────────────────────────────────────
 
 function launchClaude(systemPrompt, extraArgs) {
-  const runnerBin = resolveClaudeRunnerBin();
+  const runnerBin = resolveRunnerBin();
   const args = [
     '--dangerously-skip-permissions',
     '--append-system-prompt', systemPrompt,

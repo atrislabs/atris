@@ -4,10 +4,15 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const {
+  DEFAULT_RUNNER_MODEL,
+  DEFAULT_RUNNER_BIN,
   DEFAULT_CLAUDE_RUNNER_MODEL,
   DEFAULT_CLAUDE_RUNNER_BIN,
   RUNNER_PROFILES,
   resolveRunnerProfile,
+  resolveRunnerModel,
+  resolveRunnerBin,
+  resolveRunnerCommandTemplate,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
@@ -55,6 +60,14 @@ function withTemplateEnv(value, fn) {
 }
 
 // --- resolveClaudeRunnerModel: precedence explicit > env > default alias ---
+
+test('generic runner resolver names are canonical while legacy aliases stay compatible', () => {
+  assert.equal(DEFAULT_RUNNER_MODEL, DEFAULT_CLAUDE_RUNNER_MODEL);
+  assert.equal(DEFAULT_RUNNER_BIN, DEFAULT_CLAUDE_RUNNER_BIN);
+  assert.equal(resolveRunnerModel, resolveClaudeRunnerModel);
+  assert.equal(resolveRunnerBin, resolveClaudeRunnerBin);
+  assert.equal(resolveRunnerCommandTemplate, resolveClaudeRunnerCommandTemplate);
+});
 
 test('resolveClaudeRunnerModel honors explicit model first', () => {
   withEnv('sonnet', () => {
@@ -148,9 +161,9 @@ test('generic runner env overrides the Atris Fast profile', () => {
     ATRIS_RUNNER_MODEL: 'glm-5.2',
     ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --model {model} --prompt-file {promptFile}',
   }, () => {
-    assert.equal(resolveClaudeRunnerBin(), '/opt/glm/runner');
-    assert.equal(resolveClaudeRunnerModel({}), 'glm-5.2');
-    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --model {model} --prompt-file {promptFile}');
+    assert.equal(resolveRunnerBin(), '/opt/glm/runner');
+    assert.equal(resolveRunnerModel({}), 'glm-5.2');
+    assert.equal(resolveRunnerCommandTemplate(), '{bin} --model {model} --prompt-file {promptFile}');
   });
 });
 

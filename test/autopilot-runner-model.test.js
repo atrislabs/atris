@@ -109,7 +109,8 @@ test('mission claude ticks spawn the configured runner binary', () => {
 
 test('console claude launcher uses the configured runner binary', () => {
   assert.doesNotMatch(CONSOLE_SRC, /spawnSync\('claude'/);
-  assert.match(CONSOLE_SRC, /resolveClaudeRunnerBin\(\)/);
+  assert.doesNotMatch(CONSOLE_SRC, /resolveClaudeRunnerBin/);
+  assert.match(CONSOLE_SRC, /resolveRunnerBin\(\)/);
   assert.match(CONSOLE_SRC, /spawnSync\(runnerBin, args/);
 });
 
