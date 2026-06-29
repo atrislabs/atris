@@ -11,8 +11,14 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
   assert.equal(ax.resolveRoute('what files are here?'), 'local');
   assert.equal(ax.resolveRoute('search src for the input component'), 'local');
   assert.equal(ax.resolveRoute('fix the xp game tests'), 'local');
+  assert.equal(ax.resolveRoute('write to README.md'), 'local');
+  assert.equal(ax.resolveRoute('write a python file'), 'local');
+  assert.equal(ax.resolveRoute('edit package.json'), 'local');
+  assert.equal(ax.resolveRoute('write code in this repo'), 'local');
   assert.equal(ax.resolveRoute('hi'), 'cloud');
   assert.equal(ax.resolveRoute('thanks'), 'cloud');
+  assert.equal(ax.resolveRoute('write an essay about san francisco'), 'cloud');
+  assert.equal(ax.resolveRoute('write a poem about the ocean'), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -151,8 +157,50 @@ test('ax chat fails fast when explicit local mode is offline', async () => {
   const text = chunks.join('');
   assert.equal(healthCalls, 1);
   assert.match(text, /backend\s+offline/);
-  assert.match(text, /Local workspace mode needs a running AtrisOS backend:/);
-  assert.match(text, /Run without --local for hosted chat/);
+  assert.match(text, /This requires local workspace mode, but no AtrisOS backend is running\./);
+  assert.match(text, /retry with --cloud for hosted chat/);
+  assert.doesNotMatch(text, /\/Users\/keshavrao/);
+  assert.doesNotMatch(text, /secret-token/);
+});
+
+test('ax chat explains auto-local route reason when local backend is offline', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  let healthCalls = 0;
+  try {
+    await ax.chat({
+      mode: 'fast',
+      cwd: os.tmpdir(),
+      input: Readable.from(['write a python file\n', 'exit\n']),
+      output,
+      runtimeHealth: async () => {
+        healthCalls += 1;
+        return {
+          schema: 'ax.runtime_health.v1',
+          backend: { ready: false, reachable: false, status: 0, error: 'ECONNREFUSED secret-token' },
+          fast: { ready: false, route_ready: false },
+          permissions: { ready: false },
+        };
+      },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  const text = chunks.join('');
+  assert.equal(healthCalls, 1);
+  assert.match(text, /Routed local because prompt mentions workspace, file, code, or repo terms\./);
+  assert.match(text, /retry with --cloud for hosted cloud scratch/);
+  assert.doesNotMatch(text, /Run without --local/);
   assert.doesNotMatch(text, /\/Users\/keshavrao/);
   assert.doesNotMatch(text, /secret-token/);
 });

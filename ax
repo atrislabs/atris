@@ -598,7 +598,15 @@ function connectorWriteIntent(message) {
 }
 
 function workspaceIntent(message) {
-  return /\b(files?|folders?|repo|workspace|project|directory|tree|read|open|inspect|search|grep|find|locate|where|edit|write|change|modify|patch|fix|test|tests?|build|src|source|code|diff|git|backend|frontend|atris task|atris xp|xp game|career xp|agentxp|todo|map)\b/i.test(message || '');
+  return Boolean(workspaceIntentReason(message));
+}
+
+function workspaceIntentReason(message) {
+  const text = String(message || '');
+  if (/\b(files?|folders?|repo|workspace|project|directory|tree|src|source|code|diff|git|backend|frontend|atris task|atris xp|xp game|career xp|agentxp|todo|map|tests?)\b/i.test(text)) return 'prompt mentions workspace, file, code, or repo terms';
+  if (/(^|\s|["'`])(?:\.{0,2}\/)?[\w.-]+\/[\w./-]+|[\w.-]+\.(?:js|jsx|ts|tsx|mjs|cjs|json|md|py|rb|go|rs|java|css|scss|html|yml|yaml|toml|env|txt)\b/i.test(text)) return 'prompt names a file path or filename';
+  if (/\b(read|open|inspect|search|grep|find|locate|where|edit|write|change|modify|patch|fix|test|build|refactor)\b.*\b(this|file|folder|repo|workspace|project|directory|module|component|package|readme|source|code|branch|suite|build|bug)\b/i.test(text)) return 'prompt asks to operate on workspace material';
+  return '';
 }
 
 function githubWorkspaceIntent(message) {
@@ -608,12 +616,17 @@ function githubWorkspaceIntent(message) {
 }
 
 function resolveRoute(message, options = {}) {
-  if (options.route === 'local' || options.forceLocal) return 'local';
-  if (options.route === 'cloud' || options.forceCloud) return 'cloud';
-  if (githubWorkspaceIntent(message)) return 'local';
-  if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
-  if (workspaceIntent(message)) return 'local';
-  return 'cloud';
+  return routeDecision(message, options).route;
+}
+
+function routeDecision(message, options = {}) {
+  if (options.route === 'local' || options.forceLocal) return { route: 'local', reason: 'explicit --local' };
+  if (options.route === 'cloud' || options.forceCloud) return { route: 'cloud', reason: 'explicit --cloud' };
+  if (githubWorkspaceIntent(message)) return { route: 'local', reason: 'prompt asks for GitHub repo mutation' };
+  const reason = workspaceIntentReason(message);
+  if (mentionsConnector(message) && !reason) return { route: 'cloud', reason: 'connector request uses hosted Atris' };
+  if (reason) return { route: 'local', reason };
+  return { route: 'cloud', reason: 'default hosted chat' };
 }
 
 function shouldPreflightRuntime(route, options = {}, mode = 'fast') {
@@ -1978,7 +1991,7 @@ async function chat(options = {}) {
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
 
   const runtimePreflight = { localReady: false };
-  const ensureRuntimeReady = async (routeForTurn = 'local') => {
+  const ensureRuntimeReady = async (routeForTurn = 'local', decision = {}) => {
     if (!shouldPreflightRuntime(routeForTurn, options, mode)) {
       return true;
     }
@@ -1992,7 +2005,7 @@ async function chat(options = {}) {
       return true;
     }
     output.write(`${formatRuntimeHealth(health, output)}\n\n`);
-    output.write(`${formatBackendHint()}\n`);
+    output.write(`${formatBackendHint({ routeReason: decision.reason, explicitLocal: decision.reason === 'explicit --local' })}\n`);
     output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
     return false;
   };
@@ -2078,8 +2091,11 @@ async function chat(options = {}) {
     }
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
-    const route = pendingTaskPreview ? 'cloud' : resolveRoute(trimmed, { route: options.route });
-    if (!(await ensureRuntimeReady(route))) return false;
+    const decision = pendingTaskPreview
+      ? { route: 'cloud', reason: 'pending approval stays on hosted Atris' }
+      : routeDecision(trimmed, { route: options.route });
+    const route = decision.route;
+    if (!(await ensureRuntimeReady(route, decision))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
@@ -2137,17 +2153,21 @@ async function chat(options = {}) {
   if (logger) logger.close(0);
 }
 
-function printBackendHint() {
+function printBackendHint(options = {}) {
   console.log('');
-  console.log(formatBackendHint());
+  console.log(formatBackendHint(options));
 }
 
-function backendStartCommand() {
-  return 'Run without --local for hosted chat, or set AX_BACKEND_URL to your AtrisOS backend.';
+function backendStartCommand(options = {}) {
+  if (options.explicitLocal) return 'Start your AtrisOS backend, or retry with --cloud for hosted chat.';
+  return 'Start your AtrisOS backend for local workspace, or retry with --cloud for hosted cloud scratch.';
 }
 
-function formatBackendHint() {
-  return `Local workspace mode needs a running AtrisOS backend:\n${backendStartCommand()}`;
+function formatBackendHint(options = {}) {
+  const lines = ['This requires local workspace mode, but no AtrisOS backend is running.'];
+  if (options.routeReason && !options.explicitLocal) lines.push(`Routed local because ${options.routeReason}.`);
+  lines.push(backendStartCommand(options));
+  return lines.join('\n');
 }
 
 function bufferedOutput() {
@@ -2286,7 +2306,8 @@ async function runSelfTest(options = {}) {
     const text = chunks.join('');
     assertSelfTest(healthCalls === 1, 'offline preflight repeated unexpectedly');
     assertSelfTest(/backend\s+offline/.test(text), 'offline backend status missing');
-    assertSelfTest(/Local workspace mode needs a running AtrisOS backend:/.test(text), 'local backend hint missing');
+    assertSelfTest(/This requires local workspace mode, but no AtrisOS backend is running\./.test(text), 'local backend hint missing');
+    assertSelfTest(/retry with --cloud for hosted chat/.test(text), 'cloud retry hint missing');
     assertSelfTest(!/\/Users\/keshavrao/.test(text), 'local backend hint leaked a developer path');
     assertSelfTest(!/secret-token/.test(text), 'offline preflight leaked error detail');
   }, results, output);
@@ -3011,8 +3032,11 @@ async function main() {
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
-    const shouldShowBackendHint = forceLocal || (prompt && route !== 'cloud' && resolveRoute(prompt, { route: route === 'auto' ? undefined : route }) === 'local');
-    if (shouldShowBackendHint) printBackendHint();
+    const decision = prompt
+      ? routeDecision(prompt, { route: route === 'auto' ? undefined : route })
+      : { route: forceLocal ? 'local' : 'cloud', reason: forceLocal ? 'explicit --local' : 'default hosted chat' };
+    const shouldShowBackendHint = decision.route === 'local';
+    if (shouldShowBackendHint) printBackendHint({ routeReason: decision.reason, explicitLocal: forceLocal || decision.reason === 'explicit --local' });
     process.exit(1);
   }
 }
