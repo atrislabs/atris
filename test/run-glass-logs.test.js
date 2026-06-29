@@ -331,6 +331,25 @@ test('listRunLogs --json with no logs returns empty array', () => {
   }
 });
 
+test('listRunLogs --json with no logs does not create runs directory', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+
+    listRunLogs(['--json']);
+    assert.equal(fs.existsSync(path.join(tmpRoot, 'atris', 'logs', 'runs')), false);
+    assert.deepEqual(JSON.parse(output.trim()), { ok: true, logs: [], count: 0 });
+  } finally {
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 // --- pruneRunLogs ---
 
 test('pruneRunLogs does nothing when under keep limit', () => {

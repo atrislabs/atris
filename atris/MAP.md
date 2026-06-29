@@ -767,7 +767,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Prompt builder:** `commands/run.js:117-195` (buildRunPrompt function) — generates phase-specific prompts (plan/do/review) with full context file paths
 - **Phase executor:** `commands/run.js:200-237` (executePhase function) — runs `buildRunnerCommand()` with prompt, executes via spawnSync in a detached process group, sweeps the configured runner tree on timeout/kill, and handles output
 - **Glass run logs:** `commands/run.js:31-37` (getRunLogDir, getRunLogPath, writePhaseToRunLog) — persists plan/do/review phase reasoning to `atris/logs/runs/YYYY-MM-DD-<stamp>-cycle-N.md` as inspectable material; failed phases also logged as ERROR sections
-- **Run log browser:** `commands/run.js:543-629` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs
+- **Run log browser:** `commands/run.js:543-629` (listRunLogs function) — `atris run logs [--tail N] [--cat FILE] [--json]` subcommand for browsing glass run logs; read-only log queries use the non-creating log-dir path so empty workspaces stay untouched
 - **Run log pruning:** `commands/run.js:637-681` (pruneRunLogs function) — `atris run prune-logs [--keep N] [--dry-run]` subcommand for cleaning up old run logs
 - **Run log search:** `commands/run.js:690-777` (searchRunLogs function) — `atris run search <keyword> [--phase P] [--limit N]` subcommand for searching phase reasoning
 - **Run log stats:** `commands/run.js:782-833` (statsRunLogs function) — `atris run stats` subcommand showing phase counts and avg durations

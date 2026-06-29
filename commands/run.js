@@ -28,9 +28,10 @@ const PHASE_TIMEOUT = 600000; // 10 min per phase
  * Resolve the run log directory (atris/logs/runs/), creating it if needed.
  * Returns the directory path.
  */
-function getRunLogDir() {
+function getRunLogDir(options = {}) {
+  const { create = true } = options;
   const runsDir = path.join(process.cwd(), 'atris', 'logs', 'runs');
-  if (!fs.existsSync(runsDir)) {
+  if (create && !fs.existsSync(runsDir)) {
     fs.mkdirSync(runsDir, { recursive: true });
   }
   return runsDir;
@@ -639,7 +640,7 @@ async function runAtris(options = {}) {
  *   --json      Output machine-readable JSON
  */
 function listRunLogs(args = []) {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
   const jsonMode = args.includes('--json');
 
   // --cat FILE: print full contents
@@ -733,7 +734,7 @@ function listRunLogs(args = []) {
  *   --dry-run   Show what would be deleted without deleting
  */
 function pruneRunLogs(args = []) {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
   const dryRun = args.includes('--dry-run');
 
   let keep = 50;
@@ -786,7 +787,7 @@ function pruneRunLogs(args = []) {
  *   --limit N    Max results to show (default: 20)
  */
 function searchRunLogs(args = []) {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
 
   // Extract keyword (first non-flag arg)
   const keyword = args.find(a => !a.startsWith('-'));
@@ -878,7 +879,7 @@ function searchRunLogs(args = []) {
  * Show stats across all run logs: total runs, phase counts, avg durations.
  */
 function statsRunLogs() {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
 
   const files = fs.existsSync(runsDir)
     ? fs.readdirSync(runsDir)
@@ -936,7 +937,7 @@ function statsRunLogs() {
  *   --out FILE   Write to a specific file (default: atris/logs/runs/export.json)
  */
 function exportRunLogs(args = []) {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
 
   let outFile = path.join(runsDir, 'export.json');
   const outIdx = args.indexOf('--out');
@@ -986,7 +987,7 @@ function exportRunLogs(args = []) {
  * Usage: diffRunLogs <file1> <file2>
  */
 function diffRunLogs(args = []) {
-  const runsDir = getRunLogDir();
+  const runsDir = getRunLogDir({ create: false });
 
   const positional = args.filter(a => !a.startsWith('-'));
   if (positional.length < 2) {

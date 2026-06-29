@@ -738,18 +738,12 @@ function showServeHelp() {
 }
 
 function showLoopHelp() {
-  console.log('');
-  console.log('Usage: atris loop [--dry-run] [--json] [--limit=N]');
-  console.log('');
-  console.log('Description:');
-  console.log('  Inspect wiki upkeep state and optionally refresh wiki status/log files.');
-  console.log('');
+  console.log('Usage: atris loop [add|start|status|report|stop|wiki]');
+  console.log(require('../commands/loop-front').renderLoopHome().trimEnd());
   console.log('Options:');
-  console.log('  --dry-run    Preview wiki loop state without writing files.');
-  console.log('  --json       Print the loop report as JSON.');
-  console.log('  --limit=N    Limit suggested source count.');
+  console.log('  --dry-run    Preview delegated loop work when supported.');
+  console.log('  --json       Print machine-readable status or report output.');
   console.log('  --help, -h   Show this help.');
-  console.log('');
 }
 
 function showCleanHelp() {
@@ -2038,8 +2032,8 @@ if (command === 'init') {
     showLoopHelp();
     process.exit(0);
   }
-  require('../commands/loop').loopAtris(args)
-    .then(() => process.exit(0))
+  require('../commands/loop-front').loopFront(args)
+    .then((code) => process.exit(Number.isInteger(code) ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
   const { cleanWorkspace } = require('../commands/workspace-clean');
@@ -2318,13 +2312,12 @@ async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent [doctor|dogfood|spawn|spawns|spawn-status]');
+    console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
-    console.log('  Run `atris agent dogfood --live` to smoke-test Devin/Droid with GLM 5.2.');
     console.log('  Requires `atris login` first.');
     console.log('');
     console.log('  After selecting, use: atris chat ["message"]');
@@ -2335,6 +2328,10 @@ async function agentAtris() {
     agentDoctor();
   }
   if (firstArg === 'dogfood') {
+    if (process.env.ATRIS_INTERNAL_AGENT_DOGFOOD !== '1') {
+      console.error('agent dogfood is an internal diagnostic. Use atris agent doctor for public readiness checks.');
+      process.exit(1);
+    }
     const result = require('../commands/agent-spawn').agentDogfoodCommand(process.argv.slice(4));
     process.exit(result.ok ? 0 : 1);
   }
