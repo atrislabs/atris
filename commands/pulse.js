@@ -368,7 +368,41 @@ function resolveEngineBinDirs(extraBins = []) {
   return Array.from(dirs);
 }
 
-function installCommand(args, root = process.cwd()) {
+function buildPulseInstallPreflight({
+  scriptPath,
+  model,
+  runnerProfile,
+  runnerBin,
+  runnerCommandTemplate,
+  verifyCmd,
+}) {
+  return {
+    script_path: scriptPath,
+    model: model || 'opus',
+    runner_profile: runnerProfile || null,
+    runner_bin: runnerBin || null,
+    runner_template_configured: Boolean(runnerCommandTemplate),
+    verify_command: verifyCmd || null,
+  };
+}
+
+function renderPulseInstallPreflight(preflight) {
+  const runnerProfile = preflight.runner_profile || 'none';
+  const runnerBin = preflight.runner_bin || 'default runner on PATH';
+  const runnerTemplate = preflight.runner_template_configured ? 'configured' : 'default runner command';
+  const verifyCommand = preflight.verify_command || 'none';
+  return [
+    'runner preflight:',
+    `  model: ${preflight.model || 'opus'}`,
+    `  profile: ${runnerProfile}`,
+    `  binary: ${runnerBin}`,
+    `  template: ${runnerTemplate}`,
+    `  verify: ${verifyCommand}`,
+    `  script: ${preflight.script_path}`,
+  ].join('\n');
+}
+
+function installCommand(args, root = process.cwd(), options = {}) {
   const asJson = wantsJson(args);
   const cron = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
   const days = Math.max(1, Number(readFlag(args, '--days', '7')) || 7);
@@ -378,16 +412,19 @@ function installCommand(args, root = process.cwd()) {
   const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
   const deadlineEpoch = Math.floor(Date.now() / 1000) + days * 86400;
+  const stateHome = options.stateHome || STATE_HOME;
+  const crontabBin = options.crontabBin || 'crontab';
+  const atrisBin = options.atrisBin || resolveAtrisBin();
 
-  fs.mkdirSync(STATE_HOME, { recursive: true });
-  const scriptPath = path.join(STATE_HOME, 'tick.sh');
+  fs.mkdirSync(stateHome, { recursive: true });
+  const scriptPath = path.join(stateHome, 'tick.sh');
   // Resolve the real bin dirs the engine spawns by bare name, so cron's minimal
   // PATH doesn't silently break the worker spawn (claude lives in ~/.local/bin).
-  const pathDirs = resolveEngineBinDirs([runnerBin]);
+  const pathDirs = options.pathDirs || resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
-    atrisBin: resolveAtrisBin(),
-    stateHome: STATE_HOME,
+    atrisBin,
+    stateHome,
     deadlineEpoch,
     model,
     runnerProfile,
@@ -400,11 +437,19 @@ function installCommand(args, root = process.cwd()) {
 
   const line = pulse.buildCrontabLine({ cron, scriptPath });
   // Append our line to the existing crontab (idempotent: strip any prior marker first).
-  const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+  const existing = spawnSync(crontabBin, ['-l'], { encoding: 'utf8', timeout: 10000 });
   const prior = existing.status === 0 ? String(existing.stdout || '') : '';
   const cleaned = prior.split('\n').filter((l) => l && !l.includes(pulse.PULSE_MARKER)).join('\n');
   const next = `${cleaned ? cleaned + '\n' : ''}${line}\n`;
-  const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+  const apply = spawnSync(crontabBin, ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+  const runnerPreflight = buildPulseInstallPreflight({
+    scriptPath,
+    model,
+    runnerProfile,
+    runnerBin,
+    runnerCommandTemplate,
+    verifyCmd,
+  });
 
   const out = {
     ok: apply.status === 0,
@@ -417,16 +462,18 @@ function installCommand(args, root = process.cwd()) {
     runner_profile: runnerProfile || null,
     runner_bin: runnerBin || null,
     runner_template_configured: Boolean(runnerCommandTemplate),
+    runner_preflight: runnerPreflight,
   };
   if (!asJson) {
+    const preflightText = renderPulseInstallPreflight(runnerPreflight);
     if (apply.status === 0) {
       process.stdout.write([
         `pulse installed. heartbeat fires '${cron}' against ${root}.`,
-        `script: ${scriptPath}`,
+        preflightText,
         `auto-expires in ${days} days. stop early: atris pulse uninstall`,
       ].join('\n') + '\n');
     } else {
-      process.stdout.write(`pulse install failed to write crontab: ${apply.stderr || apply.status}\nscript written to ${scriptPath}; add this line to your crontab manually:\n${line}\n`);
+      process.stdout.write(`pulse install failed to write crontab: ${apply.stderr || apply.status}\n${preflightText}\nadd this line to your crontab manually:\n${line}\n`);
     }
   }
   return emit(out, asJson);
@@ -498,6 +545,8 @@ module.exports = {
   runMissionEngine,
   runAutopilotTick,
   runEngine,
+  buildPulseInstallPreflight,
+  renderPulseInstallPreflight,
   gitChangedFiles,
   runVerify,
   STATE_HOME,

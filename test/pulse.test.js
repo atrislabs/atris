@@ -7,11 +7,40 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { installCommand } = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   return dir;
+}
+
+function captureStdout(fn) {
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, encoding, callback) => {
+    output += String(chunk);
+    if (typeof encoding === 'function') encoding();
+    if (typeof callback === 'function') callback();
+    return true;
+  };
+  try {
+    return { result: fn(), stdout: output };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+}
+
+function fakeCrontabBin(root) {
+  const file = path.join(root, 'crontab');
+  fs.writeFileSync(file, [
+    '#!/bin/sh',
+    'if [ "$1" = "-l" ]; then exit 1; fi',
+    'if [ "$1" = "-" ]; then cat >/dev/null; exit 0; fi',
+    'exit 2',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  return file;
 }
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
@@ -284,6 +313,82 @@ test('buildTickScript preserves configured runner profile for cron', () => {
   });
   assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
   assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
+});
+
+test('installCommand shows runner preflight and writes matching cron script', () => {
+  const root = tmpRoot();
+  try {
+    const stateHome = path.join(root, '.pulse-state');
+    const crontabBin = fakeCrontabBin(root);
+    const { result, stdout } = captureStdout(() => installCommand([
+      '--cadence', '*/15 * * * *',
+      '--days', '2',
+      '--model', 'atris:fast',
+      '--runner-profile', 'atris-fast',
+      '--runner-bin', '/opt/atris/bin/ax',
+      '--runner-template', '{bin} --prompt-file {promptFile}',
+      '--verify', 'npm test',
+    ], root, {
+      stateHome,
+      crontabBin,
+      atrisBin: '/usr/local/bin/atris',
+      pathDirs: ['/opt/atris/bin'],
+    }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.script_path, path.join(stateHome, 'tick.sh'));
+    assert.equal(result.runner_preflight.script_path, result.script_path);
+    assert.equal(result.runner_preflight.model, 'atris:fast');
+    assert.equal(result.runner_preflight.runner_profile, 'atris-fast');
+    assert.equal(result.runner_preflight.runner_bin, '/opt/atris/bin/ax');
+    assert.equal(result.runner_preflight.runner_template_configured, true);
+    assert.equal(result.runner_preflight.verify_command, 'npm test');
+    assert.match(stdout, /runner preflight:/);
+    assert.match(stdout, /model: atris:fast/);
+    assert.match(stdout, /profile: atris-fast/);
+    assert.match(stdout, /binary: \/opt\/atris\/bin\/ax/);
+    assert.match(stdout, /template: configured/);
+    assert.match(stdout, /verify: npm test/);
+    assert.match(stdout, /script: .*tick\.sh/);
+
+    const script = fs.readFileSync(result.script_path, 'utf8');
+    assert.ok(script.includes("export ATRIS_RUNNER_MODEL='atris:fast'"));
+    assert.ok(script.includes("export ATRIS_RUNNER_PROFILE='atris-fast'"));
+    assert.ok(script.includes("export ATRIS_RUNNER_BIN='/opt/atris/bin/ax'"));
+    assert.ok(script.includes('export ATRIS_RUNNER_COMMAND_TEMPLATE='));
+    assert.ok(script.includes('"$ATRIS" pulse tick --json --verify \'npm test\''));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('installCommand JSON includes runner preflight', () => {
+  const root = tmpRoot();
+  try {
+    const stateHome = path.join(root, '.pulse-state');
+    const crontabBin = fakeCrontabBin(root);
+    const { result, stdout } = captureStdout(() => installCommand([
+      '--json',
+      '--model', 'atris:fast',
+      '--runner-profile', 'atris-fast',
+      '--runner-template', '{bin} --prompt-file {promptFile}',
+    ], root, {
+      stateHome,
+      crontabBin,
+      atrisBin: '/usr/local/bin/atris',
+      pathDirs: ['/opt/atris/bin'],
+    }));
+    const printed = JSON.parse(stdout);
+
+    assert.equal(result.ok, true);
+    assert.equal(printed.runner_preflight.model, 'atris:fast');
+    assert.equal(printed.runner_preflight.runner_profile, 'atris-fast');
+    assert.equal(printed.runner_preflight.runner_template_configured, true);
+    assert.equal(printed.runner_preflight.verify_command, 'npm test');
+    assert.doesNotMatch(stdout, /runner preflight:/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('buildTickScript escapes single quotes in the verify command', () => {
