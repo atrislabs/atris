@@ -65,6 +65,7 @@ const {
   apiRequestJson, streamProChat, spawnClaudeCodeSession,
   DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
 } = require('../utils/api');
+const missionRuntime = require('../lib/mission-runtime-loop');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
 const validateAccessToken = (token) => _validateAccessToken(token, apiRequestJson);
@@ -282,6 +283,7 @@ function goalAchieved(goal) {
 function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal') {
   const goal = currentAtrisGoal(workspaceDir);
   if (!goal) return null;
+  if (String(goal.runner || '').trim().toLowerCase() === 'codex_goal') return null;
   const objective = String(goal.objective || '').length > 92
     ? `${String(goal.objective).slice(0, 89)}...`
     : String(goal.objective || '');
@@ -2552,6 +2554,11 @@ async function chatAtris() {
     process.exit(1);
   }
 
+  const missionIntent = missionRunIntentFromFastMessage(message);
+  if (missionIntent) {
+    process.exit(await runLocalFastMission(missionIntent));
+  }
+
   printAtrisGoalBanner(process.cwd());
 
   // Check agent selected
@@ -2643,6 +2650,15 @@ async function chatInteractive(config, credentials) {
         return;
       }
 
+      const missionIntent = missionRunIntentFromFastMessage(input);
+      if (missionIntent) {
+        console.log('');
+        await runLocalFastMission(missionIntent);
+        console.log('');
+        rl.prompt();
+        return;
+      }
+
       // Send to pro-chat
       console.log('');
       const apiUrl = getApiBaseUrl().replace(/\/api$/, '');
@@ -2723,18 +2739,7 @@ function extractFastMissionFlag(text, flagName) {
 }
 
 function missionRunIntentFromFastMessage(message) {
-  const text = String(message || '').trim();
-  const match = /^atris\s+mission\s+run(?:\s+([\s\S]+))?$/i.exec(text);
-  if (!match) return null;
-
-  let rest = String(match[1] || '').trim();
-  const ownerFlag = extractFastMissionFlag(rest, '--owner');
-  rest = ownerFlag.text.replace(/(^|\s)--json(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
-
-  return {
-    objective: stripFastMissionQuotes(rest),
-    owner: ownerFlag.value || process.env.ATRIS_AGENT_ID || 'mission-lead',
-  };
+  return missionRuntime.missionRunIntentFromMessage(message);
 }
 
 function printFastMissionStartReceipt(payload) {
@@ -2761,51 +2766,17 @@ function printFastMissionStartReceipt(payload) {
   if (receiptGoal.next_command) console.log(`Next: ${receiptGoal.next_command}`);
 }
 
-function runLocalFastMission(intent) {
-  if (!intent?.objective) {
-    console.error('Usage: atris mission run "<objective>"');
-    return 1;
-  }
-
-  const result = spawnSync(
-    process.execPath,
-    [
-      __filename,
-      'mission',
-      'run',
-      intent.objective,
-      '--runner',
-      'atris2',
-      '--owner',
-      intent.owner || 'mission-lead',
-      '--json',
-    ],
-    {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        ATRIS_SKIP_UPDATE_CHECK: '1',
-      },
+async function runLocalFastMission(intent) {
+  const result = await missionRuntime.runRuntimeMissionLoop(intent, {
+    cwd: process.cwd(),
+    cliPath: __filename,
+    onProgress: (line) => {
+      if (/^pursuing /.test(line)) console.log('Pursuing goal...');
+      else if (/^\[tick /.test(line)) console.log(line);
     },
-  );
-
-  if (result.error) {
-    console.error(`✗ Error: ${result.error.message || result.error}`);
-    return 1;
-  }
-  if (result.status !== 0) {
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    return result.status || 1;
-  }
-
-  try {
-    printFastMissionStartReceipt(JSON.parse(result.stdout));
-  } catch {
-    process.stdout.write(result.stdout);
-  }
-  return 0;
+  });
+  console.log(result.text || 'Mission command failed.');
+  return result.ok ? 0 : (result.status || 1);
 }
 
 async function atrisFastChat() {
@@ -2834,7 +2805,7 @@ async function atrisFastChat() {
 
   const missionIntent = missionRunIntentFromFastMessage(message);
   if (missionIntent) {
-    process.exit(runLocalFastMission(missionIntent));
+    process.exit(await runLocalFastMission(missionIntent));
   }
 
   printAtrisGoalBanner(process.cwd());

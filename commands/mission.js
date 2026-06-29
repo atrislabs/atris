@@ -1009,12 +1009,14 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
 
   const owner = parent.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
   const objective = continuationObjective(parent);
+  const parentRunner = String(parent.runner || '').trim().toLowerCase();
+  const continuationRunner = parentRunner === 'atris2' ? 'atris2' : 'codex_goal';
   const mission = missionFromArgs([
     objective,
     '--owner',
     owner,
     '--runner',
-    'codex_goal',
+    continuationRunner,
     '--lane',
     parent.lane || 'workspace',
     '--cadence',

@@ -374,15 +374,19 @@ test('ax fast chat intercepts atris mission run before backend or model work', (
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Atris mission started/);
     assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
-    assert.match(res.stdout, /Mission: mission-.* · planning · atris2/);
-    assert.match(res.stdout, /Elapsed: \d+s/);
+    assert.match(res.stdout, /Mission: mission-.* - planning - atris2/);
+    assert.match(res.stdout, /Atris mission pursued/);
+    assert.match(res.stdout, /Ticks: 0\/0/);
     assert.match(res.stdout, /Achieved: no/);
+    assert.match(res.stdout, /Blocked: auth-required/);
     assert.match(res.stdout, /Next: atris mission attach-task/);
     assert.doesNotMatch(res.stdout + res.stderr, /Start backend|Worked for|credit|Hello world/);
 
-    const goalState = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), 'utf8'));
-    assert.equal(goalState.goal.objective, objective);
-    assert.equal(goalState.goal.runner, 'atris2');
+    const missionLines = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.equal(missionLines.some((mission) => mission.objective === objective && mission.runner === 'atris2'), true);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);
@@ -703,15 +707,15 @@ test('ax fast intercepts atris mission run as a local Atris goal', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const res = runCli(['ax', 'fast', `atris mission run ${objective}`], {
+    const res = runCli(['ax', 'fast', `atris mission run ${objective} --no-run`], {
       cwd: dir,
       env: { HOME: home, ATRIS_AGENT_ID: 'mission-lead' },
     });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Atris mission started/);
     assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
-    assert.match(res.stdout, /Mission: mission-.* · planning · atris2/);
-    assert.match(res.stdout, /Elapsed: \d+s/);
+    assert.match(res.stdout, /Mission: mission-.* - planning - atris2/);
+    assert.match(res.stdout, /Pursuing: not run \(--no-run\)/);
     assert.match(res.stdout, /Achieved: no/);
     assert.match(res.stdout, /Next: atris mission attach-task/);
     assert.doesNotMatch(res.stdout + res.stderr, /Not logged in|Atris2 Fast|Worked for|credit/);
@@ -719,6 +723,29 @@ test('ax fast intercepts atris mission run as a local Atris goal', () => {
     const goalState = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), 'utf8'));
     assert.equal(goalState.goal.objective, objective);
     assert.equal(goalState.goal.runner, 'atris2');
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('atris chat intercepts mission run before selected-agent auth', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'atris chat local mission';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = runCli(['chat', `atris mission run ${objective} --no-run`], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_AGENT_ID: 'mission-lead' },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Pursuing: not run \(--no-run\)/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.doesNotMatch(res.stdout + res.stderr, /No agent selected|Agent:|pro-chat|Worked for|credit/);
   } finally {
     cleanupTempDir(dir);
     cleanupTempDir(home);
