@@ -12,6 +12,7 @@ const { execSync, execFileSync, spawnSync } = require('child_process');
 const readline = require('readline');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
+const { writePromptTempFile } = require('../lib/prompt-temp');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
@@ -450,12 +451,11 @@ function executePhaseDetailed(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT } = options;
 
   const prompt = buildPrompt(phase, context, options);
-  const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('autopilot-prompt', prompt);
 
   try {
     const cmd = options.cmdOverride
-      || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
+      || buildRunnerCommand({ promptFile: promptTemp.filePath, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -467,10 +467,8 @@ function executePhaseDetailed(phase, context, options = {}) {
       env
     });
 
-    try { fs.unlinkSync(tmpFile); } catch {}
     return { prompt, output: output || '' };
   } catch (err) {
-    try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
       throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives — reconcile from pre-tick HEADs)`);
     }
@@ -481,6 +479,8 @@ function executePhaseDetailed(phase, context, options = {}) {
       return { prompt, output: err.stdout };
     }
     throw err;
+  } finally {
+    promptTemp.cleanup();
   }
 }
 
@@ -1201,10 +1201,9 @@ function parseProposedBlock(lines) {
  * Kept thin so tests can inject a stub via options.planReviewExec.
  */
 function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
-  const tmpFile = path.join(cwd, '.autopilot-plan-review.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('autopilot-plan-review', prompt);
   try {
-    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Grep,Glob' });
+    const cmd = buildRunnerCommand({ promptFile: promptTemp.filePath, allowedTools: 'Bash,Read,Grep,Glob' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const output = execPhaseCommandSync(cmd, {
@@ -1220,7 +1219,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     if (err.stdout) return err.stdout;
     throw err;
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    promptTemp.cleanup();
   }
 }
 
@@ -2896,12 +2895,11 @@ Output STRICT JSON ONLY — no prose, no markdown code fences, no commentary. Th
 
 Reply with the JSON array and nothing else.`;
 
-  const tmpFile = path.join(cwd, '.autopilot-horizons-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('autopilot-horizons-prompt', prompt);
 
   let output = '';
   try {
-    const cmd = buildRunnerCommand({ promptFile: tmpFile });
+    const cmd = buildRunnerCommand({ promptFile: promptTemp.filePath });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     output = execPhaseCommandSync(cmd, {
@@ -2921,7 +2919,7 @@ Reply with the JSON array and nothing else.`;
     }
     throw err;
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    promptTemp.cleanup();
   }
 
   const start = output.indexOf('[');
@@ -3585,13 +3583,12 @@ Task: "${title}"${sourceHint}
 
 Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
 
-  const tmpFile = path.join(cwd, '.staleness-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('staleness-prompt', prompt);
 
   try {
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Glob,Grep' });
+    const cmd = buildRunnerCommand({ promptFile: promptTemp.filePath, allowedTools: 'Bash,Read,Glob,Grep' });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -3601,8 +3598,6 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
       env
     }).trim();
 
-    try { fs.unlinkSync(tmpFile); } catch {}
-
     // Parse YES/NO from the first line of output
     const firstLine = output.split('\n').find(l => /^\s*(YES|NO)\b/i.test(l)) || output.split('\n')[0] || '';
     const fresh = /^\s*YES\b/i.test(firstLine);
@@ -3610,9 +3605,10 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
 
     return { fresh, reasoning };
   } catch (err) {
-    try { fs.unlinkSync(tmpFile); } catch {}
     // On timeout or crash, treat as unverifiable — conservative default
     return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+  } finally {
+    promptTemp.cleanup();
   }
 }
 
