@@ -33,11 +33,33 @@ Key behaviors:
 - Use `atris task` for claims, proof, ready, and accept
 - Use functional/feature members as task owners; record engines only as `executed_by`
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
+- In Codex runtimes with native goal tools, mirror `atris mission goal --json` into the visible chat goal via `goal.visible_goal`
+
+## Visible Chat Goal Mirror
+
+Before choosing work in an Atris repo, run:
+
+```bash
+atris mission goal --json
+```
+
+If it returns `action: codex_goal_candidate` or `codex_goal_heartbeat` with
+`goal.visible_goal`, treat that as the desired native chat goal:
+
+1. Call `get_goal` when the runtime exposes it.
+2. If the active goal already equals `goal.objective`, keep working.
+3. If there is no active goal or the prior goal is complete, call `create_goal` with `goal.objective`.
+4. If a different active goal is still in progress, do not complete it just to make room; report that `goal.visible_goal.status` is waiting for the visible goal slot.
+5. After proof is ready, call `update_goal({ status: "complete" })`, rerun `atris mission goal --json`, then create the next visible goal candidate when a slot is available.
+
+Native goal completion is not task acceptance. Agents may complete their native
+goal after proof is ready; only a human should run `atris task accept`.
 
 ## Steps
 
 1. Run `atris atris.md` on first interaction to show workspace status
 2. Read `atris/MAP.md` before any file search to find file:line refs
-3. Run `atris task list` or `atris task next` to find current work
-4. Claim tasks with `atris task claim <id> --as <functional-member>`
-5. Move completed work to review with `atris task ready <id> --proof "..."`
+3. Run `atris mission goal --json` and mirror `goal.visible_goal` into the native chat goal when the runtime supports it
+4. Run `atris task list` or `atris task next` to find current work
+5. Claim tasks with `atris task claim <id> --as <functional-member>`
+6. Move completed work to review with `atris task ready <id> --proof "..."`

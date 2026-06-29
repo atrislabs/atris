@@ -61,6 +61,12 @@ Always-on agents should move proof-backed work to Review, complete their native
 goal, then continue the mission loop with the next goal. They must not run
 `atris task accept` or claim AgentXP unless a human approved the proof.
 
+Codex agents with native goal tools should run `atris mission goal --json`
+before choosing work. If the payload includes `goal.visible_goal`, mirror
+`goal.objective` into the visible chat goal when the current goal is empty,
+complete, or already matching; never complete unrelated active goals just to
+make room.
+
 ## Workflow
 
 ```
