@@ -10,6 +10,8 @@ const {
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
 const {
+  FUNCTIONAL_MEMBER_TOPICS,
+  listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
@@ -142,19 +144,48 @@ function printJsonOrText(payload, lines, asJson) {
   for (const line of lines) console.log(line);
 }
 
-function missionRunInputRequired(asJson = false) {
+const MISSION_RUN_VALUE_FLAGS = [
+  '--max-ticks',
+  '--max-wall',
+  '--cadence',
+  '--owner',
+  '--runner',
+  '--lane',
+  '--verify',
+  '--stop',
+  '--model',
+];
+const MISSION_RUN_BOOLEAN_FLAGS = [
+  '--json',
+  '--due',
+  '--no-claude',
+  '--no-verify',
+  '--complete-on-pass',
+  '--no-drain',
+  '--always-on',
+  '--xp-task',
+  '--agent-xp',
+];
+const DEFAULT_MISSION_RUN_OWNER_SLUGS = new Set(
+  FUNCTIONAL_MEMBER_TOPICS.map(topic => normalizeOwnerSlug(topic.owner)),
+);
+
+function missionRunInputRequired(asJson = false, owner = '') {
+  const defaultOwner = normalizeOwnerSlug(owner || process.env.ATRIS_AGENT_ID || 'mission-lead') || 'mission-lead';
   const payload = {
     ok: false,
     action: 'mission_input_required',
     prompt: 'What mission should Atris run?',
+    owner: defaultOwner,
     owner_prompt: 'Which team member should own it?',
-    example: 'atris mission run "make onboarding magical" --owner mission-lead',
+    example: `atris mission run "make onboarding magical" --owner ${defaultOwner}`,
   };
   if (asJson) {
     console.log(JSON.stringify(payload, null, 2));
   } else {
     console.error('What mission should Atris run?');
-    console.error('Try: atris mission run "make onboarding magical" --owner mission-lead');
+    if (defaultOwner) console.error(`Team member: ${defaultOwner}`);
+    console.error(`Try: atris mission run "make onboarding magical" --owner ${defaultOwner}`);
   }
   process.exit(1);
 }
@@ -176,6 +207,38 @@ function removeValueFlag(args, name) {
     out.push(args[i]);
   }
   return out;
+}
+
+function missionRunOwnerRef(ref, root = process.cwd()) {
+  const owner = normalizeOwnerSlug(ref);
+  if (!owner || /\s/.test(String(ref || ''))) return null;
+  if (listWorkspaceMemberSlugs(root).has(owner)) return owner;
+  if (DEFAULT_MISSION_RUN_OWNER_SLUGS.has(owner)) return owner;
+  return null;
+}
+
+function missionRunArgsWithOwner(args, owner) {
+  return [...removeValueFlag(args, '--owner'), '--owner', owner];
+}
+
+function missionRunInputFromArgs(args, root = process.cwd()) {
+  const positionals = stripKnownFlags(args, MISSION_RUN_VALUE_FLAGS, MISSION_RUN_BOOLEAN_FLAGS);
+  const explicitOwner = Boolean(readFlag(args, '--owner', ''));
+  if (!explicitOwner && positionals.length > 0) {
+    const owner = missionRunOwnerRef(positionals[0], root);
+    if (owner) {
+      return {
+        ref: positionals.slice(1).join(' ').trim(),
+        args: missionRunArgsWithOwner(args, owner),
+        owner,
+      };
+    }
+  }
+  return {
+    ref: positionals.join(' ').trim(),
+    args,
+    owner: readFlag(args, '--owner', ''),
+  };
 }
 
 async function promptMissionRunInput(args) {
@@ -2368,17 +2431,15 @@ async function runMission(args) {
   const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
   const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
-  const ref = stripKnownFlags(
-    args,
-    ['--max-ticks', '--max-wall', '--cadence', '--owner', '--runner', '--lane', '--verify', '--stop', '--model'],
-    ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass', '--no-drain', '--always-on', '--xp-task', '--agent-xp'],
-  ).join(' ').trim();
+  const input = missionRunInputFromArgs(args);
+  const ref = input.ref;
+  const runArgs = input.args;
 
   if (!dueMode && !ref) {
     if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) {
-      missionRunInputRequired(asJson);
+      missionRunInputRequired(asJson, input.owner);
     }
-    const prompted = await promptMissionRunInput(args);
+    const prompted = await promptMissionRunInput(runArgs);
     startMissionFromRunObjective(prompted.objective, prompted.args);
     return;
   }
@@ -2392,8 +2453,8 @@ async function runMission(args) {
     );
     return;
   }
-  if (!mission && ref && /\s/.test(ref) && !String(ref).startsWith('mission-')) {
-    startMissionFromRunObjective(ref, args);
+  if (!mission && ref && !String(ref).startsWith('mission-')) {
+    startMissionFromRunObjective(ref, runArgs);
     return;
   }
   if (!mission) {
@@ -3216,9 +3277,9 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal [--heartbeat] [--json]
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
-  atris mission run ["objective"|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
+  atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
-                       (bare run prompts for mission + owner; --due runs the saved queue)
+                       (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]

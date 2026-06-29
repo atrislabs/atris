@@ -413,10 +413,10 @@ test('mission action missing lookups are JSON-readable', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const cases = [
-      ['tick', ['mission', 'tick', 'missing-mission', '--json']],
-      ['run', ['mission', 'run', 'missing-mission', '--json']],
-      ['complete', ['mission', 'complete', 'missing-mission', '--proof', 'probe', '--json']],
-      ['stop', ['mission', 'stop', 'missing-mission', '--json']],
+      ['tick', ['mission', 'tick', 'mission-missing', '--json']],
+      ['run', ['mission', 'run', 'mission-missing', '--json']],
+      ['complete', ['mission', 'complete', 'mission-missing', '--proof', 'probe', '--json']],
+      ['stop', ['mission', 'stop', 'mission-missing', '--json']],
     ];
 
     for (const [name, args] of cases) {
@@ -425,14 +425,14 @@ test('mission action missing lookups are JSON-readable', () => {
       assert.equal(result.stderr, '', name);
       assert.deepEqual(JSON.parse(result.stdout), {
         ok: false,
-        error: 'Mission "missing-mission" not found.',
+        error: 'Mission "mission-missing" not found.',
       }, name);
     }
 
-    const humanTick = runCli(['mission', 'tick', 'missing-mission'], { cwd: dir });
+    const humanTick = runCli(['mission', 'tick', 'mission-missing'], { cwd: dir });
     assert.equal(humanTick.status, 1);
     assert.equal(humanTick.stdout, '');
-    assert.match(humanTick.stderr, /Mission "missing-mission" not found\./);
+    assert.match(humanTick.stderr, /Mission "mission-missing" not found\./);
   } finally {
     cleanupTempDir(dir);
   }
@@ -527,6 +527,41 @@ test('mission run with an objective starts a visible-goal mission', () => {
   }
 });
 
+test('mission run accepts one-word fuzzy intent as a new mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'improve', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'improve');
+    assert.equal(payload.mission.runner, 'codex_goal');
+    assert.equal(payload.codex_goal_state.goal.objective, 'improve');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run accepts owner prefix before fuzzy intent', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'validator'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'validator', 'MEMBER.md'), '# Validator\n', 'utf8');
+
+    const run = runCli(['mission', 'run', 'validator', 'check proof', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'check proof');
+    assert.equal(payload.mission.owner, 'validator');
+    assert.equal(payload.mission.owner_resolution, 'explicit_functional_owner');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('completed mission run seeds the next useful goal', () => {
   const dir = makeTempDir();
   try {
@@ -608,8 +643,26 @@ test('bare mission run asks for input instead of resuming an old mission', () =>
     assert.equal(payload.ok, false);
     assert.equal(payload.action, 'mission_input_required');
     assert.equal(payload.prompt, 'What mission should Atris run?');
+    assert.equal(payload.owner, 'mission-lead');
     assert.equal(payload.owner_prompt, 'Which team member should own it?');
     assert.match(payload.example, /atris mission run "make onboarding magical"/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run with owner only asks for the missing mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'mission-lead'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MEMBER.md'), '# Mission Lead\n', 'utf8');
+
+    const run = runCli(['mission', 'run', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(run.status, 1);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_input_required');
+    assert.equal(payload.owner, 'mission-lead');
+    assert.match(payload.example, /--owner mission-lead/);
   } finally {
     cleanupTempDir(dir);
   }
