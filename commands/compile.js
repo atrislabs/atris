@@ -23,6 +23,7 @@ const {
   buildRunnerCommand,
   resolveClaudeRunnerBin,
 } = require('../lib/runner-command');
+const { writePromptTempFile } = require('../lib/prompt-temp');
 
 const DEFAULT_THRESHOLD = 0.99;
 const SAMPLE_RECORDS_FOR_BUILD = 25;
@@ -288,11 +289,10 @@ function executeBuild(root, name, options = {}) {
 
   fs.mkdirSync(processDir(root, name), { recursive: true });
   const prompt = buildCompilePrompt(root, name, records, notes);
-  const tmpFile = path.join(root, '.compile-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('compile-prompt', prompt);
 
   try {
-    const cmd = cmdOverride || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Read,Write,Edit,Glob,Grep' });
+    const cmd = cmdOverride || buildRunnerCommand({ promptFile: promptTemp.filePath, allowedTools: 'Read,Write,Edit,Glob,Grep' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
     execSync(cmd, {
@@ -304,7 +304,7 @@ function executeBuild(root, name, options = {}) {
       env,
     });
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    promptTemp.cleanup();
   }
 
   if (!fs.existsSync(runnerPath(root, name))) {

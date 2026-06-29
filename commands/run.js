@@ -12,6 +12,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/journal');
 const { parseTodo } = require('../lib/todo');
+const { writePromptTempFile } = require('../lib/prompt-temp');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
@@ -219,11 +220,10 @@ function executePhase(phase, context, options = {}) {
   const { verbose = false, timeout = PHASE_TIMEOUT, priorCycleReview } = options;
 
   const prompt = buildRunPrompt(phase, context, priorCycleReview);
-  const tmpFile = path.join(process.cwd(), '.run-prompt.tmp');
-  fs.writeFileSync(tmpFile, prompt);
+  const promptTemp = writePromptTempFile('run-prompt', prompt);
 
   try {
-    const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
+    const cmd = buildRunnerCommand({ promptFile: promptTemp.filePath, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
     // Strip CLAUDECODE env var to allow spawning from within a Claude Code session
     const env = { ...process.env };
     delete env.CLAUDECODE;
@@ -238,10 +238,8 @@ function executePhase(phase, context, options = {}) {
       env
     });
 
-    try { fs.unlinkSync(tmpFile); } catch {}
     return output || '';
   } catch (err) {
-    try { fs.unlinkSync(tmpFile); } catch {}
     if (isPhaseTimeoutError(err)) {
       throw new Error(`${phase} timed out after ${timeout / 1000}s`);
     }
@@ -251,6 +249,8 @@ function executePhase(phase, context, options = {}) {
     // execSync throws on non-zero exit but may still have output
     if (err.stdout) return err.stdout;
     throw err;
+  } finally {
+    promptTemp.cleanup();
   }
 }
 

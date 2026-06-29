@@ -57,6 +57,25 @@ test('autopilot.js and run.js build their spawn command via buildRunnerCommand',
   assert.match(RUN_SRC, /require\('\.\.\/lib\/runner-command'\)/);
 });
 
+test('runner prompt files use unique temp files instead of checkout-fixed paths', () => {
+  const fixedPromptPaths = [
+    '.run-prompt.tmp',
+    '.autopilot-prompt.tmp',
+    '.autopilot-plan-review.tmp',
+    '.autopilot-horizons-prompt.tmp',
+    '.staleness-prompt.tmp',
+  ];
+  for (const fixedPath of fixedPromptPaths) {
+    assert.doesNotMatch(RUN_SRC, new RegExp(fixedPath.replace(/\./g, '\\.')));
+    assert.doesNotMatch(AUTOPILOT_SRC, new RegExp(fixedPath.replace(/\./g, '\\.')));
+  }
+  assert.match(RUN_SRC, /writePromptTempFile\('run-prompt'/);
+  assert.match(AUTOPILOT_SRC, /writePromptTempFile\('autopilot-prompt'/);
+  assert.match(AUTOPILOT_SRC, /writePromptTempFile\('autopilot-plan-review'/);
+  assert.match(AUTOPILOT_SRC, /writePromptTempFile\('autopilot-horizons-prompt'/);
+  assert.match(AUTOPILOT_SRC, /writePromptTempFile\('staleness-prompt'/);
+});
+
 test('runner availability checks use the shared configured binary', () => {
   assert.doesNotMatch(AUTOPILOT_SRC, /which claude/);
   assert.doesNotMatch(RUN_SRC, /which claude/);

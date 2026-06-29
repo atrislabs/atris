@@ -88,6 +88,7 @@ rg "wikiCommand|printWikiHelp|wiki help paths" commands/wiki.js test/commands.te
 # Utilities
 rg "ensureValidCredentials" utils/auth.js   # Auth flow
 rg "apiRequestJson" utils/api.js            # API requests
+rg "writePromptTempFile|safePrefix" lib/prompt-temp.js test/prompt-temp.test.js # Unique runner prompt temp files with cleanup for concurrent loops
 rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/update-check-install-state.test.js test/commands.test.js  # Version checks, packaged auto-update, and help-side-effect skip
 
 # Documentation

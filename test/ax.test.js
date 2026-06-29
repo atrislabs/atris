@@ -237,7 +237,7 @@ test('ax shows credits, tier colors, spinner verbs, and clickable paths', () => 
   );
   assert.equal(ax.creditsFromState({ events: [] }), null);
 
-  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
+  assert.equal(ax.formatWorkingLine(2100), '• Thinking… (2s · ctrl-c to interrupt)');
   assert.equal(ax.formatWorkingLine(2100, 'Reading', '⠙'), '⠙ Reading… (2s · ctrl-c to interrupt)');
 
   const colored = { color: true, isTTY: true };
