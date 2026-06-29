@@ -820,7 +820,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
   - `installCommand` / `uninstallCommand` — write `~/.atris/overnight/atris-cli-self-improve/tick.sh` + manage the `ATRIS_PULSE_SELF_IMPROVE` crontab line (idempotent, preserves other entries, 7-day auto-expiry deadline)
 - **Channels written:**
   - `.atris/state/pulse_agi_loop_receipts.jsonl` (schema `atris.pulse_tick.v1`) — revives the **Pulse AGI** loop-health channel `commands/brain.js:43` watches
-  - `.atris/state/scorecards.jsonl` (schema `atris.improve_tick.v1`, `source:'pulse'`) — revives the reward signal `lib/policy-lessons.js` mines
+  - `.atris/state/scorecards.jsonl` (schema `atris.improve_tick.v1`, `source:'pulse'`) — revives the reward signal `lib/policy-lessons.js` mines; `model_used` is resolved through the shared runner model resolver so profile ticks record profile metadata, not stale legacy defaults
 - **Routing:** `bin/atris.js` (`command === 'pulse'` dispatch) + `knownCommands` array + `showHelp`
 - **Tests:** `test/pulse.test.js` (29 tests — scoring, ghost detection, lock, cron-script generation)
 - **Cron template lineage:** modeled on the proven `~/.atris/overnight/commander-obelisk-swarlo/tick.sh` (deadline self-removal + lock + run + proof), but all real logic lives in JS (`atris pulse tick`), not duplicated shell

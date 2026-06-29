@@ -7,11 +7,39 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const { resolvePulseScorecardModel } = require('../commands/pulse');
+
+const RUNNER_ENV_KEYS = [
+  'ATRIS_RUNNER_PROFILE',
+  'ATRIS_RUNNER_MODEL',
+  'ATRIS_RUNNER_BIN',
+  'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL',
+  'ATRIS_CLAUDE_BIN',
+  'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+];
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
   fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
   return dir;
+}
+
+function withRunnerEnv(values, fn) {
+  const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  try {
+    fn();
+  } finally {
+    for (const key of RUNNER_ENV_KEYS) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 // --- scoreTick: reward gating mirrors the improve.js tick-5 lesson ---
@@ -147,6 +175,18 @@ test('buildPulseScorecardRow reuses the improve_tick schema so the brain sees it
   assert.equal(row.member, 'pulse');
   assert.equal(row.reward, 1);
   assert.equal(row.verify_passed, true);
+});
+
+test('resolvePulseScorecardModel records runner profile model metadata', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-fast', ATRIS_CLAUDE_MODEL: 'opus' }, () => {
+    assert.equal(resolvePulseScorecardModel(), 'atris:fast');
+  });
+});
+
+test('resolvePulseScorecardModel honors explicit generic model over runner profile', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-fast', ATRIS_RUNNER_MODEL: 'glm-5.2' }, () => {
+    assert.equal(resolvePulseScorecardModel(), 'glm-5.2');
+  });
 });
 
 // --- IO round-trips ---

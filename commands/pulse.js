@@ -18,6 +18,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const pulse = require('../lib/pulse');
+const { resolveRunnerModel } = require('../lib/runner-command');
 
 function hasFlag(args, name) {
   return args.includes(name);
@@ -176,6 +177,10 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
   return { passed: r.status === 0, cmd: verifyCmd, status: r.status };
 }
 
+function resolvePulseScorecardModel() {
+  return resolveRunnerModel({});
+}
+
 // --- atris pulse tick ---
 
 function tickCommand(args, root = process.cwd()) {
@@ -260,7 +265,7 @@ function tickCommand(args, root = process.cwd()) {
         what,
         changedFiles,
         elapsedMs,
-        model: process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus',
+        model: resolvePulseScorecardModel(),
       }));
       scorecardWritten = true;
     }
@@ -503,5 +508,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  resolvePulseScorecardModel,
   STATE_HOME,
 };
