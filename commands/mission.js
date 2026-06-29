@@ -346,6 +346,8 @@ function statePaths(root = process.cwd()) {
     eventsJsonl: path.join(stateDir, 'mission_events.jsonl'),
     codexGoalJson: path.join(stateDir, 'codex_goal.json'),
     codexGoalStatus: path.join(root, 'atris', 'status', 'codex-goal.md'),
+    atrisGoalJson: path.join(stateDir, 'atris_goal.json'),
+    atrisGoalStatus: path.join(root, 'atris', 'status', 'atris-goal.md'),
     statusNow: path.join(root, 'atris', 'status', 'now.md'),
     runsDir: path.join(root, 'atris', 'runs'),
   };
@@ -1154,8 +1156,11 @@ function startMissionFromRunObjective(objective, args) {
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
-  const codexGoalState = refreshCodexGoalController(process.cwd());
-  const nativeGoal = codexGoalState.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null;
+  const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: saved.id });
+  const codexGoalState = runnerUsesCallerSession(saved.runner)
+    ? refreshCodexGoalController(process.cwd(), { missionId: saved.id })
+    : null;
+  const nativeGoal = codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null;
   printJsonOrText(
     {
       ok: true,
@@ -1171,17 +1176,19 @@ function startMissionFromRunObjective(objective, args) {
         dirty_hash: worktreeBaseline.dirty_hash,
       } : null,
       completed_continuation_goal: completedContinuationGoal,
+      atris_goal_state: atrisGoalState,
       codex_goal_state: codexGoalState,
-      requires_native_goal_start: codexGoalState.goal?.requires_native_goal_start === true,
+      requires_native_goal_start: codexGoalState?.goal?.requires_native_goal_start === true,
       native_goal_action: nativeGoal,
-      native_goal_ack_command: codexGoalState.goal?.native_goal_ack_command || null,
-      next_command: codexGoalState.goal?.next_command || `atris mission tick ${saved.id} --verify`,
+      native_goal_ack_command: codexGoalState?.goal?.native_goal_ack_command || null,
+      next_command: codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`,
     },
     [
       `Started mission: ${saved.objective}`,
       `Owner: ${saved.owner}`,
       `Runner: ${saved.runner}`,
-      ...(codexGoalState.goal ? [`Visible goal: ${codexGoalState.goal.objective}`] : []),
+      ...(atrisGoalState.goal ? [`Atris goal: ${atrisGoalState.goal.objective}`] : []),
+      ...(codexGoalState?.goal ? [`Codex goal: ${codexGoalState.goal.objective}`] : []),
       ...warnings.map((warning) => `Warning: ${warning.message}`),
     ],
     asJson,
@@ -1837,9 +1844,18 @@ function missionSelectableForCodexGoal(mission, now = new Date()) {
   return true;
 }
 
-function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
+function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Date()) {
+  const requestedId = String(options.missionId || '').trim();
   const candidates = listMissions(root)
+    .filter((mission) => runnerUsesCallerSession(mission.runner))
     .filter((mission) => missionSelectableForCodexGoal(mission, now));
+  if (requestedId) {
+    const exact = candidates.find((mission) => mission.id === requestedId || mission.id.startsWith(requestedId));
+    if (exact) {
+      const due = exact.verifier && missionDueAt(exact, now);
+      return { mission: exact, reason: due ? 'due' : 'selected' };
+    }
+  }
 
   candidates.sort((a, b) => {
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
@@ -1856,6 +1872,28 @@ function selectCodexGoalMission(root = process.cwd(), now = new Date()) {
   });
 
   const mission = candidates[0] || null;
+  if (!mission) return null;
+  const due = mission.verifier && missionDueAt(mission, now);
+  return { mission, reason: due ? 'due' : 'active' };
+}
+
+function selectAtrisGoalMission(root = process.cwd(), options = {}, now = new Date()) {
+  const requestedId = String(options.missionId || '').trim();
+  const runnable = listMissions(root).filter((mission) => missionIsRunnable(mission));
+  if (requestedId) {
+    const exact = runnable.find((mission) => mission.id === requestedId || mission.id.startsWith(requestedId));
+    if (exact) return { mission: exact, reason: 'selected' };
+  }
+  runnable.sort((a, b) => {
+    const aDue = a.verifier && missionDueAt(a, now) ? 1 : 0;
+    const bDue = b.verifier && missionDueAt(b, now) ? 1 : 0;
+    if (aDue !== bDue) return bDue - aDue;
+
+    const aTime = missionSortTime(a);
+    const bTime = missionSortTime(b);
+    return bTime - aTime;
+  });
+  const mission = runnable[0] || null;
   if (!mission) return null;
   const due = mission.verifier && missionDueAt(mission, now);
   return { mission, reason: due ? 'due' : 'active' };
@@ -2045,7 +2083,7 @@ function writeCodexGoalState(payload, root = process.cwd()) {
 
 function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   const heartbeatMode = options.heartbeat === true;
-  const selected = selectCodexGoalMission(root);
+  const selected = selectCodexGoalMission(root, options);
   if (!selected) {
     const heartbeat = heartbeatMode ? codexGoalHeartbeat(null, null) : undefined;
     return {
@@ -2094,6 +2132,138 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
 function refreshCodexGoalController(root = process.cwd(), options = {}) {
   const payload = buildCodexGoalPayload(root, options);
   const rendered = writeCodexGoalState(payload, root);
+  return {
+    ...payload,
+    state_path: rendered.state_path,
+    status_path: rendered.status_path,
+  };
+}
+
+function atrisVisibleGoalBridge(mission, goalObjective) {
+  return {
+    schema: 'atris.visible_goal_bridge.v1',
+    runtime: String(mission.runner || 'manual'),
+    source: 'atris_mission',
+    mission_id: mission.id,
+    desired_objective: goalObjective,
+    status: 'active',
+    state_file: '.atris/state/atris_goal.json',
+    status_file: 'atris/status/atris-goal.md',
+    operations: {
+      read_current_goal: 'atris mission goal --runtime atris --json',
+      update_from_mission: 'atris mission tick <mission-id> --summary "<what changed>" --json',
+      refresh_on_phase_change: 'atris mission goal --runtime atris --json before continuing changed work',
+      complete_after_proof: 'atris mission complete <mission-id> --proof "<receipt_path>" --json',
+    },
+    guardrails: [
+      'Atris owns this goal state; no external native-goal tool ack is required.',
+      'Do not claim completion until the mission has proof or a recorded blocked human ask.',
+      'Use the mission task spine when task_spine.current_step_command is present.',
+    ],
+  };
+}
+
+function atrisGoalToolContract(mission) {
+  return {
+    current_policy: 'keep one Atris-owned visible goal active for mission/chat/fast runtimes',
+    read_current_goal: 'atris mission goal --runtime atris --json',
+    set_next_goal: 'atris mission run "<objective>" --runner atris2|manual|claude',
+    complete_current_goal: 'atris mission complete <mission-id> --proof "<receipt_path>" --json',
+    visible_goal_bridge: 'goal.visible_goal',
+    platform_requirement: 'No native platform goal tool is required; Atris mission/task state is the source of truth.',
+    runtime_tool_sequence: 'atris mission run -> atris_goal_state active -> ax fast / atris chat shows goal -> mission tick/task proof -> mission complete',
+    blocked_without_platform_goal_write: false,
+    mission_id: mission.id,
+  };
+}
+
+function buildAtrisGoalPayload(root = process.cwd(), options = {}) {
+  const heartbeatMode = options.heartbeat === true;
+  const selected = selectAtrisGoalMission(root, options);
+  if (!selected) {
+    return {
+      ok: true,
+      action: heartbeatMode ? 'atris_goal_heartbeat' : 'no_goal_candidate',
+      mission: null,
+      heartbeat: heartbeatMode ? { heavy_work_performed: false, next_heavy_command: null } : undefined,
+    };
+  }
+
+  const { mission, reason } = selected;
+  const taskSpine = missionTaskSpine(mission);
+  const missionView = missionStatusView(mission);
+  const objective = mission.objective;
+  const goal = {
+    objective,
+    mission_id: mission.id,
+    mission_objective: mission.objective,
+    mission_status: mission.status,
+    owner: taskSpine?.owner || mission.owner,
+    executed_by: taskSpine?.executed_by || mission.executed_by || null,
+    runner: mission.runner || 'manual',
+    model: mission.model || null,
+    task_spine: taskSpine,
+    reason,
+    next_command: codexGoalNextCommand(mission),
+    replace_after: 'After proof or phase change, run atris mission goal --runtime atris --json and continue from the returned next_command.',
+    visible_goal: atrisVisibleGoalBridge(mission, objective),
+    atris_tool_contract: atrisGoalToolContract(mission),
+    requires_native_goal_start: false,
+    native_goal_action: null,
+  };
+  return {
+    ok: true,
+    action: heartbeatMode ? 'atris_goal_heartbeat' : 'atris_goal_candidate',
+    goal,
+    mission: missionView,
+    heartbeat: heartbeatMode ? codexGoalHeartbeat(goal, mission) : undefined,
+    requires_native_goal_start: false,
+    native_goal_action: null,
+  };
+}
+
+function writeAtrisGoalState(payload, root = process.cwd()) {
+  const paths = statePaths(root);
+  const state = {
+    schema: 'atris.goal_controller.v1',
+    updated_at: stampIso(),
+    ...payload,
+  };
+  fs.mkdirSync(path.dirname(paths.atrisGoalJson), { recursive: true });
+  fs.writeFileSync(paths.atrisGoalJson, JSON.stringify(state, null, 2) + '\n', 'utf8');
+
+  const lines = [
+    '# Atris Goal Controller',
+    '',
+    '<!-- Generated by Atris. Do not hand-edit. -->',
+    '',
+    `- updated: ${state.updated_at}`,
+    `- action: ${state.action}`,
+  ];
+  if (state.goal) {
+    lines.push(`- mission: ${state.goal.mission_id}`);
+    lines.push(`- runner: ${state.goal.runner}`);
+    lines.push(`- status: ${state.goal.mission_status}`);
+    lines.push(`- reason: ${state.goal.reason}`);
+    lines.push(`- objective: ${state.goal.objective}`);
+    lines.push(`- next: ${state.goal.next_command}`);
+    lines.push(`- visible goal: ${state.goal.visible_goal.status}`);
+  } else {
+    lines.push('- mission: none');
+  }
+  lines.push('');
+  fs.mkdirSync(path.dirname(paths.atrisGoalStatus), { recursive: true });
+  fs.writeFileSync(paths.atrisGoalStatus, lines.join('\n'), 'utf8');
+  return {
+    state_path: paths.atrisGoalJson,
+    status_path: paths.atrisGoalStatus,
+    state,
+  };
+}
+
+function refreshAtrisGoalController(root = process.cwd(), options = {}) {
+  const payload = buildAtrisGoalPayload(root, options);
+  const rendered = writeAtrisGoalState(payload, root);
   return {
     ...payload,
     state_path: rendered.state_path,
@@ -2932,10 +3102,11 @@ async function runMission(args) {
       elapsed_seconds: (Date.now() - startedAt) / 1000,
       worktree: summaryWorktree,
     });
+    const atrisGoalState = refreshAtrisGoalController(cwd, { missionId: mission.id });
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
         `Ran mission ${mission.id}`,
         `  objective: ${mission.objective}`,
@@ -3078,9 +3249,10 @@ function tickMission(args) {
       ? seedMissionRunContinuation(saved, cwd, receiptPath)
       : null;
     const outputMission = continuationGoal?.parent || saved;
+    const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
+      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
         `Ticked mission: ${outputMission.objective}`,
         `State: ${outputMission.status}`,
@@ -3172,6 +3344,7 @@ function completeMission(args) {
   const continuationGoal = seedMissionRunContinuation(saved, process.cwd(), proof);
   const outputMission = continuationGoal?.parent || saved;
   const logPath = appendMemberLog(outputMission.owner, 'Mission completed', { mission: outputMission.objective, proof });
+  const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: continuationGoal?.mission?.id || outputMission.id });
   const codexGoalState = refreshCodexGoalController(process.cwd());
   printJsonOrText(
     {
@@ -3181,6 +3354,7 @@ function completeMission(args) {
       landing: completion.landing,
       result: completion.result,
       log_path: logPath,
+      atris_goal_state: atrisGoalState,
       codex_goal_state: codexGoalState,
       xp_next_command: xpNextCommand,
       continuation_goal: continuationGoal,
@@ -3248,6 +3422,26 @@ function goalMission(args) {
   const asJson = wantsJson(args);
   if (args[0] === 'ack') {
     return ackMissionGoal(args.slice(1));
+  }
+  const runtime = String(readFlag(args, '--runtime', 'codex') || 'codex').trim().toLowerCase();
+  if (runtime === 'atris' || runtime === 'atris2' || runtime === 'ax') {
+    const heartbeatMode = hasFlag(args, '--heartbeat');
+    const payload = refreshAtrisGoalController(process.cwd(), { heartbeat: heartbeatMode });
+    if (!payload.goal) {
+      printJsonOrText(payload, ['No active mission found for Atris goal.'], asJson);
+      return;
+    }
+    printJsonOrText(
+      payload,
+      [
+        `Atris goal: ${payload.goal.objective}`,
+        `Runner: ${payload.goal.runner}`,
+        `Next: ${payload.goal.next_command}`,
+        payload.goal.replace_after,
+      ],
+      asJson,
+    );
+    return;
   }
   const heartbeatMode = hasFlag(args, '--heartbeat');
   const payload = refreshCodexGoalController(process.cwd(), { heartbeat: heartbeatMode });
@@ -3421,7 +3615,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
-  atris mission goal [--heartbeat] [--json]
+  atris mission goal [--runtime codex|atris] [--heartbeat] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]

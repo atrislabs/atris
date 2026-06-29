@@ -204,6 +204,7 @@ function loadActiveMissions(workspaceDir) {
         verifier_passed: (m.verifier_result && m.verifier_result.passed) === true,
         next_action: m.next_action || '',
         lane: m.lane || null,
+        runner: m.runner || null,
       });
     }
     // Most recently started first (rough — relies on insertion order from reversed walk)
@@ -211,6 +212,47 @@ function loadActiveMissions(workspaceDir) {
   } catch {
     return [];
   }
+}
+
+function readAtrisGoalState(workspaceDir) {
+  try {
+    const file = path.join(workspaceDir, '.atris', 'state', 'atris_goal.json');
+    if (!fs.existsSync(file)) return null;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed?.goal || null;
+  } catch {
+    return null;
+  }
+}
+
+function currentAtrisGoal(workspaceDir) {
+  const stored = readAtrisGoalState(workspaceDir);
+  if (stored && stored.objective) return stored;
+  const mission = loadActiveMissions(workspaceDir)[0] || null;
+  if (!mission) return null;
+  return {
+    objective: mission.objective,
+    mission_id: mission.id,
+    mission_status: mission.status,
+    owner: mission.owner,
+    runner: mission.runner || 'mission',
+    next_command: mission.next_action || `atris mission tick ${mission.id} --summary "<what changed>"`,
+  };
+}
+
+function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal') {
+  const goal = currentAtrisGoal(workspaceDir);
+  if (!goal) return null;
+  const objective = String(goal.objective || '').length > 92
+    ? `${String(goal.objective).slice(0, 89)}...`
+    : String(goal.objective || '');
+  console.log(`${label}: ${objective}`);
+  if (goal.mission_id || goal.mission_status || goal.runner) {
+    console.log(`Mission: ${goal.mission_id || '?'} · ${goal.mission_status || '?'} · ${goal.runner || 'mission'}`);
+  }
+  if (goal.next_command) console.log(`Next: ${goal.next_command}`);
+  console.log('');
+  return goal;
 }
 
 function showSearchHelp() {
@@ -2359,6 +2401,8 @@ async function agentAtris() {
     process.exit(1);
   }
 
+  printAtrisGoalBanner(process.cwd());
+
   // Check if logged in (with token refresh)
   const ensured = await ensureValidCredentials();
   if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
@@ -2460,6 +2504,8 @@ async function chatAtris() {
     console.error('✗ Error: atris/ folder not found. Run "atris init" first.');
     process.exit(1);
   }
+
+  printAtrisGoalBanner(process.cwd());
 
   // Check agent selected
   const config = loadConfig();
@@ -2621,6 +2667,8 @@ async function atrisFastChat() {
     console.error('Usage: atris fast "message"');
     process.exit(1);
   }
+
+  printAtrisGoalBanner(process.cwd());
 
   const ensured = await ensureValidCredentials();
   if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
