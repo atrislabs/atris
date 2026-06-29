@@ -995,6 +995,12 @@ function runnerUsesCallerSession(runner) {
   return new Set(['codex_goal', 'caller_session', 'current_agent']).has(String(runner || '').trim().toLowerCase());
 }
 
+function noRunnerMode(args = []) {
+  if (hasFlag(args, '--no-runner')) return 'no-runner-mode';
+  if (hasFlag(args, '--no-claude')) return 'no-claude-mode';
+  return '';
+}
+
 function nextCandidateTickAction(mission) {
   const completeFlag = mission.always_on ? '' : ' --complete-on-pass';
   return `next move: run atris mission run ${mission.id}${completeFlag}`;
@@ -1252,7 +1258,7 @@ function refreshCodexGoalController(root = process.cwd(), options = {}) {
 function runMissionRunDueOnce(root = process.cwd(), options = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
-  if (options.noClaude) args.push('--no-claude');
+  if (options.noRunner || options.noClaude) args.push('--no-runner');
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',
@@ -1592,7 +1598,8 @@ function cappedClaudeReceiptText(text, limit = 4000) {
 async function runMission(args) {
   const asJson = wantsJson(args);
   const dueMode = hasFlag(args, '--due');
-  const skipClaude = hasFlag(args, '--no-claude');
+  const requestedNoRunnerMode = noRunnerMode(args);
+  const skipClaude = Boolean(requestedNoRunnerMode);
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
@@ -1600,7 +1607,7 @@ async function runMission(args) {
   const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
   const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
-  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--due', '--no-claude', '--no-verify', '--complete-on-pass', '--no-drain'])[0] || '';
+  const ref = stripKnownFlags(args, ['--max-ticks', '--max-wall', '--cadence'], ['--json', '--due', '--no-runner', '--no-claude', '--no-verify', '--complete-on-pass', '--no-drain'])[0] || '';
 
   let mission = dueMode && !ref ? selectDueMission() : resolveMission(ref);
   if (!mission && dueMode && !ref) {
@@ -1742,12 +1749,13 @@ async function runMission(args) {
       }
       // Real tick
       else if (skipWorker) {
+        const skipReason = callerSessionRunner ? 'caller-session-runner' : requestedNoRunnerMode || 'no-runner-mode';
         result = {
           ...result,
           status: 'ran',
-          reason: callerSessionRunner ? 'caller-session-runner' : 'no-claude-mode',
+          reason: skipReason,
           ran: true,
-          claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
+          claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : skipReason },
         };
       } else if (atris2Runner) {
         const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
@@ -2296,7 +2304,7 @@ function goalMission(args) {
 
 async function goalLoopMission(args) {
   const asJson = wantsJson(args);
-  const noClaude = hasFlag(args, '--no-claude');
+  const skipRunner = Boolean(noRunnerMode(args));
   const dryRun = hasFlag(args, '--dry-run');
   const once = hasFlag(args, '--once');
   const maxIterations = once ? 1 : Math.max(1, Number(readFlag(args, '--max-iterations', '')) || 32);
@@ -2319,7 +2327,7 @@ async function goalLoopMission(args) {
         event.ran_heavy_work = false;
         event.run = { skipped: true, reason: 'dry-run', command: 'atris mission run --due --max-ticks 1 --complete-on-pass --json' };
       } else {
-        event.run = runMissionRunDueOnce(root, { noClaude });
+        event.run = runMissionRunDueOnce(root, { noRunner: skipRunner });
         event.ran_heavy_work = event.run.ok === true;
         event.after_run = refreshCodexGoalController(root, { heartbeat: true });
       }
@@ -2377,11 +2385,11 @@ atris mission - durable goal + loop + owner + proof state
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission goal [--heartbeat] [--json]
-  atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
+  atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-runner] [--json]
   atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
   atris mission run <id|--due> [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
-                                [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
-                       (always-on runs drain the review lane each tick; --no-drain skips)
+                                [--no-runner] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
+                       (--no-claude remains a legacy alias for --no-runner; --no-drain skips review-lane drain)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
 
@@ -2391,7 +2399,7 @@ Autonomy recipe:
      atris mission start "ship one proof" --owner <member> --runner codex_goal --lane code --verify "npm test" --stop "verifier passes" --xp-task
   3. Codex sessions: atris mission goal --json, then set /goal to goal.objective
      Overnight controller: atris mission goal --heartbeat --json
-     Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json
+     Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-runner --json
   4. Do one bounded step, then record it:
      atris mission tick <id> --verify --summary "what changed"
   5. Close or continue from the receipt:

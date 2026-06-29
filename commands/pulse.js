@@ -46,7 +46,8 @@ Commands:
 
 Options:
   --json                 Print machine-readable output
-  --no-claude            Do not spawn Claude-backed mission work
+  --no-runner            Do not spawn configured mission runner work
+  --no-claude            Legacy alias for --no-runner
   --no-verify            Skip verifier command
   --verify "<cmd>"       Verifier for changed-work ticks (default: npm test)
   --cadence "<cron>"     Cron cadence for install
@@ -79,7 +80,7 @@ const STATE_HOME = path.join(os.homedir(), '.atris', 'overnight', 'atris-cli-sel
 function runMissionEngine(root, { noClaude = false, timeoutMs = 600000 } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   const args = ['mission', 'run', '--due', '--max-ticks', '1', '--complete-on-pass', '--json'];
-  if (noClaude) args.push('--no-claude');
+  if (noClaude) args.push('--no-runner');
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: root,
     encoding: 'utf8',
@@ -176,9 +177,13 @@ function runVerify(root, verifyCmd, timeoutMs = 600000) {
 
 // --- atris pulse tick ---
 
+function noRunnerRequested(args = []) {
+  return hasFlag(args, '--no-runner') || hasFlag(args, '--no-claude');
+}
+
 function tickCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
-  const noClaude = hasFlag(args, '--no-claude');
+  const noClaude = noRunnerRequested(args);
   const noVerify = hasFlag(args, '--no-verify');
   const verifyCmd = noVerify ? null : readFlag(args, '--verify', 'npm test');
   const startedAt = Date.now();
