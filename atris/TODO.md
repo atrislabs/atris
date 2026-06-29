@@ -15,7 +15,20 @@
 
 ## In Progress
 
-(Empty)
+- **T2:** Fixture task — verify navigator can read context and append a well-formed Backlog task [explore]
+  **Claimed by:** Executor at 2026-06-29T10:40:07.742Z
+  **Stage:** DO
+  - **Exit:** This task exists under `## Backlog` in the navigator format (`T#`, tagged `[explore]`), confirming the plan→backlog write path works end-to-end.
+  - **Verify:** grep -q 'T2:' atris/TODO.md
+
+- **T1:** Reconcile all drifted refs + enumeration + dates in `atris/features/cli-ux-simplification/validate.md` [execute]
+  **Claimed by:** Executor at 2026-06-29T10:33:57.087Z
+  **Stage:** DO
+  - **Drift:** showHelp moved `290-467`→`322-504` (line 290 is now `consoleCmd`); `renderTodoMarkdown` moved `1494-1527`→`1611-1644`; MAP "Agent Activation Commands" moved `815-843`→ header at `832`. Check-1 section refs all stale (`318-380`, `324-330`, `332-338`, `356-361`) and the enumerations drifted: Core workflow now also lists `run logs`/`run search`; Context & tracking gained `launchpad` (between ctop and status); Optional helpers gained `improve`/`worktree`/`youtube`. `last_compiled: 2026-06-23` + Status `v3 — re-verified 2026-06-18` are stale.
+  - **Files:** `atris/features/cli-ux-simplification/validate.md` (target) ← sources `bin/atris.js:322-504` (showHelp), `lib/task-db.js:1611-1644` (renderTodoMarkdown), `atris/MAP.md:832` (Agent Activation Commands header), `commands/init.js:419-446`, `commands/workflow.js:411-413,619-633,768-779,1118-1121` (these four already accurate — leave as-is)
+  - **Exit:** Every frontmatter + body file:line ref in validate.md resolves to live source (showHelp `322-504`, renderTodoMarkdown `1611-1644`, MAP section at `832`, Check-1 sub-refs repointed), the Check-1 enumerations match the live help text (run logs/run search, launchpad, improve/worktree/youtube), `last_compiled: 2026-06-29`, Status bumped to `v4 — re-verified 2026-06-29` with a 2026-06-29 drift note; no stale ref strings remain.
+  - **Verify:** sed -n '322p' bin/atris.js | grep -q 'function showHelp' && sed -n '1611p' lib/task-db.js | grep -q 'function renderTodoMarkdown' && grep -n '### Feature: Agent Activation Commands' atris/MAP.md | grep -q '^832:' && grep -q '322-504' atris/features/cli-ux-simplification/validate.md && grep -q '1611-1644' atris/features/cli-ux-simplification/validate.md && grep -q 'last_compiled: 2026-06-29' atris/features/cli-ux-simplification/validate.md && grep -q 'launchpad' atris/features/cli-ux-simplification/validate.md && ! grep -qE '290-467|1494-1527|318-380|324-330|332-338|356-361|815-843|last_compiled: 2026-06-23' atris/features/cli-ux-simplification/validate.md
+  - **Rollback:** git checkout -- atris/features/cli-ux-simplification/validate.md before commit, or git revert HEAD --no-edit after commit
 
 ## Review
 
