@@ -30,7 +30,7 @@ test('npm package includes runtime workspace templates', () => {
 });
 
 test('npm package metadata matches the reviewed release version', () => {
-  assert.equal(packageJson.version, '3.30.4');
+  assert.equal(packageJson.version, '3.30.5');
   assert.equal(packageLock.version, packageJson.version);
   assert.equal(packageLock.packages[''].version, packageJson.version);
 });

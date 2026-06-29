@@ -567,6 +567,29 @@ test('completed mission run seeds the next useful goal', () => {
     const goalPayload = JSON.parse(goal.stdout);
     assert.equal(goalPayload.action, 'codex_goal_candidate');
     assert.equal(goalPayload.goal.mission_id, payload.continuation_goal.mission.id);
+
+    const next = runCli([
+      'mission',
+      'run',
+      'make the next mission real',
+      '--owner',
+      'mission-lead',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.equal(nextPayload.mission.objective, 'make the next mission real');
+    assert.equal(nextPayload.completed_continuation_goal.completed, true);
+    assert.equal(nextPayload.completed_continuation_goal.mission.id, payload.continuation_goal.mission.id);
+    assert.equal(nextPayload.completed_continuation_goal.mission.status, 'complete');
+    assert.equal(nextPayload.completed_continuation_goal.mission.continued_by_mission_id, nextPayload.mission.id);
+    assert.equal(nextPayload.codex_goal_state.goal.mission_id, nextPayload.mission.id);
+
+    const continuationStatus = runCli(['mission', 'status', payload.continuation_goal.mission.id, '--json'], { cwd: dir });
+    assert.equal(continuationStatus.status, 0, continuationStatus.stderr || continuationStatus.stdout);
+    const continuationPayload = JSON.parse(continuationStatus.stdout);
+    assert.equal(continuationPayload.missions[0].status, 'complete');
+    assert.equal(continuationPayload.missions[0].continued_by_mission_id, nextPayload.mission.id);
   } finally {
     cleanupTempDir(dir);
   }
