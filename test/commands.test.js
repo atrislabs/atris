@@ -11393,6 +11393,13 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(text.stdout, new RegExp(`land: atris task accept ${certifiedTask.display_id}`));
     assert.match(text.stdout, new RegExp(`send back: atris task revise ${certifiedTask.display_id}`));
     assert.doesNotMatch(text.stdout, new RegExp(`land: atris task accept ${blockingTask.display_id}`));
+
+    const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
+    assert.equal(grouped.status, 0, grouped.stderr);
+    assert.match(grouped.stdout, /READY TO LAND — grouped by tag/);
+    assert.match(grouped.stdout, /1 ready to land across 1 tag group\(s\)/);
+    assert.match(grouped.stdout, /land this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
+    assert.doesNotMatch(grouped.stdout, /CERTIFIED REVIEW|review then accept/);
   } finally {
     cleanupTempDir(dir);
   }
