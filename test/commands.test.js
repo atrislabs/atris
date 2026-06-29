@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
 const taskStore = require('../lib/task-db');
-const { branchName, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
+const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
 const { formatLocalDate } = require('../commands/now');
 const {
@@ -205,10 +205,51 @@ test('worktree guide prints the agent mission ship recipe', () => {
     const res = runCli(['worktree', 'guide'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /Atris worktree agent recipe/);
+    assert.match(res.stdout, /Default: stay in the current checkout/);
     assert.match(res.stdout, /atris mission start/);
     assert.match(res.stdout, /atris member goal-from-mission/);
     assert.match(res.stdout, /atris worktree ship --message/);
+    assert.match(res.stdout, /atris worktree cleanup --apply/);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('worktree cleanup removes only clean merged sibling worktrees', () => {
+  const dir = makeTempDir();
+  let cleanWorktree;
+  let dirtyWorktree;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    cleanWorktree = path.join(dir, '..', `${path.basename(dir)}-clean-worktree`);
+    dirtyWorktree = path.join(dir, '..', `${path.basename(dir)}-dirty-worktree`);
+    runGit(['worktree', 'add', '-q', '-b', 'clean-done', cleanWorktree, 'HEAD']);
+    runGit(['worktree', 'add', '-q', '-b', 'dirty-done', dirtyWorktree, 'HEAD']);
+    fs.writeFileSync(path.join(dirtyWorktree, 'dirty.txt'), 'keep me\n');
+
+    const dryRun = cleanupWorktrees({ root: dir, base: 'HEAD' });
+    assert.deepEqual(dryRun.candidates.map(item => fs.realpathSync(item.path)), [fs.realpathSync(cleanWorktree)]);
+    assert(dryRun.kept.some(item => fs.realpathSync(item.path) === fs.realpathSync(dirtyWorktree) && item.reason === 'dirty'));
+    const cleanCandidatePath = dryRun.candidates[0].path;
+
+    const applied = cleanupWorktrees({ root: dir, base: 'HEAD', apply: true });
+    assert.deepEqual(applied.removed.map(item => item.path), [cleanCandidatePath]);
+    assert.equal(fs.existsSync(cleanWorktree), false);
+    assert.equal(fs.existsSync(dirtyWorktree), true);
+  } finally {
+    if (dirtyWorktree) spawnSync('git', ['worktree', 'remove', '--force', dirtyWorktree], { cwd: dir, encoding: 'utf8' });
+    if (cleanWorktree) spawnSync('git', ['worktree', 'remove', '--force', cleanWorktree], { cwd: dir, encoding: 'utf8' });
     cleanupTempDir(dir);
   }
 });

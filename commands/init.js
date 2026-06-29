@@ -671,6 +671,14 @@ Always-on agents should move proof-backed work to Review, complete their native
 goal, then continue the mission loop with the next goal. They must not run
 \`atris task accept\` or claim AgentXP unless a human approved the proof.
 
+Mission-shaped user intent wins before normal task selection. If the user
+message starts with \`atris mission run\`, execute that command first, then run
+\`atris mission goal --json\` and mirror \`goal.visible_goal\` into the native chat
+goal. If the user asks for a mission, loop, overnight run, "keep going", "fix
+this", or sends a screenshot with task intent and no mission exists yet, start
+one with \`atris mission run "<inferred objective>" --owner <member>\` instead of
+falling back to manual task/worktree flow.
+
 Task owners are functional or feature members, not engines. Use \`task-planner\`,
 \`architect\`, \`mission-lead\`, \`validator\`, \`launcher\`, or a feature owner for
 assignment; put coding agent models like Codex and Claude in the \`executed_by\`
@@ -683,6 +691,15 @@ PLAN  → atris plan   (break ideas into tasks)
 BUILD → atris do     (execute tasks)
 CHECK → atris review (verify + cleanup)
 \`\`\`
+
+## Worktrees
+
+Default to the current checkout for small, clean, single-agent fixes. Use
+\`atris worktree start\` only when the launcher is dirty, multiple agents may
+edit in parallel, proof will run for a long time, the change is risky, or
+release/publish work needs a clean tree. Use \`atris worktree cleanup\` to preview
+merged worktree removal and \`atris worktree cleanup --apply\` to remove clean
+merged worktrees.
 
 ## Mission Autonomy
 
