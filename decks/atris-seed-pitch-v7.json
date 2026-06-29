@@ -111,7 +111,18 @@
           { "title": "4 FDEs", "sub": "clone DoorDash/Pallet to 8 more accounts", "value": "$1.8M", "sev": 1 },
           { "title": "2 substrate engineers", "sub": "receipts, judges, succession surface", "value": "$1.2M", "sev": 1 },
           { "title": "Narrative + customer receipts engine", "sub": "founder content, public proof", "value": "$0.3M", "sev": 2 },
-          { "title": "Compute + lab dependency", "sub": "18 months", "value": "$1.5M", "sev": 2 },
+          { "title": "Compute + lab dependency", "sub": "18 months", "value": "$1.5M", "sev": 2 }
+        ],
+        "footer": { "left": "builder + proof engine", "right": "$4.8M allocated" }
+      }
+    },
+    {
+      "type": "panel",
+      "heading": "Runway funds the compounding loop.",
+      "sub": "Reserve is explicit. The next round is earned by revenue proof.",
+      "panel": {
+        "header": { "title": "Reserve", "meta": "$5.2M" },
+        "rows": [
           { "title": "Spin-up reserve", "sub": "first overnight-loop business on Atris", "value": "$1.0M", "sev": 0, "active": true },
           { "title": "Reserve + runway", "sub": "24 months personal + corporate", "value": "$4.2M", "sev": 2 }
         ],

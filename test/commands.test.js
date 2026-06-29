@@ -4344,6 +4344,36 @@ test('brain compile includes chat scan load pointer when present', () => {
   }
 });
 
+test('brain compile includes primary checkout chat scan pointer from worktrees', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    seedBrainWorkspace(dir);
+    assert.equal(runGit(['init', '-b', 'main'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.email', 'test@example.com'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.name', 'Test User'], dir).status, 0);
+    assert.equal(runGit(['add', '.'], dir).status, 0);
+    assert.equal(runGit(['commit', '-m', 'seed'], dir).status, 0);
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'chat_scan.latest.json'), JSON.stringify({
+      generated_at: '2026-06-28T00:00:00.000Z',
+      next_command: 'atris member wake auto-improver --execute --confirm-autonomy-policy',
+    }) + '\n', 'utf8');
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-brain-load-order-worktree`);
+    assert.equal(runGit(['worktree', 'add', '-q', '--detach', worktreePath, 'HEAD'], dir).status, 0);
+
+    const res = runCli(['brain', 'compile', '--root', worktreePath, '--verify'], { cwd: worktreePath });
+    assert.equal(res.status, 0, res.stderr);
+    const agents = fs.readFileSync(path.join(worktreePath, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /`\.atris\/state\/chat_scan\.latest\.json`/);
+    const status = fs.readFileSync(path.join(worktreePath, 'atris', 'brain', 'STATUS.md'), 'utf8');
+    assert.match(status, /`\.atris\/state\/chat_scan\.latest\.json`/);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('brain compile refreshes stale now.md before collecting state', () => {
   const dir = makeTempDir();
   try {
@@ -14264,6 +14294,42 @@ test('launchpad --json picks the current actor claimed task first', () => {
     ]);
     assert.equal(payload.suggestions[0].subject, 'Ship launchpad');
     assert.equal(payload.suggestions[0].ref, 'CLI-9');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('launchpad --json reports clean review queue and endgame seed action', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** autopilot-runner-agnostic',
+      '**Horizon:** runner swaps should be config-only',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'STATUS.md'), '# Status\n\n## Next Move\n\nSeed work.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      schema: 'atris.task_projection.v1',
+      tasks: [],
+    }, null, 2), 'utf8');
+
+    const res = runCli(['launchpad', '--json', '--as', 'codex'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.counts.open, 0);
+    assert.equal(payload.counts.review, 0);
+    assert.equal(payload.counts.review_needs_agent, 0);
+    assert.equal(payload.counts.review_certified, 0);
+    assert.equal(payload.next_action.kind, 'seed_endgame_task');
+    assert.equal(payload.next_action.command, 'atris task next --create-next');
+    assert.equal(payload.next_action.endgame.slug, 'autopilot-runner-agnostic');
   } finally {
     cleanupTempDir(dir);
   }

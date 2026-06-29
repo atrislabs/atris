@@ -1285,8 +1285,18 @@ function verifyApproval(root, approvalId) {
 
 function brainLoadOrderFiles(state) {
   const root = state.root;
+  const lookupRoots = [root, ...(state.stateRoots || []), state.stateRoot]
+    .filter(Boolean)
+    .map(item => path.resolve(item));
+  const seen = new Set();
+  const uniqueRoots = lookupRoots.filter(item => {
+    if (seen.has(item)) return false;
+    seen.add(item);
+    return true;
+  });
+  const loadOrderFileExists = rel => uniqueRoots.some(base => fs.existsSync(path.join(base, rel)));
   const existingState = OPTIONAL_STATE_LOAD_ORDER_FILES
-    .filter(rel => fs.existsSync(path.join(root, rel)));
+    .filter(loadOrderFileExists);
   const existing = OPTIONAL_LOAD_ORDER_FILES
     .filter(rel => fs.existsSync(path.join(root, rel)));
   return [...GENERATED_LOAD_ORDER_FILES, ...existingState, ...existing];
