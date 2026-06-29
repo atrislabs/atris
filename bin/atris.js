@@ -200,6 +200,9 @@ function loadActiveMissions(workspaceDir) {
         owner: m.owner || '?',
         objective: m.objective || '',
         status,
+        created_at: m.created_at || null,
+        updated_at: m.updated_at || null,
+        completed_at: m.completed_at || null,
         verifier: m.verifier || null,
         verifier_passed: (m.verifier_result && m.verifier_result.passed) === true,
         next_action: m.next_action || '',
@@ -226,9 +229,20 @@ function readAtrisGoalState(workspaceDir) {
 }
 
 function currentAtrisGoal(workspaceDir) {
+  const activeMissions = loadActiveMissions(workspaceDir);
   const stored = readAtrisGoalState(workspaceDir);
-  if (stored && stored.objective) return stored;
-  const mission = loadActiveMissions(workspaceDir)[0] || null;
+  if (stored && stored.objective) {
+    const mission = activeMissions.find((item) => item.id === stored.mission_id) || null;
+    return {
+      ...stored,
+      mission_status: mission?.status || stored.mission_status,
+      created_at: stored.created_at || mission?.created_at || null,
+      updated_at: stored.updated_at || mission?.updated_at || null,
+      completed_at: stored.completed_at || mission?.completed_at || null,
+      next_command: stored.next_command || mission?.next_action || null,
+    };
+  }
+  const mission = activeMissions[0] || null;
   if (!mission) return null;
   return {
     objective: mission.objective,
@@ -236,8 +250,33 @@ function currentAtrisGoal(workspaceDir) {
     mission_status: mission.status,
     owner: mission.owner,
     runner: mission.runner || 'mission',
+    created_at: mission.created_at,
+    updated_at: mission.updated_at,
+    completed_at: mission.completed_at,
     next_command: mission.next_action || `atris mission tick ${mission.id} --summary "<what changed>"`,
   };
+}
+
+function goalElapsedSeconds(goal) {
+  const started = Date.parse(goal?.created_at || '');
+  if (!Number.isFinite(started)) return null;
+  const ended = Date.parse(goal?.completed_at || '') || Date.now();
+  return Math.max(0, Math.floor((ended - started) / 1000));
+}
+
+function formatGoalDuration(seconds) {
+  if (!Number.isFinite(seconds)) return null;
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function goalAchieved(goal) {
+  return ['complete', 'completed', 'achieved'].includes(String(goal?.mission_status || goal?.status || '').toLowerCase());
 }
 
 function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal') {
@@ -248,7 +287,15 @@ function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal'
     : String(goal.objective || '');
   console.log(`${label}: ${objective}`);
   if (goal.mission_id || goal.mission_status || goal.runner) {
-    console.log(`Mission: ${goal.mission_id || '?'} · ${goal.mission_status || '?'} · ${goal.runner || 'mission'}`);
+    const elapsed = formatGoalDuration(goalElapsedSeconds(goal));
+    const parts = [
+      goal.mission_id || '?',
+      goal.mission_status || '?',
+      goal.runner || 'mission',
+    ];
+    if (elapsed) parts.push(`elapsed ${elapsed}`);
+    parts.push(`achieved ${goalAchieved(goal) ? 'yes' : 'no'}`);
+    console.log(`Mission: ${parts.join(' · ')}`);
   }
   if (goal.next_command) console.log(`Next: ${goal.next_command}`);
   console.log('');
@@ -2644,6 +2691,123 @@ function atrisFastMessageFromArgs() {
   return process.argv.slice(offset).join(' ').trim();
 }
 
+function stripFastMissionQuotes(value) {
+  const text = String(value || '').trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return text.slice(1, -1).trim();
+    }
+  }
+  return text;
+}
+
+function extractFastMissionFlag(text, flagName) {
+  const source = String(text || '');
+  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
+  if (inline) {
+    return {
+      value: inline[2],
+      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
+  if (split) {
+    return {
+      value: split[2],
+      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  return { value: null, text: source.trim() };
+}
+
+function missionRunIntentFromFastMessage(message) {
+  const text = String(message || '').trim();
+  const match = /^atris\s+mission\s+run(?:\s+([\s\S]+))?$/i.exec(text);
+  if (!match) return null;
+
+  let rest = String(match[1] || '').trim();
+  const ownerFlag = extractFastMissionFlag(rest, '--owner');
+  rest = ownerFlag.text.replace(/(^|\s)--json(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+
+  return {
+    objective: stripFastMissionQuotes(rest),
+    owner: ownerFlag.value || process.env.ATRIS_AGENT_ID || 'mission-lead',
+  };
+}
+
+function printFastMissionStartReceipt(payload) {
+  const mission = payload?.mission || {};
+  const goal = payload?.atris_goal_state?.goal || {};
+  const receiptGoal = {
+    ...goal,
+    objective: goal.objective || mission.objective,
+    mission_id: goal.mission_id || mission.id,
+    mission_status: goal.mission_status || mission.status,
+    runner: goal.runner || mission.runner,
+    created_at: goal.created_at || mission.created_at,
+    updated_at: goal.updated_at || mission.updated_at,
+    completed_at: goal.completed_at || mission.completed_at,
+    next_command: goal.next_command || payload?.next_command || mission.next_action,
+  };
+  const elapsed = formatGoalDuration(goalElapsedSeconds(receiptGoal)) || '0s';
+
+  console.log('Atris mission started');
+  console.log(`Goal: ${receiptGoal.objective || '?'}`);
+  console.log(`Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`);
+  console.log(`Elapsed: ${elapsed}`);
+  console.log(`Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`);
+  if (receiptGoal.next_command) console.log(`Next: ${receiptGoal.next_command}`);
+}
+
+function runLocalFastMission(intent) {
+  if (!intent?.objective) {
+    console.error('Usage: atris mission run "<objective>"');
+    return 1;
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      __filename,
+      'mission',
+      'run',
+      intent.objective,
+      '--runner',
+      'atris2',
+      '--owner',
+      intent.owner || 'mission-lead',
+      '--json',
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    },
+  );
+
+  if (result.error) {
+    console.error(`✗ Error: ${result.error.message || result.error}`);
+    return 1;
+  }
+  if (result.status !== 0) {
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    return result.status || 1;
+  }
+
+  try {
+    printFastMissionStartReceipt(JSON.parse(result.stdout));
+  } catch {
+    process.stdout.write(result.stdout);
+  }
+  return 0;
+}
+
 async function atrisFastChat() {
   if (command === 'ax' && process.argv[3] !== 'fast') {
     console.error('Usage: atris ax fast "message"');
@@ -2666,6 +2830,11 @@ async function atrisFastChat() {
   if (!message) {
     console.error('Usage: atris fast "message"');
     process.exit(1);
+  }
+
+  const missionIntent = missionRunIntentFromFastMessage(message);
+  if (missionIntent) {
+    process.exit(runLocalFastMission(missionIntent));
   }
 
   printAtrisGoalBanner(process.cwd());
