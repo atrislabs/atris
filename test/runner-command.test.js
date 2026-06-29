@@ -141,6 +141,39 @@ test('Atris Fast runner profile resolves to ax --fast and atris:fast', () => {
   });
 });
 
+test('Atris Fast profile allows its implicit profile model', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_RUNNER_MODEL: 'atris:fast',
+  }, () => {
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'ax --fast "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('runner profile template rejects model overrides it cannot carry', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_PROFILE: 'atris-fast',
+    ATRIS_RUNNER_MODEL: 'atris:3',
+  }, () => {
+    assert.throws(
+      () => buildRunnerCommand({ promptFile: '/tmp/p.tmp' }),
+      /template must include \{model\} or \{modelFlag\}.*would ignore model "atris:3"/
+    );
+  });
+});
+
+test('custom runner templates must carry the resolved model', () => {
+  withRunnerEnv({
+    ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} --fast {prompt}',
+    ATRIS_RUNNER_MODEL: 'atris:3',
+  }, () => {
+    assert.throws(
+      () => buildRunnerCommand({ promptFile: '/tmp/p.tmp' }),
+      /template must include \{model\} or \{modelFlag\}.*would ignore model "atris:3"/
+    );
+  });
+});
+
 test('generic runner env overrides the Atris Fast profile', () => {
   withRunnerEnv({
     ATRIS_RUNNER_PROFILE: 'atris-fast',
