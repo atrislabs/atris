@@ -55,6 +55,7 @@ const VALID_COMPUTER_TYPES = new Set([
   'support',
 ]);
 const RECRUITING_BUSINESS_SLUG = 'atris-labs';
+const RECRUITING_BUSINESS_NAME = 'Atris Labs';
 const RECRUITING_LOCAL_SYNC_COMMANDS = new Set(['pull', 'push', 'publish', 'watch', 'review', 'doctor']);
 const KNOWN_CHAT_COMMANDS = new Set([
   '/audit',
@@ -1635,6 +1636,35 @@ async function resolveBusinessContextBySlug(token, slug, options = {}) {
   return null;
 }
 
+async function resolveRecruitingBusinessContext(token, slug = RECRUITING_BUSINESS_SLUG) {
+  const ctx = await resolveBusinessContextBySlug(token, slug, { preferCache: true });
+  if (ctx?.businessId) return { ...ctx, slug, businessName: RECRUITING_BUSINESS_NAME };
+
+  const cached = cachedBusinessContext(slug);
+  if (cached?.businessId) return { ...cached, slug, businessName: RECRUITING_BUSINESS_NAME };
+
+  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  const first = list.ok && Array.isArray(list.data) ? list.data[0] : null;
+  if (!first?.id) return null;
+
+  const businesses = loadBusinesses();
+  businesses[slug] = {
+    business_id: first.id,
+    workspace_id: first.workspace_id || null,
+    name: RECRUITING_BUSINESS_NAME,
+    slug,
+    canonical_slug: first.slug || null,
+    added_at: new Date().toISOString(),
+  };
+  saveBusinesses(businesses);
+  return {
+    slug,
+    businessId: first.id,
+    workspaceId: first.workspace_id || null,
+    businessName: RECRUITING_BUSINESS_NAME,
+  };
+}
+
 async function resolveComputerCommandContext(token, options = {}) {
   if (options.businessSlug || options.workspaceId) {
     const ctx = options.businessSlug
@@ -1660,7 +1690,9 @@ async function resolveTypedBusinessComputerContext(token, options = {}, defaults
     return resolveComputerCommandContext(token, { ...options, businessSlug });
   }
 
-  const ctx = await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
+  const ctx = businessSlug === RECRUITING_BUSINESS_SLUG
+    ? await resolveRecruitingBusinessContext(token, businessSlug)
+    : await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
   if (!ctx?.businessId) return null;
   const workspaces = await listBusinessWorkspaces(token, ctx);
   const workspace = resolveWorkspaceByComputerType(workspaces, computerType);
@@ -1707,6 +1739,9 @@ async function resolveWorkspaceSelector(token, ctx, input) {
 
 async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
   const wantedSlug = businessSlug ? String(businessSlug).trim() : null;
+  if (wantedSlug === RECRUITING_BUSINESS_SLUG) {
+    return resolveRecruitingBusinessContext(token, wantedSlug);
+  }
   if (wantedSlug) {
     const fromApi = await resolveBusinessContextBySlug(token, wantedSlug);
     if (fromApi) return fromApi;
