@@ -190,6 +190,38 @@ test('codex agrees with validator → SIGNOFF with both signers', () => {
   }
 });
 
+test('default codex plan-review runner fails non-zero output instead of signing partial stdout', () => {
+  const { cwd } = setupWorkspace();
+  try {
+    const cmdPath = path.join(cwd, 'fake-codex.sh');
+    fs.writeFileSync(cmdPath, '#!/bin/sh\necho codex-partial\nexit 7\n');
+    fs.chmodSync(cmdPath, 0o755);
+    const previous = process.env.ATRIS_CODEX_CMD;
+    process.env.ATRIS_CODEX_CMD = cmdPath;
+    try {
+      const result = runPlanReview({
+        cwd,
+        context: { task: 'Fixture task', kind: 'endgame', files: ['stub.txt'], tags: ['codex'] },
+        planOutput: 'candidate plan',
+        options: {
+          planReviewExec: () => 'SIGNOFF: Validator approves.',
+          hasCodex: true,
+        },
+      });
+      assert.strictEqual(result.verdict, 'SIGNOFF');
+      assert.deepStrictEqual(result.signers, ['validator']);
+      assert.match(result.notes || '', /codex invocation failed/);
+      assert.match(result.notes || '', /codex exited with status 7/);
+      assert.match(result.notes || '', /stdout:\ncodex-partial/);
+    } finally {
+      if (previous === undefined) delete process.env.ATRIS_CODEX_CMD;
+      else process.env.ATRIS_CODEX_CMD = previous;
+    }
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('executePhaseDetailed fails non-zero configured runner output instead of returning stdout', () => {
   assert.throws(
     () => executePhaseDetailed(

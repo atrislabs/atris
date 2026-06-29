@@ -1253,8 +1253,14 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       if (sweepErr.code !== 'ESRCH') throw sweepErr;
     }
   }
-  if (proc.status !== 0 && !proc.stdout) {
-    throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
+  if (proc.error) {
+    throw proc.error;
+  }
+  if (proc.status !== 0 || proc.signal) {
+    const failure = new Error(`codex exited with status ${proc.status == null ? 'unknown' : proc.status}${proc.signal ? ` signal ${proc.signal}` : ''}`);
+    failure.stdout = proc.stdout;
+    failure.stderr = proc.stderr;
+    throw new Error(formatRunnerFailure(failure));
   }
   return proc.stdout || '';
 }
