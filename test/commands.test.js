@@ -12301,7 +12301,17 @@ test('task serve exposes a local task factory API', async () => {
 	    // heartbeat strip + live activity stream (replaced the old smoke placeholder)
 	    assert.match(html, /class="beat" id="heartbeat"/);
 	    assert.match(html, /class="activity" id="activity"/);
+	    assert.match(html, /class="safe-action" id="safeAction"/);
+	    assert.match(html, /@supports \(color: oklch\(50% 0\.1 160\)\)/);
 	    assert.match(html, /async function loadStream\(\)/);
+	    assert.match(html, /function requestJson\(path, options = \{\}\)/);
+	    assert.match(html, /new XMLHttpRequest\(\)/);
+	    assert.match(html, /async function loadReviewLane\(\)/);
+	    assert.match(html, /\/api\/tasks\/review-lane-drain\?limit=1/);
+	    assert.match(html, /\/api\/tasks\/review-lane-act/);
+	    assert.match(html, /Human-only/);
+	    assert.match(html, /Run safe action/);
+	    assert.doesNotMatch(html, /style="margin-top:10px;width:100%"/);
 	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/ready/);
 	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/accept/);
 	    assert.match(html, /if \(lesson\) payload\.lesson = lesson/);

@@ -7942,25 +7942,63 @@ function taskBoardHtml() {
     /* aesthetic: machine-room telemetry — warm-tinted dark, mono data, calm signals (no neon) */
     :root {
       color-scheme: dark;
-      --bg: oklch(18% 0.012 160);
-      --panel: oklch(22% 0.014 160);
-      --panel-2: oklch(25% 0.016 160);
-      --line: oklch(32% 0.015 160);
-      --text: oklch(93% 0.012 150);
-      --muted: oklch(70% 0.018 160);
-      --accent: oklch(74% 0.115 158);
-      --warn: oklch(81% 0.11 80);
-      --bad: oklch(69% 0.14 25);
-      --info: oklch(75% 0.10 240);
-      --violet: oklch(73% 0.10 300);
+      --bg: #17211e;
+      --panel: #202b28;
+      --panel-2: #26332f;
+      --line: #40514c;
+      --line-soft: #34423e;
+      --text: #e7f0ec;
+      --muted: #a6b8b2;
+      --accent: #61d498;
+      --accent-soft: rgba(97, 212, 152, 0.35);
+      --warn: #e5c767;
+      --warn-soft: rgba(229, 199, 103, 0.4);
+      --bad: #de7d6b;
+      --bad-soft: rgba(222, 125, 107, 0.4);
+      --info: #78b6e8;
+      --info-soft: rgba(120, 182, 232, 0.4);
+      --violet: #cd9de6;
+      --violet-soft: rgba(205, 157, 230, 0.4);
+      --input: #121917;
+      --hover: #2b3a35;
+      --primary: #256347;
+      --primary-border: #39825d;
+      --primary-hover: #2f7455;
       --sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
       --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    @supports (color: oklch(50% 0.1 160)) {
+      :root {
+        --bg: oklch(18% 0.012 160);
+        --panel: oklch(22% 0.014 160);
+        --panel-2: oklch(25% 0.016 160);
+        --line: oklch(32% 0.015 160);
+        --line-soft: oklch(28% 0.013 160);
+        --text: oklch(93% 0.012 150);
+        --muted: oklch(70% 0.018 160);
+        --accent: oklch(74% 0.115 158);
+        --accent-soft: oklch(74% 0.115 158 / 0.35);
+        --warn: oklch(81% 0.11 80);
+        --warn-soft: oklch(81% 0.11 80 / 0.45);
+        --bad: oklch(69% 0.14 25);
+        --bad-soft: oklch(69% 0.14 25 / 0.45);
+        --info: oklch(75% 0.10 240);
+        --info-soft: oklch(75% 0.10 240 / 0.45);
+        --violet: oklch(73% 0.10 300);
+        --violet-soft: oklch(73% 0.10 300 / 0.45);
+        --input: oklch(15% 0.012 160);
+        --hover: oklch(29% 0.018 160);
+        --primary: oklch(38% 0.07 158);
+        --primary-border: oklch(48% 0.09 158);
+        --primary-hover: oklch(43% 0.085 158);
+      }
     }
     * { box-sizing: border-box; }
     body {
       margin:0; color:var(--text);
       font-family: var(--sans);
       -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+      background: var(--bg);
       background:
         radial-gradient(1100px 520px at 82% -12%, oklch(30% 0.04 160 / 0.55), transparent 62%),
         repeating-linear-gradient(0deg, oklch(32% 0.015 160 / 0.16) 0 1px, transparent 1px 34px),
@@ -7974,16 +8012,33 @@ function taskBoardHtml() {
     aside { border-right:1px solid var(--line); padding:16px; overflow:auto; background:var(--panel); }
     section { min-width:0; overflow:auto; padding:16px; }
     label { display:block; color:var(--muted); font-size:12px; margin:10px 0 5px; }
-    input, textarea, select { width:100%; border:1px solid var(--line); background:oklch(15% 0.012 160); color:var(--text); border-radius:8px; padding:9px 11px; font:inherit; font-size:13px; transition:border-color .18s cubic-bezier(0.25,1,0.5,1); }
+    input, textarea, select { width:100%; border:1px solid var(--line); background:var(--input); color:var(--text); border-radius:8px; padding:9px 11px; font:inherit; font-size:13px; transition:border-color .18s cubic-bezier(0.25,1,0.5,1); }
     input:focus, textarea:focus, select:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
     textarea { min-height:82px; resize:vertical; font-family:var(--mono); font-size:12px; }
     button { border:1px solid var(--line); background:var(--panel-2); color:var(--text); border-radius:8px; padding:8px 12px; font:inherit; font-size:12px; cursor:pointer; transition:background .18s cubic-bezier(0.25,1,0.5,1), border-color .18s; }
-    button:hover { border-color:var(--muted); background:oklch(29% 0.018 160); }
+    button:hover { border-color:var(--muted); background:var(--hover); }
     button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     button:active { transform:translateY(1px); }
-    .primary { background:oklch(38% 0.07 158); border-color:oklch(48% 0.09 158); color:oklch(96% 0.02 158); }
-    .primary:hover { background:oklch(43% 0.085 158); border-color:var(--accent); }
-    .grid { display:grid; grid-template-columns: repeat(var(--board-columns, 6), minmax(160px, 1fr)); gap:12px; align-items:start; }
+    .primary { background:var(--primary); border-color:var(--primary-border); color:var(--text); }
+    .primary:hover { background:var(--primary-hover); border-color:var(--accent); }
+    .create-submit { margin-top:10px; width:100%; }
+    .safe-action { margin-top:14px; background:var(--input); border:1px solid var(--line); border-radius:8px; padding:11px; }
+    .safe-action h2 { margin:0 0 8px; color:var(--muted); font-size:12px; font-weight:650; }
+    .safe-status { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:11px; font-family:var(--mono); color:var(--muted); }
+    .safe-status::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--muted); }
+    .safe-status.safe { color:var(--accent); border-color:var(--accent-soft); }
+    .safe-status.safe::before { background:var(--accent); }
+    .safe-status.wait { color:var(--warn); border-color:var(--warn-soft); }
+    .safe-status.wait::before { background:var(--warn); }
+    .safe-status.blocked { color:var(--bad); border-color:var(--bad-soft); }
+    .safe-status.blocked::before { background:var(--bad); }
+    .safe-task { margin-top:8px; font-size:13px; line-height:1.28; }
+    .safe-task b { font-family:var(--mono); font-size:11px; color:var(--muted); font-weight:600; }
+    .safe-detail { margin-top:6px; color:var(--muted); font-size:12px; line-height:1.35; }
+    .safe-command { margin:8px 0 0; max-width:100%; overflow:auto; white-space:pre-wrap; word-break:break-word; border:1px solid var(--line); border-radius:7px; padding:8px; color:var(--text); background:var(--panel); font:11px/1.35 var(--mono); }
+    .safe-actions { display:grid; grid-template-columns:1fr; gap:8px; margin-top:9px; }
+    .safe-actions button[disabled] { cursor:not-allowed; opacity:.62; transform:none; }
+    .grid { display:grid; grid-template-columns: repeat(var(--board-columns, 6), minmax(140px, 1fr)); gap:12px; align-items:start; }
     .overview { display:grid; grid-template-columns: minmax(260px, 1.4fr) minmax(260px, 1fr); gap:12px; margin-bottom:12px; }
     .goalbox, .chainbox { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px; min-height:88px; }
     .goalbox h2, .chainbox h2 { margin:0 0 8px; color:var(--muted); font-size:12px; font-weight:650; }
@@ -7993,7 +8048,7 @@ function taskBoardHtml() {
     .streams { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-bottom:12px; }
     .stream { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px; min-height:126px; }
     .stream h2 { margin:0 0 8px; font-size:12px; color:var(--text); line-height:1.25; font-weight:500; }
-    .streambar { display:flex; height:7px; overflow:hidden; border-radius:999px; background:oklch(15% 0.012 160); border:1px solid var(--line); margin:8px 0; }
+    .streambar { display:flex; height:7px; overflow:hidden; border-radius:999px; background:var(--input); border:1px solid var(--line); margin:8px 0; }
     .streambar span { display:block; min-width:2px; }
     .seg-open { background:var(--muted); }
     .seg-doing { background:var(--accent); }
@@ -8005,18 +8060,18 @@ function taskBoardHtml() {
     .col h2 { margin:0; padding:10px 11px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
     .cards { padding:8px; display:flex; flex-direction:column; gap:8px; }
     .card { text-align:left; width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:9px; transition:transform .18s cubic-bezier(0.25,1,0.5,1), border-color .18s, background .18s; }
-    .card:hover { transform:scale(1.02); border-color:var(--muted); background:oklch(28% 0.018 160); }
-    .card.active { border-color:var(--accent); box-shadow:0 0 0 1px oklch(74% 0.115 158 / 0.3); }
+    .card:hover { transform:scale(1.02); border-color:var(--muted); background:var(--hover); }
+    .card.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent-soft); }
     .title { font-size:13px; line-height:1.25; }
     .meta { margin-top:6px; color:var(--muted); font-size:11px; display:flex; gap:6px; flex-wrap:wrap; font-family:var(--mono); }
     .pill { border:1px solid var(--line); border-radius:999px; padding:1px 6px; }
     .why { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.25; }
-    .fact { margin:10px 0; background:oklch(15% 0.012 160); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; line-height:1.35; }
+    .fact { margin:10px 0; background:var(--input); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; line-height:1.35; }
     .fact b { color:var(--muted); font-size:11px; display:block; margin-bottom:3px; }
     .room { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
     .room h3 { margin:0 0 4px; font-size:14px; }
     .thread { margin:10px 0; display:flex; flex-direction:column; gap:7px; }
-    .msg { background:oklch(15% 0.012 160); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; }
+    .msg { background:var(--input); border:1px solid var(--line); border-radius:7px; padding:8px; font-size:12px; }
     .msg .who { color:var(--muted); font-size:11px; margin-bottom:3px; }
     .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
     .full { grid-column:1 / -1; }
@@ -8024,7 +8079,7 @@ function taskBoardHtml() {
     /* heartbeat strip */
     .beat { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); font-family:var(--mono); }
     .beat .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
-    .beat.alive .dot { background:var(--accent); box-shadow:0 0 0 0 oklch(74% 0.115 158 / 0.6); animation:beat 2s cubic-bezier(0.25,1,0.5,1) infinite; }
+    .beat.alive .dot { background:var(--accent); box-shadow:0 0 0 0 var(--accent-soft); animation:beat 2s cubic-bezier(0.25,1,0.5,1) infinite; }
     .beat.stale .dot { background:var(--bad); }
     .beat b { color:var(--accent); font-weight:600; }
     .beat .warn { color:var(--warn); }
@@ -8033,21 +8088,21 @@ function taskBoardHtml() {
     /* activity feed */
     .activity { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:0; margin-bottom:12px; max-height:46vh; overflow:auto; }
     .activity h2 { margin:0; position:sticky; top:0; background:var(--panel); padding:11px; font-size:12px; color:var(--muted); font-weight:650; border-bottom:1px solid var(--line); z-index:1; }
-    .ev { display:grid; grid-template-columns:52px 64px 1fr auto; gap:10px; align-items:baseline; padding:7px 11px; border-bottom:1px solid oklch(28% 0.013 160); font-size:12px; line-height:1.3; font-family:var(--mono); transition:background .15s ease; }
+    .ev { display:grid; grid-template-columns:52px 64px 1fr auto; gap:10px; align-items:baseline; padding:7px 11px; border-bottom:1px solid var(--line-soft); font-size:12px; line-height:1.3; font-family:var(--mono); transition:background .15s ease; }
     .ev:last-child { border-bottom:0; }
-    .ev:hover { background:oklch(25% 0.016 160); }
+    .ev:hover { background:var(--panel-2); }
     .ev .t { color:var(--muted); font-variant-numeric:tabular-nums; font-size:11px; }
     .ev .src { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 7px; color:var(--muted); text-align:center; }
-    .ev .src.pulse { color:var(--accent); border-color:oklch(74% 0.115 158 / 0.45); }
-    .ev .src.reward { color:var(--warn); border-color:oklch(81% 0.11 80 / 0.45); }
-    .ev .src.xp { color:var(--info); border-color:oklch(75% 0.10 240 / 0.45); }
-    .ev .src.mission { color:var(--violet); border-color:oklch(73% 0.10 300 / 0.45); }
+    .ev .src.pulse { color:var(--accent); border-color:var(--accent-soft); }
+    .ev .src.reward { color:var(--warn); border-color:var(--warn-soft); }
+    .ev .src.xp { color:var(--info); border-color:var(--info-soft); }
+    .ev .src.mission { color:var(--violet); border-color:var(--violet-soft); }
     .ev .msg { color:var(--text); min-width:0; }
     .ev .msg .d { color:var(--muted); font-size:11px; }
     .ev.bad .msg { color:var(--bad); }
     .ev .rw { font-variant-numeric:tabular-nums; font-size:11px; color:var(--muted); }
     .ev .rw.pos { color:var(--accent); } .ev .rw.neg { color:var(--bad); }
-    @media (max-width: 980px) { main { grid-template-columns:1fr; height:auto; } aside { border-right:0; border-bottom:1px solid var(--line); } .grid, .overview { grid-template-columns:1fr; } }
+    @media (max-width: 980px) { main { grid-template-columns:1fr; height:auto; } aside { border-right:0; border-bottom:1px solid var(--line); } button { min-height:44px; } .grid, .overview { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -8065,8 +8120,12 @@ function taskBoardHtml() {
         <textarea id="title" placeholder="Need something done..."></textarea>
         <label>Lane</label>
         <input id="tag" value="tasks">
-        <button class="primary full" type="submit" style="margin-top:10px;width:100%">Create task</button>
+        <button class="primary full create-submit" type="submit">Create task</button>
       </form>
+      <div class="safe-action" id="safeAction">
+        <h2>Safe next action</h2>
+        <div class="empty">Checking review lane...</div>
+      </div>
       <div class="room" id="room">
         <div class="empty">Select a task to open its room.</div>
       </div>
@@ -8089,16 +8148,36 @@ function taskBoardHtml() {
     ];
     const planTags = new Set(${JSON.stringify(Array.from(STATUS_PLAN_TAGS))});
     let state = { tasks: [] };
+    let reviewLane = null;
     let selected = null;
     const $ = (id) => document.getElementById(id);
 
-    async function api(path, options = {}) {
-      const res = await fetch(path, {
-        ...options,
-        headers: { 'content-type': 'application/json', ...(options.headers || {}) }
+    function requestJson(path, options = {}) {
+      const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
+      if (window.fetch) {
+        return fetch(path, { ...options, headers })
+          .then((res) => res.json().then((data) => ({ ok: res.ok, data })));
+      }
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method || 'GET', path);
+        Object.keys(headers).forEach((key) => xhr.setRequestHeader(key, headers[key]));
+        xhr.onload = () => {
+          try {
+            resolve({ ok: xhr.status >= 200 && xhr.status < 300, data: JSON.parse(xhr.responseText || '{}') });
+          } catch (e) {
+            reject(e);
+          }
+        };
+        xhr.onerror = () => reject(new Error('request failed'));
+        xhr.send(options.body || null);
       });
-      const data = await res.json();
-      if (!res.ok || data.ok === false) throw new Error(data.detail || data.reason || 'request failed');
+    }
+
+    async function api(path, options = {}) {
+      const result = await requestJson(path, options);
+      const data = result.data || {};
+      if (!result.ok || data.ok === false) throw new Error(data.detail || data.reason || 'request failed');
       return data;
     }
 
@@ -8169,14 +8248,25 @@ function taskBoardHtml() {
       renderActivity(data.events || []);
     }
 
+    async function loadReviewLane() {
+      try {
+        const result = await requestJson('/api/tasks/review-lane-drain?limit=1');
+        reviewLane = { ...(result.data || {}), http_ok: result.ok };
+      } catch (e) {
+        reviewLane = { ok: false, drain: { key: 'unavailable', safe_for_agent: false, reason: e.message || 'review lane unavailable' } };
+      }
+    }
+
     async function load() {
       const data = await api('/api/tasks');
       state = data.projection;
+      await loadReviewLane();
       render();
       loadStream().catch(() => {});
     }
 
     function render() {
+      renderSafeAction();
       renderOverview();
       renderStreams();
       const board = $('board');
@@ -8193,6 +8283,72 @@ function taskBoardHtml() {
         board.appendChild(col);
       }
       renderRoom();
+    }
+
+    function actionLabel(key) {
+      const labels = {
+        review_chat: 'Run review chat',
+        continue_work: 'Continue scoped work',
+        human_accept_waiting: 'Human accept needed',
+        proof_boundary_blocked: 'Proof boundary blocked',
+        pending_review_chat: 'Review already queued',
+        capabilities_drift: 'Capability check failed',
+        none: 'No review action',
+        unavailable: 'Review lane unavailable'
+      };
+      return labels[key] || String(key || 'Unknown action').replace(/[-_]/g, ' ');
+    }
+
+    function reasonLabel(reason) {
+      return String(reason || '').replace(/[_-]/g, ' ');
+    }
+
+    function renderSafeAction() {
+      const el = $('safeAction');
+      if (!el) return;
+      const drain = reviewLane && reviewLane.drain || {};
+      const key = drain.key || drain.next_action || 'none';
+      const task = drain.task || null;
+      const safe = Boolean(drain.safe_for_agent && drain.command);
+      const waiting = key === 'human_accept_waiting';
+      const statusClass = safe ? 'safe' : waiting ? 'wait' : 'blocked';
+      const statusText = safe ? 'Agent-safe' : waiting ? 'Human-only' : 'Blocked';
+      const taskHtml = task
+        ? '<div class="safe-task"><b>' + esc(task.ref || task.id || '') + '</b> ' + esc(task.title || 'Untitled task') + '</div>'
+        : '<div class="safe-task">No task selected by the review lane.</div>';
+      const commandHtml = drain.command ? '<pre class="safe-command">' + esc(drain.command) + '</pre>' : '';
+      const detail = waiting
+        ? 'Certified proof is waiting for a human accept. Agents should move to other work, not mint XP.'
+        : (drain.reason ? reasonLabel(drain.reason) : 'No executable review-lane action is available.');
+      const actionButton = safe
+        ? '<button id="runSafeAction" class="primary" type="button">Run safe action</button>'
+        : '<button type="button" disabled>' + (waiting ? 'Waiting on human' : 'No safe action') + '</button>';
+      el.innerHTML = [
+        '<h2>Safe next action</h2>',
+        '<div class="safe-status ' + statusClass + '">' + statusText + ' · ' + esc(actionLabel(key)) + '</div>',
+        taskHtml,
+        '<div class="safe-detail">' + esc(detail) + '</div>',
+        commandHtml,
+        '<div class="safe-actions">' + actionButton + '</div>'
+      ].join('');
+      const run = $('runSafeAction');
+      if (run) {
+        run.onclick = async () => {
+          run.disabled = true;
+          run.textContent = 'Running...';
+          try {
+            await api('/api/tasks/review-lane-act', {
+              method: 'POST',
+              body: JSON.stringify({ actor: 'operator' })
+            });
+            await load();
+          } catch (e) {
+            run.textContent = 'Action blocked';
+            const detailEl = el.querySelector('.safe-detail');
+            if (detailEl) detailEl.textContent = e.message || 'review-lane action failed';
+          }
+        };
+      }
     }
 
     function taskById(id) {
