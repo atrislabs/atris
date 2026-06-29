@@ -2185,7 +2185,7 @@ async function runMission(args) {
     );
     return;
   }
-  if (!mission && ref && /\s/.test(ref) && !String(ref).startsWith('mission-')) {
+  if (!mission && ref && !String(ref).startsWith('mission-') && (/\s/.test(ref) || /^[A-Za-z0-9_]+$/.test(ref))) {
     startMissionFromRunObjective(ref, args);
     return;
   }

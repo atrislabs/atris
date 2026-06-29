@@ -527,6 +527,26 @@ test('mission run with an objective starts a visible-goal mission', () => {
   }
 });
 
+test('mission run with a single-word objective starts a visible-goal mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli(['mission', 'run', 'cleanup', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    assert.equal(run.stderr, '');
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'cleanup');
+    assert.equal(payload.mission.runner, 'codex_goal');
+    assert.equal(payload.codex_goal_state.goal.objective, 'cleanup');
+    assert.equal(payload.codex_goal_state.goal.visible_goal.desired_objective, 'cleanup');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run --due selects an active verifier mission for loop heartbeats', () => {
   const dir = makeTempDir();
   try {
