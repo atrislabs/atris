@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const pulse = require('../lib/pulse');
+const pulseCommand = require('../commands/pulse');
 
 function tmpRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-test-'));
@@ -54,6 +55,24 @@ test('shouldFallbackToAutopilot is suppressed by --no-autopilot and --no-claude'
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', noClaude: true }), false);
   // fallback explicitly disabled
   assert.equal(pulse.shouldFallbackToAutopilot({ missionReason: 'no_due_mission', autopilotFallback: false }), false);
+});
+
+test('pulse value flags accept spaced and inline forms', () => {
+  assert.equal(pulseCommand.readFlag(['--model', 'sonnet'], '--model', 'opus'), 'sonnet');
+  assert.equal(pulseCommand.readFlag(['--model=sonnet'], '--model', 'opus'), 'sonnet');
+  assert.equal(pulseCommand.readFlag(['--runner-profile=atris-fast'], '--runner-profile', ''), 'atris-fast');
+  assert.equal(pulseCommand.readFlag(['--model='], '--model', 'opus'), 'opus');
+});
+
+test('pulse run strips spaced and inline --max-ticks before tick passthrough', () => {
+  assert.deepEqual(
+    pulseCommand.withoutValueFlag(['--max-ticks', '2', '--no-verify'], '--max-ticks'),
+    ['--no-verify']
+  );
+  assert.deepEqual(
+    pulseCommand.withoutValueFlag(['--max-ticks=2', '--no-verify'], '--max-ticks'),
+    ['--no-verify']
+  );
 });
 
 // --- ghost / stale detection: the silent-runner-death failure mode ---

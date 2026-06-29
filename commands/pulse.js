@@ -23,9 +23,29 @@ function hasFlag(args, name) {
   return args.includes(name);
 }
 function readFlag(args, name, fallback = null) {
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => String(arg).startsWith(prefix));
+  if (inline) {
+    const value = inline.slice(prefix.length);
+    return value ? value : fallback;
+  }
   const i = args.indexOf(name);
   if (i === -1 || i === args.length - 1) return fallback;
   return args[i + 1];
+}
+function withoutValueFlag(args, name) {
+  const out = [];
+  const prefix = `${name}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === name) {
+      if (i < args.length - 1 && !String(args[i + 1]).startsWith('--')) i++;
+      continue;
+    }
+    if (String(arg).startsWith(prefix)) continue;
+    out.push(arg);
+  }
+  return out;
 }
 function wantsJson(args) {
   return hasFlag(args, '--json');
@@ -456,7 +476,7 @@ function uninstallCommand(args) {
 function runCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
   const maxTicks = Math.max(1, Number(readFlag(args, '--max-ticks', '1')) || 1);
-  const passthrough = args.filter((a) => a !== '--max-ticks' && a !== String(maxTicks));
+  const passthrough = withoutValueFlag(args, '--max-ticks');
   const results = [];
   for (let i = 0; i < maxTicks; i++) {
     results.push(tickCommand(passthrough.concat(['--json-silent']).filter((a) => a !== '--json'), root));
@@ -503,5 +523,7 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  readFlag,
+  withoutValueFlag,
   STATE_HOME,
 };
