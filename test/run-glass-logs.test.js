@@ -310,6 +310,36 @@ test('listRunLogs --json --cat outputs JSON with content', () => {
   }
 });
 
+test('listRunLogs --json --cat rejects paths outside the run log directory', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let output = '';
+  const origLog = console.log;
+  const origExit = process.exit;
+  try {
+    process.chdir(tmpRoot);
+    console.log = (...args) => { output += args.join(' ') + '\n'; };
+    process.exit = (code) => {
+      const err = new Error(`process.exit ${code}`);
+      err.exitCode = code;
+      throw err;
+    };
+
+    const outside = path.join(tmpRoot, 'outside.md');
+    fs.writeFileSync(outside, 'outside secret');
+    assert.throws(() => listRunLogs(['--json', '--cat', outside]), /process\.exit 1/);
+    const parsed = JSON.parse(output.trim());
+    assert.equal(parsed.ok, false);
+    assert.match(parsed.error, /must stay inside atris\/logs\/runs/);
+    assert.doesNotMatch(output, /outside secret/);
+  } finally {
+    process.exit = origExit;
+    console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('listRunLogs --json with no logs returns empty array', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
   const origCwd = process.cwd();
@@ -645,6 +675,34 @@ test('diffRunLogs shows usage when not enough args', () => {
     assert.ok(output.includes('Usage:'), 'shows usage');
   } finally {
     console.log = origLog;
+    process.chdir(origCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('diffRunLogs rejects traversal outside the run log directory', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runlog-test-'));
+  const origCwd = process.cwd();
+  let errorOutput = '';
+  const origError = console.error;
+  const origExit = process.exit;
+  try {
+    process.chdir(tmpRoot);
+    console.error = (...args) => { errorOutput += args.join(' ') + '\n'; };
+    process.exit = (code) => {
+      const err = new Error(`process.exit ${code}`);
+      err.exitCode = code;
+      throw err;
+    };
+
+    const logPath = getRunLogPath('700003', 1);
+    writePhaseToRunLog(logPath, 1, 'plan', 'Plan reasoning', 3000);
+    fs.writeFileSync(path.join(tmpRoot, 'outside.md'), '# outside\n');
+    assert.throws(() => diffRunLogs([path.basename(logPath), '../outside.md']), /process\.exit 1/);
+    assert.match(errorOutput, /must stay inside atris\/logs\/runs/);
+  } finally {
+    process.exit = origExit;
+    console.error = origError;
     process.chdir(origCwd);
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

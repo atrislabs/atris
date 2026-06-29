@@ -36,6 +36,29 @@ function getRunLogDir() {
   return runsDir;
 }
 
+function isPathInside(root, candidate) {
+  const rel = path.relative(root, candidate);
+  return rel === '' || (rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function resolveRunLogFilePath(runsDir, file) {
+  const root = path.resolve(runsDir);
+  const label = String(file || '');
+  const candidate = path.resolve(runsDir, label);
+  if (!isPathInside(root, candidate)) {
+    throw new Error(`Run log path must stay inside atris/logs/runs: ${label}`);
+  }
+  if (fs.existsSync(candidate)) {
+    const realRoot = fs.realpathSync(runsDir);
+    const realCandidate = fs.realpathSync(candidate);
+    if (!isPathInside(realRoot, realCandidate)) {
+      throw new Error(`Run log path must stay inside atris/logs/runs: ${label}`);
+    }
+    return realCandidate;
+  }
+  return candidate;
+}
+
 /**
  * Build a per-cycle run log path with a run-scoped timestamp so multiple
  * same-day runs don't clobber each other.
@@ -646,7 +669,17 @@ function listRunLogs(args = []) {
   const catIdx = args.indexOf('--cat');
   if (catIdx !== -1 && args[catIdx + 1]) {
     const file = args[catIdx + 1];
-    const filePath = path.isAbsolute(file) ? file : path.join(runsDir, file);
+    let filePath;
+    try {
+      filePath = resolveRunLogFilePath(runsDir, file);
+    } catch (err) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ ok: false, error: err.message }));
+      } else {
+        console.error(err.message);
+      }
+      process.exit(1);
+    }
     if (!fs.existsSync(filePath)) {
       if (jsonMode) {
         console.log(JSON.stringify({ ok: false, error: `Run log not found: ${file}` }));
@@ -996,8 +1029,15 @@ function diffRunLogs(args = []) {
   }
 
   const [file1, file2] = positional;
-  const path1 = path.isAbsolute(file1) ? file1 : path.join(runsDir, file1);
-  const path2 = path.isAbsolute(file2) ? file2 : path.join(runsDir, file2);
+  let path1;
+  let path2;
+  try {
+    path1 = resolveRunLogFilePath(runsDir, file1);
+    path2 = resolveRunLogFilePath(runsDir, file2);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 
   if (!fs.existsSync(path1)) {
     console.error(`Run log not found: ${file1}`);
