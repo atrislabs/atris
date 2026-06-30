@@ -1327,9 +1327,20 @@ function missionLongRunIntent(mission) {
     || /\b(overnight|nonstop|forever|goal\s+after\s+goal|self[-\s]?improve)\b/i.test(text);
 }
 
+function missionChoosesNextMission(mission) {
+  return mission?.started_from === 'mission_run_continuation'
+    && mission?.continuation_policy === 'choose_next_mission';
+}
+
+function chooseNextMissionCommand(mission) {
+  const owner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
+  return `atris mission run "<next useful mission>" --owner ${owner}`;
+}
+
 function effectiveMissionVerifier(mission) {
   const explicit = String(mission?.verifier || '').trim();
   if (explicit) return explicit;
+  if (missionChoosesNextMission(mission)) return '';
   const runner = String(mission?.runner || '').trim().toLowerCase();
   if (missionLongRunIntent(mission) && (!runner || runner === 'codex_goal')) {
     return DEFAULT_LONG_RUN_VERIFIER;
@@ -1450,7 +1461,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
     parent_proof: proof || parent.receipt_path || null,
-    next_action: `decide next mission, then run: atris mission run "<next useful mission>" --owner ${owner}`,
+    next_action: `decide next mission, then run: ${chooseNextMissionCommand({ owner })}`,
   };
 
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
@@ -1701,6 +1712,8 @@ function attachMissionTask(args) {
   };
   if (nextMission.status === 'ready' && nextMission.receipt_path) {
     nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
+  } else if (missionChoosesNextMission(nextMission)) {
+    nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission)}`;
   } else if (!nextMission.verifier && !nextMission.always_on) {
     nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
   }
@@ -3450,6 +3463,9 @@ function codexGoalNextCommand(mission) {
   const taskSpine = missionTaskSpine(mission);
   if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) {
     return taskSpine.ensure_task_command;
+  }
+  if (missionChoosesNextMission(mission)) {
+    return chooseNextMissionCommand(mission);
   }
   if (mission.status === 'ready' && mission.always_on) {
     return nextCandidateRunCommand(mission);
