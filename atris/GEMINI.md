@@ -39,6 +39,9 @@ This is the Atris boot sequence. Show the output to the user, then respond natur
 ## Mission Autonomy
 
 Use `atris mission` when work should survive this chat or run as an autonomous loop.
+Mission-shaped user intent wins before normal task selection: if the user says
+`atris mission run ...`, execute it first, then run `atris mission goal --json`
+and mirror `goal.visible_goal`.
 
 ```
 member -> mission start --verify -> status --status active -> one bounded step -> mission tick --verify -> receipt -> complete|run|stop
@@ -49,6 +52,10 @@ member -> mission start --verify -> status --status active -> one bounded step -
 - Resume: `atris mission status --status active --json`, then pick the mission matching your owner/member.
 - Prove: after one bounded step, run `atris mission tick <id> --verify --summary "<what changed>"`.
 - Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
+
+Default to the current checkout for small, clean, single-agent fixes. Use
+worktrees only for dirty launchers, parallel agents, long proof, risky edits, or
+release/publish work; clean old merged worktrees with `atris worktree cleanup`.
 
 ## Rules
 

@@ -65,6 +65,7 @@ const {
   apiRequestJson, streamProChat, spawnClaudeCodeSession,
   DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
 } = require('../utils/api');
+const missionRuntime = require('../lib/mission-runtime-loop');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
 const validateAccessToken = (token) => _validateAccessToken(token, apiRequestJson);
@@ -200,10 +201,14 @@ function loadActiveMissions(workspaceDir) {
         owner: m.owner || '?',
         objective: m.objective || '',
         status,
+        created_at: m.created_at || null,
+        updated_at: m.updated_at || null,
+        completed_at: m.completed_at || null,
         verifier: m.verifier || null,
         verifier_passed: (m.verifier_result && m.verifier_result.passed) === true,
         next_action: m.next_action || '',
         lane: m.lane || null,
+        runner: m.runner || null,
       });
     }
     // Most recently started first (rough — relies on insertion order from reversed walk)
@@ -211,6 +216,93 @@ function loadActiveMissions(workspaceDir) {
   } catch {
     return [];
   }
+}
+
+function readAtrisGoalState(workspaceDir) {
+  try {
+    const file = path.join(workspaceDir, '.atris', 'state', 'atris_goal.json');
+    if (!fs.existsSync(file)) return null;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed?.goal || null;
+  } catch {
+    return null;
+  }
+}
+
+function currentAtrisGoal(workspaceDir) {
+  const activeMissions = loadActiveMissions(workspaceDir);
+  const stored = readAtrisGoalState(workspaceDir);
+  if (stored && stored.objective) {
+    const mission = activeMissions.find((item) => item.id === stored.mission_id) || null;
+    return {
+      ...stored,
+      mission_status: mission?.status || stored.mission_status,
+      created_at: stored.created_at || mission?.created_at || null,
+      updated_at: stored.updated_at || mission?.updated_at || null,
+      completed_at: stored.completed_at || mission?.completed_at || null,
+      next_command: stored.next_command || mission?.next_action || null,
+    };
+  }
+  const mission = activeMissions[0] || null;
+  if (!mission) return null;
+  return {
+    objective: mission.objective,
+    mission_id: mission.id,
+    mission_status: mission.status,
+    owner: mission.owner,
+    runner: mission.runner || 'mission',
+    created_at: mission.created_at,
+    updated_at: mission.updated_at,
+    completed_at: mission.completed_at,
+    next_command: mission.next_action || `atris mission tick ${mission.id} --summary "<what changed>"`,
+  };
+}
+
+function goalElapsedSeconds(goal) {
+  const started = Date.parse(goal?.created_at || '');
+  if (!Number.isFinite(started)) return null;
+  const ended = Date.parse(goal?.completed_at || '') || Date.now();
+  return Math.max(0, Math.floor((ended - started) / 1000));
+}
+
+function formatGoalDuration(seconds) {
+  if (!Number.isFinite(seconds)) return null;
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function goalAchieved(goal) {
+  return ['complete', 'completed', 'achieved'].includes(String(goal?.mission_status || goal?.status || '').toLowerCase());
+}
+
+function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal') {
+  if (process.env.ATRIS_SHOW_GOAL_BANNER !== '1' && process.env.AX_SHOW_GOAL_BANNER !== '1') return null;
+  const goal = currentAtrisGoal(workspaceDir);
+  if (!goal) return null;
+  if (String(goal.runner || '').trim().toLowerCase() === 'codex_goal') return null;
+  const objective = String(goal.objective || '').length > 92
+    ? `${String(goal.objective).slice(0, 89)}...`
+    : String(goal.objective || '');
+  console.log(`${label}: ${objective}`);
+  if (goal.mission_id || goal.mission_status || goal.runner) {
+    const elapsed = formatGoalDuration(goalElapsedSeconds(goal));
+    const parts = [
+      goal.mission_id || '?',
+      goal.mission_status || '?',
+      goal.runner || 'mission',
+    ];
+    if (elapsed) parts.push(`elapsed ${elapsed}`);
+    parts.push(`achieved ${goalAchieved(goal) ? 'yes' : 'no'}`);
+    console.log(`Mission: ${parts.join(' · ')}`);
+  }
+  if (goal.next_command) console.log(`Next: ${goal.next_command}`);
+  console.log('');
+  return goal;
 }
 
 function showSearchHelp() {
@@ -1313,7 +1405,7 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'mission') {
   Promise.resolve(require('../commands/mission').missionCommand(process.argv.slice(3)))
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'pulse') {
   // Pulse: durable overnight self-improvement heartbeat (OS cron) for atris-cli.
@@ -2359,6 +2451,8 @@ async function agentAtris() {
     process.exit(1);
   }
 
+  printAtrisGoalBanner(process.cwd());
+
   // Check if logged in (with token refresh)
   const ensured = await ensureValidCredentials();
   if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
@@ -2461,6 +2555,13 @@ async function chatAtris() {
     process.exit(1);
   }
 
+  const missionIntent = missionRunIntentFromFastMessage(message);
+  if (missionIntent) {
+    process.exit(await runLocalFastMission(missionIntent));
+  }
+
+  printAtrisGoalBanner(process.cwd());
+
   // Check agent selected
   const config = loadConfig();
   if (!config.agent_id) {
@@ -2550,6 +2651,15 @@ async function chatInteractive(config, credentials) {
         return;
       }
 
+      const missionIntent = missionRunIntentFromFastMessage(input);
+      if (missionIntent) {
+        console.log('');
+        await runLocalFastMission(missionIntent);
+        console.log('');
+        rl.prompt();
+        return;
+      }
+
       // Send to pro-chat
       console.log('');
       const apiUrl = getApiBaseUrl().replace(/\/api$/, '');
@@ -2598,6 +2708,78 @@ function atrisFastMessageFromArgs() {
   return process.argv.slice(offset).join(' ').trim();
 }
 
+function stripFastMissionQuotes(value) {
+  const text = String(value || '').trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return text.slice(1, -1).trim();
+    }
+  }
+  return text;
+}
+
+function extractFastMissionFlag(text, flagName) {
+  const source = String(text || '');
+  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
+  if (inline) {
+    return {
+      value: inline[2],
+      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
+  if (split) {
+    return {
+      value: split[2],
+      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  return { value: null, text: source.trim() };
+}
+
+function missionRunIntentFromFastMessage(message) {
+  return missionRuntime.missionRunIntentFromMessage(message);
+}
+
+function printFastMissionStartReceipt(payload) {
+  const mission = payload?.mission || {};
+  const goal = payload?.atris_goal_state?.goal || {};
+  const receiptGoal = {
+    ...goal,
+    objective: goal.objective || mission.objective,
+    mission_id: goal.mission_id || mission.id,
+    mission_status: goal.mission_status || mission.status,
+    runner: goal.runner || mission.runner,
+    created_at: goal.created_at || mission.created_at,
+    updated_at: goal.updated_at || mission.updated_at,
+    completed_at: goal.completed_at || mission.completed_at,
+    next_command: goal.next_command || payload?.next_command || mission.next_action,
+  };
+  const elapsed = formatGoalDuration(goalElapsedSeconds(receiptGoal)) || '0s';
+
+  console.log('Atris mission started');
+  console.log(`Goal: ${receiptGoal.objective || '?'}`);
+  console.log(`Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`);
+  console.log(`Elapsed: ${elapsed}`);
+  console.log(`Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`);
+  if (receiptGoal.next_command) console.log(`Next: ${receiptGoal.next_command}`);
+}
+
+async function runLocalFastMission(intent) {
+  const result = await missionRuntime.runRuntimeMissionLoop(intent, {
+    cwd: process.cwd(),
+    cliPath: __filename,
+    onProgress: (line) => {
+      if (/^pursuing /.test(line)) console.log('Pursuing goal...');
+      else if (/^\[tick /.test(line)) console.log(line);
+    },
+  });
+  console.log(result.text || 'Mission command failed.');
+  return result.ok ? 0 : (result.status || 1);
+}
+
 async function atrisFastChat() {
   if (command === 'ax' && process.argv[3] !== 'fast') {
     console.error('Usage: atris ax fast "message"');
@@ -2621,6 +2803,13 @@ async function atrisFastChat() {
     console.error('Usage: atris fast "message"');
     process.exit(1);
   }
+
+  const missionIntent = missionRunIntentFromFastMessage(message);
+  if (missionIntent) {
+    process.exit(await runLocalFastMission(missionIntent));
+  }
+
+  printAtrisGoalBanner(process.cwd());
 
   const ensured = await ensureValidCredentials();
   if (ensured.error === 'not_logged_in' || !ensured.credentials?.token) {
