@@ -25,6 +25,16 @@ function runCli(args, { cwd } = {}) {
     env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1' },
   });
 }
+function writeMissions(root, missions) {
+  const stateDir = path.join(root, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n'), 'utf8');
+}
+function writeReport(root, name, text) {
+  const reportsDir = path.join(root, 'atris', 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  fs.writeFileSync(path.join(reportsDir, name), text, 'utf8');
+}
 
 test('routeLoop maps bare invocation to the loop home', () => {
   assert.deepEqual(routeLoop([]), { action: 'home' });
@@ -43,6 +53,12 @@ test('routeLoop maps --overnight and --cloud to the durable heartbeat', () => {
 test('routeLoop maps status and stop to the watch/stop actions', () => {
   assert.equal(routeLoop(['status']).action, 'status');
   assert.equal(routeLoop(['stop']).action, 'stop');
+});
+
+test('routeLoop maps create-next aliases to the task materializer', () => {
+  assert.equal(routeLoop(['create-next']).action, 'create-next');
+  assert.equal(routeLoop(['claim-next']).action, 'create-next');
+  assert.equal(routeLoop(['take-next']).action, 'create-next');
 });
 
 test('routeLoop forwards wiki upkeep with its remaining flags', () => {
@@ -74,6 +90,31 @@ test('`atris loop add` with no text prints usage and writes nothing', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /usage: atris loop add/);
     assert.equal(fs.existsSync(path.join(dir, 'ROADMAP.md')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('`atris loop create-next` creates and claims the suggested seed task once', () => {
+  const dir = makeTempDir();
+  try {
+    writeMissions(dir, [
+      { id: 'mission-seed', objective: 'overnight mission', status: 'ready', owner: 'auto-improver' },
+    ]);
+    writeReport(dir, '2099-01-01-proof.md', 'Suggested target: add a command that creates and claims the suggested self-improvement task from the loop seed.\n');
+
+    let res = runCli(['loop', 'create-next', '--as', 'auto-improver', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'created_next');
+    assert.equal(payload.task.title, 'Add a command that creates and claims the suggested self-improvement task from the loop seed');
+    assert.equal(payload.task.status, 'claimed');
+    assert.equal(payload.task.claimed_by, 'auto-improver');
+
+    res = runCli(['loop', 'create-next', '--as', 'auto-improver', '--json'], { cwd: dir });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    const skipped = JSON.parse(res.stdout);
+    assert.equal(skipped.reason, 'active_task');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -227,8 +268,8 @@ test('loopFront delegates to pulse/run with the right args and exit codes', asyn
     assert.equal(await loopFront(['status']), 1, 'a failed pulse status maps to exit 1');
     assert.equal(await loopFront(['stop']), 0);
     assert.deepEqual(calls.find((c) => c[0] === 'uninstall'), ['uninstall']);
-    assert.equal(await loopFront(['start', '--overnight', '--cadence', '30m']), 0);
-    assert.deepEqual(calls.find((c) => c[0] === 'install'), ['install', '--cadence', '30m'], 'start/--overnight stripped, --cadence kept');
+    assert.equal(await loopFront(['start', '--overnight', '--cadence', '30m', '--hours', '6']), 0);
+    assert.deepEqual(calls.find((c) => c[0] === 'install'), ['install', '--cadence', '30m', '--hours', '6'], 'start/--overnight stripped, pulse flags kept');
     assert.equal(await loopFront(['start']), 0);
     assert.ok(calls.some((c) => c[0] === 'run'), 'local start delegates to runAtris');
   } finally {

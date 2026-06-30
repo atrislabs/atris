@@ -957,6 +957,44 @@ test('computer create --set-default updates the cached workspace', async () => {
   }
 });
 
+test('computer create keeps explicit missing business strict', async () => {
+  const home = makeTempDir();
+  const cwd = makeTempDir();
+  const requests = [];
+  const server = await startApiServer(requests);
+  try {
+    writeCredentials(home);
+    const { port } = server.address();
+    const res = await runCliAsync([
+      'computer',
+      'create',
+      'Recruiting Computer',
+      '--business',
+      'atris-labs',
+      '--type',
+      'recruiting',
+    ], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: home,
+        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        ATRIS_APP_URL: 'http://app.local',
+        ATRIS_NO_INTERACTIVE: '1',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /No business found/);
+    assert.equal(requests.some((request) => request.method === 'POST' && request.url === '/api/business/biz-1/workspaces'), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    cleanupTempDir(home);
+    cleanupTempDir(cwd);
+  }
+});
+
 test('computer recruiting create seeds a typed recruiting workspace', async () => {
   const home = makeTempDir();
   const cwd = makeTempDir();

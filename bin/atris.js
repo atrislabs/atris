@@ -851,7 +851,7 @@ function showLoopHelp() {
 
 function showCleanHelp() {
   console.log('');
-  console.log('Usage: atris clean [--dry-run]');
+  console.log('Usage: atris clean [--dry-run] [--json]');
   console.log('');
   console.log('Description:');
   console.log('  Check workspace housekeeping: stale tasks, MAP.md refs, old journals,');
@@ -859,6 +859,7 @@ function showCleanHelp() {
   console.log('');
   console.log('Options:');
   console.log('  --dry-run, -n   Preview cleanup without changing files.');
+  console.log('  --json          Print machine-readable cleanup results.');
   console.log('  --help, -h      Show this help.');
   console.log('');
 }
@@ -1927,7 +1928,8 @@ if (command === 'init') {
     process.exit(0);
   }
   const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
-  require('../commands/clean').cleanAtris({ dryRun });
+  const json = process.argv.includes('--json');
+  require('../commands/clean').cleanAtris({ dryRun, json });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

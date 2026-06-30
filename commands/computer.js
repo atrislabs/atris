@@ -1635,6 +1635,41 @@ async function resolveBusinessContextBySlug(token, slug, options = {}) {
   return null;
 }
 
+function shortcutBusinessLabel(slug, fallbackName) {
+  if (normalizeBusinessSlug(slug) === RECRUITING_BUSINESS_SLUG) return 'Atris Labs';
+  return fallbackName || slug;
+}
+
+async function resolveSingleBusinessShortcutFallback(token, slug) {
+  const wantedSlug = normalizeBusinessSlug(slug);
+  if (wantedSlug !== RECRUITING_BUSINESS_SLUG) return null;
+
+  const list = await apiRequestJson('/business/', { method: 'GET', token });
+  const rows = list.ok && Array.isArray(list.data)
+    ? list.data.filter((business) => business && business.id)
+    : [];
+  if (rows.length !== 1) return null;
+
+  const match = rows[0];
+  const businesses = loadBusinesses();
+  const businessName = shortcutBusinessLabel(wantedSlug, match.name || match.slug);
+  businesses[wantedSlug] = {
+    business_id: match.id,
+    workspace_id: match.workspace_id,
+    name: businessName,
+    slug: wantedSlug,
+    cloud_slug: match.slug || null,
+    added_at: new Date().toISOString(),
+  };
+  saveBusinesses(businesses);
+  return {
+    slug: wantedSlug,
+    businessId: match.id,
+    workspaceId: match.workspace_id,
+    businessName,
+  };
+}
+
 async function resolveComputerCommandContext(token, options = {}) {
   if (options.businessSlug || options.workspaceId) {
     const ctx = options.businessSlug
@@ -1660,7 +1695,10 @@ async function resolveTypedBusinessComputerContext(token, options = {}, defaults
     return resolveComputerCommandContext(token, { ...options, businessSlug });
   }
 
-  const ctx = await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
+  let ctx = await resolveBusinessContextBySlug(token, businessSlug, { preferCache: true });
+  if (!ctx?.businessId && (options.allowCanonicalShortcutFallback || defaults.allowCanonicalShortcutFallback)) {
+    ctx = await resolveSingleBusinessShortcutFallback(token, businessSlug);
+  }
   if (!ctx?.businessId) return null;
   const workspaces = await listBusinessWorkspaces(token, ctx);
   const workspace = resolveWorkspaceByComputerType(workspaces, computerType);
@@ -1705,7 +1743,7 @@ async function resolveWorkspaceSelector(token, ctx, input) {
   return workspace?.id || selector;
 }
 
-async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
+async function resolveBusinessOwnerForCreate(token, businessSlug = null, options = {}) {
   const wantedSlug = businessSlug ? String(businessSlug).trim() : null;
   if (wantedSlug) {
     const fromApi = await resolveBusinessContextBySlug(token, wantedSlug);
@@ -1719,6 +1757,9 @@ async function resolveBusinessOwnerForCreate(token, businessSlug = null) {
         workspaceId: cached.workspace_id || null,
         businessName: cached.name || cached.slug || wantedSlug,
       };
+    }
+    if (options.allowCanonicalShortcutFallback) {
+      return resolveSingleBusinessShortcutFallback(token, wantedSlug);
     }
     return null;
   }
@@ -2248,7 +2289,9 @@ async function computerCreate(token, args = [], defaults = {}) {
     return;
   }
 
-  const ctx = await resolveBusinessOwnerForCreate(token, options.businessSlug);
+  const ctx = await resolveBusinessOwnerForCreate(token, options.businessSlug, {
+    allowCanonicalShortcutFallback: Boolean(defaults.allowCanonicalShortcutFallback),
+  });
   if (!ctx?.businessId) {
     console.error('No business found.');
     console.error('Run inside a bound business workspace or pass: --business <slug>');
@@ -3874,6 +3917,7 @@ async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
     return computerCreate(token, finalArgs, {
       businessSlug: cloudOptions.businessSlug || RECRUITING_BUSINESS_SLUG,
       computerType: 'recruiting',
+      allowCanonicalShortcutFallback: !cloudOptions.businessSlug,
     });
   }
 
@@ -3888,6 +3932,7 @@ async function runRecruitingComputerShortcut(token, args, cloudOptions = {}) {
   const ctx = await resolveTypedBusinessComputerContext(token, recruitingOptions, {
     businessSlug: RECRUITING_BUSINESS_SLUG,
     computerType: 'recruiting',
+    allowCanonicalShortcutFallback: !recruitingOptions.businessSlug,
   });
   if (!ctx?.businessId) {
     console.error('Atris Recruiting is not available for this account.');

@@ -29,6 +29,26 @@ function writeRoadmap(root, items) {
   const body = items.map((i) => `- [ ] ${i}`).join('\n');
   fs.writeFileSync(path.join(root, 'ROADMAP.md'), `# Roadmap\n\n## Open loop items\n\n${body}\n\n## Other\n\ntext\n`, 'utf8');
 }
+function writeTaskProjection(root, tasks) {
+  const stateDir = path.join(root, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tasks.projection.json'), JSON.stringify({ tasks }), 'utf8');
+}
+function writeMissions(root, missions) {
+  const stateDir = path.join(root, '.atris', 'state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n'), 'utf8');
+}
+function writeLatestInbox(root, lines) {
+  const logDir = path.join(root, 'atris', 'logs', '2099');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.writeFileSync(path.join(logDir, '2099-01-01.md'), `# Log 2099-01-01\n\n## Inbox\n\n${lines.join('\n')}\n`, 'utf8');
+}
+function writeReport(root, name, text) {
+  const reportsDir = path.join(root, 'atris', 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  fs.writeFileSync(path.join(reportsDir, name), text, 'utf8');
+}
 
 test('pickNextMoves ranks roadmap over task over inbox, and dedupes', () => {
   const cands = [
@@ -74,6 +94,63 @@ test('readRoadmapOpenItems reads only the unchecked items in the section', () =>
       '# R\n\n## Open loop items\n\n- [ ] alpha\n- [x] done already\n- [ ] beta\n\n## Next\n\n- [ ] not in scope\n', 'utf8');
     const items = nextMoves.readRoadmapOpenItems(root).map((i) => i.title);
     assert.deepEqual(items, ['alpha', 'beta']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readEndgameMove suppresses compiled endgame when TODO has no active endgame work', () => {
+  const root = tmp();
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'brain'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'brain', 'state.json'), JSON.stringify({
+      endgame: { horizon: 'stale endgame', source: 'old compiled state' },
+    }), 'utf8');
+    fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** stale-endgame',
+      '**Horizon:** stale endgame',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** real non-endgame task [execute]',
+      '',
+    ].join('\n'), 'utf8');
+
+    assert.deepEqual(nextMoves.readEndgameMove(root), []);
+    assert.ok(!nextMoves.nextMoves(root, 5).some((move) => move.title === 'stale endgame'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readEndgameMove keeps compiled endgame when active endgame work remains', () => {
+  const root = tmp();
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'brain'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'brain', 'state.json'), JSON.stringify({
+      endgame: { horizon: 'live endgame', source: 'active task' },
+    }), 'utf8');
+    fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** live-endgame',
+      '**Horizon:** live endgame',
+      '',
+      '## Backlog',
+      '',
+      '- **T1:** live endgame step [endgame] [execute]',
+      '',
+    ].join('\n'), 'utf8');
+
+    const moves = nextMoves.readEndgameMove(root);
+    assert.equal(moves.length, 1);
+    assert.equal(moves[0].title, 'live endgame');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -156,6 +233,115 @@ test('killing or approving an idea never hides a real task with the same title',
   const approved = nextMoves.pickNextMoves(cands, { approvedIds: [nextMoves.moveId('roadmap', 'fix login')], approvedTitles: ['fix login'] });
   assert.equal(approved.length, 1);
   assert.equal(approved[0].source, 'task');
+});
+
+test('nextMoves suppresses reviewed task receipt fragments from inbox', () => {
+  const root = tmp();
+  try {
+    writeTaskProjection(root, [
+      { display_id: 'CLI-1', title: 'Make task accept landing concise', status: 'review' },
+      { display_id: 'CLI-2', title: 'Active same title', status: 'claimed', claimed_by: 'auto-improver' },
+    ]);
+    writeLatestInbox(root, [
+      '- **I1:** live idea',
+      '- task: CLI-1',
+      '- title: Make task accept landing concise',
+      '- status: done',
+      '- proof: already shipped',
+      '- title: Active same title',
+    ]);
+
+    const moves = nextMoves.nextMoves(root, 10);
+    const titles = moves.map((m) => m.title);
+
+    assert.ok(titles.includes('live idea'), 'real inbox ideas still show');
+    assert.ok(!titles.includes('Make task accept landing concise'), 'reviewed task title is not suggested again');
+    assert.ok(!titles.some((title) => /^(task|status|proof):/i.test(title)), 'task receipt metadata is not suggested');
+    const active = moves.find((m) => m.title === 'Active same title');
+    assert.equal(active?.source, 'task', 'real active task survives even when inbox has the same title');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('nextMoves drops generic tick placeholders but keeps concrete inbox ideas', () => {
+  const root = tmp();
+  try {
+    writeLatestInbox(root, [
+      '- **I1:** dogfood tick',
+      '- **I2:** ship receipt timeline',
+      '- **I3:** run one tick',
+    ]);
+
+    const titles = nextMoves.nextMoves(root, 10).map((m) => m.title);
+    assert.ok(!titles.includes('dogfood tick'), 'vague dogfood placeholder is not a next move');
+    assert.ok(!titles.includes('run one tick'), 'generic tick command is not a next move');
+    assert.ok(titles.includes('ship receipt timeline'), 'concrete inbox ideas still show');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('nextMoves hides Mission XP bookkeeping but keeps real active tasks', () => {
+  const root = tmp();
+  try {
+    writeTaskProjection(root, [
+      { display_id: 'CLI-1', title: 'Mission XP: overnight self improvement', status: 'claimed', tag: 'agent-xp', claimed_by: 'auto-improver' },
+      { display_id: 'CLI-2', title: 'Fix the real loop card', status: 'claimed', tag: 'loop', claimed_by: 'auto-improver' },
+    ]);
+
+    const moves = nextMoves.nextMoves(root, 10);
+    const titles = moves.map((m) => m.title);
+    assert.ok(!titles.includes('Mission XP: overnight self improvement'), 'internal AgentXP task is not a next move');
+    assert.equal(moves.find((m) => m.title === 'Fix the real loop card')?.source, 'task');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('nextMoves adds a seed when only an active mission remains', () => {
+  const root = tmp();
+  try {
+    writeMissions(root, [
+      { id: 'mission-1', objective: 'overnight mission', status: 'ready', owner: 'auto-improver' },
+    ]);
+
+    let moves = nextMoves.nextMoves(root, 3);
+    assert.equal(moves[0].title, 'overnight mission');
+    assert.equal(moves[1].title, nextMoves.SELF_IMPROVEMENT_SEED_TITLE);
+    assert.equal(moves[1].why, 'active mission has no concrete task queued');
+
+    writeTaskProjection(root, [
+      { display_id: 'CLI-2', title: 'Fix the real loop card', status: 'claimed', tag: 'loop', claimed_by: 'auto-improver' },
+    ]);
+    moves = nextMoves.nextMoves(root, 3);
+    assert.ok(moves.some((m) => m.title === 'Fix the real loop card'));
+    assert.ok(!moves.some((m) => m.title === nextMoves.SELF_IMPROVEMENT_SEED_TITLE), 'real work suppresses the fallback seed');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('nextMoves uses the latest report suggested target for mission-only seed', () => {
+  const root = tmp();
+  try {
+    writeMissions(root, [
+      { id: 'mission-1', objective: 'overnight mission', status: 'ready', owner: 'auto-improver' },
+    ]);
+    writeReport(root, '2099-01-01-old.md', 'Suggested target: old target.\n');
+    writeReport(root, '2099-01-02-new.md', [
+      '# Proof',
+      '',
+      'Suggested target: teach the loop to create the next task from evidence.',
+      '',
+    ].join('\n'));
+
+    const moves = nextMoves.nextMoves(root, 3);
+    assert.equal(moves[1].title, 'Teach the loop to create the next task from evidence');
+    assert.equal(moves[1].why, 'latest proof timeline suggested this self-improvement target');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('pickNextMoves keeps the highest-weight copy of a duplicated title', () => {

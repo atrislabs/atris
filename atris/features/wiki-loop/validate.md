@@ -1,11 +1,11 @@
 ---
-last_compiled: 2026-06-23
+last_compiled: 2026-06-30
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
   - commands/wiki.js:549-557 (wiki loop alias)
   - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
   - lib/wiki.js:620-704 (suggested sources, STATUS, log)
-  - bin/atris.js:702-715 (showLoopHelp)
+  - bin/atris.js:832-849 (showLoopHelp)
   - bin/atris.js:1835-1843 (top-level loop route)
   - test/commands.test.js:14430 (loop help coverage)
   - test/commands.test.js:15982-16051 (loop stale/suggest coverage)
@@ -13,8 +13,8 @@ sources:
 
 # Wiki Upkeep Loop — Validation
 
-> **Status:** shipped local upkeep command
-> **Validated:** 2026-06-18
+> **Status:** shipped local upkeep command with clean public-wiki baseline
+> **Validated:** 2026-06-30
 > **Exit condition:** `atris loop` reports local wiki health deterministically, writes STATUS/log unless `--dry-run`, `atris wiki loop` aliases it, and test coverage proves stale/orphan/suggestion behavior.
 
 ## Checks
@@ -30,7 +30,7 @@ sources:
 - [x] orphan page detection works
 - [x] next-ingest suggestions work
 - [x] targeted tests pass
-- [x] current repo dry-run reports real debt without mutating the wiki
+- [x] current repo reports a clean public wiki after recompilation
 
 ## Current Verification
 
@@ -39,18 +39,20 @@ node --test test/commands.test.js --test-name-pattern 'wiki|loop'
 node -c commands/loop.js
 node -c commands/wiki.js
 node -c lib/wiki.js
+node bin/atris.js loop --help
 node bin/atris.js loop --dry-run
 node bin/atris.js loop --dry-run --json
 node bin/atris.js wiki loop --dry-run
+node bin/atris.js loop wiki --json
 ```
 
 ## Current Repo Report
 
-_Point-in-time snapshot from `node bin/atris.js loop --dry-run` on 2026-06-18 — recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
+_Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-06-30 — recompiling or ingesting wiki pages changes these counts, so a mismatch here is drift, not a bug._
 
-- Reports 20 pages, 10 stale pages, 0 orphans, and 0 next-ingest candidates.
-- First remediation is `atris/wiki/systems/atris-business.md` from `README.md`.
-- No orphan pages currently reported.
+- Reports 22 pages, 0 stale pages, 0 orphan pages, and 0 next-ingest candidates.
+- Health is `wiki is in good shape`.
+- Next move is to use the wiki, ingest new source material, or clear stale feature-pack docs reported by `atris clean --dry-run --json`.
 
 ## Notes
 

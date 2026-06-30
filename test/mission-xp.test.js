@@ -41,6 +41,24 @@ function hasNodeSqlite() {
   return result.status === 0;
 }
 
+function ackNativeCodexGoal(dir, mission, env = {}) {
+  const ack = runCli([
+    'mission',
+    'goal',
+    'ack',
+    mission.id,
+    '--runtime',
+    'codex',
+    '--status',
+    'active',
+    '--objective',
+    mission.objective,
+    '--json',
+  ], { cwd: dir, env });
+  assert.equal(ack.status, 0, ack.stderr || ack.stdout);
+  return JSON.parse(ack.stdout);
+}
+
 test('mission --xp-task routes verified goal proof into AgentXP acceptance', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -98,6 +116,16 @@ test('mission --xp-task routes verified goal proof into AgentXP acceptance', () 
     const nowText = fs.readFileSync(path.join(dir, 'atris', 'team', 'game-manager', 'now.md'), 'utf8');
     assert.match(nowText, new RegExp(`task: ${mission.xp_task.ref}`));
     assert.match(nowText, new RegExp(`task next: atris task current-step --goal-id ${mission.id}`));
+
+    const blockedTick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir, env });
+    assert.equal(blockedTick.status, 2, blockedTick.stderr || blockedTick.stdout);
+    const blockedTickPayload = JSON.parse(blockedTick.stdout);
+    assert.equal(blockedTickPayload.code, 'native_goal_not_started');
+    assert.match(blockedTickPayload.next_action, /mission goal ack/);
+
+    const ack = ackNativeCodexGoal(dir, mission, env);
+    assert.equal(ack.action, 'native_goal_acknowledged');
+    assert.equal(ack.codex_goal_state.goal.requires_native_goal_start, false);
 
     const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir, env });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
@@ -191,6 +219,16 @@ test('mission attach-task creates a task spine for an existing active mission', 
     const statusMission = JSON.parse(status.stdout).missions[0];
     assert.equal(statusMission.task_ref, payload.task.ref);
     assert.equal(statusMission.task_spine.ensure_task_command, null);
+
+    const beforeAckGoal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
+    assert.equal(beforeAckGoal.status, 0, beforeAckGoal.stderr || beforeAckGoal.stdout);
+    const beforeAckGoalPayload = JSON.parse(beforeAckGoal.stdout);
+    assert.equal(beforeAckGoalPayload.goal.requires_native_goal_start, true);
+    assert.match(beforeAckGoalPayload.goal.next_command, /create_goal/);
+    assert.match(beforeAckGoalPayload.goal.next_command, new RegExp(`mission goal ack ${mission.id}`));
+
+    const ack = ackNativeCodexGoal(dir, mission, env);
+    assert.equal(ack.codex_goal_state.goal.requires_native_goal_start, false);
 
     const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);

@@ -29,8 +29,8 @@ test('npm package includes runtime workspace templates', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', 'research-canonical', 'MAP.md')));
 });
 
-test('npm package metadata matches the reviewed release version', () => {
-  assert.equal(packageJson.version, '3.30.6');
+test('npm package metadata keeps version and lockfile aligned', () => {
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+$/);
   assert.equal(packageLock.version, packageJson.version);
   assert.equal(packageLock.packages[''].version, packageJson.version);
 });

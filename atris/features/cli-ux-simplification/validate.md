@@ -1,37 +1,37 @@
 ---
-last_compiled: 2026-06-29
+last_compiled: 2026-06-30
 validated_by: executor
-validation_notes: Re-verified 2026-06-29. Reconciled all drifted file:line refs against live source after showHelp/task-db/atris.md growth. showHelp is now bin/atris.js:322-504 (line 290 is now the console.js path, not help text). Core workflow now also lists run logs/run search alongside pulse/spaceship; Context & tracking gained launchpad (between ctop and status); Optional helpers gained improve/worktree/youtube. renderTodoMarkdown moved to lib/task-db.js:1611-1644. atris.md "## task source of truth" moved from 61-67 to 85-110 (the old 61-67 range is now "## taste"). MAP.md "Agent Activation Commands" By-Feature block moved to 832-861. The workflow.js (411-413/619-633/768-779/1118-1121), init.js (419-446/427-441/445/508-516/514-515), state-detection.js (50-51), and features/README.md (145-152/156-168) refs were re-read and remain accurate. TODO.md is regenerated from durable task state (lib/task-db.js renderTodoMarkdown), so the file is a readable board, not ownership truth.
+validation_notes: Re-verified 2026-06-30. Reconciled the top-level help against the current AI-computer front door, mission/task/brain context commands, business/cloud sections, and durable TODO rendering. TODO.md remains a readable board regenerated from durable task state, not ownership truth.
 sources:
-  - bin/atris.js:322-504 (showHelp function — quick start, setup, core workflow, context/tracking, optional helpers, sync)
-  - commands/init.js:419-446 (TODO.md placeholder creation via fs.writeFileSync)
+  - bin/atris.js:414-596 (showHelp function — quick start, setup, workflow, context/tracking, sync, business, cloud agents, skills, team)
+  - commands/init.js:416-441 (TODO.md placeholder creation via fs.writeFileSync)
   - commands/workflow.js:411-413 (planAtris — read TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:619-633 (planAtris — include TODO.md in user prompt)
   - commands/workflow.js:768-779 (doAtris — load TODO.md or legacy TASK_CONTEXTS.md)
   - commands/workflow.js:1118-1121 (reviewAtris — read TODO.md or legacy TASK_CONTEXTS.md)
-  - lib/task-db.js:1611-1644 (renderTodoMarkdown — regenerated TODO.md board)
-  - atris.md:85-110 (## task source of truth — defines the atris task / TODO.md system)
-  - atris/MAP.md:832-861 (Agent Activation Commands By-Feature block — plan/do/review)
+  - lib/task-db.js:1611-1719 (renderTodoMarkdown — regenerated TODO.md board)
 ---
 
 # CLI UX Simplification — Validation
 
-> **Status:** v4 — re-verified 2026-06-29
-> **Exit Condition:** Help output clearly sections core workflow (plan/do/review) separate from optional helpers and cloud commands. TODO.md is created and read by init/plan/do/review, while `atris task render` keeps it aligned with durable task state. Legacy TASK_CONTEXTS.md is still supported for backwards compatibility.
+> **Status:** v4 — re-verified 2026-06-30
+> **Exit Condition:** Help output opens with the persistent AI computer path, keeps plan/do/review/run separate from optional helpers and cloud/business commands, and names the durable task/mission/brain surfaces. TODO.md is created and read by init/plan/do/review, while `atris task render` keeps it aligned with durable task state. Legacy TASK_CONTEXTS.md is still supported for backwards compatibility.
 
 ## Checks
 
 ### 1. Help Output Structure
-- [x] `atris help` keeps Setup, Core workflow, Context & tracking, Optional helpers, Experiments, and Sync separated (`bin/atris.js:350-420`)
-- [x] Core workflow grouped: plan, do, review, run — now also run logs, run search, pulse, spaceship (`bin/atris.js:356-364`)
-- [x] log, now, activate, radar, ctop, launchpad, status live in Context & tracking (`bin/atris.js:366-389`)
-- [x] brainstorm, autopilot, visualize stay in Optional helpers — now also improve, worktree, youtube (`bin/atris.js:391-397`)
+- [x] `atris help` starts with the persistent AI computer quick start and common invocations (`bin/atris.js:420-440`)
+- [x] Setup stays separate from the working loop (`bin/atris.js:442-446`)
+- [x] Core workflow groups plan, do, review, run, run logs, run search, pulse, and spaceship (`bin/atris.js:448-456`)
+- [x] Context & tracking names the live operating surfaces: launchpad, task, mission, learn, brain, lesson, ingest/query/lint/loop (`bin/atris.js:458-481`)
+- [x] Optional helpers stay secondary: brainstorm, autopilot, improve, worktree, visualize, youtube (`bin/atris.js:483-489`)
+- [x] Sync, business, cloud agents, skills, team, plugin, feedback, and other commands are separate sections (`bin/atris.js:508-592`)
 
 ### 2. TODO.md Creation & Usage
 - [x] `atris init` creates atris/TODO.md with placeholder content (`commands/init.js:419-446`)
 - [x] TODO.md template includes Backlog, In Progress, Completed sections (`commands/init.js:427-441`)
-- [x] init calls console.log summary after creation (`commands/init.js:445`)
-- [x] `atris task render` marks TODO.md as regenerated from durable task state (`lib/task-db.js:1611-1644`)
+- [x] init calls console.log summary after creation (`commands/init.js:440`)
+- [x] `atris task render` marks TODO.md as regenerated from durable task state (`lib/task-db.js:1611-1719`)
 
 ### 3. Commands Read TODO.md
 - [x] **plan**: Loads TODO.md for current state (`commands/workflow.js:411-413`)
@@ -67,8 +67,8 @@ Key decisions:
 - Backwards-compatible fallback to TASK_CONTEXTS.md for old projects
 - visualize command kept but nudged toward plan (legacy not removed per v2.0.0 stability rules)
 
-Drift notes (reconciled 2026-06-29): the help surface keeps growing — `showHelp` is now `bin/atris.js:322-504` (line 290 is the `console.js` path, not help); Core workflow lists `run logs`/`run search` alongside `pulse`/`spaceship`; Context & tracking gained `launchpad` between `ctop` and `status`; Optional helpers gained `improve`/`worktree`/`youtube`. `renderTodoMarkdown` (the TODO.md board generator) is now `lib/task-db.js:1611-1644`, ending right before `appendSection`. atris.md was restructured: `## task source of truth` moved from `61-67` to `85-110` (the old `61-67` is now `## taste`). MAP.md's "Agent Activation Commands" By-Feature block is now `832-861`. The `commands/workflow.js`, `commands/init.js`, `lib/state-detection.js`, and `features/README.md` refs were re-read and remain accurate. Enumerations (the help command lists) were diffed against live `showHelp` text, not just line numbers — per the reconcile-refs-misses-table-drift lesson.
+Drift notes (reconciled 2026-06-30): the help surface has grown since v2.0.0 into an AI-computer front door. Core workflow now includes run logs/search, pulse, and spaceship; Context & tracking now exposes launchpad, task, mission, brain, lesson, and local wiki commands; `renderTodoMarkdown` lives at `lib/task-db.js:1611-1719`.
 
 ## Errors Hit
 
-None. Implementation clean. Retroactively documented during /improve cycle (2026-04-06). Lesson learned: features-outlive-status — validate.md creation is the right trigger to update idea.md status from "planning" to "complete" when shipping. Re-verifications 2026-06-18 and 2026-06-29 hit no errors; every ref was re-read against live source before re-stamping, and the help-command enumerations were diffed against the actual `showHelp` output (not just line numbers) to catch body-drift the frontmatter can't.
+None. Implementation clean. Retroactively documented during /improve cycle (2026-04-06). Lesson learned: features-outlive-status — validate.md creation is the right trigger to update idea.md status from "planning" to "complete" when shipping. Re-verification 2026-06-30 hit no errors; the top-level help ref was re-read against source before re-stamping.

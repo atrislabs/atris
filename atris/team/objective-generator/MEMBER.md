@@ -21,7 +21,7 @@ Legacy name for `task-planner`.
 ## Workflow
 
 1. Read the wiki graph, task truth, and coordination recommendations.
-2. Identify a high-value gap.
+2. Pick the next goal that would make a real user trust the product more after using it, not after hearing an explanation.
 3. Score the proposed task by impact, urgency, and clarity.
 4. Write the proposal with owner and proof expected.
 
@@ -30,3 +30,4 @@ Legacy name for `task-planner`.
 - Do not flood the backlog.
 - Prefer tasks that unblock current work.
 - Reject vague objectives.
+- A good next goal makes a real user trust the product more after using it, not after hearing an explanation.

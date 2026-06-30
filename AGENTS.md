@@ -34,6 +34,12 @@ task truth, proof, review, and backend/cloud sync all flow through Atris.
 | `atris/TODO.md` | Rendered/legacy task view only |
 | `atris/MAP.md` | Navigation (where is X?) |
 
+## Proof Surfaces
+
+Run `atris run logs` to inspect autonomous plan/do/review phase logs. Use
+`atris run search`, `stats`, `export`, `diff`, and `prune-logs` when proof needs
+to be found, compared, shared, or kept concise.
+
 ## Agent Contract
 
 Every agent should leave four artifacts another agent can trust:

@@ -51,6 +51,7 @@ Options:
   --verify "<cmd>"       Verifier for changed-work ticks (default: npm test)
   --cadence "<cron>"     Cron cadence for install
   --days <n>             Auto-expire installed heartbeat after n days
+  --hours <n>            Auto-expire installed heartbeat after n hours
   --model <id>           Runner model alias/id for installed heartbeat
   --runner-profile <n>   Runner profile for installed heartbeat (e.g. atris-fast)
   --runner-bin <path>    Runner binary for installed heartbeat
@@ -197,6 +198,26 @@ function tickCommand(args, root = process.cwd()) {
   }
 
   const tickIndex = pulse.nextTickIndex(root);
+  const signalExitCode = { SIGINT: 130, SIGTERM: 143 };
+  let interrupted = false;
+  const finishInterrupted = (signal) => {
+    if (interrupted) return;
+    interrupted = true;
+    try {
+      pulse.appendPulseReceipt(root, pulse.buildInterruptedPulseReceipt({
+        tickIndex,
+        signal,
+        startedAt,
+        prevTickStale: priorStale.stale,
+      }));
+    } catch {}
+    try {
+      pulse.releaseLock(root);
+    } catch {}
+    process.exit(signalExitCode[signal] || 1);
+  };
+  process.once('SIGINT', finishInterrupted);
+  process.once('SIGTERM', finishInterrupted);
 
   // 'started' receipt - if the tick dies after this, the orphan surfaces as a ghost.
   pulse.appendPulseReceipt(root, pulse.buildPulseReceipt({
@@ -301,6 +322,8 @@ function tickCommand(args, root = process.cwd()) {
     if (!asJson) process.stdout.write(`pulse tick #${tickIndex} crashed: ${out.error}\n`);
     return emit(out, asJson);
   } finally {
+    process.removeListener('SIGINT', finishInterrupted);
+    process.removeListener('SIGTERM', finishInterrupted);
     pulse.releaseLock(root);
   }
 }
@@ -372,14 +395,45 @@ function resolveEngineBinDirs(extraBins = []) {
 
 function installCommand(args, root = process.cwd()) {
   const asJson = wantsJson(args);
-  const cron = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
-  const days = Math.max(1, Number(readFlag(args, '--days', '7')) || 7);
+  const cadenceInput = readFlag(args, '--cadence', pulse.DEFAULT_CADENCE_CRON);
+  let cron;
+  try {
+    cron = pulse.normalizeCronCadence(cadenceInput);
+  } catch (error) {
+    const out = {
+      ok: false,
+      action: 'pulse_install',
+      reason: 'invalid_cadence',
+      detail: error && error.message ? error.message : String(error),
+      cadence: cadenceInput,
+    };
+    if (!asJson) process.stdout.write(`pulse install failed: ${out.detail}\n`);
+    return emit(out, asJson);
+  }
+  let expiry;
+  try {
+    expiry = pulse.normalizeExpiryDuration({
+      hours: readFlag(args, '--hours', null),
+      days: readFlag(args, '--days', '7'),
+    });
+  } catch (error) {
+    const out = {
+      ok: false,
+      action: 'pulse_install',
+      reason: 'invalid_expiry',
+      detail: error && error.message ? error.message : String(error),
+      hours: readFlag(args, '--hours', null),
+      days: readFlag(args, '--days', '7'),
+    };
+    if (!asJson) process.stdout.write(`pulse install failed: ${out.detail}\n`);
+    return emit(out, asJson);
+  }
   const verifyCmd = readFlag(args, '--verify', 'npm test');
   const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus');
   const runnerProfile = readFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
   const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');
-  const deadlineEpoch = Math.floor(Date.now() / 1000) + days * 86400;
+  const deadlineEpoch = Math.floor(Date.now() / 1000) + expiry.seconds;
 
   fs.mkdirSync(STATE_HOME, { recursive: true });
   const scriptPath = path.join(STATE_HOME, 'tick.sh');
@@ -414,7 +468,10 @@ function installCommand(args, root = process.cwd()) {
     script_path: scriptPath,
     crontab_line: line,
     cadence: cron,
-    expires_in_days: days,
+    cadence_input: cadenceInput,
+    expires_in_days: expiry.days,
+    expires_in_hours: expiry.hours,
+    expires_in_seconds: expiry.seconds,
     deadline_epoch: deadlineEpoch,
     runner_profile: runnerProfile || null,
     runner_bin: runnerBin || null,
@@ -425,7 +482,7 @@ function installCommand(args, root = process.cwd()) {
       process.stdout.write([
         `pulse installed. heartbeat fires '${cron}' against ${root}.`,
         `script: ${scriptPath}`,
-        `auto-expires in ${days} days. stop early: atris pulse uninstall`,
+        `auto-expires in ${expiry.hours ? `${expiry.hours} hours` : `${expiry.days} days`}. stop early: atris pulse uninstall`,
       ].join('\n') + '\n');
     } else {
       process.stdout.write(`pulse install failed to write crontab: ${apply.stderr || apply.status}\nscript written to ${scriptPath}; add this line to your crontab manually:\n${line}\n`);

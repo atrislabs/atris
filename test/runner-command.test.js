@@ -12,6 +12,7 @@ const {
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerAvailabilityCommand,
+  runnerAvailabilityFailureMessage,
   buildRunnerCommand,
 } = require('../lib/runner-command');
 
@@ -164,6 +165,22 @@ test('unknown runner profile throws a clear config error', () => {
 test('buildRunnerAvailabilityCommand checks the configured runner binary', () => {
   withBinEnv('/opt/atris/bin/claude-nightly', () => {
     assert.equal(buildRunnerAvailabilityCommand(), 'command -v /opt/atris/bin/claude-nightly');
+  });
+});
+
+test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowing', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'atris-9' }, () => {
+    let err = null;
+    try {
+      buildRunnerAvailabilityCommand();
+    } catch (caught) {
+      err = caught;
+    }
+    assert.match(err && err.message, /Unknown ATRIS_RUNNER_PROFILE "atris-9"/);
+    assert.match(
+      runnerAvailabilityFailureMessage(err),
+      /Unknown ATRIS_RUNNER_PROFILE "atris-9".*Set ATRIS_RUNNER_PROFILE to one of: atris-fast/
+    );
   });
 });
 

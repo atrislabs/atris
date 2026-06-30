@@ -72,6 +72,13 @@ test('runtime runner wording is config-neutral', () => {
   assert.match(RUN_SRC, /configured runner command/);
 });
 
+test('run and autopilot format runner availability failures without re-resolving config', () => {
+  assert.match(AUTOPILOT_SRC, /runnerAvailabilityFailureMessage\(err\)/);
+  assert.match(RUN_SRC, /runnerAvailabilityFailureMessage\(err\)/);
+  assert.doesNotMatch(AUTOPILOT_SRC, /resolveClaudeRunnerBin\(\)} CLI not found/);
+  assert.doesNotMatch(RUN_SRC, /resolveClaudeRunnerBin\(\)} CLI not found/);
+});
+
 test('run and autopilot sweep configured runner process groups on timeout', () => {
   for (const src of [AUTOPILOT_SRC, RUN_SRC]) {
     assert.match(src, /function execPhaseCommandSync\(cmd, opts = \{\}\)/);

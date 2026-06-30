@@ -87,7 +87,7 @@ test('review queue surfaces validated receipt evidence from proof text', () => {
     assert.deepEqual(item.evidence.missing, []);
     assert.equal(item.evidence.all_passing, true);
 
-    const text = runCli(['task', 'reviews'], { cwd: dir, env });
+    const text = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /receipt: .*mission-mission-test-123-receipt\.json verifier:passed/);
   } finally {
@@ -115,7 +115,7 @@ test('review queue flags missing and failing receipts named in proof', () => {
     assert.deepEqual(item.evidence.missing, [ghostRel]);
     assert.equal(item.evidence.all_passing, false);
 
-    const text = runCli(['task', 'reviews'], { cwd: dir, env });
+    const text = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
     assert.match(text.stdout, /verifier:FAILED/);
     assert.match(text.stdout, /MISSING/);
   } finally {

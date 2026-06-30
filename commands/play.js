@@ -417,7 +417,7 @@ function modeState(args = []) {
       prompt: latestMessage(events),
     } : null,
     proof_recipe: proofRecipe(),
-    xp_rule: 'AgentXP lands only after a useful artifact has verifier proof and review accepts it.',
+    xp_rule: 'AgentXP is awarded only after a useful artifact has verifier proof and accepted review.',
     global_sync_rule: AGENTXP_GLOBAL_SYNC_RULE,
     leaderboard_url: AGENTXP_LEADERBOARD_URL,
     next_commands: commandList,

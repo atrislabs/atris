@@ -1,15 +1,15 @@
 ---
-last_compiled: 2026-06-23
+last_compiled: 2026-06-30
 sources:
-  - commands/member.js:7411-7531 (member command dispatch and help)
+  - commands/member.js:7588-7676 (member command dispatch and help)
   - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
   - test/commands.test.js:144 (member create, goal, wake, loop, status coverage starts here)
 ---
 
 # Team Member Standard — Validation
 
-> **Status:** implemented (local-first member runtime)
-> **Validated:** 2026-05-10
+> **Status:** implemented and re-verified (local-first member runtime)
+> **Validated:** 2026-06-30
 
 ## Checks
 
@@ -22,9 +22,13 @@ sources:
 - [x] `atris member goal-from-score` creates the active self-improvement goal from Team score evidence
 - [x] `atris member wake` returns one finite decision and refuses to pile work onto open experiments
 - [x] `atris member loop` repeats wake quickly and skips when a lease is already active
+- [x] `atris member alive` runs the loop in always-on liveness mode
 - [x] `atris member run` delegates active member runtime work to `atris mission run`
+- [x] `atris member history` reads git history for MEMBER.md and SOUL.md
+- [x] `supervisor recommendations`, `objective-generator proposals`, `generalist proof`, and `generalist patterns` are exposed from member help
+- [x] `archive` and `purge-archived` are exposed for retired members
 - [ ] Open source spec published
-- [ ] Cross-tool compatibility verified
+- [ ] Cross-tool compatibility verified by external agents reading MEMBER.md
 
 ## Verification
 
@@ -34,4 +38,6 @@ node -c commands/member.js
 node -c commands/mission.js
 node -c bin/atris.js
 node bin/atris.js member --help
+node bin/atris.js member list
+node bin/atris.js clean --dry-run --json
 ```

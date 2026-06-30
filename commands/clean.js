@@ -15,20 +15,23 @@ function cleanAtris(options = {}) {
   const atrisDir = path.join(cwd, 'atris');
 
   if (!fs.existsSync(atrisDir)) {
+    if (options.json) {
+      console.log(JSON.stringify({
+        ok: false,
+        action: 'clean',
+        error: 'atris/ folder not found. Run "atris init" first.',
+      }, null, 2));
+      process.exit(1);
+    }
     console.log('✗ atris/ folder not found. Run "atris init" first.');
     process.exit(1);
   }
-
-  console.log('');
-  console.log('┌─────────────────────────────────────────────────────────────┐');
-  console.log('│ Atris Clean                                                 │');
-  console.log('└─────────────────────────────────────────────────────────────┘');
-  console.log('');
 
   const results = {
     staleTasks: [],
     brokenRefs: [],
     healedRefs: 0,
+    healedRefDetails: [],
     unhealableRefs: [],
     archivedJournals: 0,
     cleanedSections: 0
@@ -39,8 +42,9 @@ function cleanAtris(options = {}) {
   results.staleTasks = staleTasks;
 
   // 2. Find and HEAL broken MAP.md references
-  const { healed, unhealable } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
+  const { healed, unhealable, replacements } = healBrokenMapRefs(cwd, atrisDir, options.dryRun);
   results.healedRefs = healed;
+  results.healedRefDetails = replacements;
   results.unhealableRefs = unhealable;
 
   // 3. Archive old journals (>30 days)
@@ -54,6 +58,17 @@ function cleanAtris(options = {}) {
   // 5. Find stale wiki pages (source newer than last_compiled)
   const stalePages = findStalePages(cwd, atrisDir);
   results.stalePages = stalePages;
+
+  if (options.json) {
+    console.log(JSON.stringify(cleanResultPayload(results, options, cwd), null, 2));
+    return results;
+  }
+
+  console.log('');
+  console.log('┌─────────────────────────────────────────────────────────────┐');
+  console.log('│ Atris Clean                                                 │');
+  console.log('└─────────────────────────────────────────────────────────────┘');
+  console.log('');
 
   // Report results
   console.log('Results:');
@@ -74,6 +89,12 @@ function cleanAtris(options = {}) {
   if (healed > 0) {
     const verb = options.dryRun ? 'Would heal' : 'Healed';
     console.log(`✓ ${verb} ${healed} MAP.md ${healed === 1 ? 'reference' : 'references'}`);
+    (results.healedRefDetails || []).slice(0, 3).forEach(ref => {
+      console.log(`   • ${ref.old} -> ${ref.new}${ref.symbol ? ` (${ref.symbol})` : ''}`);
+    });
+    if ((results.healedRefDetails || []).length > 3) {
+      console.log(`   ... and ${results.healedRefDetails.length - 3} more`);
+    }
   }
 
   // Unhealable refs
@@ -136,6 +157,47 @@ function cleanAtris(options = {}) {
   console.log('');
 
   return results;
+}
+
+function cleanResultPayload(results, options = {}, cwd = process.cwd()) {
+  const manualAction = [];
+  if (results.staleTasks.length > 0) manualAction.push('Delete stale tasks or finish them');
+  if (results.unhealableRefs.length > 0) manualAction.push('Manually fix unhealable MAP.md refs');
+  if (results.stalePages.length > 0) manualAction.push('Re-compile stale pages');
+  return {
+    ok: manualAction.length === 0,
+    action: 'clean',
+    dry_run: !!options.dryRun,
+    results: {
+      stale_tasks: {
+        count: results.staleTasks.length,
+        items: results.staleTasks,
+      },
+      map_refs: {
+        healed_count: results.healedRefs,
+        verb: options.dryRun ? 'would_heal' : 'healed',
+        items: results.healedRefDetails || [],
+        unhealable_count: results.unhealableRefs.length,
+        unhealable: results.unhealableRefs,
+      },
+      journals: {
+        archived_count: results.archivedJournals,
+        verb: options.dryRun ? 'would_archive' : 'archived',
+      },
+      sections: {
+        cleaned_count: results.cleanedSections,
+        verb: options.dryRun ? 'would_clean' : 'cleaned',
+      },
+      stale_pages: {
+        count: results.stalePages.length,
+        items: results.stalePages.map(page => ({
+          page: path.relative(cwd, page.page),
+          stale_source: page.staleSource,
+        })),
+      },
+    },
+    manual_action: manualAction,
+  };
 }
 
 /**
@@ -295,7 +357,7 @@ function healBrokenMapRefs(cwd, atrisDir, dryRun = false) {
     fs.writeFileSync(mapFile, mapContent);
   }
 
-  return { healed, unhealable, replacements: dryRun ? replacements : [] };
+  return { healed, unhealable, replacements };
 }
 
 /**
@@ -568,6 +630,7 @@ function cleanEmptySections(atrisDir, dryRun = false) {
 
 module.exports = {
   cleanAtris,
+  cleanResultPayload,
   findStaleTasks,
   healBrokenMapRefs,
   archiveOldJournals,

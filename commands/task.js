@@ -150,8 +150,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task finish <id> --proof "..."     Legacy alias for done with proof
   atris task review <id> --reward <n> [--verify "<cmd>"]
                                            Write review event + RSI episode
-  atris task reviews [--limit <n>]         Show certified Review items for human accept/revise
-  atris task reviews --group-by <tag|owner|source>   Cluster ready-to-land work for fast triage
+  atris task reviews [--all|--limit <n>] [--verbose]   Show certified Review items for human accept/revise
+  atris task reviews --group-by <tag|owner|source>   Cluster approval-ready work for fast triage
   atris task accept-group <key>=<value> --spot-check K --confirm-human-accept --as <you> --verified <ids>
                                            Accept a whole cluster; career XP only on the K you verified
   atris task status [--json] [--history]   Compact live status for web/Swarlo
@@ -282,6 +282,63 @@ function refreshCareerXpProjection(workspaceRoot) {
 
 function refreshCareerXpAfterReview(reviewed) {
   return refreshCareerXpProjection(reviewed?.episode?.workspace_root);
+}
+
+function compactCareerXpProjection(projection) {
+  if (!projection || typeof projection !== 'object') return projection;
+  const progress = projection.next_level_progress && typeof projection.next_level_progress === 'object'
+    ? {
+      level: projection.next_level_progress.level ?? null,
+      next_level: projection.next_level_progress.next_level ?? null,
+      current_xp: projection.next_level_progress.current_xp ?? null,
+      required_xp: projection.next_level_progress.required_xp ?? null,
+      remaining_xp: projection.next_level_progress.remaining_xp ?? null,
+      percent: projection.next_level_progress.percent ?? null,
+    }
+    : null;
+  const latest = projection.latest_accepted_proof && typeof projection.latest_accepted_proof === 'object'
+    ? {
+      label: projection.latest_accepted_proof.label ?? null,
+      receipt_id: projection.latest_accepted_proof.receipt_id ?? null,
+      source: projection.latest_accepted_proof.source ?? null,
+      source_task_id: projection.latest_accepted_proof.source_task_id ?? null,
+      title: projection.latest_accepted_proof.title ?? null,
+      xp: projection.latest_accepted_proof.xp ?? null,
+      reward: projection.latest_accepted_proof.reward ?? null,
+      accepted_at: projection.latest_accepted_proof.accepted_at ?? null,
+      goal: projection.latest_accepted_proof.goal ?? null,
+    }
+    : null;
+  const integrity = projection.integrity && typeof projection.integrity === 'object'
+    ? {
+      status: projection.integrity.status ?? null,
+      receipts_count: projection.integrity.receipts_count ?? projection.receipts_count ?? null,
+      head_hash: projection.integrity.head_hash ?? null,
+    }
+    : null;
+  return {
+    schema: projection.schema,
+    compact: true,
+    total_xp: projection.total_xp ?? projection.total_agent_xp ?? projection.agent_xp ?? null,
+    agent_xp: projection.agent_xp ?? projection.total_agent_xp ?? null,
+    today_xp: projection.today_xp ?? projection.today_agent_xp ?? null,
+    collected_receipts: projection.collected_receipts ?? 0,
+    receipts_count: projection.receipts_count ?? null,
+    level: projection.level ?? null,
+    leaderboard_eligible: projection.leaderboard_eligible ?? null,
+    integrity_status: projection.integrity_status ?? integrity?.status ?? null,
+    next_level_progress: progress,
+    latest_accepted_proof: latest,
+    integrity,
+    omitted: [
+      'contribution_graph',
+      'career',
+      'earning_model',
+      'local_activity',
+      'ledger',
+      'sources',
+    ],
+  };
 }
 
 function jsonModeActive() {
@@ -678,47 +735,103 @@ function reviewSummary(task, payload = {}) {
     || careerText.includes('agent xp')
   ) {
     if (task.status === 'done') {
-      return `Landed AgentXP result for ${plainTitle}.`;
+      return `Completed AgentXP result for ${plainTitle}.`;
     }
     if (task.status === 'review') {
-      return `${plainTitle} is ready to land; land only if the proof is real.`;
+      return `${plainTitle}: proof is ready for human approval; approve only if the evidence is real.`;
     }
-    return `This explains what landing ${plainTitle} would make real for AgentXP.`;
+    return `This explains the AgentXP result ${plainTitle} would make real.`;
   }
   if (task.status === 'done') {
-    return `Landed result for ${plainTitle}.`;
+    return `Completed result for ${plainTitle}.`;
   }
   if (task.status === 'review') {
-    return `${plainTitle} is ready to land; land it or send it back.`;
+    return `${plainTitle}: review the completed result, then approve or ask for rework.`;
   }
-  return `This explains what landing ${plainTitle} would make real.`;
+  return `This explains what ${plainTitle} would make real.`;
 }
 
 function titleToResultText(title) {
   const text = String(title || 'this task').replace(/\s+/g, ' ').trim();
-  if (!text) return 'This task is ready to review.';
+  if (!text) return 'Completed this task.';
+  const resultSentence = (prefix, body) => {
+    const clean = String(body || '').replace(/\s+/g, ' ').trim().replace(/[.!?]+$/, '');
+    return clean ? `${prefix} ${clean}.` : `${prefix}.`;
+  };
+  const missionXp = text.match(/^Mission XP:\s*(.+)$/i);
+  if (missionXp) {
+    const missionResult = titleToResultText(missionXp[1]).replace(/[.!?]+$/, '');
+    return resultSentence('Completed mission work:', missionResult.replace(/^Completed:\s*/i, ''));
+  }
   const [first, ...restParts] = text.split(' ');
   const rest = restParts.join(' ');
+  const firstLower = String(first || '').toLowerCase();
+  const compound = rest.match(/^and\s+([a-z]+)\s+(.+)$/i);
+  const compoundPast = compound ? ({
+    audit: { close: 'Audited and closed' },
+    decide: { start: 'Decided and started' },
+    prune: { compress: 'Pruned and compressed' },
+  }[firstLower] || {})[String(compound[1] || '').toLowerCase()] : null;
+  if (compoundPast && compound[2]) return resultSentence(compoundPast, compound[2]);
   const past = {
     add: 'Added',
     approve: 'Prepared approval for',
+    audit: 'Audited',
+    batch: 'Batched',
     build: 'Built',
     clean: 'Cleaned',
     create: 'Created',
+    decide: 'Decided',
     design: 'Designed',
     document: 'Documented',
+    find: 'Found',
     fix: 'Fixed',
+    heal: 'Healed',
+    ignore: 'Ignored',
+    infer: 'Inferred',
+    keep: 'Kept',
     make: 'Made',
+    number: 'Numbered',
+    prune: 'Pruned',
+    reconcile: 'Reconciled',
+    refresh: 'Refreshed',
+    render: 'Rendered',
+    repair: 'Repaired',
     replace: 'Replaced',
+    respect: 'Respected',
     route: 'Routed',
     run: 'Ran',
     ship: 'Shipped',
+    show: 'Showed',
+    stop: 'Stopped',
+    summarize: 'Summarized',
+    suppress: 'Suppressed',
+    trim: 'Trimmed',
     update: 'Updated',
+    use: 'Used',
     validate: 'Validated',
     wire: 'Wired',
-  }[String(first || '').toLowerCase()];
-  if (past && rest) return `${past} ${rest}.`;
-  return `${text} is ready to review.`;
+  }[firstLower];
+  if (past && rest) return resultSentence(past, rest);
+  return resultSentence('Completed:', text);
+}
+
+function proofToReasonText(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const label = /\b(?:Product proof|Why it matters)\s*:\s*/i.exec(text);
+  if (!label) return '';
+  const rest = text.slice(label.index + label[0].length);
+  const stop = rest.search(/(?:^|[.;]\s+)\b(?:Checks?|Mission receipt|Receipt|Landing|Changed|How I checked|What I tested|Saved|Decision)\s*:/i);
+  let section = (stop >= 0 ? rest.slice(0, stop) : rest)
+    .replace(/^(?:[-:]\s*)+/, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[;,:-]\s*$/, '')
+    .trim();
+  const sentenceStop = section.search(/[.!?]\s+/);
+  if (sentenceStop >= 0) section = section.slice(0, sentenceStop + 1).trim();
+  if (!section) return '';
+  return /[.!?]$/.test(section) ? section : `${section}.`;
 }
 
 function titleToReasonText(task, proof = '') {
@@ -737,35 +850,102 @@ function titleToReasonText(task, proof = '') {
     return 'It keeps real-world side effects behind a clear human decision.';
   }
   if (/\btest|self-test|harness|verifier|proof\b/.test(text)) {
-    return 'It makes the check repeatable before the work lands.';
+    return 'It gives the human a repeatable check before approval.';
   }
-  return 'It closes the user-visible gap named by the task.';
+  return 'It turns the task title into a concrete result the human can approve.';
 }
 
 function proofToHumanCheck(proof) {
   const text = String(proof || '').replace(/\s+/g, ' ').trim();
   if (!text) return 'Proof is attached below.';
   const lower = text.toLowerCase();
+  const passSignal = /\b(?:pass(?:es|ed|ing)?|ok|green|succeeded|verified)\b/.test(lower);
+  const verifierCommandSignal = /\b(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)\s+\S+/.test(lower);
   if (/\b(?:atris\s+)?task\s+(?:show|page)\b/.test(lower) && /\b(?:print|prints|printed|render|renders|rendered|show|shows|showed)\b/.test(lower)) {
     return 'I opened the real task screen and checked the receipt renders before raw proof.';
   }
-  if (/git\s+diff\s+--check/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) {
+  if (/git\s+diff\s+--check/.test(lower) && passSignal) {
     if (/node\s+--test/.test(lower)) return 'I ran the behavior check and the diff cleanliness check.';
     return 'I ran the diff cleanliness check.';
   }
-  if (/\btypecheck\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the typecheck.';
-  if (/\bbuild\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the build check.';
-  if (/\btest\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the verifier named in the proof.';
-  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && /\bpass(?:ed)?\b/.test(lower)) return 'I ran the validation check.';
+  if (/\btypecheck\b/.test(lower) && passSignal) return 'I ran the typecheck.';
+  if (/\bbuild\b/.test(lower) && passSignal) return 'I ran the build check.';
+  if (/\btest\b/.test(lower) && passSignal) return 'I ran the verifier named in the proof.';
+  if (/\bvalidat(?:e|ion|ed)\b/.test(lower) && passSignal) return 'I ran the validation check.';
+  if (verifierCommandSignal && /\b(?:print|prints|printed|show|shows|showed|report|reports|reported|return|returns|returned)\b/.test(lower)) {
+    return 'I checked the verifier output named in the proof.';
+  }
+  if (verifierCommandSignal && passSignal) return 'I ran the verifier named in the proof.';
+  if (/atris\/runs\/[^\s),.;:]+\.json/.test(text)) {
+    return passSignal
+      ? 'I inspected the passing receipt named in the proof.'
+      : 'I inspected the receipt named in the proof.';
+  }
+  if (/(?:^|\s)(?:\.{0,2}\/)?scripts\/[^\s),.;:]+\.(?:js|mjs|cjs|py|sh)\b/.test(text)) {
+    return 'I inspected the verifier artifact named in the proof.';
+  }
   if (/\breview(?:ed)?\b/.test(lower)) return 'Review proof is attached below.';
   return 'Proof is attached below.';
 }
 
+function taskReviewFormatCommandList(commands) {
+  const list = Array.isArray(commands)
+    ? commands.map(command => String(command || '').trim()).filter(Boolean)
+    : [];
+  if (!list.length) return '';
+  if (list.length > 1) {
+    return list.map((command, index) => `command ${index + 1}: ${command}`).join('; ');
+  }
+  return list[0];
+}
+
+function taskReviewProseCheckLabels(proof) {
+  const text = String(proof || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  const lower = text.toLowerCase();
+  const hasPass = /\b(?:pass(?:es|ed|ing)?|green|verified|current|clean|complete|completed)\b/.test(lower);
+  if (!hasPass) return [];
+  const labels = [];
+  const add = label => {
+    if (!labels.includes(label)) labels.push(label);
+  };
+  if (/\bhelp output\b/.test(lower)) add('help output');
+  if (/\b(?:wiki verify|public wiki verify|loop wiki)\b/.test(lower)) add('wiki verification');
+  if (/\bclean dry-run\b/.test(lower)) add('clean dry-run');
+  if (/\b(?:test slice|regression run|tests?|test)\b.*\bpass(?:es|ed|ing)?\b/.test(lower)
+    || /\bpass(?:es|ed|ing)?\b.*\b(?:test slice|regression run|tests?|test)\b/.test(lower)) {
+    add('passing tests');
+  }
+  if (/\bverifier\b.*\bpass(?:es|ed|ing)?\b/.test(lower)
+    || /\bpass(?:es|ed|ing)?\b.*\bverifier\b/.test(lower)) {
+    add('passing verifier');
+  }
+  if (/\bmission\b.*\bcomplete(?:d)?\b/.test(lower)) add('completed mission');
+  if (/\bgit diff --check\b/.test(lower) || /\bdiff cleanliness\b/.test(lower)) add('diff cleanliness');
+  return labels;
+}
+
 function taskReviewLandingTested(proof) {
-  const commands = taskReviewEvidenceCommands(proof, 3);
-  if (commands.length) return `I ran: ${commands.join(' | ')}.`;
-  const paths = taskReviewEvidencePaths(proof, 3);
-  if (paths.length) return `I inspected: ${paths.join(', ')}.`;
+  const maxVisible = 3;
+  const commands = taskReviewEvidenceCommands(proof, 20);
+  if (commands.length) {
+    return commands.length === 1
+      ? 'I ran the listed check for this result.'
+      : 'I ran the listed checks for this result.';
+  }
+  const paths = taskReviewEvidencePaths(proof, 20);
+  if (paths.length) {
+    return paths.length === 1
+      ? 'I inspected the artifact named in the proof.'
+      : `I inspected ${paths.length} artifacts named in the proof.`;
+  }
+  const proseChecks = taskReviewProseCheckLabels(proof);
+  if (proseChecks.length) {
+    const visible = proseChecks.slice(0, maxVisible);
+    const omitted = proseChecks.length - visible.length;
+    const suffix = omitted > 0 ? `, and ${omitted} more ${omitted === 1 ? 'check' : 'checks'}` : '';
+    return `I checked: ${visible.join(', ')}${suffix}.`;
+  }
   return String(proof || '').trim() ? 'I attached the proof below.' : 'No verifier command recorded yet.';
 }
 
@@ -793,16 +973,16 @@ function taskReviewLanding(task, review = {}, payload = {}) {
     || payload.reason || payload.why || metadata.result_reason || metadata.review_reason || metadata.why_it_matters;
   return {
     happened: clipStatusText(explicitHappened || titleToResultText(task.title), 220),
-    reason: clipStatusText(explicitReason || titleToReasonText(task, proof), 220),
+    reason: clipStatusText(explicitReason || proofToReasonText(proof) || titleToReasonText(task, proof), 220),
     checked: clipStatusText(explicitChecked || proofToHumanCheck(proof), 220),
     tested: clipStatusText(explicitTested || taskReviewLandingTested(proof), 260),
     decision: clipStatusText(explicitDecision || (task.status === 'done'
-      ? 'Landed. No action needed unless this regresses.'
+      ? 'Done. No action needed unless this regresses.'
       : approvalStatus === 'revise'
         ? 'Rework requested. Fix the note, then send a new receipt.'
         : approvalStatus === 'pending' && !agentCertified
-          ? 'Needs one more check before landing; send it back if the receipt misses the point.'
-          : 'Land it if this matches the request; send it back if not.'), 220),
+          ? 'Needs one more check; ask for rework if the receipt misses the point.'
+          : 'Approve if this matches the request; ask for rework if not.'), 220),
   };
 }
 
@@ -815,11 +995,18 @@ function taskReviewResult(task, review = {}, payload = {}) {
     changed: landing.happened,
     reason: landing.reason,
     checked: landing.checked,
-    saved: clipStatusText(explicitSaved || (task.status === 'done'
-      ? `Landed as ${ref}.`
-      : `Ready to land as ${ref}.`), 180),
+    saved: clipStatusText(explicitSaved || taskReviewSavedText(task, review, ref), 180),
     accept: landing.decision,
   };
+}
+
+function taskReviewSavedText(task, review = {}, ref = taskRef(task)) {
+  if (task.status === 'done') return `Result accepted as ${ref}.`;
+  const metadata = task.metadata || {};
+  const agentCertified = review.agent_certified === true || metadata.agent_certified === true;
+  if (task.status === 'review' && agentCertified) return `Result is ready for human approval as ${ref}.`;
+  if (task.status === 'review') return `Completed result saved for review as ${ref}.`;
+  return `Work record saved as ${ref}.`;
 }
 
 function taskReviewSummary(task) {
@@ -1292,15 +1479,140 @@ function taskReviewCommandLooksSpecific(command) {
   if (/^atris\s+task\s+\w+\s*$/i.test(text)) return false;
   if (/^atris\s+task\s+(?:accept|auto-accept-certified)\b/i.test(text)) return false;
   if (/^atris[/.]/i.test(text)) return false;
+  if (/^atris-\S+/i.test(text)) return false;
   if (/^atris\s+task\s+\w+\s+json\s*$/i.test(text) && !/--json\b/i.test(text)) return false;
   if (/^atris\s+(?:command|review-chat|smoke|temp)\b/i.test(text)) return false;
   if (/^(?:npm|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg|git)\s+commands?\b/i.test(text)) return false;
   if (/^(?:npm|pnpm|yarn)\s+(?:tests|checks?)$/i.test(text)) return false;
   if (/^(?:git|gh|rg|curl|bash|sh|tsc)\s+(?:tests?|checks?)$/i.test(text)) return false;
-  if (/\s+(?:and|then)\s+\S+/i.test(text)) return false;
+  if (/\s+(?:and|then)\s+\S+/i.test(taskReviewWithoutQuotedSegments(text))) return false;
   if (/^node\s+(?!-|\S*(?:[/.]))/i.test(text)) return false;
   if (/^node\s+--test\s+[\w-]+(?:\s+[\w-]+)+$/i.test(text)) return false;
   return true;
+}
+
+function taskReviewUnescapedQuoteCount(text, quote) {
+  let count = 0;
+  const source = String(text || '');
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === quote && source[index - 1] !== '\\') count += 1;
+  }
+  return count;
+}
+
+function taskReviewCommandStartsInsideQuote(clause, commandIndex) {
+  const before = String(clause || '').slice(0, Math.max(0, commandIndex));
+  return taskReviewUnescapedQuoteCount(before, "'") % 2 === 1
+    || taskReviewUnescapedQuoteCount(before, '"') % 2 === 1;
+}
+
+function taskReviewWithoutQuotedSegments(text) {
+  const source = String(text || '');
+  let quote = null;
+  let out = '';
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if ((char === "'" || char === '"') && source[index - 1] !== '\\') {
+      quote = quote === char ? null : (!quote ? char : quote);
+      out += ' ';
+      continue;
+    }
+    out += quote ? ' ' : char;
+  }
+  return out;
+}
+
+function taskReviewTrimOutsideQuotedTail(text, pattern) {
+  const source = String(text || '');
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const scanner = new RegExp(pattern.source, flags);
+  let match;
+  while ((match = scanner.exec(source)) !== null) {
+    if (!taskReviewCommandStartsInsideQuote(source, match.index)) {
+      return source.slice(0, match.index);
+    }
+    if (match[0] === '') scanner.lastIndex += 1;
+  }
+  return source;
+}
+
+function taskReviewTrimTrailingOutsideQuote(text) {
+  let clean = String(text || '');
+  while (clean.length > 0) {
+    const index = clean.length - 1;
+    if (!/[\]),.;:]/.test(clean[index])) break;
+    if (taskReviewCommandStartsInsideQuote(clean, index)) break;
+    clean = clean.slice(0, index);
+  }
+  return clean;
+}
+
+function taskReviewCleanEvidenceCommand(command) {
+  let clean = String(command || '');
+  const tailPatterns = [
+    /\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i,
+    /\s+(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i,
+    /\.\s+(?:Reward remains|No human|Human accept|AgentXP|XP)\b.*$/i,
+    /\s+with\s+\d+\s+(?:passing\s+)?(?:tests?|checks?|passes|passed|pass|ok|clean)\b.*$/i,
+    /\s+\((?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)$/i,
+    /\s+\(?(?:exit|status|code)\s+\d+\)?$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:[,.]\s+.*)?$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)(?:[,.]\s+.*|\s+and\b.*)$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+with\b.*$/i,
+    /,\s+(?:command suite|mission-status tests?|live\b|focused suite|clean dry-run|brain compile)\b.*$/i,
+    /\.\s+(?:The|This|It|Focused|Dogfood|Landing|Product|Review|Receipt|Human|No|Note)\b.*$/i,
+    /\s+\(?\d+\s+(?:passes|passed|pass|ok|clean|tests?|checks?)\)?$/i,
+    /\s+only$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)(?:[.:]\s+.*|\s+after\b.*)$/i,
+    /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)?$/i,
+    /\s+\(?\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?\)?$/i,
+    /\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i,
+  ];
+  for (const pattern of tailPatterns) {
+    clean = taskReviewTrimOutsideQuotedTail(clean, pattern);
+    clean = taskReviewTrimTrailingOutsideQuote(clean);
+  }
+  return clean.replace(/\s+/g, ' ').trim();
+}
+
+function taskReviewSplitEvidenceClauses(source, commandStart) {
+  const text = String(source || '');
+  const hardBoundaryPattern = /^(?:;\s*|\n\s*|\s+&&\s+)/;
+  const softBoundaryPattern = new RegExp(`^(?:,\\s+|\\.\\s+|\\s+and\\s+|\\s+then\\s+|\\.\\s+(?:focused|full|behavior|verifier)[^\\n.;:]{0,80}:\\s+)(?=${commandStart})`, 'i');
+  const clauses = [];
+  let clause = '';
+  let quote = null;
+  for (let index = 0; index < text.length;) {
+    const char = text[index];
+    if ((char === "'" || char === '"') && text[index - 1] !== '\\') {
+      if (quote === char) quote = null;
+      else if (!quote) quote = char;
+      clause += char;
+      index += 1;
+      continue;
+    }
+    if (!quote) {
+      const rest = text.slice(index);
+      const boundary = rest.match(hardBoundaryPattern) || rest.match(softBoundaryPattern);
+      if (boundary) {
+        if (clause.trim()) clauses.push(clause);
+        clause = '';
+        index += boundary[0].length;
+        continue;
+      }
+    }
+    clause += char;
+    index += 1;
+  }
+  if (clause.trim()) clauses.push(clause);
+  return clauses;
+}
+
+function taskReviewCommandIsDescribedSubject(clause, commandIndex) {
+  const before = String(clause || '').slice(Math.max(0, commandIndex - 80), commandIndex);
+  return /\b(?:contains?|displays?|extracts?|lists?|mentions?|names?|prints?|renders?|shows?)\s+(?:only\s+)?$/i.test(before)
+    || /\b(?:including|includes?|like|such as|for example|e\.g\.)\s+$/i.test(before);
 }
 
 function taskReviewEvidenceCommands(text, limit = 8) {
@@ -1310,17 +1622,14 @@ function taskReviewEvidenceCommands(text, limit = 8) {
   const envPrefix = '(?:(?:[A-Z_][A-Z0-9_]*=[^\\s,;|]+)\\s+)*';
   const prosePrefix = '(?:(?:rechecked|reran|re-run|run|verified|validated|passed|validation(?:\\s+passed)?|verification(?:\\s+passed)?|focused|live|scoped|installed|direct|full|current|fresh|then|and|commands?|checks?)[:\\s]+)*';
   const commandStart = `${prosePrefix}${envPrefix}${commandWord}\\b`;
-  const commandStartPattern = new RegExp(`(^|[^\\w./-])(${commandStart})`, 'i');
+  const commandStartPattern = new RegExp(`(^|[^\\w./=-])(${commandStart})`, 'i');
   const commandStartInnerPattern = new RegExp(`${envPrefix}${commandWord}\\b`, 'i');
-  const commandBoundaryPattern = new RegExp(`(?:;\\s*|\\n\\s*|\\s+&&\\s+|,\\s+|\\.\\s+|\\s+and\\s+|\\s+then\\s+)(?=${commandStart})`, 'gi');
-  const clauses = source
+  const normalized = source
     .replace(/\r/g, '\n')
     .replace(/```[ \t]*(?:bash|sh|shell|zsh|console|text|txt)?[ \t]*\n/gi, '\n')
     .replace(/```/g, '\n')
-    .replace(/`/g, '')
-    .replace(/(?:;\s*|\n\s*|\s+&&\s+)/g, '\n')
-    .replace(commandBoundaryPattern, '\n')
-    .split('\n');
+    .replace(/`/g, '');
+  const clauses = taskReviewSplitEvidenceClauses(normalized, commandStart);
   const out = [];
   const seen = new Set();
   for (const clause of clauses) {
@@ -1330,22 +1639,13 @@ function taskReviewEvidenceCommands(text, limit = 8) {
     const raw = clause.slice(start.index + Math.max(0, commandStartOffset));
     const prefix = raw.match(commandStartInnerPattern);
     const commandOffset = prefix && prefix.index != null ? prefix.index : 0;
+    const commandIndex = start.index + Math.max(0, commandStartOffset) + Math.max(0, commandOffset);
+    if (
+      taskReviewCommandStartsInsideQuote(clause, commandIndex)
+      || taskReviewCommandIsDescribedSubject(clause, commandIndex)
+    ) continue;
     const command = raw.slice(Math.max(0, commandOffset));
-    const clean = command
-      .replace(/\s+from\s+[^,;]*(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i, '')
-      .replace(/\s+(?:showed|shows|showing|returned|returns|printed|prints|wrote|writes|reported|reports)\b.*$/i, '')
-      .replace(/\.\s+(?:Reward remains|No human|Human accept|AgentXP|XP)\b.*$/i, '')
-      .replace(/\s+\((?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)$/i, '')
-      .replace(/\s+\(?(?:exit|status|code)\s+\d+\)?$/i, '')
-      .replace(/[\]),.;:]+$/g, '')
-      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
-      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)(?:[.:]\s+.*|\s+after\b.*)$/i, '')
-      .replace(/\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)?$/i, '')
-      .replace(/\s+\(?\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?\)?$/i, '')
-      .replace(/\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i, '')
-      .replace(/[\]),.;:]+$/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const clean = taskReviewCleanEvidenceCommand(command);
     if (!taskReviewCommandLooksSpecific(clean) || seen.has(clean.toLowerCase())) continue;
     seen.add(clean.toLowerCase());
     out.push(clean);
@@ -1365,13 +1665,24 @@ function taskReviewRecentThread(task, limit = 4) {
     .filter(message => message.content);
 }
 
+function taskReviewObjective(task) {
+  const metadata = task && task.metadata || {};
+  return task && (
+    metadata.task_goal
+    || task.title
+    || metadata.goal_objective
+    || metadata.objective
+    || task.objective
+  ) || '';
+}
+
 function taskReviewVerificationFocus(task) {
   const review = task && task.review || {};
   const metadata = task && task.metadata || {};
   const proof = review.proof || metadata.latest_agent_proof || '';
   const lesson = review.lesson || metadata.latest_agent_lesson || '';
   const nextTask = review.next_task || metadata.latest_agent_next_task || '';
-  const objective = task && (task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective) || '';
+  const objective = taskReviewObjective(task);
   const evidenceText = [proof].filter(Boolean).join('\n');
   return {
     objective: taskReviewClip(objective, 260) || null,
@@ -1388,7 +1699,7 @@ function taskReviewSpecificCodexPrompt(task, focus, actor) {
   const title = taskReviewClip(task && task.title, 180);
   const proof = focus && focus.proof_claim ? ` Proof: ${taskReviewClip(focus.proof_claim, 1800)}` : '';
   const commands = focus && focus.commands_to_verify && focus.commands_to_verify.length
-    ? ` Commands: ${focus.commands_to_verify.join(' | ')}.`
+    ? ` Commands: ${taskReviewFormatCommandList(focus.commands_to_verify)}.`
     : '';
   const files = focus && focus.files_to_inspect && focus.files_to_inspect.length
     ? ` Files/artifacts: ${focus.files_to_inspect.join(', ')}.`
@@ -1475,7 +1786,7 @@ function taskReviewChatContract(task, { reviewer = 'codex-review', allowCertifie
   const proof = review.proof || metadata.latest_agent_proof || '';
   const lesson = review.lesson || metadata.latest_agent_lesson || '';
   const nextTask = review.next_task || metadata.latest_agent_next_task || '';
-  const objective = task && (task.objective || metadata.task_goal || metadata.goal_objective || metadata.objective) || '';
+  const objective = taskReviewObjective(task);
   const verificationFocus = taskReviewVerificationFocus(task);
   const actor = reviewActor(reviewer);
   return {
@@ -1501,7 +1812,7 @@ function taskReviewChatContract(task, { reviewer = 'codex-review', allowCertifie
     required_checks: [
       `Run ${`atris task show ${taskRef(task)} --json`} and read the current proof plus dialogue.`,
       verificationFocus.commands_to_verify.length
-        ? `Re-run or inspect these proof commands: ${verificationFocus.commands_to_verify.join(' | ')}.`
+        ? `Re-run or inspect these proof commands: ${taskReviewFormatCommandList(verificationFocus.commands_to_verify)}.`
         : 'Find the concrete verifier command because the proof did not name one.',
       verificationFocus.files_to_inspect.length
         ? `Inspect these named files/artifacts before certifying: ${verificationFocus.files_to_inspect.join(', ')}.`
@@ -3999,8 +4310,19 @@ function cmdReviewLaneRun(args) {
 function reviewQueueLimit(args, total) {
   if (hasFlag(args, '--all')) return total;
   const raw = flag(args, '--limit');
-  const limit = raw && raw !== true ? Number(raw) : 12;
-  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
+  const limit = raw && raw !== true ? Number(raw) : 5;
+  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+}
+
+function reviewQueueVerbose(args) {
+  return hasFlag(args, '--verbose') || hasFlag(args, '--details') || hasFlag(args, '--all');
+}
+
+function reviewGroupTextLimit(args, total) {
+  if (hasFlag(args, '--all')) return total;
+  const raw = flag(args, '--limit');
+  const limit = raw && raw !== true ? Number(raw) : 10;
+  return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 10;
 }
 
 // Risk order for human attention: named receipts that are missing/failing (0)
@@ -4175,17 +4497,23 @@ function cmdReviews(args) {
       printJson({ ok: true, action: 'review_groups', projection_path: outPath, groups });
       return;
     }
-    console.log(`READY TO LAND — grouped by ${key}`);
-    console.log(`${groups.total_certified} ready to land across ${groups.group_count} ${key} group(s)`);
-    groups.groups.forEach((g, index) => {
+    console.log(`READY FOR APPROVAL — grouped by ${key}`);
+    console.log(`${groups.total_certified} ready for approval across ${groups.group_count} ${key} group(s)`);
+    const visibleGroups = groups.groups.slice(0, reviewGroupTextLimit(args, groups.groups.length));
+    visibleGroups.forEach((g, index) => {
       console.log('');
       console.log(`${index + 1}. ${g.value} — ${g.count} task${g.count === 1 ? '' : 's'}`);
       g.sample_titles.forEach(title => console.log(`   • ${title}`));
-      console.log(`   land this group: ${g.accept_group_command} --confirm-human-accept --as <you>`);
+      console.log(`   approve this group: ${g.accept_group_command} --confirm-human-accept --as <you>`);
     });
+    if (visibleGroups.length < groups.groups.length) {
+      console.log('');
+      console.log(`Showing ${visibleGroups.length}/${groups.groups.length} groups; rerun with --all for every group or --limit N to adjust.`);
+    }
     return;
   }
   const queue = taskReviewQueue(projection, args);
+  const verbose = reviewQueueVerbose(args);
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -4195,10 +4523,10 @@ function cmdReviews(args) {
     });
     return;
   }
-  console.log('READY TO LAND');
-  console.log(`${queue.counts.certified} ready to land / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
+  console.log('READY FOR APPROVAL');
+  console.log(`${queue.counts.certified} ready for approval / ${queue.counts.blocking} need one more check / ${queue.counts.review} total waiting`);
   if (!queue.items.length) {
-    console.log('Nothing is ready to land.');
+    console.log('Nothing is ready for approval.');
     return;
   }
   queue.items.forEach((item, index) => {
@@ -4216,8 +4544,8 @@ function cmdReviews(args) {
       if (item.result?.saved) console.log(`     Saved: ${item.result.saved}`);
       if (item.landing.decision) console.log(`     Decision: ${item.landing.decision}`);
     }
-    if (item.proof) console.log(`   details: ${item.proof}`);
-    if (item.evidence) {
+    if (verbose && item.proof) console.log(`   details: ${item.proof}`);
+    if (verbose && item.evidence) {
       item.evidence.receipts.forEach((receipt) => {
         const verdict = receipt.verifier_passed === true ? ' verifier:passed'
           : receipt.verifier_passed === false ? ' verifier:FAILED' : '';
@@ -4225,15 +4553,15 @@ function cmdReviews(args) {
       });
       item.evidence.missing.forEach((missingPath) => console.log(`   receipt: ${missingPath} MISSING`));
     }
-    if (item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
+    if (verbose && item.review_chat_command) console.log(`   /codex: ${item.review_chat_command}`);
     if (item.continue_work_command) console.log(`   continue: ${item.continue_work_command}`);
-    if (item.accept_command) console.log(`   land: ${item.accept_command}`);
-    else if (item.blocked_accept_reason) console.log(`   land: blocked (${item.blocked_accept_reason})`);
-    console.log(`   send back: ${item.revise_command}`);
+    if (item.accept_command) console.log(`   approve: ${item.accept_command}`);
+    else if (item.blocked_accept_reason) console.log(`   approve: blocked (${item.blocked_accept_reason})`);
+    console.log(`   rework: ${item.revise_command}`);
   });
   if (queue.counts.shown < queue.counts.certified) {
     console.log('');
-    console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all or --limit ${queue.counts.certified}.`);
+    console.log(`Showing ${queue.counts.shown}/${queue.counts.certified}; rerun with --all for every row or --verbose for proof details.`);
   }
 }
 
@@ -4858,7 +5186,17 @@ function cmdClaim(args) {
   }
 }
 
-function readEndgameAgentAction(root, owner) {
+function liveTaskWithTitle(tasks, title) {
+  const wanted = String(title || '').trim().toLowerCase();
+  if (!wanted) return null;
+  return (tasks || []).find(task => {
+    const taskTitle = String(task.title || task.task || '').trim().toLowerCase();
+    const status = String(task.status || '').toLowerCase();
+    return taskTitle === wanted && !new Set(['done', 'accepted', 'failed']).has(status);
+  }) || null;
+}
+
+function readEndgameAgentAction(root, owner, { tasks = [] } = {}) {
   const todoPath = path.join(root || process.cwd(), 'atris', 'TODO.md');
   if (!fs.existsSync(todoPath)) return null;
   const content = fs.readFileSync(todoPath, 'utf8');
@@ -4869,6 +5207,8 @@ function readEndgameAgentAction(root, owner) {
   if (!slug && !horizon) return null;
   const member = String(owner || DEFAULT_OWNER);
   const taskSeed = buildEndgameTaskSeed({ slug, horizon, owner: member });
+  const existing = liveTaskWithTitle(tasks, taskSeed.title);
+  if (existing) return null;
   return {
     kind: 'create_bounded_endgame_task',
     endgame_slug: slug || null,
@@ -4992,7 +5332,7 @@ function cmdNext(args) {
         ? continueWorkCommandForTask(reviewTask, { owner })
         : null;
       const nextAgentAction = handoff.next_action === 'human_accept_waiting'
-        ? readEndgameAgentAction(taskDb.workspaceRoot(), owner)
+        ? readEndgameAgentAction(taskDb.workspaceRoot(), owner, { tasks: projection.tasks || [] })
         : null;
       if (hasFlag(args, '--create-next')) {
         if (!nextAgentAction || !nextAgentAction.task_seed) {
@@ -5042,12 +5382,12 @@ function cmdNext(args) {
       }
       console.log('No open tasks.');
       console.log(handoff.next_action === 'agent_review_again'
-        ? `${taskRef(reviewTask)} needs one more agent check before landing.`
-        : `${taskRef(reviewTask)} is ready to land.`);
+        ? `${taskRef(reviewTask)} needs one more agent check before approval.`
+        : `${taskRef(reviewTask)} is ready for approval.`);
       console.log(handoff.next_action === 'continue_work'
-        ? 'Continue work elsewhere; XP lands after the human lands this task.'
+        ? 'Continue work elsewhere; XP is awarded only after the human approves this task.'
         : handoff.next_action === 'human_accept_waiting'
-        ? (nextAgentAction ? nextAgentAction.message : 'No next agent task is attached; this task is ready to land when the human decides.')
+        ? (nextAgentAction ? nextAgentAction.message : 'No next agent task is attached; this task is ready for human approval.')
         : 'Review this task again before continuing.');
       if (nextAgentAction) console.log(`Command: ${nextAgentAction.command}`);
       if (nextAgentAction && nextAgentAction.task_seed) {
@@ -5459,9 +5799,9 @@ function cmdShow(args) {
   const owner = task.claimed_by ? ` / ${task.claimed_by}` : '';
   const tag = task.tag ? ` #${task.tag}` : '';
   const statusLabel = task.status === 'review'
-    ? 'READY TO LAND'
+    ? 'READY FOR APPROVAL'
     : task.status === 'done'
-      ? 'LANDED'
+      ? 'DONE'
       : task.status.toUpperCase();
   console.log(`${statusLabel} ${taskRef(task)} v${task.current_version}${owner}${tag}`);
   console.log(task.title);
@@ -6389,7 +6729,7 @@ function taskPageNextAction(task, current, actions, { hasExistingReviewFollowUp 
     if (handoff && handoff.next_action === 'human_accept_waiting') {
       return {
         key: 'human_accept_waiting',
-        label: 'Ready to land',
+        label: 'Ready for approval',
         command: null,
         api: null,
         human_accept_command: actions.human_accept_command || null,
@@ -6511,7 +6851,7 @@ function appendTaskReviewChat(taskDb, db, taskId, { reviewer = 'codex-review', d
     throw taskReviewChatError(`not_reviewable_${task.status}`, `review chat requires a task in Review; current status is ${task.status}`, { status: 409, exitCode: 1 });
   }
   if (!taskAllowsReviewChat(task, { allowCertified: true })) {
-    throw taskReviewChatError('agent_certified_continue_work', 'review chat is closed after agent certification; continue other work or land/send back this task', { status: 409, exitCode: 1 });
+    throw taskReviewChatError('agent_certified_continue_work', 'review chat is closed after agent certification; continue other work or wait for human approval/rework on this task', { status: 409, exitCode: 1 });
   }
   const contract = taskReviewChatContract(task, { reviewer: actor, allowCertified: true });
   let event = null;
@@ -6668,8 +7008,8 @@ function readyHandoffForStep(task, proof, lesson, nextTask, agentCertified) {
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? certifiedReviewNextAction(nextTask) : 'agent_review_again',
     rule: agentCertified
-      ? 'Double-check complete; ready to keep moving. XP lands only after the human lands the task.'
-      : 'Proof is ready; one more agent check before landing. XP waits for the human.',
+      ? 'Double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
+      : 'Proof is ready; one more agent check before human approval. XP waits for the human.',
   };
   if (reviewChat) {
     handoff.review_chat_command = reviewChat.command;
@@ -6690,7 +7030,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     const reason = initialHandoffState.next_action === 'continue_work'
       ? 'agent_certified_continue_work'
       : 'agent_certified_waiting_human';
-    throw taskStepError(reason, 'atris task step: ready-to-land rows have no safe agent step; continue other work or land/send back this task', { status: 409, exitCode: 1, page: initialPage });
+    throw taskStepError(reason, 'atris task step: approval-ready rows have no safe agent step; continue other work or wait for human approval/rework on this task', { status: 409, exitCode: 1, page: initialPage });
   }
   let chat = null;
   const message = String(options.message || '').trim();
@@ -6792,7 +7132,7 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
       const reason = handoffState.next_action === 'continue_work'
         ? 'agent_certified_continue_work'
         : 'agent_certified_waiting_human';
-      throw taskStepError(reason, 'atris task step: ready-to-land rows have no safe agent step; continue other work or land/send back this task', { status: 409, exitCode: 1, page: actionPage });
+      throw taskStepError(reason, 'atris task step: approval-ready rows have no safe agent step; continue other work or wait for human approval/rework on this task', { status: 409, exitCode: 1, page: actionPage });
     }
     const reviewed = appendTaskReviewChat(taskDb, db, taskId, { reviewer, dryRun: Boolean(options.dryRun) });
     stepAction = 'review_chat';
@@ -6900,7 +7240,7 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
   if (nextActionKey === 'human_accept_waiting') {
     const error = taskStepError(
       'agent_certified_waiting_human',
-      'atris task current-step: selected row is ready to land; no agent mutation is safe',
+      'atris task current-step: selected row is ready for human approval; no agent mutation is safe',
       {
         status: 409,
         exitCode: 1,
@@ -7363,8 +7703,8 @@ function cmdReady(args) {
     career_xp_status: 'pending_human_accept',
     next_action: agentCertified ? certifiedReviewNextAction(nextTaskInput.nextTask) : 'agent_review_again',
     rule: agentCertified
-      ? 'Double-check complete; ready to keep moving. XP lands only after the human lands the task.'
-      : 'Proof is ready; one more agent check before landing. XP waits for the human.',
+      ? 'Double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
+      : 'Proof is ready; one more agent check before human approval. XP waits for the human.',
   };
   if (reviewChat) {
     handoff.review_chat_command = reviewChat.command;
@@ -7394,7 +7734,7 @@ function cmdReady(args) {
     });
     return;
   }
-  console.log(`ready to land ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
+  console.log(`ready for approval ${taskRef(compactTaskFromProjection(projection, taskId))} v${result.event.version}`);
   if (resultTrace) console.log('Result trace recorded.');
   console.log(handoff.rule);
   for (const hint of policyHints) {
@@ -7782,7 +8122,7 @@ function cmdReview(args) {
       version: result.event.version,
       reward: result.episode.reward.value,
       episode: result.episode,
-      xp_projection: xpProjection,
+      xp_projection: compactCareerXpProjection(xpProjection),
       next_task_id: nextCreated ? nextCreated.id : null,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
@@ -8155,6 +8495,40 @@ function markdownRowsForRender(taskDb, existingTodoPath, rows, refRows) {
   return out;
 }
 
+function taskRenderStatusCounts(rows) {
+  const counts = {
+    backlog: 0,
+    in_progress: 0,
+    review: 0,
+    blocked: 0,
+    done: 0,
+    total: 0,
+  };
+  for (const row of Array.isArray(rows) ? rows : []) {
+    counts.total += 1;
+    if (row.status === 'open') counts.backlog += 1;
+    else if (row.status === 'claimed') counts.in_progress += 1;
+    else if (row.status === 'review') counts.review += 1;
+    else if (row.status === 'failed') counts.blocked += 1;
+    else if (row.status === 'done') counts.done += 1;
+  }
+  return counts;
+}
+
+function taskRenderCountLabel(count) {
+  return count === 0 ? 'empty' : String(count);
+}
+
+function taskRenderSummaryLine(counts) {
+  return [
+    `Backlog: ${taskRenderCountLabel(counts.backlog)}`,
+    `In Progress: ${taskRenderCountLabel(counts.in_progress)}`,
+    `Review: ${taskRenderCountLabel(counts.review)}`,
+    `Blocked: ${taskRenderCountLabel(counts.blocked)}`,
+    `Done saved: ${taskRenderCountLabel(counts.done)}`,
+  ].join('; ');
+}
+
 function cmdRender(args) {
   const out = flag(args, '--out') || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
@@ -8178,6 +8552,7 @@ function cmdRender(args) {
   if (endgameSection) preservedSections.push(endgameSection);
   const markdownRows = markdownRowsForRender(taskDb, outPath, rows, refRows);
   const rowsToRender = [...rows, ...markdownRows];
+  const statusCounts = taskRenderStatusCounts(rowsToRender);
   const markdown = taskDb.renderTodoMarkdown(rowsToRender, { doneLimit, failedLimit, refRows, preservedSections });
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, markdown, 'utf8');
@@ -8186,11 +8561,14 @@ function cmdRender(args) {
       ok: true,
       action: 'rendered',
       count: rowsToRender.length,
+      status_counts: statusCounts,
+      backlog_empty: statusCounts.backlog === 0,
       path: outPath,
     });
     return;
   }
-  console.log(`rendered ${rowsToRender.length} task${rowsToRender.length === 1 ? '' : 's'} -> ${outPath}`);
+  console.log(`rendered TODO.md -> ${outPath}`);
+  console.log(taskRenderSummaryLine(statusCounts));
 }
 
 function cmdSync(args) {

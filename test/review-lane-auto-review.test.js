@@ -94,8 +94,8 @@ test('review lane drains a green-receipt task to certified with zero human turns
 
     // The human gate stays intact: certification is not acceptance.
     const show = runCli(['task', 'show', ref], { cwd: dir });
-    assert.match(show.stdout, /Approval: pending/);
-    assert.match(show.stdout, /Agent certified: yes/);
+    assert.match(show.stdout, /Landing: waiting on human/);
+    assert.match(show.stdout, /Checked: yes \(2 agent checks\)/);
   } finally {
     cleanupTempDir(dir);
   }
