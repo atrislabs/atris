@@ -195,6 +195,8 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--spend-full-budget',
   '--use-whole-budget',
   '--stop-when-done',
+  '--room-preflight',
+  '--no-room-preflight',
   '--allow-native-goal-supersede',
   '--supersede-paused-native-goal',
   '--always-on',
@@ -825,6 +827,63 @@ function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {
     `  Check: ${checked}`,
     `  Next: ${missionRunStartNextLine(mission, nextCommand, warnings)}`,
   ];
+}
+
+function missionRunPreflightSignals(text) {
+  const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  return /\b(messy|shower|overnight|nonstop|forever|goal\s+after\s+goal|self[-\s]?improve|figure\s+out|think\s+through|thinkwell|what\s+to\s+do\s+next|keep\s+going|tell\s+me|right\s+mission\s+input|finish[-\s]+line)\b/i.test(lower);
+}
+
+function shouldMissionRunRoomPreflight(objective, args = []) {
+  if (hasFlag(args, '--no-room-preflight')) return false;
+  if (hasFlag(args, '--room-preflight')) return true;
+  return missionRunPreflightSignals(objective);
+}
+
+function missionRunPreflightSentence(text, max = 140) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 3).replace(/\s+\S*$/, '').trimEnd()}...`;
+}
+
+function missionRunPreflightObjective(rawObjective, room, owner) {
+  const name = room?.name || 'Mission Room';
+  const task = room?.task_plan_preview?.task || room?.truth_snapshot || rawObjective;
+  return `${name} with ${owner}: turn "${missionRunPreflightSentence(task)}" into one visible goal, task spine, proof receipt, and next action.`;
+}
+
+function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
+  if (!shouldMissionRunRoomPreflight(rawObjective, args)) return null;
+  const root = options.root || process.cwd();
+  const owner = options.owner || readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const ownerResolution = resolveFunctionalOwner({
+    requestedOwner: owner,
+    title: rawObjective,
+    tag: readFlag(args, '--lane', 'workspace'),
+    goal: rawObjective,
+    root,
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const room = buildMissionRoom(rawObjective, {
+    root,
+    owner: ownerResolution.owner,
+    ownerResolution,
+  });
+  const written = writeMissionRoomReceipt(room, { root });
+  const shapedObjective = missionRunPreflightObjective(rawObjective, written.room, ownerResolution.owner);
+  return {
+    schema: 'atris.mission_run_preflight.v1',
+    source: 'mission_room',
+    raw_objective: rawObjective,
+    shaped_objective: shapedObjective,
+    visible_goal_objective: shapedObjective,
+    room_name: written.room.name,
+    room_receipt_path: written.relativePath,
+    owner: ownerResolution.owner,
+    owner_resolution: ownerResolution.reason,
+    task_spine_required: true,
+    next_action: 'attach task spine, then run one proof tick',
+  };
 }
 
 function missionRunTaskLabel(task) {
@@ -1478,12 +1537,22 @@ function startMission(args) {
 
 function startMissionFromRunObjective(objective, args) {
   const asJson = wantsJson(args);
-  const inferredLoop = inferRunObjectiveLoopOptions(objective, args);
-  const budgetContract = inferRunObjectiveBudgetContract(objective, args);
+  const rawObjective = String(objective || '').trim();
+  const inferredLoop = inferRunObjectiveLoopOptions(rawObjective, args);
+  const budgetContract = inferRunObjectiveBudgetContract(rawObjective, args);
+  const inferredOwner = inferredLoop.wantsLongRun && /\bself[-\s]?improve\b/i.test(rawObjective)
+    ? 'auto-improver'
+    : (process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const preflightOwner = readFlag(args, '--owner', inferredOwner);
+  const missionRunPreflight = buildMissionRunRoomPreflight(rawObjective, args, {
+    root: process.cwd(),
+    owner: preflightOwner,
+  });
+  const missionObjective = missionRunPreflight?.shaped_objective || rawObjective;
   const verifier = readFlag(
     args,
     '--verify',
-    inferRunObjectiveVerifier(objective) || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
+    inferRunObjectiveVerifier(missionObjective) || inferRunObjectiveVerifier(rawObjective) || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
   );
   const stopCondition = readFlag(
     args,
@@ -1492,11 +1561,8 @@ function startMissionFromRunObjective(objective, args) {
       ? `run for ${inferredLoop.requestedHours || 'the requested overnight window'} hour${inferredLoop.requestedHours === 1 ? '' : 's'}, or stop when proof is ready`
       : (verifier ? 'verifier passes and visible goal lands' : 'visible goal lands and proof is ready')),
   );
-  const inferredOwner = inferredLoop.wantsLongRun && /\bself[-\s]?improve\b/i.test(objective)
-    ? 'auto-improver'
-    : (process.env.ATRIS_AGENT_ID || 'mission-lead');
   const startArgs = [
-    objective,
+    missionObjective,
     '--owner',
     readFlag(args, '--owner', inferredOwner),
     '--runner',
@@ -1512,9 +1578,13 @@ function startMissionFromRunObjective(objective, args) {
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
   if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
-  if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp')) startArgs.push('--xp-task');
+  if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  if (missionRunPreflight) {
+    mission.mission_run_preflight = missionRunPreflight;
+    mission.raw_objective = rawObjective;
+  }
   if (budgetContract) {
     mission.budget_contract = budgetContract;
     if (budgetContract.requested_seconds) mission.max_wall_seconds = budgetContract.requested_seconds;
@@ -1527,6 +1597,11 @@ function startMissionFromRunObjective(objective, args) {
         ? `atris loop start --overnight --cadence ${mission.cadence} --hours ${inferredLoop.requestedHours}`
         : `atris loop start --overnight --cadence ${mission.cadence}`,
     };
+  }
+  if (mission.xp_task_enabled) {
+    const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
+    mission.xp_task = xpTask;
+    mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
   }
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
@@ -3211,6 +3286,7 @@ function writeDirectRunCodexGoalRequest(mission, root = process.cwd()) {
     source: 'mission_run_objective',
     mission_id: mission.id,
     objective: codexGoalObjective(mission),
+    mission_run_preflight: mission.mission_run_preflight || null,
     requested_at: stampIso(),
   };
   const paths = statePaths(root);
@@ -5159,10 +5235,11 @@ atris mission - durable goal + loop + owner + proof state
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede]
-                                [--spend-full-budget|--use-whole-budget|--stop-when-done]
+                                [--spend-full-budget|--use-whole-budget|--stop-when-done] [--room-preflight|--no-room-preflight]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
                        (plain time like "20 minutes" means finish early if solved; say "use the whole time" to spend the full budget)
+                       (messy, shower, and overnight requests preflight through Mission Room before the visible goal is written)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
