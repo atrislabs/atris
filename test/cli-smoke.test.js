@@ -729,6 +729,59 @@ test('ax fast intercepts atris mission run as a local Atris goal', () => {
   }
 });
 
+test('ax fast chat opens clean without stale Atris goal banner', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const missionId = 'mission-2026-06-29-stale-continuation';
+    const mission = {
+      schema: 'atris.mission.v1',
+      id: missionId,
+      objective: 'Decide and start the next useful mission after: old smoke',
+      status: 'planning',
+      runner: 'atris2',
+      next_action: 'atris mission attach-task mission-2026-06-29-stale-continuation --json',
+      created_at: '2026-06-29T23:00:00.000Z',
+      started_from: 'mission_run_continuation',
+    };
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify(mission)}\n`, 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), JSON.stringify({
+      schema: 'atris.goal_controller.v1',
+      goal: {
+        objective: mission.objective,
+        mission_id: missionId,
+        mission_status: 'planning',
+        runner: 'atris2',
+        next_command: mission.next_action,
+        created_at: mission.created_at,
+      },
+    }), 'utf8');
+
+    const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), '--fast', '--chat'], {
+      cwd: dir,
+      input: 'exit\n',
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        AX_AUTO_LOG: '0',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris 2 Fast chat/);
+    assert.doesNotMatch(res.stdout, /Atris goal:/);
+    assert.doesNotMatch(res.stdout, /Decide and start the next useful mission/);
+    assert.doesNotMatch(res.stdout, /Next: atris mission attach-task/);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
 test('atris chat intercepts mission run before selected-agent auth', () => {
   const dir = makeTempDir();
   const home = makeTempDir();

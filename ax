@@ -801,6 +801,11 @@ function writeAtrisGoalBanner(output, cwd = process.cwd()) {
   return true;
 }
 
+function maybeWriteAtrisGoalBanner(output, cwd = process.cwd()) {
+  if (process.env.AX_SHOW_GOAL_BANNER !== '1') return false;
+  return writeAtrisGoalBanner(output, cwd);
+}
+
 function formatMissionStartReceipt(payload) {
   const mission = payload?.mission || {};
   const goal = payload?.atris_goal_state?.goal || {};
@@ -2118,7 +2123,7 @@ async function chat(options = {}) {
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
-  writeAtrisGoalBanner(output, cwd);
+  maybeWriteAtrisGoalBanner(output, cwd);
 
   const runtimePreflight = { ready: false };
   const ensureRuntimeReady = async () => {
@@ -2173,6 +2178,10 @@ async function chat(options = {}) {
         cwd,
         onProgress: (line) => {
           if (/^pursuing /.test(line)) output.write('Pursuing goal...\n');
+          else if (/^still_running /.test(line)) {
+            const seconds = Number(String(line).split(/\s+/)[1]);
+            output.write(`Still pursuing... ${formatSeconds(seconds)}\n`);
+          } else if (/^landing /.test(line)) output.write('Landing goal...\n');
           else if (/^\[tick /.test(line)) output.write(`${line}\n`);
         },
       });
@@ -2239,7 +2248,7 @@ async function chat(options = {}) {
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
-    writeAtrisGoalBanner(output, cwd);
+    maybeWriteAtrisGoalBanner(output, cwd);
     if (!(await ensureRuntimeReady())) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
@@ -3173,7 +3182,7 @@ async function main() {
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
-    writeAtrisGoalBanner(process.stdout, process.cwd());
+    maybeWriteAtrisGoalBanner(process.stdout, process.cwd());
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
