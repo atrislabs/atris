@@ -32,7 +32,50 @@ function sqlString(value) {
 }
 
 function resolveStatePath(args = []) {
-  return path.resolve(expandHome(readFlag(args, '--state', process.env.CODEX_STATE_DB || path.join(os.homedir(), '.codex', 'state_5.sqlite'))));
+  const explicit = readFlag(args, '--state', process.env.CODEX_STATE_DB || '');
+  if (explicit) return path.resolve(expandHome(explicit));
+  // Codex moved native goals into ~/.codex/goals_1.sqlite; older builds kept them in state_5.sqlite.
+  // Prefer the live goals DB so the bridge sees real goal activity, fall back to the legacy state DB.
+  const goalsDb = path.join(os.homedir(), '.codex', 'goals_1.sqlite');
+  const legacyDb = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+  return path.resolve(fs.existsSync(goalsDb) ? goalsDb : legacyDb);
+}
+
+// Thread metadata (cwd/title) stayed in state_5.sqlite even after goals moved to goals_1.sqlite.
+function resolveThreadsPath(args = []) {
+  const explicit = readFlag(args, '--threads-db', process.env.CODEX_THREADS_DB || '');
+  if (explicit) return path.resolve(expandHome(explicit));
+  const legacyDb = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+  return fs.existsSync(legacyDb) ? path.resolve(legacyDb) : '';
+}
+
+function tableExists(dbPath, table) {
+  if (!dbPath || !fs.existsSync(dbPath)) return false;
+  try {
+    const rows = runSqliteJson(dbPath, `SELECT name FROM sqlite_master WHERE type='table' AND name=${sqlString(table)} LIMIT 1;`);
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Goals live in goals_1.sqlite (no `threads` table); thread metadata lives in state_5.sqlite.
+// Legacy single-file layouts (and test fixtures) keep both in one DB. Resolve which join to use.
+function goalQueryContext(args = []) {
+  const goalsDb = resolveStatePath(args);
+  if (tableExists(goalsDb, 'threads')) {
+    return { goalsDb, threadsTable: 'threads', prefix: '' };
+  }
+  const threadsDb = resolveThreadsPath(args);
+  if (threadsDb && threadsDb !== goalsDb && tableExists(threadsDb, 'threads')) {
+    return { goalsDb, threadsTable: 'tdb.threads', prefix: `ATTACH ${sqlString(threadsDb)} AS tdb;\n` };
+  }
+  return { goalsDb, threadsTable: null, prefix: '' };
+}
+
+function runGoalQuery(args, buildSql) {
+  const ctx = goalQueryContext(args);
+  return runSqliteJson(ctx.goalsDb, ctx.prefix + buildSql(ctx.threadsTable));
 }
 
 function defaultRunsDir(args = []) {
@@ -81,7 +124,11 @@ function ensureStateDb(dbPath) {
   }
 }
 
-function selectGoalSql(whereClause, limit = 10) {
+function selectGoalSql(whereClause, limit = 10, threadsTable = 'threads') {
+  const join = threadsTable ? `LEFT JOIN ${threadsTable} t ON t.id = tg.thread_id` : '';
+  const cwd = threadsTable ? 't.cwd' : 'NULL';
+  const title = threadsTable ? 't.title' : 'NULL';
+  const threadUpdated = threadsTable ? 't.updated_at_ms' : 'NULL';
   return `
 SELECT
   tg.thread_id,
@@ -93,41 +140,43 @@ SELECT
   tg.time_used_seconds,
   tg.created_at_ms,
   tg.updated_at_ms,
-  t.cwd AS thread_cwd,
-  t.title AS thread_title,
-  t.updated_at_ms AS thread_updated_at_ms
+  ${cwd} AS thread_cwd,
+  ${title} AS thread_title,
+  ${threadUpdated} AS thread_updated_at_ms
 FROM thread_goals tg
-LEFT JOIN threads t ON t.id = tg.thread_id
+${join}
 ${whereClause}
-ORDER BY COALESCE(t.updated_at_ms, tg.updated_at_ms) DESC
+ORDER BY COALESCE(${threadUpdated}, tg.updated_at_ms) DESC
 LIMIT ${Number(limit) || 10}
 `;
 }
 
-function readGoalByThread(dbPath, threadId) {
-  const rows = runSqliteJson(dbPath, selectGoalSql(`WHERE tg.thread_id = ${sqlString(threadId)}`, 1));
+function readGoalByThread(args, threadId) {
+  const rows = runGoalQuery(args, (tt) => selectGoalSql(`WHERE tg.thread_id = ${sqlString(threadId)}`, 1, tt));
   return rows[0] || null;
 }
 
-function readLatestGoalForCwd(dbPath, cwd) {
+function readLatestGoalForCwd(args, cwd) {
+  const ctx = goalQueryContext(args);
+  if (!ctx.threadsTable) return null; // cannot cwd-match without thread metadata
   const realCwd = fs.realpathSync.native ? fs.realpathSync.native(cwd) : fs.realpathSync(cwd);
   const pwd = process.env.PWD || '';
   const pwdReal = pwd && fs.existsSync(pwd) ? (fs.realpathSync.native ? fs.realpathSync.native(pwd) : fs.realpathSync(pwd)) : '';
   const candidates = [...new Set([cwd, realCwd, pwdReal === realCwd ? pwd : ''].filter(Boolean))];
-  const rows = runSqliteJson(dbPath, selectGoalSql(`WHERE t.cwd IN (${candidates.map(sqlString).join(', ')})`, 1));
+  const rows = runSqliteJson(ctx.goalsDb, ctx.prefix + selectGoalSql(`WHERE t.cwd IN (${candidates.map(sqlString).join(', ')})`, 1, ctx.threadsTable));
   return rows[0] || null;
 }
 
-function readRecentGoals(dbPath, limit = 10) {
-  return runSqliteJson(dbPath, selectGoalSql('', limit));
+function readRecentGoals(args, limit = 10) {
+  return runGoalQuery(args, (tt) => selectGoalSql('', limit, tt));
 }
 
-function resolveThreadGoal(dbPath, args) {
+function resolveThreadGoal(args) {
   const explicitThread = readFlag(args, '--thread', '');
-  if (explicitThread) return readGoalByThread(dbPath, explicitThread);
-  if (hasFlag(args, '--latest')) return readLatestGoalForCwd(dbPath, process.cwd());
+  if (explicitThread) return readGoalByThread(args, explicitThread);
+  if (hasFlag(args, '--latest')) return readLatestGoalForCwd(args, process.cwd());
   const envThread = process.env.CODEX_THREAD_ID || '';
-  if (envThread) return readGoalByThread(dbPath, envThread);
+  if (envThread) return readGoalByThread(args, envThread);
   return null;
 }
 
@@ -163,7 +212,7 @@ function statusCommand(args) {
   const dbPath = resolveStatePath(args);
   ensureStateDb(dbPath);
 
-  const goal = resolveThreadGoal(dbPath, args);
+  const goal = resolveThreadGoal(args);
   if (goal) {
     const payload = { ok: true, schema: SCHEMA, action: 'status', state_path: dbPath, goal };
     printJsonOrText(payload, [
@@ -176,7 +225,7 @@ function statusCommand(args) {
   }
 
   const limit = Math.max(1, Math.min(50, Number(readFlag(args, '--limit', '10')) || 10));
-  const goals = readRecentGoals(dbPath, limit);
+  const goals = readRecentGoals(args, limit);
   const payload = { ok: true, schema: SCHEMA, action: 'status', state_path: dbPath, goals };
   printJsonOrText(payload, [
     `Codex goals: ${goals.length} recent`,
@@ -192,7 +241,7 @@ function resetCommand(args) {
   ensureStateDb(dbPath);
 
   const startedAt = new Date().toISOString();
-  const goal = resolveThreadGoal(dbPath, args);
+  const goal = resolveThreadGoal(args);
   if (!goal) {
     throw new Error('No Codex goal found. Pass --thread <thread-id> or --latest.');
   }
@@ -238,7 +287,7 @@ SELECT changes() AS deleted;
 COMMIT;
 `, { readonly: false });
   const deleted = Number(rows[0]?.deleted || 0);
-  const remaining = readGoalByThread(dbPath, goal.thread_id);
+  const remaining = readGoalByThread(args, goal.thread_id);
   const ok = deleted === 1 && !remaining;
   const payload = writeReceipt(outDir, {
     ok,
@@ -277,7 +326,8 @@ function usage() {
     `  atris codex-goal reset --thread <id> ${CONFIRM_RESET_FLAG}`,
     '',
     'Flags:',
-    '  --state <path>      Codex state DB (default ~/.codex/state_5.sqlite)',
+    '  --state <path>      Codex goals DB (default ~/.codex/goals_1.sqlite, falls back to state_5.sqlite)',
+    '  --threads-db <path> Codex thread metadata DB for cwd/title (default ~/.codex/state_5.sqlite)',
     '  --latest           Use the latest Codex goal whose thread cwd matches the current directory',
     '  --out-dir <path>   Receipt/backup directory (default .atris/runs)',
     '',

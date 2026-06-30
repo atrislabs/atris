@@ -3,7 +3,11 @@ const { ensureValidCredentials } = require('../utils/auth');
 const { spawnSync } = require('child_process');
 const https = require('https');
 
-const DEFAULT_QUERY = 'Extract main topics, key insights, and actionable takeaways.';
+const DEFAULT_QUERY = [
+  'Create a timestamped YouTube brief for Atris.',
+  'Include: metadata, timestamped outline, core claims with confidence, memorable examples, actionable takeaways, Atris/product implications, and next actions.',
+  'Use transcript timestamps whenever possible.',
+].join(' ');
 const DEFAULT_TIMEOUT_MS = 300000;
 const LOCAL_TRANSCRIPT_MAX_BYTES = 5 * 1024 * 1024;
 const LOCAL_TRANSCRIPT_MAX_CHARS = 250000;
@@ -18,7 +22,8 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`Usage: ${commandName} process <youtube-url> [options]`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
-  output('Process a YouTube video through Atris using transcript-first analysis.');
+  output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
+  output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
   output('Options:');
   output('  --query, -q <text>  Focus question for the analysis');
@@ -27,6 +32,9 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('  --timeout <sec>     Request timeout in seconds (default: 300)');
   output('  --json              Print the raw JSON response');
   output('  -h, --help          This help');
+  output('');
+  output('Default output contract:');
+  output('  metadata -> timestamped outline -> claims -> examples -> takeaways -> Atris implications -> next actions');
   output('');
   output('Examples:');
   output(`  ${commandName} https://www.youtube.com/watch?v=VIDEO_ID`);
@@ -186,6 +194,34 @@ function chooseCaptionTrack(info = {}) {
   return chooseFrom(info.subtitles) || chooseFrom(info.automatic_captions);
 }
 
+function formatTimestampFromMs(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const two = (value) => String(value).padStart(2, '0');
+  return hours > 0
+    ? `${two(hours)}:${two(minutes)}:${two(seconds)}`
+    : `${two(minutes)}:${two(seconds)}`;
+}
+
+function timestampedCaptionLine(text, startMs) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  if (!Number.isFinite(Number(startMs))) return clean;
+  return `[${formatTimestampFromMs(startMs)}] ${clean}`;
+}
+
+function parseVttTimestampMs(value) {
+  const match = String(value || '').match(/(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})/);
+  if (!match) return null;
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+  const millis = Number(match[4] || 0);
+  return ((hours * 3600) + (minutes * 60) + seconds) * 1000 + millis;
+}
+
 function fetchCaptionText(urlString, redirects = 0) {
   if (!captionHostAllowed(urlString)) {
     return Promise.resolve(null);
@@ -246,13 +282,35 @@ function parseCaptionText(raw) {
           .replace(/\s+/g, ' ')
           .trim();
         if (!text) continue;
-        if (segments[segments.length - 1] === text) continue;
-        segments.push(text);
+        const line = timestampedCaptionLine(text, Number(event.tStartMs));
+        if (segments[segments.length - 1] === line) continue;
+        segments.push(line);
       }
-      return segments.join(' ');
+      return segments.join('\n');
     } catch {
       return '';
     }
+  }
+
+  if (/^WEBVTT/i.test(trimmed) || trimmed.includes('-->')) {
+    const segments = [];
+    for (const block of String(raw).split(/\r?\n\r?\n+/)) {
+      const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const timeLine = lines.find((line) => line.includes('-->'));
+      if (!timeLine) continue;
+      const startMs = parseVttTimestampMs(timeLine.split('-->')[0]);
+      const text = lines.slice(lines.indexOf(timeLine) + 1)
+        .filter((line) => !/^(NOTE|STYLE|REGION|Kind:|Language:)/.test(line))
+        .map((line) => line.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .filter((line, index, all) => index === 0 || line !== all[index - 1])
+        .join(' ')
+        .trim();
+      const captionLine = timestampedCaptionLine(text, startMs);
+      if (!captionLine || segments[segments.length - 1] === captionLine) continue;
+      segments.push(captionLine);
+    }
+    if (segments.length) return segments.join('\n');
   }
 
   const segments = [];
@@ -358,6 +416,14 @@ function formatYoutubeResult(data) {
   lines.push(data?.message || 'YouTube video processed successfully');
   if (metadata.title) lines.push(`Title: ${metadata.title}`);
   if (metadata.channel) lines.push(`Channel: ${metadata.channel}`);
+  if (metadata.duration_seconds) lines.push(`Duration: ${formatTimestampFromMs(Number(metadata.duration_seconds) * 1000)}`);
+  if (metadata.processing_method || metadata.transcript_source) {
+    const method = metadata.processing_method || metadata.transcript_source;
+    const source = metadata.transcript_source && metadata.transcript_source !== method
+      ? ` via ${metadata.transcript_source}`
+      : '';
+    lines.push(`Processing: ${method}${source}`);
+  }
   if (data?.credits_used !== undefined || data?.credits_remaining !== undefined) {
     const used = data.credits_used !== undefined ? data.credits_used : '?';
     const remaining = data.credits_remaining !== undefined ? data.credits_remaining : '?';
@@ -393,5 +459,6 @@ module.exports = {
   processYoutube,
   shouldRetryWithLocalTranscript,
   formatYoutubeResult,
+  formatTimestampFromMs,
   youtubeCommand,
 };

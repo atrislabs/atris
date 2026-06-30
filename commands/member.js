@@ -2145,6 +2145,11 @@ function stripAutoImproverTitleNoise(text) {
 function isAutoImproverGeneratedLogLine(line, relativePath = '') {
   const text = String(line || '').trim();
   if (!text) return false;
+  if (/^[-*]?\s*Next tick will stop until a human looks at the error\.?$/i.test(text)) return true;
+  if (/^[-*]?\s*Next tick will verify failed, halting\.?$/i.test(text)) return true;
+  if (/^##\s+\d{1,2}:\d{2}\s+·\s+Task failed$/i.test(text)) return true;
+  if (/^[-*]?\s*(status|action|state|verifier)\s*:\s*(failed|blocked)\s*$/i.test(text)) return true;
+  if (/^[-*]?\s*(title|proof):\s*/i.test(text)) return true;
   if (String(relativePath || '').startsWith('atris/team/auto-improver/logs/') && /^-\s*summary:\s*/i.test(text)) return true;
   if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
   if (/\bauto_improver\b/i.test(text)) return true;
@@ -2162,12 +2167,28 @@ function normalizeFailurePattern(line) {
     .trim());
 }
 
+function failureCoveredByPassLesson(line, passLessonText = '') {
+  const text = String(line || '');
+  if (!text || !passLessonText) return false;
+  if (/spawnSync\s+\/bin\/sh\s+ETIMEDOUT/i.test(text)) {
+    const target = text.match(/"([^"]+)"/)?.[1] || '';
+    const targetTail = target ? target.split('/').slice(-2).join('/') : '';
+    return /spawnSync\s+\/bin\/sh\s+ETIMEDOUT/i.test(passLessonText)
+      && (!target || passLessonText.includes(target) || (targetTail && passLessonText.includes(targetTail)));
+  }
+  return false;
+}
+
 function collectAutoImproverLogSignals(root) {
   const roots = [
     path.join(root, 'atris', 'logs'),
     path.join(root, 'atris', 'team'),
     path.join(root, 'atris', 'wiki'),
   ].filter((candidate) => fs.existsSync(candidate));
+  const passLessonText = safeReadText(path.join(root, 'atris', 'lessons.md'), 500000)
+    .split(/\r?\n/)
+    .filter((line) => /\s+pass\s+—/.test(line))
+    .join('\n');
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
   const counts = new Map();
@@ -2203,6 +2224,7 @@ function collectAutoImproverLogSignals(root) {
         if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
         if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
         if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
+        if (failureCoveredByPassLesson(line, passLessonText)) continue;
         if (unclearRegex.test(line)) {
           unclearNextActions += 1;
           unclearActions.push({

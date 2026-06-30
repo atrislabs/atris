@@ -57,7 +57,7 @@ function routeLoop(argv = []) {
   }
 }
 
-function renderLoopHome(route = { action: 'home' }) {
+function renderLoopHome(route = { action: 'home' }, moves = []) {
   const lines = [
     '',
     'atris loop: the self-improvement loop',
@@ -85,6 +85,13 @@ function renderLoopHome(route = { action: 'home' }) {
     '  wiki upkeep is at: atris loop wiki',
     '',
   ];
+  if (Array.isArray(moves) && moves.length) {
+    lines.splice(lines.length - 2, 0, '  ranked next moves');
+    moves.slice(0, 3).forEach((move) => {
+      lines.splice(lines.length - 2, 0, `    [${move.source}] ${move.title}`);
+    });
+    lines.splice(lines.length - 2, 0, '');
+  }
   if (route && route.unknown) {
     lines.splice(1, 0, `  (unknown: "${route.unknown}". here is the loop:)`);
   }
@@ -95,7 +102,11 @@ function renderLoopHome(route = { action: 'home' }) {
 }
 
 function printLoopHome(route) {
-  console.log(renderLoopHome(route));
+  let moves = [];
+  try {
+    moves = require('../lib/next-moves').nextMoves(process.cwd(), 3);
+  } catch { /* next moves are optional on a fresh checkout */ }
+  console.log(renderLoopHome(route, moves));
 }
 
 // Parse the handful of local-run flags `atris loop start` forwards to run.js.
@@ -148,7 +159,7 @@ function printLocalRunSummary() {
 // Combined machine-readable status: the overnight pulse heartbeat and the local
 // runs in one object. Best-effort per engine so a missing one does not fail it.
 function loopStatusJson(root = process.cwd()) {
-  const out = { ok: true, action: 'loop_status', pulse: null, local_runs: { count: 0, latest: null } };
+  const out = { ok: true, action: 'loop_status', pulse: null, local_runs: { count: 0, latest: null }, next_moves: [] };
   try {
     const lp = require('../lib/pulse');
     const { cronInstalled } = require('./pulse');
@@ -158,6 +169,9 @@ function loopStatusJson(root = process.cwd()) {
   try {
     out.local_runs = localRunSummary(require('./run').getRunLogDir());
   } catch { /* runs optional */ }
+  try {
+    out.next_moves = require('../lib/next-moves').nextMoves(root, 5);
+  } catch { /* next moves optional */ }
   return out;
 }
 
@@ -170,7 +184,7 @@ function loopReport(root = process.cwd()) {
   try {
     roadmap = require('../lib/next-moves').roadmapItemsByState(root);
   } catch { /* roadmap optional */ }
-  return { ok: true, action: 'loop_report', roadmap, pulse: status.pulse, local_runs: status.local_runs };
+  return { ok: true, action: 'loop_report', roadmap, next_moves: status.next_moves, pulse: status.pulse, local_runs: status.local_runs };
 }
 
 function renderLoopReport(rep) {
@@ -192,6 +206,11 @@ function renderLoopReport(rep) {
     lines.push('');
     lines.push('  next up:');
     r.open.slice(0, 4).forEach((t) => lines.push(`    [ ] ${t}`));
+  }
+  if (Array.isArray(rep.next_moves) && rep.next_moves.length) {
+    lines.push('');
+    lines.push('  ranked next:');
+    rep.next_moves.slice(0, 5).forEach((move) => lines.push(`    [${move.source}] ${move.title}`));
   }
   if (rep.pulse) {
     lines.push('');

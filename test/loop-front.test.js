@@ -125,6 +125,45 @@ test('loopReport groups roadmap state and renders without an em dash', () => {
   }
 });
 
+test('loop ranked source combines roadmap, active missions, and endgame', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'brain'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'ROADMAP.md'),
+      '# R\n\n## Open loop items\n\n- [ ] roadmap gate\n', 'utf8');
+    fs.appendFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-ranked',
+      objective: 'active mission gate',
+      owner: 'mission-lead',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-06-30T00:00:00.000Z',
+      updated_at: '2026-06-30T00:00:00.000Z',
+    }) + '\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'brain', 'state.json'), JSON.stringify({
+      endgame: { horizon: 'endgame gate', source: 'test horizon' },
+    }), 'utf8');
+
+    const moves = require('../lib/next-moves').nextMoves(dir, 3);
+    assert.deepEqual(moves.map((move) => move.source), ['roadmap', 'mission', 'endgame']);
+    assert.deepEqual(moves.map((move) => move.title), ['roadmap gate', 'active mission gate', 'endgame gate']);
+
+    const status = loopStatusJson(dir);
+    assert.deepEqual(status.next_moves.map((move) => move.source).slice(0, 3), ['roadmap', 'mission', 'endgame']);
+    const report = loopReport(dir);
+    assert.deepEqual(report.next_moves.map((move) => move.source).slice(0, 3), ['roadmap', 'mission', 'endgame']);
+    const home = renderLoopHome({ action: 'home' }, moves);
+    assert.match(home, /\[roadmap\] roadmap gate/);
+    assert.match(home, /\[mission\] active mission gate/);
+    assert.match(home, /\[endgame\] endgame gate/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('`atris loop report --json` prints a valid proof object', () => {
   const dir = makeTempDir();
   try {

@@ -15,6 +15,11 @@ const {
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
+const {
+  buildMissionRoom,
+  writeMissionRoomReceipt,
+  missionRoomLines,
+} = require('../lib/mission-room');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -631,13 +636,13 @@ function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
       ? `Completion proof is attached for verifier: ${mission.verifier}.`
       : 'No verifier command was recorded for this mission.';
   const landing = {
-    happened: `Mission completed: ${mission.objective}.`,
+    happened: `${mission.objective} is complete.`,
     checked,
     tested,
-    saved: `Saved complete mission ${mission.id}${proof ? ` with proof ${proof}` : ''}.`,
+    saved: proof ? `Proof saved at ${proof}.` : 'Proof saved in mission state.',
     decision: xpNextCommand
-      ? `Queue AgentXP next: ${xpNextCommand}`
-      : 'Mission is complete; start or resume the next mission if more work remains.',
+      ? 'Ready for human review; accept in Atris if the proof looks right.'
+      : 'Pick the next customer-facing move.',
   };
   const result = {
     changed: landing.happened,
@@ -652,12 +657,98 @@ function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
 function missionResultLines(completion) {
   const landing = completion?.landing || {};
   const result = completion?.result || {};
-  const lines = ['Result:'];
-  if (landing.happened) lines.push(`  What happened: ${landing.happened}`);
+  const lines = ['Landing:'];
+  if (landing.happened) lines.push(`  Changed: ${landing.happened}`);
   if (landing.checked) lines.push(`  How I checked: ${landing.checked}`);
   if (landing.tested) lines.push(`  What I tested: ${landing.tested}`);
-  if (result.saved) lines.push(`  Saved: ${result.saved}`);
-  if (landing.decision) lines.push(`  Decision: ${landing.decision}`);
+  if (result.saved) lines.push(`  Proof: ${result.saved}`);
+  if (landing.decision) lines.push(`  Next: ${landing.decision}`);
+  return lines;
+}
+
+function missionHumanNextAction(mission) {
+  if (!mission) return 'Pick the next customer-facing move.';
+  if (mission.status === 'ready' && /^queue AgentXP review:/i.test(mission.next_action || '')) {
+    return 'Ready for human review; accept in Atris if the proof looks right.';
+  }
+  if (mission.status === 'ready') return 'Review the proof, then complete the mission.';
+  if (mission.status === 'complete') return 'Pick the next customer-facing move.';
+  if (mission.status === 'blocked') return 'Fix the verifier failure or revise the mission.';
+  return 'Keep running the mission.';
+}
+
+function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null) {
+  const status = mission?.status || 'running';
+  const changed = status === 'ready'
+    ? `${mission.objective} is ready for review.`
+    : status === 'complete'
+      ? `${mission.objective} is complete.`
+      : status === 'blocked'
+        ? `${mission.objective} is blocked.`
+        : `${mission.objective} recorded tick ${tickIndex}.`;
+  const checked = verifierResult
+    ? verifierResult.passed
+      ? `Verifier passed: ${verifierResult.command || mission.verifier || 'configured verifier'}.`
+      : `Verifier failed: ${verifierResult.command || mission.verifier || 'configured verifier'}.`
+    : 'Tick recorded; no verifier was run.';
+  const lines = [
+    'Landing:',
+    `  Changed: ${changed}`,
+    `  How I checked: ${checked}`,
+  ];
+  if (receiptPath) lines.push(`  Proof: Receipt saved at ${receiptPath}.`);
+  lines.push(`  Next: ${missionHumanNextAction(mission)}`);
+  return lines;
+}
+
+function missionRunStartNextLine(mission, nextCommand, warnings = []) {
+  if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
+  if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
+    return 'Start the visible goal, then continue this mission.';
+  }
+  if (/attach-task/.test(nextCommand || '')) return 'Attach task context, then continue this mission.';
+  return 'Run the first proof tick.';
+}
+
+function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {}) {
+  const checked = mission.verifier
+    ? `Verifier configured: ${mission.verifier}.`
+    : 'No verifier was recorded for this mission.';
+  return [
+    'Takeoff:',
+    `  Goal: ${mission.objective}`,
+    `  Done when: ${mission.stop_condition || 'the mission has proof or a human decision'}.`,
+    '  Proof: Mission state saved in .atris/state/missions.jsonl.',
+    `  Check: ${checked}`,
+    `  Next: ${missionRunStartNextLine(mission, nextCommand, warnings)}`,
+  ];
+}
+
+function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null) {
+  const changed = mission.status === 'ready'
+    ? `${mission.objective} is ready for review.`
+    : mission.status === 'complete'
+      ? `${mission.objective} is complete.`
+      : mission.status === 'blocked'
+        ? `${mission.objective} is blocked.`
+        : ranTicks > 0
+          ? `${mission.objective} ran ${ranTicks}/${effectiveMaxTicks} tick(s).`
+          : `${mission.objective} did not run a tick.`;
+  const verifier = mission.verifier_result;
+  const checked = verifier
+    ? verifier.passed
+      ? `Verifier passed: ${verifier.command || mission.verifier || 'configured verifier'}.`
+      : `Verifier failed: ${verifier.command || mission.verifier || 'configured verifier'}.`
+    : pauseReason
+      ? `Run paused: ${pauseReason}.`
+      : 'Run recorded; no verifier was run.';
+  const lines = [
+    'Landing:',
+    `  Changed: ${changed}`,
+    `  How I checked: ${checked}`,
+    `  Proof: Summary receipt saved at ${finalReceipt}.`,
+    `  Next: ${continuationGoal?.mission ? `Next mission: ${continuationGoal.mission.objective}.` : missionHumanNextAction(mission)}`,
+  ];
   return lines;
 }
 
@@ -1163,6 +1254,7 @@ function startMissionFromRunObjective(objective, args) {
     ? refreshCodexGoalController(process.cwd(), { missionId: saved.id })
     : null;
   const nativeGoal = codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null;
+  const nextCommand = codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`;
   printJsonOrText(
     {
       ok: true,
@@ -1183,16 +1275,9 @@ function startMissionFromRunObjective(objective, args) {
       requires_native_goal_start: codexGoalState?.goal?.requires_native_goal_start === true,
       native_goal_action: nativeGoal,
       native_goal_ack_command: codexGoalState?.goal?.native_goal_ack_command || null,
-      next_command: codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`,
+      next_command: nextCommand,
     },
-    [
-      `Started mission: ${saved.objective}`,
-      `Owner: ${saved.owner}`,
-      `Runner: ${saved.runner}`,
-      ...(atrisGoalState.goal ? [`Atris goal: ${atrisGoalState.goal.objective}`] : []),
-      ...(codexGoalState?.goal ? [`Codex goal: ${codexGoalState.goal.objective}`] : []),
-      ...warnings.map((warning) => `Warning: ${warning.message}`),
-    ],
+    missionRunTakeoffLines(saved, { warnings, nextCommand }),
     asJson,
   );
 }
@@ -1419,6 +1504,132 @@ function reportMission(args) {
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
     asJson,
   );
+}
+
+function missionReceiptHealth(mission, root = process.cwd()) {
+  const receiptPath = String(mission?.receipt_path || '').trim();
+  if (!receiptPath) return { ok: false, reason: 'missing_receipt_path' };
+  const file = path.isAbsolute(receiptPath) ? receiptPath : path.join(root, receiptPath);
+  let receipt = null;
+  try {
+    receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return { ok: false, reason: 'receipt_not_found', receipt_path: receiptPath };
+  }
+  const missionVerifierPassedState = mission?.verifier_result?.passed === true;
+  const receiptPassed = receipt?.result?.passed === true
+    || receipt?.result?.verifier_result?.passed === true;
+  if (!missionVerifierPassedState || !receiptPassed) {
+    return { ok: false, reason: 'verifier_not_passed', receipt_path: receiptPath };
+  }
+  return { ok: true, reason: 'verifier_passed', receipt_path: receiptPath };
+}
+
+function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
+  const localOnly = options.localOnly === true;
+  let missions = listMissions(root);
+  if (!localOnly) {
+    const seen = new Set(missions.map((mission) => mission.id));
+    for (const rolled of listWorktreeRollupMissions(root)) {
+      if (seen.has(rolled.id)) continue;
+      seen.add(rolled.id);
+      missions.push(rolled);
+    }
+  }
+  missions = missions.map(missionStatusView);
+  const findings = [];
+  const add = (mission, code, message, severity = 'high', extra = {}) => {
+    findings.push({
+      severity,
+      code,
+      mission_id: mission.id,
+      owner: mission.owner,
+      status: mission.status,
+      objective: mission.objective,
+      message,
+      next: extra.next || `atris mission status ${mission.id}`,
+      ...extra,
+    });
+  };
+
+  for (const mission of missions) {
+    const status = String(mission.status || '');
+    const active = !TERMINAL_STATUSES.has(status);
+    const objective = String(mission.objective || '').trim();
+    if (active && !String(mission.verifier || '').trim()) {
+      add(
+        mission,
+        'missing_verifier',
+        'Mission has no verifier, so it cannot prove done work.',
+        'high',
+        { next: `atris mission start "${objective}" --owner ${mission.owner} --verify "<cmd>"` },
+      );
+    }
+    if (active && /^(?:--)?help$/i.test(objective)) {
+      add(
+        mission,
+        'accidental_help_mission',
+        'Looks like a help flag became a mission.',
+        'medium',
+        { next: `atris mission stop ${mission.id} --reason "accidental help mission"` },
+      );
+    }
+    if (status === 'ready') {
+      const receiptRoot = mission.worktree_root || root;
+      const health = missionReceiptHealth(mission, receiptRoot);
+      if (!health.ok) {
+        add(
+          mission,
+          'stale_ready_receipt',
+          `Ready mission does not have a fresh passing receipt (${health.reason}).`,
+          'high',
+          {
+            receipt_path: health.receipt_path || mission.receipt_path || null,
+            receipt_reason: health.reason,
+            next: `atris mission tick ${mission.id} --verify`,
+          },
+        );
+      }
+    }
+    if (mission.always_on === true && status === 'blocked') {
+      add(
+        mission,
+        'blocked_always_on_loop',
+        'Always-on mission is blocked and will not keep improving.',
+        'high',
+        { next: `atris mission run ${mission.id} --max-ticks 1` },
+      );
+    }
+  }
+
+  findings.sort((a, b) => {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9)
+      || String(a.code).localeCompare(String(b.code))
+      || String(a.objective).localeCompare(String(b.objective));
+  });
+  return { missions, findings };
+}
+
+function doctorMission(args) {
+  const asJson = wantsJson(args);
+  const localOnly = hasFlag(args, '--local');
+  const { missions, findings } = collectMissionDoctorFindings(process.cwd(), { localOnly });
+  const payload = {
+    ok: findings.length === 0,
+    action: 'mission_doctor',
+    checked_count: missions.length,
+    finding_count: findings.length,
+    findings,
+  };
+  const lines = findings.length
+    ? [
+      `Mission doctor: ${findings.length} problem(s) across ${missions.length} mission(s)`,
+      ...findings.map((finding) => `${finding.severity.toUpperCase()} ${finding.code}: ${finding.objective} -> ${finding.next}`),
+    ]
+    : [`Mission doctor: clean (${missions.length} mission(s) checked)`];
+  printJsonOrText(payload, lines, asJson);
+  if (findings.length) process.exitCode = 1;
 }
 
 // `atris mission watch [id]` — read-only live heartbeat. Prints a line per tick as it
@@ -2341,6 +2552,7 @@ function goalLoopNextCommandPlan(goal) {
 
 function shouldRunGoalLoopCommand(heartbeat, plan) {
   if (!heartbeat?.goal) return false;
+  if (heartbeat.goal.requires_native_goal_start === true) return false;
   if (plan && plan.run_when_due_only === false) return true;
   return heartbeat.heartbeat?.due === true;
 }
@@ -3109,16 +3321,7 @@ async function runMission(args) {
 
     printJsonOrText(
       { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
-      [
-        `Ran mission ${mission.id}`,
-        `  objective: ${mission.objective}`,
-        `  ran_ticks: ${ranTicks}/${effectiveMaxTicks}  (skipped/errored: ${ticks.length - ranTicks})`,
-        `  final state: ${mission.status}`,
-        pauseReason ? `  pause: ${pauseReason}` : null,
-        `  session: ${sessionId || '(none)'}`,
-        `  summary receipt: ${finalReceipt}`,
-        continuationGoal?.mission ? `  next goal: ${continuationGoal.mission.objective}` : null,
-      ].filter(Boolean),
+      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal),
       asJson,
     );
   } finally {
@@ -3256,11 +3459,7 @@ function tickMission(args) {
     printJsonOrText(
       { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
-        `Ticked mission: ${outputMission.objective}`,
-        `State: ${outputMission.status}`,
-        `Tick: ${tickIdx}`,
-        `Next: ${outputMission.next_action}`,
-        ...(receiptPath ? [`Receipt: ${receiptPath}`] : []),
+        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult),
         ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
       ],
       asJson,
@@ -3362,10 +3561,7 @@ function completeMission(args) {
       continuation_goal: continuationGoal,
     },
     [
-      `Completed mission: ${outputMission.objective}`,
       ...missionResultLines(completion),
-      `Proof: ${proof}`,
-      ...(xpNextCommand ? [`AgentXP: ${xpNextCommand}`] : []),
       ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
     ],
     asJson,
@@ -3612,11 +3808,13 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission doctor [--local] [--json]   Flag no-verifier missions, help missions, stale ready receipts, and blocked always-on loops
   atris mission attach-task <id> [--json]   Create the missing task spine for an existing active mission
   atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
+  atris mission room "<messy input>" [--owner <member>] [--json]   Create a Mission Room card and shareable receipt from messy intent
   atris mission goal [--runtime codex|atris] [--heartbeat] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -3814,6 +4012,40 @@ function layersMission(args) {
   printJsonOrText({ ok: true, since: sinceRaw || null, total, tagged, untagged, by_layer: byLayer, by_source: bySource, dominant: tagged ? dominant : null, skewed }, lines, asJson);
 }
 
+function roomMission(args) {
+  const asJson = wantsJson(args);
+  const explicitOwner = readFlag(args, '--owner', '');
+  const input = stripKnownFlags(args, ['--owner'], ['--json']).join(' ').trim();
+  if (!input) {
+    exitMissionError('Usage: atris mission room "<messy input>" [--owner <member>] [--json]', 1, asJson);
+  }
+  const requestedOwner = explicitOwner || process.env.ATRIS_AGENT_ID || '';
+  const ownerResolution = resolveFunctionalOwner({
+    requestedOwner,
+    title: input,
+    note: input,
+    root: process.cwd(),
+    fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
+  });
+  const owner = ownerResolution.owner || requestedOwner || 'mission-lead';
+
+  let room;
+  try {
+    room = buildMissionRoom(input, { owner, root: process.cwd(), ownerResolution });
+  } catch (error) {
+    exitMissionError(error.message || String(error), 1, asJson);
+  }
+  const { receipt, relativePath, room: persistedRoom } = writeMissionRoomReceipt(room, { root: process.cwd() });
+  const payload = {
+    ok: true,
+    action: 'mission_room_created',
+    room: persistedRoom,
+    receipt_path: relativePath,
+    receipt,
+  };
+  printJsonOrText(payload, missionRoomLines(persistedRoom, relativePath), asJson);
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -3826,6 +4058,9 @@ function missionCommand(args) {
     case 'list':
     case 'ls':
       return statusMission(rest);
+    case 'doctor':
+    case 'check':
+      return doctorMission(rest);
     case 'attach-task':
     case 'ensure-task':
     case 'task-spine':
@@ -3837,6 +4072,8 @@ function missionCommand(args) {
       return watchMission(rest);
     case 'layers':
       return layersMission(rest);
+    case 'room':
+      return roomMission(rest);
     case 'goal':
     case 'codex-goal':
       return goalMission(rest);
@@ -3875,6 +4112,7 @@ module.exports = {
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,
   classifyPathsByLayer,
+  collectMissionDoctorFindings,
   resolveClaudeRunnerModel,
   resolveClaudeRunnerBin,
   businessIdForAtris2Mission,

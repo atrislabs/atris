@@ -5932,13 +5932,80 @@ function buildAcceptHumanResult({ task, proof, nextTask, publicSync }) {
   return { changed, checked, try_next: tryNext };
 }
 
-function renderAcceptLanding({ task, proof, nextTask, publicSync }) {
-  return renderPublicResult(buildAcceptHumanResult({
+function refreshBrainScorecardsAfterAccept(root = process.cwd()) {
+  try {
+    const { recordTaskEpisodeScorecards } = require('../commands/brain');
+    return { ok: true, ...recordTaskEpisodeScorecards({ root }) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error && error.message ? error.message : String(error),
+    };
+  }
+}
+
+function nextMissionRouteAfterAccept(root = process.cwd()) {
+  try {
+    const { selectCodexGoalMission } = require('../commands/mission');
+    const selected = selectCodexGoalMission(root);
+    const mission = selected && selected.mission;
+    if (!mission) return { ok: true, objective: null, route: 'next mission: none' };
+    return {
+      ok: true,
+      mission_id: mission.id,
+      objective: mission.objective,
+      reason: selected.reason,
+      route: `next mission: ${cleanPublicText(mission.objective, 160)}`,
+      command: mission.next_action || `atris mission run ${mission.id}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      route: 'next mission: needs refresh',
+      error: error && error.message ? error.message : String(error),
+    };
+  }
+}
+
+function xpLandingText(xpProjection) {
+  if (!xpProjection) return 'XP updated';
+  if (xpProjection.ok === false) return 'XP refresh failed';
+  const candidates = [
+    xpProjection.total_agent_xp,
+    xpProjection.total_xp,
+    xpProjection.summary && xpProjection.summary.total_agent_xp,
+    xpProjection.totals && xpProjection.totals.total_agent_xp,
+  ];
+  const total = candidates.map(Number).find((value) => Number.isFinite(value));
+  return Number.isFinite(total) ? `XP updated (${total} total)` : 'XP updated';
+}
+
+function brainScorecardLandingText(brainScorecards) {
+  if (!brainScorecards) return 'brain scorecards checked';
+  if (brainScorecards.ok === false) return 'brain scorecard refresh failed';
+  const written = Number(brainScorecards.written);
+  return Number.isFinite(written) ? `brain scorecards +${written}` : 'brain scorecards checked';
+}
+
+function buildVisibleAcceptReceipt(result, { xpProjection, brainScorecards, nextMissionRoute } = {}) {
+  const updates = [
+    xpLandingText(xpProjection),
+    brainScorecardLandingText(brainScorecards),
+  ].filter(Boolean);
+  const checked = updates.length ? `${result.checked}; ${updates.join('; ')}` : result.checked;
+  const route = cleanPublicText(nextMissionRoute && nextMissionRoute.route, 180);
+  const tryNext = route ? `${result.try_next}; ${route}` : result.try_next;
+  return { ...result, checked, try_next: tryNext };
+}
+
+function renderAcceptLanding({ task, proof, nextTask, publicSync, xpProjection, brainScorecards, nextMissionRoute }) {
+  const result = buildAcceptHumanResult({
     task,
     proof,
     nextTask,
     publicSync,
-  }));
+  });
+  return renderPublicResult(buildVisibleAcceptReceipt(result, { xpProjection, brainScorecards, nextMissionRoute }));
 }
 
 async function publishAcceptAgentXp(args, actor) {
@@ -7412,9 +7479,12 @@ async function cmdAccept(args) {
   });
   const xpProjection = refreshCareerXpAfterReview(reviewed);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const workspaceRoot = projection.workspace_root || process.cwd();
+  const brainScorecards = refreshBrainScorecardsAfterAccept(workspaceRoot);
+  const nextMissionRoute = nextMissionRouteAfterAccept(workspaceRoot);
   // Inform the gate, never block it: show what the receipts named in the proof
   // actually say so the accepting human isn't trusting prose.
-  const evidence = extractReceiptEvidence(proof, projection.workspace_root || process.cwd());
+  const evidence = extractReceiptEvidence(proof, workspaceRoot);
   const publicSync = hasFlag(args, '--public') ? await publishAcceptAgentXp(args, actor) : null;
   if (wantsJson(args)) {
     printJson({
@@ -7427,6 +7497,8 @@ async function cmdAccept(args) {
       evidence,
       public_sync: publicSync,
       xp_projection: xpProjection,
+      brain_scorecards: brainScorecards,
+      next_mission_route: nextMissionRoute,
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),
     });
@@ -7438,6 +7510,9 @@ async function cmdAccept(args) {
     proof,
     nextTask,
     publicSync,
+    xpProjection,
+    brainScorecards,
+    nextMissionRoute,
   }));
   if (publicSync && !publicSync.ok) process.exitCode = 1;
 }

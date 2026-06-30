@@ -1652,13 +1652,41 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
     fs.mkdirSync(logsDir, { recursive: true });
     const nestedNoise = '- candidate: Recurring log pattern: candidate: Recurring log pattern: "mission_status": "blocked"';
     const strippedNoise = '- candidate: Next tick will stop until a human looks at the error.';
+    const rawLoopNoise = 'Next tick will stop until a human looks at the error.';
+    const genericFailureRows = [
+      '## 12:37 · Task failed',
+      '- status: failed',
+      '- action: failed',
+      '- state: blocked',
+      '- verifier: failed',
+      '- title: Auto-improver: Next tick will stop until a human looks at the error.',
+      '- title: Make runner error wording config-neutral',
+      '- proof: third-actor rerun 2026-06-16: node --test test/task-day-stale-failed.test.js passed 17/17.',
+      'Next tick will verify failed, halting.',
+    ];
+    const resolvedByLesson = 'I hit an error while running "Re-read sources and update atris/features/team-member-standard/validate.md": spawnSync /bin/sh ETIMEDOUT';
     const realPattern = 'ERROR team hub mission_status blocked waiting for owner';
+    fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), [
+      '# lessons',
+      '',
+      '- **[2026-06-18] reconcile-already-shipped-check-git-first** — pass — team-member-standard/validate.md already landed; 2x spawnSync /bin/sh ETIMEDOUT was closeout noise.',
+      '',
+    ].join('\n'), 'utf8');
     fs.writeFileSync(path.join(logsDir, '2026-06-09.md'), [
       '# test log',
       `- ${nestedNoise}`,
       `- ${nestedNoise}`,
       strippedNoise,
       strippedNoise,
+      rawLoopNoise,
+      rawLoopNoise,
+      rawLoopNoise,
+      ...genericFailureRows,
+      ...genericFailureRows,
+      ...genericFailureRows,
+      resolvedByLesson,
+      resolvedByLesson,
+      resolvedByLesson,
       `- ${realPattern}`,
       `- ${realPattern}`,
       `- ${realPattern}`,
@@ -1679,6 +1707,21 @@ test('auto-improver wake ignores self-generated recurring-pattern log noise', ()
       repeated.filter((failure) => /Next tick will stop until a human looks at the error/.test(failure.pattern)),
       [],
       'generated candidate fields must not feed the recurring-failure scanner',
+    );
+    assert.deepEqual(
+      repeated.filter((failure) => /Next tick will stop until a human looks at the error/.test(failure.pattern)),
+      [],
+      'generic loop stop lines must not feed the recurring-failure scanner',
+    );
+    assert.deepEqual(
+      repeated.filter((failure) => /Task failed|status: failed|action: failed|state: blocked|verifier: failed|title:|proof:|Next tick will verify failed/i.test(failure.pattern)),
+      [],
+      'generic structured failure, proof, and title rows must not feed the recurring-failure scanner',
+    );
+    assert.deepEqual(
+      repeated.filter((failure) => /spawnSync \/bin\/sh ETIMEDOUT/.test(failure.pattern)),
+      [],
+      'failures covered by a pass lesson must not feed the recurring-failure scanner',
     );
   } finally {
     cleanupTempDir(dir);
@@ -3191,11 +3234,19 @@ test('mission start tick complete writes durable member-owned state', () => {
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'MISSION.md')));
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md')));
-    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.md')), false);
-    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.json')), false);
-    assert.match(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md'), 'utf8'), /Make Mission real/);
+	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.md')), false);
+	    assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', 'mission-lead', 'missions.json')), false);
+	    assert.match(fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'now.md'), 'utf8'), /Make Mission real/);
+	    const ack = runCli([
+	      'mission', 'goal', 'ack', startPayload.mission.id,
+	      '--runtime', 'codex',
+	      '--status', 'active',
+	      '--objective', 'Make Mission real',
+	      '--json',
+	    ], { cwd: dir });
+	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-    const tick = runCli(['mission', 'tick', startPayload.mission.id, '--verify', '--json'], { cwd: dir });
+	    const tick = runCli(['mission', 'tick', startPayload.mission.id, '--verify', '--json'], { cwd: dir });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.action, 'mission_tick');
@@ -3233,11 +3284,19 @@ test('always-on mission run keeps ticking after verifier passes', () => {
       '--always-on',
       '--json',
     ], { cwd: dir });
-    assert.equal(start.status, 0, start.stderr || start.stdout);
-    const mission = JSON.parse(start.stdout).mission;
-    assert.equal(mission.always_on, true);
+	    assert.equal(start.status, 0, start.stderr || start.stdout);
+	    const mission = JSON.parse(start.stdout).mission;
+	    assert.equal(mission.always_on, true);
+	    const ack = runCli([
+	      'mission', 'goal', 'ack', mission.id,
+	      '--runtime', 'codex',
+	      '--status', 'active',
+	      '--objective', 'Keep the loop alive',
+	      '--json',
+	    ], { cwd: dir });
+	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-    const run = runCli([
+	    const run = runCli([
       'mission', 'run', mission.id,
       '--max-ticks', '2',
       '--complete-on-pass',
@@ -4726,7 +4785,7 @@ test('brain scorecard carries task landing quality and human outcome', () => {
         delete row.rl.approval_status;
       }
     }
-    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+	    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
     const revisedAdd = runCli(['task', 'add', 'Landing reworked task', '--tag', 'approval', '--json'], { cwd: dir, env });
     assert.equal(revisedAdd.status, 0, revisedAdd.stderr);
@@ -4745,12 +4804,16 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     assert.equal(revisedReady.status, 0, revisedReady.stderr);
     const revised = runCli(['task', 'revise', revisedRef, '--as', 'keshav', '--note', 'Decision line was too vague', '--json'], { cwd: dir, env });
     assert.equal(revised.status, 0, revised.stderr);
-    const revisedPayload = JSON.parse(revised.stdout);
-    assert.equal(revisedPayload.episode.rl.label, 'rework_requested');
-    assert.equal(revisedPayload.episode.review_landing.decision, 'Accept if useful.');
-    assert.equal(revisedPayload.episode.human_feedback.human_revision_note, 'Decision line was too vague');
+	    const revisedPayload = JSON.parse(revised.stdout);
+	    assert.equal(revisedPayload.episode.rl.label, 'rework_requested');
+	    assert.equal(revisedPayload.episode.review_landing.decision, 'Accept if useful.');
+	    assert.equal(revisedPayload.episode.human_feedback.human_revision_note, 'Decision line was too vague');
+	    const scorecardsPath = path.join(dir, '.atris', 'state', 'scorecards.jsonl');
+	    const scorecardRows = fs.readFileSync(scorecardsPath, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line))
+	      .filter(row => row.task_id !== acceptedPayload.task_id && row.task_id !== revisedPayload.task_id);
+	    fs.writeFileSync(scorecardsPath, `${scorecardRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
-    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
+	    const scorecard = runCli(['brain', 'scorecard', '--root', dir, '--verify', '--json'], { cwd: dir });
     assert.equal(scorecard.status, 0, scorecard.stderr);
     const payload = JSON.parse(scorecard.stdout);
     const acceptedCard = payload.scorecards.find(row => row.task_title === 'Landing accepted task');
@@ -15250,10 +15313,10 @@ test('loop --help prints usage without running wiki loop', () => {
   try {
     const home = path.join(dir, 'home');
     const res = runCli(['loop', '--help'], { cwd: dir, env: { HOME: home } });
-    assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stdout, /Usage: atris loop/);
-    assert.match(res.stdout, /--dry-run/);
-    assert.doesNotMatch(res.stdout, /Wiki Loop|Pages:|Health: wiki/);
+	    assert.equal(res.status, 0, res.stderr);
+	    assert.match(res.stdout, /Usage: atris loop/);
+	    assert.match(res.stdout, /atris loop wiki/);
+	    assert.doesNotMatch(res.stdout, /Wiki Loop|Pages:|Health: wiki/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
@@ -15989,12 +16052,20 @@ test('business handoff mission bootstrap executes in a generated workspace', () 
 
     const goal = runCli(['member', 'goal-from-mission', 'operator', '--json'], { cwd: dir });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
-    const goalPayload = JSON.parse(goal.stdout);
-    assert.equal(goalPayload.action, 'goal_from_mission_created');
-    assert.equal(goalPayload.goal.source, 'mission');
-    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+	    const goalPayload = JSON.parse(goal.stdout);
+	    assert.equal(goalPayload.action, 'goal_from_mission_created');
+	    assert.equal(goalPayload.goal.source, 'mission');
+	    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+	    const ack = runCli([
+	      'mission', 'goal', 'ack', missionPayload.mission.id,
+	      '--runtime', 'codex',
+	      '--status', 'active',
+	      '--objective', 'Run the first useful loop for Executable Co',
+	      '--json',
+	    ], { cwd: dir });
+	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
       cwd: dir,
       env: { PATH: path.dirname(process.execPath) },
     });
@@ -16054,10 +16125,18 @@ test('business collaborator handoff loop connects tasks missions goals proof and
 
     const goal = runCli(['member', 'goal-from-mission', 'operator', '--json'], { cwd: dir });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
-    const goalPayload = JSON.parse(goal.stdout);
-    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+	    const goalPayload = JSON.parse(goal.stdout);
+	    assert.equal(goalPayload.goal.mission_id, missionPayload.mission.id);
+	    const ack = runCli([
+	      'mission', 'goal', 'ack', missionPayload.mission.id,
+	      '--runtime', 'codex',
+	      '--status', 'active',
+	      '--objective', 'Run the first useful loop for Loop Co',
+	      '--json',
+	    ], { cwd: dir });
+	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
+	    const tick = runCli(['mission', 'tick', missionPayload.mission.id, '--verify', '--json'], {
       cwd: dir,
       env: { PATH: path.dirname(process.execPath) },
     });

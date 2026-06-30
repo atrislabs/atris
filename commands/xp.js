@@ -18,6 +18,8 @@ const CAREER_XP_CURSOR_FILE = path.join('.atris', 'state', 'career_xp.cursor.jso
 const CAREER_XP_SESSIONS_DIR = path.join('.atris', 'state', 'career_xp_sessions');
 const TASK_PROJECTION_FILE = path.join('.atris', 'state', 'tasks.projection.json');
 const CODEX_STATE_FILE = path.join(os.homedir(), '.codex', 'state_5.sqlite');
+// Codex moved native goals to goals_1.sqlite; thread metadata (cwd/title) stayed in state_5.sqlite.
+const CODEX_GOALS_FILE = path.join(os.homedir(), '.codex', 'goals_1.sqlite');
 const AGENT_XP_LABEL = 'AgentXP';
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
 const LEVEL_XP = 1000;
@@ -1549,20 +1551,42 @@ function workspacePathCandidates(workspace) {
   return [...new Set(candidates.filter(Boolean))];
 }
 
+function codexHasThreadsTable(dbPath) {
+  if (!dbPath || !fs.existsSync(dbPath)) return false;
+  return runSqliteJsonOptional(dbPath, `SELECT name FROM sqlite_master WHERE type='table' AND name='threads' LIMIT 1;`).length > 0;
+}
+
 function readCodexGoalsForSession(args, workspace, sinceMs, untilMs) {
-  const dbPath = path.resolve(expandHome(
-    readFlag(args, '--codex-state', readFlag(args, '--state', process.env.CODEX_STATE_DB || CODEX_STATE_FILE))
-  ));
+  const explicitDb = readFlag(args, '--codex-state', readFlag(args, '--state', process.env.CODEX_STATE_DB || ''));
+  const dbPath = explicitDb
+    ? path.resolve(expandHome(explicitDb))
+    : path.resolve(fs.existsSync(CODEX_GOALS_FILE) ? CODEX_GOALS_FILE : CODEX_STATE_FILE);
+
+  // Goals live in goals_1.sqlite (no `threads` table); cwd/title metadata lives in state_5.sqlite.
+  // Legacy single-file layouts (and test fixtures) keep both in one DB.
+  let threadsTable = codexHasThreadsTable(dbPath) ? 'threads' : null;
+  let attachPrefix = '';
+  if (!threadsTable) {
+    const threadsDb = CODEX_STATE_FILE !== dbPath ? CODEX_STATE_FILE : '';
+    if (codexHasThreadsTable(threadsDb)) {
+      threadsTable = 'tdb.threads';
+      attachPrefix = `ATTACH ${sqlString(threadsDb)} AS tdb;\n`;
+    }
+  }
+
   const threadId = readFlag(args, '--thread', process.env.CODEX_THREAD_ID || '');
   const clauses = [];
   if (threadId) clauses.push(`tg.thread_id = ${sqlString(threadId)}`);
   const workspaceCandidates = workspacePathCandidates(workspace);
-  if (workspaceCandidates.length) {
+  if (workspaceCandidates.length && threadsTable) {
     clauses.push(`(t.cwd IN (${workspaceCandidates.map(sqlString).join(', ')}) AND tg.created_at_ms <= ${Number(untilMs)} AND (tg.updated_at_ms >= ${Number(sinceMs)} OR tg.status = 'active'))`);
   }
   if (!clauses.length) return [];
 
-  const rows = runSqliteJsonOptional(dbPath, `
+  const join = threadsTable ? `LEFT JOIN ${threadsTable} t ON t.id = tg.thread_id` : '';
+  const cwdCol = threadsTable ? 't.cwd' : 'NULL';
+  const titleCol = threadsTable ? 't.title' : 'NULL';
+  const rows = runSqliteJsonOptional(dbPath, `${attachPrefix}
 SELECT
   'codex' AS provider,
   tg.thread_id,
@@ -1574,10 +1598,10 @@ SELECT
   tg.time_used_seconds,
   tg.created_at_ms,
   tg.updated_at_ms,
-  t.cwd AS thread_cwd,
-  t.title AS thread_title
+  ${cwdCol} AS thread_cwd,
+  ${titleCol} AS thread_title
 FROM thread_goals tg
-LEFT JOIN threads t ON t.id = tg.thread_id
+${join}
 WHERE ${clauses.join(' OR ')}
 ORDER BY tg.updated_at_ms DESC
 LIMIT 25

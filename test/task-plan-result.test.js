@@ -403,10 +403,69 @@ test('task accept prints a concise human landing', () => {
     assert.equal(accept.status, 0, accept.stderr);
     assert.deepEqual(accept.stdout.trim().split('\n'), [
       'Changed: made the accept output concise',
-      'Checked: accepted a task and read the landing',
-      'Try: read the accept landing and confirm it says public XP was not published',
+      'Checked: accepted a task and read the landing; XP updated (3 total); brain scorecards +1',
+      'Try: read the accept landing and confirm it says public XP was not published; next mission: none',
     ]);
     assert.doesNotMatch(accept.stdout, /Done:|Proof:|Local:|Public:|career_xp|contribution_graph|accepted .*reward=/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task accept receipt shows the next active mission route', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    fs.appendFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), JSON.stringify({
+      schema: 'atris.mission.v1',
+      id: 'mission-route-after-accept',
+      slug: 'route-after-accept',
+      objective: 'Route accepted proof into the next mission',
+      owner: 'mission-lead',
+      status: 'planning',
+      cadence: 'manual',
+      runner: 'codex_goal',
+      lane: 'code',
+      verifier: 'node -e "process.exit(0)"',
+      always_on: false,
+      task_ids: [],
+      human_asks: [],
+      next_action: 'run verifier with `atris mission tick <id> --verify`',
+      created_at: '2026-06-30T00:00:00.000Z',
+      updated_at: '2026-06-30T00:00:00.000Z',
+    }) + '\n', 'utf8');
+
+    const add = runCli(['task', 'add', 'Route accept landing', '--tag', 'product', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    const ready = runCli([
+      'task',
+      'ready',
+      ref,
+      '--as',
+      'architect',
+      '--proof',
+      'node --test test/task-plan-result.test.js passed for route accept landing',
+      '--changed',
+      'made accept show the next route',
+      '--checked',
+      'accepted a task with an active mission present',
+      '--try',
+      'read the accept landing',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+
+    const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao'], { cwd: dir, env });
+    assert.equal(accept.status, 0, accept.stderr);
+    assert.deepEqual(accept.stdout.trim().split('\n'), [
+      'Changed: made accept show the next route',
+      'Checked: accepted a task with an active mission present; XP updated (2 total); brain scorecards +1',
+      'Try: read the accept landing; next mission: Route accepted proof into the next mission',
+    ]);
   } finally {
     cleanupTempDir(dir);
   }
@@ -477,8 +536,8 @@ test('task accept --public publishes AgentXP in the same landing', async () => {
     assert.equal(accept.status, 0, accept.stderr || accept.stdout);
     assert.deepEqual(accept.stdout.trim().split('\n'), [
       'Changed: made public accept publish AgentXP in one command',
-      'Checked: accepted with a fake AgentXP server and saw the publish request succeed',
-      'Try: accept a reviewed task with --public',
+      'Checked: accepted with a fake AgentXP server and saw the publish request succeed; XP updated (4 total); brain scorecards +1',
+      'Try: accept a reviewed task with --public; next mission: none',
     ]);
     assert.doesNotMatch(accept.stdout, /Done:|Proof:|Local:|Public:/);
     assert.equal(captured.method, 'POST');

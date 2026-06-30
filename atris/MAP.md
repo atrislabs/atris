@@ -75,6 +75,7 @@ rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdReviews|cmdDone|getTaskDb" c
 rg "taskReviewEvidenceCommands|taskReviewVerificationFocus|commands_to_verify" commands/task.js test/commands.test.js  # Task review-chat verifier packet: extracts proof commands/files and regression coverage
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
 rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|missionIsRunnable|codex_goal.json|runMission|tickMission|watchMission|missionHeartbeatLines" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js test/mission-heartbeat.test.js  # Durable mission start/status/Codex-goal/tick/run plus verifier lint/status filters, runnable mission selection that skips human-gated missions, and terminal next-action normalization
+rg "buildMissionRoom|task_plan_preview|member_route|result.landing|writeThinkingMemory|collectMissionRoomContext|proactive_next_mission|mission room|MISSION ROOM VERIFIED" lib/mission-room.js commands/mission.js scripts/verify-mission-room.js test/mission-status.test.js atris/thinking.md # Mission Room: messy input -> task-first preview, editable member route, logs/thinking context, pending result.landing, approval packet, verifier, receipt
 rg "Codex Goal Replacement|replace_goal|set_goal|codex_goal.json" atris/features/codex-goal-replacement commands/mission.js test/mission-status.test.js  # Contract for Atris mission -> visible Codex /goal replacement
 rg "addTask|claimTask|doneTask|appendTaskCompletionLogs|listTasks|workspaceRoot" lib/task-db.js  # SQLite task store + completion autolog to project/member logs
 rg "codexGoalCommand|thread_goals|confirm-complete-goal-reset" commands/codex-goal.js test/codex-goal.test.js  # Native Codex /goal status/reset bridge
@@ -1330,10 +1331,13 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris/policies/outbound-artifact-gate.md` — Human-facing send gate: rendered artifacts, anti-slop copy, approval packet, receipt
 - `scripts/outbound-artifact-gate.js` — Cheap validator for raw HTML/source sends, missing render proof, and slop copy
 - `test/outbound-artifact-gate.test.js` — Regression coverage for the Justin raw-HTML failure class
+- `commands/slop.js` (`slopCommand`, `RULES` `:28-69`) — deterministic frontend/prose slop detector (HOW copy reads); `detect --fix/--diff/--staged`, project rules in `.atris/slop.rules.json`, `installHook` pre-commit gate `:118-133`
+- `commands/strings.js` (`stringsCommand`) — content design system from live code (WHAT words you ship): `scan` extracts user-facing strings → `.atris/strings.json` (`isUserFacing` `:53`, `extractStrings` `:75`), `variants` flags the same string written N ways (`variantClusters` `:112`), `term --ban/--prefer` codifies preferred terms, `check --staged` gates banned terms (exit 1, reuses slop's `gitChangedLines`); wired in `bin/atris.js` `command === 'strings'`
+- `test/strings.test.js` — extraction precision, variant clustering, and scan→variants→term→check round trip
 
 **Purpose:** Enforce quality standards and prevent generic AI output.
 
-**Search:** `rg "slop|kill list|outbound artifact gate" policies/ scripts/outbound-artifact-gate.js`
+**Search:** `rg "slop|kill list|outbound artifact gate" policies/ scripts/outbound-artifact-gate.js` · commands: `rg "stringsCommand|variantClusters|isUserFacing" commands/strings.js`
 
 ---
 
