@@ -2856,6 +2856,67 @@ test('completed mission run seeds the next useful goal', () => {
   }
 });
 
+test('continuation mission chooses next mission instead of passing on inherited long-run verifier', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-choice-continuation',
+      slug: 'mission-choice-continuation',
+      objective: 'Decide and start the next useful mission after: work overnight and self improve goal after goal',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent',
+      parent_objective: 'work overnight and self improve goal after goal',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: work overnight and self improve goal after goal',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const status = runCli(['mission', 'status', 'mission-choice-continuation', '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.equal(statusPayload.missions[0].verifier, '');
+    assert.equal(statusPayload.missions[0].effective_verifier, undefined);
+    assert.equal(statusPayload.missions[0].next_action, 'next move');
+
+    const due = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(due.status, 0, due.stderr || due.stdout);
+    assert.deepEqual(JSON.parse(due.stdout), {
+      ok: true,
+      action: 'run_skipped',
+      reason: 'no_due_mission',
+      mission: null,
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-continuation', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.match(attachedPayload.mission.next_action, /atris mission run "<next useful mission>" --owner mission-lead/);
+
+    const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
+    assert.equal(ack.codex_goal_state.goal.visible_goal.status, 'active');
+    assert.match(ack.codex_goal_state.goal.next_command, /atris mission run "<next useful mission>" --owner mission-lead/);
+
+    const next = runCli(['mission', 'run', 'make the concrete follow-up real', '--owner', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(next.status, 0, next.stderr || next.stdout);
+    const nextPayload = JSON.parse(next.stdout);
+    assert.equal(nextPayload.mission.objective, 'make the concrete follow-up real');
+    assert.equal(nextPayload.completed_continuation_goal.completed, true);
+    assert.equal(nextPayload.completed_continuation_goal.mission.id, 'mission-choice-continuation');
+    assert.equal(nextPayload.completed_continuation_goal.mission.continued_by_mission_id, nextPayload.mission.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('bare mission run asks for input instead of resuming an old mission', () => {
   const dir = makeTempDir();
   try {
