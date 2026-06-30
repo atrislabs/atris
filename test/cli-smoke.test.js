@@ -344,7 +344,7 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--fast\|--pro\|--max\|--code-fast\] \[--local\|--cloud\] \[--bypass\|--safe\] <message>/);
+  assert.match(res.stdout, /ax \[--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
   assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
@@ -420,7 +420,11 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(payload.model, 'atris:pro');
   assert.equal(payload.max_turns, 1);
   assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 1);
-  assert.match(payload.message, /Recent conversation/);
+  assert.equal(payload.message, 'edit config');
+  assert.deepEqual(payload.previous_messages, [
+    { role: 'user', content: 'find mode' },
+    { role: 'assistant', content: 'mode is in src/config.js' }
+  ]);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
   assert.equal(ax.modelForMode('max'), 'atris:max');
@@ -429,7 +433,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(ax.formatPrompt('pro'), 'pro › ');
   assert.equal(ax.formatDuration(6197), '6s');
   assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
-  assert.equal(ax.formatWorkingLine(2100), '• Thinking… (2s · ctrl-c to interrupt)');
+  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
   assert.equal(ax.formatStatusMessage('retrying_with_required_local_tool'), null);
   assert.equal(ax.formatStatusMessage('loading_workspace_context'), 'loading workspace context');
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat/);
