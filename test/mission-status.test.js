@@ -2341,6 +2341,30 @@ test('mission room names next-mission decisions instead of recycling prior missi
   }
 });
 
+test('mission room names messy input goal-chain runs specifically', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const memberDir = path.join(dir, 'atris', 'team', 'mission-lead');
+    fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Mission Lead\n\nOwns Mission Room loops.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'MISSION.md'), '# Mission\n\nTurn messy intent into proof-backed missions.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'now.md'), '# Now\n\nMission Room context slice.\n', 'utf8');
+
+    const input = 'messy shower test: user gives messy input and Atris must turn it into the right mission input, choose the right member, set a visible goal, think bottleneck-first, create tasks if needed, and land a specific finish-line plan';
+    const res = runCli(['mission', 'room', input, '--owner', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.room.name, 'Messy Input Goal Chain Mission Room');
+    assert.match(payload.room.approval_packet.approve_question, /Messy Input Goal Chain Mission Room/);
+    assert.match(payload.room.proactive_next_mission.objective, /Messy Input Goal Chain Mission Room/);
+    assert.match(payload.receipt_path, /messy-input-goal-chain-mission-room/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission prune-runs previews and deletes only old unreferenced run clutter', () => {
   const dir = makeTempDir();
   try {
