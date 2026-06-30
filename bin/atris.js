@@ -486,7 +486,7 @@ function showHelp() {
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
-  console.log('  youtube    - Process YouTube videos with Gemini native video analysis');
+  console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
   console.log('');
   console.log('Experiments:');
   console.log('  experiments init [slug]     - Prepare atris/experiments/ or scaffold a pack');
@@ -831,16 +831,21 @@ function showServeHelp() {
 
 function showLoopHelp() {
   console.log('');
-  console.log('Usage: atris loop [--dry-run] [--json] [--limit=N]');
+  console.log('Usage: atris loop [add|start|status|report|stop|wiki] [options]');
   console.log('');
   console.log('Description:');
-  console.log('  Inspect wiki upkeep state and optionally refresh wiki status/log files.');
+  console.log('  One front door for the self-improvement loop. It reads ROADMAP.md,');
+  console.log('  runs bounded proof-backed work, and keeps wiki upkeep under loop wiki.');
   console.log('');
-  console.log('Options:');
-  console.log('  --dry-run    Preview wiki loop state without writing files.');
-  console.log('  --json       Print the loop report as JSON.');
-  console.log('  --limit=N    Limit suggested source count.');
-  console.log('  --help, -h   Show this help.');
+  console.log('Commands:');
+  console.log('  atris loop add "<task>"        Put a bounded task into the loop queue.');
+  console.log('  atris loop start [--once]      Run the local loop.');
+  console.log('  atris loop start --overnight   Install the durable heartbeat.');
+  console.log('  atris loop status [--json]     Show heartbeat, local runs, and next moves.');
+  console.log('  atris loop report [--json]     Show proof of handled and queued loop work.');
+  console.log('  atris loop stop                Remove the durable heartbeat.');
+  console.log('  atris loop wiki                Run the wiki upkeep loop.');
+  console.log('  --help, -h                     Show this help.');
   console.log('');
 }
 
@@ -916,7 +921,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship'];
 
@@ -2130,8 +2135,8 @@ if (command === 'init') {
     showLoopHelp();
     process.exit(0);
   }
-  require('../commands/loop').loopAtris(args)
-    .then(() => process.exit(0))
+  Promise.resolve(require('../commands/loop-front').loopFront(args))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'clean-workspace' || command === 'cw') {
   const { cleanWorkspace } = require('../commands/workspace-clean');
@@ -2155,6 +2160,12 @@ if (command === 'init') {
 } else if (command === 'slop') {
   // Slop: deterministic frontend-slop detector (no LLM). Exit 1 = slop found, for CI + the autopilot gate.
   Promise.resolve(require('../commands/slop').slopCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'strings') {
+  // Strings: content design system from live code (no LLM). Extracts UI strings, flags variants,
+  // enforces preferred terms at the gate. Exit 1 = variants/banned terms found, for CI + the gate.
+  Promise.resolve(require('../commands/strings').stringsCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'security-review' || command === 'secure') {
@@ -2410,13 +2421,12 @@ async function agentAtris() {
   // Respect -h / --help / help before any auth/state work
   const firstArg = process.argv[3];
   if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
-    console.log('Usage: atris agent [doctor|dogfood|spawn|spawns|spawn-status]');
+    console.log('Usage: atris agent [doctor|spawn|spawns|spawn-status]');
     console.log('');
     console.log('  Pick which cloud agent to chat with from this workspace.');
     console.log('  Run `atris agent spawn <role> --task "..."` to create a worker request.');
     console.log('  Run `atris agent spawns` to list worker requests.');
     console.log('  Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
-    console.log('  Run `atris agent dogfood --live` to smoke-test Devin/Droid with GLM 5.2.');
     console.log('  Requires `atris login` first.');
     console.log('');
     console.log('  After selecting, use: atris chat ["message"]');
@@ -2427,7 +2437,19 @@ async function agentAtris() {
     agentDoctor();
   }
   if (firstArg === 'dogfood') {
-    const result = require('../commands/agent-spawn').agentDogfoodCommand(process.argv.slice(4));
+    // Internal diagnostic, gated off the public CLI. Operators use `atris agent doctor`.
+    if (!process.env.ATRIS_INTERNAL_AGENT_DOGFOOD) {
+      console.error('atris agent dogfood is an internal diagnostic and is not part of the public CLI.');
+      console.error('Run `atris agent doctor` to verify local AI CLIs can see Atris context.');
+      process.exit(1);
+    }
+    const dogfoodArgs = process.argv.slice(4);
+    if (dogfoodArgs.includes('--help') || dogfoodArgs.includes('-h') || dogfoodArgs[0] === 'help') {
+      console.log('Internal usage: atris agent dogfood [--live]');
+      console.log('  Smoke-test Devin/Droid with GLM 5.2. Gated behind ATRIS_INTERNAL_AGENT_DOGFOOD.');
+      process.exit(0);
+    }
+    const result = require('../commands/agent-spawn').agentDogfoodCommand(dogfoodArgs);
     process.exit(result.ok ? 0 : 1);
   }
   if (firstArg === 'spawn') {

@@ -38,6 +38,8 @@ test('buildYoutubePayload defaults to the documented takeaway query', () => {
     youtube_url: 'https://youtube.com/watch?v=abc123',
     query: DEFAULT_QUERY,
   });
+  assert.match(DEFAULT_QUERY, /timestamped YouTube brief/);
+  assert.match(DEFAULT_QUERY, /claims with confidence/);
 });
 
 test('buildYoutubePayload can include client transcript fields', () => {
@@ -199,15 +201,42 @@ test('extractLocalTranscript parses yt-dlp json3 captions', async () => {
     }),
     fetchCaptionText: async () => JSON.stringify({
       events: [
-        { segs: [{ utf8: 'Hello ' }, { utf8: 'world' }] },
-        { segs: [{ utf8: 'Next idea' }] },
+        { tStartMs: 0, segs: [{ utf8: 'Hello ' }, { utf8: 'world' }] },
+        { tStartMs: 1200, segs: [{ utf8: 'Next idea' }] },
       ],
     }),
   });
 
-  assert.equal(result.transcriptText, 'Hello world Next idea');
+  assert.equal(result.transcriptText, '[00:00] Hello world\n[00:01] Next idea');
   assert.equal(result.language, 'en');
   assert.equal(result.durationSeconds, 44);
+});
+
+test('extractLocalTranscript preserves VTT timestamps', async () => {
+  const result = await extractLocalTranscript('https://youtube.com/watch?v=abc123', {
+    spawnSync: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        duration: 61,
+        subtitles: {
+          en: [{ ext: 'vtt', url: 'https://www.youtube.com/api/timedtext?v=abc123' }],
+        },
+      }),
+    }),
+    fetchCaptionText: async () => [
+      'WEBVTT',
+      '',
+      '00:00:02.000 --> 00:00:04.000',
+      'First idea',
+      '',
+      '00:01:00.000 --> 00:01:02.000',
+      'Second idea',
+      '',
+    ].join('\n'),
+  });
+
+  assert.equal(result.transcriptText, '[00:02] First idea\n[01:00] Second idea');
+  assert.equal(result.durationSeconds, 61);
 });
 
 test('formatYoutubeResult includes metadata, credits, and analysis', () => {
@@ -216,11 +245,19 @@ test('formatYoutubeResult includes metadata, credits, and analysis', () => {
     video_analysis: 'Analysis text.',
     credits_used: 5,
     credits_remaining: 10,
-    metadata: { title: 'T', channel: 'C' },
+    metadata: {
+      title: 'T',
+      channel: 'C',
+      duration_seconds: 4459,
+      processing_method: 'client_transcript_atris_fast',
+      transcript_source: 'client_transcript',
+    },
   });
 
   assert.match(text, /Title: T/);
   assert.match(text, /Channel: C/);
+  assert.match(text, /Duration: 01:14:19/);
+  assert.match(text, /Processing: client_transcript_atris_fast via client_transcript/);
   assert.match(text, /Credits: 5 used, 10 remaining/);
   assert.match(text, /Analysis text/);
 });

@@ -1,10 +1,10 @@
-# Atris roadmap: clarity in, magic out, on a loop
+# Atris roadmap: mission run to Valhalla
 
 Owner: Keshav. Read this before picking overnight work. This is the goal the loop pursues.
 
 ## The one goal
 
-100% clarity. Get the human clear, and the magic falls out: setups, blocks (card, reel, deck, site), reports, answers. Then run it on a loop that provably improves itself.
+`atris mission run "<intent>"` becomes the dream product: one command turns messy intent into a visible mission, a functional team, a proof-backed change, a human-readable landing, and the next move. The loop keeps going until the product is obviously useful, tasteful, and self-improving, with no stale proof and no slop in durable memory.
 
 ## Three jobs (everything fits under these)
 
@@ -21,6 +21,16 @@ Owner: Keshav. Read this before picking overnight work. This is the goal the loo
    - overnight, local-fast (ax / atris2 + local models) and on cloud computers
    - recursively self-improving, provably
    - the blocks are the output: card, reel, deck, site, plus weekly reports and data answers; saved local or cloud, the atris way
+
+## Valhalla gates
+
+1. One command, zero confusion: `atris mission run "<intent>"` starts or resumes the right loop, mirrors the visible goal, attaches task context, and prints Landing / Changed / Proof / Next.
+2. Roadmap-fed autonomy: when inbox and tasks are empty, the loop pulls from this roadmap, not from stale TODO markdown or random housekeeping.
+3. Proof economy: every done state has a fresh verifier, every review lane item is accepted or sent back, and stale receipts cannot land.
+4. No-slop interface: operator output is short, human-readable, and free of runner plumbing unless debugging is requested.
+5. Dream-product surface: the operator can see active mission, current blocker, next action, proof, and accept/revise in one glance.
+6. Durable cloud loop: the same mission spine runs on a local checkout or a remote computer without changing product semantics.
+7. Self-improving taste: scorecards change future behavior; low-value loops, stale docs, and cosmetic grind get killed automatically.
 
 ## Non-negotiable, cross-cutting
 
@@ -46,6 +56,11 @@ cycle never chases something too vague to finish.
 - [x] `atris loop status` summarizes local runs, not just pulse (shipped)
 - [x] wire ROADMAP open items into the loop planner (shipped: hasWork + idle seed pull the top item into the inbox)
 - [x] atris clarity: interview the user for style and workflow, write a durable profile (shipped)
+- [x] Valhalla gate: make `atris mission run` print one dream-product landing from intent to proof to next move, with no internal runner plumbing
+- [x] Valhalla gate: add a mission doctor that flags no-verifier missions, accidental help missions, stale ready receipts, and blocked always-on loops
+- [x] Valhalla gate: make review acceptance update XP, brain scorecards, and next mission routing in one visible receipt
+- [x] Valhalla gate: collapse ROADMAP, Endgame, and active missions into one ranked next-move source for `atris loop`
+- [x] Valhalla gate: write the remote-computer acceptance test for mission parity between local and cloud execution
 
 ## Big jobs (epics, not loop-seedable)
 
