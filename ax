@@ -9,6 +9,7 @@ const readline = require('readline');
 const crypto = require('crypto');
 const { Readable } = require('stream');
 const { loadCredentials } = require('./utils/auth');
+const missionRuntime = require('./lib/mission-runtime-loop');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -16,7 +17,8 @@ const BACKEND = {
   port: 8000,
   path: '/api/atris2/turn'
 };
-const DEFAULT_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
+const CLOUD_BACKEND_BASE = 'https://api.atris.ai';
+const LOCAL_BACKEND_BASE = `http://${BACKEND.host}:${BACKEND.port}`;
 const CODE_FAST = {
   path: '/api/cursor/turn',
   model: 'composer-2-5-fast',
@@ -124,11 +126,11 @@ function formatUsage() {
     '  ax [--max|--fast] --benchmark',
     '',
     'Modes:',
-    '  --max   local workspace agent, highest reasoning, slowest turns',
-    '  --pro   local workspace agent, deeper tool loop',
-    '  --fast  local workspace agent, faster low-latency turns',
+    '  --max   hosted Atris 2, highest reasoning, slowest turns',
+    '  --pro   hosted Atris 2, deeper tool loop',
+    '  --fast  hosted Atris 2, faster low-latency turns',
     '  --code-fast  Atris Code Fast public lane',
-    '  --local force local workspace tools',
+    '  --local opt into local backend/workspace tools',
     '  --cloud force authenticated cloud connectors/chat',
     '  --business <slug>  run tools on that business cloud workspace (EC2)',
     '  --verify <cmd>  gate the turn on this command passing (default: no verifier)',
@@ -209,19 +211,21 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
   };
 }
 
-function backendBaseUrl() {
-  return (process.env.AX_BACKEND_URL
-    || process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL
-    || process.env.OBELISK_ATRIS2_BACKEND_URL
-    || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
+function backendBaseUrl(options = {}) {
+  const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
+  if (process.env.AX_BACKEND_URL) return process.env.AX_BACKEND_URL.replace(/\/$/, '');
+  if (route === 'local') {
+    return (process.env.OBELISK_LOCAL_ATRIS2_BACKEND_URL || LOCAL_BACKEND_BASE).replace(/\/$/, '');
+  }
+  return (process.env.OBELISK_ATRIS2_BACKEND_URL || process.env.ATRIS_API_BASE || CLOUD_BACKEND_BASE).replace(/\/$/, '');
 }
 
-function backendUrl() {
-  return new URL(BACKEND.path, backendBaseUrl()).toString();
+function backendUrl(options = {}) {
+  return new URL(BACKEND.path, backendBaseUrl(options)).toString();
 }
 
-function backendPathUrl(pathname) {
-  return new URL(pathname, backendBaseUrl()).toString();
+function backendPathUrl(pathname, options = {}) {
+  return new URL(pathname, backendBaseUrl(options)).toString();
 }
 
 function codeFastBaseUrl() {
@@ -268,20 +272,23 @@ function buildRunProfile(options = {}) {
   }
   const route = resolveRoute(options.message || 'doctor', options);
   const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
+  const reasoningByMode = mode === 'max'
+    ? 'Max workspace tool loop uses high reasoning effort'
+    : mode === 'pro'
+      ? 'Pro workspace tool loop uses API default medium'
+      : 'Fast workspace tool loop uses provider default';
   return {
-    endpoint: backendUrl(),
+    endpoint: backendUrl({ route }),
     mode,
     route,
     model: payload.model,
     workspace_path: payload.workspace_path || 'cloud',
     max_turns: payload.max_turns,
+    member_slug: 'ax',
+    bypass_permissions: false,
     streaming: true,
     runtime: route === 'cloud' ? 'authenticated cloud connectors/chat' : 'local workspace',
-    reasoning: mode === 'max'
-      ? 'backend reports run row; Max workspace tool loop uses high reasoning effort'
-      : mode === 'pro'
-        ? 'backend reports run row; Pro workspace tool loop uses API default medium'
-        : 'backend reports run row; Fast workspace tool loop uses provider default'
+    reasoning: `${route === 'cloud' ? 'Atris cloud service' : 'local backend'}; ${reasoningByMode}`
   };
 }
 
@@ -300,18 +307,23 @@ function formatRunProfile(profile, options = {}) {
 }
 
 async function buildRuntimeHealth(options = {}) {
+  const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
   const healthRes = options.healthRes
     ? await Promise.resolve(options.healthRes)
-    : await requestJson(ATRIS2_HEALTH_PATH, { token: '', timeoutMs: options.timeoutMs || 1500 });
+    : await requestJson(ATRIS2_HEALTH_PATH, { token: route === 'cloud' ? authToken() : '', timeoutMs: options.timeoutMs || 1500, route });
   const data = healthRes.ok && healthRes.data && typeof healthRes.data === 'object' ? healthRes.data : {};
   const models = Array.isArray(data.models) ? data.models : [];
   const fast = models.find(row => row && row.id === 'atris:fast') || null;
+  const status = Number(healthRes.status || 0);
+  const authRequired = status === 401 || status === 403;
   return {
     schema: 'ax.runtime_health.v1',
+    route,
     backend: {
       ready: Boolean(healthRes.ok && data.ready),
-      reachable: Boolean(healthRes.ok),
-      status: healthRes.status || 0,
+      reachable: Boolean(healthRes.ok || status > 0),
+      auth_required: authRequired,
+      status,
       error: healthRes.error || '',
     },
     fast: {
@@ -328,14 +340,19 @@ async function buildRuntimeHealth(options = {}) {
 function formatRuntimeHealth(health, options = {}) {
   const backendReady = health && health.backend && health.backend.ready;
   const backendReachable = health && health.backend && health.backend.reachable;
+  const authRequired = health && health.backend && health.backend.auth_required;
   const fastReady = health && health.fast && health.fast.ready;
   const permissionReady = health && health.permissions && health.permissions.ready;
   const rows = [
-    ['backend', backendReady ? 'ready' : backendReachable ? 'not ready' : 'offline'],
+    ['backend', authRequired ? 'auth required' : backendReady ? 'ready' : backendReachable ? 'not ready' : 'offline'],
     ['fast', fastReady ? 'ready' : 'not ready'],
-    ['approvals', permissionReady ? 'ready' : 'offline'],
+    ['approvals', authRequired ? 'auth required' : permissionReady ? 'ready' : 'offline'],
   ];
-  if (!backendReachable) rows.push(['fix', 'start local backend, then rerun ax --doctor']);
+  if (authRequired) {
+    rows.push(['fix', 'run atris login, then rerun ax --doctor']);
+  } else if (!backendReachable) {
+    rows.push(['fix', health?.route === 'local' ? 'start local backend, then rerun ax --doctor' : 'Atris cloud unavailable; retry or run ax --doctor']);
+  }
   return rows.map(([label, value]) => formatAuxRow(label, value, options)).join('\n');
 }
 
@@ -378,17 +395,17 @@ function authUserId() {
   }
 }
 
-function isLoopbackBackend() {
+function isLoopbackBackend(options = {}) {
   try {
-    const parsed = new URL(backendBaseUrl());
+    const parsed = new URL(backendBaseUrl(options));
     return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname);
   } catch (_) {
     return false;
   }
 }
 
-function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
-  const url = backendPathUrl(pathname);
+function requestJson(pathname, { token = authToken(), timeoutMs = 6000, route } = {}) {
+  const url = backendPathUrl(pathname, { route });
   const parsed = new URL(url);
   const transport = parsed.protocol === 'https:' ? https : http;
   return new Promise((resolve) => {
@@ -422,8 +439,8 @@ function requestJson(pathname, { token = authToken(), timeoutMs = 6000 } = {}) {
   });
 }
 
-function postJson(pathname, body, { token = authToken(), timeoutMs = 30000 } = {}) {
-  const url = backendPathUrl(pathname);
+function postJson(pathname, body, { token = authToken(), timeoutMs = 30000, route } = {}) {
+  const url = backendPathUrl(pathname, { route });
   const parsed = new URL(url);
   const transport = parsed.protocol === 'https:' ? https : http;
   const postData = JSON.stringify(body || {});
@@ -607,9 +624,7 @@ function githubWorkspaceIntent(message) {
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
-  if (githubWorkspaceIntent(message)) return 'local';
-  if (mentionsConnector(message) && !workspaceIntent(message)) return 'cloud';
-  return 'local';
+  return 'cloud';
 }
 
 function normalizeMode(mode) {
@@ -681,6 +696,161 @@ function formatDoneLine(ms, credits) {
     return `${base} · ${credits} ${credits === 1 ? 'credit' : 'credits'} —`;
   }
   return `${base} —`;
+}
+
+function stripMissionQuotes(value) {
+  const text = String(value || '').trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return text.slice(1, -1).trim();
+    }
+  }
+  return text;
+}
+
+function extractMissionFlag(text, flagName) {
+  const source = String(text || '');
+  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
+  if (inline) {
+    return {
+      value: inline[2],
+      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
+  if (split) {
+    return {
+      value: split[2],
+      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
+    };
+  }
+  return { value: null, text: source.trim() };
+}
+
+function missionRunIntentFromMessage(message) {
+  return missionRuntime.missionRunIntentFromMessage(message);
+}
+
+function loadMissionRecord(cwd, missionId) {
+  if (!missionId) return null;
+  try {
+    const statePath = path.join(cwd || process.cwd(), '.atris', 'state', 'missions.jsonl');
+    if (!fs.existsSync(statePath)) return null;
+    const lines = fs.readFileSync(statePath, 'utf8').split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let record;
+      try {
+        record = JSON.parse(lines[i]);
+      } catch (_) {
+        continue;
+      }
+      const id = record && (record.id || record.mission_id);
+      if (id === missionId) return record;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
+function currentAtrisGoal(cwd = process.cwd()) {
+  try {
+    const statePath = path.join(cwd, '.atris', 'state', 'atris_goal.json');
+    if (!fs.existsSync(statePath)) return null;
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const goal = state && state.goal;
+    if (!goal || !goal.objective) return null;
+    if (String(goal.runner || '').trim().toLowerCase() === 'codex_goal') return null;
+    const mission = loadMissionRecord(cwd, goal.mission_id);
+    return {
+      ...goal,
+      mission_status: mission?.status || goal.mission_status,
+      created_at: goal.created_at || mission?.created_at || null,
+      updated_at: goal.updated_at || mission?.updated_at || null,
+      completed_at: goal.completed_at || mission?.completed_at || null,
+      next_command: goal.next_command || mission?.next_action || null,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function goalElapsedSeconds(goal) {
+  const started = Date.parse(goal?.created_at || '');
+  if (!Number.isFinite(started)) return null;
+  const ended = Date.parse(goal?.completed_at || '') || Date.now();
+  return Math.max(0, Math.floor((ended - started) / 1000));
+}
+
+function goalAchieved(goal) {
+  return ['complete', 'completed', 'achieved'].includes(String(goal?.mission_status || goal?.status || '').toLowerCase());
+}
+
+function formatAtrisGoal(goal) {
+  if (!goal) return '';
+  const objective = String(goal.objective || '').length > 92
+    ? `${String(goal.objective).slice(0, 89)}...`
+    : String(goal.objective || '');
+  const elapsed = goalElapsedSeconds(goal);
+  const missionParts = [
+    goal.mission_id || '?',
+    goal.mission_status || '?',
+    goal.runner || 'mission',
+  ];
+  if (elapsed !== null) missionParts.push(`elapsed ${formatSeconds(elapsed)}`);
+  missionParts.push(`achieved ${goalAchieved(goal) ? 'yes' : 'no'}`);
+  return [
+    `Atris goal: ${objective}`,
+    `Mission: ${missionParts.join(' · ')}`,
+    goal.next_command ? `Next: ${goal.next_command}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function writeAtrisGoalBanner(output, cwd = process.cwd()) {
+  const text = formatAtrisGoal(currentAtrisGoal(cwd));
+  if (!text) return false;
+  output.write(`${text}\n\n`);
+  return true;
+}
+
+function maybeWriteAtrisGoalBanner(output, cwd = process.cwd()) {
+  if (process.env.AX_SHOW_GOAL_BANNER !== '1') return false;
+  return writeAtrisGoalBanner(output, cwd);
+}
+
+function formatMissionStartReceipt(payload) {
+  const mission = payload?.mission || {};
+  const goal = payload?.atris_goal_state?.goal || {};
+  const receiptGoal = {
+    ...goal,
+    objective: goal.objective || mission.objective,
+    mission_id: goal.mission_id || mission.id,
+    mission_status: goal.mission_status || mission.status,
+    runner: goal.runner || mission.runner,
+    created_at: goal.created_at || mission.created_at,
+    updated_at: goal.updated_at || mission.updated_at,
+    completed_at: goal.completed_at || mission.completed_at,
+    next_command: goal.next_command || payload?.next_command || mission.next_action,
+  };
+  const elapsed = goalElapsedSeconds(receiptGoal);
+  return [
+    'Atris mission started',
+    `Goal: ${receiptGoal.objective || '?'}`,
+    `Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`,
+    `Elapsed: ${elapsed === null ? '0s' : formatSeconds(elapsed)}`,
+    `Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`,
+    receiptGoal.next_command ? `Next: ${receiptGoal.next_command}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+async function runLocalMission(intent, options = {}) {
+  return missionRuntime.runRuntimeMissionLoop(intent, {
+    cwd: options.cwd || process.cwd(),
+    cliPath: path.join(__dirname, 'bin', 'atris.js'),
+    onProgress: options.onProgress,
+  });
 }
 
 function useColor(options = {}) {
@@ -1710,6 +1880,7 @@ function handleEvent(event, state, output) {
 async function postTurn(message, options = {}) {
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
+  const endpointRoute = options.business ? 'cloud' : route;
   const token = authToken();
   const shouldSendConnectionContext = options.connectionContext
     || route === 'cloud'
@@ -1718,7 +1889,7 @@ async function postTurn(message, options = {}) {
   const connectionContext = options.connectionContext || (shouldSendConnectionContext
     ? await buildConnectionContext({ token, localWorkspace: local })
     : null);
-  const connectionUserId = !local && isLoopbackBackend() ? authUserId() : '';
+  const connectionUserId = !local && isLoopbackBackend({ route: endpointRoute }) ? authUserId() : '';
   const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
@@ -1726,7 +1897,7 @@ async function postTurn(message, options = {}) {
   // SSE traffic in between, so the socket-idle timeout needs more headroom.
   const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
   const timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
-  const turnUrl = new URL(backendUrl());
+  const turnUrl = new URL(backendUrl({ route: endpointRoute }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
     events: [],
@@ -1747,7 +1918,7 @@ async function postTurn(message, options = {}) {
     relay: options.business ? {
       chain: Promise.resolve(),
       execute: options.business.executor,
-      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl())
+      post: (callId, result) => options.business.postToolResult(callId, result, backendBaseUrl({ route: 'cloud' }))
     } : null
   };
 
@@ -1967,24 +2138,27 @@ async function chat(options = {}) {
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
+  maybeWriteAtrisGoalBanner(output, cwd);
 
-  const runtimePreflight = { ready: false };
-  const ensureRuntimeReady = async () => {
-    if (runtimePreflight.ready) return true;
+  const runtimePreflight = new Set();
+  const ensureRuntimeReady = async (routeForTurn = 'cloud') => {
+    const endpointRoute = routeForTurn === 'local' ? 'local' : 'cloud';
+    const key = `${normalizeMode(mode)}:${endpointRoute}`;
+    if (runtimePreflight.has(key)) return true;
     if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') {
-      runtimePreflight.ready = true;
+      runtimePreflight.add(key);
       return true;
     }
     const startedAt = Date.now();
     const health = options.runtimeHealth
-      ? await Promise.resolve(options.runtimeHealth({ mode }))
-      : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200 });
+      ? await Promise.resolve(options.runtimeHealth({ mode, route: endpointRoute }))
+      : await buildRuntimeHealth({ timeoutMs: options.preflightTimeoutMs || 1200, route: endpointRoute });
     if (runtimeReadyForChat(health, mode)) {
-      runtimePreflight.ready = true;
+      runtimePreflight.add(key);
       return true;
     }
     output.write(`${formatRuntimeHealth(health, output)}\n\n`);
-    output.write(`${formatBackendHint()}\n`);
+    output.write(`${formatBackendHint({ route: endpointRoute })}\n`);
     output.write(`${formatDoneLine(Date.now() - startedAt)}\n\n`);
     return false;
   };
@@ -2014,6 +2188,26 @@ async function chat(options = {}) {
 
     if (logger) logger.write(`${formatPrompt(mode)}${trimmed}\n`);
     output.write('\n');
+
+    const missionIntent = missionRunIntentFromMessage(trimmed);
+    if (missionIntent) {
+      const result = await runLocalMission(missionIntent, {
+        cwd,
+        onProgress: (line) => {
+          if (/^pursuing /.test(line)) output.write('Pursuing goal...\n');
+          else if (/^still_running /.test(line)) {
+            const seconds = Number(String(line).split(/\s+/)[1]);
+            output.write(`Still pursuing... ${formatSeconds(seconds)}\n`);
+          } else if (/^landing /.test(line)) output.write('Landing goal...\n');
+          else if (/^\[tick /.test(line)) output.write(`${line}\n`);
+        },
+      });
+      output.write(`${result.text || 'Mission command failed.'}\n\n`);
+      history.push({ role: 'user', content: trimmed });
+      history.push({ role: 'assistant', content: result.text || 'Mission command failed.' });
+      return false;
+    }
+
     const pendingApprovalRequest = latestPendingApprovalRequest(history);
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageCancelsPendingApproval(trimmed)) {
       const startedAt = Date.now();
@@ -2025,7 +2219,7 @@ async function chat(options = {}) {
       return false;
     }
     if (pendingApprovalRequest && normalizeMode(mode) !== 'code-fast' && messageApprovesPendingApproval(trimmed)) {
-      if (!(await ensureRuntimeReady())) return false;
+      if (!(await ensureRuntimeReady('cloud'))) return false;
       const startedAt = Date.now();
       const approvalState = {
         events: [],
@@ -2071,7 +2265,9 @@ async function chat(options = {}) {
 
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
-    if (!(await ensureRuntimeReady())) return false;
+    maybeWriteAtrisGoalBanner(output, cwd);
+    const turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route });
+    if (!(await ensureRuntimeReady(turnRoute))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
@@ -2129,17 +2325,19 @@ async function chat(options = {}) {
   if (logger) logger.close(0);
 }
 
-function printBackendHint() {
+function printBackendHint(options = {}) {
   console.log('');
-  console.log(formatBackendHint());
+  console.log(formatBackendHint(options));
 }
 
 function backendStartCommand() {
   return `cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`;
 }
 
-function formatBackendHint() {
-  return `Start backend:\n${backendStartCommand()}`;
+function formatBackendHint(options = {}) {
+  const route = options.route === 'local' || options.forceLocal ? 'local' : 'cloud';
+  if (route === 'local') return `Start backend:\n${backendStartCommand()}`;
+  return 'Atris cloud did not respond. Check login/network, then rerun ax --doctor.';
 }
 
 function bufferedOutput() {
@@ -2242,7 +2440,7 @@ async function runSelfTest(options = {}) {
     assertSelfTest(!/atris:|fireworks|glm|secret|token/i.test(text), 'doctor output leaked provider/debug text');
   }, results, output);
 
-  await runSelfTestCase('chat backend offline preflight', async () => {
+  await runSelfTestCase('chat cloud offline preflight', async () => {
     const previousAuto = process.env.AX_AUTO_LOG;
     process.env.AX_AUTO_LOG = '0';
     const chunks = [];
@@ -2277,7 +2475,8 @@ async function runSelfTest(options = {}) {
     const text = chunks.join('');
     assertSelfTest(healthCalls === 1, 'offline preflight repeated unexpectedly');
     assertSelfTest(/backend\s+offline/.test(text), 'offline backend status missing');
-    assertSelfTest(/Start backend:/.test(text) && /uvicorn main:app/.test(text), 'start-backend command missing');
+    assertSelfTest(/Atris cloud unavailable/.test(text), 'cloud offline guidance missing');
+    assertSelfTest(!/Start backend:|uvicorn main:app/.test(text), 'cloud default showed local backend instructions');
     assertSelfTest(!/secret-token/.test(text), 'offline preflight leaked error detail');
   }, results, output);
 
@@ -2916,6 +3115,24 @@ async function main() {
     .join(' ')
     .trim();
 
+  const missionIntent = missionRunIntentFromMessage(prompt);
+  if (missionIntent) {
+    const result = await runLocalMission(missionIntent, {
+      cwd: process.cwd(),
+      onProgress: (line) => {
+        if (/^pursuing /.test(line)) console.log('Pursuing goal...');
+        else if (/^still_running /.test(line)) {
+          const seconds = Number(String(line).split(/\s+/)[1]);
+          console.log(`Still pursuing... ${formatSeconds(seconds)}`);
+        } else if (/^landing /.test(line)) console.log('Landing goal...');
+        else if (/^\[tick /.test(line)) console.log(line);
+      },
+    });
+    console.log(result.text || 'Mission command failed.');
+    if (!result.ok) process.exit(result.status || 1);
+    return;
+  }
+
   let business = null;
   if (businessSlug) {
     if (normalizeMode(mode) === 'code-fast') {
@@ -2963,7 +3180,7 @@ async function main() {
       console.log('');
       console.log(formatRunProfile(buildRunProfile({ mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route }), process.stdout));
       console.log('');
-      console.log(formatRuntimeHealth(await buildRuntimeHealth(), process.stdout));
+      console.log(formatRuntimeHealth(await buildRuntimeHealth({ route: route === 'auto' ? undefined : route }), process.stdout));
       return;
     }
 
@@ -2990,6 +3207,7 @@ async function main() {
 
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
+    maybeWriteAtrisGoalBanner(process.stdout, process.cwd());
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
@@ -3001,7 +3219,7 @@ async function main() {
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
     console.error(`x ${error.message}`);
-    printBackendHint();
+    printBackendHint({ route: route === 'auto' ? undefined : route });
     process.exit(1);
   }
 }

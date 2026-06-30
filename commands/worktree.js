@@ -59,7 +59,10 @@ function parseWorktrees(text) {
       if (current.worktree) {
         let branch = current.branch || 'detached';
         branch = branch.replace(/^refs\/heads\//, '');
-        out.push({ path: current.worktree, branch, head: current.HEAD || '' });
+        const item = { path: current.worktree, branch, head: current.HEAD || '' };
+        if (current.locked) item.locked = true;
+        if (current.prunable) item.prunable = true;
+        out.push(item);
       }
       current = {};
       continue;
@@ -451,10 +454,98 @@ function prune(args) {
   return result.status || 0;
 }
 
+const PROTECTED_BRANCHES = new Set(['main', 'master']);
+
+function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false } = {}) {
+  const worktrees = listWorktrees(root);
+  const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
+  const current = path.resolve(root);
+  const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
+  refreshRemoteRef(root, base);
+  const candidates = [];
+  const kept = [];
+  const removed = [];
+
+  for (const wt of worktrees) {
+    const wtPath = path.resolve(wt.path);
+    const item = { path: wt.path, branch: wt.branch, head: wt.head };
+    if (wtPath === primary) {
+      kept.push({ ...item, reason: 'primary_checkout' });
+      continue;
+    }
+    if (wtPath === current) {
+      kept.push({ ...item, reason: 'current_checkout' });
+      continue;
+    }
+    if (wt.locked) {
+      kept.push({ ...item, reason: 'locked' });
+      continue;
+    }
+    if (PROTECTED_BRANCHES.has(wt.branch)) {
+      kept.push({ ...item, reason: 'protected_branch' });
+      continue;
+    }
+    const counts = statusCounts(wt.path);
+    if (!counts) {
+      kept.push({ ...item, reason: 'missing_or_unreadable' });
+      continue;
+    }
+    if (counts.staged || counts.unstaged || counts.untracked) {
+      kept.push({ ...item, reason: 'dirty', staged: counts.staged, unstaged: counts.unstaged, untracked: counts.untracked });
+      continue;
+    }
+    if (!wt.head) {
+      kept.push({ ...item, reason: 'missing_head' });
+      continue;
+    }
+    const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
+    if (!merged) {
+      kept.push({ ...item, reason: 'unmerged' });
+      continue;
+    }
+    const candidate = { ...item, reason: 'merged_into_base' };
+    candidates.push(candidate);
+    if (!apply) continue;
+    const removedResult = runGit(['worktree', 'remove', wt.path], { cwd: root, check: false });
+    if (removedResult.status === 0) {
+      removed.push(candidate);
+    } else {
+      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+    }
+  }
+
+  return { apply, base, candidates, removed, kept };
+}
+
+function cleanup(args) {
+  const asJson = hasFlag(args, '--json');
+  const result = cleanupWorktrees({
+    root: repoRoot(),
+    base: readFlag(args, '--base'),
+    apply: hasFlag(args, '--apply'),
+  });
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+    return 0;
+  }
+  const action = result.apply ? 'removed' : 'candidate';
+  console.log(`cleanup: ${result.apply ? 'applied' : 'dry-run'} base=${result.base}`);
+  console.log(`${action}s: ${result.apply ? result.removed.length : result.candidates.length}`);
+  for (const item of result.apply ? result.removed : result.candidates) {
+    console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);
+  }
+  console.log(`kept: ${result.kept.length}`);
+  if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
+  return 0;
+}
+
 function guide() {
   console.log('Atris worktree agent recipe');
   console.log('');
-  console.log('1. Start isolated work:');
+  console.log('Default: stay in the current checkout for small, clean, single-agent fixes.');
+  console.log('Use a worktree for dirty launchers, parallel agents, risky edits, releases, or long proof runs.');
+  console.log('');
+  console.log('1. Start isolated work when needed:');
   console.log('   atris worktree start --member <member> --task "<task>" --claim');
   console.log('   atris worktree start --agent <agent> --task "<task>"');
   console.log('');
@@ -471,13 +562,17 @@ function guide() {
   console.log('4. Ship only from the isolated worktree:');
   console.log('   atris worktree ship --message "<commit>" --verify "<cmd>" --merge');
   console.log('');
+  console.log('5. Clean merged worktrees:');
+  console.log('   atris worktree cleanup');
+  console.log('   atris worktree cleanup --apply');
+  console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
 
 function help() {
-  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune>');
+  console.log('Usage: atris worktree <guide|start|ship|status|guard|prune|cleanup>');
   console.log('');
   console.log('  atris worktree guide');
   console.log('  atris worktree start --member <member>|--agent <name> --task "<task>" [--claim]');
@@ -485,6 +580,7 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
+  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]');
 }
 
 function worktreeCommand(args = []) {
@@ -503,6 +599,7 @@ function worktreeCommand(args = []) {
   }
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
+  if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
   help();
   return 2;
 }
@@ -510,6 +607,7 @@ function worktreeCommand(args = []) {
 module.exports = {
   branchName,
   createAgentWorktree,
+  cleanupWorktrees,
   defaultShipTarget,
   defaultStartBase,
   defaultWorktreePath,

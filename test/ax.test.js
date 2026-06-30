@@ -7,10 +7,10 @@ const { Readable } = require('node:stream');
 
 const ax = require('../ax');
 
-test('ax routes workspace questions to local Atris 2 tools', () => {
-  assert.equal(ax.resolveRoute('what files are here?'), 'local');
-  assert.equal(ax.resolveRoute('search src for the input component'), 'local');
-  assert.equal(ax.resolveRoute('fix the xp game tests'), 'local');
+test('ax defaults workspace questions to Atris cloud', () => {
+  assert.equal(ax.resolveRoute('what files are here?'), 'cloud');
+  assert.equal(ax.resolveRoute('search src for the input component'), 'cloud');
+  assert.equal(ax.resolveRoute('fix the xp game tests'), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -18,8 +18,16 @@ test('ax routes workspace questions to local Atris 2 tools', () => {
   });
 
   assert.equal(payload.model, 'atris:fast');
-  assert.equal(payload.workspace_path, '/tmp/project');
-  assert.equal(payload.max_turns, 8);
+  assert.equal(payload.workspace_path, undefined);
+  assert.equal(payload.max_turns, 1);
+
+  const localPayload = ax.buildPayload('what files are here?', {
+    mode: 'fast',
+    route: 'local',
+    cwd: '/tmp/project',
+  });
+  assert.equal(localPayload.workspace_path, '/tmp/project');
+  assert.equal(localPayload.max_turns, 8);
 });
 
 test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
@@ -30,8 +38,16 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
     cwd: '/tmp/project',
   });
   assert.equal(payload.model, 'atris:max');
-  assert.equal(payload.workspace_path, '/tmp/project');
-  assert.equal(payload.max_turns, 14);
+  assert.equal(payload.workspace_path, undefined);
+  assert.equal(payload.max_turns, 1);
+
+  const localPayload = ax.buildPayload('refactor this module and verify the tests', {
+    mode: 'max',
+    route: 'local',
+    cwd: '/tmp/project',
+  });
+  assert.equal(localPayload.workspace_path, '/tmp/project');
+  assert.equal(localPayload.max_turns, 14);
 
   const cloudWrite = ax.buildPayload('send a slack message to the team', {
     mode: 'max',
@@ -44,8 +60,9 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
 
   const profile = ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' });
   assert.equal(profile.model, 'atris:max');
-  assert.equal(profile.max_turns, 14);
-  assert.match(profile.reasoning, /high reasoning/);
+  assert.equal(profile.route, 'cloud');
+  assert.equal(profile.max_turns, 1);
+  assert.match(profile.reasoning, /Atris cloud|high reasoning/);
 });
 
 test('ax never shows model ids to the user and swaps tiers in chat', () => {
@@ -108,11 +125,20 @@ test('ax doctor formats runtime readiness without model ids or secrets', async (
 
   assert.equal(offline.backend.reachable, false);
   assert.match(offlineText, /backend\s+offline/);
-  assert.match(offlineText, /start local backend/);
+  assert.match(offlineText, /Atris cloud unavailable/);
+  assert.doesNotMatch(offlineText, /start local backend|uvicorn/);
   assert.doesNotMatch(offlineText, modelPattern);
+
+  const localOffline = await ax.buildRuntimeHealth({
+    route: 'local',
+    healthRes: { ok: false, status: 0, data: null, error: 'ECONNREFUSED secret-token' },
+  });
+  const localOfflineText = ax.formatRuntimeHealth(localOffline, { color: false });
+  assert.match(localOfflineText, /start local backend/);
+  assert.doesNotMatch(localOfflineText, modelPattern);
 });
 
-test('ax chat fails fast when the Atris2 backend is offline', async () => {
+test('ax chat defaults cloud and does not show local backend instructions when offline', async () => {
   const previousAuto = process.env.AX_AUTO_LOG;
   process.env.AX_AUTO_LOG = '0';
   const chunks = [];
@@ -148,6 +174,44 @@ test('ax chat fails fast when the Atris2 backend is offline', async () => {
   const text = chunks.join('');
   assert.equal(healthCalls, 1);
   assert.match(text, /backend\s+offline/);
+  assert.match(text, /Atris cloud unavailable/);
+  assert.doesNotMatch(text, /Start backend:|uvicorn main:app/);
+  assert.doesNotMatch(text, /secret-token/);
+});
+
+test('ax chat shows local backend instructions only for explicit local route', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  try {
+    await ax.chat({
+      mode: 'fast',
+      route: 'local',
+      cwd: os.tmpdir(),
+      input: Readable.from(['hi\n', 'exit\n']),
+      output,
+      runtimeHealth: async () => ({
+        schema: 'ax.runtime_health.v1',
+        route: 'local',
+        backend: { ready: false, reachable: false, status: 0, error: 'ECONNREFUSED secret-token' },
+        fast: { ready: false, route_ready: false },
+        permissions: { ready: false },
+      }),
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  const text = chunks.join('');
+  assert.match(text, /backend\s+offline/);
   assert.match(text, /Start backend:/);
   assert.match(text, /uvicorn main:app/);
   assert.doesNotMatch(text, /secret-token/);
@@ -169,7 +233,7 @@ test('ax self-test verifies harness invariants without backend calls', async () 
   assert.equal(results.every(result => result.ok), true);
   assert.match(text, /AX self-test/);
   assert.match(text, /doctor redaction .*ok/);
-  assert.match(text, /chat backend offline preflight .*ok/);
+  assert.match(text, /chat cloud offline preflight .*ok/);
   assert.match(text, /approval id .*ok/);
   assert.match(text, /calendar approval rail .*ok/);
   assert.match(text, /calendar approval execution .*ok/);
@@ -314,10 +378,11 @@ test('ax sends chat history as structured previous messages, not a prompt wrappe
   assert.doesNotMatch(payload.message, /Current user message|Recent conversation|Continue this terminal/);
 });
 
-test('ax routes GitHub repo mutations to local workspace tools', () => {
-  assert.equal(ax.resolveRoute('push something to github'), 'local');
-  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'local');
-  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'local');
+test('ax routes GitHub repo mutations to cloud unless local is explicit', () => {
+  assert.equal(ax.resolveRoute('push something to github'), 'cloud');
+  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'cloud');
+  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'cloud');
+  assert.equal(ax.resolveRoute('push something to github', { route: 'local' }), 'local');
 });
 
 test('ax carries local connector lookup id only on cloud payloads', () => {
@@ -399,6 +464,7 @@ test('ax sends a no-op verify_command unless --verify opts in', () => {
 
   const localPayload = ax.buildPayload('fix the failing suite', {
     mode: 'max',
+    route: 'local',
     cwd: '/tmp/project',
     verify: 'npm test',
   });

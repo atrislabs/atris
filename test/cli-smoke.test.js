@@ -344,11 +344,53 @@ test('ax help stays local and does not start an agent turn', () => {
 
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /ax - Atris local\/code agent/);
-  assert.match(res.stdout, /ax \[--fast\|--pro\|--max\|--code-fast\] \[--local\|--cloud\] \[--bypass\|--safe\] <message>/);
+  assert.match(res.stdout, /ax \[--max\|--pro\|--fast\|--code-fast\] \[--local\|--cloud\] <message>/);
   assert.match(res.stdout, /--max {3}hosted Atris 2, highest reasoning/);
   assert.match(res.stdout, /--code-fast  Atris Code Fast public lane/);
   assert.doesNotMatch(res.stdout, /run\s+local workspace/);
   assert.doesNotMatch(res.stdout, /Worked for/);
+});
+
+test('ax fast chat intercepts atris mission run before backend or model work', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'say hello world then set a new goal';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), '--fast', '--chat'], {
+      cwd: dir,
+      input: `atris mission run ${objective}\nexit\n`,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        AX_AUTO_LOG: '0',
+        ATRIS_AGENT_ID: 'mission-lead',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Mission: mission-.* - planning - atris2/);
+    assert.match(res.stdout, /Atris mission pursued/);
+    assert.match(res.stdout, /Ticks: 0\/0/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.match(res.stdout, /Blocked: auth-required/);
+    assert.match(res.stdout, /Next: atris mission attach-task/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Start backend|Worked for|credit|Hello world/);
+
+    const missionLines = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.equal(missionLines.some((mission) => mission.objective === objective && mission.runner === 'atris2'), true);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
 });
 
 test('ax keeps chat context and file-operation proof readable', () => {
@@ -378,7 +420,11 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(payload.model, 'atris:pro');
   assert.equal(payload.max_turns, 1);
   assert.equal(ax.buildPayload('quick edit', { cwd: '/workspace/demo', mode: 'fast' }).max_turns, 1);
-  assert.match(payload.message, /Recent conversation/);
+  assert.equal(payload.message, 'edit config');
+  assert.deepEqual(payload.previous_messages, [
+    { role: 'user', content: 'find mode' },
+    { role: 'assistant', content: 'mode is in src/config.js' }
+  ]);
   assert.equal(ax.modelForMode('pro'), 'atris:pro');
   assert.equal(ax.modelForMode('fast'), 'atris:fast');
   assert.equal(ax.modelForMode('max'), 'atris:max');
@@ -387,7 +433,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
   assert.equal(ax.formatPrompt('pro'), 'pro › ');
   assert.equal(ax.formatDuration(6197), '6s');
   assert.equal(ax.formatDoneLine(131000), '— Worked for 2m 11s —');
-  assert.equal(ax.formatWorkingLine(2100), '• Thinking… (2s · ctrl-c to interrupt)');
+  assert.equal(ax.formatWorkingLine(2100), '• Working (2s • ctrl-c to interrupt)');
   assert.equal(ax.formatStatusMessage('retrying_with_required_local_tool'), null);
   assert.equal(ax.formatStatusMessage('loading_workspace_context'), 'loading workspace context');
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/workspace/demo', chat: true }), /Atris 2 Pro chat/);
@@ -655,6 +701,111 @@ test('bare ax shows usage instead of "Unknown command"', () => {
     assert.match(res.stdout + res.stderr, /atris ax fast/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('ax fast intercepts atris mission run as a local Atris goal', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'say hello world then set a new goal';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = runCli(['ax', 'fast', `atris mission run ${objective} --no-run`], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_AGENT_ID: 'mission-lead' },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Mission: mission-.* - planning - atris2/);
+    assert.match(res.stdout, /Pursuing: not run \(--no-run\)/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.match(res.stdout, /Next: atris mission attach-task/);
+    assert.doesNotMatch(res.stdout + res.stderr, /Not logged in|Atris2 Fast|Worked for|credit/);
+
+    const goalState = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), 'utf8'));
+    assert.equal(goalState.goal.objective, objective);
+    assert.equal(goalState.goal.runner, 'atris2');
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('ax fast chat opens clean without stale Atris goal banner', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const missionId = 'mission-2026-06-29-stale-continuation';
+    const mission = {
+      schema: 'atris.mission.v1',
+      id: missionId,
+      objective: 'Decide and start the next useful mission after: old smoke',
+      status: 'planning',
+      runner: 'atris2',
+      next_action: 'atris mission attach-task mission-2026-06-29-stale-continuation --json',
+      created_at: '2026-06-29T23:00:00.000Z',
+      started_from: 'mission_run_continuation',
+    };
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), `${JSON.stringify(mission)}\n`, 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'atris_goal.json'), JSON.stringify({
+      schema: 'atris.goal_controller.v1',
+      goal: {
+        objective: mission.objective,
+        mission_id: missionId,
+        mission_status: 'planning',
+        runner: 'atris2',
+        next_command: mission.next_action,
+        created_at: mission.created_at,
+      },
+    }), 'utf8');
+
+    const res = spawnSync(process.execPath, [path.join(repoRoot, 'ax'), '--fast', '--chat'], {
+      cwd: dir,
+      input: 'exit\n',
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        AX_AUTO_LOG: '0',
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+      },
+    });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris 2 Fast chat/);
+    assert.doesNotMatch(res.stdout, /Atris goal:/);
+    assert.doesNotMatch(res.stdout, /Decide and start the next useful mission/);
+    assert.doesNotMatch(res.stdout, /Next: atris mission attach-task/);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
+  }
+});
+
+test('atris chat intercepts mission run before selected-agent auth', () => {
+  const dir = makeTempDir();
+  const home = makeTempDir();
+  const objective = 'atris chat local mission';
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const res = runCli(['chat', `atris mission run ${objective} --no-run`], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_AGENT_ID: 'mission-lead' },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /Atris mission started/);
+    assert.match(res.stdout, new RegExp(`Goal: ${objective}`));
+    assert.match(res.stdout, /Pursuing: not run \(--no-run\)/);
+    assert.match(res.stdout, /Achieved: no/);
+    assert.doesNotMatch(res.stdout + res.stderr, /No agent selected|Agent:|pro-chat|Worked for|credit/);
+  } finally {
+    cleanupTempDir(dir);
+    cleanupTempDir(home);
   }
 });
 

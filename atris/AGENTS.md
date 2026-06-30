@@ -22,6 +22,9 @@ section.
 ## Mission Autonomy
 
 Use `atris mission` when work should survive this chat or run as an autonomous loop.
+Mission-shaped user intent wins before normal task selection: if the user says
+`atris mission run ...`, execute it first, then run `atris mission goal --json`
+and mirror `goal.visible_goal`.
 
 ```
 member -> mission start --verify -> status --status active -> one bounded step -> mission tick --verify -> receipt -> complete|run|stop
@@ -61,6 +64,10 @@ before choosing work. If the payload includes `goal.visible_goal`, mirror
 `goal.objective` into the visible chat goal when the current goal is empty,
 complete, or already matching; never complete unrelated active goals just to
 make room.
+
+Default to the current checkout for small, clean, single-agent fixes. Use
+worktrees only for dirty launchers, parallel agents, long proof, risky edits, or
+release/publish work; clean old merged worktrees with `atris worktree cleanup`.
 
 Do not write new operating doctrine here first. Add it to Atris policy, skills,
 wiki, or `atris/atris.md`, then regenerate this adapter if needed.
