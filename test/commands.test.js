@@ -3296,16 +3296,30 @@ test('always-on mission run keeps ticking after verifier passes', () => {
 	    ], { cwd: dir });
 	    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
 
-	    const run = runCli([
+	    const firstRun = runCli([
       'mission', 'run', mission.id,
       '--max-ticks', '2',
       '--complete-on-pass',
       '--json',
     ], { cwd: dir });
-    assert.equal(run.status, 0, run.stderr || run.stdout);
-    const payload = JSON.parse(run.stdout);
-    assert.equal(payload.ran_ticks, 2);
-    assert.equal(payload.tick_count, 2);
+    assert.equal(firstRun.status, 0, firstRun.stderr || firstRun.stdout);
+    const firstPayload = JSON.parse(firstRun.stdout);
+    assert.equal(firstPayload.ran_ticks, 1);
+    assert.equal(firstPayload.tick_count, 1);
+    assert.equal(firstPayload.mission.status, 'ready');
+    assert.match(firstPayload.mission.next_action, /mission run/);
+
+	    const secondRun = runCli([
+      'mission', 'run', mission.id,
+      '--max-ticks', '2',
+      '--complete-on-pass',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+    const payload = JSON.parse(secondRun.stdout);
+    assert.equal(payload.ran_ticks, 1);
+    assert.equal(payload.tick_count, 1);
+    assert.equal(payload.ticks[0].tick_index, 2);
     assert.equal(payload.mission.status, 'ready');
     assert.match(payload.mission.next_action, /mission run/);
   } finally {
@@ -6011,7 +6025,9 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     fs.writeFileSync(todoPath, 'clobbered\n', 'utf8');
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);
-    assert.match(render.stdout, /rendered 1 task/);
+    assert.match(render.stdout, /rendered TODO\.md/);
+    assert.match(render.stdout, /Backlog: empty/);
+    assert.match(render.stdout, /Done saved: 1/);
     const regenerated = fs.readFileSync(todoPath, 'utf8');
     assert.match(regenerated, /Regenerated from durable Atris task state/);
     assert.match(regenerated, new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Ship task plane`));
@@ -6144,7 +6160,10 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
 
     const generatedRender = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(generatedRender.status, 0, generatedRender.stderr);
+    assert.match(generatedRender.stdout, /Backlog: empty/);
+    assert.match(generatedRender.stdout, /Review: 1/);
     const generated = fs.readFileSync(todoPath, 'utf8');
+    assert.match(generated, /## Backlog\n\n\(Empty\)/);
     assert.doesNotMatch(generated, /Legacy migration row/);
     assert.equal((generated.match(new RegExp(`\\*\\*\\[${ref}\\]\\*\\* Move review work forward`, 'g')) || []).length, 1);
     assert.match(generated, new RegExp(`## Review\\n\\n- \\*\\*\\[${ref}\\]\\*\\* Move review work forward \\[task-plane\\]`));
@@ -6318,6 +6337,7 @@ test('task help flags never render the live desk', () => {
     assert.match(rootHelp.stdout, /atris task review-lane-act \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-loop \[--json\]/);
     assert.match(rootHelp.stdout, /atris task review-lane-run \[--json\]/);
+    assert.match(rootHelp.stdout, /atris task reviews \[--all\|--limit <n>\] \[--verbose\]/);
     assert.match(rootHelp.stdout, /atris task current .*--review-state <lane>/);
     assert.match(rootHelp.stdout, /atris task queue .*--review-state <lane>/);
     assert.match(rootHelp.stdout, /atris task current-step .*--review-state <lane>/);
@@ -9472,12 +9492,12 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(readyPayload.handoff.career_xp_status, 'pending_human_accept');
     assert.equal(readyPayload.handoff.next_action, 'agent_review_again');
     assert.equal(readyPayload.handoff.review_chat_command, `atris task review-chat ${ref} --as codex-review`);
-    assert.equal(readyPayload.handoff.rule, 'Proof is ready; one more agent check before landing. XP waits for the human.');
+    assert.equal(readyPayload.handoff.rule, 'Proof is ready; one more agent check before human approval. XP waits for the human.');
     assert.match(readyPayload.handoff.codex_prompt, new RegExp(`/codex review ${ref}`));
     assert.match(readyPayload.handoff.codex_prompt, /Approve autonomous work before XP/);
     assert.match(readyPayload.handoff.codex_prompt, /Proof: typecheck passed and diff reviewed/);
     assert.equal(readyPayload.task.status, 'review');
-    assert.equal(readyPayload.task.review.summary, 'approve autonomous work before XP is ready to land; land only if the proof is real.');
+    assert.equal(readyPayload.task.review.summary, 'approve autonomous work before XP: proof is ready for human approval; approve only if the evidence is real.');
     assert.deepEqual(readyPayload.task.review.landing, {
       happened: 'Prepared the XP approval gate so autonomous work waits for human accept.',
       reason: 'It keeps real-world side effects behind a clear human decision.',
@@ -9489,7 +9509,7 @@ test('task ready holds work in review until human accept', () => {
       changed: 'Prepared the XP approval gate so autonomous work waits for human accept.',
       reason: 'It keeps real-world side effects behind a clear human decision.',
       checked: 'I checked the task stayed in Review and did not mint XP.',
-      saved: `Ready to land as ${ref}.`,
+      saved: `Completed result saved for review as ${ref}.`,
       accept: 'Accept if XP should land; rework if proof is missing.',
     });
     assert.equal(readyPayload.task.review.proof, 'typecheck passed and diff reviewed');
@@ -9506,9 +9526,9 @@ test('task ready holds work in review until human accept', () => {
     assert.match(readyShow.stdout, /Why it matters: It keeps real-world side effects behind a clear human decision\./);
     assert.match(readyShow.stdout, /How I checked: I checked the task stayed in Review and did not mint XP\./);
     assert.match(readyShow.stdout, /What I tested: I ran the typecheck proof and inspected the diff\./);
-    assert.match(readyShow.stdout, new RegExp(`Saved: Ready to land as ${ref}\\.`));
+    assert.match(readyShow.stdout, new RegExp(`Saved: Completed result saved for review as ${ref}\\.`));
     assert.match(readyShow.stdout, /Decision: Accept if XP should land; rework if proof is missing\./);
-    assert.match(readyShow.stdout, /Short version: approve autonomous work before XP is ready to land; land only if the proof is real\./);
+    assert.match(readyShow.stdout, /Short version: approve autonomous work before XP: proof is ready for human approval; approve only if the evidence is real\./);
     assert.match(readyShow.stdout, /Details: typecheck passed and diff reviewed/);
     assert.match(readyShow.stdout, /Landing: waiting on human/);
     assert.match(readyShow.stdout, new RegExp(`Check command: atris task review-chat ${ref} --as codex-review`));
@@ -9574,7 +9594,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(certifiedPayload.handoff.review_chat_command, undefined);
     assert.equal(certifiedPayload.handoff.codex_prompt, undefined);
     assert.equal(certifiedPayload.handoff.verification_focus, undefined);
-    assert.equal(certifiedPayload.handoff.rule, 'Double-check complete; ready to keep moving. XP lands only after the human lands the task.');
+    assert.equal(certifiedPayload.handoff.rule, 'Double-check complete; ready to keep moving. XP is awarded only after the human approves the task.');
     assert.equal(certifiedPayload.task.status, 'review');
     assert.equal(certifiedPayload.task.review.approval_status, 'pending');
     assert.equal(certifiedPayload.task.review.agent_review_pass_count, 3);
@@ -9648,8 +9668,8 @@ test('task ready holds work in review until human accept', () => {
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
-    assert.match(readyText.stdout, /ready to land .*/);
-    assert.match(readyText.stdout, /Proof is ready; one more agent check before landing\. XP waits for the human\./);
+    assert.match(readyText.stdout, /ready for approval .*/);
+    assert.match(readyText.stdout, /Proof is ready; one more agent check before human approval\. XP waits for the human\./);
 
     const accept = runCli([
       'task', 'accept', ref,
@@ -9661,8 +9681,8 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.action, 'accepted');
     assert.equal(acceptPayload.task.status, 'done');
     assert.equal(acceptPayload.task.review.reward, 1);
-    assert.equal(acceptPayload.task.review.summary, 'Landed AgentXP result for approve autonomous work before XP.');
-    assert.equal(acceptPayload.task.review.result.saved, `Landed as ${ref}.`);
+    assert.equal(acceptPayload.task.review.summary, 'Completed AgentXP result for approve autonomous work before XP.');
+    assert.equal(acceptPayload.task.review.result.saved, `Result accepted as ${ref}.`);
     assert.equal(acceptPayload.task.review.proof, 'typecheck passed and diff reviewed again');
     assert.equal(acceptPayload.task.review.lesson, 'Double-check proof before awarding XP');
     assert.equal(acceptPayload.task.review.next_task, 'Queue the next proof loop');
@@ -9718,6 +9738,54 @@ test('task ready holds work in review until human accept', () => {
   }
 });
 
+test('task review accepts clean dry-run verifier', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli([
+      'task', 'add', 'Review with clean dry-run proof',
+      '--tag', 'maintenance',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'ready', ref,
+      '--proof', 'node bin/atris.js clean --dry-run --json passed before verifier review',
+      '--as', 'codex',
+    ], { cwd: dir, env }).status, 0);
+
+    const review = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node bin/atris.js clean --dry-run --json reported no map repairs',
+      '--verify', 'node bin/atris.js clean --dry-run --json',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(review.status, 0, review.stderr);
+    assert.equal(JSON.parse(review.stdout).task.metadata.verify, 'node bin/atris.js clean --dry-run --json');
+
+    const mutatingReview = runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'git diff --check passed before unsafe clean command rejection',
+      '--verify', 'node bin/atris.js clean --json',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(mutatingReview.status, 2);
+    assert.equal(JSON.parse(mutatingReview.stdout).reason, 'verify_command_not_allowed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review-chat emits proof-specific verifier packet', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -9758,7 +9826,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     assert.ok(readyPayload.handoff.verification_focus.commands_to_verify.some(command => command.includes('node --check commands/task.js')));
     assert.ok(readyPayload.handoff.verification_focus.commands_to_verify.some(command => command.includes('node --test test/commands.test.js')));
     assert.ok(readyPayload.handoff.verification_focus.files_to_inspect.includes('commands/task.js'));
-    assert.match(readyPayload.handoff.codex_prompt, /Commands: node --check commands\/task\.js/);
+    assert.match(readyPayload.handoff.codex_prompt, /Commands: command 1: node --check commands\/task\.js/);
 
     const reviewChat = runCli(['task', 'review-chat', ref, '--as', 'codex-review', '--json'], { cwd: dir, env });
     assert.equal(reviewChat.status, 0, reviewChat.stderr);
@@ -9782,7 +9850,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     assert.ok(!payload.contract.verification_focus.commands_to_verify.some(command => command.includes('atris-cli/commands')));
     assert.ok(!payload.contract.verification_focus.files_to_inspect.some(file => file.includes('commands_to_verify/files_to_inspect')));
     assert.match(payload.contract.codex_prompt, /Verify review chat specificity/);
-    assert.match(payload.contract.codex_prompt, /Commands: node --check commands\/task\.js/);
+    assert.match(payload.contract.codex_prompt, /Commands: command 1: node --check commands\/task\.js/);
     assert.match(payload.contract.codex_prompt, /Files\/artifacts: commands\/task\.js, lib\/task-db\.js, test\/commands\.test\.js/);
     assert.match(payload.contract.required_checks.join('\n'), /Re-run or inspect these proof commands/);
     assert.match(payload.contract.required_checks.join('\n'), /Inspect these named files\/artifacts/);
@@ -10107,6 +10175,47 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(pluralPseudoChat.status, 0, pluralPseudoChat.stderr);
     assert.deepEqual(JSON.parse(pluralPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
 
+    const atrisSlugTask = runCli(['task', 'new', 'Reject Atris slug prose pseudo command', '--json'], { cwd: dir, env });
+    assert.equal(atrisSlugTask.status, 0, atrisSlugTask.stderr);
+    const atrisSlugRef = JSON.parse(atrisSlugTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', atrisSlugRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const atrisSlugReady = runCli([
+      'task', 'ready', atrisSlugRef,
+      '--as', 'codex',
+      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full npm test passed 1635/1635.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);
+    const atrisSlugReadyPayload = JSON.parse(atrisSlugReady.stdout);
+    assert.equal(atrisSlugReadyPayload.task.review.landing.tested, 'I ran the listed check for this result.');
+    const atrisSlugChat = runCli(['task', 'review-chat', atrisSlugRef, '--json'], { cwd: dir, env });
+    assert.equal(atrisSlugChat.status, 0, atrisSlugChat.stderr);
+    assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, [
+      'npm test',
+    ]);
+
+    const atrisWildcardTask = runCli(['task', 'new', 'Reject Atris wildcard prose pseudo command', '--json'], { cwd: dir, env });
+    assert.equal(atrisWildcardTask.status, 0, atrisWildcardTask.stderr);
+    const atrisWildcardRef = JSON.parse(atrisWildcardTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', atrisWildcardRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const atrisWildcardReady = runCli([
+      'task', 'ready', atrisWildcardRef,
+      '--as', 'codex',
+      '--proof', 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: npm test only; node --test test/commands.test.js passed 381/381.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(atrisWildcardReady.status, 0, atrisWildcardReady.stderr);
+    const atrisWildcardReadyPayload = JSON.parse(atrisWildcardReady.stdout);
+    assert.equal(atrisWildcardReadyPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /atris-\*/);
+    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /npm test only/);
+    const atrisWildcardChat = runCli(['task', 'review-chat', atrisWildcardRef, '--json'], { cwd: dir, env });
+    assert.equal(atrisWildcardChat.status, 0, atrisWildcardChat.stderr);
+    assert.deepEqual(JSON.parse(atrisWildcardChat.stdout).contract.verification_focus.commands_to_verify, [
+      'npm test',
+      'node --test test/commands.test.js',
+    ]);
+
     const proseSegmentTask = runCli(['task', 'new', 'Semicolon prose segment', '--json'], { cwd: dir, env });
     assert.equal(proseSegmentTask.status, 0, proseSegmentTask.stderr);
     const proseSegmentRef = JSON.parse(proseSegmentTask.stdout).task.display_id;
@@ -10227,6 +10336,347 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.deepEqual(JSON.parse(passCountChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --test test/commands.test.js',
     ]);
+
+    const passExplanationTask = runCli(['task', 'new', 'Trim pass count explanation', '--json'], { cwd: dir, env });
+    assert.equal(passExplanationTask.status, 0, passExplanationTask.stderr);
+    const passExplanationRef = JSON.parse(passExplanationTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', passExplanationRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passExplanationReady = runCli([
+      'task', 'ready', passExplanationRef,
+      '--as', 'codex',
+      '--proof', "node --test test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(passExplanationReady.status, 0, passExplanationReady.stderr);
+    const passExplanationChat = runCli(['task', 'review-chat', passExplanationRef, '--json'], { cwd: dir, env });
+    assert.equal(passExplanationChat.status, 0, passExplanationChat.stderr);
+    assert.deepEqual(JSON.parse(passExplanationChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node --test test/mission-status.test.js',
+    ]);
+
+    const changedFilesTailTask = runCli(['task', 'new', 'Trim changed files tail', '--json'], { cwd: dir, env });
+    assert.equal(changedFilesTailTask.status, 0, changedFilesTailTask.stderr);
+    const changedFilesTailRef = JSON.parse(changedFilesTailTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', changedFilesTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const changedFilesTailReady = runCli([
+      'task', 'ready', changedFilesTailRef,
+      '--as', 'codex',
+      '--proof', 'node --test test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(changedFilesTailReady.status, 0, changedFilesTailReady.stderr);
+    const changedFilesTailChat = runCli(['task', 'review-chat', changedFilesTailRef, '--json'], { cwd: dir, env });
+    assert.equal(changedFilesTailChat.status, 0, changedFilesTailChat.stderr);
+    assert.deepEqual(JSON.parse(changedFilesTailChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node --test test/mission-status.test.js',
+    ]);
+
+    const passedWithTailTask = runCli(['task', 'new', 'Trim passed with tail', '--json'], { cwd: dir, env });
+    assert.equal(passedWithTailTask.status, 0, passedWithTailTask.stderr);
+    const passedWithTailRef = JSON.parse(passedWithTailTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', passedWithTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passedWithTailReady = runCli([
+      'task', 'ready', passedWithTailRef,
+      '--as', 'codex',
+      '--proof', 'node scripts/verify-mission-room.js passed with member=mission-lead. node --test test/mission-status.test.js passed.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(passedWithTailReady.status, 0, passedWithTailReady.stderr);
+    const passedWithTailChat = runCli(['task', 'review-chat', passedWithTailRef, '--json'], { cwd: dir, env });
+    assert.equal(passedWithTailChat.status, 0, passedWithTailChat.stderr);
+    assert.deepEqual(JSON.parse(passedWithTailChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node scripts/verify-mission-room.js',
+      'node --test test/mission-status.test.js',
+    ]);
+
+    const exampleCommandTask = runCli(['task', 'new', 'Ignore example command subject', '--json'], { cwd: dir, env });
+    assert.equal(exampleCommandTask.status, 0, exampleCommandTask.stderr);
+    const exampleCommandRef = JSON.parse(exampleCommandTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', exampleCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const exampleCommandReady = runCli([
+      'task', 'ready', exampleCommandRef,
+      '--as', 'codex',
+      '--proof', 'Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git diff --check.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(exampleCommandReady.status, 0, exampleCommandReady.stderr);
+    const exampleCommandChat = runCli(['task', 'review-chat', exampleCommandRef, '--json'], { cwd: dir, env });
+    assert.equal(exampleCommandChat.status, 0, exampleCommandChat.stderr);
+    assert.deepEqual(JSON.parse(exampleCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node -c commands/task.js',
+      'git diff --check',
+    ]);
+
+    const commaResultTask = runCli(['task', 'new', 'Trim comma result prose', '--json'], { cwd: dir, env });
+    assert.equal(commaResultTask.status, 0, commaResultTask.stderr);
+    const commaResultRef = JSON.parse(commaResultTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', commaResultRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const commaResultReady = runCli([
+      'task', 'ready', commaResultRef,
+      '--as', 'codex',
+      '--proof', 'node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git diff --check.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(commaResultReady.status, 0, commaResultReady.stderr);
+    const commaResultChat = runCli(['task', 'review-chat', commaResultRef, '--json'], { cwd: dir, env });
+    assert.equal(commaResultChat.status, 0, commaResultChat.stderr);
+    assert.deepEqual(JSON.parse(commaResultChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node --check commands/mission.js',
+      'git diff --check',
+    ]);
+
+    const focusedSuiteTask = runCli(['task', 'new', 'Split focused suite verifier', '--json'], { cwd: dir, env });
+    assert.equal(focusedSuiteTask.status, 0, focusedSuiteTask.stderr);
+    const focusedSuiteRef = JSON.parse(focusedSuiteTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', focusedSuiteRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const focusedSuiteReady = runCli([
+      'task', 'ready', focusedSuiteRef,
+      '--as', 'codex',
+      '--proof', 'node scripts/verify-mission-room.js. Focused suite also passed separately: node --test test/mission-status.test.js.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(focusedSuiteReady.status, 0, focusedSuiteReady.stderr);
+    const focusedSuiteChat = runCli(['task', 'review-chat', focusedSuiteRef, '--json'], { cwd: dir, env });
+    assert.equal(focusedSuiteChat.status, 0, focusedSuiteChat.stderr);
+    assert.deepEqual(JSON.parse(focusedSuiteChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node scripts/verify-mission-room.js',
+      'node --test test/mission-status.test.js',
+    ]);
+
+    const commaProseTask = runCli(['task', 'new', 'Trim comma prose command list', '--json'], { cwd: dir, env });
+    assert.equal(commaProseTask.status, 0, commaProseTask.stderr);
+    const commaProseRef = JSON.parse(commaProseTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', commaProseRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const commaProseReady = runCli([
+      'task', 'ready', commaProseRef,
+      '--as', 'codex',
+      '--proof', 'Verified commands/task.js with node -c commands/task.js passed, command suite, clean dry-run, brain compile.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(commaProseReady.status, 0, commaProseReady.stderr);
+    const commaProseChat = runCli(['task', 'review-chat', commaProseRef, '--json'], { cwd: dir, env });
+    assert.equal(commaProseChat.status, 0, commaProseChat.stderr);
+    assert.deepEqual(JSON.parse(commaProseChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node -c commands/task.js',
+    ]);
+
+    const describedCommandTask = runCli(['task', 'new', 'Ignore described command subject', '--json'], { cwd: dir, env });
+    assert.equal(describedCommandTask.status, 0, describedCommandTask.stderr);
+    const describedCommandRef = JSON.parse(describedCommandTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', describedCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const describedCommandReady = runCli([
+      'task', 'ready', describedCommandRef,
+      '--as', 'codex',
+      '--proof', 'Product proof: parser extracts only node --test test/mission-status.test.js. Checks: node -c commands/task.js; git diff --check.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(describedCommandReady.status, 0, describedCommandReady.stderr);
+    const describedCommandChat = runCli(['task', 'review-chat', describedCommandRef, '--json'], { cwd: dir, env });
+    assert.equal(describedCommandChat.status, 0, describedCommandChat.stderr);
+    assert.deepEqual(JSON.parse(describedCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node -c commands/task.js',
+      'git diff --check',
+    ]);
+
+    const productProofTask = runCli(['task', 'new', 'Product proof command extraction', '--json'], { cwd: dir, env });
+    assert.equal(productProofTask.status, 0, productProofTask.stderr);
+    const productProofRef = JSON.parse(productProofTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', productProofRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const productProofReady = runCli([
+      'task', 'ready', productProofRef,
+      '--as', 'codex',
+      '--proof', "Product proof: live mission goal now says next_command=atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505, so the overnight loop continues instead of asking for task review. Checks: node -c commands/mission.js; node --test test/mission-status.test.js --test-name-pattern 'always-on|mission goal' (57 pass); node bin/atris.js mission goal --json; node bin/atris.js clean --dry-run --json; git diff --check; node bin/atris.js brain compile --root . --verify.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(productProofReady.status, 0, productProofReady.stderr);
+    const productProofReadyPayload = JSON.parse(productProofReady.stdout);
+    assert.equal(productProofReadyPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+    assert.doesNotMatch(productProofReadyPayload.task.review.landing.tested, /node -c commands\/mission\.js \| node --test/);
+    const productProofChat = runCli(['task', 'review-chat', productProofRef, '--json'], { cwd: dir, env });
+    assert.equal(productProofChat.status, 0, productProofChat.stderr);
+    const productProofPayload = JSON.parse(productProofChat.stdout);
+    assert.deepEqual(productProofPayload.contract.verification_focus.commands_to_verify, [
+      'node -c commands/mission.js',
+      "node --test test/mission-status.test.js --test-name-pattern 'always-on|mission goal'",
+      'node bin/atris.js mission goal --json',
+      'node bin/atris.js clean --dry-run --json',
+      'git diff --check',
+      'node bin/atris.js brain compile --root . --verify',
+    ]);
+    assert.match(productProofPayload.contract.codex_prompt, /command 1: node -c commands\/mission\.js/);
+    assert.doesNotMatch(productProofPayload.contract.codex_prompt, /node -c commands\/mission\.js \| node --test/);
+
+    const quotedPipeTask = runCli(['task', 'new', 'Quoted pipe proof command', '--json'], { cwd: dir, env });
+    assert.equal(quotedPipeTask.status, 0, quotedPipeTask.stderr);
+    const quotedPipeRef = JSON.parse(quotedPipeTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', quotedPipeRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedPipeReady = runCli([
+      'task', 'ready', quotedPipeRef,
+      '--as', 'codex',
+      '--proof', "Checks passed: node --test test/commands.test.js --test-name-pattern 'always-on mission run keeps ticking|clean dry-run shows MAP refs|clean --dry-run --json reports machine-readable health' (380 pass); git diff --check.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(quotedPipeReady.status, 0, quotedPipeReady.stderr);
+    const quotedPipeReadyPayload = JSON.parse(quotedPipeReady.stdout);
+    assert.equal(quotedPipeReadyPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+    assert.doesNotMatch(quotedPipeReadyPayload.task.review.landing.tested, /health' \| git diff --check/);
+    const quotedPipeChat = runCli(['task', 'review-chat', quotedPipeRef, '--json'], { cwd: dir, env });
+    assert.equal(quotedPipeChat.status, 0, quotedPipeChat.stderr);
+    const quotedPipePayload = JSON.parse(quotedPipeChat.stdout);
+    assert.deepEqual(quotedPipePayload.contract.verification_focus.commands_to_verify, [
+      "node --test test/commands.test.js --test-name-pattern 'always-on mission run keeps ticking|clean dry-run shows MAP refs|clean --dry-run --json reports machine-readable health'",
+      'git diff --check',
+    ]);
+    assert.match(quotedPipePayload.contract.codex_prompt, /command 1: node --test test\/commands\.test\.js/);
+    assert.match(quotedPipePayload.contract.required_checks.join('\n'), /command 2: git diff --check/);
+    assert.doesNotMatch(quotedPipePayload.contract.codex_prompt, /health' \| git diff --check/);
+    assert.doesNotMatch(quotedPipePayload.contract.required_checks.join('\n'), /health' \| git diff --check/);
+
+    const quotedListTask = runCli(['task', 'new', 'Quoted command-list examples', '--json'], { cwd: dir, env });
+    assert.equal(quotedListTask.status, 0, quotedListTask.stderr);
+    const quotedListRef = JSON.parse(quotedListTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', quotedListRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedListReady = runCli([
+      'task', 'ready', quotedListRef,
+      '--as', 'codex',
+      '--proof', "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git diff --check'. Checks passed: node -c commands/task.js; git diff --check.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(quotedListReady.status, 0, quotedListReady.stderr);
+    const quotedListPayload = JSON.parse(quotedListReady.stdout);
+    assert.deepEqual(quotedListPayload.handoff.verification_focus.commands_to_verify, [
+      'node -c commands/task.js',
+      'git diff --check',
+    ]);
+    assert.equal(quotedListPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+
+    const quotedProductTask = runCli(['task', 'new', 'Quoted product command example', '--json'], { cwd: dir, env });
+    assert.equal(quotedProductTask.status, 0, quotedProductTask.stderr);
+    const quotedProductRef = JSON.parse(quotedProductTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', quotedProductRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedProductReady = runCli([
+      'task', 'ready', quotedProductRef,
+      '--as', 'codex',
+      '--proof', "Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --test test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git diff --check.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(quotedProductReady.status, 0, quotedProductReady.stderr);
+    const quotedProductChat = runCli(['task', 'review-chat', quotedProductRef, '--json'], { cwd: dir, env });
+    assert.equal(quotedProductChat.status, 0, quotedProductChat.stderr);
+    assert.deepEqual(JSON.parse(quotedProductChat.stdout).contract.verification_focus.commands_to_verify, [
+      'node -c commands/mission.js',
+      "node --test test/mission-status.test.js --test-name-pattern 'mission report'",
+      'git diff --check',
+    ]);
+
+    const optionBeforeFileTask = runCli(['task', 'new', 'Quoted option-before-file verifier', '--json'], { cwd: dir, env });
+    assert.equal(optionBeforeFileTask.status, 0, optionBeforeFileTask.stderr);
+    const optionBeforeFileRef = JSON.parse(optionBeforeFileTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', optionBeforeFileRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const optionBeforeFileReady = runCli([
+      'task', 'ready', optionBeforeFileRef,
+      '--as', 'codex',
+      '--proof', "Product proof: the review handoff preserves the full verifier command, including node --test --test-name-pattern with quoted test names containing 'and'. Checks: node --test test/mission-xp.test.js; node --test --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git diff --check; atris clean --dry-run --json; atris brain compile --root . --verify.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(optionBeforeFileReady.status, 0, optionBeforeFileReady.stderr);
+    const optionBeforeFilePayload = JSON.parse(optionBeforeFileReady.stdout);
+    assert.deepEqual(optionBeforeFilePayload.handoff.verification_focus.commands_to_verify, [
+      'node --test test/mission-xp.test.js',
+      "node --test --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js",
+      'git diff --check',
+      'atris clean --dry-run --json',
+      'atris brain compile --root . --verify',
+    ]);
+
+    const noteTailTask = runCli(['task', 'new', 'Trim note tail from verifier command', '--json'], { cwd: dir, env });
+    assert.equal(noteTailTask.status, 0, noteTailTask.stderr);
+    const noteTailRef = JSON.parse(noteTailTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', noteTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const noteTailReady = runCli([
+      'task', 'ready', noteTailRef,
+      '--as', 'codex',
+      '--proof', 'Checks: atris brain compile --root . --verify. Note: full npm test still has unrelated failures queued for later work.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(noteTailReady.status, 0, noteTailReady.stderr);
+    assert.deepEqual(JSON.parse(noteTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+      'atris brain compile --root . --verify',
+    ]);
+
+    const withPassingTask = runCli(['task', 'new', 'Trim with passing test tail', '--json'], { cwd: dir, env });
+    assert.equal(withPassingTask.status, 0, withPassingTask.stderr);
+    const withPassingRef = JSON.parse(withPassingTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', withPassingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const withPassingReady = runCli([
+      'task', 'ready', withPassingRef,
+      '--as', 'codex',
+      '--proof', "Checks passed: node --test test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git diff --check.",
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(withPassingReady.status, 0, withPassingReady.stderr);
+    const withPassingPayload = JSON.parse(withPassingReady.stdout);
+    assert.doesNotMatch(withPassingPayload.task.review.landing.tested, /with 380 passing tests/);
+    assert.equal(withPassingPayload.task.review.landing.checked, 'I ran the behavior check and the diff cleanliness check.');
+    const withPassingChat = runCli(['task', 'review-chat', withPassingRef, '--json'], { cwd: dir, env });
+    assert.equal(withPassingChat.status, 0, withPassingChat.stderr);
+    assert.deepEqual(JSON.parse(withPassingChat.stdout).contract.verification_focus.commands_to_verify, [
+      "node --test test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
+      'git diff --check',
+    ]);
+
+    const receiptCheckedTask = runCli(['task', 'new', 'Receipt-specific checked landing', '--json'], { cwd: dir, env });
+    assert.equal(receiptCheckedTask.status, 0, receiptCheckedTask.stderr);
+    const receiptCheckedRef = JSON.parse(receiptCheckedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', receiptCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const receiptCheckedReady = runCli([
+      'task', 'ready', receiptCheckedRef,
+      '--as', 'codex',
+      '--proof', 'Second-pass review: receipt atris/runs/mission-example-2026-06-30T00-00-00-000Z.json verifier_result.passed=true.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(receiptCheckedReady.status, 0, receiptCheckedReady.stderr);
+    const receiptCheckedPayload = JSON.parse(receiptCheckedReady.stdout);
+    assert.equal(receiptCheckedPayload.task.review.landing.checked, 'I inspected the passing receipt named in the proof.');
+
+    const outputCheckedTask = runCli(['task', 'new', 'Verifier output checked landing', '--json'], { cwd: dir, env });
+    assert.equal(outputCheckedTask.status, 0, outputCheckedTask.stderr);
+    const outputCheckedRef = JSON.parse(outputCheckedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', outputCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const outputCheckedReady = runCli([
+      'task', 'ready', outputCheckedRef,
+      '--as', 'codex',
+      '--proof', 'node scripts/verify-mission-product-wedge.js printed MISSION PRODUCT WEDGE VERIFIED.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(outputCheckedReady.status, 0, outputCheckedReady.stderr);
+    assert.equal(JSON.parse(outputCheckedReady.stdout).task.review.landing.checked, 'I checked the verifier output named in the proof.');
+
+    const passesCheckedTask = runCli(['task', 'new', 'Passes checked landing', '--json'], { cwd: dir, env });
+    assert.equal(passesCheckedTask.status, 0, passesCheckedTask.stderr);
+    const passesCheckedRef = JSON.parse(passesCheckedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', passesCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passesCheckedReady = runCli([
+      'task', 'ready', passesCheckedRef,
+      '--as', 'codex',
+      '--proof', 'node scripts/verify-mission-artifact-timeline.js passes.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(passesCheckedReady.status, 0, passesCheckedReady.stderr);
+    assert.equal(JSON.parse(passesCheckedReady.stdout).task.review.landing.checked, 'I ran the verifier named in the proof.');
+
+    const proseCheckedTask = runCli(['task', 'new', 'Prose-only proof landing', '--json'], { cwd: dir, env });
+    assert.equal(proseCheckedTask.status, 0, proseCheckedTask.stderr);
+    const proseCheckedRef = JSON.parse(proseCheckedTask.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', proseCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const proseCheckedReady = runCli([
+      'task', 'ready', proseCheckedRef,
+      '--as', 'codex',
+      '--proof', 'Agent review: help output renders, clean dry-run dropped stale pages, the help-focused test slice passed 379/379, and diff cleanliness passed.',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(proseCheckedReady.status, 0, proseCheckedReady.stderr);
+    assert.equal(JSON.parse(proseCheckedReady.stdout).task.review.landing.tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
 
     const rewardTailTask = runCli(['task', 'new', 'Trim human gate tail', '--json'], { cwd: dir, env });
     assert.equal(rewardTailTask.status, 0, rewardTailTask.stderr);
@@ -10453,6 +10903,70 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
   }
 });
 
+test('task next does not repeat an Endgame seed that already exists', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex-executor' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only, not overnight outages',
+      '',
+      '## Backlog',
+      '',
+      '(empty)',
+      '',
+    ].join('\n'), 'utf8');
+
+    const existing = runCli([
+      'task', 'new', 'Audit and close next runner-agnostic heartbeat gap',
+      '--tag', 'runner',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(existing.status, 0, existing.stderr);
+    const existingTask = JSON.parse(existing.stdout).task;
+    assert.equal(runCli(['task', 'claim', existingTask.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+
+    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during certification',
+    ], { cwd: dir, env }).status, 0);
+
+    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    assert.equal(next.status, 0, next.stderr);
+    const payload = JSON.parse(next.stdout);
+    assert.equal(payload.action, 'human_accept_waiting');
+    assert.equal(payload.next_agent_action, null);
+    assert.equal(payload.review_task.display_id, ref);
+
+    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
+    assert.equal(text.status, 0, text.stderr);
+    assert.doesNotMatch(text.stdout, /Create the next bounded task/);
+    assert.doesNotMatch(text.stdout, /Create: atris task new/);
+    assert.match(text.stdout, /No next agent task is attached/);
+
+    const duplicate = runCli(['task', 'next', '--as', 'codex-executor', '--create-next', '--json'], { cwd: dir, env });
+    assert.notEqual(duplicate.status, 0);
+    const duplicatePayload = JSON.parse(duplicate.stdout);
+    assert.equal(duplicatePayload.reason, 'no_create_next_seed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review summary does not treat incidental XP wording as AgentXP work', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -10478,13 +10992,13 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
     const readyPayload = JSON.parse(ready.stdout);
-    assert.equal(readyPayload.task.review.summary, 'clean stale claimed task queue after XP review is ready to land; land it or send it back.');
+    assert.equal(readyPayload.task.review.summary, 'clean stale claimed task queue after XP review: review the completed result, then approve or ask for rework.');
     assert.deepEqual(readyPayload.task.review.landing, {
       happened: 'Cleaned stale claimed task queue after XP review.',
-      reason: 'It closes the user-visible gap named by the task.',
+      reason: 'It turns the task title into a concrete result the human can approve.',
       checked: 'I ran the validation check.',
       tested: 'I attached the proof below.',
-      decision: 'Needs one more check before landing; send it back if the receipt misses the point.',
+      decision: 'Needs one more check; ask for rework if the receipt misses the point.',
     });
     assert.equal(readyPayload.task.review.result.changed, 'Cleaned stale claimed task queue after XP review.');
     assert.equal(readyPayload.task.review.result.checked, 'I ran the validation check.');
@@ -10496,11 +11010,48 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
     assert.match(readyShow.stdout, /What happened: Cleaned stale claimed task queue after XP review\./);
     assert.match(readyShow.stdout, /How I checked: I ran the validation check\./);
     assert.match(readyShow.stdout, /What I tested: I attached the proof below\./);
-    assert.match(readyShow.stdout, /Why it matters: It closes the user-visible gap named by the task\./);
-    assert.match(readyShow.stdout, /Decision: Needs one more check before landing; send it back if the receipt misses the point\./);
-    assert.match(readyShow.stdout, /Short version: clean stale claimed task queue after XP review is ready to land; land it or send it back\./);
+    assert.match(readyShow.stdout, /Why it matters: It turns the task title into a concrete result the human can approve\./);
+    assert.match(readyShow.stdout, /Decision: Needs one more check; ask for rework if the receipt misses the point\./);
+    assert.match(readyShow.stdout, /Short version: clean stale claimed task queue after XP review: review the completed result, then approve or ask for rework\./);
     assert.match(readyShow.stdout, /Details: closed stale duplicate scheduler claims; validation passed reward 0/);
     assert.doesNotMatch(readyShow.stdout, /AgentXP a real local scoreboard/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready default landing describes completed work for unmapped titles', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const add = runCli([
+      'task', 'add', 'Explore review landing output',
+      '--tag', 'cli',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const ready = runCli([
+      'task', 'ready', ref,
+      '--proof', 'node --test test/commands.test.js passed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(readyPayload.task.review.landing.happened, 'Completed: Explore review landing output.');
+    assert.equal(readyPayload.task.review.result.changed, 'Completed: Explore review landing output.');
+
+    const readyShow = runCli(['task', 'show', ref], { cwd: dir, env });
+    assert.equal(readyShow.status, 0, readyShow.stderr);
+    assert.match(readyShow.stdout, /What happened: Completed: Explore review landing output\./);
+    assert.doesNotMatch(readyShow.stdout, /Explore review landing output is ready to review/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -10807,8 +11358,12 @@ test('task review after acceptance cannot mint duplicate AgentXP', () => {
     assert.equal(extraReview.status, 0, extraReview.stderr);
     const extraReviewPayload = JSON.parse(extraReview.stdout);
     assert.equal(extraReviewPayload.episode.career_xp.eligible, false);
+    assert.equal(extraReviewPayload.xp_projection.compact, true);
     assert.equal(extraReviewPayload.xp_projection.total_xp, 1);
     assert.equal(extraReviewPayload.xp_projection.collected_receipts, 0);
+    assert.equal(extraReviewPayload.xp_projection.contribution_graph, undefined);
+    assert.equal(extraReviewPayload.xp_projection.local_activity, undefined);
+    assert.ok(Buffer.byteLength(extraReview.stdout, 'utf8') < 12000, extraReview.stdout);
 
     const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
@@ -11433,7 +11988,7 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
     const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
     assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const certifiedProof = `${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, focused node --test review queue test, live atris task reviews json showing rows, git diff --check -- commands/task.js test/commands.test.js clean`;
+    const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --test test/commands.test.js passed, focused node --test review queue test, live atris task reviews json showing rows, git diff --check -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
       '--proof', certifiedProof,
@@ -11443,6 +11998,18 @@ test('task reviews gives a compact certified accept queue', () => {
       '--decision', 'Accept if the packet is readable; rework if proof is vague.',
       '--as', 'codex',
     ], { cwd: dir, env }).status, 0);
+    const db = taskStore.open(dbPath);
+    try {
+      const row = taskStore.getTask(db, certifiedTask.id);
+      const metadata = {
+        ...(row.metadata || {}),
+        goal_objective: 'Stale mission objective from another task',
+        objective: 'Stale metadata objective from another task',
+      };
+      db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), certifiedTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
     const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
@@ -11461,20 +12028,22 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.equal(payload.queue.counts.blocking, 1);
     assert.equal(payload.queue.items.length, 1);
     assert.equal(payload.queue.items[0].display_id, certifiedTask.display_id);
-    assert.deepEqual(payload.queue.items[0].landing, {
-      happened: 'Certified proof packet is ready for human approval.',
-      reason: 'It makes the check repeatable before the work lands.',
-      checked: 'I checked the verifier claims and review thread.',
-      tested: 'I ran the focused review queue test.',
-      decision: 'Accept if the packet is readable; rework if proof is vague.',
+	    assert.deepEqual(payload.queue.items[0].landing, {
+	      happened: 'Certified proof packet is ready for human approval.',
+	      reason: 'Human approval queue shows a compact certified packet without stale objective text.',
+	      checked: 'I checked the verifier claims and review thread.',
+	      tested: 'I ran the focused review queue test.',
+	      decision: 'Accept if the packet is readable; rework if proof is vague.',
     });
-    assert.equal(payload.queue.items[0].result.saved, `Ready to land as ${certifiedTask.display_id}.`);
+    assert.equal(payload.queue.items[0].result.saved, `Result is ready for human approval as ${certifiedTask.display_id}.`);
     assert.equal(payload.queue.items[0].accept_command, `atris task accept ${certifiedTask.display_id}`);
     assert.equal(payload.queue.items[0].land_command, `atris task accept ${certifiedTask.display_id}`);
     assert.equal(payload.queue.items[0].revise_command, `atris task revise ${certifiedTask.display_id} --note "<what must change>"`);
     assert.equal(payload.queue.items[0].send_back_command, `atris task revise ${certifiedTask.display_id} --note "<what must change>"`);
     assert.equal(payload.queue.items[0].review_chat_command, `atris task review-chat ${certifiedTask.display_id} --as codex-review`);
     assert.match(payload.queue.items[0].codex_prompt, new RegExp(`/codex review ${certifiedTask.display_id}`));
+    assert.equal(payload.queue.items[0].verification_focus.objective, 'Ship certified proof packet');
+    assert.doesNotMatch(payload.queue.items[0].codex_prompt, /Stale mission objective|Stale metadata objective/);
     assert.match(payload.queue.items[0].verification_focus.proof_claim, /node --test test\/commands\.test\.js passed/);
     assert.deepEqual(payload.queue.items[0].verification_focus.commands_to_verify, [
       'node --test test/commands.test.js',
@@ -11484,26 +12053,73 @@ test('task reviews gives a compact certified accept queue', () => {
 
     const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
-    assert.match(text.stdout, /READY TO LAND/);
-    assert.match(text.stdout, /Result:/);
-    assert.match(text.stdout, /What happened: Certified proof packet is ready for human approval\./);
-    assert.match(text.stdout, /Why it matters: It makes the check repeatable before the work lands\./);
+	    assert.match(text.stdout, /READY FOR APPROVAL/);
+	    assert.match(text.stdout, /Result:/);
+	    assert.match(text.stdout, /What happened: Certified proof packet is ready for human approval\./);
+	    assert.match(text.stdout, /Why it matters: Human approval queue shows a compact certified packet without stale objective text\./);
     assert.match(text.stdout, /How I checked: I checked the verifier claims and review thread\./);
     assert.match(text.stdout, /What I tested: I ran the focused review queue test\./);
-    assert.match(text.stdout, /Saved: Ready to land as .*?\./);
+    assert.match(text.stdout, /Saved: Result is ready for human approval as .*?\./);
     assert.match(text.stdout, /Decision: Accept if the packet is readable; rework if proof is vague\./);
-    assert.ok(text.stdout.indexOf('   Result:') < text.stdout.indexOf('   details:'), 'Result should appear before raw details');
-    assert.match(text.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
-    assert.match(text.stdout, new RegExp(`land: atris task accept ${certifiedTask.display_id}`));
-    assert.match(text.stdout, new RegExp(`send back: atris task revise ${certifiedTask.display_id}`));
-    assert.doesNotMatch(text.stdout, new RegExp(`land: atris task accept ${blockingTask.display_id}`));
+    assert.doesNotMatch(text.stdout, /   details:/);
+    assert.doesNotMatch(text.stdout, /   receipt:/);
+    assert.doesNotMatch(text.stdout, /   \/codex:/);
+    assert.match(text.stdout, new RegExp(`approve: atris task accept ${certifiedTask.display_id}`));
+    assert.match(text.stdout, new RegExp(`rework: atris task revise ${certifiedTask.display_id}`));
+    assert.doesNotMatch(text.stdout, new RegExp(`approve: atris task accept ${blockingTask.display_id}`));
+
+    const verbose = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
+    assert.equal(verbose.status, 0, verbose.stderr);
+    assert.ok(verbose.stdout.indexOf('   Result:') < verbose.stdout.indexOf('   details:'), 'Result should appear before raw details');
+    assert.match(verbose.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
-    assert.match(grouped.stdout, /READY TO LAND — grouped by tag/);
-    assert.match(grouped.stdout, /1 ready to land across 1 tag group\(s\)/);
-    assert.match(grouped.stdout, /land this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
+    assert.match(grouped.stdout, /READY FOR APPROVAL — grouped by tag/);
+    assert.match(grouped.stdout, /1 ready for approval across 1 tag group\(s\)/);
+    assert.match(grouped.stdout, /approve this group: atris task accept-group tag="review" --spot-check 3 --confirm-human-accept --as <you>/);
     assert.doesNotMatch(grouped.stdout, /CERTIFIED REVIEW|review then accept/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review groups are capped by default for human scan', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    for (let index = 1; index <= 12; index += 1) {
+      const tag = `tag-${String(index).padStart(2, '0')}`;
+      const created = runCli(['task', 'new', `Grouped approval ${index}`, '--tag', tag, '--json'], { cwd: dir, env });
+      assert.equal(created.status, 0, created.stderr);
+      const task = JSON.parse(created.stdout).task;
+      assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --test test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+      assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+    }
+
+    const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
+    assert.equal(grouped.status, 0, grouped.stderr);
+    assert.match(grouped.stdout, /12 ready for approval across 12 tag group\(s\)/);
+    assert.match(grouped.stdout, /1\. tag-01/);
+    assert.match(grouped.stdout, /10\. tag-10/);
+    assert.doesNotMatch(grouped.stdout, /11\. tag-11/);
+    assert.match(grouped.stdout, /Showing 10\/12 groups; rerun with --all for every group or --limit N to adjust\./);
+
+    const limited = runCli(['task', 'reviews', '--group-by', 'tag', '--limit', '3'], { cwd: dir, env });
+    assert.equal(limited.status, 0, limited.stderr);
+    assert.match(limited.stdout, /3\. tag-03/);
+    assert.doesNotMatch(limited.stdout, /4\. tag-04/);
+    assert.match(limited.stdout, /Showing 3\/12 groups/);
+
+    const all = runCli(['task', 'reviews', '--group-by', 'tag', '--all'], { cwd: dir, env });
+    assert.equal(all.status, 0, all.stderr);
+    assert.match(all.stdout, /12\. tag-12/);
+    assert.doesNotMatch(all.stdout, /Showing 10\/12 groups/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -12328,8 +12944,8 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
 
     const reviewText = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(reviewText.status, 0, reviewText.stderr);
-    assert.match(reviewText.stdout, /land: blocked \(proof_unmerged_or_draft_pr_boundary\)/);
-    assert.doesNotMatch(reviewText.stdout, new RegExp(`land: atris task accept ${ref}`));
+    assert.match(reviewText.stdout, /approve: blocked \(proof_unmerged_or_draft_pr_boundary\)/);
+    assert.doesNotMatch(reviewText.stdout, new RegExp(`approve: atris task accept ${ref}`));
 
     const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
@@ -14094,7 +14710,7 @@ test('task projection exposes goals, review proof, and task lineage for visual b
     assert.equal(parent.objective, 'Build the task factory into a compounding autonomous development surface');
     assert.equal(unrelatedTask.objective, null);
     assert.equal(genericLoopTask.objective, null);
-    assert.equal(parent.review.summary, 'Landed result for improve task factory lineage view.');
+    assert.equal(parent.review.summary, 'Completed result for improve task factory lineage view.');
     assert.equal(parent.review.proof, 'board lineage validation passed');
     assert.equal(parent.review.lesson, 'Visual tasks need goal and proof context');
     assert.deepEqual(parent.lineage.child_task_ids, [nextId]);
@@ -15001,6 +15617,21 @@ test('clean exits 1 when no atris/ folder', () => {
   }
 });
 
+test('clean --json reports missing atris folder without text chrome', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['clean', '--json'], { cwd: dir });
+    assert.equal(res.status, 1);
+    assert.doesNotMatch(res.stdout, /Atris Clean/);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.action, 'clean');
+    assert.match(payload.error, /atris\/ folder not found/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('clean --help prints usage without touching workspace', () => {
   const dir = makeTempDir();
   try {
@@ -15008,8 +15639,71 @@ test('clean --help prints usage without touching workspace', () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Usage: atris clean/);
     assert.match(res.stdout, /--dry-run/);
+    assert.match(res.stdout, /--json/);
     assert.doesNotMatch(res.stdout, /Atris Clean/);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('clean --dry-run --json reports machine-readable health', () => {
+  const dir = makeTempDir();
+  try {
+    initWorkspace(dir);
+    const res = runCli(['clean', '--dry-run', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    assert.doesNotMatch(res.stdout, /Atris Clean/);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'clean');
+    assert.equal(payload.dry_run, true);
+    assert.equal(payload.results.stale_tasks.count, 0);
+    assert.equal(typeof payload.results.map_refs.healed_count, 'number');
+    assert.equal(payload.results.map_refs.verb, 'would_heal');
+    assert.equal(Array.isArray(payload.results.map_refs.items), true);
+    assert.equal(typeof payload.results.stale_pages.count, 'number');
+    assert.equal(Array.isArray(payload.results.stale_pages.items), true);
+    assert.equal(Array.isArray(payload.manual_action), true);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('clean dry-run shows MAP refs it would heal', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'app.js'), [
+      'function main() {',
+      '  return true;',
+      '}',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), [
+      '# MAP.md',
+      '',
+      '- `src/app.js:20` (main function)',
+      '',
+    ].join('\n'), 'utf8');
+
+    const res = runCli(['clean', '--dry-run', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr);
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.results.map_refs.healed_count, 1);
+    assert.deepEqual(payload.results.map_refs.items, [
+      {
+        old: '`src/app.js:20`',
+        new: '`src/app.js:1`',
+        symbol: 'main',
+      },
+    ]);
+    assert.match(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), /src\/app\.js:20/);
+
+    const text = runCli(['clean', '--dry-run'], { cwd: dir });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /Would heal 1 MAP\.md reference/);
+    assert.match(text.stdout, /`src\/app\.js:20` -> `src\/app\.js:1` \(main\)/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -15953,7 +16647,7 @@ test('business share prints and writes a collaborator handoff from workspace sta
     assert.match(body, /Team goals: 6 member lanes, 1 with active goals/);
     assert.match(body, /AgentXP: 12 total, 2 today, 1 receipts, integrity ok/);
     assert.match(body, /Loop: 1 mission ticks; Codex goal Keep the business loop moving/);
-    assert.match(body, /XP gate: proof can move to Review; XP lands only after human accept/);
+    assert.match(body, /XP gate: proof can move to Review; XP is awarded only after human approval/);
     assert.match(body, /atris radar/);
     assert.match(body, /atris mission status --status active --json/);
   } finally {
@@ -16010,7 +16704,7 @@ test('business start gives a collaborator first-run card for a ready workspace',
     assert.match(res.stdout, /Tasks: 1 open, 1 claimed, 1 review \(1 certified\), 0 blocked/);
     assert.match(res.stdout, /Missions: 1 active, 1 running, 1 always-on, 0 stale\/no-verifier/);
     assert.match(res.stdout, /AgentXP: 12 total, 2 today, 1 receipts, integrity ok/);
-    assert.match(res.stdout, /XP gate: proof can move to Review; XP lands only after human accept/);
+    assert.match(res.stdout, /XP gate: proof can move to Review; XP is awarded only after human approval/);
     assert.match(res.stdout, /Work the first loop/);
   } finally {
     cleanupTempDir(dir);
@@ -16546,9 +17240,9 @@ test('review default mode renders certified task review console', () => {
     const res = runCli(['review'], { cwd: dir, env });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review is the human checkpoint/);
-    assert.match(res.stdout, /READY TO LAND/);
-    assert.match(res.stdout, new RegExp(`land: atris task accept ${ref}`));
-    assert.match(res.stdout, new RegExp(`send back: atris task revise ${ref}`));
+    assert.match(res.stdout, /READY FOR APPROVAL/);
+    assert.match(res.stdout, new RegExp(`approve: atris task accept ${ref}`));
+    assert.match(res.stdout, new RegExp(`rework: atris task revise ${ref}`));
     assert.match(res.stdout, /Need the legacy Validator prompt/);
     assert.doesNotMatch(res.stdout, /I checked the review setup\./);
     assert.doesNotMatch(res.stdout, /┌|└|│|Validator Agent Activated/);

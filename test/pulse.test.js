@@ -149,6 +149,22 @@ test('buildPulseScorecardRow reuses the improve_tick schema so the brain sees it
   assert.equal(row.verify_passed, true);
 });
 
+test('buildInterruptedPulseReceipt closes interrupted ticks as failed instead of ghosting', () => {
+  const receipt = pulse.buildInterruptedPulseReceipt({
+    tickIndex: 120,
+    signal: 'SIGINT',
+    elapsedMs: 2500,
+    prevTickStale: true,
+  });
+  assert.equal(receipt.phase, 'finished');
+  assert.equal(receipt.actor, 'pulse_signal');
+  assert.equal(receipt.actor_ok, false);
+  assert.equal(receipt.actor_reason, 'sigint');
+  assert.equal(receipt.what, 'tick interrupted by SIGINT');
+  assert.equal(receipt.reward, -1);
+  assert.equal(receipt.prev_tick_stale, true);
+});
+
 // --- IO round-trips ---
 
 test('append + read pulse receipts round-trips through the channel file', () => {
@@ -305,6 +321,41 @@ test('buildTickScript requires root, stateHome, and deadlineEpoch', () => {
 test('buildCrontabLine produces a marked, scheduled line', () => {
   const line = pulse.buildCrontabLine({ cron: '11,40 * * * *', scriptPath: '/x/tick.sh' });
   assert.equal(line, '11,40 * * * * /x/tick.sh # ATRIS_PULSE_SELF_IMPROVE');
+});
+
+test('buildCrontabLine accepts human cadence shorthands', () => {
+  assert.equal(pulse.normalizeCronCadence('13m'), '*/13 * * * *');
+  assert.equal(pulse.normalizeCronCadence('2h'), '23 */2 * * *');
+  assert.equal(pulse.normalizeCronCadence('hourly'), pulse.DEFAULT_CADENCE_CRON);
+  assert.equal(
+    pulse.buildCrontabLine({ cron: '13m', scriptPath: '/x/tick.sh' }),
+    '*/13 * * * * /x/tick.sh # ATRIS_PULSE_SELF_IMPROVE',
+  );
+});
+
+test('buildCrontabLine rejects invalid human cadence shorthands', () => {
+  assert.throws(() => pulse.normalizeCronCadence('90m'), /minute cadence/);
+  assert.throws(() => pulse.buildCrontabLine({ cron: 'soon', scriptPath: '/x/tick.sh' }), /invalid cadence/);
+});
+
+test('normalizeExpiryDuration accepts hours for short overnight runs', () => {
+  assert.deepEqual(pulse.normalizeExpiryDuration({ hours: '6', days: '7' }), {
+    source: 'hours',
+    hours: 6,
+    days: null,
+    seconds: 21600,
+  });
+  assert.deepEqual(pulse.normalizeExpiryDuration({ days: '2' }), {
+    source: 'days',
+    hours: null,
+    days: 2,
+    seconds: 172800,
+  });
+});
+
+test('normalizeExpiryDuration rejects invalid expiry values', () => {
+  assert.throws(() => pulse.normalizeExpiryDuration({ hours: '0' }), /invalid hours/);
+  assert.throws(() => pulse.normalizeExpiryDuration({ days: 'soon' }), /invalid days/);
 });
 
 test('buildCrontabLine requires a scriptPath', () => {

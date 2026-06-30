@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-23
+last_compiled: 2026-06-30
 sources:
   - commands/member.js:211-223 (memberPaths and MISSION.md wiring)
   - commands/member.js:422-452 (member run bridge to Mission Runtime)
@@ -9,7 +9,7 @@ sources:
   - commands/member.js:6734-6758 (wake decision and receipts)
   - commands/member.js:6765-7077 (member loop)
   - commands/member.js:7079-7319 (tick, review, block, status)
-  - commands/member.js:7411-7531 (member command dispatch and help)
+  - commands/member.js:7588-7676 (member command dispatch and help)
   - commands/mission.js:412-443 (renderMemberNowMarkdown — member now.md rendering)
   - bin/atris.js:1742 (member command route)
   - atris/team/_template/MEMBER.md
@@ -18,7 +18,7 @@ sources:
 
 # Team Member Standard — Build Spec
 
-> **Status:** implemented (local-first member runtime)
+> **Status:** implemented and re-verified (local-first member runtime)
 
 ## Files Touched
 
@@ -158,6 +158,10 @@ MISSION.md + now.md
 - [x] `atris member loop` repeats wake with no-overlap lease, latest status, stop support, and receipts
 - [x] `atris member tick`, `review`, `block`, and `status` form the proof loop for useful member work
 - [x] `atris member run` bridges active member runtime state into `atris mission run`
+- [x] `atris member alive` runs the member loop in always-on liveness mode
+- [x] `atris member history` shows git-backed identity history for MEMBER.md / SOUL.md
+- [x] Supervisor, objective-generator, and generalist subcommands expose member-specialized readouts
+- [x] `atris member archive` and `purge-archived` manage retired member directories
 - [x] Members reference shared skills (`atris/skills/`) and local skills (`team/<name>/skills/`)
 - [x] Member directories are portable (self-contained)
 - [x] Spec is tool-agnostic in design
@@ -165,4 +169,4 @@ MISSION.md + now.md
 ## What's Not Done
 
 - [ ] Open source spec published separately
-- [ ] Cross-tool testing (Codex, Cursor reading MEMBER.md)
+- [ ] Cross-tool compatibility verified by external agents reading MEMBER.md

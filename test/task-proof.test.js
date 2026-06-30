@@ -41,6 +41,7 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
   for (const proof of [
     'npm run test passed',
     'node --test test/commands.test.js passed',
+    'node bin/atris.js clean --dry-run --json passed',
     'typecheck passed and git diff --check passed',
     "grep -qE 'pass|ok' atris/runs/run.json passed",
     "rg -n 'taskProofState' lib/task-proof.js passed",
@@ -53,6 +54,7 @@ test('task proof helper accepts commands, verifier results, receipts, and human 
   ]) {
     assert.equal(taskProofLooksMeaningful(proof), true, `${JSON.stringify(proof)} should be accepted`);
   }
+  assert.equal(taskProofLooksMeaningful('node bin/atris.js clean --json passed'), false);
 });
 
 test('buildVerifiedProof turns a passing command into executed proof', () => {

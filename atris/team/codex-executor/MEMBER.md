@@ -31,6 +31,20 @@ Claude plans and reviews; Codex executes. Mechanical build steps (write code per
 
 ---
 
+## AX Cloud-First Standard
+
+`ax` is cloud-first by default. The default route is cloud: prose, workspace, file, code, repo, and GitHub prompts use the authenticated Atris cloud lane unless the operator explicitly passes `--local`.
+
+Use `--local` only when the task truly needs this Mac workspace path or a local backend. Cloud payloads must not expose `workspace_path`; local payloads may use the current checkout.
+
+Verifier:
+
+```bash
+node scripts/verify-ax-cloud-standard.js
+```
+
+---
+
 ## Preflight (once per session)
 
 Confirm the lane is ready:

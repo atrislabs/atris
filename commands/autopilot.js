@@ -15,7 +15,7 @@ const { parseTodo } = require('../lib/todo');
 const {
   buildRunnerCommand,
   buildRunnerAvailabilityCommand,
-  resolveClaudeRunnerBin,
+  runnerAvailabilityFailureMessage,
 } = require('../lib/runner-command');
 const { findStalePages, findStaleTasks, healBrokenMapRefs } = require('./clean');
 const {
@@ -481,6 +481,91 @@ function executePhaseDetailed(phase, context, options = {}) {
       return { prompt, output: err.stdout };
     }
     throw err;
+  }
+}
+
+function autopilotGlassLogDir(cwd = process.cwd()) {
+  const dir = path.join(cwd, 'atris', 'logs', 'autopilot');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function autopilotGlassSlug(value) {
+  const slug = String(value || 'tick')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+  return slug || 'tick';
+}
+
+function autopilotGlassTimestamp(now = new Date()) {
+  return now.toISOString().replace(/[:.]/g, '-');
+}
+
+function phaseGlassText(phaseResults, key) {
+  const phase = phaseResults && phaseResults[key] ? phaseResults[key] : {};
+  const output = String(phase.output || '').trim();
+  const elapsed = Number.isFinite(phase.elapsedSeconds) ? `\n\nElapsed: ${phase.elapsedSeconds}s` : '';
+  return `${output || '(no output)'}${elapsed}`;
+}
+
+function buildAutopilotGlassLog(context, execution, options = {}) {
+  const phaseResults = execution.phaseResults || {};
+  const task = context.task || 'Autopilot tick';
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const proof = execution.verifyRan
+    ? `${execution.verifyPass ? 'PASS' : 'FAIL'}: ${phaseGlassText(phaseResults, 'verify')}`
+    : 'NOT RUN: no verifier command was available';
+
+  return [
+    '# Autopilot Glass Log',
+    '',
+    `Generated: ${generatedAt}`,
+    `Task: ${task}`,
+    `Kind: ${context.kind || 'unknown'}`,
+    `Verify: ${execution.verifyCmd || '(none)'}`,
+    `Outcome: ${execution.success ? 'success' : 'needs attention'}`,
+    '',
+    '## Plan',
+    '',
+    phaseGlassText(phaseResults, 'plan'),
+    '',
+    '## Plan Review',
+    '',
+    phaseGlassText(phaseResults, 'plan-review'),
+    '',
+    '## Action',
+    '',
+    phaseGlassText(phaseResults, 'do'),
+    '',
+    '## Result',
+    '',
+    phaseGlassText(phaseResults, 'review'),
+    '',
+    '## Proof',
+    '',
+    proof,
+    ''
+  ].join('\n');
+}
+
+function writeAutopilotGlassLog(cwd, context, execution, options = {}) {
+  const dir = autopilotGlassLogDir(cwd);
+  const now = options.now || new Date();
+  const file = `${autopilotGlassTimestamp(now)}-${autopilotGlassSlug(context.task)}.md`;
+  const absPath = path.join(dir, file);
+  fs.writeFileSync(absPath, buildAutopilotGlassLog(context, execution, {
+    generatedAt: now.toISOString(),
+  }));
+  return path.relative(cwd, absPath);
+}
+
+function maybeWriteAutopilotGlassLog(cwd, context, execution) {
+  try {
+    return writeAutopilotGlassLog(cwd, context, execution);
+  } catch {
+    return null;
   }
 }
 
@@ -1806,7 +1891,7 @@ function runTaskOnce(context, options = {}) {
     }
   }
 
-  return {
+  const execution = {
     success: verifyRan && verifyPass,
     elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
     phaseResults,
@@ -1815,6 +1900,8 @@ function runTaskOnce(context, options = {}) {
     verifyPass,
     verifyRan,
   };
+  execution.glassLogPath = maybeWriteAutopilotGlassLog(cwd, context, execution);
+  return execution;
 }
 
 /**
@@ -3022,8 +3109,8 @@ async function autopilotAtris(description, options = {}) {
     process.exit(1);
   }
 
-  try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch {
-    console.error(`${resolveClaudeRunnerBin()} CLI not found. Set ATRIS_RUNNER_BIN (or legacy ATRIS_CLAUDE_BIN), or install the configured runner first.`);
+  try { execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' }); } catch (err) {
+    console.error(runnerAvailabilityFailureMessage(err));
     process.exit(1);
   }
 
@@ -3679,5 +3766,8 @@ module.exports = {
   isPhaseKillError,
   execPhaseCommandSync,
   executePhaseDetailed,
+  autopilotGlassLogDir,
+  buildAutopilotGlassLog,
+  writeAutopilotGlassLog,
   lessonSlug
 };

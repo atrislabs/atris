@@ -1,5 +1,5 @@
 ---
-last_compiled: 2026-06-23
+last_compiled: 2026-06-30
 sources:
   - lib/wiki.js:15-25 (public/private wiki root getters)
   - lib/wiki.js:192-217 (wiki and context scaffold)
@@ -23,8 +23,8 @@ sources:
 
 # Wiki — Validation
 
-> **Status:** v2 — local-first wiki plus upkeep loop
-> **Validated:** 2026-06-18
+> **Status:** v3 — local-first wiki plus clean upkeep baseline
+> **Validated:** 2026-06-30
 > **Exit condition:** local/public and private wiki flows work, canonical root is `atris/wiki/`, init scaffolds it, activate surfaces it, agent/spec docs reference it, stale/orphan upkeep is executable, and this repo dogfoods it.
 
 ## Checks
@@ -54,16 +54,18 @@ node -c lib/wiki.js
 node -c commands/wiki.js
 node -c commands/loop.js
 node bin/atris.js wiki --help
-node bin/atris.js loop --dry-run
+node bin/atris.js wiki verify
+node bin/atris.js loop wiki --json
+node bin/atris.js clean --dry-run --json
 ```
 
 `npm test` remains the full regression gate; the focused command above covers the wiki behavior directly.
 
-## Known Content Debt
+## Current Repo Proof
 
-- `node bin/atris.js wiki verify` currently fails this repo's wiki content: 15 pages, 84 findings.
-- The top causes are missing `last_compiled`, `last_verified`, confidence, dependencies, actionability, stale sources, and 2 orphan pages.
-- `node bin/atris.js loop --dry-run` is the current remediation queue: 13 stale pages, starting with `atris/wiki/people/jack-dorsey.md`.
+- `node bin/atris.js wiki verify` passes this repo's public wiki with 22 pages and 0 findings.
+- `node bin/atris.js loop wiki --json` reports 22 pages, 0 stale pages, 0 orphan pages, 0 next-ingest candidates, and `health: "wiki is in good shape"`.
+- `node bin/atris.js clean --dry-run --json` now shows no public wiki stale pages; remaining stale pages are feature-pack validation/build docs.
 
 ## Notes
 

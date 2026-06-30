@@ -14,11 +14,19 @@
 //   atris loop status             liveness, last tick, reward   -> pulse.js
 //   atris loop stop               remove the durable heartbeat  -> pulse.js
 //   atris loop wiki               wiki upkeep (the old `loop`)  -> loop.js
+//   atris loop create-next        create + claim the suggested task
 //
 // The loop reads ROADMAP.md for what to pursue.
 
 function isFlag(arg) {
   return typeof arg === 'string' && arg.startsWith('-');
+}
+
+function flagValue(argv, name) {
+  const index = argv.indexOf(name);
+  if (index === -1) return null;
+  const value = argv[index + 1];
+  return value && !isFlag(value) ? value : true;
 }
 
 // Pure router: decide what `atris loop ...` means without executing anything.
@@ -36,6 +44,10 @@ function routeLoop(argv = []) {
       return { action: 'status' };
     case 'stop':
       return { action: 'stop' };
+    case 'create-next':
+    case 'claim-next':
+    case 'take-next':
+      return { action: 'create-next' };
     case 'wiki':
       // Forward the remaining args (e.g. --json, --limit=) to wiki upkeep.
       return { action: 'wiki', rest: argv.filter((a) => a.toLowerCase() !== 'wiki') };
@@ -73,6 +85,7 @@ function renderLoopHome(route = { action: 'home' }, moves = []) {
     '    atris loop start              run it now, here (local)',
     '    atris loop start --once       one cycle, then stop',
     '    atris loop start --overnight  install the durable heartbeat (~15m)',
+    '    atris loop start --overnight --hours 6',
     '',
     '  watch it',
     '    atris loop status             liveness, last tick, reward',
@@ -92,6 +105,9 @@ function renderLoopHome(route = { action: 'home' }, moves = []) {
     });
     lines.splice(lines.length - 2, 0, '');
   }
+  lines.splice(lines.length - 2, 0, '  act on it');
+  lines.splice(lines.length - 2, 0, '    atris loop create-next       create + claim the suggested task');
+  lines.splice(lines.length - 2, 0, '');
   if (route && route.unknown) {
     lines.splice(1, 0, `  (unknown: "${route.unknown}". here is the loop:)`);
   }
@@ -175,6 +191,82 @@ function loopStatusJson(root = process.cwd()) {
   return out;
 }
 
+function loopSeedMove(root = process.cwd()) {
+  const moves = require('../lib/next-moves').nextMoves(root, 5);
+  const activeTask = moves.find((move) => move && move.source === 'task');
+  if (activeTask) return { ok: false, reason: 'active_task', move: activeTask, moves };
+  const seed = moves.find((move) => (
+    move
+    && move.source === 'mission'
+    && (
+      move.why === 'active mission has no concrete task queued'
+      || move.why === 'latest proof timeline suggested this self-improvement target'
+    )
+  ));
+  if (!seed) return { ok: false, reason: 'no_seed', moves };
+  return { ok: true, move: seed, moves };
+}
+
+function createNextLoopTask(argv = [], root = process.cwd(), options = {}) {
+  const shouldPrint = options.print !== false;
+  const json = argv.includes('--json');
+  const owner = flagValue(argv, '--as') || flagValue(argv, '--owner') || process.env.ATRIS_AGENT_ID || 'auto-improver';
+  const seed = loopSeedMove(root);
+  if (!seed.ok) {
+    const payload = { ok: false, action: 'create_next_skipped', reason: seed.reason, move: seed.move || null };
+    if (shouldPrint) {
+      if (json) console.log(JSON.stringify(payload, null, 2));
+      else if (seed.reason === 'active_task') console.log(`not created: active task already exists (${seed.move.ref || seed.move.title})`);
+      else console.log('not created: no loop seed is available');
+    }
+    return payload;
+  }
+
+  const note = `Goal: ${seed.move.title}. Files: inspect atris/MAP.md first, then the relevant code. Done: one bounded proof-backed self-improvement task is moved to Review. Check: focused verifier; git diff --check; atris clean --dry-run --json; atris brain compile --root . --verify.`;
+  const taskArgs = [
+    'task',
+    'delegate',
+    seed.move.title,
+    '--tag', 'loop',
+    '--claim',
+    '--as', String(owner),
+    '--note', note,
+    '--json',
+  ];
+  const { spawnSync } = require('child_process');
+  const path = require('path');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const child = spawnSync(process.execPath, [cli, ...taskArgs], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
+  });
+  if (child.status !== 0) {
+    const payload = { ok: false, action: 'create_next_failed', reason: 'task_delegate_failed', stderr: child.stderr, stdout: child.stdout };
+    if (shouldPrint) {
+      if (json) console.log(JSON.stringify(payload, null, 2));
+      else console.error(child.stderr || child.stdout || 'task creation failed');
+    }
+    return payload;
+  }
+  let delegated = null;
+  try { delegated = JSON.parse(child.stdout); } catch { delegated = null; }
+  const task = delegated && delegated.task ? delegated.task : null;
+  const payload = { ok: true, action: 'created_next', owner: String(owner), move: seed.move, task, delegated };
+  if (shouldPrint) {
+    if (json) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      const ref = task?.display_id || task?.id || 'task';
+      console.log(`created next loop task: ${ref} ${seed.move.title}`);
+      console.log(`claimed by: ${owner}`);
+      console.log(`next: atris task show ${ref}`);
+    }
+  }
+  return payload;
+}
+
 // The evidence that the loop is improving things: ROADMAP items it has handled,
 // what is in flight and queued, and the heartbeat's reward/verify trend. Pure of
 // console so it is testable.
@@ -255,6 +347,11 @@ function loopFront(argv = []) {
       return Promise.resolve(0);
     }
 
+    case 'create-next': {
+      const result = createNextLoopTask(argv, process.cwd());
+      return Promise.resolve(result.ok ? 0 : 1);
+    }
+
     case 'status': {
       if (jsonFlag.length) {
         // One machine-readable object covering BOTH engines (overnight pulse
@@ -303,6 +400,8 @@ module.exports = {
   startLocalOptions,
   localRunSummary,
   loopStatusJson,
+  loopSeedMove,
+  createNextLoopTask,
   loopReport,
   renderLoopReport,
   loopFront,

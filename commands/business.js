@@ -840,7 +840,7 @@ function renderBusinessOsLines(os = {}, prefix = '- ') {
     `${prefix}Team goals: ${team.members || 0} member lanes, ${team.activeGoalMembers || 0} with active goals`,
     `${prefix}${xp.metric || 'AgentXP'}: ${xp.total || 0} total, ${xp.today || 0} today, ${xp.receipts || 0} receipts, integrity ${xp.integrity || 'unknown'}`,
     `${prefix}Loop: ${loop.ticks || 0} mission ticks; Codex goal ${loop.codexGoal || 'none'}`,
-    `${prefix}XP gate: proof can move to Review; XP lands only after human accept`,
+    `${prefix}XP gate: proof can move to Review; XP is awarded only after human approval`,
   ];
 }
 

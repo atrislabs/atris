@@ -331,7 +331,7 @@ function gmState(args = []) {
     missions,
     review_queue: reviewQueue,
     next_commands: commands,
-    xp_rule: 'GM can route missions and review proof, but AgentXP still lands only after human accept.',
+    xp_rule: 'GM can route missions and review proof, but AgentXP is awarded only after human approval.',
     global_sync_rule: AGENTXP_GLOBAL_SYNC_RULE,
     leaderboard_url: AGENTXP_LEADERBOARD_URL,
   };

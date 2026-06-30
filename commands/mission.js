@@ -20,11 +20,21 @@ const {
   writeMissionRoomReceipt,
   missionRoomLines,
 } = require('../lib/mission-room');
+const {
+  missionArtifactPaths,
+  writeMissionArtifact,
+} = require('../lib/mission-artifact');
+const {
+  pruneRuns,
+  runsPruneLines,
+  formatBytes,
+} = require('../lib/runs-prune');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
 const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
+const DEFAULT_LONG_RUN_VERIFIER = 'git diff --check';
 
 function stampIso() {
   return new Date().toISOString();
@@ -85,6 +95,16 @@ function readPositiveIntegerFlag(args, name, fallback = null, options = {}) {
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1) {
     exitMissionError(`${name} must be a positive integer`, 2, options.json);
+  }
+  return value;
+}
+
+function readNonNegativeIntegerFlag(args, name, fallback = null) {
+  const raw = readFlag(args, name, '');
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
   }
   return value;
 }
@@ -159,6 +179,10 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--verify',
   '--stop',
   '--model',
+  '--native-goal-status',
+  '--native-goal-objective',
+  '--visible-goal-status',
+  '--visible-goal-objective',
 ];
 const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
@@ -167,6 +191,12 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--no-verify',
   '--complete-on-pass',
   '--no-drain',
+  '--create-next',
+  '--spend-full-budget',
+  '--use-whole-budget',
+  '--stop-when-done',
+  '--allow-native-goal-supersede',
+  '--supersede-paused-native-goal',
   '--always-on',
   '--xp-task',
   '--agent-xp',
@@ -326,7 +356,7 @@ function createMissionXpTask(mission, root = process.cwd(), asJson = false) {
     taskDb.noteTask(db, {
       id: task.id,
       actor: process.env.ATRIS_AGENT_ID || owner,
-      content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task current-step; AgentXP lands only after human accept.`,
+      content: `Mission goal loop XP bridge for ${mission.id}. Proof goes through task current-step; AgentXP is awarded only after human approval.`,
     });
   }
   const { outPath } = writeMissionTaskProjection(taskDb, db, workspaceRoot);
@@ -350,6 +380,7 @@ function statePaths(root = process.cwd()) {
     missionsJsonl: path.join(stateDir, 'missions.jsonl'),
     eventsJsonl: path.join(stateDir, 'mission_events.jsonl'),
     codexGoalJson: path.join(stateDir, 'codex_goal.json'),
+    codexGoalRequestJson: path.join(stateDir, 'codex_goal_request.json'),
     codexGoalStatus: path.join(root, 'atris', 'status', 'codex-goal.md'),
     atrisGoalJson: path.join(stateDir, 'atris_goal.json'),
     atrisGoalStatus: path.join(root, 'atris', 'status', 'atris-goal.md'),
@@ -409,9 +440,21 @@ function terminalNextAction(status) {
 
 function normalizeMissionState(mission) {
   if (!mission) return mission;
+  let normalized = mission;
   const nextAction = terminalNextAction(mission.status);
-  if (!nextAction || mission.next_action === nextAction) return mission;
-  return { ...mission, next_action: nextAction };
+  if (nextAction && mission.next_action !== nextAction) {
+    normalized = { ...normalized, next_action: nextAction };
+  }
+  const effectiveVerifier = effectiveMissionVerifier(normalized);
+  const explicitVerifier = String(normalized.verifier || '').trim();
+  if (effectiveVerifier && effectiveVerifier !== explicitVerifier) {
+    return { ...normalized, effective_verifier: effectiveVerifier };
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'effective_verifier')) {
+    const { effective_verifier, ...withoutDerivedVerifier } = normalized;
+    return withoutDerivedVerifier;
+  }
+  return normalized;
 }
 
 function listMissions(root = process.cwd()) {
@@ -659,6 +702,7 @@ function missionResultLines(completion) {
   const result = completion?.result || {};
   const lines = ['Landing:'];
   if (landing.happened) lines.push(`  Changed: ${landing.happened}`);
+  if (landing.artifact) lines.push(`  Artifact: ${landing.artifact}`);
   if (landing.checked) lines.push(`  How I checked: ${landing.checked}`);
   if (landing.tested) lines.push(`  What I tested: ${landing.tested}`);
   if (result.saved) lines.push(`  Proof: ${result.saved}`);
@@ -666,10 +710,28 @@ function missionResultLines(completion) {
   return lines;
 }
 
-function missionHumanNextAction(mission) {
+function missionSelfImprovementSeedAction(mission, root = process.cwd()) {
+  try {
+    const moves = require('../lib/next-moves');
+    const seed = moves.nextMoves(root, 3).find((move) => (
+      move
+      && move.source === 'mission'
+      && (!mission?.id || !move.ref || move.ref === mission.id)
+      && move.title !== mission.objective
+    ));
+    return seed ? `${seed.title}.` : '';
+  } catch {
+    return '';
+  }
+}
+
+function missionHumanNextAction(mission, root = process.cwd()) {
   if (!mission) return 'Pick the next customer-facing move.';
   if (mission.status === 'ready' && /^queue AgentXP review:/i.test(mission.next_action || '')) {
     return 'Ready for human review; accept in Atris if the proof looks right.';
+  }
+  if (mission.status === 'ready' && mission.always_on) {
+    return missionSelfImprovementSeedAction(mission, root) || 'Run the next proof step.';
   }
   if (mission.status === 'ready') return 'Review the proof, then complete the mission.';
   if (mission.status === 'complete') return 'Pick the next customer-facing move.';
@@ -677,20 +739,60 @@ function missionHumanNextAction(mission) {
   return 'Keep running the mission.';
 }
 
-function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null) {
+function missionLandingStepSummary(summary) {
+  const clean = String(summary || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const withoutLabel = clean
+    .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
+    .trim();
+  if (!withoutLabel) return '';
+  const beforeChecks = withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel;
+  const clipped = beforeChecks.slice(0, 220).trim().replace(/[.!?:;,]+$/g, '');
+  return clipped ? `${clipped}.` : '';
+}
+
+function missionLastStepSummary(ticks = []) {
+  for (let index = ticks.length - 1; index >= 0; index -= 1) {
+    const tick = ticks[index] || {};
+    const summary = missionLandingStepSummary(tick.summary || tick.claude?.summary || tick.atris2?.receipt_text || '');
+    if (summary) return summary;
+  }
+  return '';
+}
+
+function missionVerifierCheckedText(verifierResult, mission) {
+  if (!verifierResult) return 'Tick recorded; no verifier was run.';
+  const command = verifierResult.command || mission.verifier || 'configured verifier';
+  if (verifierResult.passed) {
+    if (/^git\s+diff\s+--check\b/i.test(command)) return 'I ran the diff cleanliness check.';
+    if (/\bnode\s+--test\b/i.test(command)) return 'I ran the behavior checks.';
+    return `Verifier passed: ${command}.`;
+  }
+  if (/^git\s+diff\s+--check\b/i.test(command)) return 'Diff cleanliness check failed.';
+  if (/\bnode\s+--test\b/i.test(command)) return 'Behavior checks failed.';
+  return `Verifier failed: ${command}.`;
+}
+
+function missionFallbackChangedText(mission, status, tickIndex, { ranTicks = null, effectiveMaxTicks = null } = {}) {
+  if (mission?.always_on && (status === 'ready' || status === 'running')) {
+    return 'Recorded a proof heartbeat for this always-on mission.';
+  }
+  if (status === 'ready') return `${mission.objective} is ready for review.`;
+  if (status === 'complete') return `${mission.objective} is complete.`;
+  if (status === 'blocked') return `${mission.objective} is blocked.`;
+  if (ranTicks != null && effectiveMaxTicks != null) {
+    return ranTicks > 0
+      ? `${mission.objective} ran ${ranTicks}/${effectiveMaxTicks} tick(s).`
+      : `${mission.objective} did not run a tick.`;
+  }
+  return `${mission.objective} recorded tick ${tickIndex}.`;
+}
+
+function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null, stepSummary = '') {
   const status = mission?.status || 'running';
-  const changed = status === 'ready'
-    ? `${mission.objective} is ready for review.`
-    : status === 'complete'
-      ? `${mission.objective} is complete.`
-      : status === 'blocked'
-        ? `${mission.objective} is blocked.`
-        : `${mission.objective} recorded tick ${tickIndex}.`;
-  const checked = verifierResult
-    ? verifierResult.passed
-      ? `Verifier passed: ${verifierResult.command || mission.verifier || 'configured verifier'}.`
-      : `Verifier failed: ${verifierResult.command || mission.verifier || 'configured verifier'}.`
-    : 'Tick recorded; no verifier was run.';
+  const stepChanged = missionLandingStepSummary(stepSummary);
+  const changed = stepChanged || missionFallbackChangedText(mission, status, tickIndex);
+  const checked = missionVerifierCheckedText(verifierResult, mission);
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
@@ -718,36 +820,91 @@ function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {
     'Takeoff:',
     `  Goal: ${mission.objective}`,
     `  Done when: ${mission.stop_condition || 'the mission has proof or a human decision'}.`,
+    ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     '  Proof: Mission state saved in .atris/state/missions.jsonl.',
     `  Check: ${checked}`,
     `  Next: ${missionRunStartNextLine(mission, nextCommand, warnings)}`,
   ];
 }
 
-function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null) {
-  const changed = mission.status === 'ready'
-    ? `${mission.objective} is ready for review.`
-    : mission.status === 'complete'
-      ? `${mission.objective} is complete.`
-      : mission.status === 'blocked'
-        ? `${mission.objective} is blocked.`
-        : ranTicks > 0
-          ? `${mission.objective} ran ${ranTicks}/${effectiveMaxTicks} tick(s).`
-          : `${mission.objective} did not run a tick.`;
+function missionRunTaskLabel(task) {
+  const ref = task?.ref || task?.display_id || task?.id || 'task';
+  return [ref, task?.title].filter(Boolean).join(' ');
+}
+
+function missionRunCreatedNextChangedText(createdNext) {
+  const createdTask = createdNext?.ok ? createdNext.task : null;
+  if (createdTask) {
+    return `Created and claimed next task: ${missionRunTaskLabel(createdTask)}.`;
+  }
+  const activeTask = createdNext?.reason === 'active_task' ? createdNext.move : null;
+  if (activeTask) {
+    return `Kept active task: ${missionRunTaskLabel(activeTask)}. No duplicate was created.`;
+  }
+  return null;
+}
+
+function missionRunCreatedNextLine(createdNext, continuationGoal, mission) {
+  const createdTask = createdNext?.ok ? createdNext.task : null;
+  if (createdTask) {
+    return `Created next task: ${missionRunTaskLabel(createdTask)}.`;
+  }
+  const activeTask = createdNext?.reason === 'active_task' ? createdNext.move : null;
+  if (activeTask) {
+    return `Continue active task: ${missionRunTaskLabel(activeTask)}.`;
+  }
+  return continuationGoal?.mission
+    ? `Next mission: ${continuationGoal.mission.objective}.`
+    : missionHumanNextAction(mission);
+}
+
+function missionRunTimelineCommand(mission) {
+  return `atris mission timeline ${mission.id} --limit 5`;
+}
+
+function missionRunExportCommand(mission) {
+  return `atris mission timeline ${mission.id} --all --write`;
+}
+
+function missionRunPrunePreviewCommand(mission) {
+  return `atris mission timeline ${mission.id} --prune-preview`;
+}
+
+function missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks = [], createdNext = null) {
+  const stepChanged = missionLastStepSummary(ticks);
+  const createdNextChanged = missionRunCreatedNextChangedText(createdNext);
+  return createdNextChanged || stepChanged || missionFallbackChangedText(mission, mission.status, null, { ranTicks, effectiveMaxTicks });
+}
+
+function missionBudgetLine(mission) {
+  const contract = mission?.budget_contract;
+  if (!contract) return null;
+  return `${contract.plain_language} Limit: ${contract.budget_label}.`;
+}
+
+function missionSpendsFullBudget(mission) {
+  return mission?.budget_contract?.policy === 'spend_full_budget';
+}
+
+function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null) {
+  const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const verifier = mission.verifier_result;
   const checked = verifier
-    ? verifier.passed
-      ? `Verifier passed: ${verifier.command || mission.verifier || 'configured verifier'}.`
-      : `Verifier failed: ${verifier.command || mission.verifier || 'configured verifier'}.`
+    ? missionVerifierCheckedText(verifier, mission)
     : pauseReason
       ? `Run paused: ${pauseReason}.`
       : 'Run recorded; no verifier was run.';
+  const nextLine = missionRunCreatedNextLine(createdNext, continuationGoal, mission);
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
+    ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     `  How I checked: ${checked}`,
     `  Proof: Summary receipt saved at ${finalReceipt}.`,
-    `  Next: ${continuationGoal?.mission ? `Next mission: ${continuationGoal.mission.objective}.` : missionHumanNextAction(mission)}`,
+    `  Timeline: ${missionRunTimelineCommand(mission)}`,
+    `  Export: ${missionRunExportCommand(mission)}`,
+    `  Prune preview: ${missionRunPrunePreviewCommand(mission)}`,
+    `  Next: ${nextLine}`,
   ];
   return lines;
 }
@@ -910,7 +1067,11 @@ function missionFromArgs(args) {
     '--task',
     '--ask',
     '--model',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree']).join(' ').trim();
+    '--native-goal-status',
+    '--native-goal-objective',
+    '--visible-goal-status',
+    '--visible-goal-objective',
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--allow-native-goal-supersede', '--supersede-paused-native-goal']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -970,7 +1131,7 @@ function missionFromArgs(args) {
 }
 
 function missingVerifierWarning(mission) {
-  if (String(mission.verifier || '').trim()) return null;
+  if (effectiveMissionVerifier(mission)) return null;
   return {
     code: 'missing_verifier',
     message: 'Mission has no verifier; it cannot complete automatically and future runs will report unverified worktree side effects.',
@@ -1008,6 +1169,113 @@ function inferRunObjectiveVerifier(objective, root = process.cwd()) {
     return 'node --test test/mission-status.test.js';
   }
   return missionRunSmokeVerifier();
+}
+
+function durationSecondsFromText(text) {
+  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = match[2].toLowerCase();
+  if (/^d/.test(unit)) return Math.round(value * 86400);
+  if (/^h/.test(unit)) return Math.round(value * 3600);
+  if (/^m(?!s)/.test(unit)) return Math.round(value * 60);
+  return Math.round(value);
+}
+
+function durationLabel(seconds, fallback = 'the requested time') {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  if (value % 86400 === 0) {
+    const days = value / 86400;
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+  if (value % 3600 === 0) {
+    const hours = value / 3600;
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  if (value % 60 === 0) {
+    const minutes = value / 60;
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  return `${value} second${value === 1 ? '' : 's'}`;
+}
+
+function wantsFullBudget(text, args = []) {
+  if (hasFlag(args, '--spend-full-budget') || hasFlag(args, '--use-whole-budget')) return true;
+  const compact = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  return /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+(time|budget|window)\b/.test(compact)
+    || /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+\d/.test(compact)
+    || /\bfor\s+the\s+(whole|full|entire)\s+/.test(compact)
+    || /\bkeep\s+going\s+until\s+(time|the\s+time|budget|the\s+budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact)
+    || /\b(run|work|stop|continue)\s+(until|till)\s+(the\s+)?(time|budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact);
+}
+
+function inferRunObjectiveBudgetContract(objective, args = []) {
+  const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
+  const explicitMaxWall = Number(readFlag(args, '--max-wall', ''));
+  const requestedSeconds = durationSecondsFromText(text)
+    || (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null);
+  const overnight = /\bovernight\b/i.test(text);
+  if (!requestedSeconds && !overnight) return null;
+  const policy = wantsFullBudget(text, args) && !hasFlag(args, '--stop-when-done')
+    ? 'spend_full_budget'
+    : 'stop_when_done';
+  const budgetLabel = requestedSeconds
+    ? durationLabel(requestedSeconds)
+    : 'the overnight window';
+  const plainLanguage = policy === 'spend_full_budget'
+    ? 'Use the whole time.'
+    : 'Finish early if solved.';
+  const stopRule = policy === 'spend_full_budget'
+    ? `Use the whole ${budgetLabel}; keep picking the next useful move until time is up, unless blocked or unsafe.`
+    : `Use up to ${budgetLabel}; stop early when the mission is done, proven, or blocked.`;
+  return {
+    schema: 'atris.mission_budget_contract.v1',
+    requested_seconds: requestedSeconds,
+    budget_label: budgetLabel,
+    policy,
+    plain_language: plainLanguage,
+    stop_rule: stopRule,
+  };
+}
+
+function budgetStopCondition(contract) {
+  if (!contract) return '';
+  if (contract.policy === 'spend_full_budget') {
+    return `run for ${contract.budget_label}; use the whole time unless blocked or unsafe`;
+  }
+  return `run for ${contract.budget_label}, or stop early when proof is strong enough`;
+}
+
+function inferRunObjectiveLoopOptions(objective, args = []) {
+  const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
+  const hoursMatch = text.match(/\b(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)\b/i);
+  const requestedHours = hoursMatch ? Number(hoursMatch[1]) : null;
+  const wantsLongRun = /\b(overnight|nonstop|forever|goal\s+after\s+goal|self[-\s]?improve)\b/i.test(text)
+    || (Number.isFinite(requestedHours) && requestedHours > 0);
+  if (!wantsLongRun) return { wantsLongRun: false, requestedHours: null, cadence: '' };
+  return {
+    wantsLongRun: true,
+    requestedHours: Number.isFinite(requestedHours) && requestedHours > 0 ? requestedHours : null,
+    cadence: readFlag(args, '--cadence', '13m'),
+  };
+}
+
+function missionLongRunIntent(mission) {
+  const text = `${mission?.objective || ''} ${mission?.stop_condition || ''}`;
+  return Boolean(mission?.overnight_loop)
+    || /\b(overnight|nonstop|forever|goal\s+after\s+goal|self[-\s]?improve)\b/i.test(text);
+}
+
+function effectiveMissionVerifier(mission) {
+  const explicit = String(mission?.verifier || '').trim();
+  if (explicit) return explicit;
+  const runner = String(mission?.runner || '').trim().toLowerCase();
+  if (missionLongRunIntent(mission) && (!runner || runner === 'codex_goal')) {
+    return DEFAULT_LONG_RUN_VERIFIER;
+  }
+  return '';
 }
 
 function markMissionRunContinuation(mission) {
@@ -1210,35 +1478,60 @@ function startMission(args) {
 
 function startMissionFromRunObjective(objective, args) {
   const asJson = wantsJson(args);
-  const verifier = readFlag(args, '--verify', inferRunObjectiveVerifier(objective));
+  const inferredLoop = inferRunObjectiveLoopOptions(objective, args);
+  const budgetContract = inferRunObjectiveBudgetContract(objective, args);
+  const verifier = readFlag(
+    args,
+    '--verify',
+    inferRunObjectiveVerifier(objective) || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
+  );
   const stopCondition = readFlag(
     args,
     '--stop',
-    verifier ? 'verifier passes and visible goal lands' : 'visible goal lands and proof is ready',
+    budgetStopCondition(budgetContract) || (inferredLoop.wantsLongRun
+      ? `run for ${inferredLoop.requestedHours || 'the requested overnight window'} hour${inferredLoop.requestedHours === 1 ? '' : 's'}, or stop when proof is ready`
+      : (verifier ? 'verifier passes and visible goal lands' : 'visible goal lands and proof is ready')),
   );
+  const inferredOwner = inferredLoop.wantsLongRun && /\bself[-\s]?improve\b/i.test(objective)
+    ? 'auto-improver'
+    : (process.env.ATRIS_AGENT_ID || 'mission-lead');
   const startArgs = [
     objective,
     '--owner',
-    readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead'),
+    readFlag(args, '--owner', inferredOwner),
     '--runner',
     readFlag(args, '--runner', 'codex_goal'),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',
-    readFlag(args, '--cadence', 'manual'),
+    readFlag(args, '--cadence', inferredLoop.wantsLongRun ? inferredLoop.cadence : 'manual'),
     '--stop',
     stopCondition,
   ];
   if (verifier) startArgs.push('--verify', verifier);
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
-  if (hasFlag(args, '--always-on')) startArgs.push('--always-on');
+  if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp')) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  if (budgetContract) {
+    mission.budget_contract = budgetContract;
+    if (budgetContract.requested_seconds) mission.max_wall_seconds = budgetContract.requested_seconds;
+  }
+  if (inferredLoop.wantsLongRun) {
+    mission.overnight_loop = {
+      requested_hours: inferredLoop.requestedHours,
+      cadence: mission.cadence,
+      install_command: inferredLoop.requestedHours
+        ? `atris loop start --overnight --cadence ${mission.cadence} --hours ${inferredLoop.requestedHours}`
+        : `atris loop start --overnight --cadence ${mission.cadence}`,
+    };
+  }
   const warnings = [missingVerifierWarning(mission)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(mission, process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
+  const directGoalRequest = writeDirectRunCodexGoalRequest(saved, process.cwd());
   const memberState = renderMemberMissionState(saved.owner);
   const logPath = appendMemberLog(saved.owner, 'Mission started from run', {
     mission: saved.objective,
@@ -1249,17 +1542,26 @@ function startMissionFromRunObjective(objective, args) {
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
+  const nativeGoalStatus = readFlag(args, '--native-goal-status', readFlag(args, '--visible-goal-status', ''));
+  const nativeGoalObjective = readFlag(args, '--native-goal-objective', readFlag(args, '--visible-goal-objective', ''));
+  const nativeGoalOptions = {
+    ...(nativeGoalStatus ? { nativeGoalStatus } : {}),
+    ...(nativeGoalObjective ? { nativeGoalObjective } : {}),
+    ...(hasFlag(args, '--allow-native-goal-supersede') || hasFlag(args, '--supersede-paused-native-goal') ? { allowNativeGoalSupersede: true } : {}),
+  };
   const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: saved.id });
   const codexGoalState = runnerUsesCallerSession(saved.runner)
-    ? refreshCodexGoalController(process.cwd(), { missionId: saved.id })
+    ? refreshCodexGoalController(process.cwd(), { missionId: saved.id, ...nativeGoalOptions })
     : null;
-  const nativeGoal = codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null;
-  const nextCommand = codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`;
+  const nativeGoal = codexGoalState?.native_goal_action
+    || (codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null);
+  const nextCommand = codexGoalState?.next_command || codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`;
   printJsonOrText(
     {
       ok: true,
       action: 'mission_run_started',
       mission: saved,
+      budget_contract: saved.budget_contract || null,
       warnings,
       state_path: statePaths().missionsJsonl,
       member_state: memberState,
@@ -1270,11 +1572,13 @@ function startMissionFromRunObjective(objective, args) {
         dirty_hash: worktreeBaseline.dirty_hash,
       } : null,
       completed_continuation_goal: completedContinuationGoal,
+      direct_goal_request: directGoalRequest,
       atris_goal_state: atrisGoalState,
       codex_goal_state: codexGoalState,
-      requires_native_goal_start: codexGoalState?.goal?.requires_native_goal_start === true,
+      requires_native_goal_start: codexGoalState?.requires_native_goal_start === true || codexGoalState?.goal?.requires_native_goal_start === true,
+      requires_native_goal_replace: codexGoalState?.requires_native_goal_replace === true || codexGoalState?.goal?.requires_native_goal_replace === true,
       native_goal_action: nativeGoal,
-      native_goal_ack_command: codexGoalState?.goal?.native_goal_ack_command || null,
+      native_goal_ack_command: codexGoalState?.goal?.native_goal_ack_command || codexGoalState?.active_goal_conflict?.commands?.ack_new_mission || null,
       next_command: nextCommand,
     },
     missionRunTakeoffLines(saved, { warnings, nextCommand }),
@@ -1435,17 +1739,349 @@ function missionWorkerSummary(mission, receipt) {
   if (mission && mission.worker_summary) return mission.worker_summary;
   const tick = receipt && receipt.result && (receipt.result.tick || (Array.isArray(receipt.result.ticks) ? receipt.result.ticks[receipt.result.ticks.length - 1] : null));
   if (!tick) return mission && mission.last_tick_reason ? `Last tick: ${mission.last_tick_reason}` : 'No worker receipt yet.';
+  return missionTickReportSummary(tick);
+}
+
+function missionTickReportSummary(tick) {
+  if (!tick) return 'Worker tick recorded.';
   if (tick.atris2) {
     return firstUsefulLine(tick.atris2.receipt_text, tick.atris2.ok ? 'Remote worker ran and returned a response.' : 'Remote worker failed.');
   }
   if (tick.claude) {
     if (tick.claude.skipped) {
+      const skipReason = tick.claude.reason || tick.reason || '';
+      if (!tick.summary && ['runner-uses-caller-session', 'orchestrator-is-caller-session'].includes(skipReason)) {
+        return 'Goal handed to the active Codex session.';
+      }
       return tick.summary || `Worker step skipped: ${tick.claude.reason || tick.reason || 'not needed'}.`;
     }
     return tick.claude.summary || firstUsefulLine(tick.claude.receipt_text, tick.claude.ok ? 'Worker ran and returned a response.' : 'Worker failed.');
   }
   if (tick.summary) return tick.summary;
   return tick.reason ? `Worker tick: ${tick.reason}` : 'Worker tick recorded.';
+}
+
+function missionReceiptTicks(receipt) {
+  const result = receipt && receipt.result;
+  if (!result) return [];
+  if (result.tick) return [result.tick];
+  if (Array.isArray(result.ticks)) return result.ticks.filter(Boolean);
+  return [];
+}
+
+function missionTickAt(receipt, tick) {
+  return tick.finished_at || tick.started_at || receipt.at || '';
+}
+
+function missionTimelineTitle(tick, summary) {
+  const tickIndex = Number(tick && tick.tick_index);
+  const prefix = Number.isInteger(tickIndex) && tickIndex > 0 ? `Goal ${tickIndex}` : 'Goal';
+  const text = String(summary || '').trim();
+  const explicitGoal = text.match(/^(Goal\s+\d+)\s*:\s*(.*)$/i);
+  if (explicitGoal) {
+    return missionTimelineTitleLine(`${explicitGoal[1].replace(/\s+/g, ' ')}: ${explicitGoal[2].trim()}`);
+  }
+  return missionTimelineTitleLine(`${prefix}: ${text.replace(/^Goal\s*:\s*/i, '').trim()}`);
+}
+
+function missionTimelineTitleLine(title) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  const firstSentence = text.match(/^(.+?[.!?])(?:\s+|$)/);
+  const candidate = firstSentence ? firstSentence[1].trim() : text;
+  if (candidate.length <= 180) return candidate;
+  return `${candidate.slice(0, 177).trimEnd()}...`;
+}
+
+function missionTimelineSummaryIsUseful(summary) {
+  const text = String(summary || '').trim();
+  if (!text) return false;
+  return ![
+    'Goal handed to the active Codex session.',
+    'Worker tick recorded.',
+  ].includes(text) && !/^Worker step skipped:/i.test(text);
+}
+
+function missionTimelineTickIndex(tick) {
+  const tickIndex = Number(tick && tick.tick_index);
+  return Number.isInteger(tickIndex) && tickIndex > 0 ? tickIndex : null;
+}
+
+function missionReportTimeline(mission, root = process.cwd(), limit = 6) {
+  const paths = statePaths(root);
+  let files = [];
+  try {
+    files = fs.readdirSync(paths.runsDir)
+      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
+      .map((file) => path.join(paths.runsDir, file));
+  } catch {
+    files = [];
+  }
+
+  const items = [];
+  const seen = new Set();
+  for (const file of files) {
+    let receipt = null;
+    try {
+      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!receipt || receipt.mission_id !== mission.id) continue;
+    const receiptPath = path.relative(root, file);
+    for (const tick of missionReceiptTicks(receipt)) {
+      const summary = missionTickReportSummary(tick);
+      if (!missionTimelineSummaryIsUseful(summary)) continue;
+      const at = missionTickAt(receipt, tick);
+      const key = `${tick.tick_index || ''}:${at}:${summary}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({
+        at,
+        tick_index: missionTimelineTickIndex(tick),
+        title: missionTimelineTitle(tick, summary),
+        summary,
+        receipt_path: receiptPath,
+      });
+    }
+  }
+
+  items.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+  return items.slice(Math.max(0, items.length - limit));
+}
+
+function missionLandingTimeline(mission, root = process.cwd(), limit = 12) {
+  const paths = statePaths(root);
+  let files = [];
+  try {
+    files = fs.readdirSync(paths.runsDir)
+      .filter((file) => file.startsWith('mission-') && file.endsWith('.json'))
+      .map((file) => path.join(paths.runsDir, file));
+  } catch {
+    files = [];
+  }
+
+  const items = [];
+  const seen = new Set();
+  for (const file of files) {
+    let receipt = null;
+    try {
+      receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!receipt || receipt.mission_id !== mission.id) continue;
+    const landing = receipt.result && receipt.result.landing;
+    const changed = String(landing && landing.changed || '').trim();
+    const next = String(landing && landing.next || '').trim();
+    if (!changed && !next) continue;
+    const receiptPath = path.relative(root, file);
+    const key = `${receipt.at || ''}:${changed}:${next}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      at: receipt.at || '',
+      changed,
+      next,
+      receipt_path: receiptPath,
+      created_next: receipt.result.created_next || null,
+    });
+  }
+  items.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? limit : items.length;
+  const shown = items.slice(Math.max(0, items.length - normalizedLimit));
+  return {
+    items: shown,
+    meta: {
+      shown_count: shown.length,
+      total_count: items.length,
+      hidden_count: Math.max(0, items.length - shown.length),
+      truncated: shown.length < items.length,
+      limit: normalizedLimit === Number.MAX_SAFE_INTEGER ? null : normalizedLimit,
+    },
+  };
+}
+
+function formatInteger(value) {
+  return String(Math.max(0, Number(value || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function missionTimelinePruneSummaryMarkdown(prunePreview) {
+  if (!prunePreview) return [];
+  if (prunePreview.error) {
+    return [
+      '',
+      '## Latest prune dry-run',
+      '',
+      `- Not available: ${prunePreview.error}`,
+    ];
+  }
+  return [
+    '',
+    '## Latest prune dry-run',
+    '',
+    `- Policy: keep newest ${formatInteger(prunePreview.policy?.keep_newest)}; keep ${formatInteger(prunePreview.policy?.keep_days)} days`,
+    `- Total run files: ${formatInteger(prunePreview.total_files)}`,
+    `- Total run bytes: ${formatInteger(prunePreview.total_bytes)} (${formatBytes(prunePreview.total_bytes)})`,
+    `- Referenced files kept: ${formatInteger(prunePreview.referenced_files)}`,
+    `- Recent files kept: ${formatInteger(prunePreview.recent_files)}`,
+    `- Would prune: ${formatInteger(prunePreview.prune_count)} files / ${formatInteger(prunePreview.prune_bytes)} bytes (${formatBytes(prunePreview.prune_bytes)})`,
+    `- Deleted files: ${formatInteger(prunePreview.deleted_count)}`,
+  ];
+}
+
+function missionTimelinePruneSummaryLine(prunePreview) {
+  if (!prunePreview) return null;
+  if (prunePreview.error) return `Prune dry-run: not available (${prunePreview.error}).`;
+  return `Prune dry-run: ${formatInteger(prunePreview.prune_count)} files / ${formatBytes(prunePreview.prune_bytes)} would prune; ${formatInteger(prunePreview.deleted_count)} deleted.`;
+}
+
+function missionTimelinePruneSummaryObject(prunePreview) {
+  if (!prunePreview) return null;
+  if (prunePreview.error) {
+    return {
+      ok: false,
+      error: prunePreview.error,
+      text: missionTimelinePruneSummaryLine(prunePreview),
+    };
+  }
+  return {
+    ok: true,
+    text: missionTimelinePruneSummaryLine(prunePreview),
+    total_files: prunePreview.total_files,
+    total_bytes: prunePreview.total_bytes,
+    referenced_files: prunePreview.referenced_files,
+    recent_files: prunePreview.recent_files,
+    prune_count: prunePreview.prune_count,
+    prune_bytes: prunePreview.prune_bytes,
+    prune_bytes_text: formatBytes(prunePreview.prune_bytes),
+    deleted_count: prunePreview.deleted_count,
+  };
+}
+
+function missionTimelineCurrentLanding(timeline) {
+  if (!timeline.length) return null;
+  const latest = timeline[timeline.length - 1];
+  return {
+    at: latest.at || '',
+    changed: latest.changed || '',
+    next: latest.next || '',
+    receipt_path: latest.receipt_path || '',
+  };
+}
+
+function missionTimelineEmptyStateDisplay(mission, timelineLength = 0) {
+  const hasMission = Boolean(mission);
+  const isEmpty = !timelineLength;
+  return {
+    label: 'Empty state',
+    is_empty: isEmpty,
+    has_mission: hasMission,
+    title: isEmpty ? (hasMission ? 'No timeline items yet.' : 'No missions yet.') : null,
+    message: isEmpty
+      ? (hasMission ? 'Run the mission once to create the first timeline item.' : 'Start a mission to create the first timeline item.')
+      : null,
+    action_label: isEmpty ? (hasMission ? 'Run mission' : 'Start mission') : null,
+    command: isEmpty ? (hasMission ? `atris mission run ${mission.id} --create-next` : 'atris mission start "..." --owner <member>') : null,
+  };
+}
+
+function missionTimelineNextMove(mission, landing) {
+  const latestNext = landing ? String(landing.next || '').trim() : '';
+  return latestNext || `atris mission run ${mission.id} --create-next`;
+}
+
+function missionTimelineCountLine(meta) {
+  if (!meta) return null;
+  const shown = Number(meta.shown_count || 0);
+  const total = Number(meta.total_count || 0);
+  if (meta.truncated) {
+    return `Showing latest ${formatInteger(shown)} of ${formatInteger(total)} ${total === 1 ? 'item' : 'items'}.`;
+  }
+  return `Showing ${formatInteger(shown)} ${shown === 1 ? 'item' : 'items'}.`;
+}
+
+function missionTimelineCurrentLandingLines(landing) {
+  if (!landing) return [];
+  return [
+    'Current landing:',
+    `  Changed: ${landing.changed || 'Landing recorded.'}`,
+    ...(landing.next ? [`  Next: ${landing.next}`] : []),
+    `  Proof: ${landing.receipt_path}`,
+    '',
+  ];
+}
+
+function missionTimelineMarkdown(mission, timeline, { prunePreview = null, generatedAt = stampIso(), timelineMeta = null } = {}) {
+  const latestLanding = timeline.length ? timeline[timeline.length - 1] : null;
+  const nextMove = missionTimelineNextMove(mission, latestLanding);
+  const lines = [
+    `# Mission timeline: ${mission.objective}`,
+    '',
+    `Mission: ${mission.id}`,
+    `Status: ${mission.status}`,
+    `Generated at: ${generatedAt}`,
+    ...(timelineMeta ? [missionTimelineCountLine(timelineMeta)] : []),
+    '',
+    '## Operator commands',
+    '',
+    `- Timeline: \`${missionRunTimelineCommand(mission)}\``,
+    `- Export: \`${missionRunExportCommand(mission)}\``,
+    `- Prune preview: \`${missionRunPrunePreviewCommand(mission)}\``,
+    '',
+  ];
+  if (latestLanding) {
+    lines.push(
+      '## Current landing',
+      '',
+      `Changed: ${latestLanding.changed || 'Landing recorded.'}`,
+      ...(latestLanding.next ? [`Next: ${latestLanding.next}`] : []),
+      `Proof: ${latestLanding.receipt_path}`,
+      '',
+    );
+  }
+  if (!timeline.length) {
+    lines.push('No landing receipts yet.');
+    lines.push(
+      '',
+      '## Next move',
+      '',
+      nextMove,
+    );
+    lines.push(
+      '',
+      '## Keep it concise',
+      '',
+      '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
+      '- Apply only after review: add `--apply`.',
+    );
+    lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
+    lines.push('');
+    return lines.join('\n');
+  }
+  timeline.forEach((item, index) => {
+    if (index === 0) lines.push('## Full history', '');
+    lines.push(`${index + 1}. ${item.changed || 'Landing recorded.'}`);
+    if (item.next) lines.push(`   - Next: ${item.next}`);
+    lines.push(`   - Proof: ${item.receipt_path}`);
+  });
+  lines.push('', '## Next move', '', nextMove);
+  lines.push(
+    '',
+    '## Keep it concise',
+    '',
+    '- Dry run: `atris mission prune-runs --days 14 --keep-newest 200`',
+    '- Apply only after review: add `--apply`.',
+  );
+  lines.push(...missionTimelinePruneSummaryMarkdown(prunePreview));
+  lines.push('');
+  return lines.join('\n');
+}
+
+function defaultMissionTimelinePath(root, mission) {
+  const safeId = String(mission.id || 'mission')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'mission';
+  return path.join(root, 'atris', 'reports', `${safeId}-timeline.md`);
 }
 
 function missionReportFor(mission, root = process.cwd()) {
@@ -1462,10 +2098,17 @@ function missionReportFor(mission, root = process.cwd()) {
     operator_outcome: operatorOutcome,
     worker: mission.worker || missionWorkerLabel(mission),
     worker_summary: missionWorkerSummary(mission, receipt),
+    timeline: missionReportTimeline(mission, root),
     worker_receipt_path: workerReceiptPath,
     verifier_receipt_path: verifierReceiptPath,
     operator_next: mission.operator_next || mission.next_action || 'Review the mission state.',
   };
+}
+
+function missionReportNextText(nextAction) {
+  return String(nextAction || 'Review the mission state.')
+    .replace(/^next move:\s*run\s+/i, '')
+    .trim();
 }
 
 function reportMission(args) {
@@ -1497,13 +2140,339 @@ function reportMission(args) {
         `  What happened: ${report.operator_outcome}`,
         `  Worker: ${report.worker}`,
         `  Worker summary: ${report.worker_summary}`,
+        ...(report.timeline && report.timeline.length ? [
+          '  Timeline:',
+          ...report.timeline.map((item) => `    - ${item.title}`),
+        ] : []),
         ...(report.worker_receipt_path ? [`  Worker receipt: ${report.worker_receipt_path}`] : []),
         ...(report.verifier_receipt_path ? [`  Verifier receipt: ${report.verifier_receipt_path}`] : []),
-        `  Next: ${report.operator_next}`,
+        `  Next: ${missionReportNextText(report.operator_next)}`,
       ])
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],
     asJson,
   );
+}
+
+function timelineMission(args) {
+  const asJson = wantsJson(args);
+  const write = hasFlag(args, '--write');
+  const all = hasFlag(args, '--all');
+  const prunePreviewRequested = hasFlag(args, '--prune-preview');
+  const outputPath = readFlag(args, '--output', '') || readFlag(args, '--out', '');
+  const ref = stripKnownFlags(args, ['--limit', '--output', '--out'], ['--json', '--write', '--all', '--prune-preview'])[0] || '';
+  const limit = all ? Number.MAX_SAFE_INTEGER : readPositiveIntegerFlag(args, '--limit', 12, { json: asJson });
+  const missions = listMissions();
+  const mission = ref
+    ? resolveMission(ref)
+    : (missions.find((row) => !TERMINAL_STATUSES.has(row.status)) || missions[0] || null);
+  if (ref && !mission) {
+    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+  }
+  if (!mission) {
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'mission_timeline',
+        mission: null,
+        timeline: [],
+        empty_state_display: missionTimelineEmptyStateDisplay(null, 0),
+      },
+      ['No missions yet. Run: atris mission start "..." --owner <member>'],
+      asJson,
+    );
+    return;
+  }
+  const root = mission.worktree_root || process.cwd();
+  const timelineResult = missionLandingTimeline(mission, root, limit);
+  const timeline = timelineResult.items;
+  const currentLanding = missionTimelineCurrentLanding(timeline);
+  const timelineItemDisplay = (item) => ({
+    changed_label: 'Changed',
+    changed: item.changed || 'Landing recorded.',
+    next_label: 'Next',
+    next: item.next || null,
+    proof_label: 'Proof',
+    proof: item.receipt_path || null,
+  });
+  const currentLandingDisplay = currentLanding ? {
+    label: 'Current landing',
+    ...timelineItemDisplay(currentLanding),
+  } : null;
+  const historyWithoutCurrent = currentLanding ? timeline.slice(0, -1) : timeline;
+  const historyWithoutCurrentDisplay = historyWithoutCurrent.map((item, index) => ({
+    index: index + 1,
+    label: `History item ${index + 1}`,
+    ...timelineItemDisplay(item),
+  }));
+  const timelineDisplay = timeline.map((item, index) => ({
+    index: index + 1,
+    label: `Timeline item ${index + 1}`,
+    at_label: 'When',
+    at: item.at || null,
+    ...timelineItemDisplay(item),
+  }));
+  const nextMove = missionTimelineNextMove(mission, currentLanding);
+  const generatedAt = stampIso();
+  let artifactPath = null;
+  let prunePreview = null;
+  if (write || prunePreviewRequested) {
+    try {
+      prunePreview = pruneRuns(root, { keepNewest: 200, keepDays: 14 });
+    } catch (error) {
+      prunePreview = { error: error.message || String(error) };
+    }
+  }
+  if (write) {
+    const outPath = outputPath
+      ? path.resolve(root, outputPath)
+      : defaultMissionTimelinePath(root, mission);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, missionTimelineMarkdown(mission, timeline, { prunePreview, generatedAt, timelineMeta: timelineResult.meta }), 'utf8');
+    artifactPath = path.relative(root, outPath);
+  }
+  const pruneSummary = missionTimelinePruneSummaryObject(prunePreview);
+  const pruneDisplay = {
+    label: 'Prune preview',
+    command: missionRunPrunePreviewCommand(mission),
+    available: Boolean(pruneSummary),
+    ok: pruneSummary?.ok ?? null,
+    summary: pruneSummary?.text || null,
+    would_prune_label: 'Would prune',
+    prune_count: pruneSummary?.prune_count ?? null,
+    prune_bytes_text: pruneSummary?.prune_bytes_text || null,
+    deleted_label: 'Deleted',
+    deleted_count: pruneSummary?.deleted_count ?? null,
+  };
+  const payload = {
+    ok: true,
+    action: 'mission_timeline',
+    generated_at: generatedAt,
+    generated: {
+      label: 'Generated at',
+      at: generatedAt,
+    },
+    schema_display: {
+      label: 'Schema',
+      name: 'atris.mission_timeline',
+      version: 1,
+      primary_objects: [
+        'display',
+        'summary_display',
+        'navigation_display',
+        'filter_display',
+        'mission_display',
+        'current_landing_display',
+        'history_without_current_display',
+        'timeline_display',
+        'timeline_meta_display',
+        'empty_state_display',
+        'status_display',
+        'actions_display',
+        'proof_display',
+        'export_display',
+        'prune_display',
+        'artifact_display',
+      ],
+    },
+    summary_display: {
+      label: 'Summary',
+      title: `Mission timeline: ${mission.objective}`,
+      count: missionTimelineCountLine(timelineResult.meta),
+      latest_label: 'Latest',
+      latest: currentLanding?.changed || null,
+      proof_label: 'Proof',
+      proof: currentLanding?.receipt_path || null,
+      next_label: 'Next',
+      next: nextMove,
+    },
+    display: {
+      title: `Mission timeline: ${mission.objective}`,
+      generated: `Generated at: ${generatedAt}`,
+      count: missionTimelineCountLine(timelineResult.meta),
+      current_landing_label: 'Current landing',
+      history_label: 'History',
+      next_label: 'Next',
+    },
+    status_display: {
+      label: 'Status',
+      mission_status_label: 'Mission status',
+      mission_status: mission.status,
+      history_status_label: 'History status',
+      history_status: timelineResult.meta.truncated ? 'Compact history' : 'Full history',
+      count: missionTimelineCountLine(timelineResult.meta),
+      truncated: Boolean(timelineResult.meta.truncated),
+      hidden_count: timelineResult.meta.hidden_count,
+    },
+    empty_state_display: missionTimelineEmptyStateDisplay(mission, timeline.length),
+    mission: {
+      id: mission.id,
+      objective: mission.objective,
+      status: mission.status,
+    },
+    mission_labels: {
+      mission: 'Mission',
+      objective: 'Objective',
+      status: 'Status',
+    },
+    mission_display: {
+      label: 'Mission',
+      title: mission.objective,
+      id: mission.id,
+      status: mission.status,
+    },
+    operator_commands: {
+      timeline: missionRunTimelineCommand(mission),
+      export: missionRunExportCommand(mission),
+      prune_preview: missionRunPrunePreviewCommand(mission),
+    },
+    commands: {
+      timeline: missionRunTimelineCommand(mission),
+      export: missionRunExportCommand(mission),
+      prune_preview: missionRunPrunePreviewCommand(mission),
+    },
+    actions_display: {
+      label: 'Actions',
+      items: [
+        { label: 'Timeline', command: missionRunTimelineCommand(mission) },
+        { label: 'Export', command: missionRunExportCommand(mission) },
+        { label: 'Prune preview', command: missionRunPrunePreviewCommand(mission) },
+      ],
+    },
+    navigation_display: {
+      label: 'Navigation',
+      current_label: 'Current view',
+      current: 'timeline',
+      items: [
+        { key: 'timeline', label: 'Timeline', command: missionRunTimelineCommand(mission), active: true },
+        { key: 'export', label: 'Full history', command: missionRunExportCommand(mission), active: false },
+        { key: 'prune_preview', label: 'Prune preview', command: missionRunPrunePreviewCommand(mission), active: false },
+      ],
+    },
+    filter_display: {
+      label: 'Filters',
+      active_label: 'Active filter',
+      active: all ? 'full_history' : 'latest',
+      limit_label: 'Limit',
+      limit: timelineResult.meta.limit,
+      shown_count: timelineResult.meta.shown_count,
+      total_count: timelineResult.meta.total_count,
+      hidden_count: timelineResult.meta.hidden_count,
+      truncated_label: 'Truncated',
+      truncated: Boolean(timelineResult.meta.truncated),
+      items: [
+        { key: 'latest', label: 'Latest', command: missionRunTimelineCommand(mission), active: !all },
+        { key: 'full_history', label: 'Full history', command: `atris mission timeline ${mission.id} --all`, active: Boolean(all) },
+      ],
+    },
+    current_landing: currentLanding,
+    current_landing_display: currentLandingDisplay,
+    current_landing_label: 'Current landing',
+    history_without_current: historyWithoutCurrent,
+    history_without_current_display: historyWithoutCurrentDisplay,
+    history_without_current_count: historyWithoutCurrent.length,
+    has_history_without_current: historyWithoutCurrent.length > 0,
+    history_label: 'History',
+    labels: {
+      current_landing: 'Current landing',
+      history: 'History',
+    },
+    counts: {
+      timeline: timeline.length,
+      history_without_current: historyWithoutCurrent.length,
+      total: timelineResult.meta.total_count,
+      hidden: timelineResult.meta.hidden_count,
+      shown: timelineResult.meta.shown_count,
+    },
+    booleans: {
+      has_current_landing: Boolean(currentLanding),
+      has_history_without_current: historyWithoutCurrent.length > 0,
+      truncated: Boolean(timelineResult.meta.truncated),
+      all: Boolean(all),
+    },
+    next_move: nextMove,
+    next: {
+      label: 'Next',
+      move: nextMove,
+      has_move: Boolean(nextMove),
+    },
+    timeline,
+    timeline_display: timelineDisplay,
+    timeline_meta: timelineResult.meta,
+    timeline_meta_display: {
+      label: 'Timeline metadata',
+      shown_label: 'Shown',
+      shown_count: timelineResult.meta.shown_count,
+      total_label: 'Total',
+      total_count: timelineResult.meta.total_count,
+      hidden_label: 'Hidden',
+      hidden_count: timelineResult.meta.hidden_count,
+      limit_label: 'Limit',
+      limit: timelineResult.meta.limit,
+      truncated_label: 'Truncated',
+      truncated: Boolean(timelineResult.meta.truncated),
+    },
+    all,
+    prune_summary: pruneSummary,
+    prune_display: pruneDisplay,
+    prune_preview: prunePreview,
+    artifact: {
+      path: artifactPath,
+      written: Boolean(artifactPath),
+      format: artifactPath ? 'markdown' : null,
+    },
+    artifact_display: {
+      label: 'Artifact',
+      path_label: 'Path',
+      path: artifactPath,
+      written_label: 'Written',
+      written: Boolean(artifactPath),
+      format_label: 'Format',
+      format: artifactPath ? 'markdown' : null,
+    },
+    export_display: {
+      label: 'Export',
+      command: missionRunExportCommand(mission),
+      report_label: 'Saved report',
+      report_path: artifactPath,
+      report_written: Boolean(artifactPath),
+      report_format: artifactPath ? 'markdown' : null,
+    },
+    proof_display: {
+      label: 'Proof',
+      latest_receipt_label: 'Latest receipt',
+      latest_receipt_path: currentLanding?.receipt_path || null,
+      report_label: 'Saved report',
+      report_path: artifactPath,
+      report_written: Boolean(artifactPath),
+      report_format: artifactPath ? 'markdown' : null,
+    },
+    artifact_path: artifactPath,
+  };
+  const lines = timeline.length
+    ? [
+      `Mission timeline: ${mission.objective}`,
+      `Generated at: ${generatedAt}`,
+      missionTimelineCountLine(timelineResult.meta),
+      ...missionTimelineCurrentLandingLines(currentLanding),
+      ...(historyWithoutCurrent.length ? ['History:'] : []),
+      ...historyWithoutCurrent.flatMap((item, index) => [
+        `  ${index + 1}. ${item.changed || 'Landing recorded.'}`,
+        ...(item.next ? [`     Next: ${item.next}`] : []),
+        `     Proof: ${item.receipt_path}`,
+      ]),
+    ]
+    : [
+      `Mission timeline: ${mission.objective}`,
+      `Generated at: ${generatedAt}`,
+      missionTimelineCountLine(timelineResult.meta),
+      '  No landing receipts yet.',
+      `  Next: atris mission run ${mission.id} --create-next`,
+    ];
+  if (timelineResult.meta.truncated) lines.push(`Full history: ${missionRunExportCommand(mission)}`);
+  if (artifactPath) lines.push(`Saved: ${artifactPath}`);
+  const pruneLine = missionTimelinePruneSummaryLine(prunePreview);
+  if (pruneLine) lines.push(pruneLine);
+  printJsonOrText(payload, lines, asJson);
 }
 
 function missionReceiptHealth(mission, root = process.cwd()) {
@@ -1556,7 +2525,7 @@ function collectMissionDoctorFindings(root = process.cwd(), options = {}) {
     const status = String(mission.status || '');
     const active = !TERMINAL_STATUSES.has(status);
     const objective = String(mission.objective || '').trim();
-    if (active && !String(mission.verifier || '').trim()) {
+    if (active && !effectiveMissionVerifier(mission)) {
       add(
         mission,
         'missing_verifier',
@@ -1957,6 +2926,10 @@ function nextCandidateTickAction(mission) {
   return `next move: run atris mission run ${mission.id}${completeFlag}`;
 }
 
+function nextCandidateRunCommand(mission) {
+  return `atris mission run ${mission.id}`;
+}
+
 function missionVerifierPassed(mission) {
   return (mission && mission.verifier_result && mission.verifier_result.passed) === true;
 }
@@ -1999,7 +2972,7 @@ function missionHeartbeatLines(mission, now = new Date()) {
   const lastTickAt = mission.last_tick_at ? Date.parse(mission.last_tick_at) : NaN;
   if (Number.isFinite(lastTickAt)) {
     const age = formatDurationShort((now.getTime() - lastTickAt) / 1000);
-    const verifier = mission.verifier
+    const verifier = effectiveMissionVerifier(mission)
       ? (mission.verifier_result ? (mission.verifier_result.passed ? 'verifier passed' : 'verifier failed') : 'verifier not run')
       : 'no verifier';
     const tickIdx = mission.last_tick_index != null ? `#${mission.last_tick_index}, ` : '';
@@ -2033,7 +3006,7 @@ function missionSortTime(mission) {
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
     .filter((mission) => missionSelectableForLoop(mission, now))
-    .filter((mission) => mission.verifier)
+    .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
     .filter((mission) => missionDueAt(mission, now));
 
@@ -2047,6 +3020,13 @@ function selectDueMission(root = process.cwd(), now = new Date()) {
     return bTime - aTime;
   });
   return candidates[0] || null;
+}
+
+function callerSessionMissionReadyForDue(mission) {
+  return runnerUsesCallerSession(mission?.runner)
+    && mission?.always_on === true
+    && Boolean(codexNativeGoalAck(mission))
+    && missionTaskSpine(mission)?.has_task === true;
 }
 
 function missionSelectableForCodexGoal(mission, now = new Date()) {
@@ -2065,7 +3045,7 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
   if (requestedId) {
     const exact = candidates.find((mission) => mission.id === requestedId || mission.id.startsWith(requestedId));
     if (exact) {
-      const due = exact.verifier && missionDueAt(exact, now);
+      const due = effectiveMissionVerifier(exact) && missionDueAt(exact, now);
       return { mission: exact, reason: due ? 'due' : 'selected' };
     }
   }
@@ -2075,8 +3055,8 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
     const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
     if (aCaller !== bCaller) return bCaller - aCaller;
 
-    const aVerifier = a.verifier ? 1 : 0;
-    const bVerifier = b.verifier ? 1 : 0;
+    const aVerifier = effectiveMissionVerifier(a) ? 1 : 0;
+    const bVerifier = effectiveMissionVerifier(b) ? 1 : 0;
     if (aVerifier !== bVerifier) return bVerifier - aVerifier;
 
     const aTime = missionSortTime(a);
@@ -2086,7 +3066,7 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
 
   const mission = candidates[0] || null;
   if (!mission) return null;
-  const due = mission.verifier && missionDueAt(mission, now);
+  const due = effectiveMissionVerifier(mission) && missionDueAt(mission, now);
   return { mission, reason: due ? 'due' : 'active' };
 }
 
@@ -2098,8 +3078,8 @@ function selectAtrisGoalMission(root = process.cwd(), options = {}, now = new Da
     if (exact) return { mission: exact, reason: 'selected' };
   }
   runnable.sort((a, b) => {
-    const aDue = a.verifier && missionDueAt(a, now) ? 1 : 0;
-    const bDue = b.verifier && missionDueAt(b, now) ? 1 : 0;
+    const aDue = effectiveMissionVerifier(a) && missionDueAt(a, now) ? 1 : 0;
+    const bDue = effectiveMissionVerifier(b) && missionDueAt(b, now) ? 1 : 0;
     if (aDue !== bDue) return bDue - aDue;
 
     const aTime = missionSortTime(a);
@@ -2108,7 +3088,7 @@ function selectAtrisGoalMission(root = process.cwd(), options = {}, now = new Da
   });
   const mission = runnable[0] || null;
   if (!mission) return null;
-  const due = mission.verifier && missionDueAt(mission, now);
+  const due = effectiveMissionVerifier(mission) && missionDueAt(mission, now);
   return { mission, reason: due ? 'due' : 'active' };
 }
 
@@ -2124,8 +3104,214 @@ function codexNativeGoalAck(mission, objective = codexGoalObjective(mission)) {
   return ack;
 }
 
+function codexRuntimeGoalStateFromOptions(options = {}) {
+  const status = String(options.nativeGoalStatus || options.visibleGoalStatus || '').trim().toLowerCase();
+  const objective = String(options.nativeGoalObjective || options.visibleGoalObjective || '').trim();
+  if (!status && !objective) return null;
+  return {
+    status: status || null,
+    objective: objective || null,
+  };
+}
+
+function codexRuntimeStateBlocksMissionSlot(runtimeGoalState, mission) {
+  if (!runtimeGoalState) return true;
+  if (runtimeGoalState.status && !new Set(['active', 'paused']).has(runtimeGoalState.status)) return false;
+  if (!runtimeGoalState.objective) return new Set(['active', 'paused']).has(runtimeGoalState.status);
+  return runtimeGoalState.objective === codexGoalObjective(mission);
+}
+
 function codexGoalAckCommand(mission, objective = codexGoalObjective(mission)) {
   return `atris mission goal ack ${mission.id} --runtime codex --status active --objective ${shellQuote(objective)} --json`;
+}
+
+function codexNativeGoalReplaceAction(newMission, activeMission, runtimeGoalState = null, commands = {}) {
+  const fromObjective = codexGoalObjective(activeMission);
+  const toObjective = codexGoalObjective(newMission);
+  return {
+    runtime: 'codex',
+    tool: 'replace_goal',
+    available: false,
+    blocked_by: 'codex_runtime_missing_replace_goal_tool',
+    args: {
+      objective: toObjective,
+      from_objective: fromObjective,
+      to_objective: toObjective,
+      from_mission_id: activeMission.id,
+      to_mission_id: newMission.id,
+      current_status: runtimeGoalState?.status || null,
+    },
+    after_success: {
+      ack_new_mission: commands.ack_new_mission || codexGoalAckCommand(newMission, toObjective),
+    },
+    fallback: {
+      reason: 'This Codex runtime exposes get_goal/create_goal/update_goal but not replace_goal or resume_goal.',
+      commands,
+    },
+  };
+}
+
+function codexNativeGoalRuntimeReplaceAction(newMission, runtimeGoalState = null, commands = {}) {
+  const toObjective = codexGoalObjective(newMission);
+  const fromObjective = runtimeGoalState?.objective || null;
+  const ackNewMission = commands.ack_new_mission || codexGoalAckCommand(newMission, toObjective);
+  const completeCurrentGoal = 'update_goal({ status: "complete" })';
+  const createNewGoal = `create_goal({ objective: ${JSON.stringify(toObjective)} })`;
+  const supersedeApproved = commands.allow_native_goal_supersede === true;
+  return {
+    runtime: 'codex',
+    tool: 'replace_goal',
+    available: false,
+    blocked_by: 'codex_runtime_missing_replace_goal_tool',
+    args: {
+      objective: toObjective,
+      from_objective: fromObjective,
+      to_objective: toObjective,
+      from_mission_id: null,
+      to_mission_id: newMission.id,
+      current_status: runtimeGoalState?.status || null,
+    },
+    after_success: {
+      ack_new_mission: ackNewMission,
+    },
+    fallback: {
+      reason: 'This Codex runtime exposes get_goal/create_goal/update_goal but not replace_goal or resume_goal.',
+      automatic: supersedeApproved,
+      approved: supersedeApproved,
+      executable_now: supersedeApproved,
+      blocked_by: supersedeApproved ? null : 'native_goal_cancel_or_supersede_tool_missing',
+      safe_when: 'Use only when a mission handoff proves the paused goal is intentionally superseded; update_goal complete otherwise misrepresents abandoned work as finished.',
+      sequence_name: 'complete_paused_goal_then_create_new_goal',
+      sequence: [
+        completeCurrentGoal,
+        createNewGoal,
+        ackNewMission,
+      ],
+      commands: {
+        ...commands,
+        complete_current_goal: completeCurrentGoal,
+        create_new_goal: createNewGoal,
+        ack_new_mission: ackNewMission,
+      },
+    },
+  };
+}
+
+function codexRuntimeGoalNeedsReplace(runtimeGoalState, objective) {
+  if (!runtimeGoalState) return false;
+  if (runtimeGoalState.status !== 'paused') return false;
+  if (!runtimeGoalState.objective) return true;
+  return runtimeGoalState.objective !== objective;
+}
+
+function writeDirectRunCodexGoalRequest(mission, root = process.cwd()) {
+  if (!isCodexGoalMission(mission)) return null;
+  const request = {
+    schema: 'atris.codex_goal_direct_run_request.v1',
+    source: 'mission_run_objective',
+    mission_id: mission.id,
+    objective: codexGoalObjective(mission),
+    requested_at: stampIso(),
+  };
+  const paths = statePaths(root);
+  fs.mkdirSync(path.dirname(paths.codexGoalRequestJson), { recursive: true });
+  fs.writeFileSync(paths.codexGoalRequestJson, JSON.stringify(request, null, 2) + '\n', 'utf8');
+  return request;
+}
+
+function readDirectRunCodexGoalRequest(root = process.cwd(), now = new Date()) {
+  const file = statePaths(root).codexGoalRequestJson;
+  let request = null;
+  try {
+    request = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  const missionId = String(request?.mission_id || '').trim();
+  if (!missionId) return null;
+  const mission = resolveMission(missionId, root);
+  if (!mission || !isCodexGoalMission(mission)) return null;
+  if (!missionSelectableForCodexGoal(mission, now)) return null;
+  return { request, mission };
+}
+
+function activeCodexVisibleGoalOwner(root = process.cwd(), excludeId = '', now = new Date(), runtimeGoalState = null) {
+  const excluded = String(excludeId || '');
+  const candidates = listMissions(root)
+    .filter((mission) => mission.id !== excluded)
+    .filter((mission) => isCodexGoalMission(mission))
+    .filter((mission) => missionSelectableForCodexGoal(mission, now))
+    .filter((mission) => Boolean(codexNativeGoalAck(mission)))
+    .filter((mission) => codexRuntimeStateBlocksMissionSlot(runtimeGoalState, mission));
+  candidates.sort((a, b) => {
+    const aAck = Date.parse(a.native_goal_ack?.acknowledged_at || '') || 0;
+    const bAck = Date.parse(b.native_goal_ack?.acknowledged_at || '') || 0;
+    if (aAck !== bAck) return bAck - aAck;
+    return missionSortTime(b) - missionSortTime(a);
+  });
+  return candidates[0] || null;
+}
+
+function codexGoalActiveConflictPayload(newMission, activeMission, request = null, heartbeatMode = false, runtimeGoalState = null) {
+  const newObjective = codexGoalObjective(newMission);
+  const pausedConflict = runtimeGoalState?.status === 'paused';
+  const holdOldMission = `atris mission pause ${activeMission.id} --reason ${shellQuote(`visible goal replaced by ${newMission.id}`)} --json`;
+  const ackNewMission = codexGoalAckCommand(newMission, newObjective);
+  const completeOldMission = `atris mission complete ${activeMission.id} --proof "<proof>" --json`;
+  const refreshAfterResume = `atris mission goal --native-goal-status active --native-goal-objective ${shellQuote(codexGoalObjective(activeMission))} --json`;
+  const nextCommand = pausedConflict
+    ? `Resume the paused Codex goal, then run ${refreshAfterResume}`
+    : `${holdOldMission} && ${ackNewMission}`;
+  const commands = {
+    hold_old_mission: holdOldMission,
+    complete_old_mission: completeOldMission,
+    refresh_after_resume: refreshAfterResume,
+    ack_new_mission: ackNewMission,
+  };
+  const nativeGoalAction = codexNativeGoalReplaceAction(newMission, activeMission, runtimeGoalState, commands);
+  const nativeGoalResolution = {
+    action: 'replace_visible_goal',
+    automatic_decision: true,
+    executable_now: false,
+    blocked_by: nativeGoalAction.blocked_by,
+    required_tool: nativeGoalAction.tool,
+    from_mission_id: activeMission.id,
+    to_mission_id: newMission.id,
+  };
+  const conflict = {
+    schema: 'atris.codex_active_goal_conflict.v1',
+    message: pausedConflict
+      ? `new mission created, but old mission ${activeMission.id} is paused and still occupies the visible slot.`
+      : `new mission created, but old mission ${activeMission.id} still owns the visible slot.`,
+    source: request?.source || 'mission_run_objective',
+    status: pausedConflict ? 'paused_goal_conflict' : 'active_goal_conflict',
+    new_mission_id: newMission.id,
+    new_objective: newObjective,
+    active_mission_id: activeMission.id,
+    active_objective: codexGoalObjective(activeMission),
+    next_command: nextCommand,
+    native_goal_action: nativeGoalAction,
+    native_goal_resolution: nativeGoalResolution,
+    commands,
+    new_mission: missionStatusView(newMission),
+    active_mission: missionStatusView(activeMission),
+    request,
+    runtime_goal_state: runtimeGoalState,
+  };
+  return {
+    ok: true,
+    action: pausedConflict ? 'paused_goal_conflict' : 'active_goal_conflict',
+    active_goal_conflict: conflict,
+    mission: conflict.new_mission,
+    conflicting_mission: conflict.active_mission,
+    goal: null,
+    heartbeat: heartbeatMode ? { heavy_work_performed: false, next_heavy_command: nextCommand } : undefined,
+    requires_native_goal_start: true,
+    requires_native_goal_replace: true,
+    native_goal_action: nativeGoalAction,
+    native_goal_resolution: nativeGoalResolution,
+    next_command: nextCommand,
+  };
 }
 
 function codexNativeGoalAction(mission, objective = codexGoalObjective(mission)) {
@@ -2138,6 +3324,16 @@ function codexNativeGoalAction(mission, objective = codexGoalObjective(mission))
 
 function codexNativeGoalStartInstruction(mission, objective = codexGoalObjective(mission)) {
   return `Call native Codex create_goal({ objective: ${JSON.stringify(objective)} }), then run ${codexGoalAckCommand(mission, objective)}`;
+}
+
+function codexNativeGoalReplaceInstruction(mission, runtimeGoalState = null, objective = codexGoalObjective(mission), options = {}) {
+  const fromObjective = runtimeGoalState?.objective
+    ? ` from paused objective ${JSON.stringify(runtimeGoalState.objective)}`
+    : '';
+  if (options.allowNativeGoalSupersede === true) {
+    return `Supersede approved: run update_goal({ status: "complete" }), then create_goal({ objective: ${JSON.stringify(objective)} }), then run ${codexGoalAckCommand(mission, objective)}. Atris records the old paused goal as superseded.`;
+  }
+  return `Native Codex replace_goal is required${fromObjective} to ${JSON.stringify(objective)}, then run ${codexGoalAckCommand(mission, objective)}; this runtime currently lacks replace_goal. Fallback is update_goal({ status: "complete" }) -> create_goal({ objective: ${JSON.stringify(objective)} }) -> mission goal ack only after handoff proof says the paused goal is intentionally superseded.`;
 }
 
 function codexNativeGoalBlockPayload(mission) {
@@ -2179,15 +3375,19 @@ function codexGoalNextCommand(mission) {
   if (taskSpine && !taskSpine.has_task && taskSpine.ensure_task_command) {
     return taskSpine.ensure_task_command;
   }
+  if (mission.status === 'ready' && mission.always_on) {
+    return nextCandidateRunCommand(mission);
+  }
   if (mission.status === 'ready') {
     const xpAction = missionXpReadyAction(mission, mission.receipt_path);
     if (xpAction) return xpAction.replace(/^queue AgentXP review: /, '');
   }
-  if (mission.verifier && missionDueAt(mission)) {
+  const verifier = effectiveMissionVerifier(mission);
+  if (verifier && missionDueAt(mission)) {
     const completeFlag = mission.always_on ? '' : ' --complete-on-pass';
     return `atris mission run --due --max-ticks 1${completeFlag}`;
   }
-  if (mission.verifier) {
+  if (verifier) {
     return `atris mission tick ${mission.id} --verify --summary "<what changed>"`;
   }
   return `atris mission tick ${mission.id} --summary "<what changed>"`;
@@ -2281,6 +3481,15 @@ function writeCodexGoalState(payload, root = process.cwd()) {
       lines.push(`- visible goal complete: ${state.goal.visible_goal.operations.complete_after_proof}`);
     }
     lines.push(`- platform write blocked: ${state.goal.codex_tool_contract.blocked_without_platform_goal_write}`);
+  } else if (state.active_goal_conflict) {
+    lines.push(`- conflict: ${state.active_goal_conflict.message}`);
+    lines.push(`- new mission: ${state.active_goal_conflict.new_mission_id}`);
+    lines.push(`- active mission: ${state.active_goal_conflict.active_mission_id}`);
+    if (state.active_goal_conflict.native_goal_action) {
+      lines.push(`- native goal action: ${state.active_goal_conflict.native_goal_action.tool}`);
+      lines.push(`- native goal executable now: ${state.active_goal_conflict.native_goal_action.available !== false}`);
+    }
+    lines.push(`- next: ${state.active_goal_conflict.next_command}`);
   } else {
     lines.push('- mission: none');
   }
@@ -2296,7 +3505,24 @@ function writeCodexGoalState(payload, root = process.cwd()) {
 
 function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   const heartbeatMode = options.heartbeat === true;
-  const selected = selectCodexGoalMission(root, options);
+  const runtimeGoalState = codexRuntimeGoalStateFromOptions(options);
+  const directRequest = options.missionId
+    ? (() => {
+      const mission = resolveMission(options.missionId, root);
+      return mission && isCodexGoalMission(mission) && missionSelectableForCodexGoal(mission)
+        ? { mission, request: null }
+        : null;
+    })()
+    : readDirectRunCodexGoalRequest(root);
+  const activeGoalOwner = directRequest
+    ? activeCodexVisibleGoalOwner(root, directRequest.mission.id, new Date(), runtimeGoalState)
+    : null;
+  if (directRequest && activeGoalOwner) {
+    return codexGoalActiveConflictPayload(directRequest.mission, activeGoalOwner, directRequest.request, heartbeatMode, runtimeGoalState);
+  }
+  const selected = directRequest
+    ? { mission: directRequest.mission, reason: 'direct_run', direct_goal_request: directRequest.request }
+    : selectCodexGoalMission(root, options);
   if (!selected) {
     const heartbeat = heartbeatMode ? codexGoalHeartbeat(null, null) : undefined;
     return {
@@ -2307,11 +3533,20 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     };
   }
 
-  const { mission, reason } = selected;
+  const { mission, reason, direct_goal_request: directGoalRequest } = selected;
   const taskSpine = missionTaskSpine(mission);
   const missionView = missionStatusView(mission);
   const objective = codexGoalObjective(mission);
   const ack = codexNativeGoalAck(mission, objective);
+  const runtimeNeedsReplace = !ack && codexRuntimeGoalNeedsReplace(runtimeGoalState, objective);
+  const nativeGoalAction = ack
+    ? null
+    : runtimeNeedsReplace
+      ? codexNativeGoalRuntimeReplaceAction(mission, runtimeGoalState, {
+        ack_new_mission: codexGoalAckCommand(mission, objective),
+        allow_native_goal_supersede: options.allowNativeGoalSupersede === true,
+      })
+      : codexNativeGoalAction(mission, objective);
   const goal = {
     objective,
     mission_id: mission.id,
@@ -2321,14 +3556,21 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     executed_by: taskSpine?.executed_by || mission.executed_by || null,
     task_spine: taskSpine,
     reason,
-    next_command: codexGoalNextCommand(mission),
+    next_command: runtimeNeedsReplace
+      ? codexNativeGoalReplaceInstruction(mission, runtimeGoalState, objective, {
+        allowNativeGoalSupersede: options.allowNativeGoalSupersede === true,
+      })
+      : codexGoalNextCommand(mission),
     replace_after: 'After proof or verifier pass, run atris mission goal --json again and replace the Codex /goal with the returned objective.',
     visible_goal: codexVisibleGoalBridge(mission, objective),
     codex_tool_contract: codexGoalToolContract(mission),
     requires_native_goal_start: !ack,
-    native_goal_action: ack ? null : codexNativeGoalAction(mission, objective),
+    requires_native_goal_replace: runtimeNeedsReplace,
+    native_goal_action: nativeGoalAction,
     native_goal_ack_command: codexGoalAckCommand(mission, objective),
     native_goal_ack: ack,
+    direct_goal_request: directGoalRequest || null,
+    runtime_goal_state: runtimeGoalState,
   };
   const heartbeat = heartbeatMode ? codexGoalHeartbeat(goal, mission) : undefined;
   return {
@@ -2338,7 +3580,9 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     mission: missionView,
     heartbeat,
     requires_native_goal_start: goal.requires_native_goal_start,
+    requires_native_goal_replace: goal.requires_native_goal_replace,
     native_goal_action: goal.native_goal_action,
+    runtime_goal_state: runtimeGoalState,
   };
 }
 
@@ -2602,6 +3846,19 @@ function computeBackoff(policy, attempt) {
   return Math.min(policy.maxMs, Math.round(base + jitter));
 }
 
+function missionBudgetPromptLines(mission) {
+  const contract = mission?.budget_contract;
+  if (!contract) return [];
+  return [
+    ``,
+    `## Budget`,
+    `Plain rule: ${contract.plain_language}`,
+    `Limit: ${contract.budget_label}`,
+    `Stop rule: ${contract.stop_rule}`,
+    `Before acting, state the current bottleneck, the next useful move, and what proof or stop reason will make the tick honest.`,
+  ];
+}
+
 function consecutiveVerifierFails(ticks) {
   let n = 0;
   for (let i = ticks.length - 1; i >= 0; i--) {
@@ -2692,6 +3949,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
     `**Verifier (frozen):** ${frozen.verifier || '(none — receipt only)'}`,
     `**Last status:** ${mission.status}`,
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
+    ...missionBudgetPromptLines(mission),
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
@@ -2898,9 +4156,11 @@ async function runMission(args) {
   const verifyEach = !hasFlag(args, '--no-verify');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
+  const createNext = hasFlag(args, '--create-next');
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
   const maxTicks = Math.max(1, Number(maxTicksFlag) || MISSION_RUN_DEFAULTS.maxTicks);
-  const maxWallSeconds = Math.max(60, Number(readFlag(args, '--max-wall', '')) || MISSION_RUN_DEFAULTS.maxWallSeconds);
+  const maxWallFlag = readFlag(args, '--max-wall', '');
+  let maxWallSeconds = Math.max(60, Number(maxWallFlag) || MISSION_RUN_DEFAULTS.maxWallSeconds);
   const cadenceOverride = readFlag(args, '--cadence', '');
   const input = missionRunInputFromArgs(args);
   const ref = input.ref;
@@ -2930,6 +4190,9 @@ async function runMission(args) {
   }
   if (!mission) {
     exitMissionError(ref ? `Mission "${ref}" not found.` : 'Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
+  }
+  if (!maxWallFlag && Number(mission.budget_contract?.requested_seconds) > 0) {
+    maxWallSeconds = Math.max(60, Number(mission.budget_contract.requested_seconds));
   }
   if (['complete', 'stopped'].includes(mission.status)) {
     if (asJson) {
@@ -2991,6 +4254,7 @@ async function runMission(args) {
       mission = saveMission({
         ...mission,
         status: 'running',
+        paused_at: null,
         resumed_at: stampIso(),
         stop_reason: null,
         next_action: `running: atris mission run ${mission.id}`,
@@ -3004,7 +4268,7 @@ async function runMission(args) {
 
     // Freeze run-start contract (verifier, lane). Stored on receipts, not the mission record.
     const frozen = {
-      verifier: mission.verifier || '',
+      verifier: effectiveMissionVerifier(mission),
       lane: mission.lane || 'workspace',
       started_at: stampIso(),
     };
@@ -3032,7 +4296,9 @@ async function runMission(args) {
       : atris2Runner
         ? `atris2 (${mission.model || 'atris:fast'})`
         : (sessionId || `pending=${pendingSessionId}`);
-    console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
+    if (!asJson) {
+      console.error(`[mission run] ${mission.id}\n  objective: ${mission.objective}\n  lane: ${frozen.lane}\n  cadence: ${cadence} (${cadenceSeconds}s)\n  max_ticks: ${effectiveMaxTicks}, max_wall: ${maxWallSeconds}s\n  session: ${sessionLabel}`);
+    }
 
     while (ticks.length < effectiveMaxTicks) {
       const elapsedSec = (Date.now() - startedAt) / 1000;
@@ -3043,7 +4309,7 @@ async function runMission(args) {
       // Re-read mission, detect mutation of frozen fields
       mission = resolveMission(mission.id) || mission;
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
-      if (mission.verifier !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
+      if (effectiveMissionVerifier(mission) !== frozen.verifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
 
       const tickIdx = Number(mission.last_tick_index || 0) + 1;
@@ -3196,9 +4462,10 @@ async function runMission(args) {
       });
 
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
+      const fullBudgetMode = missionSpendsFullBudget(mission);
       const newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
-                        (verifierResult?.passed && completeOnPass) ? 'complete' :
+                        (verifierResult?.passed && completeOnPass && !fullBudgetMode) ? 'complete' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
@@ -3207,16 +4474,22 @@ async function runMission(args) {
         nextAction = nextCandidateTickAction(mission);
       } else if (verifierResult?.passed && xpReadyAction) {
         nextAction = xpReadyAction;
-      } else if (verifierResult?.passed && completeOnPass) {
+      } else if (verifierResult?.passed && completeOnPass && !fullBudgetMode) {
         nextAction = 'mission complete';
+      } else if (verifierResult?.passed && completeOnPass && fullBudgetMode) {
+        nextAction = 'proof passed; keep using the budget for the next useful move';
       } else if (verifierResult?.passed) {
         nextAction = `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
       } else if (verifierResult) {
         nextAction = 'fix verifier failure or revise mission';
+      } else if (result.status === 'ran' && mission.always_on) {
+        nextAction = nextCandidateTickAction(mission);
       }
       mission = saveMission({
         ...mission,
         status: newStatus,
+        paused_at: null,
+        stop_reason: null,
         last_tick_at: finishedAt,
         last_tick_status: result.status,
         last_tick_reason: result.reason,
@@ -3244,7 +4517,9 @@ async function runMission(args) {
       }
       refreshCodexGoalController(cwd);
 
-      console.error(`[tick ${tickIdx}] status=${result.status} reason=${result.reason} verifier=${verifierResult ? (verifierResult.passed ? 'pass' : 'fail') : 'skip'} -> ${receiptPath || '-'}`);
+      if (!asJson) {
+        console.error(`[tick ${tickIdx}] status=${result.status} reason=${result.reason} verifier=${verifierResult ? (verifierResult.passed ? 'pass' : 'fail') : 'skip'} -> ${receiptPath || '-'}`);
+      }
 
       if (result.status === 'ran') {
         ranTicks++;
@@ -3253,7 +4528,8 @@ async function runMission(args) {
         backoffAttempt++;
       }
 
-      if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on)) break;
+      if (callerSessionRunner && result.status === 'ran') break;
+      if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
       if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so
       // every remaining tick (and every future cron firing) fails identically. Backoff
@@ -3304,6 +4580,16 @@ async function runMission(args) {
     }
 
     const summaryWorktree = worktreeReceipt(runWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: frozen.verifier, baseline: runWorktreeBaseline });
+    const createdNext = createNext
+      ? require('./loop-front').createNextLoopTask(['--as', mission.owner || 'auto-improver', '--json'], cwd, { print: false })
+      : null;
+    const landingSummary = {
+      changed: missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext),
+      timeline_command: missionRunTimelineCommand(mission),
+      export_command: missionRunExportCommand(mission),
+      prune_preview_command: missionRunPrunePreviewCommand(mission),
+      next: missionRunCreatedNextLine(createdNext, continuationGoal, mission),
+    };
     const finalReceipt = writeReceipt(mission, {
       kind: 'mission_run_summary',
       frozen,
@@ -3314,14 +4600,17 @@ async function runMission(args) {
       session_id: sessionId,
       pending_session_id: mission.pending_session_id || null,
       elapsed_seconds: (Date.now() - startedAt) / 1000,
+      budget_contract: mission.budget_contract || null,
       worktree: summaryWorktree,
+      created_next: createdNext,
+      landing: landingSummary,
     });
     const atrisGoalState = refreshAtrisGoalController(cwd, { missionId: mission.id });
     const codexGoalState = refreshCodexGoalController(cwd);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
-      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal),
+      { ok: true, action: 'mission_run', mission, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: mission.budget_contract || null, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
+      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext),
       asJson,
     );
   } finally {
@@ -3336,9 +4625,10 @@ async function runMission(args) {
 function tickMission(args) {
   const asJson = wantsJson(args);
   const verify = hasFlag(args, '--verify');
+  const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const summary = readFlag(args, '--summary', '');
-  const ref = stripKnownFlags(args, ['--summary'], ['--json', '--verify', '--complete-on-pass'])[0] || '';
+  const ref = stripKnownFlags(args, ['--summary', '--verify'], ['--json', '--complete-on-pass'])[0] || '';
   let mission = resolveMission(ref);
   if (!mission) {
     exitMissionError(ref ? `Mission "${ref}" not found.` : 'No mission found. Run: atris mission start "..."', 1, asJson);
@@ -3374,11 +4664,17 @@ function tickMission(args) {
     const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
     const worktreeBaseline = loadMissionWorktreeBaseline(mission.id, cwd);
 
+    const effectiveVerifier = effectiveMissionVerifier(mission);
+    const verifierCommand = verify
+      ? String(verifyOverride || effectiveVerifier || '').trim()
+      : '';
+    if (verifierCommand) assertMissionVerifier(verifierCommand, asJson);
+
     let verifierResult = null;
-    if (verify && mission.verifier) {
-      verifierResult = runVerifier(mission.verifier);
+    if (verify && verifierCommand) {
+      verifierResult = runVerifier(verifierCommand);
     }
-    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: mission.verifier, baseline: worktreeBaseline });
+    const tickWorktree = worktreeReceipt(tickWorktreeBefore, gitWorktreeSnapshot(cwd), { verifier: verifierCommand || effectiveVerifier, baseline: worktreeBaseline });
 
     // Same layer classification as the run-tick path; manual ticks carry their
     // receipt text in --summary.
@@ -3401,7 +4697,7 @@ function tickMission(args) {
       kind: 'mission_tick',
       tick: tickRecord,
       frozen: {
-        verifier: mission.verifier || '',
+        verifier: verifierCommand || effectiveVerifier || '',
         lane: mission.lane || 'workspace',
         started_at: tickStart,
       },
@@ -3411,7 +4707,11 @@ function tickMission(args) {
     });
 
     let status = 'running';
-    let nextAction = mission.verifier ? `run verifier: ${mission.verifier}` : 'attach task, verifier, or proof';
+    let nextAction = (verifierCommand || effectiveVerifier)
+      ? `run verifier: ${verifierCommand || effectiveVerifier}`
+      : (mission.always_on && missionTaskSpine(mission)?.has_task
+        ? nextCandidateTickAction(mission)
+        : 'attach task, verifier, or proof');
     if (verifierResult?.passed) {
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
       status = (completeOnPass && !mission.always_on && !xpReadyAction) ? 'complete' : 'ready';
@@ -3459,7 +4759,7 @@ function tickMission(args) {
     printJsonOrText(
       { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
       [
-        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult),
+        ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary),
         ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),
       ],
       asJson,
@@ -3493,7 +4793,7 @@ function receiptShowsPass(receipt) {
 // verifier passed. Mirrors the task plane's proof-only accept guard so the
 // final transition consumes the receipts instead of trusting free text.
 function missionCompletionGate(mission, proof, root = process.cwd()) {
-  if (!String(mission.verifier || '').trim()) return { ok: true, source: 'no_verifier' };
+  if (!effectiveMissionVerifier(mission)) return { ok: true, source: 'no_verifier' };
   const receipt = readReceiptProof(proof, root);
   if (receipt) {
     if (receipt.mission_id !== mission.id) {
@@ -3512,6 +4812,7 @@ function completeMission(args) {
   const force = hasFlag(args, '--force');
   const proof = readFlag(args, '--proof', '');
   const ref = stripKnownFlags(args, ['--proof'], ['--json', '--force'])[0] || '';
+  const root = process.cwd();
   if (!ref || !proof) {
     exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
   }
@@ -3519,11 +4820,11 @@ function completeMission(args) {
   if (!mission) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
-  const gate = missionCompletionGate(mission, proof, process.cwd());
+  const gate = missionCompletionGate(mission, proof, root);
   if (!gate.ok && !force) {
     exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
   }
-  const baselineSummary = pruneMissionWorktreeBaseline(mission, process.cwd());
+  const baselineSummary = pruneMissionWorktreeBaseline(mission, root);
   const completionGate = { ...gate, forced: force && !gate.ok };
   const baseNext = {
     ...mission,
@@ -3536,17 +4837,31 @@ function completeMission(args) {
   };
   const xpNextCommand = missionXpReadyAction(baseNext, proof);
   const completion = missionCompletionReceipt(baseNext, proof, xpNextCommand);
+  const artifactPreview = missionArtifactPaths(baseNext, root);
+  completion.landing.artifact = `Open timeline at ${artifactPreview.relativeIndexHtml}.`;
+  completion.result.artifact = artifactPreview.relativeIndexHtml;
   const next = {
     ...baseNext,
     landing: completion.landing,
     result: completion.result,
   };
-  const { mission: saved } = saveMission(next, process.cwd(), 'mission_completed', { proof, completion_gate: next.completion_gate });
-  const continuationGoal = seedMissionRunContinuation(saved, process.cwd(), proof);
+  const { mission: saved } = saveMission(next, root, 'mission_completed', { proof, completion_gate: next.completion_gate });
+  const continuationGoal = seedMissionRunContinuation(saved, root, proof);
   const outputMission = continuationGoal?.parent || saved;
-  const logPath = appendMemberLog(outputMission.owner, 'Mission completed', { mission: outputMission.objective, proof });
-  const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: continuationGoal?.mission?.id || outputMission.id });
-  const codexGoalState = refreshCodexGoalController(process.cwd());
+  const artifact = writeMissionArtifact(outputMission, {
+    root,
+    proof,
+    completion,
+    xpNextCommand,
+    continuationGoal,
+  });
+  const logPath = appendMemberLog(outputMission.owner, 'Mission completed', {
+    mission: outputMission.objective,
+    proof,
+    artifact: artifact.index_html,
+  }, root);
+  const atrisGoalState = refreshAtrisGoalController(root, { missionId: continuationGoal?.mission?.id || outputMission.id });
+  const codexGoalState = refreshCodexGoalController(root);
   printJsonOrText(
     {
       ok: true,
@@ -3554,6 +4869,7 @@ function completeMission(args) {
       mission: outputMission,
       landing: completion.landing,
       result: completion.result,
+      artifact,
       log_path: logPath,
       atris_goal_state: atrisGoalState,
       codex_goal_state: codexGoalState,
@@ -3642,7 +4958,26 @@ function goalMission(args) {
     return;
   }
   const heartbeatMode = hasFlag(args, '--heartbeat');
-  const payload = refreshCodexGoalController(process.cwd(), { heartbeat: heartbeatMode });
+  const nativeGoalStatus = readFlag(args, '--native-goal-status', readFlag(args, '--visible-goal-status', ''));
+  const nativeGoalObjective = readFlag(args, '--native-goal-objective', readFlag(args, '--visible-goal-objective', ''));
+  const allowNativeGoalSupersede = hasFlag(args, '--allow-native-goal-supersede') || hasFlag(args, '--supersede-paused-native-goal');
+  const payload = refreshCodexGoalController(process.cwd(), {
+    heartbeat: heartbeatMode,
+    ...(nativeGoalStatus ? { nativeGoalStatus } : {}),
+    ...(nativeGoalObjective ? { nativeGoalObjective } : {}),
+    ...(allowNativeGoalSupersede ? { allowNativeGoalSupersede: true } : {}),
+  });
+  if (payload.active_goal_conflict) {
+    printJsonOrText(
+      payload,
+      [
+        payload.active_goal_conflict.message,
+        `Next: ${payload.active_goal_conflict.next_command}`,
+      ],
+      asJson,
+    );
+    return;
+  }
   if (!payload.goal) {
     printJsonOrText(
       payload,
@@ -3811,18 +5146,23 @@ atris mission - durable goal + loop + owner + proof state
   atris mission doctor [--local] [--json]   Flag no-verifier missions, help missions, stale ready receipts, and blocked always-on loops
   atris mission attach-task <id> [--json]   Create the missing task spine for an existing active mission
   atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
+  atris mission timeline [id] [--limit <n>] [--all] [--prune-preview] [--write] [--json]   Saved landing Changed/Next lines from mission receipts
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission room "<messy input>" [--owner <member>] [--json]   Create a Mission Room card and shareable receipt from messy intent
-  atris mission goal [--runtime codex|atris] [--heartbeat] [--json]
+  atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
+  atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
-  atris mission tick <id> [--verify] [--complete-on-pass] [--summary "..."] [--json]
+  atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--summary "..."] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
-                                [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--json]
+                                [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede]
+                                [--spend-full-budget|--use-whole-budget|--stop-when-done]
+                                [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
+                       (plain time like "20 minutes" means finish early if solved; say "use the whole time" to spend the full budget)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
@@ -3831,7 +5171,7 @@ Autonomy recipe:
   1. Pick an owner member: atris member create <member>  (if missing)
   2. Start a current-agent mission with a verifier:
      atris mission start "ship one proof" --owner <member> --runner codex_goal --lane code --verify "npm test" --stop "verifier passes" --xp-task
-  3. Codex sessions: atris mission goal --json, create the native goal, then run atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
+  3. Codex sessions: read native get_goal, then pass its status into atris mission goal --native-goal-status <status> --native-goal-objective "<objective>" --json
      Overnight controller: atris mission goal --heartbeat --json
      Bounded overnight runner: atris mission goal-loop --max-wall 28800 --no-claude --json
   4. Do one bounded step, then record it:
@@ -4046,6 +5386,30 @@ function roomMission(args) {
   printJsonOrText(payload, missionRoomLines(persistedRoom, relativePath), asJson);
 }
 
+function pruneRunsMission(args) {
+  const asJson = wantsJson(args);
+  let keepNewest;
+  let keepDays;
+  try {
+    keepNewest = readNonNegativeIntegerFlag(args, '--keep-newest', 200);
+    keepDays = readNonNegativeIntegerFlag(args, '--days', 14);
+  } catch (error) {
+    exitMissionError(error.message || String(error), 1, asJson);
+  }
+  const result = pruneRuns(process.cwd(), {
+    apply: hasFlag(args, '--apply'),
+    archive: !hasFlag(args, '--no-archive'),
+    keepNewest,
+    keepDays,
+  });
+  printJsonOrText(
+    { ok: !result.errors.length, ...result },
+    runsPruneLines(result),
+    asJson,
+  );
+  if (result.errors.length) process.exitCode = 1;
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -4068,12 +5432,19 @@ function missionCommand(args) {
     case 'report':
     case 'debrief':
       return reportMission(rest);
+    case 'timeline':
+    case 'landings':
+      return timelineMission(rest);
     case 'watch':
       return watchMission(rest);
     case 'layers':
       return layersMission(rest);
     case 'room':
       return roomMission(rest);
+    case 'prune-runs':
+    case 'runs-prune':
+    case 'clean-runs':
+      return pruneRunsMission(rest);
     case 'goal':
     case 'codex-goal':
       return goalMission(rest);

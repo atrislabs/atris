@@ -32,6 +32,8 @@ for (const phrase of [
   'thinking.md',
   'thinking_memory',
   'writeThinkingMemory',
+  'chat_zone',
+  'atris.mission_room_chat_zone.v1',
   'task_plan_preview',
   'member_route',
   'member_context',
@@ -42,6 +44,10 @@ for (const phrase of [
   'clarifying_questions',
   'approval_packet',
   'goal_chain',
+  'timeline_preview',
+  'human_goal_chain',
+  'Goal done',
+  'Mission accomplished',
   'awaiting_operator_approval',
   'approve',
   'revise',
@@ -64,7 +70,7 @@ fs.writeFileSync(path.join(memberDir, 'logs', '2026-06-30.md'), '# Mission Lead 
 fs.mkdirSync(path.join(temp, 'atris', 'logs', '2026'), { recursive: true });
 fs.writeFileSync(path.join(temp, 'atris', 'logs', '2026', '2026-06-30.md'), '# Daily Log\n\n- next: proactive mission room\n', 'utf8');
 
-const sample = 'we only have limited runway and need Atris Mission to become the product led growth wedge';
+const sample = 'limited runway. Acme PO exists but we cannot collect it tonight. Warm buyer mission loops waste time. We need product-led growth. Pick one concrete product proof that helps us get cash or adoption fast.';
 const result = spawnSync(process.execPath, [
   path.join(root, 'bin', 'atris.js'),
   'mission',
@@ -92,7 +98,9 @@ try {
 }
 
 if (payload.action !== 'mission_room_created') fail('unexpected mission room action');
-if (!/Mission Room$/.test(payload.room?.name || '')) fail('missing mission room name');
+if (payload.room?.name !== 'Ship Product-Led Cash Proof Mission Room') {
+  fail(`mission room name is not the real business move: ${payload.room?.name || 'missing'}`);
+}
 if (!/proof-backed mission/.test(payload.room?.target_outcome || '')) fail('missing target outcome');
 if (!/smallest artifact or change/.test(payload.room?.first_proof_step || '')) fail('missing first proof step');
 if (!Array.isArray(payload.room?.clarifying_questions)) fail('missing clarifying questions');
@@ -110,6 +118,27 @@ if (!payload.room?.approval_packet?.decision_options?.includes('stop')) fail('ap
 if (!/judgment, priority, and final accept/.test(payload.room?.approval_packet?.operator_role || '')) fail('approval packet does not elevate operator role');
 if (payload.room?.goal_chain?.mode !== 'approval_gated') fail('goal chain must be approval gated');
 if (!/clarify -> approve packet -> set one goal/.test(payload.room?.goal_chain?.loop || '')) fail('goal chain loop is unclear');
+if (payload.room?.chat_zone?.schema !== 'atris.mission_room_chat_zone.v1') fail('missing chat zone schema');
+if (payload.room?.chat_zone?.status !== 'clarifying') fail('chat zone must start clarifying');
+if (!/Do not start a mission goal until the operator approves/.test(payload.room?.chat_zone?.execution_policy || '')) {
+  fail('chat zone must block execution before approval');
+}
+if (!/only after a bounded goal runs/.test(payload.room?.chat_zone?.result_landing_policy || '')) {
+  fail('chat zone must reserve result.landing for post-goal proof');
+}
+if (payload.room?.chat_zone?.plan_preview?.mission !== payload.room?.name) fail('chat zone plan preview mission mismatch');
+if (payload.room?.timeline_preview?.schema !== 'atris.mission_room_timeline_preview.v1') fail('missing timeline preview schema');
+if (payload.room?.timeline_preview?.mode !== 'human_goal_chain') fail('timeline preview should be human goal chain');
+if (!Array.isArray(payload.room?.timeline_preview?.items) || payload.room.timeline_preview.items.length < 5) {
+  fail('timeline preview must include the full human goal chain');
+}
+const timelineTitles = payload.room.timeline_preview.items.map((item) => item.title);
+for (const title of ['Messy ask captured', 'Goal set', 'Goal done', 'Next goal set', 'Mission accomplished']) {
+  if (!timelineTitles.includes(title)) fail(`timeline preview missing ${title}`);
+}
+for (const item of payload.room.timeline_preview.items) {
+  if (!item.did || !item.meant) fail('timeline preview item missing did/meant');
+}
 if (!/After approval: atris mission start/.test(payload.room?.next_command || '')) fail('next command must wait for approval');
 if (payload.room?.task_plan_preview?.schema !== 'atris.mission_room_task_plan_preview.v1') fail('missing task plan preview schema');
 if (payload.room?.task_plan_preview?.order !== 'task_first') fail('task plan preview must be task first');
@@ -127,10 +156,13 @@ if (!/--owner <member>/.test(payload.room?.member_route?.change_hint || '')) fai
 if (payload.room?.result?.schema !== 'atris.mission_room_result.v1') fail('missing result schema');
 if (payload.room?.result?.status !== 'pending_goal_run') fail('result should be pending before goal run');
 if (payload.room?.result?.landing?.status !== 'pending_goal_run') fail('result.landing should be pending before goal run');
-if (!/^Pending:/.test(payload.room?.result?.landing?.changed || '')) fail('result.landing missing changed line');
-if (!/^Pending:/.test(payload.room?.result?.landing?.checked || '')) fail('result.landing missing checked line');
+if (!/^Room open:/.test(payload.room?.result?.landing?.changed || '')) fail('result.landing missing chat-first changed line');
+if (!/no mission goal has run yet/.test(payload.room?.result?.landing?.checked || '')) fail('result.landing missing pre-execution checked line');
 if (payload.room?.result?.landing?.proof !== null) fail('result.landing proof should be null before run');
-if (!/accept, revise/.test(payload.room?.result?.landing?.decision || '')) fail('result.landing missing decision line');
+if (!/Approve to start one bounded goal/.test(payload.room?.result?.landing?.decision || '')) fail('result.landing missing decision line');
+if (!Array.isArray(payload.room?.result?.landing?.timeline_preview) || payload.room.result.landing.timeline_preview.length < 5) {
+  fail('result.landing missing timeline preview');
+}
 if (payload.room?.member_context?.status !== 'member_selected') fail('member context did not select mission-lead');
 if (payload.room?.context?.selected_member !== 'mission-lead') fail('context missing selected member');
 if (!payload.room?.context?.available_members?.includes('mission-lead')) fail('context missing available member');
@@ -177,16 +209,19 @@ if (receipt.schema !== 'atris.mission_room_receipt.v1') fail('bad receipt schema
 if (receipt.product_wedge !== 'Chaos -> Mission Room') fail('bad product wedge');
 if (receipt.room?.name !== payload.room.name) fail('receipt room does not match payload');
 if (receipt.room?.approval_packet?.status !== 'awaiting_operator_approval') fail('receipt missing approval packet');
+if (receipt.room?.chat_zone?.status !== 'clarifying') fail('receipt missing chat zone');
 if (receipt.room?.task_plan_preview?.order !== 'task_first') fail('receipt missing task-first preview');
+if (receipt.room?.timeline_preview?.schema !== 'atris.mission_room_timeline_preview.v1') fail('receipt missing timeline preview');
 if (receipt.room?.member_route?.editable !== true) fail('receipt missing editable member route');
 if (receipt.room?.result?.landing?.status !== 'pending_goal_run') fail('receipt missing pending result landing');
 if (receipt.room?.member_context?.status !== 'member_selected') fail('receipt missing member context');
 if (receipt.room?.proactive_next_mission?.selected_member !== 'mission-lead') fail('receipt missing proactive next mission');
 if (receipt.thinking_memory?.path !== 'atris/thinking.md') fail('receipt missing thinking memory path');
 
-console.log('MISSION ROOM VERIFIED');
-console.log(`receipt=${payload.receipt_path}`);
-console.log(`name=${payload.room.name}`);
-console.log(`clarifiers=${payload.room.clarifying_questions.length}`);
-console.log(`thinking=${payload.room.thinking_memory.path}`);
-console.log(`member=${payload.room.context.selected_member}`);
+const landingTimelineTitles = payload.room.timeline_preview.items.map((item) => item.title).join(' -> ');
+console.log('Mission Room landing');
+console.log(`Changed: ${payload.room.name} now turns messy intent into a human timeline preview.`);
+console.log(`How I checked: Created a Mission Room from messy founder input and inspected the saved receipt.`);
+console.log(`What I tested: ${landingTimelineTitles}; ${payload.room.clarifying_questions.length} clarifiers; member ${payload.room.context.selected_member}; thinking ${payload.room.thinking_memory.path}.`);
+console.log(`Decision: Ready to show the operator; approve, revise, stop, or run the suggested next mission.`);
+console.log(`Receipt: ${payload.receipt_path}`);

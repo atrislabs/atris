@@ -156,6 +156,12 @@ test('strict verify parser rejects path and npm config escapes', () => {
     ok: true,
     argv: ['node', '--test', '--test-name-pattern=lineage', 'test/commands.test.js'],
   });
+  assert.deepEqual(parseVerifyCommand('node bin/atris.js clean --dry-run --json'), {
+    ok: true,
+    argv: ['node', 'bin/atris.js', 'clean', '--dry-run', '--json'],
+  });
+  assert.equal(parseVerifyCommand('node bin/atris.js clean --json').ok, false);
+  assert.equal(parseVerifyCommand('node bin/atris.js task accept CLI-1').ok, false);
   assert.equal(parseVerifyCommand('node scripts/../../tmp/pwn.js').ok, false);
   assert.equal(parseVerifyCommand('node --test ../../tmp/pwn.js').ok, false);
   assert.equal(parseVerifyCommand('npm run --script-shell=/bin/sh').ok, false);
