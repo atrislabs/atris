@@ -281,6 +281,7 @@ function goalAchieved(goal) {
 }
 
 function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal') {
+  if (process.env.ATRIS_SHOW_GOAL_BANNER !== '1' && process.env.AX_SHOW_GOAL_BANNER !== '1') return null;
   const goal = currentAtrisGoal(workspaceDir);
   if (!goal) return null;
   if (String(goal.runner || '').trim().toLowerCase() === 'codex_goal') return null;
