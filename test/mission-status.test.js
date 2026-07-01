@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const {
   cappedClaudeReceiptText,
   selectDueMission,
@@ -35,6 +35,28 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function runCliAsync(args, { cwd, env = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd,
+      env: {
+        ...process.env,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        ...env,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', status => resolve({ status, stdout, stderr }));
+  });
 }
 
 function readSummaryReceipt(dir, stdout) {
@@ -2514,6 +2536,65 @@ test('mission run blocks Codex-goal work until native goal ack', () => {
     const tick = runCli(['mission', 'tick', id, '--summary', 'work after ack', '--json'], { cwd: dir });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     assert.equal(JSON.parse(tick.stdout).action, 'mission_tick');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission ack attach preserves state when commands race', async () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const objective = 'ack attach race mission';
+    const started = runCli([
+      'mission',
+      'start',
+      objective,
+      '--owner',
+      'mission-lead',
+      '--runner',
+      'codex_goal',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const [ack, attach] = await Promise.all([
+      runCliAsync([
+        'mission',
+        'goal',
+        'ack',
+        mission.id,
+        '--runtime',
+        'codex',
+        '--status',
+        'active',
+        '--objective',
+        objective,
+        '--json',
+      ], { cwd: dir }),
+      runCliAsync(['mission', 'attach-task', mission.id, '--json'], { cwd: dir }),
+    ]);
+    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
+    assert.equal(attach.status, 0, attach.stderr || attach.stdout);
+
+    const status = runCli(['mission', 'status', mission.id, '--json'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    const saved = JSON.parse(status.stdout).missions[0];
+    assert.equal(saved.native_goal_ack.status, 'active');
+    assert.equal(saved.native_goal_ack.objective, objective);
+    assert.equal(saved.task_spine.has_task, true);
+    assert.equal(saved.task_spine.task_ref, saved.xp_task.ref);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.goal.visible_goal.status, 'active');
+    assert.equal(goalPayload.goal.task_spine.has_task, true);
+    assert.equal(goalPayload.goal.next_command, 'atris mission run --due --max-ticks 1 --complete-on-pass');
   } finally {
     cleanupTempDir(dir);
   }

@@ -1678,62 +1678,74 @@ function attachMissionTask(args) {
   if (!ref) {
     exitMissionError('Usage: atris mission attach-task <id> [--json]', 1, asJson);
   }
-  const mission = resolveMission(ref);
+  let mission = resolveMission(ref);
   if (!mission) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
   }
-  if (TERMINAL_STATUSES.has(mission.status)) {
-    exitMissionError(`Mission "${ref}" is ${mission.status}; task spines attach only to active missions.`, 2, asJson);
+
+  const lock = acquireMissionLock(mission.id, process.cwd(), { waitMs: 2000 });
+  if (!lock.ok) {
+    exitMissionError(`[mission attach-task] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
   }
 
-  const existingSpine = missionTaskSpine(mission);
-  if (existingSpine?.has_task) {
-    const view = missionStatusView(mission);
+  try {
+    mission = resolveMission(mission.id) || mission;
+    if (TERMINAL_STATUSES.has(mission.status)) {
+      releaseMissionLock(lock);
+      exitMissionError(`Mission "${ref}" is ${mission.status}; task spines attach only to active missions.`, 2, asJson);
+    }
+
+    const existingSpine = missionTaskSpine(mission);
+    if (existingSpine?.has_task) {
+      const view = missionStatusView(mission);
+      printJsonOrText(
+        { ok: true, action: 'mission_task_spine_exists', mission: view, task_spine: view.task_spine },
+        [
+          `Mission task spine already exists: ${mission.objective}`,
+          `Task: ${view.task_spine.task_ref}`,
+          `Next: ${view.task_spine.current_step_command}`,
+        ],
+        asJson,
+      );
+      return;
+    }
+
+    const ownership = applyMissionOwnerResolution(mission, process.cwd());
+    const baseMission = ownership.mission;
+    const xpTask = createMissionXpTask(baseMission, process.cwd(), asJson);
+    const nextMission = {
+      ...baseMission,
+      xp_task_enabled: true,
+      xp_task: xpTask,
+      task_ids: Array.from(new Set([...(baseMission.task_ids || []), xpTask.task_id])),
+    };
+    if (nextMission.status === 'ready' && nextMission.receipt_path) {
+      nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
+    } else if (missionChoosesNextMission(nextMission)) {
+      nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission)}`;
+    } else if (!nextMission.verifier && !nextMission.always_on) {
+      nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
+    }
+
+    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref });
+    const memberState = renderMemberMissionState(saved.owner);
+    const logPath = appendMemberLog(saved.owner, 'Mission task spine attached', {
+      mission: saved.objective,
+      task: xpTask.ref,
+    });
+    const view = missionStatusView(saved);
     printJsonOrText(
-      { ok: true, action: 'mission_task_spine_exists', mission: view, task_spine: view.task_spine },
+      { ok: true, action: 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
       [
-        `Mission task spine already exists: ${mission.objective}`,
-        `Task: ${view.task_spine.task_ref}`,
+        `Attached task spine: ${saved.objective}`,
+        `Task: ${xpTask.ref}`,
         `Next: ${view.task_spine.current_step_command}`,
       ],
       asJson,
     );
-    return;
+  } finally {
+    releaseMissionLock(lock);
   }
-
-  const ownership = applyMissionOwnerResolution(mission, process.cwd());
-  const baseMission = ownership.mission;
-  const xpTask = createMissionXpTask(baseMission, process.cwd(), asJson);
-  const nextMission = {
-    ...baseMission,
-    xp_task_enabled: true,
-    xp_task: xpTask,
-    task_ids: Array.from(new Set([...(baseMission.task_ids || []), xpTask.task_id])),
-  };
-  if (nextMission.status === 'ready' && nextMission.receipt_path) {
-    nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
-  } else if (missionChoosesNextMission(nextMission)) {
-    nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission)}`;
-  } else if (!nextMission.verifier && !nextMission.always_on) {
-    nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
-  }
-
-  const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_task_spine_attached', { task_id: xpTask.task_id, task_ref: xpTask.ref });
-  const memberState = renderMemberMissionState(saved.owner);
-  const logPath = appendMemberLog(saved.owner, 'Mission task spine attached', {
-    mission: saved.objective,
-    task: xpTask.ref,
-  });
-  const view = missionStatusView(saved);
-  printJsonOrText(
-    { ok: true, action: 'mission_task_spine_attached', mission: view, task: xpTask, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
-    [
-      `Attached task spine: ${saved.objective}`,
-      `Task: ${xpTask.ref}`,
-      `Next: ${view.task_spine.current_step_command}`,
-    ],
-    asJson,
-  );
 }
 
 function statusMission(args) {
@@ -3993,22 +4005,36 @@ function isWithinActiveHours(activeHours, now = new Date()) {
   return cur >= start || cur < end;
 }
 
-function acquireMissionLock(missionId, root = process.cwd()) {
+function sleepSync(ms) {
+  const waitMs = Math.max(0, Number(ms) || 0);
+  if (!waitMs) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+}
+
+function acquireMissionLock(missionId, root = process.cwd(), options = {}) {
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
   const lockFile = path.join(dir, `mission-${missionId}.lock`);
+  const waitMs = Math.max(0, Number(options.waitMs) || 0);
+  const deadline = waitMs ? Date.now() + waitMs : 0;
   let fd;
-  try {
-    fd = fs.openSync(lockFile, 'wx');
-    fs.writeSync(fd, JSON.stringify({ pid: process.pid, started_at: stampIso(), mission_id: missionId }));
-    return { ok: true, lockFile, fd };
-  } catch (e) {
-    if (e.code === 'EEXIST') {
-      let info = {};
-      try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
-      return { ok: false, lockFile, busy: true, holder: info };
+  while (true) {
+    try {
+      fd = fs.openSync(lockFile, 'wx');
+      fs.writeSync(fd, JSON.stringify({ pid: process.pid, started_at: stampIso(), mission_id: missionId }));
+      return { ok: true, lockFile, fd };
+    } catch (e) {
+      if (e.code === 'EEXIST') {
+        let info = {};
+        try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8') || '{}'); } catch {}
+        if (deadline && Date.now() < deadline) {
+          sleepSync(Math.min(25, deadline - Date.now()));
+          continue;
+        }
+        return { ok: false, lockFile, busy: true, holder: info };
+      }
+      return { ok: false, lockFile, error: e.message };
     }
-    return { ok: false, lockFile, error: e.message };
   }
 }
 
@@ -5099,49 +5125,62 @@ function ackMissionGoal(args) {
   }
   const runtime = String(readFlag(args, '--runtime', 'codex') || 'codex').trim().toLowerCase();
   const status = String(readFlag(args, '--status', 'active') || 'active').trim().toLowerCase();
-  const mission = resolveMission(ref);
+  let mission = resolveMission(ref);
   if (!mission) {
     exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
-  }
-  if (!isCodexGoalMission(mission)) {
-    exitMissionError(`Mission "${ref}" uses runner=${mission.runner || 'manual'}; native Codex goal ack is only for runner=codex_goal.`, 2, asJson);
   }
   if (runtime !== 'codex' || status !== 'active') {
     exitMissionError('Native goal ack requires --runtime codex --status active.', 2, asJson);
   }
-  const expectedObjective = codexGoalObjective(mission);
-  const objective = readFlag(args, '--objective', expectedObjective);
-  if (objective !== expectedObjective) {
-    exitMissionError(`Native goal objective mismatch. Expected: ${expectedObjective}`, 2, asJson);
+
+  const lock = acquireMissionLock(mission.id, process.cwd(), { waitMs: 2000 });
+  if (!lock.ok) {
+    exitMissionError(`[mission goal ack] lock busy (held by pid ${lock.holder?.pid || '?'} since ${lock.holder?.started_at || '?'}). Exit.`, 3, asJson);
   }
-  const ack = {
-    runtime: 'codex',
-    status: 'active',
-    objective,
-    acknowledged_at: stampIso(),
-  };
-  const nextMission = {
-    ...mission,
-    native_goal_ack: ack,
-    next_action: codexGoalNextCommand({ ...mission, native_goal_ack: ack }),
-  };
-  const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_native_goal_ack', { ack });
-  const payload = refreshCodexGoalController(process.cwd());
-  printJsonOrText(
-    {
-      ok: true,
-      action: 'native_goal_acknowledged',
-      mission: saved,
+
+  try {
+    mission = resolveMission(mission.id) || mission;
+    if (!isCodexGoalMission(mission)) {
+      releaseMissionLock(lock);
+      exitMissionError(`Mission "${ref}" uses runner=${mission.runner || 'manual'}; native Codex goal ack is only for runner=codex_goal.`, 2, asJson);
+    }
+    const expectedObjective = codexGoalObjective(mission);
+    const objective = readFlag(args, '--objective', expectedObjective);
+    if (objective !== expectedObjective) {
+      releaseMissionLock(lock);
+      exitMissionError(`Native goal objective mismatch. Expected: ${expectedObjective}`, 2, asJson);
+    }
+    const ack = {
+      runtime: 'codex',
+      status: 'active',
+      objective,
+      acknowledged_at: stampIso(),
+    };
+    const nextMission = {
+      ...mission,
       native_goal_ack: ack,
-      codex_goal_state: payload,
-      next_command: payload.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`,
-    },
-    [
-      `Native goal active: ${saved.objective}`,
-      `Next: ${payload.goal?.next_command || saved.next_action}`,
-    ],
-    asJson,
-  );
+      next_action: codexGoalNextCommand({ ...mission, native_goal_ack: ack }),
+    };
+    const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_native_goal_ack', { ack });
+    const payload = refreshCodexGoalController(process.cwd());
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'native_goal_acknowledged',
+        mission: saved,
+        native_goal_ack: ack,
+        codex_goal_state: payload,
+        next_command: payload.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`,
+      },
+      [
+        `Native goal active: ${saved.objective}`,
+        `Next: ${payload.goal?.next_command || saved.next_action}`,
+      ],
+      asJson,
+    );
+  } finally {
+    releaseMissionLock(lock);
+  }
 }
 
 async function goalLoopMission(args) {
