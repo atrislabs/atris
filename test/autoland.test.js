@@ -76,8 +76,10 @@ test('digest and alarm compose in plain language', () => {
   const digest = autoland.composeDigest({
     accepted: {
       auto: [
-        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference' },
+        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference', happened: 'Fixed full-duration mission budget inference.' },
         { ref: 'CLI-2', title: 'Add hourly member loop' },
+        { ref: 'CLI-4', title: 'Mission XP: Decide and start the next useful mission after: x', happened: 'Stopped with reason: no concrete follow-up mission found.' },
+        { ref: 'CLI-5', title: 'Mission XP: Decide and start the next useful mission after: y', happened: 'The continuation did not start fake work.' },
       ],
       human: [{ ref: 'CLI-3', title: 'Ship release' }],
     },
@@ -86,8 +88,9 @@ test('digest and alarm compose in plain language', () => {
     project: 'atris-cli',
   });
   assert.match(digest, /got their final sign-off on their own/);
-  assert.match(digest, /- fix mission budget inference/);
+  assert.match(digest, /- fixed full-duration mission budget inference/);
   assert.match(digest, /- add hourly member loop/);
+  assert.match(digest, /- 2 checks that the loop stops cleanly instead of inventing work/);
   assert.match(digest, /you approved 1 piece yourself/);
   assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
   assert.match(digest, /2 pieces of work still in the air, 1 overdue/);
