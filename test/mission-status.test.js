@@ -642,8 +642,9 @@ test('mission complete emits a human-readable landing receipt', () => {
     assert.equal(payload.action, 'mission_completed');
     assert.equal(payload.mission.status, 'complete');
     assert.equal(payload.landing.happened, 'json complete receipt mission is complete.');
+    assert.match(payload.landing.reason, /understandable before a human accepts/);
     assert.match(payload.landing.checked, /passing verifier receipt/);
-    assert.match(payload.landing.tested, /Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(payload.landing.tested, /Verifier command passed: node -e "process\.exit\(0\)"/);
     assert.match(payload.result.saved, /Proof saved at/);
     assert.match(payload.landing.artifact, /^Open timeline at atris\/runs\/mission-/);
     assert.match(payload.result.artifact, /^atris\/runs\/mission-/);
@@ -679,9 +680,10 @@ test('mission complete emits a human-readable landing receipt', () => {
     assert.equal(humanCompleted.status, 0, humanCompleted.stderr || humanCompleted.stdout);
     assert.match(humanCompleted.stdout, /Landing:/);
     assert.match(humanCompleted.stdout, /Changed: human complete receipt mission is complete\./);
+    assert.match(humanCompleted.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
     assert.match(humanCompleted.stdout, /Artifact: Open timeline at atris\/runs\/mission-/);
     assert.match(humanCompleted.stdout, /How I checked: I checked the passing verifier receipt/);
-    assert.match(humanCompleted.stdout, /What I tested: Verifier passed: node -e "process\.exit\(0\)"/);
+    assert.match(humanCompleted.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
     assert.match(humanCompleted.stdout, /Proof: Proof saved at/);
     assert.match(humanCompleted.stdout, /Next: Pick the next customer-facing move\./);
     assert.doesNotMatch(humanCompleted.stdout, /AgentXP:/);
@@ -796,6 +798,7 @@ test('mission run summary starts with product landing instead of run internals',
     assert.equal(ran.status, 0, ran.stderr || ran.stdout);
     assert.match(ran.stdout, /^Landing:/m);
     assert.match(ran.stdout, /Changed: human run summary landing is ready for review\./);
+    assert.match(ran.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
     assert.match(ran.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
     assert.match(ran.stdout, /Proof: Summary receipt saved at atris\/runs\/mission-/);
     assert.match(ran.stdout, new RegExp(`Timeline: atris mission timeline ${mission.id} --limit 5`));
@@ -836,6 +839,7 @@ test('mission tick landing uses step summary when provided', () => {
     assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
     assert.match(ticked.stdout, /^Landing:/m);
     assert.match(ticked.stdout, /Changed: Made review landing proof high-level\./);
+    assert.match(ticked.stdout, /Why it matters: It makes the result understandable before a human accepts or rejects it\./);
     assert.doesNotMatch(ticked.stdout, /Changed: overnight self improve loop is ready for review\./);
     assert.match(ticked.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
   } finally {
@@ -881,6 +885,7 @@ test('mission tick receipt stores result.landing with high-level verifier meanin
 
     assert.equal(receipt.result.landing.schema, 'atris.result_landing.v1');
     assert.equal(receipt.result.landing.changed, 'Standardized mission proof receipts.');
+    assert.match(receipt.result.landing.reason, /understandable before a human accepts/);
     assert.equal(receipt.result.landing.checked, 'I ran the behavior checks.');
     assert.match(receipt.result.landing.tested, /Automated behavior checks passed/);
     assert.match(receipt.result.landing.proof, /Receipt saved at atris\/runs\/mission-/);

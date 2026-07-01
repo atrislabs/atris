@@ -670,6 +670,7 @@ function completionGateLabel(gate) {
 function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
   const gate = mission.completion_gate || {};
   const gateLabel = completionGateLabel(gate) || 'completion gate';
+  const happened = `${mission.objective} is complete.`;
   const checked = gate.source === 'receipt' && gate.receipt_path
     ? `I checked the passing verifier receipt ${gate.receipt_path}.`
     : gate.source === 'mission_state'
@@ -678,12 +679,13 @@ function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
         ? 'No verifier was configured, so completion used the no-verifier gate.'
         : `I checked the ${gateLabel} completion gate.`;
   const tested = mission.verifier_result?.passed
-    ? `Verifier passed: ${mission.verifier_result.command || mission.verifier || 'configured verifier'}.`
+    ? missionVerifierHighLevelTestText(mission.verifier_result, mission)
     : mission.verifier
       ? `Completion proof is attached for verifier: ${mission.verifier}.`
       : 'No verifier command was recorded for this mission.';
   const landing = {
-    happened: `${mission.objective} is complete.`,
+    happened,
+    reason: missionHumanReasonText(mission, happened),
     checked,
     tested,
     saved: proof ? `Proof saved at ${proof}.` : 'Proof saved in mission state.',
@@ -693,6 +695,7 @@ function missionCompletionReceipt(mission, proof, xpNextCommand = null) {
   };
   const result = {
     changed: landing.happened,
+    reason: landing.reason,
     checked: landing.checked,
     tested: landing.tested,
     saved: landing.saved,
@@ -706,6 +709,7 @@ function missionResultLines(completion) {
   const result = completion?.result || {};
   const lines = ['Landing:'];
   if (landing.happened) lines.push(`  Changed: ${landing.happened}`);
+  if (landing.reason) lines.push(`  Why it matters: ${landing.reason}`);
   if (landing.artifact) lines.push(`  Artifact: ${landing.artifact}`);
   if (landing.checked) lines.push(`  How I checked: ${landing.checked}`);
   if (landing.tested) lines.push(`  What I tested: ${landing.tested}`);
@@ -758,6 +762,18 @@ function missionLandingStepSummary(summary) {
   const beforeChecks = withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel;
   const clipped = missionLandingSentenceClip(beforeChecks, 220);
   return clipped ? `${clipped}.` : '';
+}
+
+function missionHumanReasonText(mission, changed = '') {
+  const objective = String(mission?.objective || '').trim();
+  const text = `${objective} ${changed}`.toLowerCase();
+  if (/\b(human|plain|language|landing|proof|receipt|understand|readable)\b/.test(text)) {
+    return 'It makes the result understandable before a human accepts or rejects it.';
+  }
+  if (/\b(update|install|runner|autopilot|mission run|heartbeat)\b/.test(text)) {
+    return 'It proves the workflow works in the place people actually use it.';
+  }
+  return 'It turns the mission into a concrete result a human can accept, reject, or run again.';
 }
 
 function missionPlainVerifiedSummary(text) {
@@ -844,10 +860,12 @@ function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult 
   const status = mission?.status || 'running';
   const stepChanged = missionLandingStepSummary(stepSummary);
   const changed = stepChanged || missionFallbackChangedText(mission, status, tickIndex);
+  const reason = missionHumanReasonText(mission, changed);
   const checked = missionVerifierCheckedText(verifierResult, mission);
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
+    `  Why it matters: ${reason}`,
     `  How I checked: ${checked}`,
   ];
   if (receiptPath) lines.push(`  Proof: Receipt saved at ${receiptPath}.`);
@@ -896,10 +914,12 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
     || missionFallbackChangedText(mission, status, missionReceiptTickIndex(mission, result));
   const checked = missionVerifierCheckedText(verifierResult, mission);
   const tested = missionVerifierHighLevelTestText(verifierResult, mission);
+  const reason = missionHumanReasonText(mission, changed);
   return {
     schema: 'atris.result_landing.v1',
     status,
     changed,
+    reason,
     checked,
     tested,
     proof: receiptPath ? `Receipt saved at ${receiptPath}.` : 'Receipt saved in mission run history.',
@@ -1250,6 +1270,7 @@ function missionGoalChainLines(mission) {
 
 function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null) {
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
+  const reason = missionHumanReasonText(mission, changed);
   const verifier = mission.verifier_result;
   const checked = verifier
     ? missionVerifierCheckedText(verifier, mission)
@@ -1260,6 +1281,7 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
   const lines = [
     'Landing:',
     `  Changed: ${changed}`,
+    `  Why it matters: ${reason}`,
     ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     `  How I checked: ${checked}`,
     `  Proof: Summary receipt saved at ${finalReceipt}.`,
@@ -5545,6 +5567,7 @@ async function runMission(args) {
       prune_preview_command: missionRunPrunePreviewCommand(mission),
       next: missionRunCreatedNextLine(createdNext, continuationGoal, mission),
     };
+    landingSummary.reason = missionHumanReasonText(mission, landingSummary.changed);
     const finalReceipt = writeReceipt(mission, {
       kind: 'mission_run_summary',
       frozen,
