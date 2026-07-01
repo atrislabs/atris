@@ -36,3 +36,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Private business data — never ship
+decks/private/
+private/
+.atris/
