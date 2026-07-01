@@ -17293,6 +17293,32 @@ test('feedback rejects unknown subcommands before submit fallback', () => {
 // unknown command warning
 // ============================================
 
+test('casual launch words route to the durable mission loop', () => {
+  const dir = makeTempDir();
+  try {
+    for (const args of [
+      ['start', '--json'],
+      ['go', '--json'],
+      ['keep', 'going', '--json'],
+    ]) {
+      const res = runCli(args, { cwd: dir });
+      assert.equal(res.status, 0, `${args.join(' ')} failed: ${res.stderr}`);
+      assert.equal(res.stderr, '');
+      const payload = JSON.parse(res.stdout);
+      assert.equal(payload.ok, true);
+      assert.equal(payload.action, 'start_mission_run');
+      assert.match(payload.route, /^atris mission run /);
+      assert.match(payload.objective, /self improve goal after goal/);
+      assert.equal(payload.expected_loop, 'mission_run');
+      assert.doesNotMatch(res.stdout, /Unknown command/i);
+      assert.doesNotMatch(res.stdout, /COPY\/PASTE PROMPT/i);
+      assert.doesNotMatch(res.stdout, /atris run --once/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('unknown single-word command shows warning', () => {
   const dir = makeTempDir();
   try {

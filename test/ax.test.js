@@ -343,6 +343,37 @@ test('ax routes connector reads to authenticated cloud context', () => {
   assert.equal(payload.connection_context.schema, 'atris.connection_capabilities.v1');
 });
 
+test('ax marks connector writes as isolated preview turns', () => {
+  const payload = ax.buildPayload('send gmail to ada@example.com about receipts', {
+    mode: 'fast',
+    route: 'cloud',
+    conversationId: 'ax-thread-1',
+    turnId: 'turn-123',
+    connectionContext: {
+      schema: 'atris.connection_capabilities.v1',
+      connections: [{
+        id: 'gmail',
+        connected: true,
+        authority: { list_messages: 'read_only', send_message: 'approval_required' },
+      }],
+    },
+  });
+
+  assert.equal(payload.max_turns, 1);
+  assert.equal(payload.turn_id, 'turn-123');
+  assert.equal(payload.conversation_id, 'ax-thread-1');
+  assert.equal(payload.external_action_policy, 'preview_then_explicit_approval');
+  assert.deepEqual(payload.connector_turn, {
+    schema: 'ax.connector_turn.v1',
+    scope: 'current_turn_only',
+    policy: 'preview_then_explicit_approval',
+    writes_require_approval: true,
+    turn_id: 'turn-123',
+    conversation_id: 'ax-thread-1',
+  });
+  assert.equal(payload.allow_external_actions, undefined);
+});
+
 test('ax sends chat history as structured previous messages, not a prompt wrapper', () => {
   const history = [
     { role: 'user', content: 'hi' },
@@ -654,6 +685,45 @@ test('ax renders approval preview rows from Atris2 receipts', () => {
   assert.match(rendered, /check\s+approval required/);
   assert.match(rendered, /wait\s+Approval needed before creation: calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
   assert.equal(state.output, 'Accepted: markoo today at 2:00 PM.\nCalendar approval still needed before I create it.');
+});
+
+test('ax renders Gmail approval previews without leaking the body', () => {
+  const receipt = {
+    task_preview: {
+      task: 'gmail.send_message',
+      owner_member: 'comms',
+      status: 'approval_required',
+      missing: [],
+      slots: {
+        to: 'ada@example.com',
+        subject: 'Receipt review',
+      },
+    },
+    tool_events: [{
+      tool: 'gmail',
+      approval_request: {
+        connector: 'gmail',
+        action: 'send_message',
+        executor_action_type: 'gmail_send',
+        status: 'approval_required',
+        payload: {
+          to: ['ada@example.com'],
+          subject: 'Receipt review',
+          body: 'secret receipt body',
+        },
+      },
+    }],
+  };
+
+  const rendered = [
+    ...ax.formatTaskPreviewRows(receipt, { color: false }),
+    ax.formatApprovalReceipt(receipt),
+  ].join('\n');
+
+  assert.match(rendered, /owner\s+comms/);
+  assert.match(rendered, /plan\s+send Gmail to ada@example.com subject "Receipt review"/);
+  assert.match(rendered, /Approval needed before sending Gmail: to ada@example.com subject "Receipt review" \(body hidden until approved\)/);
+  assert.doesNotMatch(rendered, /secret receipt body/);
 });
 
 test('ax does not execute approval previews before explicit acceptance', async () => {
@@ -997,6 +1067,52 @@ test('ax stored approval preview includes exact approve command without payload 
     assert.match(listed, /wait\s+Approval needed before creation: calendar event "markoo" Jun 28, 2026 at 2:00 PM/);
     assert.match(listed, new RegExp(`approve\\s+ax --approve ${record.id}`));
     assert.doesNotMatch(listed, /secret payload text/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ax stored Gmail approval preview hides email body', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-gmail-approval-'));
+  const storePath = path.join(dir, 'approvals.json');
+  const receipt = {
+    task_preview: {
+      task: 'gmail.send_message',
+      owner_member: 'comms',
+      status: 'approval_required',
+      missing: [],
+      slots: {
+        to: 'ada@example.com',
+        subject: 'Receipt review',
+      },
+    },
+    tool_events: [{
+      tool: 'gmail',
+      approval_request: {
+        connector: 'gmail',
+        action: 'send_message',
+        executor_action_type: 'gmail_send',
+        status: 'approval_required',
+        payload: {
+          to: 'ada@example.com',
+          subject: 'Receipt review',
+          body: 'secret receipt body',
+        },
+      },
+    }],
+  };
+
+  try {
+    const request = ax.approvalRequestFromReceipt(receipt);
+    const record = ax.persistPendingApproval(receipt, request, { storePath, cwd: dir, mode: 'fast' });
+    const listed = ax.formatStoredApprovals(ax.readApprovalStore({ storePath }), { color: false });
+
+    assert.equal(record.id, request.approval_request_id);
+    assert.match(listed, /owner\s+comms/);
+    assert.match(listed, /plan\s+send Gmail to ada@example.com subject "Receipt review"/);
+    assert.match(listed, /wait\s+Approval needed before sending Gmail: to ada@example.com subject "Receipt review" \(body hidden until approved\)/);
+    assert.match(listed, new RegExp(`approve\\s+ax --approve ${record.id}`));
+    assert.doesNotMatch(listed, /secret receipt body/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
