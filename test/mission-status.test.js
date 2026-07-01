@@ -2964,11 +2964,63 @@ test('mission run treats hyphenated time as a real long-run budget', () => {
 
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.action, 'mission_run_started');
-    assert.equal(payload.budget_contract.policy, 'stop_when_done');
+    assert.equal(payload.budget_contract.policy, 'spend_full_budget');
     assert.equal(payload.budget_contract.requested_seconds, 18000);
     assert.equal(payload.budget_contract.budget_label, '5 hours');
+    assert.equal(payload.budget_contract.plain_language, 'Use the whole time.');
     assert.equal(payload.mission.max_wall_seconds, 18000);
-    assert.match(payload.mission.stop_condition, /run for 5 hours, or stop early/);
+    assert.match(payload.mission.stop_condition, /run for 5 hours; use the whole time unless blocked or unsafe/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run treats spend-duration roadmap work as full-budget thinking time', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'Spend 2 hours building the invincible Atris roadmap from the actual software we have created',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.budget_contract.policy, 'spend_full_budget');
+    assert.equal(payload.budget_contract.requested_seconds, 7200);
+    assert.equal(payload.budget_contract.budget_label, '2 hours');
+    assert.equal(payload.budget_contract.plain_language, 'Use the whole time.');
+    assert.match(payload.budget_contract.stop_rule, /keep picking the next useful move until time is up/);
+    assert.match(payload.mission.stop_condition, /run for 2 hours; use the whole time unless blocked or unsafe/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run lets stop-when-done override explicit spend-duration work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'Spend 2 hours cleaning one flaky smoke test',
+      '--stop-when-done',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.budget_contract.policy, 'stop_when_done');
+    assert.equal(payload.budget_contract.requested_seconds, 7200);
+    assert.equal(payload.budget_contract.plain_language, 'Finish early if solved.');
+    assert.match(payload.mission.stop_condition, /run for 2 hours, or stop early when proof is strong enough/);
   } finally {
     cleanupTempDir(dir);
   }

@@ -1597,9 +1597,14 @@ function durationLabel(seconds, fallback = 'the requested time') {
 
 function wantsFullBudget(text, args = []) {
   if (hasFlag(args, '--spend-full-budget') || hasFlag(args, '--use-whole-budget')) return true;
+  if (hasFlag(args, '--hours') || hasFlag(args, '--minutes')) return true;
   const compact = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  const duration = '\\d+(?:\\.\\d+)?[-\\s]*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)';
   return /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+(time|budget|window)\b/.test(compact)
     || /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+\d/.test(compact)
+    || new RegExp(`\\b(?:spend|use)\\s+${duration}\\b`).test(compact)
+    || new RegExp(`(?:^|\\b)(?:run|work|think|research|investigate|brainstorm|plan|map|audit|explore|study|analyze|build)\\s+(?:[^.!?;]{0,80}\\s+)?for\\s+${duration}\\b`).test(compact)
+    || new RegExp(`^\\s*for\\s+${duration}\\b`).test(compact)
     || /\bfor\s+the\s+(whole|full|entire)\s+/.test(compact)
     || /\bkeep\s+going\s+until\s+(time|the\s+time|budget|the\s+budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact)
     || /\b(run|work|stop|continue)\s+(until|till)\s+(the\s+)?(time|budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact);
