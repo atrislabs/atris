@@ -1566,7 +1566,7 @@ function inferRunObjectiveVerifier(objective, root = process.cwd()) {
 }
 
 function durationSecondsFromText(text) {
-  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b/i);
+  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)[-\s]*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b/i);
   if (!match) return null;
   const value = Number(match[1]);
   if (!Number.isFinite(value) || value <= 0) return null;

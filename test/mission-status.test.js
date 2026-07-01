@@ -2949,6 +2949,31 @@ test('mission run treats plain time as a finish-early budget by default', () => 
   }
 });
 
+test('mission run treats hyphenated time as a real long-run budget', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'make mission run work for 5-hour long missions',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.budget_contract.policy, 'stop_when_done');
+    assert.equal(payload.budget_contract.requested_seconds, 18000);
+    assert.equal(payload.budget_contract.budget_label, '5 hours');
+    assert.equal(payload.mission.max_wall_seconds, 18000);
+    assert.match(payload.mission.stop_condition, /run for 5 hours, or stop early/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run supports explicit whole-budget mode without manager jargon', () => {
   const dir = makeTempDir();
   try {
