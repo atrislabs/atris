@@ -480,10 +480,12 @@ function memberRunTruthRule(args = []) {
 
 function memberRunUsefulTarget() {
   try {
-    const moves = require('../lib/next-moves').nextMoves(process.cwd(), 5);
+    const { nextMoves: pickNextMoves, isGenericInboxPlaceholder } = require('../lib/next-moves');
+    const moves = pickNextMoves(process.cwd(), 5);
     const candidate = moves.find((move) => {
       const title = cleanMemberRunPhrase(move?.title);
       if (!title) return false;
+      if (isGenericInboxPlaceholder(title)) return false;
       if (/^mission xp\s*:/i.test(title)) return false;
       if (/^decide and start the next useful mission after:/i.test(title)) return false;
       return true;
@@ -2256,6 +2258,46 @@ function buildMemberAliveCrontabLine(name, args = [], paths = memberLoopPaths(na
   return `${memberAliveCronCadence(args)} ${paths.cronScriptPath} # ${memberAliveCronMarker(name)}`;
 }
 
+function dirtyGitStatus(root = process.cwd()) {
+  const result = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 10000 });
+  if (result.status !== 0) {
+    return { inside_git: false, dirty: false, dirty_count: 0, dirty_files: [] };
+  }
+  const dirtyFiles = String(result.stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return {
+    inside_git: true,
+    dirty: dirtyFiles.length > 0,
+    dirty_count: dirtyFiles.length,
+    dirty_files: dirtyFiles.slice(0, 12),
+  };
+}
+
+function memberAliveInstallPreview(name, args = [], paths = memberLoopPaths(name), script = buildMemberAliveCronScript(name, args, paths)) {
+  return {
+    schema: 'atris.member_alive_install_preview.v1',
+    member: name,
+    cadence: memberAliveCronCadence(args),
+    mission_text: memberRunAutoMissionText(name, args),
+    run: script.rendered_command,
+    verify: `atris member alive ${name} --status --json`,
+    stop_when: `Run atris member alive ${name} --uninstall, or create the stop marker at ${paths.stopPath}.`,
+    receipts: path.join(paths.stateDir, 'logs'),
+  };
+}
+
+function memberAliveInstallPreviewLines(preview) {
+  return [
+    'Every hour this will:',
+    `  run: ${preview.run}`,
+    `  verify: ${preview.verify}`,
+    `  stop when: ${preview.stop_when}`,
+    `  receipts: ${preview.receipts}`,
+  ];
+}
+
 function installMemberAliveCron(name, args = []) {
   const asJson = hasFlag(args, '--json');
   const dryRun = hasFlag(args, '--dry-run');
@@ -2277,6 +2319,27 @@ function installMemberAliveCron(name, args = []) {
   fs.mkdirSync(paths.stateDir, { recursive: true });
   const script = buildMemberAliveCronScript(name, args, paths);
   const crontabLine = buildMemberAliveCrontabLine(name, args, paths);
+  const preview = memberAliveInstallPreview(name, args, paths, script);
+  if (hasFlag(args, '--execute') && !dryRun) {
+    const gitStatus = dirtyGitStatus();
+    if (gitStatus.dirty) {
+      const payload = {
+        ok: false,
+        action: 'alive_install',
+        member: name,
+        status: 'blocked',
+        reason: 'install_requires_clean_git',
+        git: gitStatus,
+        preview,
+      };
+      printJsonOrText(payload, [
+        `Install blocked for ${name}: commit or clean local changes before installing an execute loop.`,
+        ...memberAliveInstallPreviewLines(preview),
+      ], asJson);
+      process.exitCode = 1;
+      return payload;
+    }
+  }
   fs.writeFileSync(paths.cronScriptPath, script.script, { mode: 0o755 });
   const marker = memberAliveCronMarker(name);
   let installed = false;
@@ -2301,6 +2364,7 @@ function installMemberAliveCron(name, args = []) {
     script_path: paths.cronScriptPath,
     crontab_line: crontabLine,
     command: script.command,
+    preview,
     stop_command: `atris member alive ${name} --uninstall`,
     error,
   };
@@ -2308,6 +2372,7 @@ function installMemberAliveCron(name, args = []) {
   printJsonOrText(payload, [
     `${dryRun ? 'Would install' : installed ? 'Installed' : 'Install failed'} hourly alive loop: ${name}`,
     `Cron: ${crontabLine}`,
+    ...memberAliveInstallPreviewLines(preview),
     `Stop: ${payload.stop_command}`,
   ], asJson);
   if (!payload.ok) process.exitCode = 1;

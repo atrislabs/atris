@@ -1165,6 +1165,8 @@ function buildTaskStreams(tasks, goals) {
     if (column === 'doing') stream.doing_count += 1;
     if (column === 'blocked') stream.blocked_count += 1;
     if (column === 'review') stream.review_count += 1;
+    const review = task.review || {};
+    const metadata = task.metadata || {};
     stream.tasks.push({
       id: task.id,
       title: task.title,
@@ -1174,7 +1176,7 @@ function buildTaskStreams(tasks, goals) {
       assigned_to: taskAssignee(task),
       parent_task_id: task.lineage && task.lineage.parent_task_id || null,
       child_task_ids: task.lineage && task.lineage.child_task_ids || [],
-      proof: task.review && task.review.proof || null,
+      proof: review.proof || metadata.latest_agent_proof || null,
     });
   }
   for (const goal of goals) {
@@ -2066,6 +2068,17 @@ function taskStatusSummary(projection, { history = false, hasExistingReviewFollo
       doing_count: stream.doing_count,
       review_count: stream.review_count,
       blocked_count: stream.blocked_count,
+      tasks: (stream.tasks || []).map(task => ({
+        id: task.id,
+        title: clipStatusText(task.title, 120),
+        status: task.status,
+        tag: task.tag || null,
+        claimed_by: task.claimed_by || null,
+        assigned_to: task.assigned_to || null,
+        parent_task_id: task.parent_task_id || null,
+        child_task_ids: task.child_task_ids || [],
+        proof: task.proof || null,
+      })),
     })),
     last_updated_at: lastUpdated ? new Date(lastUpdated).toISOString() : null,
   };

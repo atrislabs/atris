@@ -179,6 +179,17 @@ test('member run starts a budgeted isolated mission from plain text', () => {
     git(['config', 'user.email', 'test@example.com']);
     git(['config', 'user.name', 'Test User']);
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    const logDir = path.join(dir, 'atris', 'logs', today.slice(0, 4));
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(path.join(logDir, `${today}.md`), [
+      `# Log ${today}`,
+      '',
+      '## Inbox',
+      '',
+      '- **I1:** test idea',
+      '',
+    ].join('\n'), 'utf8');
     const created = runCli(['member', 'create', 'growth'], { cwd: dir });
     assert.equal(created.status, 0, created.stderr || created.stdout);
     git(['add', '.']);
@@ -258,11 +269,73 @@ test('member run chooses useful work from params when no mission text exists', (
     assert.match(mission.objective, /reduce support time/);
     assert.match(mission.objective, /what changed, what was checked, and what is still unproven/);
     assert.match(mission.objective, /stop instead of doing fake busywork/);
+    assert.doesNotMatch(mission.objective, /Start with this concrete candidate: test idea/);
     assert.equal(mission.budget_contract.requested_seconds, 300);
     assert.equal(mission.max_wall_seconds, 300);
     assert.ok(mission.worktree?.path, 'auto member mission should still use an isolated worktree');
   } finally {
     cleanupTempDir(base);
+  }
+});
+
+test('harvest surfaces receipt and thinking actions, then writes inbox on request', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'thinking.md'), [
+      '# thinking',
+      '',
+      '- Values plain English and proof over motion.',
+      '- Stop instead of fake busywork when there is no concrete next move.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'mission-harvest.json'), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'mission-harvest',
+      objective: 'harvest buried proof',
+      result: {
+        landing: {
+          changed: 'Saved a useful receipt.',
+          reason: 'The good reasoning was buried in a receipt.',
+          checked: 'I checked the receipt.',
+          tested: 'No automated verifier ran for this receipt.',
+          proof: 'Receipt saved at atris/runs/mission-harvest.json.',
+          next: 'no concrete follow-up mission found in Atris state',
+        },
+        verifier_result: { passed: true },
+      },
+    }, null, 2), 'utf8');
+
+    const help = runCli(['harvest', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris harvest/);
+
+    const readOnly = runCli(['harvest', '--json'], { cwd: dir });
+    assert.equal(readOnly.status, 0, readOnly.stderr || readOnly.stdout);
+    const payload = JSON.parse(readOnly.stdout);
+    assert.equal(payload.action, 'harvest');
+    assert.equal(payload.write, false);
+    assert.ok(payload.actions.some((action) => /Surface buried result landing/.test(action.title)));
+    assert.ok(payload.actions.some((action) => /proof and task previews plain/.test(action.title)));
+    assert.equal(fs.existsSync(path.join(dir, 'atris', 'logs')), false);
+
+    const written = runCli(['harvest', '--write', '--json'], { cwd: dir });
+    assert.equal(written.status, 0, written.stderr || written.stdout);
+    const writtenPayload = JSON.parse(written.stdout);
+    assert.ok(writtenPayload.writes.some((item) => item.line));
+    const today = new Date();
+    const logPath = path.join(
+      dir,
+      'atris',
+      'logs',
+      String(today.getFullYear()),
+      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}.md`,
+    );
+    const log = fs.readFileSync(logPath, 'utf8');
+    assert.match(log, /Surface buried result landing reasoning/);
+  } finally {
+    cleanupTempDir(dir);
   }
 });
 
@@ -3288,6 +3361,13 @@ test('member alive install dry-run writes hourly cron plan without touching cron
     assert.equal(payload.forever, true);
     assert.match(payload.crontab_line, /ATRIS_MEMBER_ALIVE_MISSION_LEAD/);
     assert.match(payload.crontab_line, /23 \* \* \* \*/);
+    assert.equal(payload.preview.member, 'mission-lead');
+    assert.equal(payload.preview.cadence, '23 * * * *');
+    assert.match(payload.preview.mission_text, /Run mission-lead on meaningful work/);
+    assert.match(payload.preview.run, /member' 'alive' 'mission-lead'/);
+    assert.equal(payload.preview.verify, 'atris member alive mission-lead --status --json');
+    assert.match(payload.preview.stop_when, /atris member alive mission-lead --uninstall/);
+    assert.match(payload.preview.receipts, /\.atris\/state\/member-loops\/logs$/);
     assert.deepEqual(payload.command.slice(-7), [
       '--hourly',
       '--forever',
@@ -3303,6 +3383,20 @@ test('member alive install dry-run writes hourly cron plan without touching cron
     assert.match(script, /member' 'alive' 'mission-lead'/);
     assert.match(script, /--ticks' '1'/);
 
+    const humanInstall = runCli([
+      'member', 'alive', 'mission-lead',
+      '--install',
+      '--dry-run',
+      '--hourly',
+      '--forever',
+      '--execute',
+      '--confirm-autonomy-policy',
+    ], { cwd: dir });
+    assert.equal(humanInstall.status, 0, humanInstall.stderr || humanInstall.stdout);
+    assert.match(humanInstall.stdout, /Every hour this will:/);
+    assert.match(humanInstall.stdout, /verify: atris member alive mission-lead --status --json/);
+    assert.match(humanInstall.stdout, /receipts: .*\.atris\/state\/member-loops\/logs/);
+
     const status = runCli(['member', 'alive', 'mission-lead', '--status', '--json'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     const statusPayload = JSON.parse(status.stdout);
@@ -3310,6 +3404,41 @@ test('member alive install dry-run writes hourly cron plan without touching cron
     assert.equal(statusPayload.hourly_alive.installed, false);
     assert.equal(statusPayload.hourly_alive.install_command, 'atris member alive mission-lead --install --hourly --forever --execute --confirm-autonomy-policy --json');
     assert.equal(statusPayload.hourly_alive.uninstall_command, 'atris member alive mission-lead --uninstall');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member alive install blocks execute on dirty git', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runGit(['init', '-q'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.email', 'test@example.com'], dir).status, 0);
+    assert.equal(runGit(['config', 'user.name', 'Test User'], dir).status, 0);
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions loop safely"'], { cwd: dir }).status, 0);
+    assert.equal(runGit(['add', '.'], dir).status, 0);
+    assert.equal(runGit(['commit', '-qm', 'baseline'], dir).status, 0);
+    fs.writeFileSync(path.join(dir, 'dirty.txt'), 'uncommitted install risk\n');
+
+    const install = runCli([
+      'member', 'alive', 'mission-lead',
+      '--install',
+      '--hourly',
+      '--forever',
+      '--execute',
+      '--confirm-autonomy-policy',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(install.status, 0, install.stderr || install.stdout);
+    const payload = JSON.parse(install.stdout);
+    assert.equal(payload.action, 'alive_install');
+    assert.equal(payload.status, 'blocked');
+    assert.equal(payload.reason, 'install_requires_clean_git');
+    assert.equal(payload.git.dirty, true);
+    assert.ok(payload.git.dirty_files.some((line) => /dirty\.txt/.test(line)));
+    assert.equal(payload.preview.verify, 'atris member alive mission-lead --status --json');
+    assert.equal(fs.existsSync(payload.preview.receipts), false);
   } finally {
     cleanupTempDir(dir);
   }
@@ -12084,6 +12213,44 @@ test('task status gives web and Swarlo a compact live contract', () => {
     assert.equal(historyPayload.status.swarlo.feed[0].metadata.swarlo.task_key, id);
     assert.match(historyPayload.status.swarlo.realtime_contract.web, /atrisos-web/);
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task status stream tasks use latest agent proof fallback', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskStore.open(dbPath);
+    const proof = 'agent-only proof is visible in stream rows';
+    const objective = 'Make proof visible in stream status';
+    const added = taskStore.addTask(db, {
+      title: 'Expose stream proof fallback',
+      tag: 'tasks',
+      workspaceRoot: taskStore.workspaceRoot(dir),
+      status: 'claimed',
+      claimedBy: 'codex',
+      metadata: {
+        goal_objective: objective,
+        latest_agent_proof: proof,
+      },
+    });
+    assert.ok(added.id);
+    taskStore.close();
+
+    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    assert.equal(status.status, 0, status.stderr);
+    const payload = JSON.parse(status.stdout);
+    const stream = payload.status.streams.find(row => row.objective === objective);
+    assert.ok(stream);
+    const task = stream.tasks.find(row => row.id === added.id);
+    assert.ok(task);
+    assert.equal(task.proof, proof);
+  } finally {
+    taskStore.close();
     cleanupTempDir(dir);
   }
 });

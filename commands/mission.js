@@ -860,20 +860,11 @@ function missionFallbackChangedText(mission, status, tickIndex, { ranTicks = nul
 }
 
 function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult = null, stepSummary = '') {
-  const status = mission?.status || 'running';
-  const stepChanged = missionLandingStepSummary(stepSummary);
-  const changed = stepChanged || missionFallbackChangedText(mission, status, tickIndex);
-  const reason = missionHumanReasonText(mission, changed);
-  const checked = missionVerifierCheckedText(verifierResult, mission);
-  const lines = [
-    'Landing:',
-    `  Changed: ${changed}`,
-    `  Why it matters: ${reason}`,
-    `  How I checked: ${checked}`,
-  ];
-  if (receiptPath) lines.push(`  Proof: Receipt saved at ${receiptPath}.`);
-  lines.push(`  Next: ${missionHumanNextAction(mission)}`);
-  return lines;
+  return missionLandingLines(missionReceiptLanding(mission, {
+    tick: { tick_index: tickIndex },
+    summary: stepSummary,
+    verifier_result: verifierResult,
+  }, receiptPath));
 }
 
 function missionReceiptSummaryText(result) {
@@ -928,6 +919,38 @@ function missionReceiptLanding(mission, result, receiptPath = '') {
     proof: receiptPath ? `Receipt saved at ${receiptPath}.` : 'Receipt saved in mission run history.',
     next: missionReceiptNextText(mission, result),
     timeline_visible: !missionLandingChangedIsGenericTick(mission, changed),
+  };
+}
+
+function missionLandingLines(landing) {
+  if (!landing) return [];
+  return [
+    'Landing:',
+    `  Changed: ${landing.changed || landing.happened || 'Landing recorded.'}`,
+    `  Why it matters: ${landing.reason || landing.why || 'This makes the work easier to judge.'}`,
+    `  How I checked: ${landing.checked || 'No check recorded.'}`,
+    `  What I tested: ${landing.tested || 'No test summary recorded.'}`,
+    `  Proof: ${landing.proof || landing.saved || 'No proof path recorded.'}`,
+    `  Next: ${landing.next || landing.decision || 'Pick the next useful move.'}`,
+  ];
+}
+
+function missionStatusLandingLines(landing) {
+  const lines = missionLandingLines(landing);
+  if (!lines.length) return [];
+  return [
+    '  last landing:',
+    ...lines.slice(1).map((line) => `  ${line.trim()}`),
+  ];
+}
+
+function missionLastLanding(mission, root = process.cwd()) {
+  const receipt = readMissionReceipt(mission?.receipt_path, mission?.worktree_root || root);
+  const landing = receipt?.result?.landing;
+  if (!landing || typeof landing !== 'object') return null;
+  return {
+    ...landing,
+    receipt_path: mission.receipt_path || null,
   };
 }
 
@@ -1319,6 +1342,11 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
     : pauseReason
       ? `Run paused: ${pauseReason}.`
       : 'Run recorded; no verifier was run.';
+  const tested = verifier
+    ? missionVerifierHighLevelTestText(verifier, mission)
+    : mission.verifier
+      ? `Verifier was configured but not completed: ${mission.verifier}.`
+      : 'No verifier command was recorded for this mission.';
   const nextLine = missionRunCreatedNextLine(createdNext, continuationGoal, mission);
   const lines = [
     'Landing:',
@@ -1326,6 +1354,7 @@ function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalRecei
     `  Why it matters: ${reason}`,
     ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
     `  How I checked: ${checked}`,
+    `  What I tested: ${tested}`,
     `  Proof: Summary receipt saved at ${finalReceipt}.`,
     `  Timeline: ${missionRunTimelineCommand(mission)}`,
     `  Export: ${missionRunExportCommand(mission)}`,
@@ -1479,6 +1508,7 @@ function missionStatusView(mission) {
     current_task_id: taskSpine.current_task_id,
     task_ref: taskSpine.task_ref,
     task_spine: taskSpine,
+    last_landing: missionLastLanding(mission),
   };
 }
 
@@ -1765,48 +1795,212 @@ function handledContinuationTargetKeys(root, moves) {
   return keys;
 }
 
-function chooseNextMissionTarget(mission, root = process.cwd()) {
+function readTaskProjectionForMission(root = process.cwd()) {
+  const file = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(parsed?.tasks) ? parsed.tasks : [];
+  } catch {
+    return [];
+  }
+}
+
+function taskTags(task) {
+  return [
+    task?.tag,
+    ...(Array.isArray(task?.tags) ? task.tags : []),
+    ...(Array.isArray(task?.metadata?.tags) ? task.metadata.tags : []),
+  ]
+    .filter(Boolean)
+    .map((tag) => String(tag).trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function certifiedReviewNextTaskCandidates(root = process.cwd()) {
+  return readTaskProjectionForMission(root)
+    .filter((task) => String(task?.status || '').toLowerCase() === 'review')
+    .filter((task) => task?.review?.agent_certified === true || task?.metadata?.agent_certified === true)
+    .map((task) => ({
+      title: task?.review?.next_task || task?.metadata?.latest_agent_next_task || '',
+      why: `certified review ${task.display_id || task.id || ''} suggested this next task`.trim(),
+      source: 'certified_review_next_task',
+      ref: task.display_id || task.id || null,
+      weight: 95,
+    }))
+    .filter((move) => String(move.title || '').trim());
+}
+
+function endgameBacklogCandidates(root = process.cwd()) {
+  return readTaskProjectionForMission(root)
+    .filter((task) => String(task?.status || '').toLowerCase() === 'open')
+    .filter((task) => taskTags(task).includes('endgame'))
+    .map((task) => ({
+      title: String(task.title || '').trim(),
+      why: `open endgame backlog task ${task.display_id || task.id || ''}`.trim(),
+      source: 'endgame_backlog',
+      ref: task.display_id || task.id || null,
+      weight: 85,
+    }))
+    .filter((move) => move.title);
+}
+
+function cleanWikiNextIngestTitle(value) {
+  return String(value || '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[-*]\s*/, '')
+    .replace(/^next[- ]?ingests?\s*:\s*/i, '')
+    .replace(/^next source\s*:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?:;,]+$/g, '');
+}
+
+function wikiStatusNextIngestCandidates(root = process.cwd()) {
+  const file = path.join(root, 'atris', 'wiki', 'STATUS.md');
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const out = [];
+  let inSection = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^#+\s+next[- ]?ingests?\b/i.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && /^#+\s+/.test(line)) inSection = false;
+    const direct = line.match(/^[-*]?\s*next[- ]?ingests?\s*:\s*(.+)$/i)
+      || line.match(/^[-*]?\s*next source\s*:\s*(.+)$/i);
+    if (direct) {
+      const title = cleanWikiNextIngestTitle(direct[1]);
+      if (title) out.push(title);
+      continue;
+    }
+    if (inSection && /^[-*]\s+/.test(line)) {
+      const title = cleanWikiNextIngestTitle(line);
+      if (title) out.push(title);
+    }
+  }
+  return out.map((title) => ({
+    title: /^ingest\b/i.test(title) ? title : `Ingest ${title}`,
+    why: 'wiki STATUS listed this as a next ingest',
+    source: 'wiki_status_next_ingest',
+    ref: 'atris/wiki/STATUS.md',
+    weight: 70,
+  }));
+}
+
+function missionExtraNextCandidates(root = process.cwd()) {
+  return [
+    ...certifiedReviewNextTaskCandidates(root),
+    ...endgameBacklogCandidates(root),
+    ...wikiStatusNextIngestCandidates(root),
+  ];
+}
+
+function uniqueMissionCandidates(candidates) {
+  const seen = new Set();
+  const out = [];
+  for (const candidate of candidates) {
+    const key = continuationTargetKey(candidate?.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
+}
+
+function trustedNextMissionSource(source) {
+  return new Set([
+    'certified_review_next_task',
+    'endgame_backlog',
+    'wiki_status_next_ingest',
+    'mission_report',
+  ]).has(String(source || ''));
+}
+
+function rejectNextMissionCandidate(move, context) {
+  const title = String(move?.title || '').trim();
+  if (!title) return 'empty title';
+  if (context.moves.isGenericInboxPlaceholder(title)) return 'placeholder';
+  if (!isConcreteContinuationTarget(title)) return 'not a concrete mission';
+  const key = continuationTargetKey(title);
+  if (context.handledTargets.has(key)) return 'already handled';
+  if (context.currentObjective && title === context.currentObjective) return 'same as current objective';
+  if (context.parentObjective && title === context.parentObjective) return 'same as parent objective';
+  if (context.mission?.id && move?.ref === context.mission.id && title === context.currentObjective) return 'same as current mission';
+  const preview = missionValuePreview(move, context.mission, context.root);
+  const score = Number(preview?.score?.total || 0);
+  move.value_preview = preview;
+  if (score <= 0 && !trustedNextMissionSource(move.source)) return 'zero value score';
+  return '';
+}
+
+function nearMissPreview(nearMisses) {
+  if (!nearMisses.length) return null;
+  return {
+    schema: 'atris.next_mission_stop_preview.v1',
+    stop_reason: 'no concrete follow-up mission found in Atris state',
+    near_misses: nearMisses.slice(0, 3),
+    feynman: {
+      what: 'Atris found possible next moves, but none passed the mission filter.',
+      why_now: 'Stopping is safer than spending tokens on fake or low-value work.',
+      risk: 'A human may want to promote one near-miss manually.',
+      validation: 'Review the near-miss reasons, then add a concrete next task if one should run.',
+    },
+  };
+}
+
+function chooseNextMissionAnalysis(mission, root = process.cwd()) {
   try {
     const moves = require('../lib/next-moves');
     const currentObjective = String(mission?.objective || '').trim();
     const parentObjective = String(mission?.parent_objective || '').trim();
     const handledTargets = handledContinuationTargetKeys(root, moves);
-    const candidates = moves.nextMoves(root, 8)
-      .filter((move) => move && isConcreteContinuationTarget(move.title))
-      .filter((move) => !handledTargets.has(continuationTargetKey(move.title)))
+    const latestTarget = moves.latestSuggestedTarget(root);
+    const reportCandidates = latestTarget
+      ? [{
+        title: latestTarget,
+        why: 'latest proof timeline suggested this follow-up mission',
+        source: 'mission_report',
+        weight: 75,
+      }]
+      : [];
+    const context = { mission, root, moves, currentObjective, parentObjective, handledTargets };
+    const nearMisses = [];
+    const candidates = uniqueMissionCandidates([
+      ...missionExtraNextCandidates(root),
+      ...reportCandidates,
+      ...moves.nextMoves(root, 8),
+    ])
       .filter((move) => {
-        const title = String(move.title || '').trim();
-        return !(mission?.id && move.ref === mission.id && title === currentObjective);
+        const reason = rejectNextMissionCandidate(move, context);
+        if (reason) {
+          nearMisses.push({
+            title: String(move?.title || '').trim() || '(empty)',
+            source: move?.source || null,
+            ref: move?.ref || null,
+            reason,
+          });
+          return false;
+        }
+        return true;
       })
-      .filter((move) => !currentObjective || String(move.title || '').trim() !== currentObjective)
-      .filter((move) => !parentObjective || String(move.title || '').trim() !== parentObjective)
-      .map((move) => ({
-        ...move,
-        value_preview: missionValuePreview(move, mission, root),
-      }))
       .sort((a, b) => {
         const aScore = Number(a.value_preview?.score?.total || 0);
         const bScore = Number(b.value_preview?.score?.total || 0);
         if (aScore !== bScore) return bScore - aScore;
         return Number(b.weight || 0) - Number(a.weight || 0);
       });
-    if (candidates[0]) return candidates[0];
-    const target = moves.latestSuggestedTarget(root);
-    if (isConcreteContinuationTarget(target) && !handledTargets.has(continuationTargetKey(target))) {
-      const fallback = {
-        title: target,
-        why: 'latest proof timeline suggested this follow-up mission',
-        source: 'mission_report',
-      };
-      return {
-        ...fallback,
-        value_preview: missionValuePreview(fallback, mission, root),
-      };
-    }
+    return { target: candidates[0] || null, near_misses: nearMisses.slice(0, 3) };
   } catch {
     // Fall through to an explicit stop command; never emit the old placeholder.
   }
-  return null;
+  return { target: null, near_misses: [] };
+}
+
+function chooseNextMissionTarget(mission, root = process.cwd()) {
+  return chooseNextMissionAnalysis(mission, root).target;
 }
 
 function normalizeMissionOwner(value) {
@@ -2132,9 +2326,67 @@ function missionValuePreview(move, mission, root = process.cwd()) {
   };
 }
 
+function resumableActiveMissions(mission, root = process.cwd()) {
+  const selfId = String(mission?.id || '');
+  const parentId = String(mission?.parent_mission_id || '');
+  try {
+    // Only planning missions resume: ready missions wait for human review, and
+    // running missions already have an actor.
+    return listMissions(root).filter((row) => {
+      if (!row || row.status !== 'planning') return false;
+      if (row.id === selfId || row.id === parentId) return false;
+      if (String(row.started_from || '') === 'mission_run_continuation') return false;
+      if (!isConcreteContinuationTarget(row.objective)) return false;
+      return true;
+    });
+  } catch {
+    return [];
+  }
+}
+
+function chooseResumeMissionPlan(mission, nearMisses, root = process.cwd()) {
+  const ranked = resumableActiveMissions(mission, root)
+    .map((row) => ({
+      row,
+      preview: missionValuePreview({ title: row.objective, source: 'resume_active_mission', ref: row.id }, mission, root),
+    }))
+    .sort((a, b) => {
+      const aScore = Number(a.preview?.score?.total || 0);
+      const bScore = Number(b.preview?.score?.total || 0);
+      if (aScore !== bScore) return bScore - aScore;
+      return String(b.row.updated_at || '').localeCompare(String(a.row.updated_at || ''));
+    });
+  const best = ranked[0];
+  if (!best) return null;
+  return {
+    target: {
+      title: best.row.objective,
+      source: 'resume_active_mission',
+      ref: best.row.id,
+      value_preview: best.preview,
+    },
+    command: `atris mission run ${best.row.id} --json`,
+    preview: {
+      schema: 'atris.next_mission_resume_preview.v1',
+      resume_mission_id: best.row.id,
+      resume_objective: best.row.objective,
+      resume_status: best.row.status,
+      resume_owner: best.row.owner || null,
+      near_misses: nearMisses.slice(0, 3),
+      feynman: {
+        what: 'Every new candidate is already tracked, and one active mission is still in planning.',
+        why_now: 'Resuming chosen work beats stopping when real work is already on the board.',
+        risk: 'The resumed mission may deserve a fresher objective; stop it if it no longer matters.',
+        validation: 'Run the resume command, then check the mission landing and receipt.',
+      },
+    },
+  };
+}
+
 function chooseNextMissionPlan(mission, root = process.cwd()) {
   const owner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
-  const target = chooseNextMissionTarget(mission, root);
+  const analysis = chooseNextMissionAnalysis(mission, root);
+  const target = analysis.target;
   if (target?.title) {
     return {
       target,
@@ -2142,11 +2394,13 @@ function chooseNextMissionPlan(mission, root = process.cwd()) {
       preview: target.value_preview || missionValuePreview(target, mission, root),
     };
   }
+  const resume = chooseResumeMissionPlan(mission, analysis.near_misses || [], root);
+  if (resume) return resume;
   const missionId = mission?.id || '<mission-id>';
   return {
     target: null,
     command: `atris mission stop ${missionId} --reason ${shellQuote('no concrete follow-up mission found in Atris state')} --json`,
-    preview: null,
+    preview: nearMissPreview(analysis.near_misses || []),
   };
 }
 
@@ -2722,9 +2976,10 @@ function statusMission(args) {
 	        ...(mission.next_action_preview?.feynman?.what ? [`  preview: ${mission.next_action_preview.feynman.what}`] : []),
 	        ...missionGoalChainLines(mission),
 	        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
-	        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
-	        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
+        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
+        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
+        ...missionStatusLandingLines(mission.last_landing),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
       : ['No missions yet. Run: atris mission start "..." --owner <member>'],

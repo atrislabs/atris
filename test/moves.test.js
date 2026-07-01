@@ -346,6 +346,27 @@ test('nextMoves uses the latest report suggested target for mission-only seed', 
   }
 });
 
+test('nextMoves rejects placeholder report targets for mission-only seed', () => {
+  const root = tmp();
+  try {
+    writeMissions(root, [
+      { id: 'mission-1', objective: 'overnight mission', status: 'ready', owner: 'auto-improver' },
+    ]);
+    writeReport(root, '2099-01-02-new.md', [
+      '# Proof',
+      '',
+      'Suggested target: test idea.',
+      '',
+    ].join('\n'));
+
+    const moves = nextMoves.nextMoves(root, 3);
+    assert.equal(moves[1].title, nextMoves.SELF_IMPROVEMENT_SEED_TITLE);
+    assert.doesNotMatch(moves.map((move) => move.title).join('\n'), /test idea/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('pickNextMoves keeps the highest-weight copy of a duplicated title', () => {
   const cands = [
     { title: 'dup', source: 'inbox', weight: 40 },
