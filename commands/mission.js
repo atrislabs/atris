@@ -1082,6 +1082,7 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
     selected_target: selectedTarget ? {
       title: selectedTarget.title,
       source: selectedTarget.source,
+      task_id: selectedTarget.task_id || null,
       ref: selectedTarget.ref || null,
       why: selectedTarget.why || '',
     } : null,
@@ -1095,6 +1096,34 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
 function missionRunTaskLabel(task) {
   const ref = task?.ref || task?.display_id || task?.id || 'task';
   return [ref, task?.title].filter(Boolean).join(' ');
+}
+
+function missionRunSelectedTaskTarget(preflight) {
+  const target = preflight?.selected_target;
+  if (!target || target.source !== 'task') return null;
+  const taskId = String(target.task_id || '').trim();
+  const ref = String(target.ref || taskId || '').trim();
+  if (!taskId && !ref) return null;
+  return {
+    task_id: taskId || ref,
+    task_ref: ref || taskId,
+    title: target.title || '',
+  };
+}
+
+function attachSelectedTargetTaskSpine(mission) {
+  const selected = missionRunSelectedTaskTarget(mission?.mission_run_preflight);
+  if (!selected) return mission;
+  const taskIds = Array.from(new Set([...(mission.task_ids || []), selected.task_id].filter(Boolean)));
+  return {
+    ...mission,
+    task_ids: taskIds,
+    current_task_id: selected.task_id,
+    task_ref: selected.task_ref,
+    task_scope_ref: selected.task_ref || selected.task_id,
+    selected_target_task: selected,
+    next_action: `work selected task then run: atris task current-step --goal-id ${selected.task_ref || selected.task_id} --as ${mission.owner} --proof "<proof>" --json`,
+  };
 }
 
 function missionRunCreatedNextChangedText(createdNext) {
@@ -1408,6 +1437,7 @@ function missionTaskSpine(mission) {
   const taskRef = mission.xp_task?.ref
     || mission.task_ref
     || (taskId ? String(taskId) : null);
+  const taskScopeRef = mission.task_scope_ref || mission.id;
   const owner = ownerResolution.owner;
   return {
     schema: 'atris.mission_task_spine.v1',
@@ -1423,7 +1453,7 @@ function missionTaskSpine(mission) {
     task_ref: taskRef,
     has_task: Boolean(taskId || taskRef),
     current_step_command: taskId || taskRef
-      ? `atris task current-step --goal-id ${mission.id} --as ${owner} --proof "<proof>" --json`
+      ? `atris task current-step --goal-id ${taskScopeRef} --as ${owner} --proof "<proof>" --json`
       : null,
     ensure_task_command: taskId || taskRef
       ? null
@@ -2430,6 +2460,10 @@ function startMissionFromRunObjective(objective, args) {
     mission.mission_run_preflight = missionRunPreflight;
     mission.raw_objective = rawObjective;
   }
+  const selectedTargetTask = missionRunSelectedTaskTarget(missionRunPreflight);
+  if (selectedTargetTask) {
+    Object.assign(mission, attachSelectedTargetTaskSpine(mission));
+  }
   if (budgetContract) {
     mission.budget_contract = budgetContract;
     if (budgetContract.requested_seconds) mission.max_wall_seconds = budgetContract.requested_seconds;
@@ -2443,7 +2477,7 @@ function startMissionFromRunObjective(objective, args) {
         : `atris loop start --overnight --cadence ${mission.cadence}`,
     };
   }
-  if (mission.xp_task_enabled) {
+  if (mission.xp_task_enabled && !selectedTargetTask) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
     mission.task_ids = Array.from(new Set([...(mission.task_ids || []), xpTask.task_id]));
@@ -2546,6 +2580,34 @@ function attachMissionTask(args) {
 
     const ownership = applyMissionOwnerResolution(mission, process.cwd());
     const baseMission = ownership.mission;
+    const selectedTargetMission = attachSelectedTargetTaskSpine(baseMission);
+    if (missionTaskSpine(selectedTargetMission)?.has_task) {
+      const { mission: saved } = saveMission(
+        selectedTargetMission,
+        process.cwd(),
+        'mission_selected_task_spine_attached',
+        {
+          task_id: selectedTargetMission.current_task_id || selectedTargetMission.task_ids?.[0] || null,
+          task_ref: selectedTargetMission.task_ref || null,
+        },
+      );
+      const memberState = renderMemberMissionState(saved.owner);
+      const logPath = appendMemberLog(saved.owner, 'Mission selected task spine attached', {
+        mission: saved.objective,
+        task: saved.task_ref || saved.current_task_id,
+      });
+      const view = missionStatusView(saved);
+      printJsonOrText(
+        { ok: true, action: 'mission_selected_task_spine_attached', mission: view, task_spine: view.task_spine, member_state: memberState, log_path: logPath },
+        [
+          `Attached selected task spine: ${saved.objective}`,
+          `Task: ${view.task_spine.task_ref}`,
+          `Next: ${view.task_spine.current_step_command}`,
+        ],
+        asJson,
+      );
+      return;
+    }
     const xpTask = createMissionXpTask(baseMission, process.cwd(), asJson);
     const nextMission = {
       ...baseMission,

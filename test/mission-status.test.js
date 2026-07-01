@@ -2691,10 +2691,24 @@ test('mission run trusted room selects real task before creating mission state',
     assert.equal(payload.mission.objective, 'Make atris go execute one useful bounded slice');
     assert.equal(payload.mission.verifier, 'git diff --check');
     assert.equal(payload.mission.xp_task, undefined);
+    assert.deepEqual(payload.mission.task_ids, ['task-1']);
+    assert.equal(payload.mission.current_task_id, 'task-1');
+    assert.equal(payload.mission.task_ref, 'CLI-758');
+    assert.equal(payload.mission.task_scope_ref, 'CLI-758');
+    assert.equal(payload.codex_goal_state.goal.task_spine.task_ref, 'CLI-758');
+    assert.match(payload.codex_goal_state.goal.task_spine.current_step_command, /--goal-id CLI-758/);
     assert.equal(payload.mission.mission_run_preflight.trusted_run, true);
+    assert.equal(payload.mission.mission_run_preflight.selected_target.task_id, 'task-1');
     assert.equal(payload.mission.mission_run_preflight.selected_target.ref, 'CLI-758');
     assert.notEqual(payload.mission.objective, input);
     assert.doesNotMatch(payload.mission.objective, /go go go/i);
+
+    const attach = runCli(['mission', 'attach-task', payload.mission.id, '--json'], { cwd: dir });
+    assert.equal(attach.status, 0, attach.stderr || attach.stdout);
+    const attached = JSON.parse(attach.stdout);
+    assert.equal(attached.action, 'mission_task_spine_exists');
+    assert.equal(attached.task_spine.task_ref, 'CLI-758');
+    assert.match(attached.task_spine.current_step_command, /--goal-id CLI-758/);
   } finally {
     cleanupTempDir(dir);
   }
