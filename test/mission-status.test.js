@@ -1064,6 +1064,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
         'status_display',
         'actions_display',
         'proof_display',
+        'receipt_display',
         'export_display',
         'prune_display',
         'artifact_display',
@@ -1152,6 +1153,21 @@ test('mission timeline lists saved landing changed and next lines', () => {
         { key: 'latest', label: 'Latest', command: payload.commands.timeline, active: true },
         { key: 'full_history', label: 'Full history', command: 'atris mission timeline landing-timeline-codex-loop --all', active: false },
       ],
+    });
+    assert.deepEqual(payload.receipt_display, {
+      label: 'Receipts',
+      latest_label: 'Latest receipt',
+      latest_path: payload.current_landing.receipt_path,
+      has_latest: true,
+      count_label: 'Receipts',
+      count: 1,
+      items: [{
+        index: 1,
+        label: 'Receipt 1',
+        path: payload.timeline[0].receipt_path,
+        at: payload.timeline[0].at,
+        current: true,
+      }],
     });
     assert.equal(payload.timeline.length, 1);
     assert.deepEqual(payload.timeline_meta, {
@@ -1607,6 +1623,21 @@ test('mission timeline lists saved landing changed and next lines', () => {
       report_path: 'atris/reports/landing-timeline-codex-loop-timeline.md',
       report_written: true,
       report_format: 'markdown',
+    });
+    assert.deepEqual(writtenPayload.receipt_display, {
+      label: 'Receipts',
+      latest_label: 'Latest receipt',
+      latest_path: writtenPayload.current_landing.receipt_path,
+      has_latest: true,
+      count_label: 'Receipts',
+      count: writtenPayload.timeline.filter((item) => item.receipt_path).length,
+      items: writtenPayload.timeline.map((item, index) => ({
+        index: index + 1,
+        label: `Receipt ${index + 1}`,
+        path: item.receipt_path,
+        at: item.at,
+        current: item.receipt_path === writtenPayload.current_landing.receipt_path,
+      })),
     });
     assert.deepEqual(writtenPayload.proof_display, {
       label: 'Proof',
