@@ -199,3 +199,19 @@ test('land <name> tells the story: landed-elsewhere vs unique changes', () => {
     cleanupTempDir(base);
   }
 });
+
+test('land --reap --ttl 0 clears yesterday-old work (0 is not the default)', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const yesterday = new Date(Date.now() - 26 * 3600 * 1000).toISOString();
+    commitOnBranch(repo, 'day-old', 'a.txt', { backdate: yesterday });
+
+    const result = runCli(['land', '--reap', '--ttl', '0', '--json'], repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const receipt = JSON.parse(result.stdout);
+    assert.equal(receipt.ttlDays, 0);
+    assert.deepEqual(receipt.deletedBranches, ['day-old']);
+  } finally {
+    cleanupTempDir(base);
+  }
+});

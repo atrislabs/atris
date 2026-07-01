@@ -403,7 +403,9 @@ function landCommand(args = []) {
     console.error('not a git repository');
     return 1;
   }
-  const ttlDays = Number(readFlag(args, '--ttl', DEFAULT_TTL_DAYS)) || DEFAULT_TTL_DAYS;
+  const ttlRaw = readFlag(args, '--ttl', '');
+  const ttlParsed = Number(ttlRaw);
+  const ttlDays = ttlRaw !== '' && Number.isFinite(ttlParsed) && ttlParsed >= 0 ? ttlParsed : DEFAULT_TTL_DAYS;
   const base = readFlag(args, '--base', '');
   const json = args.includes('--json');
 
