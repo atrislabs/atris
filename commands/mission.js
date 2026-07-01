@@ -1341,13 +1341,44 @@ function isConcreteContinuationTarget(title) {
   return true;
 }
 
+function continuationTargetKey(title) {
+  return String(title || '')
+    .replace(/^mission xp:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function handledContinuationTargetKeys(root, moves) {
+  const keys = new Set();
+  const add = (title) => {
+    const key = continuationTargetKey(title);
+    if (key) keys.add(key);
+  };
+  try {
+    for (const title of moves.readHandledTaskTitles(root)) add(title);
+  } catch {
+    // Best-effort guard; mission state below still catches completed missions.
+  }
+  try {
+    for (const row of listMissions(root)) {
+      if (TERMINAL_STATUSES.has(String(row?.status || '').toLowerCase())) add(row.objective);
+    }
+  } catch {
+    // If state is unreadable, fall back to the remaining explicit filters.
+  }
+  return keys;
+}
+
 function chooseNextMissionTarget(mission, root = process.cwd()) {
   try {
     const moves = require('../lib/next-moves');
     const currentObjective = String(mission?.objective || '').trim();
     const parentObjective = String(mission?.parent_objective || '').trim();
+    const handledTargets = handledContinuationTargetKeys(root, moves);
     const candidates = moves.nextMoves(root, 8)
       .filter((move) => move && isConcreteContinuationTarget(move.title))
+      .filter((move) => !handledTargets.has(continuationTargetKey(move.title)))
       .filter((move) => {
         const title = String(move.title || '').trim();
         return !(mission?.id && move.ref === mission.id && title === currentObjective);
@@ -1356,7 +1387,7 @@ function chooseNextMissionTarget(mission, root = process.cwd()) {
       .filter((move) => !parentObjective || String(move.title || '').trim() !== parentObjective);
     if (candidates[0]) return candidates[0];
     const target = moves.latestSuggestedTarget(root);
-    if (isConcreteContinuationTarget(target)) {
+    if (isConcreteContinuationTarget(target) && !handledTargets.has(continuationTargetKey(target))) {
       return {
         title: target,
         why: 'latest proof timeline suggested this follow-up mission',

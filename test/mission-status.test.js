@@ -3076,6 +3076,61 @@ test('continuation mission stops instead of returning placeholder when no concre
   }
 });
 
+test('continuation mission skips report target that was already handled', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'reports', '2099-01-01-proof.md'), [
+      '# Proof',
+      '',
+      'Suggested target: repeat done thing.',
+      '',
+    ].join('\n'), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-repeat-done-thing',
+      slug: 'mission-repeat-done-thing',
+      objective: 'Repeat done thing',
+      status: 'complete',
+      runner: 'codex_goal',
+      verifier: '',
+      created_at: '2026-06-30T11:00:00.000Z',
+      updated_at: '2026-06-30T11:05:00.000Z',
+      completed_at: '2026-06-30T11:05:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'mission-choice-handled-report',
+      slug: 'mission-choice-handled-report',
+      objective: 'Decide and start the next useful mission after: finish handled report',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent-handled-report',
+      parent_objective: 'finish handled report',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: finish handled report',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-handled-report', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.match(attachedPayload.mission.next_action, /atris mission stop mission-choice-handled-report --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.doesNotMatch(attachedPayload.mission.next_action, /Repeat done thing/);
+
+    const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
+    assert.match(ack.codex_goal_state.goal.next_command, /atris mission stop mission-choice-handled-report --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /Repeat done thing/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('bare mission run asks for input instead of resuming an old mission', () => {
   const dir = makeTempDir();
   try {
