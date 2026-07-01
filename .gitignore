@@ -85,3 +85,6 @@ progress.txt
 
 # Backups created by atrisos-backend's atris-cli-overlays/apply.sh (chmod 444 prevents the actual clobber, but .bak still gets written)
 *.pre-overlay.bak
+
+# Private deck specs (fundraising/investor data) — never commit
+decks/private/

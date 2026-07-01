@@ -40,7 +40,7 @@ test('npm package includes launchpad and deck assets', () => {
   assert.ok(files.includes('commands/'), 'package.json files must include commands/ for launchpad');
   assert.ok(files.includes('decks/'), 'package.json files must include decks/ for deck artifacts');
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'commands', 'launchpad.js')));
-  assert.ok(fs.existsSync(path.join(__dirname, '..', 'decks', 'atris-seed-pitch-v7.json')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'decks', 'atris-one-loop-pitch.json')));
 });
 
 test('npm package must not ship local workspace wiki', () => {
