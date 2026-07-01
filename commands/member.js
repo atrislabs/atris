@@ -406,17 +406,56 @@ function missionPurpose(paths) {
   };
 }
 
+const MEMBER_RUN_RUNNABLE_STATUSES = new Set(['planning', 'running', 'ready']);
+
+function memberRunMissionMap() {
+  try {
+    return require('./mission').loadMissionMap(process.cwd());
+  } catch {
+    return new Map();
+  }
+}
+
+function memberRunRunnableMissionId(candidateId, missionMap) {
+  const id = String(candidateId || '').trim();
+  if (!id) return '';
+  const mission = missionMap.get(id);
+  // Unknown here can mean a worktree-held mission; let mission run decide.
+  if (!mission) return id;
+  return MEMBER_RUN_RUNNABLE_STATUSES.has(mission.status) ? id : '';
+}
+
+function memberRunOwnedActiveMissionId(name, missionMap) {
+  // Discovery fallback when the member's own pointers are stale: resume the
+  // member's newest moving mission. ready is excluded — it waits for review.
+  const owner = String(name || '').trim().toLowerCase();
+  const candidates = Array.from(missionMap.values())
+    .filter((mission) => String(mission?.owner || '').trim().toLowerCase() === owner)
+    .filter((mission) => mission.status === 'running' || mission.status === 'planning')
+    .filter((mission) => !/^decide and start the next useful mission after:/i.test(String(mission?.objective || '')))
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'running' ? -1 : 1;
+      return String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''));
+    });
+  return candidates[0]?.id || '';
+}
+
 function resolveMemberRunMissionId(name, args = []) {
   const override = readFlag(args, '--mission', '') || readFlag(args, '--mission-id', '');
   if (override) return override;
 
   const paths = requireMemberDir(name);
+  const missionMap = memberRunMissionMap();
   const purpose = missionPurpose(paths);
-  if (purpose.runtimeMission?.id) return purpose.runtimeMission.id;
+  const runtimeId = memberRunRunnableMissionId(purpose.runtimeMission?.id, missionMap);
+  if (runtimeId) return runtimeId;
 
   const goals = loadMemberGoals(name, paths);
   const goal = activeGoal(goals);
-  return goal?.mission_id || '';
+  const goalId = memberRunRunnableMissionId(goal?.mission_id, missionMap);
+  if (goalId) return goalId;
+
+  return memberRunOwnedActiveMissionId(paths.storageName || name, missionMap);
 }
 
 const MEMBER_RUN_START_VALUE_FLAGS = [
