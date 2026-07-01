@@ -159,7 +159,7 @@ test('land --help prints usage without touching the repo', () => {
   try {
     const result = runCli(['land', '--help'], repo);
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /landing contract/);
+    assert.match(result.stdout, /still in the air/);
     assert.match(result.stdout, /--reap/);
   } finally {
     cleanupTempDir(base);

@@ -486,7 +486,7 @@ function showHelp() {
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
-  console.log('  land       - Landing contract: board of unlanded branches/worktrees; --reap salvages + clears stale');
+  console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
   console.log('');
@@ -1379,7 +1379,7 @@ function showWelcomeVisualization() {
     let landInfo = null;
     try { landInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { landInfo = null; }
     if (landInfo && landInfo.branches > 0) {
-      const landText = `${landInfo.branches} unlanded, ${landInfo.due} past ttl`;
+      const landText = `${landInfo.branches} in the air, ${landInfo.due} overdue`;
       console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
     }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
@@ -1407,7 +1407,7 @@ function showWelcomeVisualization() {
     let landHint = null;
     try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
     if (landHint && landHint.due > 0) {
-      console.log(`    Ready. ${landHint.due} branches past ttl — run 'atris land --reap'.`);
+      console.log(`    Ready. ${landHint.due} overdue in the landing — run 'atris land --reap'.`);
     } else {
       console.log(`    Ready. Run 'atris plan' to start.`);
     }

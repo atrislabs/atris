@@ -227,27 +227,30 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
 
 function printBoard(board) {
   console.log('');
-  console.log(`land board — base ${board.base}, ttl ${board.ttlDays}d`);
+  console.log('the landing — what is actually done vs still in the air');
   console.log('');
   if (board.branches.length === 0 && board.worktrees.length === 0) {
-    console.log('  everything is landed. no branches or worktrees in limbo.');
+    console.log('  everything has landed. nothing in the air, nothing stuck.');
     console.log('');
     return;
   }
   const order = { due: 0, detached: 0, landed: 1, active: 2 };
   const rows = [...board.branches].sort((a, b) => (order[a.state] ?? 3) - (order[b.state] ?? 3) || b.ageDays - a.ageDays);
+  const labels = { due: 'overdue', landed: 'landed', active: 'in the air' };
   for (const b of rows) {
-    const marker = b.state === 'due' ? 'due   ' : b.state === 'landed' ? 'landed' : 'active';
-    console.log(`  ${marker}  ${String(b.ageDays).padStart(3)}d  +${String(b.ahead).padEnd(4)} ${b.name}`);
+    const changes = b.ahead === 1 ? '1 change ' : `${b.ahead} changes`;
+    console.log(`  ${(labels[b.state] || b.state).padEnd(11)} ${String(b.ageDays).padStart(3)}d  ${changes}  ${b.name}`);
   }
   for (const w of board.worktrees) {
-    console.log(`  worktree  ${w.path} (${w.branch || 'detached'}, ${w.dirty} dirty)`);
+    const edits = w.dirty === 1 ? '1 unsaved edit' : `${w.dirty} unsaved edits`;
+    console.log(`  side copy   ${w.path} (${edits})`);
   }
   console.log('');
   const s = board.summary;
-  console.log(`  ${s.unlanded} branches: ${s.active} active, ${s.due} due, ${s.landed} landed residue. ${s.worktrees} extra worktrees.`);
+  console.log(`  ${s.unlanded} pieces of work in the air, ${s.due} overdue, ${s.landed} landed and safe to clear.`);
+  console.log('  work counts as done only when it lands in master.');
   if (s.due + s.landed > 0) {
-    console.log(`  run 'atris land --reap' to salvage + clear the ${s.due + s.landed} due/landed.`);
+    console.log(`  back up + clear the ${s.due + s.landed} overdue/landed: atris land --reap`);
   }
   console.log('');
 }
@@ -255,16 +258,16 @@ function printBoard(board) {
 function printReceipt(receipt) {
   console.log('');
   if (receipt.dryRun) {
-    console.log(`land --reap (dry run) — would delete ${receipt.deletedBranches.length} branches, ${receipt.removedWorktrees.length} worktrees`);
-    for (const b of receipt.deletedBranches) console.log(`  branch   ${b}`);
-    for (const w of receipt.removedWorktrees) console.log(`  worktree ${w}`);
+    console.log(`landing cleanup preview — would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
+    for (const b of receipt.deletedBranches) console.log(`  would clear  ${b}`);
+    for (const w of receipt.removedWorktrees) console.log(`  would remove ${w}`);
   } else {
-    console.log(`land --reap — ${receipt.deletedBranches.length} branches deleted, ${receipt.removedWorktrees.length} worktrees removed`);
-    if (receipt.bundle) console.log(`  salvage bundle: ${receipt.bundle}`);
-    for (const p of receipt.patches) console.log(`  salvage patch:  ${p}`);
-    if (receipt.deletedRemote.length > 0) console.log(`  origin: deleted ${receipt.deletedRemote.length} matching remote branches`);
+    console.log(`landing cleanup done — ${receipt.deletedBranches.length} pieces cleared, ${receipt.removedWorktrees.length} side copies removed`);
+    if (receipt.bundle) console.log(`  backed up first, nothing lost: ${receipt.bundle}`);
+    for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
+    if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
   }
-  console.log(`  kept: ${receipt.kept.length} active branches`);
+  console.log(`  still flying (recent work, left alone): ${receipt.kept.length}`);
   console.log('');
 }
 
@@ -276,17 +279,19 @@ function readFlag(args, name, fallback = '') {
 
 function showHelp() {
   console.log('');
-  console.log('atris land — the landing contract: work is merged or reaped, never limbo');
+  console.log('atris land — the landing: what is actually done vs still in the air');
   console.log('');
-  console.log('  atris land                     show every unlanded branch and worktree');
-  console.log('  atris land --reap              salvage (bundle + patches) then delete all');
-  console.log('                                 landed-residue and past-ttl branches/worktrees,');
-  console.log('                                 locally and on origin');
-  console.log('  atris land --reap --dry-run    preview what a reap would delete');
-  console.log('  atris land --ttl <days>        override the 7-day limbo budget');
+  console.log('work counts as done only when it lands in master. everything else is');
+  console.log('in the air, and this shows it so nothing quietly dies.');
+  console.log('');
+  console.log('  atris land                     show everything still in the air');
+  console.log('  atris land --reap              back up, then clear anything overdue');
+  console.log('                                 or already landed (here and on github)');
+  console.log('  atris land --reap --dry-run    preview what would be cleared');
+  console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
-  console.log('salvage lands in .atris/salvage/<date>/ — a reap never loses work.');
+  console.log('backups go to .atris/salvage/<date>/ — clearing never loses work.');
   console.log('');
 }
 
