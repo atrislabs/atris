@@ -165,3 +165,37 @@ test('land --help prints usage without touching the repo', () => {
     cleanupTempDir(base);
   }
 });
+
+test('land <name> tells the story: landed-elsewhere vs unique changes', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    // backdate so the later cherry-pick can never hash to the identical
+    // commit (same tree + same second would collide into one object)
+    commitOnBranch(repo, 'mixed-work', 'a.txt', { backdate: '2026-06-30T00:00:00' });
+    runGit(['checkout', '-q', 'mixed-work'], repo);
+    fs.writeFileSync(path.join(repo, 'b.txt'), 'unique\n');
+    runGit(['add', '.'], repo);
+    runGit(['commit', '-m', 'unique change'], repo, {
+      GIT_AUTHOR_DATE: '2026-06-30T00:01:00',
+      GIT_COMMITTER_DATE: '2026-06-30T00:01:00',
+    });
+    runGit(['checkout', '-q', 'master'], repo);
+    // replay only the first change onto master so it counts as landed elsewhere
+    const first = runGit(['rev-list', '--reverse', 'master..mixed-work'], repo)
+      .stdout.split(/\r?\n/).filter(Boolean)[0];
+    runGit(['cherry-pick', first], repo);
+
+    const result = runCli(['land', 'mixed-work', '--json'], repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const story = JSON.parse(result.stdout);
+    assert.equal(story.changes.length, 2);
+    assert.equal(story.landedElsewhere, 1);
+    assert.equal(story.uniqueChanges, 1);
+
+    const missing = runCli(['land', 'no-such-thing'], repo);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /in the air/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});

@@ -225,6 +225,101 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, base: baseOverride = '', dryRu
   return receipt;
 }
 
+// The story of one piece of work: what it tried to do, whether it made it
+// into master some other way, and what would be lost if it were cleared.
+function collectStory(root, name, { base: baseOverride = '' } = {}) {
+  const base = baseBranch(root, baseOverride);
+  if (!base) throw new Error('no master/main branch found');
+  if (!refExists(root, name)) return null;
+
+  const logResult = runGit(
+    ['log', '--format=%h%x09%cs%x09%an%x09%s', `${base}..${name}`],
+    { cwd: root, check: false }
+  );
+  const changes = logResult.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, date, author, subject] = line.split('\t');
+      return { hash, date, author, subject };
+    });
+
+  // git cherry marks a change '-' when an equivalent patch already exists
+  // in base — the honest "it landed some other way" signal.
+  const cherry = runGit(['cherry', base, name], { cwd: root, check: false });
+  const landedHashes = new Set();
+  for (const line of cherry.stdout.split(/\r?\n/).filter(Boolean)) {
+    if (line.startsWith('- ')) landedHashes.add(line.slice(2).trim());
+  }
+  const fullHashes = runGit(['log', '--format=%H %h', `${base}..${name}`], { cwd: root, check: false });
+  const shortToLanded = new Set();
+  for (const line of fullHashes.stdout.split(/\r?\n/).filter(Boolean)) {
+    const [full, short] = line.split(' ');
+    if (landedHashes.has(full)) shortToLanded.add(short);
+  }
+  for (const c of changes) c.landedElsewhere = shortToLanded.has(c.hash);
+
+  const stat = runGit(['diff', '--stat', `${base}...${name}`], { cwd: root, check: false });
+  const statLines = stat.stdout.split(/\r?\n/).filter(Boolean);
+  const files = statLines.slice(0, -1).map((l) => l.split('|')[0].trim());
+
+  const info = listBranches(root).find((b) => b.name === name);
+  return {
+    name,
+    base,
+    ageDays: info ? ageDays(info.lastCommitUnix) : null,
+    changes,
+    landedElsewhere: changes.filter((c) => c.landedElsewhere).length,
+    uniqueChanges: changes.filter((c) => !c.landedElsewhere).length,
+    files,
+  };
+}
+
+function printStory(story) {
+  console.log('');
+  console.log(`what happened in ${story.name}`);
+  console.log('');
+  if (story.changes.length === 0) {
+    console.log(`  everything here is already in ${story.base}. this is an empty leftover,`);
+    console.log("  safe to clear. nothing would be lost.");
+    console.log('');
+    return;
+  }
+  const who = [...new Set(story.changes.map((c) => c.author))].join(', ');
+  const when = story.changes[story.changes.length - 1].date;
+  const last = story.changes[0].date;
+  const age = story.ageDays === null ? '' : ` (${story.ageDays} days ago)`;
+  console.log(`  started ${when}, last touched ${last}${age}, by ${who}.`);
+  console.log('');
+  console.log('  what it tried to do:');
+  for (const c of [...story.changes].reverse()) {
+    const mark = c.landedElsewhere ? 'made it in   ' : 'never made it';
+    console.log(`    ${mark}  ${c.subject}`);
+  }
+  console.log('');
+  if (story.files.length > 0) {
+    const shown = story.files.slice(0, 6).join(', ');
+    const more = story.files.length > 6 ? ` and ${story.files.length - 6} more` : '';
+    console.log(`  it touched: ${shown}${more}`);
+    console.log('');
+  }
+  if (story.uniqueChanges === 0) {
+    console.log(`  bottom line: all ${story.changes.length} changes made it into ${story.base}`);
+    console.log('  some other way. nothing here would be lost by clearing it.');
+  } else if (story.landedElsewhere > 0) {
+    console.log(`  bottom line: ${story.landedElsewhere} of ${story.changes.length} changes made it into ${story.base} another`);
+    console.log(`  way. ${story.uniqueChanges} exist only here (marked "never made it") — they may have`);
+    console.log('  been redone differently, or they may be real lost work. clearing backs');
+    console.log('  them up first either way.');
+  } else {
+    console.log(`  bottom line: none of this is in ${story.base}. this is real work that only`);
+    console.log('  exists here. land it or clear it knowing the backup keeps a copy.');
+  }
+  console.log('');
+  console.log(`  see the actual changes: git diff ${story.base}...${story.name}`);
+  console.log('');
+}
+
 function printBoard(board) {
   console.log('');
   console.log('the landing — what is actually done vs still in the air');
@@ -285,6 +380,9 @@ function showHelp() {
   console.log('in the air, and this shows it so nothing quietly dies.');
   console.log('');
   console.log('  atris land                     show everything still in the air');
+  console.log('  atris land <name>              the story of one piece: what it tried,');
+  console.log('                                 whether it landed some other way, what');
+  console.log('                                 would be lost by clearing it');
   console.log('  atris land --reap              back up, then clear anything overdue');
   console.log('                                 or already landed (here and on github)');
   console.log('  atris land --reap --dry-run    preview what would be cleared');
@@ -313,6 +411,18 @@ function landCommand(args = []) {
     const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote') });
     if (json) console.log(JSON.stringify(receipt, null, 2));
     else printReceipt(receipt);
+    return 0;
+  }
+
+  const name = args.find((a) => !a.startsWith('-') && a !== readFlag(args, '--ttl') && a !== readFlag(args, '--base'));
+  if (name) {
+    const story = collectStory(root, name, { base });
+    if (!story) {
+      console.error(`nothing called '${name}' is in the air right now`);
+      return 1;
+    }
+    if (json) console.log(JSON.stringify(story, null, 2));
+    else printStory(story);
     return 0;
   }
 
