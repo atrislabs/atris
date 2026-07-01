@@ -1165,6 +1165,51 @@ function formatApprovalTime(value) {
   return `${months[Number(month) - 1] || month} ${Number(day)}, ${year} at ${hour12}:${minute} ${ampm}`;
 }
 
+function previewText(value, limit = 80) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function previewContact(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return previewText(value, 120);
+  if (typeof value !== 'object') return previewText(value, 120);
+  return previewText(value.email || value.address || value.value || value.name || '', 120);
+}
+
+function previewContacts(value) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value || '').includes(',')
+      ? String(value).split(',')
+      : [value];
+  return values
+    .map(previewContact)
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ');
+}
+
+function gmailApprovalDetails(receipt, request, approvalEvent = null) {
+  const payload = request && request.payload && typeof request.payload === 'object' ? request.payload : {};
+  const taskPreview = receipt && receipt.task_preview && typeof receipt.task_preview === 'object' ? receipt.task_preview : {};
+  const slots = taskPreview.slots && typeof taskPreview.slots === 'object' ? taskPreview.slots : {};
+  const preview = approvalEvent && approvalEvent.preview && typeof approvalEvent.preview === 'object' ? approvalEvent.preview : {};
+  return {
+    to: previewContacts(payload.to || payload.recipient || payload.recipients || payload.email || slots.to || slots.recipient || preview.to),
+    subject: previewText(payload.subject || payload.title || slots.subject || preview.subject, 80),
+  };
+}
+
+function isGmailApproval(request, approvalEvent = null, accept = {}) {
+  const connector = canonicalConnectorId((request && request.connector) || (approvalEvent && approvalEvent.tool));
+  const action = String(
+    (request && (request.executor_action_type || request.action_type || request.action))
+    || accept.task
+    || ''
+  ).toLowerCase().replace(/_/g, ' ');
+  return connector === 'gmail' && /\b(send|reply|compose)\b/.test(action);
+}
+
 function formatApprovalReceipt(receipt) {
   if (!receipt || typeof receipt !== 'object') return null;
   const events = Array.isArray(receipt.tool_events) ? receipt.tool_events : [];
@@ -1180,6 +1225,15 @@ function formatApprovalReceipt(receipt) {
     const when = formatApprovalTime(start);
     const title = taskPreviewTitle(receipt) || accept.title || (approvalEvent.preview && approvalEvent.preview.summary) || 'calendar event';
     return `Approval needed before creation: calendar event "${String(title).slice(0, 80)}"${when ? ` ${when}` : ''}`;
+  }
+
+  if (isGmailApproval(request, approvalEvent, accept)) {
+    const details = gmailApprovalDetails(receipt, request, approvalEvent);
+    const parts = [
+      details.to ? `to ${details.to}` : '',
+      details.subject ? `subject "${details.subject}"` : '',
+    ].filter(Boolean);
+    return `Approval needed before sending Gmail${parts.length ? `: ${parts.join(' ')}` : ''} (body hidden until approved)`;
   }
 
   const connector = String(request.connector || approvalEvent.tool || 'connector').replace(/_/g, ' ');
@@ -1210,6 +1264,16 @@ function formatTaskPreviewPlan(receipt) {
   if (!taskPreview) return null;
   const task = String(taskPreview.task || '').trim();
   const slots = taskPreview.slots && typeof taskPreview.slots === 'object' ? taskPreview.slots : {};
+  const approvalEvent = taskPreviewApprovalEvent(receipt);
+  const request = approvalEvent && approvalEvent.approval_request;
+  if (isGmailApproval(request, approvalEvent, receipt.task_accept_receipt || {}) || task === 'gmail.send_message') {
+    const details = gmailApprovalDetails(receipt, request || { payload: slots }, approvalEvent);
+    return [
+      'send Gmail',
+      details.to ? `to ${details.to}` : '',
+      details.subject ? `subject "${details.subject}"` : '',
+    ].filter(Boolean).join(' ');
+  }
   if (task === 'calendar.create_event') {
     const title = taskPreviewTitle(receipt);
     const start = slots.start || (receipt.task_accept_receipt && receipt.task_accept_receipt.start);
@@ -1712,12 +1776,30 @@ function buildMessage(message, history = []) {
   return String(message || '').trim();
 }
 
+function createTurnId() {
+  return `axt_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function connectorTurnPolicy(message, options = {}) {
+  if (!connectorWriteIntent(message)) return null;
+  const policy = {
+    schema: 'ax.connector_turn.v1',
+    scope: 'current_turn_only',
+    policy: 'preview_then_explicit_approval',
+    writes_require_approval: true,
+  };
+  if (options.turnId) policy.turn_id = String(options.turnId);
+  if (options.conversationId) policy.conversation_id = String(options.conversationId);
+  return policy;
+}
+
 function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
   const verifyCommand = String(options.verify || '').trim();
   const previousMessages = structuredHistory(options.history || []);
+  const turnId = String(options.turnId || '').trim();
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
@@ -1729,6 +1811,14 @@ function buildPayload(message, options = {}) {
   }
   if (options.conversationId) {
     payload.conversation_id = String(options.conversationId);
+  }
+  if (turnId) {
+    payload.turn_id = turnId;
+  }
+  const connectorPolicy = !local ? connectorTurnPolicy(message, { ...options, turnId }) : null;
+  if (connectorPolicy) {
+    payload.connector_turn = connectorPolicy;
+    payload.external_action_policy = 'preview_then_explicit_approval';
   }
   if (options.business) {
     // Business cloud workspace: the model loop stays on the backend and every
@@ -1882,6 +1972,7 @@ async function postTurn(message, options = {}) {
   const local = route !== 'cloud';
   const endpointRoute = options.business ? 'cloud' : route;
   const token = authToken();
+  const turnId = options.turnId || createTurnId();
   const shouldSendConnectionContext = options.connectionContext
     || route === 'cloud'
     || mentionsConnector(message)
@@ -1890,7 +1981,7 @@ async function postTurn(message, options = {}) {
     ? await buildConnectionContext({ token, localWorkspace: local })
     : null);
   const connectionUserId = !local && isLoopbackBackend({ route: endpointRoute }) ? authUserId() : '';
-  const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId });
+  const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId, turnId });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
   // Relayed business turns wait on EC2 terminal calls (up to 60s each) with no
@@ -2269,7 +2360,8 @@ async function chat(options = {}) {
     const turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route });
     if (!(await ensureRuntimeReady(turnRoute))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
-    const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId });
+    const turnId = options.turnId || createTurnId();
+    const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId, turnId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
       ? null

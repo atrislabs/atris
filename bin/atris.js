@@ -919,7 +919,7 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 }
 
 // Check if this is a known command or natural language input
-const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', 'plan', 'do', 'review', 'release',
+const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
                        'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
@@ -946,7 +946,15 @@ if (command === '--version' || command === '-v' || process.argv.includes('--vers
 // If no command OR command is not recognized, treat as natural language
 // Voice-friendly aliases — natural language → command mapping
 // Solves speech-to-text issues (inspired by gstack v0.14.6 voice-triggers)
+const START_MISSION_OBJECTIVE = 'self improve goal after goal: pick one useful bounded mission from current Atris state, run proof, and continue only with real next work';
+
 const voiceTriggers = {
+  'start': '_start',
+  'start now': '_start',
+  'go': '_start',
+  'keep going': '_start',
+  'keepgoing': '_start',
+  'keep-going': '_start',
   'review my code': 'code-review',
   'check my code': 'code-review',
   'run a review': 'code-review',
@@ -971,7 +979,12 @@ const voiceTriggers = {
 if (!command || !knownCommands.includes(command)) {
   // Check voice triggers before falling through to natural language
   const fullInput = process.argv.slice(2).join(' ').toLowerCase().trim();
-  const triggered = voiceTriggers[fullInput];
+  const fullInputWithoutFlags = process.argv.slice(2)
+    .filter((arg, index, args) => !String(arg).startsWith('-') && !isOptionValue(args, index, RUNNER_FLAG_NAMES))
+    .join(' ')
+    .toLowerCase()
+    .trim();
+  const triggered = voiceTriggers[fullInput] || voiceTriggers[fullInputWithoutFlags];
   if (triggered) {
     command = triggered;
     // Re-check — if it's now a known command, fall through to dispatch
@@ -1402,6 +1415,40 @@ if (command === 'init') {
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`✗ Error: ${error.message || error}`);
+      process.exit(1);
+    });
+} else if (command === '_start') {
+  const args = process.argv.slice(3);
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('');
+    console.log('Usage: atris start [options]');
+    console.log('');
+    console.log('Starts the durable mission loop for one useful self-improvement mission.');
+    console.log('');
+    console.log('Options:');
+    console.log('  --json       Print the mission route without starting it.');
+    console.log('  --owner X    Override mission owner.');
+    console.log('  --cadence X  Override mission cadence.');
+    console.log('');
+    process.exit(0);
+  }
+
+  if (args.includes('--json')) {
+    console.log(JSON.stringify({
+      ok: true,
+      action: 'start_mission_run',
+      route: `atris mission run "${START_MISSION_OBJECTIVE}"`,
+      reason: 'casual_launch',
+      objective: START_MISSION_OBJECTIVE,
+      expected_loop: 'mission_run',
+    }, null, 2));
+    process.exit(0);
+  }
+
+  Promise.resolve(require('../commands/mission').missionCommand(['run', START_MISSION_OBJECTIVE, ...args]))
+    .then(() => process.exit(process.exitCode || 0))
+    .catch((error) => {
+      console.error(`✗ Start failed: ${error.message || error}`);
       process.exit(1);
     });
 } else if (command === 'task') {

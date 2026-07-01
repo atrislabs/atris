@@ -29,7 +29,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 ```bash
 # Core CLI logic
 rg "async function interactiveEntry|async function atrisDevEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
-rg "modelForMode|buildPayload|resolveRoute|formatUsage|normalizeChatCommandArgs|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: cloud-first by default, explicit --local workspace opt-in, Fast/Pro modes, SSE streaming, workspace_path, chat subcommand alias, chat history, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
+rg "modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTaskPreviewRows|resolveRoute|formatUsage|normalizeChatCommandArgs|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: cloud-first by default, explicit --local workspace opt-in, Fast/Pro modes, SSE streaming, workspace_path, chat subcommand alias, chat history, connector turn isolation, Gmail approval previews, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
 rg "function planAtris" commands/workflow.js   # Plan command (line 66)
@@ -63,6 +63,7 @@ rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
 rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, projection-backed open work counts, proof receipts, portfolio signals, non-mutating help
 rg "radarCommand|collectRadar|Operator radar|Agent process top|findTaskWorkspaceRoot|task_reason|task_action|task_load|whats going on|loadBusinessCollaboration|ctop" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with nearest workspace task projection, ctop unmapped-session reasons/actions and task-load pileups, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, and Codex goal state
+rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|taskNeedsAgentReview|taskIsHumanGatedClaimed|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js  # Launchpad command-center card: single next action + 3 suggested moves from local task projection, missions, brain STATUS, and TODO endgame; ranks own-claimed > mission tick > proof review > human-accept queue > open claim > endgame seed > brain move; skips human-gated claimed work; --json (atris.launchpad.v1) and plain card
 rg "releaseAtris" commands/release.js      # Release command
 rg "showSearchHelp|searchJournal|search help flags" bin/atris.js test/commands.test.js # Search command + workspace-free help flags
 rg "showLearnHelp|learnAtris|learn help" commands/learn.js test/commands.test.js # Project learnings command + workspace-free help
@@ -74,7 +75,7 @@ rg "computerCreate|computerActivate|computerDelete|parseComputerCreateArgs|parse
 rg "cmdAdd|cmdImport|cmdClaim|cmdReady|cmdAccept|cmdReviews|cmdDone|cmdNext|readEndgameAgentAction|liveTaskWithTitle|getTaskDb" commands/task.js  # Local agent task plane, proof-ready review, human accept, task-next Endgame seed dedupe, and compact certified review queue
 rg "taskReviewEvidenceCommands|taskReviewVerificationFocus|taskReviewObjective|commands_to_verify" commands/task.js test/commands.test.js  # Task review-chat verifier packet: extracts proof commands/files, uses task-owned objective/title instead of stale workspace goal fallback, and regression coverage
 rg "worktreeCommand|startWorktree|shipWorktree|parseWorktrees|swarloClaim" commands/worktree.js  # Member-scoped isolated Git worktrees, optional Swarlo claim, and guarded ship flow
-rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|selectDueMission|missionIsRunnable|codex_goal.json|codex_goal_request.json|active_goal_conflict|paused_goal_conflict|native-goal-status|codexRuntimeGoalStateFromOptions|writeDirectRunCodexGoalRequest|codexGoalActiveConflictPayload|runMission|tickMission|watchMission|missionHeartbeatLines|inferRunObjectiveLoopOptions|budget_contract|spend-full-budget|overnight_loop|choose_next_mission|missionChoosesNextMission|chooseNextMissionTarget|continuationTargetKey|handledContinuationTargetKeys|chooseNextMissionCommand|ackMissionGoal|attachMissionTask|acquireMissionLock" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js test/mission-heartbeat.test.js  # Durable mission start/status/Codex-goal/tick/run plus direct-run visible-goal conflict handoff, paused native-goal reconciliation, verifier lint/status filters, runnable mission selection that skips human-gated missions, task-backed caller-session due picks, time budget contracts, overnight/self-improve run-objective inference, continuation-goal state-backed next-mission selection and handoff commands with stale handled-target filtering, native-goal ack/task-spine race locking, and terminal next-action normalization
+rg "missionCommand|lintMissionVerifier|normalizeMissionState|selectCodexGoalMission|selectDueMission|missionIsRunnable|missionTaskHumanAcceptWaiting|missionCanSeedContinuation|seedNextMoveContinuationGoal|missionMemberTasteProfile|readMissionTasteMemory|missionValuePreview|chooseNextMissionPlan|buildMissionGoalChain|advanceMissionGoalChain|missionGoalChainLines|missionGoalChainNextAction|missionReceiptLanding|normalizeMissionReceiptResult|missionVerifierHighLevelTestText|codex_goal.json|codex_goal_request.json|active_goal_conflict|paused_goal_conflict|native-goal-status|codexRuntimeGoalStateFromOptions|writeDirectRunCodexGoalRequest|codexGoalActiveConflictPayload|runMission|tickMission|watchMission|missionHeartbeatLines|inferRunObjectiveLoopOptions|budget_contract|spend-full-budget|overnight_loop|choose_next_mission|missionChoosesNextMission|chooseNextMissionTarget|continuationTargetKey|handledContinuationTargetKeys|chooseNextMissionCommand|ackMissionGoal|attachMissionTask|acquireMissionLock" commands/mission.js test/mission-verifier.test.js test/mission-status.test.js test/mission-heartbeat.test.js  # Durable mission start/status/Codex-goal/tick/run plus direct-run visible-goal conflict handoff, validated child-goal chains, default result.landing receipts with high-level verifier meaning, paused native-goal reconciliation, verifier lint/status filters, runnable mission selection that skips human-gated missions, task-backed caller-session due picks, time budget contracts, overnight/self-improve run-objective inference, continuation-goal state-backed next-mission selection with member taste filters, taste memory from thinking.md/member MISSION/recent logs/task history, Feynman previews, planning/review certified continuation seeding, stale completed-handoff skip, native-goal ack/task-spine race locking, and terminal next-action normalization
 rg "timelineMission|missionLandingTimeline|missionTimelineMarkdown|missionTimelinePruneSummaryMarkdown|schema_display|summary_display|navigation_display|filter_display|empty_state_display|timeline_meta_display|timeline_meta|timeline_display|proof_display|receipt_display|export_display|prune_display|actions_display|status_display|artifact_display|operator_commands|commands|mission_labels|mission_display|display|labels|counts|booleans|artifact|current_landing_display|current_landing|current_landing_label|history_label|history_without_current_display|history_without_current|history_without_current_count|has_history_without_current|next_move|next|generated_at|generated|prune_preview" commands/mission.js test/mission-status.test.js lib/runs-prune.js  # Mission timeline: saved landing list, schema display, summary display, navigation display, filter display, empty-state display, truncation metadata/display, timeline display items, proof display, receipt display, export display, prune display, actions display, status display, artifact display, mission labels/display, display copy, commands/labels/counts/booleans/artifact/generated/next/current-landing/history objects, current landing label, duplicate-free history label/count/toggle, next move, operator commands, markdown export, generated timestamp, full-history --all, and automatic prune dry-run summary
 rg "buildMissionRoom|chat_zone|task_plan_preview|member_route|timeline_preview|result.landing|writeThinkingMemory|collectMissionRoomContext|proactive_next_mission|missionName|Mission Room landing" lib/mission-room.js commands/mission.js scripts/verify-mission-room.js test/mission-status.test.js atris/thinking.md # Mission Room: messy input -> chat zone first, task-first preview, editable member route, human timeline preview, real business-move naming, logs/thinking context, pending result.landing, approval packet, landing-style verifier, receipt
 rg "Ship Cash Proof Mission Room|verify-ship-cash-proof-mission-room|one-screen Mission Room proof|What Keshav Approves" atris/reports/2026-06-30-ship-cash-proof-mission-room.md scripts/verify-ship-cash-proof-mission-room.js # Cash Proof Mission Room: one-screen approval landing, no-send boundary, linked Mission Room receipt, verifier
@@ -109,8 +110,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 **Purpose:** Universal entry point - accepts any input and routes intelligently
 
 - **Entry point:** `bin/atris.js:922-933` (knownCommands dispatch)
-- **Cold-start handler:** `bin/atris.js:1024` (`interactiveEntry`; active missions/work outrank completed history)
-- **Legacy handler:** `bin/atris.js:2868` (`atrisDevEntry` function)
+- **Cold-start handler:** `bin/atris.js:1035` (`interactiveEntry`; active missions/work outrank completed history)
+- **Legacy handler:** `bin/atris.js:2920` (`atrisDevEntry` function)
 - **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -532,10 +533,25 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:1915-1919` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:1967-1971` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
+
+### Feature: Launchpad (`atris launchpad`)
+
+**Purpose:** One compact command-center card — the single next action plus 3 suggested moves — synthesized from local task, mission, brain, and proof state
+
+- **Entry point:** `commands/launchpad.js:620` (`launchpadCommand`) routes `--help`/`--json`/plain card
+- **Collector:** `commands/launchpad.js:426` (`collectLaunchpad`) reads the task projection, active missions, brain STATUS next move, and TODO endgame; emits `schema: atris.launchpad.v1`
+- **Ranking:** `commands/launchpad.js:201` (`chooseNextAction`) — own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept
+- **Suggestions:** `commands/launchpad.js:373` (`suggestedNextMoves`) returns up to 3 plain-language moves
+- **Render:** `commands/launchpad.js:575` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:609` (`showLaunchpadHelp`)
+- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:922` `knownCommands`
+- **Regression:** `test/commands.test.js:14965` (actor-claimed first), `test/commands.test.js:15039` (clean queue → endgame seed), `test/commands.test.js:15075` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
+- **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
+
+**Search:** `rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js`
 
 ### Feature: Workspace Cleanup (`atris clean`)
 
@@ -925,7 +941,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2266-2318` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2318-2370` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1432-1438` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -976,7 +992,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2559-2616` (chatAtris function)
+- **Entry point:** `bin/atris.js:2611-2668` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1056,7 +1072,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Auto-advance to next workflow step based on journal state
 
-- **Entry point:** `bin/atris.js:1024` (interactiveEntry function)
+- **Entry point:** `bin/atris.js:1035` (interactiveEntry function)
 - **Help:** `bin/atris.js:689-699` (`showNextHelp`) and `bin/atris.js:1366-1373` route `next --help` before `interactiveEntry`
 - **Regression:** `test/commands.test.js:4310-4324` covers next help without context panels or temp state creation
 - **Logic:** Same as natural language entry - loads context, detects state, advances
@@ -1105,7 +1121,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** First `atris` contact asks for human context before planning or agent bootstrap, then persists the answer and creates a starter onboarding task.
 
-- **Entry point:** `bin/atris.js:1024` (`interactiveEntry`)
+- **Entry point:** `bin/atris.js:1035` (`interactiveEntry`)
 - **Helper:** `lib/context-gatherer.js`
 - **State:** `.atris/state/context_profile.json`
 - **Regression:** `test/context-gatherer.test.js`, `test/cli-smoke.test.js`
