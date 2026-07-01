@@ -1,5 +1,7 @@
 # INTUITION.md
 
+> Note: this copy is the unused init template. Live learnings for this repo are in atris/lessons.md (+ lessons.json / learnings.jsonl). Do not check here first.
+
 > Accumulated learnings. Read before major decisions. Update after discoveries.
 
 ---

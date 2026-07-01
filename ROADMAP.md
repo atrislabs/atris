@@ -115,7 +115,7 @@ Next on this task, in order:
 2. Point `pulse` help at `atris loop` too (finish convergence).
 3. A real `--cloud` that reaches remote computers (atrisos-backend); `--overnight` today is a local OS-cron heartbeat, not remote cloud.
 
-Branch hygiene: this work sits on the stale `feat/pulse-self-improve-loop` (v3.17.0). The loop front door should be rebased/cherry-picked onto master (v3.25.x) before any release. The HEALTH.md fixes committed here are already on master via 3.25.x.
+Branch hygiene: this work sits on the stale `feat/pulse-self-improve-loop` (v3.17.0). The loop front door should be rebased/cherry-picked onto master (v3.25.x) before any release. The health-report fixes (now atris/reports/2026-06-25-cli-health-report.md) are already on master via 3.25.x.
 
 ### job 1 (draw out clarity): first slices shipped
 

@@ -31,7 +31,7 @@ task truth, proof, review, and backend/cloud sync all flow through Atris.
 |------|---------|
 | `atris/atris.md` | Protocol/backbone for this workspace |
 | `atris/PERSONA.md` | Communication style (read first) |
-| `atris task` | Current tasks, claims, dialogue, proof |
+| `atris task` | Current tasks, claims, dialogue, proof — deep dive: [`tasks.md`](tasks.md) |
 | `.atris/state/tasks.projection.json` | Readable task projection for UIs/agents |
 | `atris/TODO.md` | Rendered/legacy task view only |
 | `atris/MAP.md` | Navigation (where is X?) |

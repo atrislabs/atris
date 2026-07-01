@@ -32,6 +32,9 @@ jobs:
       - run: npm run build --if-present
 
       - name: Release gate
+        # Focused subset deliberately replaced the full "npm test" gate in
+        # be0c484a: the full suite has known-flaky subprocess tests locally.
+        # Run the full suite (marker-free env) before pushing a v* tag.
         run: |
           node -c commands/mission.js
           node --test test/mission-status.test.js test/check-command-regression.test.js test/repo-shape.test.js

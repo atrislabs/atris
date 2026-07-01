@@ -10,9 +10,10 @@ leave a trail another agent or human can trust.
 On session start, before responding:
 
 1. Read:
-   - `atris/logs/YYYY/YYYY-MM-DD.md` — today's journal
-   - `atris/MAP.md` — navigation
-   - `atris/wiki/STATUS.md` if present — current memory snapshot
+   - `atris/logs/YYYY/YYYY-MM-DD.md`: today's journal
+   - `atris/MAP.md`: navigation
+   - `atris/CLARITY.md` if present: how the operator works (voice, cadence, leash); prompt yourself to match it
+   - `atris/wiki/STATUS.md` if present: current memory snapshot
 
 2. Show this box, then ask what to work on if no task was already given.
 
@@ -50,13 +51,36 @@ Then:
 - do not call something complete without verification
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
-- do not edit the rules that judge you — the reward config, the authority policy, or this file
+- do not edit the rules that judge you: the reward config, the authority policy, or this file
 
 If you cannot honor these rules, stop, write why in the journal, and ask the human before continuing.
 
 Labels used below:
-- `guarded` — checked by code or a pre-commit hook; bypassing is a bug
-- `expected` — convention; honor it or stop
+- `guarded`: checked by code or a pre-commit hook; bypassing is a bug
+- `expected`: convention; honor it or stop
+
+## taste
+
+What you ship should not read as generated. The test: if someone said "an AI made this," would they believe it instantly? If yes, that is the bug. The model has no words for restraint and it falls into gravity wells. Beat both.
+
+- **Gate it.** `atris slop detect <path>` is deterministic: no model, exit 1 on a tell, built for CI and the review stage. A finding is a fact (file:line + rule), not an opinion. `guarded` once wired into review.
+- **Name the move.** Vague prompts make vague output. Direct with craft words: vertical rhythm, negative space, hierarchy, contrast, bolder here / quieter there, restraint. Precise language is the lever. Own it.
+- **Refuse the wells** (named so you can): purple/indigo gradients, gradient-filled text, glassmorphism, Inter/Roboto defaults, claude-beige, neon-on-dark, hero-metric rows, identical card grids, eyebrow/tracked-caps labels, pulsing live-dots, em dashes.
+- **Commit to constraints.** One distinctive font, one accent hue, a small spacing scale. Taste is subtraction, not addition.
+- **Generate it right.** `atris deck` (slides) and the `design` policy apply the system by default: own backgrounds and fonts, never the tool's stock template.
+- **Compound it.** A new tell becomes a typed lesson with a `detector:` regex, so the gate grows instead of leaning on memory. Taste lives in code, not vibes.
+
+## voice
+
+The same discipline for words. Output stays sharp no matter how bloated the context. A full context is not license to ramble.
+
+- **Lead with the move.** Answer first, support after. No preamble, no agreement reflex ("great question", "you're absolutely right").
+- **Specific over buzzy.** Name the exact thing. If you can't, you don't understand it yet; go look, don't hedge.
+- **Cut filler.** Drop "it's worth noting", "in order to", "leverage", "seamless", "robust", "delve", stacked hedges, and em dashes. `atris slop` flags the prose tells (em-dash, hype-copy) too.
+- **Bound verbosity by information, not context.** Say the load-bearing thing and stop. Length tracks what the reader needs to act, nothing more.
+- **Match the register.** The operator wants the next move; a spec wants the contract; a journal wants one line. Jargon is a lever only when shared: use the reader's precise terms, define a new one once.
+
+`expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
 ## task source of truth
 
@@ -136,10 +160,10 @@ The human is the constructor. You multiply. Handoff fidelity lives in the files,
 
 Move one task at a time through plan → do → review.
 
-- **plan** — read relevant files, produce an ASCII visualization, wait for approval. No code.
-- **plan-review** — the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:` + `FIX:` + an optional `PROPOSED:` block (concrete draft of Files / Exit / Verify / Rollback to replace). Plan does not move to do without signoff. The validator is a drafting partner, not just a critic — on REJECT it proposes the sharper rubric rather than leaving the human to guess. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
-- **do** — claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
-- **review** — run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
+- **plan**: read relevant files, produce an ASCII visualization, wait for approval. No code.
+- **plan-review**: the validator reads the plan fresh and signs off with `SIGNOFF:` or halts with `REJECT:` + `FIX:` + an optional `PROPOSED:` block (concrete draft of Files / Exit / Verify / Rollback to replace). Plan does not move to do without signoff. The validator is a drafting partner, not just a critic: on REJECT it proposes the sharper rubric rather than leaving the human to guess. Codex is optional escalation when `ATRIS_USE_CODEX=1` or the task carries `[codex]`.
+- **do**: claim the task with `atris task claim <id> --as <agent>`, execute step by step, add notes as reality changes, update `MAP.md` and the journal when needed.
+- **review**: run the task's verification, read the diff, run the relevant tests, finish with `atris task finish <id> --proof "..."`, and add the lesson/next task with `atris task review`.
 
 Every stage runs the Confidence Gate before it advances:
 
@@ -192,7 +216,7 @@ Periodically, and before closing an endgame, clean:
 - **I1:** Description
 
 ## Notes
-[timestamped lines — one per discovery, decision, or tick]
+[timestamped lines: one per discovery, decision, or tick]
 ```
 
 Context is a cache. Disk is truth. Route discoveries as they happen:
@@ -210,12 +234,13 @@ Do not batch. Nothing important should live only in memory.
 
 ## failure smells
 
-If you notice these, stop and flag — do not continue:
-- **loop** — the same suggestion fires tick after tick, nothing changes on disk
-- **drift** — `MAP.md` file:line refs no longer match the code
-- **stale task** — a backlog task references a file or symbol that no longer exists
-- **hidden side effect** — an action changed external state (email sent, money moved, deploy) without a queued approval
-- **unverifiable completion** — a task marked complete without a `Verify:` command that actually ran
+If you notice these, stop and flag, do not continue:
+- **loop**: the same suggestion fires tick after tick, nothing changes on disk
+- **drift**: `MAP.md` file:line refs no longer match the code
+- **stale task**: a backlog task references a file or symbol that no longer exists
+- **hidden side effect**: an action changed external state (email sent, money moved, deploy) without a queued approval
+- **unverifiable completion**: a task marked complete without a `Verify:` command that actually ran
+- **slop**: output reads as generated: gradient text, purple gradients, em dashes, hype copy, eyebrow caps, or rambling filler. `atris slop detect` names it; fix it before shipping (see `## taste` and `## voice`)
 
 Each has real examples in `lessons.md`. Before nontrivial execution, read the relevant recent lessons.
 
@@ -232,7 +257,7 @@ Pages that summarize or reference other files declare their sources in YAML fron
 
 If any source was modified after `last_compiled`, the page is stale. Re-read the sources, update the page, bump `last_compiled`.
 
-Compounding: when you answer a question that required synthesis across pages, file the answer back — as a new page or into an existing one. Explorations accumulate.
+Compounding: when you answer a question that required synthesis across pages, file the answer back: as a new page or into an existing one. Explorations accumulate.
 
 Linting during review catches stale pages, orphans, contradictions, and concepts mentioned but missing their own page.
 

@@ -54,11 +54,11 @@ Atris is a Node.js CLI package (see `package.json` for version) that transforms 
 - Some interactive cloud flows still live in `bin/atris.js` (`agent`, `chat`).
 
 **atris.md** (master spec in root) — The blueprint. Copied to user projects as `atris/atris.md`. Defines:
-- Phase 1: MAP.md generation rules
-- Phase 2: Navigator/executor/validator agent specs
-- Phase 3: TODO.md structure (task context system, formerly `TODO.md`)
-- Phase 4: Activation & validation checklists
-- Phase 5: Future roadmap (sync, crew orchestration)
+- Activation contract (boot steps, MAP-first navigation)
+- Operating rules and failure smells
+- `## taste` + `## voice` doctrine every agent inherits on boot
+- Task source of truth (`atris task`) and work routing
+- Journal, sweep, and upkeep loops
 
 **atris/MAP.md** (navigation guide) — AI-generated from scanning your codebase. Contains:
 - Quick reference search patterns (ripgrep shortcuts)
@@ -74,7 +74,7 @@ Atris is a Node.js CLI package (see `package.json` for version) that transforms 
 - `atris task status --json` for headless agents and Swarlo/web status
 - `atris task render --out atris/TODO.md` only to regenerate the readable fallback view
 
-**atris/logs/2025/YYYY-MM-DD.md** (daily journal) — Markdown files with sections:
+**atris/logs/YYYY/YYYY-MM-DD.md** (daily journal) — Markdown files with sections:
 - `## Inbox` — Raw ideas from brain dumps (format: `- **I#: Description**`)
 - `## In Progress 🔄` — Currently active work
 - `## Backlog` — Deferred work
@@ -196,7 +196,7 @@ Commands fall into a few categories:
 
 **Agent Activation:**
 - `plan` (navigator) — Brainstorm and create tasks
-- `do` (executor) — Build tasks from TASK_CONTEXTS
+- `do` (executor) — Build tasks from the task db (`atris task day` / `atris task next`; commands/workflow.js reads the rendered atris/TODO.md view)
 - `review` (validator) — Verify, test, clean docs
 
 **Guided Loops:**
@@ -224,9 +224,8 @@ project/
 │   ├── MAP.md                (navigation - AI generates)
 │   ├── TODO.md      (rendered task view - regenerated from `atris task`)
 │   ├── logs/
-│   │   └── 2025/
-│   │       ├── 2025-10-23.md (daily journals)
-│   │       └── 2025-10-24.md
+│   │   └── 2026/
+│   │       └── 2026-07-01.md (daily journals)
 │   └── team/
 │       ├── navigator/MEMBER.md  (planner agent)
 │       ├── executor/MEMBER.md   (builder agent)

@@ -13,7 +13,6 @@ __pycache__/
 # Only block user-generated runtime files
 atris/logs/
 atris/MAP.md
-atris/TASK_CONTEXTS.md
 atris/.config
 atris/.log_sync_state.json
 
