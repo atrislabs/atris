@@ -74,15 +74,24 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
 
 test('digest and alarm compose in plain language', () => {
   const digest = autoland.composeDigest({
-    accepted: { auto: [{ ref: 'CLI-1' }, { ref: 'CLI-2' }], human: [{ ref: 'CLI-3' }] },
+    accepted: {
+      auto: [
+        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference' },
+        { ref: 'CLI-2', title: 'Add hourly member loop' },
+      ],
+      human: [{ ref: 'CLI-3', title: 'Ship release' }],
+    },
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', tag: 'billing', hours: 30 }],
     landed: { branches: 2, due: 1 },
     project: 'atris-cli',
   });
-  assert.match(digest, /2 pieces landed on their own/);
-  assert.match(digest, /1 piece you approved/);
+  assert.match(digest, /got their final sign-off on their own/);
+  assert.match(digest, /- fix mission budget inference/);
+  assert.match(digest, /- add hourly member loop/);
+  assert.match(digest, /you approved 1 piece yourself/);
   assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
   assert.match(digest, /2 pieces of work still in the air, 1 overdue/);
+  assert.match(digest, /the full story: atris autoland digest/);
   assert.doesNotMatch(digest, /branch|worktree|ttl|certif/i);
 
   const alarm = autoland.composeAlarm({

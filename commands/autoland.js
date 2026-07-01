@@ -180,13 +180,28 @@ function turnOff(root) {
 function runDigest(root, args, { forceSend = false } = {}) {
   const policy = autoland.readPolicy(root) || {};
   const tasks = readProjection(root);
+  const accepted = autoland.acceptedInLastDay(tasks);
   const text = autoland.composeDigest({
-    accepted: autoland.acceptedInLastDay(tasks),
+    accepted,
     waiting: autoland.waitingOnHuman(tasks),
     landed: landSummarySafe(root),
     project: projectName(root),
   });
   console.log(text);
+  // the full story: what each piece actually was, in its own words
+  const byRef = new Map(tasks.map((t) => [t.display_id || t.legacy_ref || t.id, t]));
+  const storied = accepted.auto.filter((item) => {
+    const t = byRef.get(item.ref);
+    return t && (t.review?.landing?.happened || t.metadata?.landing_happened);
+  });
+  if (storied.length > 0) {
+    console.log('');
+    for (const item of storied) {
+      const t = byRef.get(item.ref);
+      const happened = String(t.review?.landing?.happened || t.metadata?.landing_happened || '').replace(/\s+/g, ' ').slice(0, 160);
+      console.log(`  ${item.ref}  ${happened}`);
+    }
+  }
   const shouldSend = (forceSend || args.includes('--send')) && policy.imessage_to;
   if (shouldSend) {
     const sent = autoland.sendImessage(root, policy.imessage_to, text);
