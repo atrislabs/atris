@@ -512,7 +512,7 @@ function initAtris() {
   if (!fs.existsSync(featuresDir)) {
     fs.mkdirSync(featuresDir, { recursive: true });
     const featuresReadme = path.join(featuresDir, 'README.md');
-    fs.writeFileSync(featuresReadme, '# Features\n\nThis directory tracks all features built using the atrisDev protocol.\n\nEach feature has:\n- `[feature-name]/idea.md` - Problem, solution, diagrams, success criteria\n- `[feature-name]/build.md` - Implementation plan, files changed, testing\n- `[feature-name]/validate.md` - End-to-end simulation script\n\n---\n\n## Features Built\n\n*Features will appear here as you build them.*\n');
+    fs.writeFileSync(featuresReadme, '# Features\n\nThis directory tracks all features built using the Atris protocol.\n\nEach feature has:\n- `[feature-name]/idea.md` - Problem, solution, diagrams, success criteria\n- `[feature-name]/build.md` - Implementation plan, files changed, testing\n- `[feature-name]/validate.md` - End-to-end simulation script\n\n---\n\n## Features Built\n\n*Features will appear here as you build them.*\n');
     console.log('✓ Created features/ directory with README');
   }
 

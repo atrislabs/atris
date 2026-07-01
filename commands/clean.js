@@ -399,7 +399,7 @@ function findFunctionEnd(lines, startLine) {
 }
 
 /**
- * Extract a symbol name from context like "(atrisDevEntry function)" or "— Main entry"
+ * Extract a symbol name from context like "(interactiveEntry function)" or "— Main entry"
  */
 function extractSymbol(context) {
   if (!context) return null;

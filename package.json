@@ -20,7 +20,6 @@
     "atris.md",
     "GETTING_STARTED.md",
     "PERSONA.md",
-    "atris/atrisDev.md",
     "atris/CLAUDE.md",
     "atris/GEMINI.md",
     "atris/GETTING_STARTED.md",
@@ -48,7 +47,6 @@
     "atris/team/_template/MEMBER.md",
     "atris/features/_templates/",
     "atris/features/company-brain-sync/",
-    "templates/",
     "atris/policies/",
     "atris/skills/"
   ],

@@ -238,4 +238,4 @@ Linting during review catches stale pages, orphans, contradictions, and concepts
 
 ---
 
-*Canonical copy: workspace root `atris.md`. Project copies are distributed; `atris update` syncs them. Full spec: `atrisDev.md`.*
+*Canonical copy: workspace root `atris.md`. Project copies are distributed; `atris update` syncs them.*

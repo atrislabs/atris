@@ -28,7 +28,7 @@ For details, read `atris/wiki/concepts/owner-computer-model.md` before changing 
 
 ```bash
 # Core CLI logic
-rg "async function interactiveEntry|async function atrisDevEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
+rg "async function interactiveEntry|shouldGatherContext|renderContextGathererPrompt" bin/atris.js lib/context-gatherer.js    # Main entry points: cold-start dispatcher, first-contact context gatherer, legacy natural-language mode
 rg "modelForMode|buildPayload|connectorTurnPolicy|formatApprovalReceipt|formatTaskPreviewRows|resolveRoute|formatUsage|normalizeChatCommandArgs|async function chat|postTurn|runAxSpawnCommand|runAxYoutubeCommand|runChatDogfood|extractYoutubeUrl|AX Cloud-First Standard|verify-ax-cloud-standard" ax test/cli-smoke.test.js test/ax.test.js scripts/verify-ax-cloud-standard.js atris/team/codex-executor/MEMBER.md  # ax Atris2 local coding-agent CLI: cloud-first by default, explicit --local workspace opt-in, Fast/Pro modes, SSE streaming, workspace_path, chat subcommand alias, chat history, connector turn isolation, Gmail approval previews, doctor/help, durable worker spawn aliases, local YouTube URL routing, and safe 25-loop --dogfood-chat checklist
 rg "atrisFastChat|atrisFastOnce|streamProChat|text_delta|Usage: atris fast" bin/atris.js utils/api.js test/commands.test.js test/api-stream.test.js  # Atris2 Fast one-shot chat CLI and SSE text_delta streaming
 rg "brainstormAtris|Usage: atris brainstorm|brainstorm help" commands/brainstorm.js test/commands.test.js  # Brainstorm command + workspace-free help
@@ -111,7 +111,6 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 - **Entry point:** `bin/atris.js:922-933` (knownCommands dispatch)
 - **Cold-start handler:** `bin/atris.js:1035` (`interactiveEntry`; active missions/work outrank completed history)
-- **Legacy handler:** `bin/atris.js:2920` (`atrisDevEntry` function)
 - **Regression:** `test/commands.test.js:4974-4987` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
@@ -125,7 +124,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
 
-**Search:** `rg "atrisDevEntry" bin/atris.js`
+**Search:** `rg "interactiveEntry" bin/atris.js`
 
 ### Feature: Project Initialization (`atris init`)
 
@@ -261,7 +260,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - Confirms before writing unless `--force` / `--yes` / `-y`
 - `--dry-run` prints the plan and exits
 - **Regression:** `test/commands.test.js:4218-4233` covers `update --help` and `sync --help` as non-mutating usage output
-- **Value:** Keep canonical docs (atris.md, atrisDev.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
+- **Value:** Keep canonical docs (atris.md, PERSONA.md, GETTING_STARTED.md, CLAUDE.md) in sync across a multi-project workspace in one command
 
 **Search:** `rg "showUpdateHelp|syncAtris|syncAtrisAll|_findAtrisProjects|update and sync --help" bin/atris.js commands/sync.js test/commands.test.js`
 
@@ -534,7 +533,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `--verbose` / `-v`: Legacy visual task board
 - `--quick` / `-q`: One-line emoji summary
 - `--json`: Structured JSON (date, backlog, inProgress, completed, inbox, completions, lessons, team)
-- **Routing:** `bin/atris.js:1967-1971` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
+- **Routing:** `bin/atris.js:1962-1966` (`statusCmd` local path), `bin/atris.js:1461-1465` routes slug status to `commands/context-sync.js:55` (`businessStatus`)
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
@@ -549,7 +548,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Suggestions:** `commands/launchpad.js:373` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js:575` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:609` (`showLaunchpadHelp`)
 - **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:922` `knownCommands`
-- **Regression:** `test/commands.test.js:14965` (actor-claimed first), `test/commands.test.js:15039` (clean queue → endgame seed), `test/commands.test.js:15075` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
+- **Regression:** `test/commands.test.js:7588` (actor-claimed first), `test/commands.test.js:15225` (clean queue → endgame seed), `test/commands.test.js:102` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
 **Search:** `rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js`
@@ -942,7 +941,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2318-2370` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:2313-2365` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:1432-1438` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -993,7 +992,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:2611-2668` (chatAtris function)
+- **Entry point:** `bin/atris.js:2606-2663` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1388,7 +1387,6 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - `interactiveEntry()` — Natural language entry (line 525)
 - `showWelcomeVisualization()` — Spec file trigger (line 672)
 - `upgradeAtris()` — npm upgrade (line 1214)
-- `atrisDevEntry()` — Dev entry point (line 1508)
 **Modular commands (in commands/):**
 
 - `planAtris()` → `commands/workflow.js:362-701`
@@ -1511,7 +1509,7 @@ atris fix the auth bug
 atris build user dashboard
 ```
 
-**Flow:** `bin/atris.js:525` → `atrisDevEntry()` → loads context → shows protocol
+**Flow:** `interactiveEntry()` → loads context → shows protocol
 
 ### Entry Point 4: AI Agent Execution
 
@@ -1562,7 +1560,7 @@ Agent: Runs atris command, follows protocol
 User: Has fully instrumented system
 ```
 
-### Flow 2: atrisDev Protocol (v1.9+)
+### Flow 2: Atris Protocol
 
 ```
 User: atris (or atris [task description])
@@ -1677,7 +1675,7 @@ CLI: Updates sync state in ~/.atris/.log_sync_state.json
 
 ```bash
 # Find command implementation
-rg "atrisDevEntry" bin/atris.js
+rg "interactiveEntry" bin/atris.js
 rg "initAtris" commands/init.js
 rg "logSyncAtris" commands/log-sync.js
 
