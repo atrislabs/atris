@@ -63,6 +63,7 @@ rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands.test.js  # Local AI Computer bridge routing + help guard
 rg "ensureNowFile|renderDefaultNow|renderPortfolioNow|countOpenWorkItems|countOpenTodoItems|countJournalCompletedReceipts|now --help" bin/atris.js commands/now.js test/now.test.js test/commands.test.js  # now.md front door: local date, projection-backed open work counts, proof receipts, portfolio signals, non-mutating help
 rg "radarCommand|collectRadar|Operator radar|Agent process top|findTaskWorkspaceRoot|task_reason|task_action|task_load|whats going on|loadBusinessCollaboration|ctop" commands/radar.js bin/atris.js test/radar.test.js test/commands.test.js  # Live Atris OS radar: agent processes joined with nearest workspace task projection, ctop unmapped-session reasons/actions and task-load pileups, mission/loop, worktree, AgentXP, team/member, business collaboration readiness, brain scorecard, Swarlo/delegation, and Codex goal state
+rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|taskNeedsAgentReview|taskIsHumanGatedClaimed|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js  # Launchpad command-center card: single next action + 3 suggested moves from local task projection, missions, brain STATUS, and TODO endgame; ranks own-claimed > mission tick > proof review > human-accept queue > open claim > endgame seed > brain move; skips human-gated claimed work; --json (atris.launchpad.v1) and plain card
 rg "releaseAtris" commands/release.js      # Release command
 rg "showSearchHelp|searchJournal|search help flags" bin/atris.js test/commands.test.js # Search command + workspace-free help flags
 rg "showLearnHelp|learnAtris|learn help" commands/learn.js test/commands.test.js # Project learnings command + workspace-free help
@@ -536,6 +537,21 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Value:** Parallel work visibility + machine-readable output for scripting
 
 **Search:** `rg "statusAtris|showStatusHelp|status and analytics --help" bin/atris.js commands/status.js test/commands.test.js`
+
+### Feature: Launchpad (`atris launchpad`)
+
+**Purpose:** One compact command-center card — the single next action plus 3 suggested moves — synthesized from local task, mission, brain, and proof state
+
+- **Entry point:** `commands/launchpad.js:620` (`launchpadCommand`) routes `--help`/`--json`/plain card
+- **Collector:** `commands/launchpad.js:426` (`collectLaunchpad`) reads the task projection, active missions, brain STATUS next move, and TODO endgame; emits `schema: atris.launchpad.v1`
+- **Ranking:** `commands/launchpad.js:201` (`chooseNextAction`) — own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept
+- **Suggestions:** `commands/launchpad.js:373` (`suggestedNextMoves`) returns up to 3 plain-language moves
+- **Render:** `commands/launchpad.js:575` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:609` (`showLaunchpadHelp`)
+- **Help:** `bin/atris.js:464` help line; **Routing:** `bin/atris.js:1856-1857` dispatch, `bin/atris.js:922` `knownCommands`
+- **Regression:** `test/commands.test.js:14965` (actor-claimed first), `test/commands.test.js:15039` (clean queue → endgame seed), `test/commands.test.js:15075` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:14915`
+- **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
+
+**Search:** `rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|atris.launchpad.v1" commands/launchpad.js bin/atris.js test/commands.test.js`
 
 ### Feature: Workspace Cleanup (`atris clean`)
 
