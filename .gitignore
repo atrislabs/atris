@@ -90,3 +90,6 @@ progress.txt
 # Private deck specs (fundraising/investor data) — never commit
 decks/private/
 atris/.research/
+
+# Private business docs — never commit
+private/
