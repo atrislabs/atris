@@ -302,6 +302,20 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "missionCommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|captureMissionWorktreeBaseline|missionCompletionGate|runMission|tickMission|pruneRuns|runsPruneLines|prune-runs" commands/mission.js lib/runs-prune.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js test/mission-worktree-baseline.test.js test/mission-complete-guard.test.js test/mission-status.test.js`
 
+### Feature: Landing Contract (`atris land`)
+
+**Purpose:** Work is merged or reaped, never limbo — the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
+
+- **Implementation:** `commands/land.js` (collectBoard, reap, landSummary)
+- **Router:** `bin/atris.js` (`command === 'land'` dispatch)
+- **Boot visibility:** `bin/atris.js` welcome banner (`🛬 Land:` line via `landSummary`)
+- **Doctrine:** `atris.md` operating rules ("land or reap"), `AGENTS.md` agent contract table
+- **Salvage:** bundles + dirty patches under `.atris/salvage/<date>/` — a reap never loses work
+- **Regression:** `test/land.test.js` (board classification, reap, dry-run, worktree patch salvage)
+- **Value:** hundreds of agents can fan out without work silently dying in branches nobody merges
+
+**Search:** `rg "collectBoard|landCommand|landSummary" commands/land.js bin/atris.js`
+
 ### Feature: Member Worktrees (`atris worktree`)
 
 **Purpose:** Keep parallel members, subagents, and agents out of one dirty checkout by creating identity-scoped Git worktrees and branches, with optional Swarlo claim wiring.

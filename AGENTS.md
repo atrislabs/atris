@@ -53,6 +53,7 @@ Every agent should leave four artifacts another agent can trust:
 | Change | Small git diff in declared files only |
 | Proof ready | `atris task ready <id> --proof "<commands or receipt>"` |
 | Human accept | `atris task accept <id>` |
+| Land or reap | merge your branch or delete it before you stop; `atris land` shows limbo, `atris land --reap` clears it |
 
 Do not rely on chat context. Put the task, file pointers, and proof on disk.
 Do not write new operating doctrine here first; add it to Atris policy, skills,

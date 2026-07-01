@@ -468,6 +468,7 @@ function showHelp() {
   console.log('  analytics  - Show recent productivity from journals');
   console.log('  search     - Search journal history (atris search <keyword>)');
   console.log('  clean      - Housekeeping (stale tasks, archive journals, broken refs)');
+  console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt');
@@ -485,6 +486,7 @@ function showHelp() {
   console.log('  autopilot  - Guided loop that can clarify TODOs and run plan → do → review');
   console.log('  improve    - Run one paid RL tick (POST /api/improve, deducts credits)');
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
+  console.log('  land       - Landing contract: board of unlanded branches/worktrees; --reap salvages + clears stale');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
   console.log('');
@@ -921,8 +923,8 @@ if (command === '2' && ['fast', 'pro'].includes(String(firstCommandArg || '').to
 // Check if this is a known command or natural language input
 const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'status', 'analytics', 'visualize', 'brain', 'brainstorm', 'autopilot', 'run', '_start', 'plan', 'do', 'review', 'release',
                        'activate', '_activate', 'agent', 'chat', 'fast', 'ax', 'console', 'serve', 'login', 'logout', 'whoami', 'switch', 'use', 'accounts', '_resolve', '_profile-email', '_switch-session', 'shell-init', 'update', 'upgrade', 'version', 'help', 'next', 'atris',
-                       'clean', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
-                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
+                       'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
+                       'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
                        'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship'];
 
@@ -1374,6 +1376,12 @@ function showWelcomeVisualization() {
         : `${tasksInReview} waiting`;
       console.log(`    │   ⏳ Review:  ${reviewText.padEnd(26)}│`);
     }
+    let landInfo = null;
+    try { landInfo = require('../commands/land').landSummary(process.cwd()); } catch (err) { landInfo = null; }
+    if (landInfo && landInfo.branches > 0) {
+      const landText = `${landInfo.branches} unlanded, ${landInfo.due} past ttl`;
+      console.log(`    │   🛬 Land:    ${landText.padEnd(26)}│`);
+    }
     console.log(`    │   📝 Journal: ${(journalEntries + ' entries today').padEnd(26)}│`);
     if (endgameState.slug !== 'unset' && endgameState.horizon) {
       const endgameLine = endgameState.slug + ' — ' + endgameState.horizon;
@@ -1396,7 +1404,13 @@ function showWelcomeVisualization() {
   if (tasksCertified > 0) {
     console.log(`    Ready. ${tasksCertified} certified await accept — run 'atris task reviews'.`);
   } else {
-    console.log(`    Ready. Run 'atris plan' to start.`);
+    let landHint = null;
+    try { landHint = require('../commands/land').landSummary(process.cwd()); } catch (err) { landHint = null; }
+    if (landHint && landHint.due > 0) {
+      console.log(`    Ready. ${landHint.due} branches past ttl — run 'atris land --reap'.`);
+    } else {
+      console.log(`    Ready. Run 'atris plan' to start.`);
+    }
   }
   console.log('');
 }
@@ -1472,6 +1486,10 @@ if (command === 'init') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'worktree') {
   Promise.resolve(require('../commands/worktree').worktreeCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'land') {
+  Promise.resolve(require('../commands/land').landCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'radar' || command === 'ctop') {
@@ -1977,6 +1995,12 @@ if (command === 'init') {
   const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-n');
   const json = process.argv.includes('--json');
   require('../commands/clean').cleanAtris({ dryRun, json });
+} else if (command === 'harvest') {
+  Promise.resolve(require('../commands/harvest').harvestCommand(process.argv.slice(3)))
+    .catch((err) => {
+      console.error(err.message || err);
+      process.exit(1);
+    });
 } else if (command === 'verify') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {

@@ -49,6 +49,7 @@ Before changing anything, state:
 Then:
 - do not execute if another agent owns the same task or files
 - do not call something complete without verification
+- land or reap: work is not done until it is merged to the base branch or reaped; if you make a branch or worktree, you merge it or delete it before you stop. Run `atris land` to see limbo; anything past 7 days gets salvaged to `.atris/salvage/` and deleted by `atris land --reap`.
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file
