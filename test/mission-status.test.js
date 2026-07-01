@@ -3689,6 +3689,15 @@ test('continuation mission stops instead of returning placeholder when no concre
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', '2099'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2099', '2099-01-01.md'), [
+      '# Log 2099-01-01',
+      '',
+      '## Inbox',
+      '',
+      '- **I1:** test idea',
+      '',
+    ].join('\n'), 'utf8');
     appendMissionState(dir, {
       id: 'mission-choice-empty',
       slug: 'mission-choice-empty',
@@ -3714,10 +3723,72 @@ test('continuation mission stops instead of returning placeholder when no concre
     const attachedPayload = JSON.parse(attached.stdout);
     assert.match(attachedPayload.mission.next_action, /atris mission stop mission-choice-empty --reason 'no concrete follow-up mission found in Atris state' --json/);
     assert.doesNotMatch(attachedPayload.mission.next_action, /<next useful mission>/);
+    assert.equal(attachedPayload.mission.next_action_preview, null);
 
     const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
     assert.match(ack.codex_goal_state.goal.next_command, /atris mission stop mission-choice-empty --reason 'no concrete follow-up mission found in Atris state' --json/);
     assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /<next useful mission>/);
+    assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /test idea/);
+    assert.equal(ack.codex_goal_state.goal.next_action_preview, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('continuation mission refreshes stale placeholder preview after task spine exists', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', '2099'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2099', '2099-01-01.md'), [
+      '# Log 2099-01-01',
+      '',
+      '## Inbox',
+      '',
+      '- **I1:** test idea',
+      '',
+    ].join('\n'), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-choice-stale-preview',
+      slug: 'mission-choice-stale-preview',
+      objective: 'Decide and start the next useful mission after: finish stale preview run',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent-stale-preview',
+      parent_objective: 'finish stale preview run',
+      task_ids: ['task-1'],
+      xp_task: {
+        task_id: 'task-1',
+        ref: 'CLI-1',
+      },
+      next_action: "decide next mission, then run: atris mission run 'test idea' --owner mission-lead",
+      next_action_preview: {
+        candidate: { title: 'test idea' },
+        feynman: { what: 'Test idea.' },
+      },
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: finish stale preview run',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.match(goalPayload.goal.next_command, /atris mission stop mission-choice-stale-preview --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.equal(goalPayload.goal.next_action_preview, null);
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-stale-preview', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.equal(attachedPayload.action, 'mission_task_spine_exists');
+    assert.match(attachedPayload.mission.next_action, /atris mission stop mission-choice-stale-preview --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.equal(attachedPayload.mission.next_action_preview, null);
   } finally {
     cleanupTempDir(dir);
   }

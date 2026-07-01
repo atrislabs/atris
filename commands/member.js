@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
@@ -433,6 +433,12 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--max-wall',
   '--minutes',
   '--hours',
+  '--industry',
+  '--domain',
+  '--value',
+  '--outcome',
+  '--truth',
+  '--proof',
 ];
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [
@@ -446,10 +452,63 @@ const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--spend-full-budget',
   '--use-whole-budget',
   '--stop-when-done',
+  '--choose-work',
+  '--auto',
 ];
 
 function memberRunMissionText(args = []) {
   return stripKnownFlags(args, MEMBER_RUN_START_VALUE_FLAGS, MEMBER_RUN_START_BOOLEAN_FLAGS).join(' ').trim();
+}
+
+function cleanMemberRunPhrase(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function memberRunDomain(args = []) {
+  return cleanMemberRunPhrase(readFlag(args, '--industry', '') || readFlag(args, '--domain', '')) || 'this workspace and its users';
+}
+
+function memberRunOutcome(args = []) {
+  return cleanMemberRunPhrase(readFlag(args, '--outcome', '') || readFlag(args, '--value', ''))
+    || 'revenue, reliability, speed, security, workflow clarity, or customer trust';
+}
+
+function memberRunTruthRule(args = []) {
+  return cleanMemberRunPhrase(readFlag(args, '--truth', '') || readFlag(args, '--proof', ''))
+    || 'say what changed, what was checked, and what is still unproven';
+}
+
+function memberRunUsefulTarget() {
+  try {
+    const moves = require('../lib/next-moves').nextMoves(process.cwd(), 5);
+    const candidate = moves.find((move) => {
+      const title = cleanMemberRunPhrase(move?.title);
+      if (!title) return false;
+      if (/^mission xp\s*:/i.test(title)) return false;
+      if (/^decide and start the next useful mission after:/i.test(title)) return false;
+      return true;
+    });
+    return candidate?.title ? cleanMemberRunPhrase(candidate.title) : '';
+  } catch {
+    return '';
+  }
+}
+
+function memberRunAutoMissionText(name, args = []) {
+  const domain = memberRunDomain(args);
+  const outcome = memberRunOutcome(args);
+  const truth = memberRunTruthRule(args);
+  const target = memberRunUsefulTarget();
+  const work = target
+    ? `Start with this concrete candidate: ${target}.`
+    : 'First inspect current Atris state, then choose one bounded useful task.';
+  return [
+    `Run ${name} on meaningful work for ${domain}.`,
+    work,
+    `Useful means it improves ${outcome}.`,
+    `Truth rule: ${truth}.`,
+    'Explain the choice in plain language, prove the result before Review, and stop instead of doing fake busywork when no useful task exists.',
+  ].join(' ');
 }
 
 function memberRunBudgetSeconds(args = []) {
@@ -514,7 +573,10 @@ function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member run <name> ["mission text"] [--minutes N|--hours N] [--json]');
     console.log('New mission: atris member run growth "Improve onboarding proof" --minutes 30 --json');
+    console.log('Choose work: atris member run growth --industry logistics --value "reduce support time" --minutes 30 --json');
     console.log('Existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
+    console.log('Meaning: if mission text is omitted, the member chooses one useful bounded task from Atris state.');
+    console.log('Truth: useful work must improve revenue, reliability, speed, security, clarity, or trust, then show plain proof.');
     console.log('Isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
     return;
   }
@@ -528,10 +590,7 @@ function memberRun(name, ...args) {
 
   const missionId = resolveMemberRunMissionId(name, args);
   if (!missionId) {
-    console.error(`No active Mission Runtime found for member "${name}".`);
-    console.error(`Try: atris member goal-from-mission ${name} --json`);
-    console.error(`Or:  atris member run ${name} "..." --minutes 30 --json`);
-    process.exitCode = 1;
+    startMemberRunMission(name, memberRunAutoMissionText(name, args), args);
     return;
   }
 
@@ -2123,6 +2182,184 @@ function memberLoopPaths(name) {
     lockPath: path.join(stateDir, `${name}.lock.json`),
     stopPath: path.join(stateDir, `${name}.stop.json`),
     latestPath: path.join(stateDir, `${name}.latest.json`),
+    cronScriptPath: path.join(stateDir, `${name}.hourly-alive.sh`),
+  };
+}
+
+function memberAliveCronMarker(name) {
+  return `ATRIS_MEMBER_ALIVE_${String(name || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+}
+
+function shellSingleQuote(value) {
+  return `'${String(value || '').replace(/'/g, "'\\''")}'`;
+}
+
+function resolveAtrisCommand() {
+  return path.join(__dirname, '..', 'bin', 'atris.js');
+}
+
+function buildMemberAliveCronScript(name, args = [], paths = memberLoopPaths(name)) {
+  const root = process.cwd();
+  const atrisBin = resolveAtrisCommand();
+  const logDir = path.join(paths.stateDir, 'logs');
+  const command = [
+    process.execPath,
+    atrisBin,
+    'member',
+    'alive',
+    name,
+    '--hourly',
+    '--forever',
+    '--ticks',
+    '1',
+    '--json',
+    ...(hasFlag(args, '--execute') ? ['--execute'] : []),
+    ...(hasFlag(args, '--confirm-autonomy-policy') ? ['--confirm-autonomy-policy'] : []),
+  ];
+  const agent = String(readFlag(args, '--agent', '') || '').trim();
+  const model = String(readFlag(args, '--model', '') || '').trim();
+  const maxWall = String(readFlag(args, '--operate-max-wall', readFlag(args, '--max-wall', '')) || '').trim();
+  const autoAcceptLimit = String(readFlag(args, '--auto-accept-limit', '') || '').trim();
+  if (agent) command.push('--agent', agent);
+  if (model) command.push('--model', model);
+  if (maxWall) command.push('--operate-max-wall', maxWall);
+  if (autoAcceptLimit) command.push('--auto-accept-limit', autoAcceptLimit);
+  const renderedCommand = command.map(shellSingleQuote).join(' ');
+  return {
+    command,
+    rendered_command: renderedCommand,
+    script: [
+      '#!/bin/zsh',
+      'set -u',
+      `ROOT=${shellSingleQuote(root)}`,
+      `LOG_DIR=${shellSingleQuote(logDir)}`,
+      'mkdir -p "$LOG_DIR"',
+      'stamp="$(date +"%Y%m%d-%H%M%S")"',
+      'cd "$ROOT" || exit 1',
+      'export ATRIS_SKIP_UPDATE_CHECK=1',
+      `${renderedCommand} >> "$LOG_DIR/$stamp.log" 2>&1`,
+      'echo "done: $(date -Iseconds) exit=$?" >> "$LOG_DIR/$stamp.log"',
+      '',
+    ].join('\n'),
+  };
+}
+
+function memberAliveCronCadence(args = []) {
+  const pulse = require('../lib/pulse');
+  const raw = hasFlag(args, '--hourly') || hasFlag(args, '--every-hour')
+    ? 'hourly'
+    : readFlag(args, '--cadence', readFlag(args, '--cron', readFlag(args, '--interval', 'hourly')));
+  return pulse.normalizeCronCadence(raw);
+}
+
+function buildMemberAliveCrontabLine(name, args = [], paths = memberLoopPaths(name)) {
+  return `${memberAliveCronCadence(args)} ${paths.cronScriptPath} # ${memberAliveCronMarker(name)}`;
+}
+
+function installMemberAliveCron(name, args = []) {
+  const asJson = hasFlag(args, '--json');
+  const dryRun = hasFlag(args, '--dry-run');
+  if (hasFlag(args, '--execute') && !hasFlag(args, '--confirm-autonomy-policy')) {
+    const payload = {
+      ok: false,
+      action: 'alive_install',
+      member: name,
+      status: 'blocked',
+      reason: 'execute_requires_confirm_autonomy_policy',
+    };
+    printJsonOrText(payload, [
+      `Install blocked for ${name}: execute requires --confirm-autonomy-policy.`,
+    ], asJson);
+    process.exitCode = 1;
+    return payload;
+  }
+  const paths = memberLoopPaths(name);
+  fs.mkdirSync(paths.stateDir, { recursive: true });
+  const script = buildMemberAliveCronScript(name, args, paths);
+  const crontabLine = buildMemberAliveCrontabLine(name, args, paths);
+  fs.writeFileSync(paths.cronScriptPath, script.script, { mode: 0o755 });
+  const marker = memberAliveCronMarker(name);
+  let installed = false;
+  let error = null;
+  if (!dryRun) {
+    const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+    const current = existing.status === 0 ? existing.stdout : '';
+    const kept = String(current || '').split(/\r?\n/).filter((line) => line.trim() && !line.includes(marker));
+    const next = `${kept.join('\n')}${kept.length ? '\n' : ''}${crontabLine}\n`;
+    const apply = spawnSync('crontab', ['-'], { input: next, encoding: 'utf8', timeout: 10000 });
+    installed = apply.status === 0;
+    if (!installed) error = apply.stderr || `crontab exited ${apply.status}`;
+  }
+  const payload = {
+    ok: dryRun || installed,
+    action: 'alive_install',
+    member: name,
+    cadence: 'hourly',
+    forever: true,
+    installed,
+    dry_run: dryRun,
+    script_path: paths.cronScriptPath,
+    crontab_line: crontabLine,
+    command: script.command,
+    stop_command: `atris member alive ${name} --uninstall`,
+    error,
+  };
+  writeJsonFile(paths.latestPath, payload);
+  printJsonOrText(payload, [
+    `${dryRun ? 'Would install' : installed ? 'Installed' : 'Install failed'} hourly alive loop: ${name}`,
+    `Cron: ${crontabLine}`,
+    `Stop: ${payload.stop_command}`,
+  ], asJson);
+  if (!payload.ok) process.exitCode = 1;
+  return payload;
+}
+
+function uninstallMemberAliveCron(name, args = []) {
+  const asJson = hasFlag(args, '--json');
+  const paths = memberLoopPaths(name);
+  const marker = memberAliveCronMarker(name);
+  const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+  if (existing.status !== 0) {
+    const payload = { ok: true, action: 'alive_uninstall', member: name, removed: false, reason: 'no_crontab' };
+    printJsonOrText(payload, [`No hourly alive crontab found for ${name}.`], asJson);
+    return payload;
+  }
+  const before = String(existing.stdout || '').split(/\r?\n/);
+  const after = before.filter((line) => !line.includes(marker));
+  const removed = after.length !== before.length;
+  const apply = spawnSync('crontab', ['-'], { input: after.filter(Boolean).join('\n') + (after.filter(Boolean).length ? '\n' : ''), encoding: 'utf8', timeout: 10000 });
+  const payload = {
+    ok: apply.status === 0,
+    action: 'alive_uninstall',
+    member: name,
+    removed,
+    marker,
+    script_path: paths.cronScriptPath,
+    error: apply.status === 0 ? null : apply.stderr || `crontab exited ${apply.status}`,
+  };
+  printJsonOrText(payload, [
+    removed ? `Removed hourly alive loop: ${name}` : `No hourly alive line found for ${name}.`,
+  ], asJson);
+  if (!payload.ok) process.exitCode = 1;
+  return payload;
+}
+
+function memberAliveCronStatus(name, paths = memberLoopPaths(name)) {
+  const marker = memberAliveCronMarker(name);
+  let crontabLine = null;
+  const crontab = spawnSync('crontab', ['-l'], { encoding: 'utf8', timeout: 10000 });
+  if (crontab.status === 0) {
+    crontabLine = String(crontab.stdout || '').split(/\r?\n/).find((line) => line.includes(marker)) || null;
+  }
+  return {
+    schema: 'atris.member_alive_cron_status.v1',
+    marker,
+    installed: Boolean(crontabLine),
+    crontab_line: crontabLine,
+    script_path: paths.cronScriptPath,
+    script_exists: fs.existsSync(paths.cronScriptPath),
+    install_command: `atris member alive ${name} --install --hourly --forever --execute --confirm-autonomy-policy --json`,
+    uninstall_command: `atris member alive ${name} --uninstall`,
   };
 }
 
@@ -7022,6 +7259,14 @@ async function memberLoop(name, ...args) {
   const paths = memberLoopPaths(name);
   fs.mkdirSync(paths.stateDir, { recursive: true });
 
+  if (hasFlag(args, '--install')) {
+    return installMemberAliveCron(name, args);
+  }
+
+  if (hasFlag(args, '--uninstall')) {
+    return uninstallMemberAliveCron(name, args);
+  }
+
   if (status) {
     const active = readJsonIfExists(paths.lockPath);
     const latest = readJsonIfExists(paths.latestPath);
@@ -7032,12 +7277,14 @@ async function memberLoop(name, ...args) {
       active: Boolean(active && Number(active.expires_at_ms || 0) > Date.now() && isPidAlive(active.pid)),
       lease: active || null,
       latest: latest || null,
+      hourly_alive: memberAliveCronStatus(name, paths),
       lock_path: paths.lockPath,
       latest_path: paths.latestPath,
     };
     printJsonOrText(payload, [
       `Loop status: ${name}`,
       `Active: ${payload.active ? 'yes' : 'no'}`,
+      `Hourly: ${payload.hourly_alive.installed ? 'installed' : payload.hourly_alive.script_exists ? 'script ready' : 'not installed'}`,
       `Latest: ${latest?.receipt_path ? path.relative(process.cwd(), latest.receipt_path) : 'none'}`,
     ], asJson);
     return;
@@ -7075,11 +7322,21 @@ async function memberLoop(name, ...args) {
   const ticksFlag = readNumberFlag(args, '--ticks', null);
   const minutes = readNumberFlag(args, '--minutes', null);
   const durationSeconds = readNumberFlag(args, '--duration-seconds', readNumberFlag(args, '--seconds', null));
-  const intervalSeconds = readNumberFlag(args, '--interval', readNumberFlag(args, '--interval-seconds', 60));
+  const hourly = hasFlag(args, '--hourly') || hasFlag(args, '--every-hour');
+  const forever = hasFlag(args, '--forever') || hasFlag(args, '--until-stopped');
+  const intervalSeconds = hourly
+    ? 3600
+    : readNumberFlag(args, '--interval', readNumberFlag(args, '--interval-seconds', 60));
   const intervalMs = Math.max(0, Math.floor(Number(intervalSeconds == null ? 60 : intervalSeconds) * 1000));
-  const durationMs = Math.max(0, Math.floor(durationSeconds != null ? Number(durationSeconds) * 1000 : Number(minutes == null ? 10 : minutes) * 60 * 1000));
+  const durationMs = forever && ticksFlag == null
+    ? 0
+    : Math.max(0, Math.floor(durationSeconds != null ? Number(durationSeconds) * 1000 : Number(minutes == null ? 10 : minutes) * 60 * 1000));
   const ticks = ticksFlag != null
     ? Math.max(1, Math.floor(Number(ticksFlag)))
+    : forever
+      ? execute && confirmed
+        ? Number.MAX_SAFE_INTEGER
+        : 1
     : intervalMs > 0
       ? Math.max(1, Math.floor(durationMs / intervalMs))
       : 1;
@@ -7089,7 +7346,7 @@ async function memberLoop(name, ...args) {
   const ttlMs = Math.max(
     30000,
     Math.floor(Number(ttlSeconds == null ? 0 : ttlSeconds) * 1000),
-    durationMs + 60000,
+    forever ? intervalMs + (2 * 60 * 60 * 1000) : durationMs + 60000,
     intervalMs + 60000,
   );
 
@@ -7284,6 +7541,12 @@ async function memberLoop(name, ...args) {
     alive: aliveMode,
     status: failed ? 'failed' : stopped ? 'stopped' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
     mode: execute ? 'execute' : 'dry_run',
+    cadence: hourly ? 'hourly' : 'custom',
+    forever,
+    stop_command: `atris member ${aliveMode ? 'alive' : 'loop'} ${name} --stop`,
+    operating_contract: forever
+      ? 'Run on this cadence until stopped; each tick must choose useful work, prove it plainly, or stop/ask instead of faking activity.'
+      : 'Run for the requested bounded window; each tick must choose useful work, prove it plainly, or stop/ask instead of faking activity.',
     run_id: runId,
     ticks_requested: ticks,
     ticks: tickResults.length,
@@ -7313,8 +7576,10 @@ async function memberLoop(name, ...args) {
   printJsonOrText(payload, [
     `${aliveMode ? 'Alive' : 'Loop'}: ${name}`,
     `Status: ${payload.status}`,
+    `Cadence: ${payload.cadence}${payload.forever ? ' forever' : ''}`,
     `Ticks: ${payload.ticks}/${payload.ticks_requested}`,
     `Decisions: ${Object.entries(decisions).map(([key, count]) => `${key} x${count}`).join(', ') || 'none'}`,
+    `Stop: ${payload.stop_command}`,
     `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
   ], asJson);
 }
@@ -7763,6 +8028,8 @@ async function memberCommand(subcommand, ...args) {
       console.log('  atris member generalist proof --json');
       console.log('  atris member generalist patterns --json');
       console.log('  atris member loop growth --minutes 10 --interval 60 --json');
+      console.log('  atris member alive growth --hourly --forever --execute --confirm-autonomy-policy --json');
+      console.log('  atris member alive growth --install --hourly --forever --execute --confirm-autonomy-policy --json');
       console.log('  atris member alive growth --minutes 480 --interval 900 --execute --confirm-autonomy-policy --json');
       console.log('  atris member loop growth --ticks 2 --interval 0 --json');
       console.log('  atris member tick growth --json');

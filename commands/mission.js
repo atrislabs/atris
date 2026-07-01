@@ -2565,7 +2565,31 @@ function attachMissionTask(args) {
 
     const existingSpine = missionTaskSpine(mission);
     if (existingSpine?.has_task) {
-      const view = missionStatusView(mission);
+      let currentMission = mission;
+      if (missionChoosesNextMission(currentMission)) {
+        const nextPlan = chooseNextMissionPlan(currentMission);
+        const nextAction = `decide next mission, then run: ${nextPlan.command}`;
+        const currentPreviewTitle = currentMission.next_action_preview?.candidate?.title || null;
+        const nextPreviewTitle = nextPlan.preview?.candidate?.title || null;
+        const previewChanged = Boolean(currentMission.next_action_preview) !== Boolean(nextPlan.preview)
+          || currentPreviewTitle !== nextPreviewTitle;
+        if (currentMission.next_action !== nextAction || previewChanged) {
+          currentMission = saveMission(
+            {
+              ...currentMission,
+              next_action: nextAction,
+              next_action_preview: nextPlan.preview,
+            },
+            process.cwd(),
+            'mission_next_action_refreshed',
+            {
+              next_command: nextPlan.command,
+              target: nextPreviewTitle,
+            },
+          ).mission;
+        }
+      }
+      const view = missionStatusView(currentMission);
       printJsonOrText(
         { ok: true, action: 'mission_task_spine_exists', mission: view, task_spine: view.task_spine },
         [
@@ -4635,7 +4659,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     native_goal_ack: ack,
     direct_goal_request: directGoalRequest || null,
     seeded_continuation_goal: seededContinuationGoal || null,
-    next_action_preview: mission.next_action_preview || (missionChoosesNextMission(mission) ? chooseNextMissionPreview(mission, root) : null),
+    next_action_preview: missionChoosesNextMission(mission) ? chooseNextMissionPreview(mission, root) : (mission.next_action_preview || null),
     runtime_goal_state: runtimeGoalState,
   };
   const heartbeat = heartbeatMode ? codexGoalHeartbeat(goal, mission) : undefined;

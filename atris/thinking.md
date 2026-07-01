@@ -47,4 +47,6 @@ This file says how Keshav thinks.
 - 2026-07-01T00:45:55.780Z - Messy Input Goal Chain Mission Room: Dogfood Atris mission loop one more time: prove it can turn messy intent into the right next goal, choose only fresh work, or stop cleanly when nothing useful remains
 - 2026-07-01T07:34:38.020Z - Bounded Proof Mission Room: self improve goal after goal: pick one useful bounded mission from current Atris state, run proof, and continue only with real next work
 - 2026-07-01T08:40:15.567Z - Bounded State Message Mission Room: one-message autonomy: improve atris-cli usefully without creating junk state; pick the best next bounded task from live state and prove it
+- 2026-07-01T18:21:55.139Z - Clarity Mission Room: Investigate the atris-cli codebase for 10 minutes; read recent logs for context, set a goal, accomplish it, synthesize findings into the next useful goal, and use the whole 10...
+- 2026-07-01T19:20:13.781Z - Close Hourly Intelligent Mission Room: Close the hourly intelligent forever loop gap: team members should run every hour, choose useful work, think-do-prove truthfully, and stop instead of fake activity
 <!-- ATRIS_MISSION_ROOM_SIGNALS:END -->

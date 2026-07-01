@@ -271,11 +271,13 @@ test('nextMoves drops generic tick placeholders but keeps concrete inbox ideas',
       '- **I1:** dogfood tick',
       '- **I2:** ship receipt timeline',
       '- **I3:** run one tick',
+      '- **I4:** test idea',
     ]);
 
     const titles = nextMoves.nextMoves(root, 10).map((m) => m.title);
     assert.ok(!titles.includes('dogfood tick'), 'vague dogfood placeholder is not a next move');
     assert.ok(!titles.includes('run one tick'), 'generic tick command is not a next move');
+    assert.ok(!titles.includes('test idea'), 'test placeholder is not a next mission');
     assert.ok(titles.includes('ship receipt timeline'), 'concrete inbox ideas still show');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
