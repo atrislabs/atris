@@ -13,6 +13,7 @@ atris/business/
 node_modules/
 
 # Build outputs
+*.plugin
 dist/
 build/
 __pycache__/

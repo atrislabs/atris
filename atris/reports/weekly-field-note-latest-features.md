@@ -55,5 +55,4 @@ We will turn it into a Mission Room and return the first proof packet.
 - Mission Product Wedge Discovery: `atris/reports/2026-06-30-mission-product-wedge-discovery.md`
 - Cash Sprint operating context: `atris/reports/2026-07-01-30-day-runway-cash-sprint.md`
 - AI memory moat note: `atris/wiki/concepts/ai-memory-moat-enterprise-agents.md`
-- Takeoff/Landing verifier: `node scripts/verify-mission-landing.js`
 - Mission status verifier: `node --test test/mission-status.test.js`
