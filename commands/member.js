@@ -590,6 +590,7 @@ function startMemberRunMission(name, missionText, args = []) {
   pushFlagValue(startArgs, args, '--max-wall');
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
+  pushFlagValue(startArgs, args, '--base');
   pushFlagWhenPresent(startArgs, args, '--always-on');
   pushFlagWhenPresent(startArgs, args, '--xp-task');
   pushFlagWhenPresent(startArgs, args, '--agent-xp');
@@ -637,7 +638,12 @@ function memberRun(name, ...args) {
 
   const runArgs = stripKnownFlags(args, ['--mission', '--mission-id', '--minutes', '--hours'], ['--worktree', '--shared-checkout', '--no-worktree']);
   const budgetSeconds = memberRunBudgetSeconds(args);
-  if (!readFlag(runArgs, '--max-ticks', '')) runArgs.push('--max-ticks', '1');
+  // A timed run is a loop contract, not one tick: keep picking the next useful
+  // move until the wall clock (--max-wall) spends the budget. Only untimed runs
+  // default to a single tick.
+  if (!readFlag(runArgs, '--max-ticks', '')) {
+    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+  }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
 
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');

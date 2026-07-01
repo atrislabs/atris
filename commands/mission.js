@@ -1524,6 +1524,7 @@ function missionFromArgs(args) {
     '--max-wall',
     '--minutes',
     '--hours',
+    '--base',
     '--task',
     '--ask',
     '--model',
@@ -2603,6 +2604,23 @@ function seedNextMoveContinuationGoal(root = process.cwd()) {
   return null;
 }
 
+// Continuation runs started from inside an existing agent worktree must build
+// on that work, not restart clean from origin/master. Returns the current HEAD
+// sha (a sha survives normalizeTargetRef; an unpushed branch name would be
+// rewritten to a nonexistent origin/ ref) when cwd is an agent worktree.
+function inheritedWorktreeBase(cwd) {
+  try {
+    const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
+    const root = String(top.stdout || '').trim();
+    if (top.status !== 0 || !root) return '';
+    if (!fs.existsSync(path.join(root, '.atris', 'agent-worktree.json'))) return '';
+    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+    return head.status === 0 ? String(head.stdout || '').trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
@@ -2614,7 +2632,8 @@ function startMission(args) {
     let created;
     try {
       const { createAgentWorktree } = require('./worktree');
-      created = createAgentWorktree({ member: mission.owner, task: mission.objective });
+      const base = readFlag(args, '--base', '') || inheritedWorktreeBase(process.cwd());
+      created = createAgentWorktree({ member: mission.owner, task: mission.objective, ...(base ? { base } : {}) });
     } catch (e) {
       exitMissionError(`[mission start] worktree creation failed: ${e.message}`, 2, asJson);
     }
@@ -5821,10 +5840,12 @@ async function runMission(args) {
       });
 
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-      const fullBudgetMode = missionSpendsFullBudget(mission);
+      const budgetRemainingSeconds = missionFullBudgetRemainingSeconds(mission);
+      const fullBudgetMode = budgetRemainingSeconds > 0;
       const newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
                         (verifierResult?.passed && completeOnPass && !fullBudgetMode) ? 'complete' :
+                        (verifierResult?.passed && fullBudgetMode) ? 'running' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
@@ -5835,8 +5856,8 @@ async function runMission(args) {
         nextAction = xpReadyAction;
       } else if (verifierResult?.passed && completeOnPass && !fullBudgetMode) {
         nextAction = 'mission complete';
-      } else if (verifierResult?.passed && completeOnPass && fullBudgetMode) {
-        nextAction = 'proof passed; keep using the budget for the next useful move';
+      } else if (verifierResult?.passed && fullBudgetMode) {
+        nextAction = `proof passed with ${durationLabel(budgetRemainingSeconds)} left on the budget; pick the next useful move, then: atris mission tick ${mission.id} --verify --summary "<what changed>"`;
       } else if (verifierResult?.passed) {
         nextAction = `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
       } else if (verifierResult) {
@@ -6078,12 +6099,14 @@ function tickMission(args) {
 	      nextAction = missionGoalChainNextAction(nextGoalChain);
     } else if (verifierResult?.passed) {
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-      const fullBudgetMode = missionSpendsFullBudget(mission);
-      status = (completeOnPass && !mission.always_on && !xpReadyAction && !fullBudgetMode) ? 'complete' : 'ready';
+      const budgetRemainingSeconds = missionFullBudgetRemainingSeconds(mission);
+      const budgetOpen = budgetRemainingSeconds > 0;
+      status = (completeOnPass && !mission.always_on && !xpReadyAction && !budgetOpen) ? 'complete'
+        : (budgetOpen && !mission.always_on && !xpReadyAction ? 'running' : 'ready');
       nextAction = mission.always_on ? nextCandidateTickAction(mission) :
         (xpReadyAction
-          || (completeOnPass && fullBudgetMode
-            ? 'proof passed; keep using the budget for the next useful move'
+          || (budgetOpen
+            ? `proof passed with ${durationLabel(budgetRemainingSeconds)} left on the budget; pick the next useful move, then: atris mission tick ${mission.id} --verify --summary "<what changed>"`
             : (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`)));
 	    } else if (verifierResult) {
 	      status = 'blocked';
@@ -6826,6 +6849,9 @@ function missionCommand(args) {
     case 'status':
     case 'list':
     case 'ls':
+    case 'show':
+    case 'info':
+    case 'view':
       return statusMission(rest);
     case 'doctor':
     case 'check':
