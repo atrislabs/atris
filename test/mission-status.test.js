@@ -760,6 +760,41 @@ test('mission run objective starts with product takeoff instead of runner plumbi
   }
 });
 
+test('full-budget mission keeps running after early passing proof', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const run = runCli([
+      'mission',
+      'run',
+      'work on useful things for 5 hours while I sleep',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const started = JSON.parse(run.stdout);
+    assert.equal(started.budget_contract.policy, 'spend_full_budget');
+    assert.equal(started.budget_contract.requested_seconds, 18000);
+    ackNativeCodexGoal(dir, started.mission);
+
+    const tick = runCli(['mission', 'tick', started.mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const tickPayload = JSON.parse(tick.stdout);
+    assert.equal(tickPayload.mission.status, 'ready');
+    assert.equal(tickPayload.continuation_goal, null);
+    assert.doesNotMatch(tickPayload.mission.next_action, /^mission complete$/);
+
+    const complete = runCli(['mission', 'complete', started.mission.id, '--proof', tickPayload.receipt_path, '--json'], { cwd: dir });
+    assert.equal(complete.status, 2);
+    assert.match(JSON.parse(complete.stdout).error, /full-budget mission still has/);
+    assert.match(JSON.parse(complete.stdout).error, /keep picking the next useful move/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run summary starts with product landing instead of run internals', () => {
   const dir = makeTempDir();
   try {
@@ -2970,6 +3005,7 @@ test('mission run treats hyphenated time as a real long-run budget', () => {
     assert.equal(payload.budget_contract.plain_language, 'Use the whole time.');
     assert.equal(payload.mission.max_wall_seconds, 18000);
     assert.match(payload.mission.stop_condition, /run for 5 hours; use the whole time unless blocked or unsafe/);
+    assert.match(payload.budget_contract.stop_rule, /keep picking the next useful move until time is up/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -5126,7 +5162,8 @@ test('mission help documents status filters', () => {
     assert.match(help.stdout, /mission goal ack <id> --runtime codex --status active --objective "<objective>" --json/);
     assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
     assert.match(help.stdout, /--spend-full-budget\|--use-whole-budget\|--stop-when-done/);
-    assert.match(help.stdout, /plain time like "20 minutes" means finish early if solved/);
+    assert.match(help.stdout, /short time like "20 minutes" means finish early/);
+    assert.match(help.stdout, /long\/sleep time like "5 hours" keeps using the budget/);
     assert.match(help.stdout, /Autonomy recipe:/);
     assert.match(help.stdout, /Codex sessions: read native get_goal, then pass its status into atris mission goal --native-goal-status <status>/);
     assert.match(help.stdout, /Overnight controller: atris mission goal --heartbeat --json/);

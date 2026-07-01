@@ -35,6 +35,7 @@ const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
 const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 const DEFAULT_LONG_RUN_VERIFIER = 'git diff --check';
+const SLEEP_LENGTH_BUDGET_SECONDS = 3600;
 
 function stampIso() {
   return new Date().toISOString();
@@ -1150,6 +1151,15 @@ function missionSpendsFullBudget(mission) {
   return mission?.budget_contract?.policy === 'spend_full_budget';
 }
 
+function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
+  if (!missionSpendsFullBudget(mission)) return 0;
+  const budgetSeconds = Number(mission?.budget_contract?.requested_seconds || mission?.max_wall_seconds || 0);
+  if (!Number.isFinite(budgetSeconds) || budgetSeconds <= 0) return 0;
+  const startedMs = Date.parse(mission.started_at || mission.created_at || mission.updated_at || '');
+  if (!Number.isFinite(startedMs)) return 0;
+  return Math.max(0, Math.ceil((startedMs + budgetSeconds * 1000 - nowMs) / 1000));
+}
+
 function missionGoalChainIntent(text) {
   const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
   return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower);
@@ -1610,6 +1620,12 @@ function wantsFullBudget(text, args = []) {
     || /\b(run|work|stop|continue)\s+(until|till)\s+(the\s+)?(time|budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact);
 }
 
+function sleepLengthBudgetIntent(requestedSeconds, text = '') {
+  const seconds = Number(requestedSeconds);
+  return /\b(overnight|while\s+i\s+(?:sleep|am\s+sleeping|['’]?m\s+sleeping)|sleep(?:ing)?\s+run)\b/i.test(text)
+    || (Number.isFinite(seconds) && seconds >= SLEEP_LENGTH_BUDGET_SECONDS);
+}
+
 function inferRunObjectiveBudgetContract(objective, args = []) {
   const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
   const explicitHours = Number(readFlag(args, '--hours', ''));
@@ -1623,7 +1639,9 @@ function inferRunObjectiveBudgetContract(objective, args = []) {
   const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
   const overnight = /\bovernight\b/i.test(text);
   if (!requestedSeconds && !overnight) return null;
-  const policy = wantsFullBudget(text, args) && !hasFlag(args, '--stop-when-done')
+  const spendBudget = !hasFlag(args, '--stop-when-done')
+    && (wantsFullBudget(text, args) || sleepLengthBudgetIntent(requestedSeconds, text));
+  const policy = spendBudget
     ? 'spend_full_budget'
     : 'stop_when_done';
   const budgetLabel = requestedSeconds
@@ -5715,11 +5733,15 @@ function tickMission(args) {
 	    if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
 	      status = 'running';
 	      nextAction = missionGoalChainNextAction(nextGoalChain);
-	    } else if (verifierResult?.passed) {
-	      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-	      status = (completeOnPass && !mission.always_on && !xpReadyAction) ? 'complete' : 'ready';
-	      nextAction = mission.always_on ? nextCandidateTickAction(mission) :
-	        (xpReadyAction || (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`));
+    } else if (verifierResult?.passed) {
+      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
+      const fullBudgetMode = missionSpendsFullBudget(mission);
+      status = (completeOnPass && !mission.always_on && !xpReadyAction && !fullBudgetMode) ? 'complete' : 'ready';
+      nextAction = mission.always_on ? nextCandidateTickAction(mission) :
+        (xpReadyAction
+          || (completeOnPass && fullBudgetMode
+            ? 'proof passed; keep using the budget for the next useful move'
+            : (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`)));
 	    } else if (verifierResult) {
 	      status = 'blocked';
 	      nextAction = 'fix verifier failure or revise mission';
@@ -5802,6 +5824,14 @@ function receiptShowsPass(receipt) {
 // verifier passed. Mirrors the task plane's proof-only accept guard so the
 // final transition consumes the receipts instead of trusting free text.
 function missionCompletionGate(mission, proof, root = process.cwd()) {
+  const remainingSeconds = missionFullBudgetRemainingSeconds(mission);
+  if (remainingSeconds > 0) {
+    return {
+      ok: false,
+      source: 'budget_contract',
+      reason: `full-budget mission still has ${durationLabel(remainingSeconds)} left; keep picking the next useful move or use --force if blocked/unsafe`,
+    };
+  }
   const receipt = readReceiptProof(proof, root);
   if (receipt) {
     if (receipt.mission_id !== mission.id) {
@@ -6186,7 +6216,7 @@ atris mission - durable goal + loop + owner + proof state
                                 [--room-auto-run|--no-room-auto-run]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
-                       (plain time like "20 minutes" means finish early if solved; say "use the whole time" to spend the full budget)
+                       (short time like "20 minutes" means finish early; long/sleep time like "5 hours" keeps using the budget; --stop-when-done overrides)
                        (messy, shower, and overnight requests preflight through Mission Room before the visible goal is written)
                        (--room-auto-run makes trusted self-improvement asks preview through Mission Room, select real work, then start one bounded goal)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
