@@ -46,6 +46,7 @@ Skills we publish to OpenClaw's ClawHub marketplace. These have YAML frontmatter
 | Skill | Description | Status |
 |-------|-------------|--------|
 | clawhub/atris | Codebase intelligence — MAP.md navigation for any agent | Ready to publish |
+| clawhub/philosophy-of-work | Agent onboarding — philosophy, 60s start, proof contract | Ready to publish |
 
 ```bash
 # Publish to ClawHub

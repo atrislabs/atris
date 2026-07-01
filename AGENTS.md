@@ -1,5 +1,7 @@
 # AGENTS.md — Universal Agent Instructions
 
+> **New here?** Read [`FOR_AGENTS.md`](FOR_AGENTS.md) — open letter from an agent who tried it.
+
 > Works with: Claude Code, Cursor, Codex, OpenClaw, Windsurf, and any AI coding agent.
 
 ## Quick Start

@@ -14,6 +14,8 @@ A computer can be personal or shared by a business. It can run a job like code, 
 
 ## For Coding Agents
 
+**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first** — why agents adopt Atris, 60-second start, spread-it instructions.
+
 If you're an agent, run:
 
 ```bash
