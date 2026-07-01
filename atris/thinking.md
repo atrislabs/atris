@@ -44,4 +44,7 @@ This file says how Keshav thinks.
 - 2026-06-30T23:23:26.906Z - Messy Input Mission Room: messy shower test: user gives messy input and Atris must turn it into the right mission input, choose the right member, set a visible goal, think bottleneck-first, create tasks...
 - 2026-06-30T23:24:52.169Z - Messy Input Goal Chain Mission Room: messy shower test: user gives messy input and Atris must turn it into the right mission input, choose the right member, set a visible goal, think bottleneck-first, create tasks...
 - 2026-07-01T00:09:01.762Z - Messy Input Goal Chain Mission Room: run for 10 minutes while I shower; make mission run set the goal, understand messy input, choose what to do next, and finish with a specific next goal
+- 2026-07-01T00:45:55.780Z - Messy Input Goal Chain Mission Room: Dogfood Atris mission loop one more time: prove it can turn messy intent into the right next goal, choose only fresh work, or stop cleanly when nothing useful remains
+- 2026-07-01T07:34:38.020Z - Bounded Proof Mission Room: self improve goal after goal: pick one useful bounded mission from current Atris state, run proof, and continue only with real next work
+- 2026-07-01T08:40:15.567Z - Bounded State Message Mission Room: one-message autonomy: improve atris-cli usefully without creating junk state; pick the best next bounded task from live state and prove it
 <!-- ATRIS_MISSION_ROOM_SIGNALS:END -->

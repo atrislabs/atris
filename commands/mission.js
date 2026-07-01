@@ -197,6 +197,8 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--stop-when-done',
   '--room-preflight',
   '--no-room-preflight',
+  '--room-auto-run',
+  '--no-room-auto-run',
   '--allow-native-goal-supersede',
   '--supersede-paused-native-goal',
   '--always-on',
@@ -727,13 +729,16 @@ function missionSelfImprovementSeedAction(mission, root = process.cwd()) {
   }
 }
 
-function missionHumanNextAction(mission, root = process.cwd()) {
+function missionHumanNextAction(mission, root = process.cwd(), options = {}) {
   if (!mission) return 'Pick the next customer-facing move.';
+  if (mission.goal_chain?.pause_ready) return 'Mission feels good; review proof, then complete, revise, or choose the next goal.';
   if (mission.status === 'ready' && /^queue AgentXP review:/i.test(mission.next_action || '')) {
     return 'Ready for human review; accept in Atris if the proof looks right.';
   }
   if (mission.status === 'ready' && mission.always_on) {
-    return missionSelfImprovementSeedAction(mission, root) || 'Run the next proof step.';
+    return options.allowSelfImprovementSeed
+      ? (missionSelfImprovementSeedAction(mission, root) || 'Run the next proof step.')
+      : 'Run the next proof step.';
   }
   if (mission.status === 'ready') return 'Review the proof, then complete the mission.';
   if (mission.status === 'complete') return 'Pick the next customer-facing move.';
@@ -775,6 +780,22 @@ function missionVerifierCheckedText(verifierResult, mission) {
   return `Verifier failed: ${command}.`;
 }
 
+function missionVerifierHighLevelTestText(verifierResult, mission) {
+  if (!verifierResult) return 'No automated verifier ran for this receipt; judge it from the receipt, changed files, and next action.';
+  const command = verifierResult.command || mission.verifier || 'configured verifier';
+  const outcome = verifierResult.passed ? 'passed' : 'failed';
+  if (/^git\s+diff\s+--check\b/i.test(command)) {
+    return `Diff cleanliness check ${outcome}: no whitespace or patch-format issues in the changed files.`;
+  }
+  if (/\bnode\s+--test\b/i.test(command) && /\btest\/mission-status\.test\.js\b/i.test(command)) {
+    return `Mission behavior checks ${outcome}: mission start, tick, completion, timeline landing, goal-chain, next-mission, and human-accept boundaries were exercised.`;
+  }
+  if (/\bnode\s+--test\b/i.test(command)) {
+    return `Automated behavior checks ${outcome}: the touched code path was exercised by Node tests.`;
+  }
+  return `Verifier command ${outcome}: ${command}.`;
+}
+
 function missionFallbackChangedText(mission, status, tickIndex, { ranTicks = null, effectiveMaxTicks = null } = {}) {
   if (mission?.always_on && (status === 'ready' || status === 'running')) {
     return 'Recorded a proof heartbeat for this always-on mission.';
@@ -805,6 +826,79 @@ function missionTickResultLines(mission, tickIndex, receiptPath, verifierResult 
   return lines;
 }
 
+function missionReceiptSummaryText(result) {
+  const tick = result?.tick || {};
+  return tick.summary
+    || tick.atris2?.receipt_text
+    || tick.claude?.receipt_text
+    || result?.summary
+    || result?.reason
+    || '';
+}
+
+function missionReceiptTickIndex(mission, result) {
+  const value = Number(result?.tick?.tick_index || mission?.last_tick_index || 0);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function missionReceiptStatus(mission, result) {
+  const tickStatus = String(result?.tick?.status || '').trim();
+  if (tickStatus === 'blocked') return 'blocked';
+  if (result?.verifier_result?.passed === false) return 'blocked';
+  if (result?.verifier_result?.passed === true) return 'proof_ready';
+  return String(mission?.status || 'running');
+}
+
+function missionReceiptNextText(mission, result) {
+  if (result?.next) return String(result.next);
+  if (result?.landing?.next) return String(result.landing.next);
+  if (result?.verifier_result?.passed === true) {
+    return mission?.always_on ? 'Run the next proof step.' : 'Review the proof, then complete the mission.';
+  }
+  if (result?.verifier_result) return 'Fix the verifier failure or revise the mission.';
+  return missionHumanNextAction(mission);
+}
+
+function missionReceiptLanding(mission, result, receiptPath = '') {
+  const verifierResult = result?.verifier_result || null;
+  const status = missionReceiptStatus(mission, result);
+  const summary = missionReceiptSummaryText(result);
+  const changed = missionLandingStepSummary(summary)
+    || missionFallbackChangedText(mission, status, missionReceiptTickIndex(mission, result));
+  const checked = missionVerifierCheckedText(verifierResult, mission);
+  const tested = missionVerifierHighLevelTestText(verifierResult, mission);
+  return {
+    schema: 'atris.result_landing.v1',
+    status,
+    changed,
+    checked,
+    tested,
+    proof: receiptPath ? `Receipt saved at ${receiptPath}.` : 'Receipt saved in mission run history.',
+    next: missionReceiptNextText(mission, result),
+    timeline_visible: !missionLandingChangedIsGenericTick(mission, changed),
+  };
+}
+
+function missionLandingChangedIsGenericTick(mission, changed) {
+  const text = String(changed || '').trim();
+  const objective = String(mission?.objective || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!objective) return false;
+  return new RegExp(`^${objective} recorded tick \\d+\\.$`).test(text);
+}
+
+function normalizeMissionReceiptResult(mission, result, receiptPath = '') {
+  const object = result && typeof result === 'object' && !Array.isArray(result)
+    ? { ...result }
+    : { value: result };
+  if (!object.landing) {
+    object.landing = missionReceiptLanding(mission, object, receiptPath);
+  }
+  if (object.verifier_result && !('passed' in object)) {
+    object.passed = !!object.verifier_result.passed;
+  }
+  return object;
+}
+
 function missionRunStartNextLine(mission, nextCommand, warnings = []) {
   if (warnings.length) return 'Add a verifier before completion, then run the first proof tick.';
   if (isCodexGoalMission(mission) && !codexNativeGoalAck(mission)) {
@@ -823,6 +917,7 @@ function missionRunTakeoffLines(mission, { warnings = [], nextCommand = '' } = {
     `  Goal: ${mission.objective}`,
     `  Done when: ${mission.stop_condition || 'the mission has proof or a human decision'}.`,
     ...(missionBudgetLine(mission) ? [`  Budget: ${missionBudgetLine(mission)}`] : []),
+    ...missionGoalChainLines(mission),
     '  Proof: Mission state saved in .atris/state/missions.jsonl.',
     `  Check: ${checked}`,
     `  Next: ${missionRunStartNextLine(mission, nextCommand, warnings)}`,
@@ -837,7 +932,41 @@ function missionRunPreflightSignals(text) {
 function shouldMissionRunRoomPreflight(objective, args = []) {
   if (hasFlag(args, '--no-room-preflight')) return false;
   if (hasFlag(args, '--room-preflight')) return true;
-  return missionRunPreflightSignals(objective);
+  return missionRunPreflightSignals(objective) || missionRunTrustedRoomSignals(objective);
+}
+
+function missionRunTrustedRoomSignals(text) {
+  const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  return /\b(one[-\s]?message|autonomy|autonomous|self[-\s]?improve|improve\s+(atris|this|it)|keep\s+going|work\s+on\s+this|next\s+useful|goes?\s+off|no\s+junk|junk\s+state)\b/i.test(lower);
+}
+
+function shouldMissionRunTrustedRoom(rawObjective, args = []) {
+  if (hasFlag(args, '--no-room-auto-run')) return false;
+  if (hasFlag(args, '--room-auto-run')) return true;
+  return missionRunTrustedRoomSignals(rawObjective);
+}
+
+function missionRunConcreteTitle(value) {
+  const title = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!title) return '';
+  if (/^(go|go go|go go go|keep going|do it|start|run|continue)$/i.test(title)) return '';
+  if (title.length < 8) return '';
+  return title;
+}
+
+function selectMissionRunUsefulTarget(rawObjective, root = process.cwd()) {
+  try {
+    const moves = require('../lib/next-moves');
+    const rawTitle = missionRunConcreteTitle(rawObjective);
+    return moves.nextMoves(root, 8)
+      .filter((move) => missionRunConcreteTitle(move?.title))
+      .filter((move) => !rawTitle || String(move.title).trim() !== rawTitle)
+      .find((move) => move.source === 'task')
+      || moves.nextMoves(root, 8).find((move) => missionRunConcreteTitle(move?.title))
+      || null;
+  } catch {
+    return null;
+  }
 }
 
 function missionRunPreflightSentence(text, max = 140) {
@@ -852,15 +981,26 @@ function missionRunPreflightObjective(rawObjective, room, owner) {
   return `${name} with ${owner}: turn "${missionRunPreflightSentence(task)}" into one visible goal, task spine, proof receipt, and next action.`;
 }
 
+function missionRunTrustedObjective(rawObjective, room, target) {
+  const targetTitle = missionRunConcreteTitle(target?.title);
+  if (targetTitle) return targetTitle;
+  if (missionRunTrustedRoomSignals(rawObjective)) {
+    return 'Improve Atris one-message autonomy without creating junk mission state';
+  }
+  return missionRunPreflightObjective(rawObjective, room, room?.owner || 'mission-lead');
+}
+
 function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
   if (!shouldMissionRunRoomPreflight(rawObjective, args)) return null;
   const root = options.root || process.cwd();
   const owner = options.owner || readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const trustedRun = options.allowTrustedRun !== false && shouldMissionRunTrustedRoom(rawObjective, args);
+  const selectedTarget = trustedRun ? selectMissionRunUsefulTarget(rawObjective, root) : null;
   const ownerResolution = resolveFunctionalOwner({
     requestedOwner: owner,
-    title: rawObjective,
+    title: selectedTarget?.title || rawObjective,
     tag: readFlag(args, '--lane', 'workspace'),
-    goal: rawObjective,
+    goal: selectedTarget?.title || rawObjective,
     root,
     fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
   });
@@ -868,9 +1008,14 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
     root,
     owner: ownerResolution.owner,
     ownerResolution,
+    trustedRun,
+    selectedTarget,
+    verifier: trustedRun ? DEFAULT_LONG_RUN_VERIFIER : '',
   });
   const written = writeMissionRoomReceipt(room, { root });
-  const shapedObjective = missionRunPreflightObjective(rawObjective, written.room, ownerResolution.owner);
+  const shapedObjective = trustedRun
+    ? missionRunTrustedObjective(rawObjective, written.room, selectedTarget)
+    : missionRunPreflightObjective(rawObjective, written.room, ownerResolution.owner);
   return {
     schema: 'atris.mission_run_preflight.v1',
     source: 'mission_room',
@@ -881,8 +1026,17 @@ function buildMissionRunRoomPreflight(rawObjective, args = [], options = {}) {
     room_receipt_path: written.relativePath,
     owner: ownerResolution.owner,
     owner_resolution: ownerResolution.reason,
-    task_spine_required: true,
-    next_action: 'attach task spine, then run one proof tick',
+    trusted_run: trustedRun,
+    selected_target: selectedTarget ? {
+      title: selectedTarget.title,
+      source: selectedTarget.source,
+      ref: selectedTarget.ref || null,
+      why: selectedTarget.why || '',
+    } : null,
+    task_spine_required: !selectedTarget,
+    next_action: selectedTarget
+      ? 'run one proof tick for the selected existing task'
+      : 'attach task spine, then run one proof tick',
   };
 }
 
@@ -914,7 +1068,7 @@ function missionRunCreatedNextLine(createdNext, continuationGoal, mission) {
   }
   return continuationGoal?.mission
     ? `Next mission: ${continuationGoal.mission.objective}.`
-    : missionHumanNextAction(mission);
+    : missionHumanNextAction(mission, process.cwd(), { allowSelfImprovementSeed: true });
 }
 
 function missionRunTimelineCommand(mission) {
@@ -943,6 +1097,126 @@ function missionBudgetLine(mission) {
 
 function missionSpendsFullBudget(mission) {
   return mission?.budget_contract?.policy === 'spend_full_budget';
+}
+
+function missionGoalChainIntent(text) {
+  const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower);
+}
+
+function missionGoalChainTargetCount(text) {
+  const lower = String(text || '').toLowerCase();
+  if (/\b3\s*(?:or|-)?\s*4\b|\bthree\s+or\s+four\b/.test(lower)) return 4;
+  const explicit = lower.match(/\b([3-4])\s+(?:goals?|child\s+goals?|subgoals?)\b/);
+  if (explicit) return Number(explicit[1]);
+  return 4;
+}
+
+function buildMissionGoalChain(objective, options = {}) {
+  const targetCount = Math.max(3, Math.min(4, Number(options.targetCount || missionGoalChainTargetCount(objective)) || 4));
+  const baseGoals = [
+    {
+      title: 'Find the novel mission',
+      done_when: 'A concrete mission is named with why it matters now.',
+      validation: 'Plain-English reason plus the source signal that made it worth doing.',
+    },
+    {
+      title: 'Split it into child goals',
+      done_when: 'The mission has a 3-4 step path with a clear first move.',
+      validation: 'Each child goal says what proof would make it done.',
+    },
+    {
+      title: 'Run the smallest proof',
+      done_when: 'One real artifact, code change, status output, or receipt exists.',
+      validation: 'A verifier, receipt, or inspectable output proves the work happened.',
+    },
+    {
+      title: 'Explain the pause or next goal',
+      done_when: 'The result says what changed, how it was checked, and whether to accept, revise, or continue.',
+      validation: 'The operator can understand the mission state without reading logs.',
+    },
+  ].slice(0, targetCount).map((goal, index) => ({
+    order: index + 1,
+    status: 'pending',
+    ...goal,
+  }));
+
+  return {
+    schema: 'atris.mission_goal_chain.v1',
+    mode: 'validated_child_goals',
+    status: 'planned',
+    target_count: targetCount,
+    done_count: 0,
+    current_goal_order: 1,
+    plain_language: 'One mission can be reached by several small goals, each with proof.',
+    pause_rule: 'Pause when the chain has proof strong enough to understand, accept, revise, or choose the next mission.',
+    validation_rule: 'Every child goal must leave a receipt, verifier result, artifact, or explicit stop reason.',
+    goals: baseGoals,
+  };
+}
+
+function missionGoalChainCounts(goalChain) {
+  const goals = Array.isArray(goalChain?.goals) ? goalChain.goals : [];
+  const done = goals.filter((goal) => goal?.status === 'done').length;
+  return { done, total: goals.length };
+}
+
+function missionGoalChainPendingGoal(goalChain) {
+  const goals = Array.isArray(goalChain?.goals) ? goalChain.goals : [];
+  return goals.find((goal) => goal?.status !== 'done' && goal?.status !== 'blocked') || null;
+}
+
+function missionGoalChainNextAction(goalChain) {
+  const goal = missionGoalChainPendingGoal(goalChain);
+  if (!goal) return 'continue child-goal chain';
+  return `continue child goal ${goal.order}: ${goal.title}`;
+}
+
+function advanceMissionGoalChain(goalChain, summary, verifierResult = null) {
+  if (!goalChain || !Array.isArray(goalChain.goals) || !goalChain.goals.length) return goalChain || null;
+  const cleanSummary = String(summary || '').replace(/\s+/g, ' ').trim();
+  if (!cleanSummary && !verifierResult) return goalChain;
+
+  const goals = goalChain.goals.map((goal) => ({ ...goal }));
+  const nextIndex = goals.findIndex((goal) => goal.status !== 'done');
+  if (nextIndex === -1) return goalChain;
+
+  const validationResult = verifierResult
+    ? (verifierResult.passed ? 'Verifier passed.' : 'Verifier failed; this goal needs repair.')
+    : 'Summary receipt recorded.';
+  goals[nextIndex] = {
+    ...goals[nextIndex],
+    status: verifierResult && !verifierResult.passed ? 'blocked' : 'done',
+    completed_at: stampIso(),
+    result: cleanSummary.slice(0, 240) || validationResult,
+    validation_result: validationResult,
+  };
+
+  const counts = missionGoalChainCounts({ goals });
+  const blocked = goals.some((goal) => goal.status === 'blocked');
+  const nextPending = goals.find((goal) => goal.status !== 'done' && goal.status !== 'blocked');
+  return {
+    ...goalChain,
+    goals,
+    done_count: counts.done,
+    current_goal_order: nextPending ? nextPending.order : null,
+    status: blocked ? 'blocked' : counts.done >= counts.total ? 'validated' : 'running',
+    pause_ready: !blocked && counts.done >= counts.total,
+  };
+}
+
+function missionGoalChainLines(mission) {
+  const chain = mission?.goal_chain;
+  if (!chain || !Array.isArray(chain.goals) || !chain.goals.length) return [];
+  const counts = missionGoalChainCounts(chain);
+  const lines = [
+    `  goal chain: ${counts.done}/${counts.total} done; ${chain.pause_rule}`,
+  ];
+  for (const goal of chain.goals) {
+    const mark = goal.status === 'done' ? '[x]' : goal.status === 'blocked' ? '[!]' : '[ ]';
+    lines.push(`    ${mark} ${goal.order}. ${goal.title} -> ${goal.validation}`);
+  }
+  return lines;
 }
 
 function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null) {
@@ -1362,10 +1636,10 @@ function handledContinuationTargetKeys(root, moves) {
   }
   try {
     for (const row of listMissions(root)) {
-      if (TERMINAL_STATUSES.has(String(row?.status || '').toLowerCase())) add(row.objective);
+      add(row.objective);
     }
   } catch {
-    // If state is unreadable, fall back to the remaining explicit filters.
+    // If mission state is unreadable, fall back to the remaining explicit filters.
   }
   return keys;
 }
@@ -1384,14 +1658,28 @@ function chooseNextMissionTarget(mission, root = process.cwd()) {
         return !(mission?.id && move.ref === mission.id && title === currentObjective);
       })
       .filter((move) => !currentObjective || String(move.title || '').trim() !== currentObjective)
-      .filter((move) => !parentObjective || String(move.title || '').trim() !== parentObjective);
+      .filter((move) => !parentObjective || String(move.title || '').trim() !== parentObjective)
+      .map((move) => ({
+        ...move,
+        value_preview: missionValuePreview(move, mission, root),
+      }))
+      .sort((a, b) => {
+        const aScore = Number(a.value_preview?.score?.total || 0);
+        const bScore = Number(b.value_preview?.score?.total || 0);
+        if (aScore !== bScore) return bScore - aScore;
+        return Number(b.weight || 0) - Number(a.weight || 0);
+      });
     if (candidates[0]) return candidates[0];
     const target = moves.latestSuggestedTarget(root);
     if (isConcreteContinuationTarget(target) && !handledTargets.has(continuationTargetKey(target))) {
-      return {
+      const fallback = {
         title: target,
         why: 'latest proof timeline suggested this follow-up mission',
         source: 'mission_report',
+      };
+      return {
+        ...fallback,
+        value_preview: missionValuePreview(fallback, mission, root),
       };
     }
   } catch {
@@ -1400,12 +1688,353 @@ function chooseNextMissionTarget(mission, root = process.cwd()) {
   return null;
 }
 
-function chooseNextMissionCommand(mission, root = process.cwd()) {
+function normalizeMissionOwner(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function missionMemberTasteProfile(owner) {
+  const key = normalizeMissionOwner(owner);
+  if (/\b(security|sync-inspector|proof-inspector|validator)\b/.test(key)) {
+    return {
+      id: 'security_guard',
+      name: 'Security / trust',
+      bias: 'Prefer work that prevents unsafe behavior, privacy mistakes, or quiet trust breaks.',
+    };
+  }
+  if (/\b(researcher|architect|improver|auto-improver|problem-solver|objective-generator)\b/.test(key)) {
+    return {
+      id: 'technical_homerun',
+      name: 'Technical homerun',
+      bias: 'Prefer technical leaps, but require a usability or proof gate before spending serious tokens.',
+    };
+  }
+  return {
+    id: 'usability_operator',
+    name: 'Usability / demo',
+    bias: 'Prefer work that makes the product easier, faster, clearer, or more demo-ready.',
+  };
+}
+
+function missionValueSignals(title) {
+  const text = String(title || '').toLowerCase();
+  const signals = [];
+  const add = (id, label, pattern) => {
+    if (pattern.test(text)) signals.push({ id, label });
+  };
+  add('usability', 'simplifies use', /\b(simple|simplify|preview|clear|plain|feynman|demo|onboarding|ux|workflow|usable|understand)\b/);
+  add('speed', 'speeds the process', /\b(speed|fast|faster|latency|token|waste|friction|shortcut|automation|auto)\b/);
+  add('users_revenue', 'can help users or revenue', /\b(user|users|customer|revenue|payment|checkout|pricing|conversion|retention|demo)\b/);
+  add('trust', 'protects trust', /\b(security|safe|safety|trust|permission|approval|auth|privacy|gmail|email|connector|leak|isolation)\b/);
+  add('technical', 'technical advancement', /\b(agent|ax|connector|isolation|research|benchmark|model|compiler|runtime|architecture|rl|experiment)\b/);
+  add('freshness', 'keeps workflow current', /\b(up[- ]?to[- ]?date|fresh|sync|stale|current|latest)\b/);
+  return signals;
+}
+
+function missionTasteSnippet(value, max = 180) {
+  const text = String(value || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/[`*_#>]+/g, '')
+    .replace(/^[-\d.()[\]\s]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max - 3).trim()}...` : text;
+}
+
+function missionTasteSnippets(text, limit = 4) {
+  const tastePattern = /\b(plain|jargon|feynman|understand|simple|clarify|clarity|proof|receipt|verify|verified|checked|tested|accept|approval|runway|revenue|cash|user|customer|demo|technical|homerun|security|trust|privacy|logs|working memory|recent|speed|token|waste|simplify)\b/i;
+  const snippets = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const snippet = missionTasteSnippet(line);
+    if (!snippet || !tastePattern.test(snippet)) continue;
+    snippets.push(snippet);
+  }
+  return snippets.slice(-limit);
+}
+
+function readTextFile(root, relativePath) {
+  const file = path.join(root, ...relativePath.split('/'));
+  try {
+    return { path: relativePath, present: true, text: fs.readFileSync(file, 'utf8') };
+  } catch {
+    return { path: relativePath, present: false, text: '' };
+  }
+}
+
+function recentMarkdownFiles(dir, limit = 2) {
+  const files = [];
+  try {
+    for (const entry of fs.readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        for (const child of recentMarkdownFiles(full, limit * 4)) files.push(child);
+      } else if (/\.md$/i.test(entry)) {
+        files.push(full);
+      }
+    }
+  } catch {
+    return [];
+  }
+  return files
+    .sort((a, b) => {
+      const aBase = path.basename(a);
+      const bBase = path.basename(b);
+      if (aBase !== bBase) return aBase.localeCompare(bBase);
+      return a.localeCompare(b);
+    })
+    .slice(-limit);
+}
+
+function readRecentTasteLogs(root, owner, limit = 3) {
+  const logFiles = [
+    ...recentMarkdownFiles(path.join(root, 'atris', 'logs'), 2),
+    ...recentMarkdownFiles(path.join(root, 'atris', 'team', owner || '', 'logs'), 2),
+  ];
+  const seen = new Set();
+  return logFiles
+    .filter((file) => {
+      const key = path.resolve(file);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-limit)
+    .map((file) => {
+      let text = '';
+      try { text = fs.readFileSync(file, 'utf8'); } catch { text = ''; }
+      return {
+        path: path.relative(root, file),
+        snippets: missionTasteSnippets(text, 3),
+      };
+    })
+    .filter((entry) => entry.snippets.length);
+}
+
+function readTasteReviewHistory(root, limit = 4) {
+  const file = path.join(root, '.atris', 'state', 'tasks.projection.json');
+  let projection = null;
+  try { projection = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { projection = null; }
+  const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+  const accepted = [];
+  const revised = [];
+  const sorted = tasks
+    .filter(Boolean)
+    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
+  for (const task of sorted) {
+    const title = missionTasteSnippet(task.title, 120);
+    for (const event of Array.isArray(task.events) ? task.events : []) {
+      const type = String(event?.event_type || '');
+      const payload = event?.payload || {};
+      if ((type === 'accepted' || (type === 'reviewed' && Number(payload.reward || 0) > 0)) && accepted.length < limit) {
+        accepted.push(missionTasteSnippet(`${title}: ${payload.proof || payload.note || 'accepted'}`));
+      }
+      if (type === 'revision_requested' && revised.length < limit) {
+        revised.push(missionTasteSnippet(`${title}: ${payload.note || 'revision requested'}`));
+      }
+    }
+  }
+  return { accepted, revised };
+}
+
+function missionTasteMemorySignals(text) {
+  const definitions = [
+    ['plain_language', 'Keshav asks for plain English', /\b(plain|jargon|feynman|understand|simple|clarify|clarity)\b/i],
+    ['proof_gate', 'Keshav wants proof before accept', /\b(proof|receipt|verify|verified|checked|tested|accept|approval)\b/i],
+    ['runway_revenue', 'runway pushes user or revenue work', /\b(runway|revenue|cash|user|users|customer|demo|adoption|retention)\b/i],
+    ['technical_ambition', 'technical advancement still matters', /\b(technical|homerun|research|runtime|architecture|model|benchmark|agent)\b/i],
+    ['trust_boundary', 'trust and approval boundaries matter', /\b(security|safe|safety|trust|privacy|approval|permission|gmail|email|connector)\b/i],
+    ['working_memory', 'recent logs are working memory', /\b(logs?|working memory|recent|today|now)\b/i],
+    ['speed_token', 'avoid wasted time and tokens', /\b(speed|fast|faster|token|waste|friction|simplify)\b/i],
+  ];
+  return definitions
+    .filter(([, , pattern]) => pattern.test(text))
+    .map(([id, label]) => ({ id, label }));
+}
+
+function readMissionTasteMemory(root = process.cwd(), owner = '') {
+  const safeOwner = normalizeMissionOwner(owner || process.env.ATRIS_AGENT_ID || 'mission-lead') || 'mission-lead';
+  const thinking = readTextFile(root, 'atris/thinking.md');
+  const memberMission = readTextFile(root, `atris/team/${safeOwner}/MISSION.md`);
+  const recentLogs = readRecentTasteLogs(root, safeOwner);
+  const taskHistory = readTasteReviewHistory(root);
+  const thinkingSnippets = missionTasteSnippets(thinking.text, 5);
+  const memberMissionSnippets = missionTasteSnippets(memberMission.text, 5);
+  const allText = [
+    ...thinkingSnippets,
+    ...memberMissionSnippets,
+    ...recentLogs.flatMap((entry) => entry.snippets),
+    ...taskHistory.accepted,
+    ...taskHistory.revised,
+  ].join('\n');
+  const signals = missionTasteMemorySignals(allText);
+  return {
+    schema: 'atris.mission_taste_memory.v1',
+    owner: safeOwner,
+    sources: {
+      thinking_md: {
+        path: thinking.path,
+        present: thinking.present,
+        snippets: thinkingSnippets,
+      },
+      member_mission: {
+        path: memberMission.path,
+        present: memberMission.present,
+        snippets: memberMissionSnippets,
+      },
+      recent_logs: recentLogs,
+      task_history: taskHistory,
+    },
+    signals,
+  };
+}
+
+function missionTasteMemoryBoost(signals, tasteMemory, profile) {
+  const candidateIds = new Set((signals || []).map((signal) => signal.id));
+  const memoryIds = new Set((tasteMemory?.signals || []).map((signal) => signal.id));
+  const hasCandidate = (id) => candidateIds.has(id) ? 1 : 0;
+  const hasMemory = (id) => memoryIds.has(id);
+  let boost = 0;
+  if (hasMemory('plain_language')) boost += hasCandidate('usability') * 2;
+  if (hasMemory('proof_gate')) boost += (hasCandidate('trust') || hasCandidate('usability') || hasCandidate('technical')) ? 1 : 0;
+  if (hasMemory('runway_revenue')) boost += hasCandidate('users_revenue') * 3;
+  if (hasMemory('technical_ambition')) boost += profile.id === 'technical_homerun' ? hasCandidate('technical') * 2 : hasCandidate('technical');
+  if (hasMemory('trust_boundary')) boost += hasCandidate('trust') * 2;
+  if (hasMemory('working_memory')) boost += (hasCandidate('freshness') || hasCandidate('speed')) ? 1 : 0;
+  if (hasMemory('speed_token')) boost += hasCandidate('speed') * 2;
+  return boost;
+}
+
+function missionValueScore(signals, profile, tasteMemory = null) {
+  const ids = new Set((signals || []).map((signal) => signal.id));
+  const has = (id) => ids.has(id) ? 1 : 0;
+  const base = has('usability') + has('speed') + has('users_revenue') + has('trust') + has('freshness');
+  let profileBoost = 0;
+  if (profile.id === 'technical_homerun') profileBoost = (has('technical') * 2) + has('trust') + has('speed');
+  else if (profile.id === 'security_guard') profileBoost = (has('trust') * 3) + has('freshness');
+  else profileBoost = (has('usability') * 2) + has('speed') + has('users_revenue');
+  const memoryBoost = missionTasteMemoryBoost(signals, tasteMemory, profile);
+  return {
+    total: base + profileBoost + memoryBoost,
+    signals: Array.from(ids),
+    memory_boost: memoryBoost,
+  };
+}
+
+function missionPlainTaskPreview(title) {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'Do one concrete useful thing.';
+  if (/ax\b/i.test(text) && /gmail/i.test(text) && /turn isolation/i.test(text)) {
+    return 'Make ax safer with Gmail: keep each chat request separate, and show a clear preview or receipt before Gmail actions.';
+  }
+  const cleaned = text
+    .replace(/^mission xp:\s*/i, '')
+    .replace(/^ship\s+/i, '')
+    .replace(/\bturn isolation\b/ig, 'separate chat requests')
+    .replace(/\breceipt previews?\b/ig, 'clear before/after receipts')
+    .replace(/\bconnector\b/ig, 'connected-app path');
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}`.replace(/[.!?:;,]+$/g, '') + '.';
+}
+
+function missionTasteMemoryReason(tasteMemory, signals) {
+  const candidateIds = new Set((signals || []).map((signal) => signal.id));
+  const memoryIds = new Set((tasteMemory?.signals || []).map((signal) => signal.id));
+  if (memoryIds.has('runway_revenue') && candidateIds.has('users_revenue')) return 'Keshav has been steering toward user/revenue proof because runway is tight.';
+  if (memoryIds.has('plain_language') && candidateIds.has('usability')) return 'Keshav keeps asking for plain-English, understandable work.';
+  if (memoryIds.has('proof_gate') && (candidateIds.has('trust') || candidateIds.has('technical'))) return 'Keshav wants proof and receipts before serious work is accepted.';
+  if (memoryIds.has('working_memory')) return 'Recent logs are being used as working memory for what matters now.';
+  if (memoryIds.has('technical_ambition') && candidateIds.has('technical')) return 'The member memory still values technical advancement when it has proof.';
+  return '';
+}
+
+function missionPreviewWhyNow(move, profile, signals, tasteMemory = null) {
+  const ids = new Set((signals || []).map((signal) => signal.id));
+  let base = '';
+  if (profile.id === 'technical_homerun') {
+    base = ids.has('technical')
+      ? 'This is a technical bet; run it only because it can make the product stronger without making the user think harder.'
+      : 'This is not a technical homerun on its face, so it needs clear usability proof before it should win.';
+  } else if (profile.id === 'security_guard') {
+    base = ids.has('trust')
+      ? 'This matters because trust failures are expensive and should be blocked before users feel them.'
+      : 'This is not mainly security work, so it should only run if the current trust queue is quiet.';
+  } else if (ids.has('users_revenue')) {
+    base = 'This matters now because it can help demos, users, retention, or revenue.';
+  } else if (ids.has('usability') || ids.has('speed')) {
+    base = 'This matters now because it can make the product easier or faster to use.';
+  } else {
+    base = move?.why || 'This needs a clear reason before it should spend serious tokens.';
+  }
+  const memoryReason = missionTasteMemoryReason(tasteMemory, signals);
+  return memoryReason ? `${base} Taste memory says: ${memoryReason}` : base;
+}
+
+function missionPreviewRisk(signals) {
+  const ids = new Set((signals || []).map((signal) => signal.id));
+  if (ids.has('technical') && !ids.has('usability')) return 'Risk: it becomes clever infrastructure that does not make the product easier.';
+  if (ids.has('trust')) return 'Risk: changing connected-tool behavior can hide or create approval/privacy mistakes.';
+  return 'Risk: it adds complexity without a visible product win.';
+}
+
+function missionPreviewValidation(signals) {
+  const ids = new Set((signals || []).map((signal) => signal.id));
+  if (ids.has('trust')) return 'Validate with a before/after receipt and a test proving unsafe state does not carry across turns.';
+  if (ids.has('users_revenue')) return 'Validate with a customer-visible proof: demo path, signup/payment path, or retention signal.';
+  if (ids.has('technical')) return 'Validate with a small benchmark, regression test, or artifact that proves the technical bet helped.';
+  return 'Validate with a simple before/after check that a human can understand.';
+}
+
+function missionValuePreview(move, mission, root = process.cwd()) {
+  const profile = missionMemberTasteProfile(mission?.owner);
+  const signals = missionValueSignals(move?.title);
+  const tasteMemory = readMissionTasteMemory(root, mission?.owner);
+  const score = missionValueScore(signals, profile, tasteMemory);
+  return {
+    schema: 'atris.mission_value_preview.v1',
+    member: mission?.owner || null,
+    profile,
+    candidate: {
+      title: move?.title || '',
+      source: move?.source || null,
+      ref: move?.ref || null,
+    },
+    feynman: {
+      what: missionPlainTaskPreview(move?.title),
+      why_now: missionPreviewWhyNow(move, profile, signals, tasteMemory),
+      risk: missionPreviewRisk(signals),
+      validation: missionPreviewValidation(signals),
+      taste: missionTasteMemoryReason(tasteMemory, signals) || 'No live taste memory matched this candidate yet.',
+    },
+    value_signals: signals,
+    taste_memory: tasteMemory,
+    score,
+  };
+}
+
+function chooseNextMissionPlan(mission, root = process.cwd()) {
   const owner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
   const target = chooseNextMissionTarget(mission, root);
-  if (target?.title) return `atris mission run ${shellQuote(target.title)} --owner ${owner}`;
+  if (target?.title) {
+    return {
+      target,
+      command: `atris mission run ${shellQuote(target.title)} --owner ${owner}`,
+      preview: target.value_preview || missionValuePreview(target, mission, root),
+    };
+  }
   const missionId = mission?.id || '<mission-id>';
-  return `atris mission stop ${missionId} --reason ${shellQuote('no concrete follow-up mission found in Atris state')} --json`;
+  return {
+    target: null,
+    command: `atris mission stop ${missionId} --reason ${shellQuote('no concrete follow-up mission found in Atris state')} --json`,
+    preview: null,
+  };
+}
+
+function chooseNextMissionCommand(mission, root = process.cwd()) {
+  return chooseNextMissionPlan(mission, root).command;
+}
+
+function chooseNextMissionPreview(mission, root = process.cwd()) {
+  return chooseNextMissionPlan(mission, root).preview;
 }
 
 function effectiveMissionVerifier(mission) {
@@ -1495,14 +2124,33 @@ function completeActiveContinuationForStartedMission(nextMission, root = process
   };
 }
 
+function missionCanSeedContinuation(parent) {
+  if (!parent) return false;
+  if (parent.status === 'complete') return true;
+  return GOAL_LOOP_STATUSES.has(String(parent.status || '')) && missionTaskHumanAcceptWaiting(parent);
+}
+
 function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
-  if (!parent || parent.status !== 'complete') return null;
+  if (!missionCanSeedContinuation(parent)) return null;
   if (parent.continue_on_complete !== true) return null;
-  if (parent.continuation_seeded_mission_id) return {
-    inserted: false,
-    reason: 'already_seeded',
-    mission_id: parent.continuation_seeded_mission_id,
-  };
+  if (parent.continuation_seeded_mission_id) {
+    const seeded = resolveMission(parent.continuation_seeded_mission_id, root);
+    if (seeded && TERMINAL_STATUSES.has(String(seeded.status || '')) && seeded.continued_by_mission_id) {
+      return {
+        inserted: false,
+        reason: 'already_continued',
+        mission_id: parent.continuation_seeded_mission_id,
+        mission: null,
+        continued_by_mission_id: seeded.continued_by_mission_id,
+      };
+    }
+    return {
+      inserted: false,
+      reason: 'already_seeded',
+      mission_id: parent.continuation_seeded_mission_id,
+      mission: seeded || null,
+    };
+  }
 
   const existing = findActiveContinuationMission(parent, root);
   if (existing) return { inserted: false, reason: 'active_continuation_exists', mission: existing };
@@ -1534,7 +2182,9 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     parent_proof: proof || parent.receipt_path || null,
     next_action: '',
   };
-  nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission, root)}`;
+  const nextPlan = chooseNextMissionPlan(nextMission, root);
+  nextMission.next_action = `decide next mission, then run: ${nextPlan.command}`;
+  nextMission.next_action_preview = nextPlan.preview;
 
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
   const { mission: saved } = saveMission(nextMission, root, 'mission_continuation_started', {
@@ -1563,6 +2213,19 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
       dirty_hash: worktreeBaseline.dirty_hash,
     } : null,
   };
+}
+
+function seedNextMoveContinuationGoal(root = process.cwd()) {
+  const candidates = listMissions(root)
+    .filter((mission) => runnerUsesCallerSession(mission.runner))
+    .filter((mission) => mission.continue_on_complete === true)
+    .filter((mission) => missionCanSeedContinuation(mission));
+  candidates.sort((a, b) => missionSortTime(b) - missionSortTime(a));
+  for (const parent of candidates) {
+    const seeded = seedMissionRunContinuation(parent, root, parent.receipt_path || 'agent-certified task waiting for human accept');
+    if (seeded?.mission && missionSelectableForCodexGoal(seeded.mission)) return { ...seeded, parent: seeded.parent || parent };
+  }
+  return null;
 }
 
 function startMission(args) {
@@ -1630,12 +2293,16 @@ function startMissionFromRunObjective(objective, args) {
   const missionRunPreflight = buildMissionRunRoomPreflight(rawObjective, args, {
     root: process.cwd(),
     owner: preflightOwner,
+    allowTrustedRun: !inferredLoop.wantsLongRun,
   });
   const missionObjective = missionRunPreflight?.shaped_objective || rawObjective;
   const verifier = readFlag(
     args,
     '--verify',
-    inferRunObjectiveVerifier(missionObjective) || inferRunObjectiveVerifier(rawObjective) || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
+    inferRunObjectiveVerifier(missionObjective)
+      || inferRunObjectiveVerifier(rawObjective)
+      || (missionRunPreflight?.trusted_run ? DEFAULT_LONG_RUN_VERIFIER : '')
+      || (inferredLoop.wantsLongRun ? DEFAULT_LONG_RUN_VERIFIER : ''),
   );
   const stopCondition = readFlag(
     args,
@@ -1664,6 +2331,9 @@ function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  if (missionGoalChainIntent(rawObjective) || missionGoalChainIntent(missionObjective)) {
+    mission.goal_chain = buildMissionGoalChain(missionObjective || rawObjective);
+  }
   if (missionRunPreflight) {
     mission.mission_run_preflight = missionRunPreflight;
     mission.raw_objective = rawObjective;
@@ -1794,7 +2464,9 @@ function attachMissionTask(args) {
     if (nextMission.status === 'ready' && nextMission.receipt_path) {
       nextMission.next_action = missionXpReadyAction(nextMission, nextMission.receipt_path) || nextMission.next_action;
     } else if (missionChoosesNextMission(nextMission)) {
-      nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission)}`;
+      const nextPlan = chooseNextMissionPlan(nextMission);
+      nextMission.next_action = `decide next mission, then run: ${nextPlan.command}`;
+      nextMission.next_action_preview = nextPlan.preview;
     } else if (!nextMission.verifier && !nextMission.always_on) {
       nextMission.next_action = `work task then run: atris task current-step --goal-id ${nextMission.id} --as ${nextMission.owner} --proof "<proof>" --json`;
     }
@@ -1865,13 +2537,15 @@ function statusMission(args) {
         `  id: ${mission.id}`,
         `  owner: ${mission.owner}`,
         ...(mission.executed_by ? [`  executed_by: ${mission.executed_by}`] : []),
-        `  state: ${mission.status}`,
-        ...missionHeartbeatLines(mission),
-        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
-        `  next: ${mission.next_action || 'tick or verify'}`,
-        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
-        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
-        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
+	        `  state: ${mission.status}`,
+	        ...missionHeartbeatLines(mission),
+	        ...(mission.worktree_root ? [`  worktree: ${mission.worktree_root}`] : []),
+	        `  next: ${mission.next_action || 'tick or verify'}`,
+	        ...(mission.next_action_preview?.feynman?.what ? [`  preview: ${mission.next_action_preview.feynman.what}`] : []),
+	        ...missionGoalChainLines(mission),
+	        ...(mission.task_spine?.task_ref ? [`  task: ${mission.task_spine.task_ref}`] : []),
+	        ...(mission.task_spine?.current_step_command ? [`  task next: ${mission.task_spine.current_step_command}`] : []),
+	        ...(!mission.task_spine?.has_task && mission.task_spine?.ensure_task_command ? [`  task setup: ${mission.task_spine.ensure_task_command}`] : []),
         ...(mission.receipt_path ? [`  proof: ${mission.receipt_path}`] : []),
         ...(completionGateLabel(mission.completion_gate) ? [`  gate: ${completionGateLabel(mission.completion_gate)}`] : []),
       ])
@@ -2043,6 +2717,7 @@ function missionLandingTimeline(mission, root = process.cwd(), limit = 12) {
     }
     if (!receipt || receipt.mission_id !== mission.id) continue;
     const landing = receipt.result && receipt.result.landing;
+    if (landing && landing.timeline_visible === false) continue;
     const changed = String(landing && landing.changed || '').trim();
     const next = String(landing && landing.next || '').trim();
     if (!changed && !next) continue;
@@ -2856,11 +3531,8 @@ function writeReceipt(mission, result, root = process.cwd()) {
   fs.mkdirSync(paths.runsDir, { recursive: true });
   const safeTime = stampIso().replace(/[:.]/g, '-');
   const receiptPath = path.join(paths.runsDir, `mission-${mission.id}-${safeTime}.json`);
-  // Back-compat: legacy consumers read receipt.result.passed (verifier-only shape).
-  // New shape nests verifier under result.verifier_result, so mirror .passed at top.
-  const finalResult = (result && typeof result === 'object' && result.verifier_result && !('passed' in result))
-    ? { ...result, passed: !!result.verifier_result.passed }
-    : result;
+  const relativeReceiptPath = path.relative(root, receiptPath);
+  const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
   fs.writeFileSync(receiptPath, JSON.stringify({
     schema: 'atris.mission_receipt.v1',
     mission_id: mission.id,
@@ -2870,7 +3542,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
     verifier: mission.verifier || null,
     result: finalResult,
   }, null, 2) + '\n', 'utf8');
-  return path.relative(root, receiptPath);
+  return relativeReceiptPath;
 }
 
 function shellQuote(value) {
@@ -3181,6 +3853,23 @@ function missionHasHumanAsks(mission) {
     && mission.human_asks.some((ask) => String(ask || '').trim());
 }
 
+function missionTaskHumanAcceptWaiting(mission) {
+  const taskId = missionTaskSpine(mission)?.task_id;
+  if (!taskId) return false;
+  try {
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open();
+    const task = taskDb.getTask(db, taskId);
+    if (!task) return false;
+    const metadata = task.metadata || {};
+    return task.status === 'review'
+      && metadata.approval_status === 'pending'
+      && metadata.agent_certified === true;
+  } catch {
+    return false;
+  }
+}
+
 function missionIsRunnable(mission) {
   return mission
     && GOAL_LOOP_STATUSES.has(String(mission.status || ''))
@@ -3194,6 +3883,7 @@ function missionSortTime(mission) {
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
     .filter((mission) => missionSelectableForLoop(mission, now))
+    .filter((mission) => !missionTaskHumanAcceptWaiting(mission))
     .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
     .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
     .filter((mission) => missionDueAt(mission, now));
@@ -3219,6 +3909,7 @@ function callerSessionMissionReadyForDue(mission) {
 
 function missionSelectableForCodexGoal(mission, now = new Date()) {
   if (!missionIsRunnable(mission)) return false;
+  if (missionTaskHumanAcceptWaiting(mission)) return false;
   if (mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now)) {
     return parseCadenceSeconds(mission.cadence) > 0;
   }
@@ -3422,6 +4113,23 @@ function readDirectRunCodexGoalRequest(root = process.cwd(), now = new Date()) {
   if (!mission || !isCodexGoalMission(mission)) return null;
   if (!missionSelectableForCodexGoal(mission, now)) return null;
   return { request, mission };
+}
+
+function clearDirectRunCodexGoalRequestForMission(missionId, root = process.cwd()) {
+  const file = statePaths(root).codexGoalRequestJson;
+  let request = null;
+  try {
+    request = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return false;
+  }
+  if (String(request?.mission_id || '') !== String(missionId || '')) return false;
+  try {
+    fs.rmSync(file, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function activeCodexVisibleGoalOwner(root = process.cwd(), excludeId = '', now = new Date(), runtimeGoalState = null) {
@@ -3712,9 +4420,19 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
   if (directRequest && activeGoalOwner) {
     return codexGoalActiveConflictPayload(directRequest.mission, activeGoalOwner, directRequest.request, heartbeatMode, runtimeGoalState);
   }
-  const selected = directRequest
+  let selected = directRequest
     ? { mission: directRequest.mission, reason: 'direct_run', direct_goal_request: directRequest.request }
     : selectCodexGoalMission(root, options);
+  if (!selected && !directRequest) {
+    const continuation = seedNextMoveContinuationGoal(root);
+    if (continuation?.mission) {
+      selected = {
+        mission: continuation.mission,
+        reason: continuation.inserted ? 'next_move_continuation_seeded' : 'next_move_continuation_active',
+        seeded_continuation_goal: continuation,
+      };
+    }
+  }
   if (!selected) {
     const heartbeat = heartbeatMode ? codexGoalHeartbeat(null, null) : undefined;
     return {
@@ -3725,7 +4443,7 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     };
   }
 
-  const { mission, reason, direct_goal_request: directGoalRequest } = selected;
+  const { mission, reason, direct_goal_request: directGoalRequest, seeded_continuation_goal: seededContinuationGoal } = selected;
   const taskSpine = missionTaskSpine(mission);
   const missionView = missionStatusView(mission);
   const objective = codexGoalObjective(mission);
@@ -3762,6 +4480,8 @@ function buildCodexGoalPayload(root = process.cwd(), options = {}) {
     native_goal_ack_command: codexGoalAckCommand(mission, objective),
     native_goal_ack: ack,
     direct_goal_request: directGoalRequest || null,
+    seeded_continuation_goal: seededContinuationGoal || null,
+    next_action_preview: mission.next_action_preview || (missionChoosesNextMission(mission) ? chooseNextMissionPreview(mission, root) : null),
     runtime_goal_state: runtimeGoalState,
   };
   const heartbeat = heartbeatMode ? codexGoalHeartbeat(goal, mission) : undefined;
@@ -4912,25 +5632,34 @@ function tickMission(args) {
       worktree: tickWorktree,
     });
 
-    let status = 'running';
-    let nextAction = (verifierCommand || effectiveVerifier)
-      ? `run verifier: ${verifierCommand || effectiveVerifier}`
-      : (mission.always_on && missionTaskSpine(mission)?.has_task
-        ? nextCandidateTickAction(mission)
-        : 'attach task, verifier, or proof');
-    if (verifierResult?.passed) {
-      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
-      status = (completeOnPass && !mission.always_on && !xpReadyAction) ? 'complete' : 'ready';
-      nextAction = mission.always_on ? nextCandidateTickAction(mission) :
-        (xpReadyAction || (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`));
-    } else if (verifierResult) {
-      status = 'blocked';
-      nextAction = 'fix verifier failure or revise mission';
-    }
-    const clearsPauseState = !['paused', 'stopped'].includes(status);
-    const nextMission = {
-      ...mission,
-      status,
+	    let status = 'running';
+	    let nextAction = (verifierCommand || effectiveVerifier)
+	      ? `run verifier: ${verifierCommand || effectiveVerifier}`
+	      : (mission.always_on && missionTaskSpine(mission)?.has_task
+	        ? nextCandidateTickAction(mission)
+	        : 'attach task, verifier, or proof');
+	    const nextGoalChain = advanceMissionGoalChain(mission.goal_chain, summary, verifierResult);
+	    if (verifierResult?.passed && nextGoalChain && !nextGoalChain.pause_ready) {
+	      status = 'running';
+	      nextAction = missionGoalChainNextAction(nextGoalChain);
+	    } else if (verifierResult?.passed) {
+	      const xpReadyAction = missionXpReadyAction(mission, receiptPath);
+	      status = (completeOnPass && !mission.always_on && !xpReadyAction) ? 'complete' : 'ready';
+	      nextAction = mission.always_on ? nextCandidateTickAction(mission) :
+	        (xpReadyAction || (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`));
+	    } else if (verifierResult) {
+	      status = 'blocked';
+	      nextAction = 'fix verifier failure or revise mission';
+	    } else if (nextGoalChain?.pause_ready) {
+	      status = 'ready';
+	      nextAction = `mission feels good; review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`;
+	    } else if (nextGoalChain) {
+	      nextAction = missionGoalChainNextAction(nextGoalChain);
+	    }
+	    const clearsPauseState = !['paused', 'stopped'].includes(status);
+	    const nextMission = {
+	      ...mission,
+	      status,
       paused_at: clearsPauseState ? null : mission.paused_at || null,
       stop_reason: clearsPauseState ? null : mission.stop_reason || null,
       resumed_at: clearsPauseState && mission.status === 'paused' ? tickRecord.finished_at : mission.resumed_at || null,
@@ -4939,11 +5668,12 @@ function tickMission(args) {
       last_tick_status: tickRecord.status,
       last_tick_reason: tickRecord.reason,
       last_tick_index: tickIdx,
-      last_tick_layer: tickRecord.layer,
-      last_tick_layer_source: tickRecord.layer_source,
-      verifier_result: verifierResult || mission.verifier_result || null,
-      next_action: nextAction,
-    };
+	      last_tick_layer: tickRecord.layer,
+	      last_tick_layer_source: tickRecord.layer_source,
+	      verifier_result: verifierResult || mission.verifier_result || null,
+	      ...(nextGoalChain ? { goal_chain: nextGoalChain } : {}),
+	      next_action: nextAction,
+	    };
     const { mission: saved } = saveMission(nextMission, cwd, 'mission_tick', {
       tick_index: tickIdx, verify, verifier_result: verifierResult, receipt_path: receiptPath, layer: tickRecord.layer,
     });
@@ -4999,7 +5729,6 @@ function receiptShowsPass(receipt) {
 // verifier passed. Mirrors the task plane's proof-only accept guard so the
 // final transition consumes the receipts instead of trusting free text.
 function missionCompletionGate(mission, proof, root = process.cwd()) {
-  if (!effectiveMissionVerifier(mission)) return { ok: true, source: 'no_verifier' };
   const receipt = readReceiptProof(proof, root);
   if (receipt) {
     if (receipt.mission_id !== mission.id) {
@@ -5010,6 +5739,7 @@ function missionCompletionGate(mission, proof, root = process.cwd()) {
       : { ok: false, source: 'receipt', reason: 'proof receipt does not show a passing verifier' };
   }
   if (mission.verifier_result?.passed === true) return { ok: true, source: 'mission_state' };
+  if (!effectiveMissionVerifier(mission)) return { ok: true, source: 'no_verifier' };
   return { ok: false, source: 'mission_state', reason: 'verifier has not passed for this mission and proof is not a passing receipt' };
 }
 
@@ -5126,9 +5856,10 @@ function stopMission(args) {
     next_action: status === 'paused' ? `resume with: atris mission tick ${mission.id}` : 'mission stopped',
   };
   const { mission: saved } = saveMission(next, process.cwd(), pause ? 'mission_paused' : 'mission_stopped', { reason, receipt_path: receiptPath });
+  const directGoalRequestCleared = pause ? false : clearDirectRunCodexGoalRequestForMission(saved.id, process.cwd());
   const logPath = appendMemberLog(saved.owner, pause ? 'Mission paused' : 'Mission stopped', { mission: saved.objective, reason });
   printJsonOrText(
-    { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath },
+    { ok: true, action: pause ? 'mission_paused' : 'mission_stopped', mission: saved, receipt_path: receiptPath, log_path: logPath, direct_goal_request_cleared: directGoalRequestCleared },
     [
       `${pause ? 'Paused' : 'Stopped'} mission: ${saved.objective}`,
       `Reason: ${reason}`,
@@ -5369,7 +6100,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission watch [id] [--interval <s>] [--idle-every <s>]   Live heartbeat: prints a line per tick as it lands
   atris mission layers [--mission <id-substr>] [--since <date>] [--json]   Per-layer growth curve across tick receipts
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
-  atris mission room "<messy input>" [--owner <member>] [--json]   Create a Mission Room card and shareable receipt from messy intent
+  atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]   Create a Mission Room card and shareable receipt from messy intent
   atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
@@ -5379,10 +6110,12 @@ atris mission - durable goal + loop + owner + proof state
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--room-preflight|--no-room-preflight]
+                                [--room-auto-run|--no-room-auto-run]
                                 [--no-claude] [--no-verify] [--complete-on-pass] [--no-drain] [--create-next] [--json]
                        (bare/member-only run prompts; one-word fuzzy intent starts a new visible-goal mission; --due runs the saved queue)
                        (plain time like "20 minutes" means finish early if solved; say "use the whole time" to spend the full budget)
                        (messy, shower, and overnight requests preflight through Mission Room before the visible goal is written)
+                       (--room-auto-run makes trusted self-improvement asks preview through Mission Room, select real work, then start one bounded goal)
                        (mission-run completions seed the next visible goal: decide and start the next useful mission)
   atris mission complete <id> --proof "..."
   atris mission stop <id> [--pause] [--reason "..."]
@@ -5575,9 +6308,9 @@ function layersMission(args) {
 function roomMission(args) {
   const asJson = wantsJson(args);
   const explicitOwner = readFlag(args, '--owner', '');
-  const input = stripKnownFlags(args, ['--owner'], ['--json']).join(' ').trim();
+  const input = stripKnownFlags(args, ['--owner'], ['--json', '--room-auto-run', '--no-room-auto-run']).join(' ').trim();
   if (!input) {
-    exitMissionError('Usage: atris mission room "<messy input>" [--owner <member>] [--json]', 1, asJson);
+    exitMissionError('Usage: atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]', 1, asJson);
   }
   const requestedOwner = explicitOwner || process.env.ATRIS_AGENT_ID || '';
   const ownerResolution = resolveFunctionalOwner({
@@ -5591,7 +6324,13 @@ function roomMission(args) {
 
   let room;
   try {
-    room = buildMissionRoom(input, { owner, root: process.cwd(), ownerResolution });
+    room = buildMissionRoom(input, {
+      owner,
+      root: process.cwd(),
+      ownerResolution,
+      trustedRun: hasFlag(args, '--room-auto-run') && !hasFlag(args, '--no-room-auto-run'),
+      verifier: DEFAULT_LONG_RUN_VERIFIER,
+    });
   } catch (error) {
     exitMissionError(error.message || String(error), 1, asJson);
   }

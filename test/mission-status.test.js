@@ -690,6 +690,45 @@ test('mission complete emits a human-readable landing receipt', () => {
   }
 });
 
+test('mission complete credits ad hoc passing receipt before no-verifier fallback', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'ad hoc verifier completion receipt',
+      '--owner',
+      'mission-lead',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const tick = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--summary',
+      'Proved with an ad hoc verifier.',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receiptPath = JSON.parse(tick.stdout).receipt_path;
+
+    const completed = runCli(['mission', 'complete', mission.id, '--proof', receiptPath, '--json'], { cwd: dir });
+    assert.equal(completed.status, 0, completed.stderr || completed.stdout);
+    const payload = JSON.parse(completed.stdout);
+    assert.equal(payload.mission.completion_gate.source, 'receipt');
+    assert.match(payload.landing.checked, /passing verifier receipt/);
+    assert.doesNotMatch(payload.landing.checked, /No verifier was configured/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run objective starts with product takeoff instead of runner plumbing', () => {
   const dir = makeTempDir();
   try {
@@ -799,6 +838,89 @@ test('mission tick landing uses step summary when provided', () => {
     assert.match(ticked.stdout, /Changed: Made review landing proof high-level\./);
     assert.doesNotMatch(ticked.stdout, /Changed: overnight self improve loop is ready for review\./);
     assert.match(ticked.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission tick receipt stores result.landing with high-level verifier meaning', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'smoke.test.js'), [
+      "const test = require('node:test');",
+      "const assert = require('node:assert/strict');",
+      "test('smoke behavior', () => assert.equal(1 + 1, 2));",
+      '',
+    ].join('\n'), 'utf8');
+    const started = runCli([
+      'mission',
+      'start',
+      'standard landing receipt mission',
+      '--owner',
+      'mission-lead',
+      '--verify',
+      'node --test smoke.test.js',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const ticked = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--verify',
+      '--summary',
+      'Standardized mission proof receipts.',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+    const payload = JSON.parse(ticked.stdout);
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, payload.receipt_path), 'utf8'));
+
+    assert.equal(receipt.result.landing.schema, 'atris.result_landing.v1');
+    assert.equal(receipt.result.landing.changed, 'Standardized mission proof receipts.');
+    assert.equal(receipt.result.landing.checked, 'I ran the behavior checks.');
+    assert.match(receipt.result.landing.tested, /Automated behavior checks passed/);
+    assert.match(receipt.result.landing.proof, /Receipt saved at atris\/runs\/mission-/);
+    assert.match(receipt.result.landing.next, /Review the proof, then complete the mission/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission timeline reads standard result.landing from tick receipts', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const started = runCli([
+      'mission',
+      'start',
+      'timeline standard landing receipt',
+      '--owner',
+      'mission-lead',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const ticked = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--summary',
+      'Saved a human-readable landing receipt.',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+
+    const timeline = runCli(['mission', 'timeline', mission.id, '--json'], { cwd: dir });
+    assert.equal(timeline.status, 0, timeline.stderr || timeline.stdout);
+    const payload = JSON.parse(timeline.stdout);
+    assert.equal(payload.current_landing.changed, 'Saved a human-readable landing receipt.');
+    assert.match(payload.current_landing.next, /Keep running the mission/);
+    assert.equal(payload.current_landing.receipt_path, JSON.parse(ticked.stdout).receipt_path);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1031,6 +1153,7 @@ test('mission timeline lists saved landing changed and next lines', () => {
     assert.match(timeline.stdout, /Showing 1 item\./);
     assert.match(timeline.stdout, /Current landing:\n  Changed: Created and claimed next task: \S+ Add receipt timeline proof\./);
     assert.doesNotMatch(timeline.stdout, /History:/);
+    assert.doesNotMatch(timeline.stdout, /landing timeline codex loop recorded tick 1\./);
     assert.doesNotMatch(timeline.stdout, /  1\. Created and claimed next task/);
     assert.match(timeline.stdout, /Created and claimed next task: \S+ Add receipt timeline proof\./);
     assert.match(timeline.stdout, /Next: Created next task: \S+ Add receipt timeline proof\./);
@@ -2410,6 +2533,74 @@ test('mission room text output leads with chat zone before execution', () => {
   }
 });
 
+test('mission room trusted mode previews then permits one bounded run', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const memberDir = path.join(dir, 'atris', 'team', 'mission-lead');
+    fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Mission Lead\n\nOwns Mission Room loops.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'MISSION.md'), '# Mission\n\nTurn messy intent into proof-backed missions.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'now.md'), '# Now\n\nMission Room context slice.\n', 'utf8');
+
+    const input = 'one-message autonomy: improve atris-cli usefully without creating junk state';
+    const res = runCli(['mission', 'room', input, '--owner', 'mission-lead', '--room-auto-run', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.room.execution_mode, 'trusted_run');
+    assert.equal(payload.room.goal_chain.mode, 'trusted_run');
+    assert.equal(payload.room.chat_zone.status, 'ready_to_run');
+    assert.match(payload.room.chat_zone.execution_policy, /Trusted run/);
+    assert.equal(payload.room.result.landing.status, 'ready_to_run');
+    assert.match(payload.room.next_command, /^After preview:/);
+    assert.match(payload.room.approval_packet.approved_next_command, /--verify "git diff --check"/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run trusted room selects real task before creating mission state', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+    const memberDir = path.join(dir, 'atris', 'team', 'mission-lead');
+    fs.mkdirSync(path.join(memberDir, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Mission Lead\n\nOwns Mission Room loops.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'MISSION.md'), '# Mission\n\nTurn messy intent into proof-backed missions.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'now.md'), '# Now\n\nMission Room context slice.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [
+        {
+          id: 'task-1',
+          display_id: 'CLI-758',
+          title: 'Make atris go execute one useful bounded slice',
+          status: 'open',
+          tag: 'autonomy',
+          workspace_root: dir,
+        },
+      ],
+    }, null, 2), 'utf8');
+
+    const input = 'one-message autonomy: improve atris-cli usefully without creating junk state';
+    const res = runCli(['mission', 'run', input, '--owner', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+
+    const payload = JSON.parse(res.stdout);
+    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.mission.objective, 'Make atris go execute one useful bounded slice');
+    assert.equal(payload.mission.verifier, 'git diff --check');
+    assert.equal(payload.mission.xp_task, undefined);
+    assert.equal(payload.mission.mission_run_preflight.trusted_run, true);
+    assert.equal(payload.mission.mission_run_preflight.selected_target.ref, 'CLI-758');
+    assert.notEqual(payload.mission.objective, input);
+    assert.doesNotMatch(payload.mission.objective, /go go go/i);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission room names next-mission decisions instead of recycling prior mission words', () => {
   const dir = makeTempDir();
   try {
@@ -2713,6 +2904,71 @@ test('mission run supports explicit whole-budget mode without manager jargon', (
     assert.equal(payload.budget_contract.plain_language, 'Use the whole time.');
     assert.match(payload.mission.stop_condition, /run for 20 minutes; use the whole time unless blocked or unsafe/);
     assert.match(payload.budget_contract.stop_rule, /keep picking the next useful move until time is up/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission run can plan and advance a validated child-goal chain', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const run = runCli([
+      'mission',
+      'run',
+      'show me 3 or 4 goals done towards a novel mission that is validated and understandable',
+      '--owner',
+      'auto-improver',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    const mission = payload.mission;
+
+    assert.equal(mission.goal_chain.schema, 'atris.mission_goal_chain.v1');
+    assert.equal(mission.goal_chain.target_count, 4);
+    assert.equal(mission.goal_chain.done_count, 0);
+    assert.equal(mission.goal_chain.goals.length, 4);
+    assert.match(mission.goal_chain.pause_rule, /Pause when the chain has proof/);
+
+    const statusBefore = runCli(['mission', 'status', mission.id], { cwd: dir });
+    assert.equal(statusBefore.status, 0, statusBefore.stderr || statusBefore.stdout);
+    assert.match(statusBefore.stdout, /goal chain: 0\/4 done/);
+
+    ackNativeCodexGoal(dir, mission);
+    let latest = mission;
+    for (let index = 1; index <= 4; index += 1) {
+      const tickArgs = [
+        'mission',
+        'tick',
+        mission.id,
+        '--summary',
+        `goal ${index}: proof recorded for child goal ${index}`,
+        '--json',
+      ];
+      if (index === 3) tickArgs.splice(6, 0, '--verify', 'node -e "process.exit(0)"');
+      const tick = runCli(tickArgs, { cwd: dir });
+      assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+      const tickPayload = JSON.parse(tick.stdout);
+      latest = tickPayload.mission;
+      assert.equal(latest.goal_chain.done_count, index);
+      assert.equal(latest.goal_chain.goals[index - 1].status, 'done');
+      if (index === 3) {
+        assert.equal(tickPayload.verifier_result.passed, true);
+        assert.equal(latest.status, 'running');
+        assert.match(latest.next_action, /continue child goal 4/);
+      }
+    }
+
+    assert.equal(latest.status, 'ready');
+    assert.equal(latest.goal_chain.status, 'validated');
+    assert.equal(latest.goal_chain.pause_ready, true);
+    assert.match(latest.next_action, /mission feels good/);
+
+    const status = runCli(['mission', 'status', mission.id], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /goal chain: 4\/4 done/);
+    assert.match(status.stdout, /\[x\] 4\. Explain the pause or next goal/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3038,6 +3294,181 @@ test('continuation mission chooses next mission instead of passing on inherited 
   }
 });
 
+test('continuation mission includes member value preview before starting next mission', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'ROADMAP.md'), [
+      '# Roadmap',
+      '',
+      '## Open loop items',
+      '',
+      '- [ ] Ship ax connector turn isolation and Gmail receipt previews',
+      '',
+    ].join('\n'), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-choice-preview',
+      slug: 'mission-choice-preview',
+      owner: 'researcher',
+      objective: 'Decide and start the next useful mission after: run awake loop with member taste',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent',
+      parent_objective: 'run awake loop with member taste',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: run awake loop with member taste',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-preview', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.match(attachedPayload.mission.next_action, /atris mission run 'Ship ax connector turn isolation and Gmail receipt previews' --owner researcher/);
+    assert.equal(attachedPayload.mission.next_action_preview.schema, 'atris.mission_value_preview.v1');
+    assert.equal(attachedPayload.mission.next_action_preview.profile.id, 'technical_homerun');
+    assert.equal(
+      attachedPayload.mission.next_action_preview.feynman.what,
+      'Make ax safer with Gmail: keep each chat request separate, and show a clear preview or receipt before Gmail actions.',
+    );
+    assert.match(attachedPayload.mission.next_action_preview.feynman.why_now, /technical bet/);
+    assert.match(attachedPayload.mission.next_action_preview.feynman.validation, /before\/after receipt/);
+
+    const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
+    assert.equal(ack.codex_goal_state.goal.next_action_preview.feynman.what, attachedPayload.mission.next_action_preview.feynman.what);
+
+    const status = runCli(['mission', 'status', 'mission-choice-preview'], { cwd: dir });
+    assert.equal(status.status, 0, status.stderr || status.stdout);
+    assert.match(status.stdout, /preview: Make ax safer with Gmail/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('continuation mission uses taste memory and recent logs when scoring next mission', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', '2026'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'ROADMAP.md'), [
+      '# Roadmap',
+      '',
+      '## Open loop items',
+      '',
+      '- [ ] Build compiler benchmark harness',
+      '- [ ] Ship onboarding proof preview for customer demo',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'thinking.md'), [
+      '# thinking.md',
+      '',
+      '- 30 days of runway means prefer user/revenue proof over clever work.',
+      '- Everything should be plain English and easy to understand.',
+      '- Proof and receipts matter before accept.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'MISSION.md'), [
+      '# Auto-Improver Mission',
+      '',
+      '- Prevent repeated token waste.',
+      '- Keep technical work only when it creates visible proof.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', '2026', '2026-07-01.md'), [
+      '# 2026-07-01',
+      '',
+      '- Recent logs are working memory: focus on demo-ready proof and users.',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'auto-improver', 'logs', '2026-07-01.md'), [
+      '# 2026-07-01',
+      '',
+      '- Working memory: do not waste tokens; simplify the next preview.',
+      '',
+    ].join('\n'), 'utf8');
+    const db = taskDb.open();
+    const acceptedTask = taskDb.addTask(db, {
+      title: 'Accepted demo proof path',
+      status: 'done',
+      tag: 'taste',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+    });
+    taskDb.reviewTask(db, {
+      id: acceptedTask.id,
+      actor: 'keshav',
+      reward: 1,
+      proof: 'Plain customer demo proof was accepted.',
+    });
+    const revisedTask = taskDb.addTask(db, {
+      title: 'Rejected jargon plan',
+      status: 'review',
+      claimedBy: 'auto-improver',
+      tag: 'taste',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+    });
+    taskDb.reviseTask(db, {
+      id: revisedTask.id,
+      actor: 'keshav',
+      note: 'Too much jargon; explain in simple terms first.',
+    });
+    appendMissionState(dir, {
+      id: 'mission-choice-memory',
+      slug: 'mission-choice-memory',
+      owner: 'auto-improver',
+      objective: 'Decide and start the next useful mission after: use taste memory',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent',
+      parent_objective: 'use taste memory',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: use taste memory',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-memory', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const payload = JSON.parse(attached.stdout);
+    assert.match(payload.mission.next_action, /atris mission run 'Ship onboarding proof preview for customer demo' --owner auto-improver/);
+    const preview = payload.mission.next_action_preview;
+    assert.equal(preview.taste_memory.schema, 'atris.mission_taste_memory.v1');
+    assert.equal(preview.taste_memory.sources.thinking_md.present, true);
+    assert.equal(preview.taste_memory.sources.member_mission.present, true);
+    assert.equal(preview.taste_memory.sources.recent_logs.length, 2);
+    assert.equal(preview.taste_memory.sources.task_history.accepted.length, 1);
+    assert.equal(preview.taste_memory.sources.task_history.revised.length, 1);
+    assert(preview.score.memory_boost > 0);
+    assert(preview.taste_memory.signals.some((signal) => signal.id === 'working_memory'));
+    assert.match(preview.feynman.why_now, /Taste memory says:/);
+    assert.match(preview.feynman.taste, /runway|plain-English|proof|working memory/i);
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
+    cleanupTempDir(dir);
+  }
+});
+
 test('continuation mission stops instead of returning placeholder when no concrete next mission exists', () => {
   const dir = makeTempDir();
   try {
@@ -3126,6 +3557,56 @@ test('continuation mission skips report target that was already handled', () => 
     const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
     assert.match(ack.codex_goal_state.goal.next_command, /atris mission stop mission-choice-handled-report --reason 'no concrete follow-up mission found in Atris state' --json/);
     assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /Repeat done thing/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('continuation mission skips report target that already exists as ready work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'reports', '2099-01-02-proof.md'), [
+      '# Proof',
+      '',
+      'Suggested target: repeat active thing.',
+      '',
+    ].join('\n'), 'utf8');
+    appendMissionState(dir, {
+      id: 'mission-repeat-active-thing',
+      slug: 'mission-repeat-active-thing',
+      objective: 'Repeat active thing',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: '',
+      created_at: '2026-06-30T11:00:00.000Z',
+      updated_at: '2026-06-30T11:05:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'mission-choice-active-report',
+      slug: 'mission-choice-active-report',
+      objective: 'Decide and start the next useful mission after: finish active report',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent-active-report',
+      parent_objective: 'finish active report',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: finish active report',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-active-report', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.match(attachedPayload.mission.next_action, /atris mission stop mission-choice-active-report --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.doesNotMatch(attachedPayload.mission.next_action, /Repeat active thing/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3770,6 +4251,260 @@ test('mission goal skips human-gated ready missions', () => {
     assert.equal(payload.action, 'codex_goal_candidate');
     assert.equal(payload.goal.mission_id, 'older-codex-work');
   } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal skips agent-certified mission tasks waiting for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open();
+    const task = taskDb.addTask(db, {
+      title: 'Mission XP: certified waiting task',
+      status: 'review',
+      claimedBy: 'auto-improver',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'human-waiting-codex',
+      },
+    });
+
+    appendMissionState(dir, {
+      id: 'older-codex-work',
+      slug: 'older-codex-work',
+      objective: 'older executable codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'human-waiting-codex',
+      slug: 'human-waiting-codex',
+      objective: 'certified mission waiting for human accept',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      task_id: task.id,
+      current_task_id: task.id,
+      task_ids: [task.id],
+      xp_task: {
+        task_id: task.id,
+        ref: 'CLI-999',
+      },
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'older-codex-work');
+    const due = selectDueMission(dir);
+    assert.equal(due.id, 'older-codex-work');
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.mission_id, 'older-codex-work');
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal seeds next-move continuation after certified mission waits for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open();
+    const task = taskDb.addTask(db, {
+      title: 'Mission XP: certified waiting task',
+      status: 'review',
+      claimedBy: 'auto-improver',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'human-waiting-codex',
+      },
+    });
+
+    appendMissionState(dir, {
+      id: 'human-waiting-codex',
+      slug: 'human-waiting-codex',
+      objective: 'certified mission waiting for human accept',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      continue_on_complete: true,
+      receipt_path: 'atris/runs/proof.json',
+      task_id: task.id,
+      current_task_id: task.id,
+      task_ids: [task.id],
+      xp_task: {
+        task_id: task.id,
+        ref: 'CLI-999',
+      },
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.reason, 'next_move_continuation_seeded');
+    assert.equal(
+      payload.goal.objective,
+      'Decide and start the next useful mission after: certified mission waiting for human accept',
+    );
+    assert.equal(payload.goal.seeded_continuation_goal.inserted, true);
+    assert.equal(payload.goal.seeded_continuation_goal.parent.id, 'human-waiting-codex');
+    assert.equal(payload.goal.mission_id, payload.goal.seeded_continuation_goal.mission.id);
+    assert.equal(payload.goal.seeded_continuation_goal.mission.started_from, 'mission_run_continuation');
+    assert.equal(payload.goal.seeded_continuation_goal.mission.continuation_policy, 'choose_next_mission');
+
+    const secondGoal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(secondGoal.status, 0, secondGoal.stderr || secondGoal.stdout);
+    const secondPayload = JSON.parse(secondGoal.stdout);
+    assert.equal(secondPayload.goal.mission_id, payload.goal.mission_id);
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal ignores completed handoff continuations when seeding the next mission', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open();
+    const staleTask = taskDb.addTask(db, {
+      title: 'Mission XP: stale parent waiting',
+      status: 'review',
+      claimedBy: 'auto-improver',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'stale-parent',
+      },
+    });
+    const currentTask = taskDb.addTask(db, {
+      title: 'Mission XP: current planning waiting',
+      status: 'review',
+      claimedBy: 'auto-improver',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'current-planning',
+      },
+    });
+
+    appendMissionState(dir, {
+      id: 'current-planning',
+      slug: 'current-planning',
+      objective: 'current certified planning mission',
+      status: 'planning',
+      runner: 'codex_goal',
+      continue_on_complete: true,
+      task_id: currentTask.id,
+      current_task_id: currentTask.id,
+      task_ids: [currentTask.id],
+      xp_task: {
+        task_id: currentTask.id,
+        ref: 'CLI-1000',
+      },
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'stale-parent',
+      slug: 'stale-parent',
+      objective: 'stale parent mission',
+      status: 'ready',
+      runner: 'codex_goal',
+      continue_on_complete: true,
+      continuation_seeded_mission_id: 'stale-continuation',
+      task_id: staleTask.id,
+      current_task_id: staleTask.id,
+      task_ids: [staleTask.id],
+      xp_task: {
+        task_id: staleTask.id,
+        ref: 'CLI-999',
+      },
+      created_at: '2026-05-03T00:00:00.000Z',
+      updated_at: '2026-05-03T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'stale-continuation',
+      slug: 'stale-continuation',
+      objective: 'Decide and start the next useful mission after: stale parent mission',
+      status: 'complete',
+      runner: 'codex_goal',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'stale-parent',
+      continued_by_mission_id: 'already-started',
+      created_at: '2026-05-03T00:01:00.000Z',
+      updated_at: '2026-05-03T00:01:00.000Z',
+    });
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const payload = JSON.parse(goal.stdout);
+    assert.equal(payload.action, 'codex_goal_candidate');
+    assert.equal(payload.goal.reason, 'next_move_continuation_seeded');
+    assert.equal(payload.goal.seeded_continuation_goal.parent.id, 'current-planning');
+    assert.notEqual(payload.goal.mission_id, 'stale-continuation');
+    assert.equal(
+      payload.goal.objective,
+      'Decide and start the next useful mission after: current certified planning mission',
+    );
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
     cleanupTempDir(dir);
   }
 });
