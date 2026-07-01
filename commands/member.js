@@ -419,11 +419,110 @@ function resolveMemberRunMissionId(name, args = []) {
   return goal?.mission_id || '';
 }
 
+const MEMBER_RUN_START_VALUE_FLAGS = [
+  '--mission',
+  '--mission-id',
+  '--owner',
+  '--runner',
+  '--lane',
+  '--cadence',
+  '--verify',
+  '--stop',
+  '--model',
+  '--max-ticks',
+  '--max-wall',
+  '--minutes',
+  '--hours',
+];
+
+const MEMBER_RUN_START_BOOLEAN_FLAGS = [
+  '--json',
+  '--worktree',
+  '--shared-checkout',
+  '--no-worktree',
+  '--always-on',
+  '--xp-task',
+  '--agent-xp',
+  '--spend-full-budget',
+  '--use-whole-budget',
+  '--stop-when-done',
+];
+
+function memberRunMissionText(args = []) {
+  return stripKnownFlags(args, MEMBER_RUN_START_VALUE_FLAGS, MEMBER_RUN_START_BOOLEAN_FLAGS).join(' ').trim();
+}
+
+function memberRunBudgetSeconds(args = []) {
+  const hours = readNumberFlag(args, '--hours', null);
+  if (Number.isFinite(hours) && hours > 0) return Math.round(hours * 3600);
+  const minutes = readNumberFlag(args, '--minutes', null);
+  if (Number.isFinite(minutes) && minutes > 0) return Math.round(minutes * 60);
+  return null;
+}
+
+function pushFlagValue(out, args, name) {
+  const value = readFlag(args, name, '');
+  if (value) out.push(name, String(value));
+}
+
+function pushFlagWhenPresent(out, args, name) {
+  if (hasFlag(args, name)) out.push(name);
+}
+
+function startMemberRunMission(name, missionText, args = []) {
+  const paths = requireMemberDir(name);
+  const owner = paths.storageName || name;
+  const startArgs = [
+    'mission',
+    'start',
+    missionText,
+    '--owner',
+    owner,
+    '--runner',
+    readFlag(args, '--runner', 'codex_goal'),
+    '--lane',
+    readFlag(args, '--lane', 'workspace'),
+  ];
+  pushFlagValue(startArgs, args, '--cadence');
+  pushFlagValue(startArgs, args, '--verify');
+  pushFlagValue(startArgs, args, '--stop');
+  pushFlagValue(startArgs, args, '--model');
+  pushFlagValue(startArgs, args, '--max-wall');
+  pushFlagValue(startArgs, args, '--minutes');
+  pushFlagValue(startArgs, args, '--hours');
+  pushFlagWhenPresent(startArgs, args, '--always-on');
+  pushFlagWhenPresent(startArgs, args, '--xp-task');
+  pushFlagWhenPresent(startArgs, args, '--agent-xp');
+  pushFlagWhenPresent(startArgs, args, '--spend-full-budget');
+  pushFlagWhenPresent(startArgs, args, '--use-whole-budget');
+  pushFlagWhenPresent(startArgs, args, '--stop-when-done');
+  if (!hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree')) startArgs.push('--worktree');
+  if (hasFlag(args, '--json')) startArgs.push('--json');
+
+  const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  try {
+    execFileSync(process.execPath, [cliPath, ...startArgs], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+  } catch (error) {
+    process.exitCode = Number(error?.status) || 1;
+  }
+}
+
 function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member run <name> [mission run flags]');
-    console.log('Example: atris member run block-builder --max-ticks 1 --max-wall 900 --json');
-    console.log('Override: atris member run block-builder --mission <mission-id> --json');
+    console.log('Usage: atris member run <name> ["mission text"] [--minutes N|--hours N] [--json]');
+    console.log('New mission: atris member run growth "Improve onboarding proof" --minutes 30 --json');
+    console.log('Existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
+    console.log('Isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
+    return;
+  }
+
+  const missionText = memberRunMissionText(args);
+  const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));
+  if (missionText && !hasMissionOverride) {
+    startMemberRunMission(name, missionText, args);
     return;
   }
 
@@ -431,14 +530,15 @@ function memberRun(name, ...args) {
   if (!missionId) {
     console.error(`No active Mission Runtime found for member "${name}".`);
     console.error(`Try: atris member goal-from-mission ${name} --json`);
-    console.error(`Or:  atris mission start "..." --owner ${name}`);
+    console.error(`Or:  atris member run ${name} "..." --minutes 30 --json`);
     process.exitCode = 1;
     return;
   }
 
-  const runArgs = stripKnownFlags(args, ['--mission', '--mission-id']);
+  const runArgs = stripKnownFlags(args, ['--mission', '--mission-id', '--minutes', '--hours'], ['--worktree', '--shared-checkout', '--no-worktree']);
+  const budgetSeconds = memberRunBudgetSeconds(args);
   if (!readFlag(runArgs, '--max-ticks', '')) runArgs.push('--max-ticks', '1');
-  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', '900');
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
 
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   try {
@@ -7555,7 +7655,7 @@ async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
   // help themselves (with subcommand-specific usage) — leave those alone.
-  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new']);
+  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run']);
   if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
     subcommand = undefined;
   }
@@ -7625,7 +7725,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
       console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
-      console.log("  run <name>          Run the member's active Mission Runtime");
+      console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
       console.log('  loop <name>         Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
@@ -7655,7 +7755,8 @@ async function memberCommand(subcommand, ...args) {
       console.log('  atris member goal-from-mission growth --json');
       console.log('  atris member goal-from-score growth --score-json team-score.json --json');
       console.log('  atris member wake growth --json');
-      console.log('  atris member run growth --max-ticks 1 --max-wall 900 --json');
+      console.log('  atris member run growth "Improve onboarding proof" --minutes 30 --json');
+      console.log('  atris member run growth --mission <mission-id> --max-ticks 1 --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member supervisor recommendations --json');
       console.log('  atris member objective-generator proposals --json');

@@ -172,6 +172,8 @@ function printJsonOrText(payload, lines, asJson) {
 const MISSION_RUN_VALUE_FLAGS = [
   '--max-ticks',
   '--max-wall',
+  '--minutes',
+  '--hours',
   '--cadence',
   '--owner',
   '--runner',
@@ -1448,6 +1450,9 @@ function missionFromArgs(args) {
     '--lane',
     '--verify',
     '--stop',
+    '--max-wall',
+    '--minutes',
+    '--hours',
     '--task',
     '--ask',
     '--model',
@@ -1455,10 +1460,11 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--allow-native-goal-supersede', '--supersede-paused-native-goal']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
+  const budgetContract = inferRunObjectiveBudgetContract(objective, args);
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const runner = readFlag(args, '--runner', 'manual');
@@ -1475,7 +1481,7 @@ function missionFromArgs(args) {
   const owner = ownerResolution.owner;
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
-  const stopCondition = readFlag(args, '--stop', verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof');
+  const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
   const alwaysOn = hasFlag(args, '--always-on');
@@ -1510,6 +1516,10 @@ function missionFromArgs(args) {
     created_at: stampIso(),
     updated_at: stampIso(),
   };
+  if (budgetContract) {
+    mission.budget_contract = budgetContract;
+    if (budgetContract.requested_seconds) mission.max_wall_seconds = budgetContract.requested_seconds;
+  }
   if (alwaysOn) mission.next_action = nextCandidateTickAction(mission);
   return mission;
 }
@@ -1597,9 +1607,15 @@ function wantsFullBudget(text, args = []) {
 
 function inferRunObjectiveBudgetContract(objective, args = []) {
   const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
+  const explicitHours = Number(readFlag(args, '--hours', ''));
+  const explicitMinutes = Number(readFlag(args, '--minutes', ''));
   const explicitMaxWall = Number(readFlag(args, '--max-wall', ''));
-  const requestedSeconds = durationSecondsFromText(text)
-    || (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null);
+  const explicitSeconds = Number.isFinite(explicitHours) && explicitHours > 0
+    ? Math.round(explicitHours * 3600)
+    : (Number.isFinite(explicitMinutes) && explicitMinutes > 0
+      ? Math.round(explicitMinutes * 60)
+      : (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null));
+  const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
   const overnight = /\bovernight\b/i.test(text);
   if (!requestedSeconds && !overnight) return null;
   const policy = wantsFullBudget(text, args) && !hasFlag(args, '--stop-when-done')

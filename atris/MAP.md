@@ -431,6 +431,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 - **Human readout:** `atris/team/<member>/goals.md`
 - **Learning log:** `atris/team/<member>/logs/YYYY-MM-DD.md`
 - **Loop:** `atris member goal` -> `atris member tick` -> `atris member status` -> `atris member review --accept|--discard --proof ... --value 1..5`
+- **Mission run:** `atris member run <member> "mission text" --minutes N` starts a budgeted mission in an isolated worktree by default; `--mission <id>` keeps the old active-mission run path.
 - **Blocked path:** `atris member block <member> <experiment> --reason ... --ask ... --orchestrator ...`; later ticks pause instead of creating more work until the ask is resolved.
 - **Value:** Tests whether a member is actually creating useful progress, not just activity, while keeping the operator able to chime in at any point.
 

@@ -165,6 +165,58 @@ test('member create initializes MEMBER.md and dated logs', () => {
   }
 });
 
+test('member run starts a budgeted isolated mission from plain text', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-test-'));
+  const dir = path.join(base, 'repo');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const git = (args, cwd = dir) => {
+      const result = runGit(args, cwd);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    git(['init', '-q']);
+    git(['config', 'user.email', 'test@example.com']);
+    git(['config', 'user.name', 'Test User']);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const created = runCli(['member', 'create', 'growth'], { cwd: dir });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    git(['add', '.']);
+    git(['commit', '-qm', 'baseline']);
+    fs.writeFileSync(path.join(dir, 'main-dirt.txt'), 'noise that must stay out of the member mission\n');
+
+    const res = runCli([
+      'member',
+      'run',
+      'growth',
+      'Improve onboarding proof',
+      '--minutes',
+      '10',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const payload = JSON.parse(res.stdout);
+    const mission = payload.mission;
+
+    assert.equal(payload.action, 'mission_started');
+    assert.equal(mission.owner, 'growth');
+    assert.equal(mission.objective, 'Improve onboarding proof');
+    assert.equal(mission.runner, 'codex_goal');
+    assert.equal(mission.budget_contract.requested_seconds, 600);
+    assert.equal(mission.budget_contract.policy, 'stop_when_done');
+    assert.equal(mission.max_wall_seconds, 600);
+    assert.match(mission.stop_condition, /run for 10 minutes, or stop early/);
+    assert.ok(mission.worktree?.path, 'member mission should have an isolated worktree by default');
+    assert.ok(fs.existsSync(mission.worktree.path));
+    assert.notEqual(fs.realpathSync(mission.worktree.path), fs.realpathSync(dir));
+    assert.ok(!fs.existsSync(path.join(mission.worktree.path, 'main-dirt.txt')));
+    assert.ok(fs.existsSync(path.join(mission.worktree.path, '.atris', 'state', 'missions.jsonl')));
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('worktree helpers keep member identity in branch and parse git worktrees', () => {
   assert.equal(slugify('Security Agent!!'), 'security-agent');
   assert.equal(
