@@ -890,6 +890,65 @@ test('mission tick receipt stores result.landing with high-level verifier meanin
   }
 });
 
+test('mission tick result landing rewrites raw verified summaries into plain headlines', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'smoke.test.js'), [
+      "const test = require('node:test');",
+      "const assert = require('node:assert/strict');",
+      "test('smoke behavior', () => assert.equal(1 + 1, 2));",
+      '',
+    ].join('\n'), 'utf8');
+
+    const cases = [
+      [
+        'npm landing summary',
+        'Verified npm auto-update behavior already shipped on master: packaged installs spawn detached npm latest, git checkouts skip by default, force/off env toggles work, help paths avoid update-check side effects, and npm pack includes utils/update-check.js.',
+        'Verified npm auto-update works for installed npm packages on master.',
+      ],
+      [
+        'runner landing summary',
+        'Verified runner-agnostic heartbeat behavior already shipped on master: autopilot and run both call buildRunnerCommand, no raw claude -p spawn literals remain, runner flags are exposed through the bin router, mission tick uses the same helper.',
+        'Verified autopilot and mission run use the same runner setup on master.',
+      ],
+    ];
+
+    for (const [objective, summary, expected] of cases) {
+      const started = runCli([
+        'mission',
+        'start',
+        objective,
+        '--owner',
+        'mission-lead',
+        '--verify',
+        'node --test smoke.test.js',
+        '--json',
+      ], { cwd: dir });
+      assert.equal(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+
+      const ticked = runCli([
+        'mission',
+        'tick',
+        mission.id,
+        '--verify',
+        '--summary',
+        summary,
+        '--json',
+      ], { cwd: dir });
+      assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+      const payload = JSON.parse(ticked.stdout);
+      const receipt = JSON.parse(fs.readFileSync(path.join(dir, payload.receipt_path), 'utf8'));
+
+      assert.equal(receipt.result.landing.changed, expected);
+      assert.doesNotMatch(receipt.result.landing.changed, /npm pac\.|mission tick|raw claude|bin router|spawn literals/i);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission timeline reads standard result.landing from tick receipts', () => {
   const dir = makeTempDir();
   try {

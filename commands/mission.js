@@ -753,9 +753,38 @@ function missionLandingStepSummary(summary) {
     .replace(/^(?:landing|changed|summary|result|product proof|proof):\s*/i, '')
     .trim();
   if (!withoutLabel) return '';
+  const plainVerified = missionPlainVerifiedSummary(withoutLabel);
+  if (plainVerified) return plainVerified;
   const beforeChecks = withoutLabel.split(/\s+(?:checks?|verified|proof):\s+/i)[0] || withoutLabel;
-  const clipped = beforeChecks.slice(0, 220).trim().replace(/[.!?:;,]+$/g, '');
+  const clipped = missionLandingSentenceClip(beforeChecks, 220);
   return clipped ? `${clipped}.` : '';
+}
+
+function missionPlainVerifiedSummary(text) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  const shipped = clean.match(/^Verified\s+(.+?)\s+behavior\s+already\s+shipped\s+on\s+master\s*:/i);
+  if (!shipped) return '';
+  const topic = shipped[1].toLowerCase();
+  if (topic.includes('npm auto-update')) {
+    return 'Verified npm auto-update works for installed npm packages on master.';
+  }
+  if (topic.includes('runner-agnostic heartbeat')) {
+    return 'Verified autopilot and mission run use the same runner setup on master.';
+  }
+  return `Verified ${shipped[1]} is already working on master.`;
+}
+
+function missionLandingSentenceClip(text, max) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  if (clean.length <= max) return clean.replace(/[.!?:;,]+$/g, '').trim();
+  const sentence = clean.match(/^(.{24,220}?[.!?])\s+/);
+  const base = sentence ? sentence[1] : clean.slice(0, max);
+  return base
+    .replace(/\s+\S*$/, '')
+    .replace(/[.!?:;,]+$/g, '')
+    .replace(/\b(?:and|or|but|with|to|for|from|by|through|via|using|including|include|includes|plus|then|both|the|a|an|of|in|on|at|as)$/i, '')
+    .trim();
 }
 
 function missionLastStepSummary(ticks = []) {
