@@ -1162,7 +1162,8 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
 
 function missionGoalChainIntent(text) {
   const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
-  return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower);
+  return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower)
+    || /\bset\s+a\s+goal\b.{0,160}\b(accomplish|complete|finish|prove)\w*\b.{0,200}\bnext\s+(?:useful\s+)?goal\b/.test(lower);
 }
 
 function missionGoalChainTargetCount(text) {
@@ -2423,6 +2424,7 @@ function startMissionFromRunObjective(objective, args) {
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
   if (missionGoalChainIntent(rawObjective) || missionGoalChainIntent(missionObjective)) {
     mission.goal_chain = buildMissionGoalChain(missionObjective || rawObjective);
+    mission.next_action = missionGoalChainNextAction(mission.goal_chain);
   }
   if (missionRunPreflight) {
     mission.mission_run_preflight = missionRunPreflight;

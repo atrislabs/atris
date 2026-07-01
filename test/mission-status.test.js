@@ -3151,6 +3151,31 @@ test('mission run can plan and advance a validated child-goal chain', () => {
   }
 });
 
+test('mission run recognizes set-accomplish-next wording as a child-goal chain', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const rawObjective = 'investigate codebase for 10 minutes; set a goal, accomplish it, then synthesize findings into the next useful goal';
+    const run = runCli([
+      'mission',
+      'run',
+      rawObjective,
+      '--owner',
+      'architect',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+
+    assert.equal(payload.mission.goal_chain.schema, 'atris.mission_goal_chain.v1');
+    assert.equal(payload.mission.goal_chain.target_count, 4);
+    assert.match(payload.mission.goal_chain.plain_language, /several small goals/);
+    assert.match(payload.mission.next_action, /continue child goal 1/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run accepts one-word fuzzy intent as a new mission', () => {
   const dir = makeTempDir();
   try {
