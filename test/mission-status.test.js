@@ -2941,6 +2941,13 @@ test('continuation mission chooses next mission instead of passing on inherited 
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'reports', '2099-01-01-proof.md'), [
+      '# Proof',
+      '',
+      'Suggested target: make the concrete follow-up real.',
+      '',
+    ].join('\n'), 'utf8');
     appendMissionState(dir, {
       id: 'mission-choice-continuation',
       slug: 'mission-choice-continuation',
@@ -2980,19 +2987,59 @@ test('continuation mission chooses next mission instead of passing on inherited 
     const attached = runCli(['mission', 'attach-task', 'mission-choice-continuation', '--json'], { cwd: dir });
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
     const attachedPayload = JSON.parse(attached.stdout);
-    assert.match(attachedPayload.mission.next_action, /atris mission run "<next useful mission>" --owner mission-lead/);
+    assert.match(attachedPayload.mission.next_action, /atris mission run 'Make the concrete follow-up real' --owner mission-lead/);
+    assert.doesNotMatch(attachedPayload.mission.next_action, /<next useful mission>/);
 
     const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
     assert.equal(ack.codex_goal_state.goal.visible_goal.status, 'active');
-    assert.match(ack.codex_goal_state.goal.next_command, /atris mission run "<next useful mission>" --owner mission-lead/);
+    assert.match(ack.codex_goal_state.goal.next_command, /atris mission run 'Make the concrete follow-up real' --owner mission-lead/);
+    assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /<next useful mission>/);
 
-    const next = runCli(['mission', 'run', 'make the concrete follow-up real', '--owner', 'mission-lead', '--json'], { cwd: dir });
+    const next = runCli(['mission', 'run', 'Make the concrete follow-up real', '--owner', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(next.status, 0, next.stderr || next.stdout);
     const nextPayload = JSON.parse(next.stdout);
-    assert.equal(nextPayload.mission.objective, 'make the concrete follow-up real');
+    assert.equal(nextPayload.mission.objective, 'Make the concrete follow-up real');
     assert.equal(nextPayload.completed_continuation_goal.completed, true);
     assert.equal(nextPayload.completed_continuation_goal.mission.id, 'mission-choice-continuation');
     assert.equal(nextPayload.completed_continuation_goal.mission.continued_by_mission_id, nextPayload.mission.id);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('continuation mission stops instead of returning placeholder when no concrete next mission exists', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-choice-empty',
+      slug: 'mission-choice-empty',
+      objective: 'Decide and start the next useful mission after: finish an empty long run',
+      status: 'planning',
+      runner: 'codex_goal',
+      verifier: '',
+      started_from: 'mission_run_continuation',
+      continuation_policy: 'choose_next_mission',
+      parent_mission_id: 'mission-parent-empty',
+      parent_objective: 'finish an empty long run',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'Decide and start the next useful mission after: finish an empty long run',
+      },
+      created_at: '2026-06-30T12:00:00.000Z',
+      updated_at: '2026-06-30T12:00:00.000Z',
+    });
+
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-empty', '--json'], { cwd: dir });
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const attachedPayload = JSON.parse(attached.stdout);
+    assert.match(attachedPayload.mission.next_action, /atris mission stop mission-choice-empty --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.doesNotMatch(attachedPayload.mission.next_action, /<next useful mission>/);
+
+    const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
+    assert.match(ack.codex_goal_state.goal.next_command, /atris mission stop mission-choice-empty --reason 'no concrete follow-up mission found in Atris state' --json/);
+    assert.doesNotMatch(ack.codex_goal_state.goal.next_command, /<next useful mission>/);
   } finally {
     cleanupTempDir(dir);
   }
