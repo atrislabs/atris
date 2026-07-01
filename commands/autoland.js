@@ -263,6 +263,16 @@ function runTick(root, args) {
     }
     receipt.digest_text = text;
     state.last_digest_date = today;
+
+    // 4. once a day, keep the receipt shelf lean: compress old run receipts
+    // into the manifest and drop unreferenced clutter, newest 200 kept.
+    const prune = runOwnCli(root, ['mission', 'prune-runs', '--apply', '--days', '14', '--keep-newest', '200', '--json']);
+    try {
+      const pruned = JSON.parse(prune.stdout);
+      receipt.receipts_pruned = pruned.pruned_count ?? pruned.pruned ?? pruned.removed ?? 0;
+    } catch {
+      receipt.receipts_pruned = null;
+    }
   }
   autoland.writeState(root, state);
 
