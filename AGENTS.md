@@ -52,7 +52,7 @@ Every agent should leave four artifacts another agent can trust:
 | Navigation | `atris/MAP.md` when a new route or file location is learned |
 | Change | Small git diff in declared files only |
 | Proof ready | `atris task ready <id> --proof "<commands or receipt>"` |
-| Human accept | `atris task accept <id>` |
+| Accept | `atris task accept <id>` by a human, or autoland lands certified work when the owner flipped `atris autoland on` (protected lanes still wait) |
 | Land or reap | merge your branch or delete it before you stop; `atris land` shows limbo, `atris land --reap` clears it |
 
 Do not rely on chat context. Put the task, file pointers, and proof on disk.
@@ -68,7 +68,8 @@ Human accept      -> task Done + AgentXP awarded
 
 Always-on agents should move proof-backed work to Review, complete their native
 goal, then continue the mission loop with the next goal. They must not run
-`atris task accept` or claim AgentXP unless a human approved the proof.
+`atris task accept` or claim AgentXP themselves; acceptance comes from a human
+or from the owner's standing `atris autoland` policy, never from the agent.
 
 Mission-shaped user intent wins before normal task selection. If the user
 message starts with `atris mission run`, execute that command first, then run

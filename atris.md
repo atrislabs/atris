@@ -107,6 +107,12 @@ atris task review <id> --lesson "<what improved>" --next "<next task>"
 
 Headless agents should add `--json` where available and read
 `.atris/state/tasks.projection.json` for a compact board view.
+
+Landing policy: when the owner has flipped `atris autoland on`, certified work
+(two independent review passes, real proof, safe verify re-run) lands itself
+with a receipt; agents never run `atris task accept` themselves. Money,
+deploys, security, customer, and outward-facing lanes always wait for the
+human. `atris autoland` shows what lands alone and what waits.
 Swarlo is the live coordination layer for claims, heartbeats, and reports; the
 task row/event stream remains the durable source of truth.
 

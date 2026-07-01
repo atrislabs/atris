@@ -7913,9 +7913,16 @@ function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const strictVerify = hasFlag(args, '--strict-verify');
   const actorFlag = flag(args, '--as');
-  const actor = String(actorFlag || 'auto-accept-certified');
   const hasHumanActor = validHumanActorFlag(actorFlag);
   const confirmedHumanAccept = hasFlag(args, '--confirm-human-accept');
+  // Standing owner authorization: when the autoland policy is on for this
+  // workspace, live accepts run as the owner who flipped it, no per-run
+  // confirmation needed. See lib/autoland.js and 'atris autoland'.
+  const dryRunEarly = hasFlag(args, '--dry-run');
+  const policyAuth = (!dryRunEarly && !confirmedHumanAccept)
+    ? require('../lib/autoland').liveAcceptAuthorization()
+    : { ok: false };
+  const actor = String(actorFlag || (policyAuth.ok ? policyAuth.actor : 'auto-accept-certified'));
   const limitRaw = flag(args, '--limit');
   const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 12) : 12;
   const parsedReward = parseAcceptReward(flag(args, '--reward'));
@@ -7923,14 +7930,14 @@ function cmdAutoAcceptCertified(args) {
     console.error('atris task auto-accept-certified: reward must be a positive number');
     process.exit(2);
   }
-  if (!dryRun && !confirmedHumanAccept) {
+  if (!dryRun && !confirmedHumanAccept && !policyAuth.ok) {
     failTask(
       'atris task auto-accept-certified',
       'human_accept_confirmation_required',
-      'live auto-accept requires --confirm-human-accept --as <human>; use --dry-run to preview',
+      'live auto-accept requires --confirm-human-accept --as <human>, or the owner flips the standing policy with atris autoland on; use --dry-run to preview',
     );
   }
-  if (!dryRun && !hasHumanActor) {
+  if (!dryRun && !hasHumanActor && !policyAuth.ok) {
     failTask(
       'atris task auto-accept-certified',
       'human_actor_required',

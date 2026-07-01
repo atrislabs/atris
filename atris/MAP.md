@@ -302,6 +302,20 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "missionCommand|lintMissionVerifier|gitWorktreeSnapshot|worktreeReceipt|captureMissionWorktreeBaseline|missionCompletionGate|runMission|tickMission|pruneRuns|runsPruneLines|prune-runs" commands/mission.js lib/runs-prune.js test/mission-verifier.test.js test/mission-worktree-receipt.test.js test/mission-worktree-baseline.test.js test/mission-complete-guard.test.js test/mission-status.test.js`
 
+### Feature: Autoland (`atris autoland`)
+
+**Purpose:** The owner approves the policy once; certified work lands itself with receipts. Money, deploys, security, customer, and outward lanes always wait for the human.
+
+- **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
+- **Authorization bridge:** `commands/task.js` cmdAutoAcceptCertified consults `liveAcceptAuthorization()` — the policy file is the standing human confirmation
+- **Eligibility engine:** `lib/auto-accept-certified.js` evaluateAutoAccept (2 passes + 2 actors or 3 passes, denied tags, proof checks, strict verify re-run)
+- **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
+- **Heartbeat:** hourly labeled cron (`ATRIS_AUTOLAND_<project>`) running `atris autoland tick`: land eligible -> alarm anything waiting on a human past 24h -> daily iMessage digest
+- **Regression:** `test/autoland.test.js` (compose, dedupe, policy gate, live e2e land + denied lane, off no-op)
+- **Value:** the human approves policy, not items; nothing certified waits silently again
+
+**Search:** `rg "autolandCommand|liveAcceptAuthorization|composeDigest" commands/autoland.js lib/autoland.js commands/task.js`
+
 ### Feature: Landing Contract (`atris land`)
 
 **Purpose:** Work is merged or reaped, never limbo — the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
