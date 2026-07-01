@@ -1332,9 +1332,49 @@ function missionChoosesNextMission(mission) {
     && mission?.continuation_policy === 'choose_next_mission';
 }
 
-function chooseNextMissionCommand(mission) {
+function isConcreteContinuationTarget(title) {
+  const text = String(title || '').trim();
+  if (!text) return false;
+  if (/^decide and start the next useful mission after:/i.test(text)) return false;
+  if (/<next useful mission>/i.test(text)) return false;
+  if (/^create the next proof-backed self-improvement task$/i.test(text)) return false;
+  return true;
+}
+
+function chooseNextMissionTarget(mission, root = process.cwd()) {
+  try {
+    const moves = require('../lib/next-moves');
+    const currentObjective = String(mission?.objective || '').trim();
+    const parentObjective = String(mission?.parent_objective || '').trim();
+    const candidates = moves.nextMoves(root, 8)
+      .filter((move) => move && isConcreteContinuationTarget(move.title))
+      .filter((move) => {
+        const title = String(move.title || '').trim();
+        return !(mission?.id && move.ref === mission.id && title === currentObjective);
+      })
+      .filter((move) => !currentObjective || String(move.title || '').trim() !== currentObjective)
+      .filter((move) => !parentObjective || String(move.title || '').trim() !== parentObjective);
+    if (candidates[0]) return candidates[0];
+    const target = moves.latestSuggestedTarget(root);
+    if (isConcreteContinuationTarget(target)) {
+      return {
+        title: target,
+        why: 'latest proof timeline suggested this follow-up mission',
+        source: 'mission_report',
+      };
+    }
+  } catch {
+    // Fall through to an explicit stop command; never emit the old placeholder.
+  }
+  return null;
+}
+
+function chooseNextMissionCommand(mission, root = process.cwd()) {
   const owner = mission?.owner || process.env.ATRIS_AGENT_ID || 'mission-lead';
-  return `atris mission run "<next useful mission>" --owner ${owner}`;
+  const target = chooseNextMissionTarget(mission, root);
+  if (target?.title) return `atris mission run ${shellQuote(target.title)} --owner ${owner}`;
+  const missionId = mission?.id || '<mission-id>';
+  return `atris mission stop ${missionId} --reason ${shellQuote('no concrete follow-up mission found in Atris state')} --json`;
 }
 
 function effectiveMissionVerifier(mission) {
@@ -1461,8 +1501,9 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
     parent_proof: proof || parent.receipt_path || null,
-    next_action: `decide next mission, then run: ${chooseNextMissionCommand({ owner })}`,
+    next_action: '',
   };
+  nextMission.next_action = `decide next mission, then run: ${chooseNextMissionCommand(nextMission, root)}`;
 
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
   const { mission: saved } = saveMission(nextMission, root, 'mission_continuation_started', {
