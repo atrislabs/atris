@@ -73,7 +73,7 @@ test('always-on mission run ticks drain the review lane and record the receipt',
   try {
     initWorkspace(dir);
     seedReviewLane(dir);
-    const mission = startMission(dir, 'always-on drain mission', ['--always-on']);
+    const mission = startMission(dir, 'always-on drain mission', ['--always-on', '--no-verify']);
 
     const run = runCli(['mission', 'run', mission.id, '--no-claude', '--max-ticks', '1', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
@@ -114,7 +114,7 @@ test('mission run --no-drain skips the review lane on always-on missions', () =>
   try {
     initWorkspace(dir);
     seedReviewLane(dir);
-    const mission = startMission(dir, 'always-on no-drain mission', ['--always-on']);
+    const mission = startMission(dir, 'always-on no-drain mission', ['--always-on', '--no-verify']);
 
     const run = runCli(['mission', 'run', mission.id, '--no-claude', '--max-ticks', '1', '--no-drain', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);

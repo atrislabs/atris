@@ -1632,7 +1632,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -1653,10 +1653,21 @@ function missionFromArgs(args) {
   const owner = ownerResolution.owner;
   const verifier = readFlag(args, '--verify', '');
   assertMissionVerifier(verifier, wantsJson(args));
+  const alwaysOn = hasFlag(args, '--always-on');
+  const scheduledLoop = cadence && cadence !== 'manual';
+  // Autonomous loops need a witness. Manual missions can still be started for
+  // human-proof work, but always-on/scheduled work must either carry a verifier
+  // or opt out explicitly.
+  if (!verifier && (alwaysOn || scheduledLoop) && !hasFlag(args, '--no-verify')) {
+    exitMissionError(
+      'Autonomous mission loops need a verifier: pass --verify "<cmd>" so ticks can prove progress, or --no-verify to start without one (it will only complete by human proof).',
+      2,
+      wantsJson(args),
+    );
+  }
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   const humanAsks = readRepeatedFlag(args, '--ask');
-  const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
   const id = missionId(objective);
@@ -2781,7 +2792,7 @@ function inheritedWorktreeBase(cwd) {
 // Dedup gate: the same objective + owner already active anywhere in the
 // workspace family (this store or any worktree's) is reused, never cloned.
 // Born 2026-07-02: an hourly alive loop spawned six identical auto-improver
-// missions in six fresh worktrees in one day — pure token burn. --duplicate
+// missions in six fresh worktrees in one day - pure token burn. --duplicate
 // is the explicit escape hatch.
 const TWIN_ACTIVE_STATUSES = new Set(['planning', 'ready', 'running']);
 
@@ -2806,7 +2817,89 @@ function findActiveTwinMission(objective, owner, root = process.cwd()) {
   return null;
 }
 
+// Retroactive sweep for the clutter the start-time dedupe gate can't reach:
+// active twins born before the gate existed, and planning missions nobody has
+// touched in weeks. Dry-run by default; --apply stops them with a reason.
+function dedupeMissions(args) {
+  const asJson = wantsJson(args);
+  const apply = hasFlag(args, '--apply');
+  const localOnly = hasFlag(args, '--local');
+  const staleDays = readPositiveIntegerFlag(args, '--stale-days', 14, { json: asJson });
+  const missionRows = listMissions().map((mission) => ({ mission, root: process.cwd(), rolled: false }));
+  if (!localOnly) {
+    for (const rolled of listWorktreeRollupMissions()) {
+      const { worktree_root: worktreeRoot, worktree_branch: worktreeBranch, ...mission } = rolled;
+      missionRows.push({ mission, root: worktreeRoot, rolled: true, worktree_branch: worktreeBranch });
+    }
+  }
+  const active = missionRows.filter((row) => row.mission && TWIN_ACTIVE_STATUSES.has(row.mission.status));
+  const groups = new Map();
+  for (const row of active) {
+    const m = row.mission;
+    const key = `${normalizedObjective(m.objective)}::${String(m.owner || '').trim().toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const statusRank = { running: 0, ready: 1, planning: 2 };
+  const targets = new Map();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => (statusRank[a.mission.status] ?? 9) - (statusRank[b.mission.status] ?? 9)
+      || Number(a.rolled) - Number(b.rolled)
+      || String(b.mission.updated_at || b.mission.created_at || '').localeCompare(String(a.mission.updated_at || a.mission.created_at || '')));
+    const keeper = sorted[0].mission;
+    for (const twin of sorted.slice(1)) {
+      targets.set(twin.mission.id, { ...twin, reason: `duplicate of ${keeper.id}` });
+    }
+  }
+  const cutoff = Date.now() - staleDays * 86400000;
+  for (const row of active) {
+    const m = row.mission;
+    if (targets.has(m.id) || m.status !== 'planning') continue;
+    const touched = Date.parse(m.updated_at || m.created_at || '');
+    if (Number.isFinite(touched) && touched < cutoff) {
+      targets.set(m.id, { ...row, reason: `stale planning mission, untouched for ${staleDays}+ days` });
+    }
+  }
+  const rows = [...targets.values()];
+  const stopped = [];
+  if (apply) {
+    for (const { mission, root, reason } of rows) {
+      const { mission: saved } = saveMission({
+        ...mission,
+        status: 'stopped',
+        stopped_at: stampIso(),
+        stop_reason: `mission dedupe: ${reason}`,
+        next_action: 'mission stopped',
+      }, root, 'mission_stopped', { reason: `mission dedupe: ${reason}` });
+      stopped.push(saved.id);
+    }
+  }
+  printJsonOrText(
+    {
+      ok: true,
+      action: apply ? 'mission_dedupe' : 'mission_dedupe_dry_run',
+      scanned: active.length,
+      local_only: localOnly,
+      stale_days: staleDays,
+      targets: rows.map(({ mission, root, rolled, worktree_branch: worktreeBranch, reason }) => ({ id: mission.id, status: mission.status, owner: mission.owner, objective: mission.objective, root, rolled, worktree_branch: worktreeBranch || null, reason })),
+      stopped,
+    },
+    rows.length
+      ? [
+        `${apply ? 'Stopped' : 'Would stop'} ${rows.length} of ${active.length} active missions:`,
+        ...rows.map(({ mission, rolled, reason }) => `  ${mission.id}  (${mission.status}, ${mission.owner || '?'})${rolled ? ' [worktree]' : ''} - ${reason}`),
+        ...(apply ? [] : ['Apply: atris mission dedupe --apply']),
+      ]
+      : [`Nothing to clean: ${active.length} active missions, no twins, no planning rows older than ${staleDays}d.`],
+    asJson,
+  );
+}
+
 function startMission(args) {
+  // Help is read-only: `mission start --help` must never create a mission
+  // whose objective is the literal flag text.
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') return help();
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
   if (!hasFlag(args, '--duplicate')) {
@@ -2816,7 +2909,7 @@ function startMission(args) {
         { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
         [
           `Already active: ${twin.id} (${twin.status})`,
-          `Same objective, same owner — reusing it instead of starting a clone.`,
+          `Same objective, same owner - reusing it instead of starting a clone.`,
           `Resume: atris mission run ${twin.id}`,
           `Really want a second one: re-run with --duplicate`,
         ],
@@ -2923,6 +3016,9 @@ function startMissionFromRunObjective(objective, args) {
     stopCondition,
   ];
   if (verifier) startArgs.push('--verify', verifier);
+  // Forward the caller's explicit opt-out; otherwise an always-on run objective
+  // with no inferable verifier hits the autonomous-loop verifier gate.
+  else if (hasFlag(args, '--no-verify')) startArgs.push('--no-verify');
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
   if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
@@ -6953,7 +7049,9 @@ function help() {
   console.log(`
 atris mission - durable goal + loop + owner + proof state
 
-  atris mission start "<objective>" --owner <member> [--verify "..."] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
+  atris mission start "<objective>" --owner <member> [--verify "..."] [--no-verify] [--always-on] [--xp-task] [--worktree] [--take-goal-slot]
+                      (always-on and scheduled-cadence missions require --verify; --no-verify is the
+                       explicit opt-out - the mission then only completes by human proof)
                       [--runner manual|claude|atris2|codex_goal] [--model <id>]
                       (runner claude spawns local claude -p per tick, --model passes through;
                        runner atris2 runs each tick as one /atris2/turn on the AtrisOS backend,
@@ -6971,6 +7069,7 @@ atris mission - durable goal + loop + owner + proof state
                        (rolls up sibling git-worktree missions; --local scopes to this checkout)
   atris mission room "<messy input>" [--owner <member>] [--room-auto-run] [--json]   Create a Mission Room card and shareable receipt from messy intent
   atris mission prune-runs [--apply] [--days <n>] [--keep-newest <n>] [--json]   Compress old run receipts into a manifest and prune unreferenced clutter
+  atris mission dedupe [--apply] [--local] [--stale-days <n>] [--json]   Stop duplicate active twins and stale planning missions (dry-run by default)
   atris mission goal [--runtime codex|atris] [--heartbeat] [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede] [--json]
   atris mission goal ack <id> --runtime codex --status active --objective "<objective>" --json
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
@@ -7339,6 +7438,9 @@ function missionCommand(args) {
     case 'create':
     case 'new':
       return startMission(rest);
+    case 'dedupe':
+    case 'tidy':
+      return dedupeMissions(rest);
     case 'status':
     case 'list':
     case 'ls':

@@ -12171,6 +12171,55 @@ test('task auto-accept-certified requires explicit human confirmation when autol
   }
 });
 
+test('task ready --verify feeds strict task landing by default', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'verify.js'), 'const ok = true;\n', 'utf8');
+
+    const add = runCli(['task', 'add', 'Strict landing sees ready verifier', '--tag', 'code', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], { cwd: dir, env }).status, 0);
+
+    for (const actor of ['builder', 'reviewer']) {
+      const ready = runCli([
+        'task', 'ready', ref,
+        '--as', actor,
+        '--proof', 'node --check verify.js passed and diff inspected',
+        '--verify', 'node --check verify.js',
+        '--json',
+      ], { cwd: dir, env });
+      assert.equal(ready.status, 0, ready.stderr);
+      assert.equal(JSON.parse(ready.stdout).strict_verify_recorded, true);
+    }
+    const shown = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(shown.metadata.verify, 'node --check verify.js');
+
+    const preview = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify', '--json'], { cwd: dir, env });
+    assert.equal(preview.status, 0, preview.stderr);
+    const previewPayload = JSON.parse(preview.stdout);
+    assert.equal(previewPayload.summary.would_accept, 1);
+    assert.equal(previewPayload.results[0].reason, 'certified_strict_verify');
+    assert.equal(previewPayload.results[0].verify_executed, false);
+
+    const landing = runCli(['task', 'landing', '--accept', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    assert.equal(landing.status, 0, landing.stderr);
+    const landingPayload = JSON.parse(landing.stdout);
+    assert.equal(landingPayload.strict_verify, true);
+    assert.equal(landingPayload.summary.accepted, 1);
+    assert.equal(landingPayload.results[0].action, 'accepted');
+    const accepted = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(accepted.status, 'done');
+    assert.equal(accepted.metadata.accepted_by, 'keshavrao');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task review after acceptance cannot mint duplicate AgentXP', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -19119,6 +19168,40 @@ test('task lineage', () => {
     const noGitEnv = { ...env, HOME: dir };
     const noGit = runCli(['task', 'lineage', childRef], { cwd: dir, env: noGitEnv });
     assert.equal(noGit.status, 0, 'no crash without git');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('review proof command extraction trims prose connectors off command text', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Trim prose from extracted commands', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const proof = [
+      'Ran npm test to confirm the loader works end to end',
+      'npm test (1793 pass, 0 fail)',
+      'node --test test/commands.test.js (452 pass, 0 fail)',
+      'changed-file node --test suite (452 pass, 0 fail)',
+      'node --check commands/task.js \u2014 clean output, no syntax drift anywhere.',
+    ].join('; ');
+    const ready = runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex', '--json'], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    const commands = JSON.parse(ready.stdout).handoff.verification_focus.commands_to_verify;
+    assert.ok(commands.includes('npm test'), `prose after "to confirm" must be trimmed: ${JSON.stringify(commands)}`);
+    assert.ok(commands.includes('node --test test/commands.test.js'), `pass/fail parenthetical must be trimmed: ${JSON.stringify(commands)}`);
+    assert.ok(commands.includes('node --check commands/task.js'), `prose after the em dash must be trimmed: ${JSON.stringify(commands)}`);
+    assert.ok(!commands.includes('node --test suite'), `vague suite prose must not become a command: ${JSON.stringify(commands)}`);
+    for (const command of commands) {
+      assert.doesNotMatch(command, /\b(?:confirm the|clean output|loader works|pass, 0 fail)\b/, `command still carries prose: ${command}`);
+    }
   } finally {
     cleanupTempDir(dir);
   }

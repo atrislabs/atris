@@ -271,6 +271,22 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
   }
 });
 
+test('tick explains why strict autoland landed nothing', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    certifiedTask(repo, 'Needs recorded verifier before strict landing', { tag: 'code' });
+
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.deepEqual(receipt.landed, []);
+    assert.equal(receipt.scanned, 1);
+    assert.equal(receipt.held.strict_verify_missing, 1);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 // Walk a task only to first proof: builder ready, no second reviewer. The tick
 // must supply the second-actor check itself by re-running the proof's command.
 function proofBackedTask(repo, title, { tag = 'code' } = {}) {
@@ -346,6 +362,44 @@ test('tick is a no-op when the policy is off', () => {
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.enabled, false);
     assert.deepEqual(receipt.landed, []);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('task ready --verify records the allowlisted command where strict autoland looks', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    fs.writeFileSync(path.join(repo, 'ok.js'), 'process.exit(0);\n');
+    const created = runCli(['task', 'new', 'verify stamping', '--tag', 'code', '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
+    assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+    const readied = runCli(['task', 'ready', String(id), '--verify', 'node --check ok.js', '--proof', 'Syntax check executed on the changed file, output inspected and clean.', '--as', 'builder', '--json'], repo);
+    assert.equal(readied.status, 0, readied.stderr || readied.stdout);
+    assert.equal(JSON.parse(readied.stdout).strict_verify_recorded, true);
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const task = projection.tasks.find((t) => (t.display_id || t.id) === String(id));
+    assert.equal(task.metadata.verify, 'node --check ok.js');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('task ready --verify with a non-allowlisted command still readies but is not recorded for strict autoland', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const created = runCli(['task', 'new', 'verify not allowlisted', '--tag', 'code', '--json'], repo);
+    const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
+    assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+    const readied = runCli(['task', 'ready', String(id), '--verify', 'true && true', '--proof', 'Shell check executed, output inspected and clean end to end.', '--as', 'builder', '--json'], repo);
+    assert.equal(readied.status, 0, readied.stderr || readied.stdout);
+    assert.equal(JSON.parse(readied.stdout).strict_verify_recorded, false);
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const task = projection.tasks.find((t) => (t.display_id || t.id) === String(id));
+    assert.equal(task.metadata.verify, undefined);
   } finally {
     cleanupTempDir(base);
   }
