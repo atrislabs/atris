@@ -188,7 +188,10 @@ test('alarm dedupe: a task pings once per window', () => {
 test('policy file gates live accept authorization', () => {
   const { base, repo } = makeTempRepo();
   try {
-    assert.equal(autoland.liveAcceptAuthorization(repo).ok, false);
+    // default is ON with an inferred owner; only an explicit off blocks
+    const defaultAuth = autoland.liveAcceptAuthorization(repo);
+    assert.equal(defaultAuth.ok, true);
+    assert.ok(defaultAuth.actor);
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav' });
     const auth = autoland.liveAcceptAuthorization(repo);
     assert.equal(auth.ok, true);
@@ -242,12 +245,13 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
     const codeTask = certifiedTask(repo, 'Fix the flaky moves test', { tag: 'code' });
     const billingTask = certifiedTask(repo, 'Send the June invoice', { tag: 'billing' });
 
-    // no policy: live refuses
+    // explicit off: live refuses
+    autoland.writePolicy(repo, { enabled: false, enabled_by: 'keshav' });
     const refused = runCli(['task', 'auto-accept-certified', '--json'], repo);
     assert.notEqual(refused.status, 0);
     assert.match(refused.stdout + refused.stderr, /human_accept_confirmation_required/);
 
-    // owner flips the policy: the code task lands, billing stays for the human
+    // owner flips the policy back on: the code task lands, billing stays for the human
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
@@ -336,6 +340,7 @@ test('tick is a no-op when the policy is off', () => {
   const { base, repo } = makeTempRepo();
   try {
     certifiedTask(repo, 'Some certified work', { tag: 'code' });
+    autoland.writePolicy(repo, { enabled: false, enabled_by: 'keshav' });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());

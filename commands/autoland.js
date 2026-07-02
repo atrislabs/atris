@@ -128,7 +128,7 @@ function showStatus(root, args) {
   console.log('');
   console.log(`autoland — certified work lands itself; you keep the irreversible calls`);
   console.log('');
-  console.log(`  policy: ${enabled ? `on (flipped by ${policy.enabled_by}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})` : 'off — everything waits for you'}`);
+  console.log(`  policy: ${enabled ? (policy.default ? `on by default (accepting as ${policy.enabled_by}; opt out: atris autoland off)` : `on (flipped by ${policy.enabled_by}${policy.enabled_at ? ` on ${String(policy.enabled_at).slice(0, 10)}` : ''})`) : 'off — everything waits for you'}`);
   console.log(`  heartbeat: ${autoland.cronInstalled(root) ? 'running hourly' : 'not installed'}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   console.log('');
