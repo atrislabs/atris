@@ -127,6 +127,19 @@ function isOptionValue(args, index, optionNames) {
 }
 
 function applyRunnerFlags(args) {
+  // --engine <name> is the operator-facing spelling of --runner-profile:
+  // one flag rents a specific intelligence for this run.
+  const engineFlag = readOptionArg(args, '--engine');
+  if (engineFlag) {
+    const { canonicalEngineName } = require('../commands/engine');
+    const { RUNNER_PROFILE_NAMES } = require('../lib/runner-command');
+    const canonical = canonicalEngineName(engineFlag);
+    if (!canonical) {
+      console.error(`Unknown --engine "${engineFlag}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}.`);
+      process.exit(1);
+    }
+    process.env.ATRIS_RUNNER_PROFILE = canonical;
+  }
   const runnerProfile = readOptionArg(args, '--runner-profile');
   if (runnerProfile) {
     // Fail fast at the CLI boundary: an unknown profile otherwise stays silent
@@ -153,7 +166,29 @@ function applyRunnerFlags(args) {
     process.env.ATRIS_RUNNER_MODEL = runnerModel;
     process.env.ATRIS_CLAUDE_MODEL = runnerModel;
   }
+  // No per-run choice and no env: the workspace's saved engine
+  // (.atris/engine.json, written by `atris engine <name>`) becomes the
+  // profile for every loop spawn. For the loop commands themselves, fall all
+  // the way to the house engine (atris-fast when ax is installed) so the
+  // default intelligence is our own. Heartbeats stay engine-agnostic without
+  // any loop code knowing about engines.
+  if (!process.env.ATRIS_RUNNER_PROFILE) {
+    try {
+      const engine = require('../commands/engine');
+      const saved = engine.readSavedEngine();
+      if (saved) {
+        process.env.ATRIS_RUNNER_PROFILE = saved;
+      } else if (RUNNER_SPAWNING_COMMANDS.includes(command)) {
+        const resolved = engine.resolveDefaultEngine();
+        if (resolved.source === 'house') process.env.ATRIS_RUNNER_PROFILE = resolved.name;
+      }
+    } catch {}
+  }
 }
+
+// Commands whose ticks spawn a worker engine; only these pay the engine
+// detection probe when nothing is configured.
+const RUNNER_SPAWNING_COMMANDS = ['run', 'autopilot', 'mission', 'pulse', 'gm', 'spaceship'];
 
 const isBusinessSyncSafetyCommand = command === 'sync'
   && (
@@ -499,6 +534,7 @@ function showHelp() {
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
+  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
@@ -939,7 +975,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship', 'truth', 'sign'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -2278,6 +2314,13 @@ if (command === 'init') {
   Promise.resolve(require('../commands/compile').compileCommand(subcommand, ...args))
     .then(() => process.exit(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'engine' || command === 'engines') {
+  // Engine: bring any intelligence — roster of installed coding CLIs, default
+  // engine per workspace, --engine <name> rides any loop for one run.
+  try {
+    const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
+    process.exit(require('../commands/engine').engineCommand(engineArgs) || 0);
+  } catch (err) { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); }
 } else if (command === 'sign') {
   // Sign: prepare-commit-msg hook that credits Atris as co-author on commits in atris workspaces.
   try { process.exit(require('../commands/sign').signCommand(process.argv[3]) || 0); }
