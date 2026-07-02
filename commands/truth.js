@@ -1,13 +1,15 @@
 // atris truth — one table of what is actually proven, blocked, or stale.
 // Rolls up sources that already exist; writes nothing. SQL/state is truth, this is the render.
 //   1. .atris/state/missions.jsonl        — mission states (dedupe by id, latest wins)
-//   2. ~/.atris/tasks.db                  — task counts by status
+//   2. ~/.atris/tasks.db                  — task counts by status, scoped to this workspace unless --all is passed
 //   3. atris/features/*/                  — validate.md frontmatter + newest proof/ receipt age
 //   4. ~/.atris/heartbeat/{registry,state}.json — declared loops vs last_run / fails
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFileSync } = require('child_process');
+const taskDb = require('../lib/task-db');
 
 const STALE_DAYS = 7;
 
@@ -42,16 +44,67 @@ function loadMissions(cwd) {
   return [...seen.values()].filter((m) => m.status && !['complete', 'archived', 'stopped'].includes(m.status));
 }
 
-function loadTaskCounts() {
+function gitCommonWorkspaceRoot(cwd) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: cwd || process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!common) return null;
+    const gitDir = path.resolve(cwd || process.cwd(), common);
+    return path.basename(gitDir) === '.git' ? path.dirname(gitDir) : null;
+  } catch {
+    return null;
+  }
+}
+
+function workspaceRootCandidates(cwd) {
+  const primary = taskDb.workspaceRoot(cwd || process.cwd());
+  const candidates = [primary];
+  const commonRoot = gitCommonWorkspaceRoot(primary);
+  if (commonRoot && commonRoot !== primary) candidates.push(commonRoot);
+  return candidates;
+}
+
+function countsFromRows(rows) {
+  const counts = {};
+  for (const r of rows) counts[r.status] = Number(r.n || 0);
+  return counts;
+}
+
+function taskCountRows(db, workspaceRoot) {
+  return workspaceRoot
+    ? db.prepare('SELECT status, COUNT(*) n FROM tasks WHERE workspace_root = ? GROUP BY status').all(workspaceRoot)
+    : db.prepare('SELECT status, COUNT(*) n FROM tasks GROUP BY status').all();
+}
+
+function loadTaskCounts({ cwd, all = false } = {}) {
+  const candidates = all ? [null] : workspaceRootCandidates(cwd || process.cwd());
   try {
     const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(path.join(os.homedir(), '.atris', 'tasks.db'), { readOnly: true });
-    const rows = db.prepare('SELECT status, COUNT(*) n FROM tasks GROUP BY status').all();
+    const dbPath = taskDb.getDbPath();
+    if (!fs.existsSync(dbPath)) return { counts: null, workspaceRoot: candidates[0] || null };
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    for (const workspaceRoot of candidates) {
+      const rows = taskCountRows(db, workspaceRoot);
+      if (all || rows.length > 0) {
+        db.close();
+        return { counts: countsFromRows(rows), workspaceRoot };
+      }
+    }
     db.close();
-    const counts = {};
-    for (const r of rows) counts[r.status] = r.n;
-    return counts;
-  } catch { return null; }
+    return { counts: {}, workspaceRoot: candidates[0] || null };
+  } catch { return { counts: null, workspaceRoot: candidates[0] || null }; }
+}
+
+function taskScopeLabel(scope) {
+  return scope.kind === 'global' ? 'global' : 'workspace';
+}
+
+function taskScopeLine(scope) {
+  if (scope.kind === 'global') return 'global';
+  return `${taskScopeLabel(scope)} (${scope.workspace_root})`;
 }
 
 function loadFeatures(cwd) {
@@ -111,9 +164,14 @@ function truthCommand(args = []) {
   const cwd = process.cwd();
   const json = args.includes('--json');
   const summary = args.includes('--summary');
+  const all = args.includes('--all');
 
   const missions = loadMissions(cwd);
-  const tasks = loadTaskCounts();
+  const taskCounts = loadTaskCounts({ cwd, all });
+  const scope = all
+    ? { kind: 'global' }
+    : { kind: 'workspace', workspace_root: taskCounts.workspaceRoot };
+  const tasks = taskCounts.counts;
   const features = loadFeatures(cwd);
   const heartbeats = loadHeartbeats();
 
@@ -125,6 +183,7 @@ function truthCommand(args = []) {
   const result = {
     ok: true,
     generated_at: new Date().toISOString(),
+    scope,
     missions_active: missions.map((m) => ({ id: m.id || m.mission_id, status: m.status, owner: m.owner })),
     tasks,
     features: featureTally,
@@ -140,11 +199,12 @@ function truthCommand(args = []) {
 
   const line = (s) => console.log(s);
   if (summary) {
-    line(`truth: features ${featureTally.proven || 0} proven / ${featureTally.stale || 0} stale / ${featureTally.blocked || 0} blocked / ${featureTally.unproven || 0} unproven · loops ${loopTally.proven || 0} live / ${(loopTally.stale || 0) + (loopTally['never-ran'] || 0)} stale / ${loopTally.blocked || 0} failing · missions ${missions.length} active`);
+    line(`truth [${taskScopeLabel(scope)}]: features ${featureTally.proven || 0} proven / ${featureTally.stale || 0} stale / ${featureTally.blocked || 0} blocked / ${featureTally.unproven || 0} unproven · loops ${loopTally.proven || 0} live / ${(loopTally.stale || 0) + (loopTally['never-ran'] || 0)} stale / ${loopTally.blocked || 0} failing · missions ${missions.length} active`);
     return 0;
   }
 
   line('ATRIS TRUTH — live state, not belief\n');
+  line(`Scope: ${taskScopeLine(scope)}`);
 
   line(`Missions active: ${missions.length}`);
   for (const m of missions) line(`  ${m.status.padEnd(8)} ${m.owner || '?'}  ${m.id || m.mission_id}`);
