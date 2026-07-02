@@ -37,10 +37,10 @@ The agent recovered:
 
 Input files:
 
-- `/Users/keshavrao/arena/atrisos-backend/atris/MAP.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/TODO.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/ai-computer.md`
+- `~/arena/atrisos-backend/atris/MAP.md`
+- `~/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
+- `~/arena/atrisos-backend/atris/TODO.md`
+- `~/arena/atrisos-backend/atris/wiki/ai-computer.md`
 
 Result: pass.
 
@@ -56,8 +56,8 @@ The agent recovered:
 
 Input files:
 
-- `/Users/keshavrao/arena/atris-cli/atris/MAP.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/MAP.md`
+- `~/arena/atris-cli/atris/MAP.md`
+- `~/arena/atrisos-backend/atris/MAP.md`
 
 Result: pass.
 
@@ -115,12 +115,12 @@ Finding fixed after eval:
 
 Input files:
 
-- `/Users/keshavrao/arena/atrisos-backend/atris/MAP.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/ai-computer.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/BRAIN.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/INDEX.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/STATUS.md`
+- `~/arena/atrisos-backend/atris/MAP.md`
+- `~/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
+- `~/arena/atrisos-backend/atris/wiki/ai-computer.md`
+- `~/arena/atrisos-backend/atris/wiki/BRAIN.md`
+- `~/arena/atrisos-backend/atris/wiki/INDEX.md`
+- `~/arena/atrisos-backend/atris/wiki/STATUS.md`
 
 Result: pass with one metadata finding, then fixed.
 
@@ -144,8 +144,8 @@ Input files:
 - `atris/wiki/index.md`
 - `atris/wiki/systems/atris-cli.md`
 - `atris/wiki/systems/atris-business.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
-- `/Users/keshavrao/arena/atrisos-backend/atris/wiki/ai-computer.md`
+- `~/arena/atrisos-backend/atris/wiki/concepts/owner-computer-model.md`
+- `~/arena/atrisos-backend/atris/wiki/ai-computer.md`
 
 Result: pass.
 

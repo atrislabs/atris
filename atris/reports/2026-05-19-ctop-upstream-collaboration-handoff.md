@@ -2,7 +2,7 @@
 
 Date: 2026-05-19
 Task: CLI-141
-Local upstream clone: `/Users/keshavrao/arena/ctop-upstream-dogfood`
+Local upstream clone: `~/arena/ctop-upstream-dogfood`
 Branch: `atris/plugin-autoload`
 
 ## What this is for
@@ -29,9 +29,9 @@ ctop's documented plugin system load reliably from the normal bin entrypoint.
 
 Installed locally:
 
-- `/Users/keshavrao/.ctop/plugins/atris-task.js`
-- `/Users/keshavrao/.ctop/ctop-atris.js`
-- `/Users/keshavrao/.local/bin/ctop-atris`
+- `~/.ctop/plugins/atris-task.js`
+- `~/.ctop/ctop-atris.js`
+- `~/.local/bin/ctop-atris`
 
 Current proof:
 

@@ -39,24 +39,24 @@ Task load:
 | PID | CWD | Process age | ctop reason | Probe result | Recommended action |
 | --- | --- | --- | --- | --- | --- |
 | 5843 | `/` | 3d 19h | no task projection | `/` is not a git repo and has no Atris task plane. Process is Codex app-server. | Operator may close if idle. No agent task to resume. |
-| 97169 | `/Users/keshavrao/.codex/worktrees/ac29/atrisos-backend` | 1d 21h | empty task projection | Detached backend worktree, dirty files in `backend/routers/business/workspace.py` and `backend/tests/test_ai_computer_auth_scoping.py`; task status reports 0 total tasks. The useful dirty diff was ported to current `origin/master` and merged as BCK-323 / PR #491 at `6b53d0f63`. | Operator may close/remove after confirming no local process state is needed. Do not hand-edit or reset from an agent session without explicit cleanup approval. |
-| 57239 | `/Users/keshavrao/arena/personal_context` | 12h | no active task | Task status: 10 done, 0 active/backlog/review; `atris task next --as codex` returns none. Worktree is heavily dirty. | Operator may close if idle; do not mutate without a new personal-context task. |
-| 38261 | `/Users/keshavrao/arena/atrisos-web` | 3d 19h | no active task | Task status: 46 done, 0 active/backlog/review; `atris task next --as codex` returns none. Worktree is dirty on `agent/claude/aeo-ui-pass-20260516`. | Operator may close if idle or create a fresh web task before continuing. |
+| 97169 | `~/.codex/worktrees/ac29/atrisos-backend` | 1d 21h | empty task projection | Detached backend worktree, dirty files in `backend/routers/business/workspace.py` and `backend/tests/test_ai_computer_auth_scoping.py`; task status reports 0 total tasks. The useful dirty diff was ported to current `origin/master` and merged as BCK-323 / PR #491 at `6b53d0f63`. | Operator may close/remove after confirming no local process state is needed. Do not hand-edit or reset from an agent session without explicit cleanup approval. |
+| 57239 | `~/arena/personal_context` | 12h | no active task | Task status: 10 done, 0 active/backlog/review; `atris task next --as codex` returns none. Worktree is heavily dirty. | Operator may close if idle; do not mutate without a new personal-context task. |
+| 38261 | `~/arena/atrisos-web` | 3d 19h | no active task | Task status: 46 done, 0 active/backlog/review; `atris task next --as codex` returns none. Worktree is dirty on `agent/claude/aeo-ui-pass-20260516`. | Operator may close if idle or create a fresh web task before continuing. |
 
 ## Evidence commands
 
 - `ps -p 5843,97169,57239,38261 -o pid,ppid,etime,stat,%cpu,%mem,command`
-- `git -C /Users/keshavrao/.codex/worktrees/ac29/atrisos-backend status --short --branch`
-- `git -C /Users/keshavrao/.codex/worktrees/ac29/atrisos-backend diff -- backend/routers/business/workspace.py backend/tests/test_ai_computer_auth_scoping.py`
+- `git -C ~/.codex/worktrees/ac29/atrisos-backend status --short --branch`
+- `git -C ~/.codex/worktrees/ac29/atrisos-backend diff -- backend/routers/business/workspace.py backend/tests/test_ai_computer_auth_scoping.py`
 - `gh pr view 491 --repo atrislabs/atrisos-backend --json number,state,mergedAt,mergeCommit,url,title`
-- `atris task status --json` in `/Users/keshavrao/.codex/worktrees/ac29/atrisos-backend`
-- `atris task next --as codex --json` in `/Users/keshavrao/.codex/worktrees/ac29/atrisos-backend`
-- `git -C /Users/keshavrao/arena/personal_context status --short --branch`
-- `atris task status --json` in `/Users/keshavrao/arena/personal_context`
-- `atris task next --as codex --json` in `/Users/keshavrao/arena/personal_context`
-- `git -C /Users/keshavrao/arena/atrisos-web status --short --branch`
-- `atris task status --json` in `/Users/keshavrao/arena/atrisos-web`
-- `atris task next --as codex --json` in `/Users/keshavrao/arena/atrisos-web`
+- `atris task status --json` in `~/.codex/worktrees/ac29/atrisos-backend`
+- `atris task next --as codex --json` in `~/.codex/worktrees/ac29/atrisos-backend`
+- `git -C ~/arena/personal_context status --short --branch`
+- `atris task status --json` in `~/arena/personal_context`
+- `atris task next --as codex --json` in `~/arena/personal_context`
+- `git -C ~/arena/atrisos-web status --short --branch`
+- `atris task status --json` in `~/arena/atrisos-web`
+- `atris task next --as codex --json` in `~/arena/atrisos-web`
 - `git -C / rev-parse --show-toplevel`
 
 ## Operator handoff

@@ -18,8 +18,8 @@ tool, not the customer's. Examples:
 ## Install for yourself (Atris team)
 
 ```bash
-ln -s /Users/keshavrao/arena/atris-cli/_internal-skills/<name> ~/.claude/skills/<name>
-ln -s /Users/keshavrao/arena/atris-cli/_internal-skills/<name> ~/.codex/skills/<name>
+ln -s ~/arena/atris-cli/_internal-skills/<name> ~/.claude/skills/<name>
+ln -s ~/arena/atris-cli/_internal-skills/<name> ~/.codex/skills/<name>
 ```
 
 Once linked, Claude Code and Codex pick them up in every session.

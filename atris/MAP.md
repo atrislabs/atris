@@ -1396,8 +1396,8 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Scripts:**
 
-- `/Users/keshavrao/.codex/skills/.system/skill-creator/scripts/init_skill.py`
-- `/Users/keshavrao/.codex/skills/.system/skill-creator/scripts/package_skill.py`
+- `~/.codex/skills/.system/skill-creator/scripts/init_skill.py`
+- `~/.codex/skills/.system/skill-creator/scripts/package_skill.py`
 
 **Use:** Initialize and package Codex skills.
 

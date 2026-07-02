@@ -10290,16 +10290,16 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const narratedReady = runCli([
       'task', 'ready', narratedRef,
       '--as', 'codex',
-      '--proof', 'Validation passed: node /Users/keshavrao/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/keshavrao/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/keshavrao/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local',
+      '--proof', 'Validation passed: node /Users/owner/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/owner/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/owner/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local',
       '--json',
     ], { cwd: dir, env });
     assert.equal(narratedReady.status, 0, narratedReady.stderr);
     const narratedChat = runCli(['task', 'review-chat', narratedRef, '--json'], { cwd: dir, env });
     assert.equal(narratedChat.status, 0, narratedChat.stderr);
     assert.deepEqual(JSON.parse(narratedChat.stdout).contract.verification_focus.commands_to_verify, [
-      'node /Users/keshavrao/arena/atris-cli/bin/atris.js business check',
-      'node /Users/keshavrao/arena/atris-cli/bin/atris.js business share --write',
-      'node /Users/keshavrao/arena/atris-cli/bin/atris.js app list',
+      'node /Users/owner/arena/atris-cli/bin/atris.js business check',
+      'node /Users/owner/arena/atris-cli/bin/atris.js business share --write',
+      'node /Users/owner/arena/atris-cli/bin/atris.js app list',
     ]);
 
     const pathPassedTask = runCli(['task', 'new', 'Path then passed proof commands', '--json'], { cwd: dir, env });

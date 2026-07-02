@@ -4,7 +4,7 @@
   "purpose": "Shared block contract connecting APP.md manifests, generated UI, code execution, image generation, decks, and receipts.",
   "thesis": "A block is a manifestation unit: inspectable, rerunnable, editable, validated, and composable.",
   "appMdBridge": {
-    "source": "/Users/keshavrao/arena/app.md/SPEC.md",
+    "source": "~/arena/app.md/SPEC.md",
     "mapping": {
       "APP.md name": "appBlock.title",
       "APP.md slug": "appBlock.slug",

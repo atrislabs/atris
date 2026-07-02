@@ -28,7 +28,7 @@
       "stopped_reason": "auto_review_no_green_evidence",
       "stopped_on": "none",
       "status": 200,
-      "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json",
+      "projection_path": "~/arena/atris-cli/.atris/state/tasks.projection.json",
       "final_decision": {
         "ok": false,
         "step_action": "none",
@@ -74,7 +74,7 @@
             "api": null
           },
           "result": {
-            "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json"
+            "projection_path": "~/arena/atris-cli/.atris/state/tasks.projection.json"
           }
         },
         {
@@ -136,9 +136,9 @@
     }
   ],
   "status": 200,
-  "projection_path": "/Users/keshavrao/arena/atris-cli/.atris/state/tasks.projection.json",
-  "receipt_path": "/Users/keshavrao/arena/atris-cli/.atris/state/review-lane-runs.jsonl",
-  "latest_receipt_path": "/Users/keshavrao/arena/atris-cli/.atris/state/review-lane-run.latest.json",
+  "projection_path": "~/arena/atris-cli/.atris/state/tasks.projection.json",
+  "receipt_path": "~/arena/atris-cli/.atris/state/review-lane-runs.jsonl",
+  "latest_receipt_path": "~/arena/atris-cli/.atris/state/review-lane-run.latest.json",
   "would_write_receipt_path": null,
   "receipt_written": true,
   "safety": {

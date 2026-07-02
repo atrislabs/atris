@@ -2,7 +2,7 @@
 
 Date: 2026-05-19
 Task: CLI-157
-Workspace: `/Users/keshavrao/arena/atris-cli`
+Workspace: `~/arena/atris-cli`
 
 ## Move
 
@@ -38,8 +38,8 @@ Untasked sessions are cleanup candidates only:
 | PID | CWD | Reason | Boundary |
 | --- | --- | --- | --- |
 | 5843 | `/` | no task projection | Do not close without operator approval. |
-| 57239 | `/Users/keshavrao/arena/personal_context` | no active task | Do not mutate without a fresh task. |
-| 97169 | `/Users/keshavrao/.codex/worktrees/ac29/atrisos-backend` | empty task projection | Do not close without operator approval. |
+| 57239 | `~/arena/personal_context` | no active task | Do not mutate without a fresh task. |
+| 97169 | `~/.codex/worktrees/ac29/atrisos-backend` | empty task projection | Do not close without operator approval. |
 
 ## Backend deploy proof
 

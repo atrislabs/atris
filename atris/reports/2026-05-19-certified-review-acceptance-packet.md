@@ -1,7 +1,7 @@
 # Certified Review Acceptance Packet
 
 Date: 2026-05-19T18:52Z
-Workspace: `/Users/keshavrao/arena/atris-cli`
+Workspace: `~/arena/atris-cli`
 Refresh task: `CLI-176`
 Current review checkpoint: `CLI-177`
 
@@ -54,14 +54,14 @@ From `atris task next --as codex --json`, the active codex checkpoint is now `CL
 Operator action, only if approved:
 
 ```bash
-cd /Users/keshavrao/arena/atris-cli
+cd ~/arena/atris-cli
 atris task accept CLI-177
 ```
 
 Revise instead:
 
 ```bash
-cd /Users/keshavrao/arena/atris-cli
+cd ~/arena/atris-cli
 atris task revise CLI-177 --note "<what must change>"
 ```
 
@@ -81,7 +81,7 @@ Witness run: https://github.com/atrislabs/atrisos-backend/actions/runs/261181107
 Verifier:
 
 ```bash
-cd /Users/keshavrao/arena/atrisos-backend
+cd ~/arena/atrisos-backend
 python3 scripts/github_actions_owner_gate.py --commit 4c5856b2fb39b3dff703cad618eba84122a80356 --json
 ```
 
@@ -140,7 +140,7 @@ Do not undraft, push, comment, or request review externally without explicit app
 - `node bin/atris.js ctop --json`
 - `node bin/atris.js ctop`
 - `atris task next --as codex --json`
-- `git ls-remote origin refs/heads/master` in `/Users/keshavrao/arena/atrisos-backend`
+- `git ls-remote origin refs/heads/master` in `~/arena/atrisos-backend`
 - `python3 scripts/github_actions_owner_gate.py --commit 4c5856b2fb39b3dff703cad618eba84122a80356 --json`
 - `curl -sS https://api.atris.ai/health`
 - `curl -sS https://api.atris.ai/api/health`

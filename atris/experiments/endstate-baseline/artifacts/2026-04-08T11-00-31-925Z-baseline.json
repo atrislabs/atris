@@ -205,8 +205,8 @@
   },
   "wiki": {
     "status": "not_applicable",
-    "before": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from acme ingest — syntheses/acme-workspace-protocol, **concepts/acme-goals** (north star + Q2 targets), **systems/acme** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from /Users/keshavrao/arena/atris-cli/commands/business.js\n",
-    "after": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from acme ingest — syntheses/acme-workspace-protocol, **concepts/acme-goals** (north star + Q2 targets), **systems/acme** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from /Users/keshavrao/arena/atris-cli/commands/business.js\n"
+    "before": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from acme ingest — syntheses/acme-workspace-protocol, **concepts/acme-goals** (north star + Q2 targets), **systems/acme** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from ~/arena/atris-cli/commands/business.js\n",
+    "after": "# Atris Wiki Status\n\n- Last ingest: 2026-04-08\n- Last lint: never\n- Last loop: 2026-04-07 01:18\n- Health: 3 fresh pages from acme ingest — syntheses/acme-workspace-protocol, **concepts/acme-goals** (north star + Q2 targets), **systems/acme** (entity, MEMBER.md ingest logged 2026-04-08); 6 prior stale pages still need recompiling\n- Next move: recompile atris/wiki/systems/atris-business.md from ~/arena/atris-cli/commands/business.js\n"
   },
   "elapsed_seconds": 0,
   "interventions": {

@@ -5,7 +5,7 @@ Role: collaborator
 Business: Rebased Pack Co (rebased-pack-co)
 Business ID: local-only
 Workspace ID: local-only
-Local path: /Users/keshavrao/arena/atris-cli
+Local path: ~/arena/atris-cli
 Ready to share: yes
 Remote pull: local-only
 
@@ -14,7 +14,7 @@ Remote pull: local-only
 If this folder is already on your machine:
 
 ```bash
-cd /Users/keshavrao/arena/atris-cli
+cd ~/arena/atris-cli
 atris business start
 ```
 
@@ -26,7 +26,7 @@ Remote pull is not available yet:
 ## Start Here
 
 ```bash
-cd /Users/keshavrao/arena/atris-cli
+cd ~/arena/atris-cli
 atris
 atris business start
 atris radar

@@ -41,7 +41,7 @@ test('scanLine respects an inline suppression marker', () => {
 });
 
 test('scanLine flags personal home paths but not CI/system paths', () => {
-  assert.equal(scanLine('cwd: /Users/keshavrao/arena/atris-cli')[0].rule, 'home-path');
+  assert.equal(scanLine('cwd: /Users/someuser/arena/some-project')[0].rule, 'home-path');
   assert.equal(scanLine('path = /home/jdoe/secret/app')[0].rule, 'home-path');
   assert.deepEqual(scanLine('runner at /home/runner/work/repo'), []);
   assert.deepEqual(scanLine('install to /Users/runner/app'), []);

@@ -18,6 +18,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const pulse = require('../lib/pulse');
+const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 
 function hasFlag(args, name) {
   return args.includes(name);
@@ -281,7 +282,7 @@ function tickCommand(args, root = process.cwd()) {
         what,
         changedFiles,
         elapsedMs,
-        model: process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus',
+        model: process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL,
       }));
       scorecardWritten = true;
     }
@@ -429,7 +430,7 @@ function installCommand(args, root = process.cwd()) {
     return emit(out, asJson);
   }
   const verifyCmd = readFlag(args, '--verify', 'npm test');
-  const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || 'opus');
+  const model = readFlag(args, '--model', process.env.ATRIS_RUNNER_MODEL || process.env.ATRIS_CLAUDE_MODEL || DEFAULT_CLAUDE_RUNNER_MODEL);
   const runnerProfile = readFlag(args, '--runner-profile', process.env.ATRIS_RUNNER_PROFILE || '');
   const runnerBin = readFlag(args, '--runner-bin', process.env.ATRIS_RUNNER_BIN || process.env.ATRIS_CLAUDE_BIN || '');
   const runnerCommandTemplate = readFlag(args, '--runner-template', process.env.ATRIS_RUNNER_COMMAND_TEMPLATE || process.env.ATRIS_CLAUDE_COMMAND_TEMPLATE || '');

@@ -120,13 +120,12 @@ test('console claude launcher uses the configured runner binary', () => {
   assert.match(CONSOLE_SRC, /spawnSync\(runnerBin, args/);
 });
 
-// --- T3: every spawn injects a resolved --model alias by default ---
+// --- T3: every spawn injects a resolved --model by default ---
 
-test('default heartbeat spawn carries --model opus (alias, not a versioned id)', () => {
+test('default heartbeat spawn carries pinned Opus 4.8', () => {
   withRunnerEnv({}, () => {
     const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
-    assert.match(cmd, /--model opus\b/);
-    assert.doesNotMatch(cmd, /--model claude-/);
+    assert.match(cmd, /--model claude-opus-4-8\b/);
   });
 });
 

@@ -2423,7 +2423,7 @@ function printBackendHint(options = {}) {
 }
 
 function backendStartCommand() {
-  return `cd /Users/keshavrao/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`;
+  return `cd ${process.env.HOME}/arena/atrisos-backend/backend && ATRIS2_ALLOW_LOCAL_WORKSPACE=1 ENVIRONMENT=development ENV=development ../venv/bin/uvicorn main:app --host ${BACKEND.host} --port ${BACKEND.port}`;
 }
 
 function formatBackendHint(options = {}) {
