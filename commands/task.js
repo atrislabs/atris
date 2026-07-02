@@ -8262,6 +8262,22 @@ function cmdCertifyVerified(args) {
   return payload;
 }
 
+// The landing: everything certified, one summary, one human gesture.
+// Review-by-N-pastes was the operator pain; this is the batch gate that
+// keeps human accept as the one gate without making it N gates.
+function cmdLanding(args) {
+  if (hasFlag(args, '--accept')) {
+    const passthrough = args.filter(arg => arg !== '--accept');
+    if (!passthrough.includes('--confirm-human-accept')) passthrough.push('--confirm-human-accept');
+    return cmdAutoAcceptCertified(passthrough);
+  }
+  cmdReviews(args);
+  console.log('');
+  console.log('land everything certified above in one gesture:');
+  console.log('  atris task landing --accept --as <you>');
+  console.log('(items needing one more check stay in review; only certified work lands)');
+}
+
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const strictVerify = hasFlag(args, '--strict-verify');
@@ -10124,6 +10140,9 @@ async function run(args) {
     case 'ready':  return cmdReady(rest);
     case 'result': return cmdResult(rest);
     case 'accept': return cmdAccept(rest);
+    case 'landing':
+    case 'land-review':
+      return cmdLanding(rest);
     case 'auto-accept-certified':
     case 'auto-accept':
       return cmdAutoAcceptCertified(rest);
