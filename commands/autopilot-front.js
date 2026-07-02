@@ -92,7 +92,7 @@ function legPlan(root, legWallSeconds) {
   const member = pickMember(root, newestMissionOwner(root));
   if (member) {
     // --runner atris2: member run defaults to codex_goal, which waits for a
-    // live Codex session — a headless leg would tick it without doing work.
+    // live Codex session; a headless leg would tick it without doing work.
     return {
       kind: 'member',
       label: `member ${member} chooses useful work`,

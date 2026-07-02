@@ -50,7 +50,7 @@ function runObjective(args = []) {
 }
 
 // Runners a spawned `mission run` can actually drive. Session-bound runners
-// (codex_goal, manual, caller_session, current_agent) wait for a live agent —
+// (codex_goal, manual, caller_session, current_agent) wait for a live agent;
 // a headless front door ticking them just records no-op receipts forever.
 const HEADLESS_DRIVABLE_RUNNERS = new Set(['claude', 'atris2']);
 

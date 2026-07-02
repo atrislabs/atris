@@ -6964,6 +6964,7 @@ module.exports = {
   loadMissionMap,
   renderMissionStatus,
   selectDueMission,
+  selectAtrisGoalMission,
   selectCodexGoalMission,
   usefulClaudeReceiptSummary,
   cappedClaudeReceiptText,

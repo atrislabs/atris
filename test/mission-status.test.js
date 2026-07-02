@@ -8,6 +8,7 @@ const taskStore = require('../lib/task-db');
 const {
   cappedClaudeReceiptText,
   selectDueMission,
+  selectAtrisGoalMission,
   selectCodexGoalMission,
   usefulClaudeReceiptSummary,
 } = require('../commands/mission');
@@ -4861,6 +4862,68 @@ test('mission goal skips human-gated ready missions', () => {
     assert.equal(payload.goal.mission_id, 'older-codex-work');
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('mission goal prefers active work over newer ready review work', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'older-codex-work',
+      slug: 'older-codex-work',
+      objective: 'older executable codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(dir, {
+      id: 'newer-codex-review',
+      slug: 'newer-codex-review',
+      objective: 'newer codex mission waiting for review',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectCodexGoalMission(dir);
+    assert.equal(selected.mission.id, 'older-codex-work');
+  } finally {
+    cleanupTempDir(dir);
+  }
+
+  const atrisDir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(atrisDir, 'atris'), { recursive: true });
+    appendMissionState(atrisDir, {
+      id: 'older-atris-work',
+      slug: 'older-atris-work',
+      objective: 'older executable atris mission',
+      status: 'running',
+      runner: 'atris2',
+      verifier: 'true',
+      created_at: '2026-05-01T00:00:00.000Z',
+      updated_at: '2026-05-01T00:00:00.000Z',
+    });
+    appendMissionState(atrisDir, {
+      id: 'newer-atris-review',
+      slug: 'newer-atris-review',
+      objective: 'newer atris mission waiting for review',
+      status: 'ready',
+      runner: 'atris2',
+      verifier: 'true',
+      created_at: '2026-05-02T00:00:00.000Z',
+      updated_at: '2026-05-02T00:00:00.000Z',
+    });
+
+    const selected = selectAtrisGoalMission(atrisDir);
+    assert.equal(selected.mission.id, 'older-atris-work');
+  } finally {
+    cleanupTempDir(atrisDir);
   }
 });
 
