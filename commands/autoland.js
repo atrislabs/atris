@@ -275,6 +275,22 @@ function runTick(root, args) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
 
+  // 2b. tell the operator the moment something lands: one text, one landing
+  // sentence per piece (the day-one PM sentence written at finish time),
+  // capped at three with the rest counted. Off with live_updates: false.
+  const tasksForLive = readProjection(root);
+  if (receipt.landed.length > 0 && policy.imessage_to && policy.live_updates !== false) {
+    const text = autoland.composeLiveUpdate({
+      landedRefs: receipt.landed,
+      tasks: tasksForLive,
+      project: projectName(root),
+    });
+    if (text) {
+      const sent = autoland.sendImessage(root, policy.imessage_to, text);
+      receipt.live_update_sent = sent.ok;
+    }
+  }
+
   // 3. alarm on anything waiting on a human past the line
   const state = autoland.readState(root);
   const tasks = readProjection(root);

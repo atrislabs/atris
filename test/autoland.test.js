@@ -158,6 +158,21 @@ test('operatorReady: a queue sentence earns its digest surface with a why, no ag
   assert.ok(!operatorReady('CLI-788 failed because the continuation stopped'));
 });
 
+test('live update: a landing texts its capability sentence the moment it lands', () => {
+  const tasks = [
+    { display_id: 'CLI-1', title: 'Fix onboarding', claimed_by: 'onboarding', metadata: { landing_happened: 'A new user now reaches task setup before any proof tick, so Atris avoids a fake first receipt.' } },
+    { display_id: 'CLI-2', title: 'Mission XP: Decide and start the next useful mission after: x', metadata: { landing_happened: 'Stopped with reason: no concrete follow-up mission found.' } },
+  ];
+  const text = autoland.composeLiveUpdate({ landedRefs: ['CLI-1', 'CLI-2'], tasks, project: 'atris-cli' });
+  assert.match(text, /atris atris-cli: just landed/);
+  assert.match(text, /- a new user now reaches task setup before any proof tick/);
+  assert.match(text, /\(onboarding\)/);
+  // Clean-stop check-offs never page the operator.
+  assert.doesNotMatch(text, /no concrete follow-up/);
+  // A landing that is nothing but clean stops sends no text at all.
+  assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli' }), '');
+});
+
 test('alarm dedupe: a task pings once per window', () => {
   const now = Date.now();
   const waiting = [{ ref: 'CLI-9', hours: 30 }, { ref: 'CLI-8', hours: 10 }];
