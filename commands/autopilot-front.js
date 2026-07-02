@@ -196,8 +196,12 @@ async function autopilotFront(args = []) {
   writeState(root, state);
 
   const current = { child: null };
+  // `autopilot stop` SIGTERMs this pid directly, so the farewell must print
+  // here — the signal always beats the loop's own stop-file check.
   const onSignal = () => {
     if (current.child) { try { current.child.kill('SIGTERM'); } catch {} }
+    const reason = stopRequested(root) ? 'stop requested' : 'interrupted';
+    console.log(`\nAutopilot off (${reason}). Legs run: ${state.legs}.`);
     clearState(root);
     clearStop(root);
     process.exit(130);
@@ -230,13 +234,17 @@ async function autopilotFront(args = []) {
     if (once) { stopReason = 'single leg (--once)'; break; }
     if (stopRequested(root)) { stopReason = 'stop requested'; break; }
 
-    // A leg that dies in seconds means something structural is broken;
-    // back off, and stop instead of hot-looping on the same failure.
+    // A leg that finishes in seconds means no real work happened — a crash,
+    // or a degenerate mission whose ticks record instantly (exit 0). Either
+    // way, back off and stop instead of hot-looping on it.
     const legSeconds = (Date.now() - legStarted) / 1000;
-    if (code !== 0 && legSeconds < FAST_FAIL_SECONDS) {
+    if (legSeconds < FAST_FAIL_SECONDS) {
       fastFails += 1;
-      if (fastFails >= MAX_FAST_FAILS) { stopReason = `${MAX_FAST_FAILS} fast failures in a row`; break; }
-      await sleep(15000);
+      if (fastFails >= MAX_FAST_FAILS) {
+        stopReason = `${MAX_FAST_FAILS} fast legs in a row (${code === 0 ? 'no progress' : 'failures'})`;
+        break;
+      }
+      await sleep(code === 0 ? 5000 : 15000);
     } else {
       fastFails = 0;
       await sleep(2000);
@@ -246,7 +254,7 @@ async function autopilotFront(args = []) {
   clearStop(root);
   clearState(root);
   console.log(`\nAutopilot off (${stopReason}). Legs run: ${state.legs}.`);
-  return stopReason.includes('failures') ? 1 : 0;
+  return stopReason.includes('fast legs') ? 1 : 0;
 }
 
 module.exports = {
