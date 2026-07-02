@@ -6992,6 +6992,7 @@ function ackMissionGoal(args) {
 }
 
 async function goalLoopMission(args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) return help();
   const asJson = wantsJson(args);
   const noClaude = hasFlag(args, '--no-claude');
   const dryRun = hasFlag(args, '--dry-run');

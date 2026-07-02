@@ -3812,6 +3812,22 @@ test('mission run --help prints help instead of starting a mission', () => {
   }
 });
 
+test('mission goal-loop --help prints help instead of running the loop', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const help = runCli(['mission', 'goal-loop', '--help'], { cwd: dir });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.equal(help.stderr, '');
+    assert.match(help.stdout, /mission goal-loop \[--max-wall 28800\] \[--max-iterations 32\] \[--no-claude\] \[--json\]/);
+    assert.doesNotMatch(help.stdout, /Codex goal loop iterations/);
+    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'codex_goal.json')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run accepts owner prefix before fuzzy intent', () => {
   const dir = makeTempDir();
   try {
