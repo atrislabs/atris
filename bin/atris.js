@@ -594,6 +594,7 @@ function showHelp() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
+  console.log('  loops      - Background loops board: what runs, what died, start/stop');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
   console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
@@ -975,7 +976,7 @@ const knownCommands = ['init', 'log', 'now', 'radar', 'ctop', 'launchpad', 'stat
                        'clean', 'harvest', 'verify', 'search', 'skill', 'member', 'codex-goal', 'app', 'apps', 'learn', 'lesson', 'plugin', 'experiments', 'receipt', 'proof', 'openclaw', 'pull', 'push', 'live', 'align', 'terminal', 'computer', 'diff', 'business', 'sync', 'youtube',
                        'ingest', 'query', 'lint', 'loop', 'pulse', 'task', 'mission', 'probe', 'worktree', 'land', 'autoland', 'aeo', 'slop', 'strings', 'security-review', 'secure', 'deck', 'site', 'theme', 'card', 'reel', 'improve', 'xp', 'play', 'gm', 'x', 'recap', 'signup', 'clarity', 'moves',
                        'gmail', 'calendar', 'twitter', 'slack', 'imessage', 'integrations', 'setup', 'clean-workspace', 'cw',
-                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines'];
+                       'fork', 'browse', 'publish', 'sleep', 'wake', 'feedback', 'errors', 'wiki', 'code-review', 'cr', 'soul', 'fleet', 'loops', 'compile', 'spaceship', 'truth', 'sign', 'engine', 'engines'];
 
 // Check if command is an atris.md spec file - triggers welcome visualization
 function isSpecFile(cmd) {
@@ -2267,6 +2268,14 @@ if (command === 'init') {
   require('../commands/fleet').fleet(args)
     .then(() => process.exit(0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'loops') {
+  try {
+    require('../commands/loops').loopsCommand(process.argv[3], ...process.argv.slice(4));
+    process.exit(0);
+  } catch (error) {
+    console.error(`\n✗ Error: ${error.message || error}`);
+    process.exit(1);
+  }
 } else if (command === 'spaceship') {
   const args = process.argv.slice(3);
   require('../commands/spaceship').spaceship(args)
