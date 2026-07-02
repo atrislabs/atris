@@ -109,7 +109,9 @@ test('digest and alarm compose in plain language', () => {
   // always ships. Held count = clean-stop fold only.
   assert.match(digest, /- add hourly flag so users save time/);
   assert.match(digest, /1 more result when you want them: atris autoland digest/);
-  assert.match(digest, /you approved 1 piece yourself/);
+  // v5: no self-news ("you approved N") and no separate workers tally; each
+  // result carries its author inline instead.
+  assert.doesNotMatch(digest, /you approved|workers:/);
   // Waiting items are the ask, so they carry names, not counts.
   assert.match(digest, /waiting on you \(approve or bounce: atris task reviews\):/);
   assert.match(digest, /- Send invoice \(30h\)/);
@@ -118,7 +120,9 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
   assert.match(digest, /stuck codex mission/);
   assert.match(digest, /- 2 more ideas that can't explain themselves yet \(atris now\)/);
-  assert.match(digest, /the full story: atris autoland digest/);
+  // One tail pointer: the 'more results' line already names the command, so
+  // the closing line only appears when nothing else pointed there.
+  assert.equal((digest.match(/atris autoland digest/g) || []).length, 1);
   assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)|--hourly/i);
 
   const quiet = autoland.composeDigest({
@@ -129,6 +133,7 @@ test('digest and alarm compose in plain language', () => {
   });
   assert.match(quiet, /waiting on you: nothing/);
   assert.match(quiet, /in the air: 2 pieces, all fresh/);
+  assert.match(quiet, /the full story: atris autoland digest/);
   assert.doesNotMatch(quiet, /next, if you agree/);
 
   const alarm = autoland.composeAlarm({
