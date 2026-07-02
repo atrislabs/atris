@@ -4532,6 +4532,42 @@ function codexNativeGoalAck(mission, objective = codexGoalObjective(mission)) {
   return ack;
 }
 
+function supersedeOtherCodexNativeGoalAcks(root, activeMission, activeAck) {
+  const activeMissionId = String(activeMission?.id || '');
+  if (!activeMissionId) return [];
+  const supersededAt = stampIso();
+  const superseded = [];
+  for (const mission of listMissions(root)) {
+    if (String(mission.id || '') === activeMissionId) continue;
+    const priorAck = codexNativeGoalAck(mission);
+    if (!priorAck) continue;
+    const nextAck = {
+      ...priorAck,
+      status: 'superseded',
+      superseded_at: supersededAt,
+      superseded_by_mission_id: activeMissionId,
+      superseded_by_objective: activeAck?.objective || activeMission.objective,
+    };
+    const { mission: saved } = saveMission(
+      { ...mission, native_goal_ack: nextAck },
+      root,
+      'mission_native_goal_ack_superseded',
+      {
+        superseded_by_mission_id: activeMissionId,
+        superseded_by_objective: activeAck?.objective || activeMission.objective,
+        previous_ack: priorAck,
+      },
+    );
+    superseded.push({
+      mission_id: saved.id,
+      objective: saved.objective,
+      previous_ack: priorAck,
+      native_goal_ack: nextAck,
+    });
+  }
+  return superseded;
+}
+
 function codexRuntimeGoalStateFromOptions(options = {}) {
   const status = String(options.nativeGoalStatus || options.visibleGoalStatus || '').trim().toLowerCase();
   const objective = String(options.nativeGoalObjective || options.visibleGoalObjective || '').trim();
@@ -6614,6 +6650,7 @@ function ackMissionGoal(args) {
       native_goal_ack: ack,
       next_action: codexGoalNextCommand({ ...mission, native_goal_ack: ack }),
     };
+    const supersededNativeGoalAcks = supersedeOtherCodexNativeGoalAcks(process.cwd(), nextMission, ack);
     const { mission: saved } = saveMission(nextMission, process.cwd(), 'mission_native_goal_ack', { ack });
     const payload = refreshCodexGoalController(process.cwd());
     printJsonOrText(
@@ -6622,6 +6659,7 @@ function ackMissionGoal(args) {
         action: 'native_goal_acknowledged',
         mission: saved,
         native_goal_ack: ack,
+        superseded_native_goal_acks: supersededNativeGoalAcks,
         codex_goal_state: payload,
         next_command: payload.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`,
       },

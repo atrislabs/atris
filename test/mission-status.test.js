@@ -2670,6 +2670,88 @@ test('mission run objective reports active visible-goal conflict instead of hidi
   }
 });
 
+test('mission goal ack supersedes stale older Codex native acks', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    appendMissionState(dir, {
+      id: 'mission-old-one',
+      slug: 'old-one',
+      objective: 'old one',
+      status: 'ready',
+      runner: 'codex_goal',
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-01T00:00:00.000Z',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'old one',
+        acknowledged_at: '2026-07-01T00:00:01.000Z',
+      },
+    });
+    appendMissionState(dir, {
+      id: 'mission-old-two',
+      slug: 'old-two',
+      objective: 'old two',
+      status: 'running',
+      runner: 'codex_goal',
+      created_at: '2026-07-01T00:01:00.000Z',
+      updated_at: '2026-07-01T00:01:00.000Z',
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        objective: 'old two',
+        acknowledged_at: '2026-07-01T00:01:01.000Z',
+      },
+    });
+
+    const run = runCli(['mission', 'run', 'new handoff goal', '--json'], { cwd: dir });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const runPayload = JSON.parse(run.stdout);
+    const newMission = runPayload.mission;
+    assert.equal(runPayload.codex_goal_state.action, 'active_goal_conflict');
+
+    const ack = runCli([
+      'mission',
+      'goal',
+      'ack',
+      newMission.id,
+      '--runtime',
+      'codex',
+      '--status',
+      'active',
+      '--objective',
+      'new handoff goal',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
+    const ackPayload = JSON.parse(ack.stdout);
+    assert.equal(ackPayload.action, 'native_goal_acknowledged');
+    assert.equal(ackPayload.superseded_native_goal_acks.length, 2);
+    assert.equal(ackPayload.codex_goal_state.action, 'codex_goal_candidate');
+    assert.equal(ackPayload.codex_goal_state.goal.mission_id, newMission.id);
+    assert.equal(ackPayload.codex_goal_state.requires_native_goal_start, false);
+    assert.equal(ackPayload.codex_goal_state.requires_native_goal_replace, false);
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'codex_goal_candidate');
+    assert.equal(goalPayload.goal.mission_id, newMission.id);
+
+    for (const oldId of ['mission-old-one', 'mission-old-two']) {
+      const status = runCli(['mission', 'status', oldId, '--json'], { cwd: dir });
+      assert.equal(status.status, 0, status.stderr || status.stdout);
+      const oldMission = JSON.parse(status.stdout).missions[0];
+      assert.equal(oldMission.native_goal_ack.status, 'superseded');
+      assert.equal(oldMission.native_goal_ack.superseded_by_mission_id, newMission.id);
+      assert.equal(oldMission.native_goal_ack.superseded_by_objective, 'new handoff goal');
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission room turns messy input into a shareable receipt', () => {
   const dir = makeTempDir();
   try {
