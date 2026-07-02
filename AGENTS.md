@@ -163,8 +163,6 @@ Load these first:
 - `atris/now.md`
 - `atris/brain/STATUS.md`
 - `atris/brain/self_improvement_ledger.md`
-- `.atris/state/chat_scan.latest.json`
-- `atris/wiki/concepts/agent-activation-contract.md`
 - `atris/skills/atris/SKILL.md`
 - `atris/PERSONA.md`
 - `atris/MAP.md`
