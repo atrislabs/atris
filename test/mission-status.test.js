@@ -2876,6 +2876,79 @@ test('mission goal ack supersedes stale older Codex native acks', () => {
   }
 });
 
+test('mission run --take-goal-slot pauses slot owner in one move', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const oldRun = runCli(['mission', 'run', 'old slot owner goal', '--json'], { cwd: dir });
+    assert.equal(oldRun.status, 0, oldRun.stderr || oldRun.stdout);
+    const oldMission = JSON.parse(oldRun.stdout).mission;
+    ackNativeCodexGoal(dir, oldMission);
+
+    const newRun = runCli(['mission', 'run', 'new slot taker goal', '--take-goal-slot', '--json'], { cwd: dir });
+    assert.equal(newRun.status, 0, newRun.stderr || newRun.stdout);
+    const runPayload = JSON.parse(newRun.stdout);
+    const newMission = runPayload.mission;
+    assert.equal(runPayload.action, 'mission_run_started');
+    assert.equal(runPayload.codex_goal_state.action, 'codex_goal_candidate');
+    assert.equal(runPayload.codex_goal_state.goal.mission_id, newMission.id);
+    assert.equal(runPayload.goal_slot_handoff.paused_mission_id, oldMission.id);
+    assert.equal(runPayload.goal_slot_handoff.reason, `visible goal replaced by ${newMission.id}`);
+
+    const oldStatus = runCli(['mission', 'status', oldMission.id, '--json'], { cwd: dir });
+    assert.equal(oldStatus.status, 0, oldStatus.stderr || oldStatus.stdout);
+    assert.equal(JSON.parse(oldStatus.stdout).missions[0].status, 'paused');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission goal ack matches by mission id despite objective text drift', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const started = runCli([
+      'mission',
+      'start',
+      'Fix widget handoff',
+      '--owner',
+      'mission-lead',
+      '--runner',
+      'codex_goal',
+      '--verify',
+      'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr || started.stdout);
+    const mission = JSON.parse(started.stdout).mission;
+
+    const ack = runCli([
+      'mission',
+      'goal',
+      'ack',
+      mission.id,
+      '--runtime',
+      'codex',
+      '--status',
+      'active',
+      '--objective',
+      'Fix widget handoff.',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(ack.status, 0, ack.stderr || ack.stdout);
+    const ackPayload = JSON.parse(ack.stdout);
+    assert.equal(ackPayload.action, 'native_goal_acknowledged');
+    assert.equal(ackPayload.native_goal_ack.mission_id, mission.id);
+    assert.equal(ackPayload.native_goal_ack.objective, 'Fix widget handoff');
+    assert.equal(ackPayload.native_goal_ack.reported_objective, 'Fix widget handoff.');
+    assert.equal(ackPayload.codex_goal_state.goal.requires_native_goal_start, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission room turns messy input into a shareable receipt', () => {
   const dir = makeTempDir();
   try {
