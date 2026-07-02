@@ -47,20 +47,21 @@ const CHAT_PROMPTS = [
   'write an essay about the product',
   'plan my morning',
   'what is the capital of france?',
-  // Prose slashes and math must NOT trip the path detector.
   "what's 15% of 2400?",
   'is it an either/or decision — pick one for me',
 ];
 
-// 1) Chat prompts route cloud from ANYWHERE — even inside a workspace.
+// 1) Workspace standard v2: INSIDE a workspace even chat prompts route local —
+// tools are always attached, the model decides whether to use them (the
+// Claude Code shape; intent regexes lost three live rounds on 2026-07-02).
+// From a bare cwd chat stays pure cloud with one turn and no workspace_path.
 for (const message of CHAT_PROMPTS) {
-  for (const cwd of [bareCwd, repoRoot]) {
-    assert.equal(ax.resolveRoute(message, { cwd }), 'cloud', `chat prompt should stay cloud (${message}, cwd=${cwd})`);
-  }
-  const payload = ax.buildPayload(message, { mode: 'fast', cwd: repoRoot });
+  assert.equal(ax.resolveRoute(message, { cwd: repoRoot }), 'local', `chat prompt inside a workspace gets tools (${message})`);
+  assert.equal(ax.resolveRoute(message, { cwd: bareCwd }), 'cloud', `chat prompt from a bare cwd stays cloud (${message})`);
+  const payload = ax.buildPayload(message, { mode: 'fast', cwd: bareCwd });
   assert.equal(payload.model, 'atris:fast');
-  assert.equal(payload.workspace_path, undefined, `${message} should not expose workspace_path`);
-  assert.equal(payload.max_turns, 1, `${message} should use one cloud turn`);
+  assert.equal(payload.workspace_path, undefined, `${message} should not expose workspace_path from a bare cwd`);
+  assert.equal(payload.max_turns, 1, `${message} should use one cloud turn from a bare cwd`);
 }
 
 // 2) Workspace prompts from a NON-workspace cwd stay cloud — the privacy line.
@@ -104,7 +105,7 @@ assert.match(member, /--cloud/);
 assert.match(member, /scripts\/verify-ax-cloud-standard\.js/);
 
 console.log('AX Context Standard');
-console.log('- chat prompts route cloud from anywhere, one turn, no workspace_path');
+console.log('- inside a workspace every prompt gets tools (v2, Claude Code shape); bare-cwd chat stays pure cloud');
 console.log('- workspace prompts from a bare cwd stay cloud (privacy line holds)');
 console.log('- workspace prompts inside a workspace route local with tools (fast=8, pro=14 turns)');
 console.log('- explicit --cloud/--local always win; run profile from bare cwd is cloud');

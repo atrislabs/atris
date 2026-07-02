@@ -643,52 +643,23 @@ function insideWorkspaceCwd(startDir) {
   return found;
 }
 
-// Routing-grade workspace intent. workspaceIntent() above is too broad to
-// route on — bare verbs like "write"/"read" match prose ("write an essay"),
-// which would drag chat through the tool loop. Routing requires either a noun
-// that IS the filespace, a locate/edit verb PAIRED with a code noun, or a
-// GitHub write intent.
-const ROUTE_STRONG_NOUN = /\b(files?|folders?|repos?|repository|codebase|director(?:y|ies)|src|grep|diff|branch(?:es)?|commits?|\.git\b|package\.json|readme|map\.md|todo\.md|workspace)\b/i;
-// Recent-events phrasing is workspace-shaped INSIDE a workspace — the journal
-// (atris/logs) is the answer surface. Live miss 2026-07-02: "what did Atris
-// ship last night?" routed cloud tool-less and the model asked the user to
-// paste a changelog it was sitting on top of.
-const ROUTE_RECENT_EVENTS = /\b(shipp?ed|shipping|changelog|journals?|overnight|last night|yesterday)\b|\bship\b.*\b(today|tonight|last|this week)\b|\bwhat(?:'s| is| did| got)?\s+(?:\w+\s+){0,3}(?:new|ship|shipped|done|built|landed)\b/i;
-const ROUTE_VERB = /\b(find|where|which|search|locate|name|show|list|read|open|inspect|edit|fix|patch|modify|change|refactor|run|debug|trace|failing)\b/i;
-const ROUTE_CODE_NOUN = /\b(functions?|class(?:es)?|modules?|components?|scripts?|tests?|gates?|configs?|imports?|exports?|variables?|lines?|paths?|projects?|channels?|handlers?|endpoints?|ipc|launchd|plists?|lanes?|crons?|daemons?|missions?|receipts?)\b/i;
-// A literal path or code identifier IS the workspace — the strongest routing
-// signal there is, and the regex vocabulary above can't see it. Live miss
-// 2026-07-02: "in scripts/fast-coach/tick.mjs, what does SLOW_MS control?"
-// routed cloud (no tools) because no English keyword matched. Matches:
-// slash-joined path ending in an extension, a bare code-extension filename,
-// or a SCREAMING_SNAKE identifier (case-sensitive on purpose). Bare prose
-// slashes ("either/or", "24/7") don't match — the path form needs the
-// extension.
-const ROUTE_PATH = /\b[\w.-]+(?:\/[\w.-]+)+\.\w{1,8}\b|\b[\w-]+\.(?:mjs|cjs|jsx?|tsx?|json|md|py|sh|rb|go|rs|ya?ml|toml|plist|sql|css|html)\b|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/;
-function workspaceRouteIntent(message) {
-  const text = String(message || '');
-  // GitHub-mentioning prompts are connector work by default (the cloud GitHub
-  // API lane, e.g. "what github repos do I have?", "push something to github");
-  // only explicit local-checkout wording claims them for local tools.
-  if (/\bgithub\b/i.test(text)) return /\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff)\b/i.test(text);
-  if (ROUTE_PATH.test(text)) return true;
-  if (ROUTE_STRONG_NOUN.test(text)) return true;
-  if (ROUTE_RECENT_EVENTS.test(text)) return true;
-  if (ROUTE_VERB.test(text) && ROUTE_CODE_NOUN.test(text)) return true;
-  return false;
-}
-
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
-  // Context standard (2026-07-02, supersedes cloud-first): the cloud lane is
-  // for chat and cloud workspaces (EC2/business relays); a workspace-shaped
-  // question asked from INSIDE a local workspace routes local so the cloud
-  // model gets workspace tools. Before this, resolveRoute never consulted any
-  // intent detector and `ax --fast` confabulated repo answers from the
-  // tool-less chat lane (SwapBench 2026-07-02: 1/6 vs 6/6 with tools). Chat
-  // and non-workspace cwds stay pure cloud; explicit flags always win.
-  if (workspaceRouteIntent(message) && insideWorkspaceCwd(options.cwd)) return 'local';
+  // Workspace standard v2 (2026-07-02, supersedes intent routing): inside a
+  // workspace, tools are ALWAYS attached and the model decides whether to use
+  // them — the Claude Code / Codex shape. v1 guessed intent with regexes and
+  // lost three times in one day ("in scripts/fast-coach/tick.mjs, what does
+  // SLOW_MS control?", "what did Atris ship last night?", "find it lol" — all
+  // tool-less misses that told the user to paste files they were sitting on).
+  // Measured cost of always-tools: pure math 3s vs 2s; and "plan my morning"
+  // through the tool lane reads the real task board instead of guessing.
+  // Non-workspace cwds stay pure cloud (the privacy line); explicit flags
+  // always win. One carve-out: GitHub-connector phrasing prefers the cloud
+  // GitHub API lane unless it names local-checkout work.
+  const text = String(message || '');
+  if (/\bgithub\b/i.test(text) && !/\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff)\b/i.test(text)) return 'cloud';
+  if (insideWorkspaceCwd(options.cwd)) return 'local';
   return 'cloud';
 }
 
