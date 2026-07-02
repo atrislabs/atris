@@ -15,7 +15,7 @@ const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
 } = require('../lib/functional-owner');
-const { operatorReady } = require('./autoland');
+const { operatorReady, hasAgentJargon } = require('./autoland');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -385,11 +385,34 @@ function textFlag(args, names) {
 
 function landingFlags(args) {
   return {
-    happened: textFlag(args, ['--happened', '--what-happened']),
+    happened: textFlag(args, ['--landing', '--happened', '--what-happened']),
     checked: textFlag(args, ['--checked', '--how-checked']),
     tested: textFlag(args, ['--tested', '--what-tested']),
     decision: textFlag(args, ['--decision', '--acceptance']),
   };
+}
+
+function normalizedLandingSentence(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function defaultLandingSentenceForTitle(title) {
+  return `Completed: ${String(title || '').trim()}.`;
+}
+
+function landingNeedsDayOnePm(sentence, title) {
+  const text = normalizedLandingSentence(sentence);
+  if (!text) return true;
+  if (text.toLowerCase() === normalizedLandingSentence(defaultLandingSentenceForTitle(title)).toLowerCase()) return true;
+  return hasAgentJargon(text) || !operatorReady(text);
+}
+
+function warnIfLandingNeedsDayOnePm(landing, title) {
+  const sentence = landing && typeof landing === 'object' ? landing.happened : '';
+  if (!landingNeedsDayOnePm(sentence, title)) return null;
+  const warning = 'Advisory: add --landing with one capability sentence a day-one PM could read, with the result in plain words and no flags or identifiers.';
+  console.error(warning);
+  return warning;
 }
 
 function numericFlag(args, name) {
@@ -5465,6 +5488,9 @@ function cmdNext(args) {
   }
   console.log(`next ${taskRef(compactTaskFromProjection(projection, open[0].id))} @${owner}`);
   console.log(open[0].title);
+  const ref = taskRef(compactTaskFromProjection(projection, open[0].id));
+  const { printOperatorNext } = require('../lib/operator-next');
+  printOperatorNext(`atris task step ${ref}`);
 }
 
 function continueWorkForReviewTask(taskDb, db, taskId, { owner = DEFAULT_OWNER } = {}) {
@@ -7570,6 +7596,7 @@ function cmdFinish(args) {
   const currentTask = taskDb.getTask(db, taskId);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const proof = proofFlagValue(args);
+  const landing = landingFlags(args);
   const failed = hasFlag(args, '--failed');
   const hasReview = hasFlag(args, '--review') || flag(args, '--lesson') || flag(args, '--next') || flag(args, '--proof') || flag(args, '--reward');
   if (agentProofOnlyMode() && !failed) {
@@ -7606,6 +7633,7 @@ function cmdFinish(args) {
     process.exit(1);
   }
   if (hasReview) {
+    const landingAdvisory = !failed ? warnIfLandingNeedsDayOnePm(landing, currentTask && currentTask.title) : null;
     const result = taskDb.reviewTask(db, {
       id: taskId,
       actor,
@@ -7614,6 +7642,7 @@ function cmdFinish(args) {
       nextTask: typeof flag(args, '--next') === 'string' ? flag(args, '--next') : '',
       proof,
       careerXpEligible: false,
+      landing,
     });
     const nextCreated = createNextTaskIfRequested(taskDb, db, args, currentTask, result.episode.next_task_suggestion);
     const xpProjection = refreshCareerXpAfterReview(result);
@@ -7627,6 +7656,7 @@ function cmdFinish(args) {
         reward: result.episode.reward.value,
         episode: result.episode,
         xp_projection: xpProjection,
+        landing_advisory: landingAdvisory,
         next_task_id: nextCreated ? nextCreated.id : null,
         projection_path: outPath,
         task: compactTaskFromProjection(projection, taskId),
@@ -7721,6 +7751,7 @@ function cmdReady(args) {
     console.error(`ready failed: ${result.reason}`);
     process.exit(1);
   }
+  const landingAdvisory = warnIfLandingNeedsDayOnePm(landing, result.row && result.row.title);
   const { projection, outPath } = writeDefaultProjection(taskDb, db);
   const agentCertified = result.event.payload.agent_certified === true;
   const projectionTask = taskFromProjection(projection, taskId)
@@ -7762,6 +7793,7 @@ function cmdReady(args) {
       agent_certified: agentCertified,
       handoff,
       result_trace: resultTrace,
+      landing_advisory: landingAdvisory,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, taskId),

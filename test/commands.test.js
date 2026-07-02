@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../lib/manifest');
+const { acceptedInLastDay } = require('../lib/autoland');
 const taskStore = require('../lib/task-db');
 const { branchName, cleanupWorktrees, defaultStartBase, normalizeTargetRef, parseWorktrees, slugify, swarloClaim } = require('../commands/worktree');
 const { ensureWikiScaffold, normalizeWikiOnlyPrefix, validateAgentReadableWikiPages } = require('../lib/wiki');
@@ -11701,6 +11702,88 @@ test('task ready default landing describes completed work for unmapped titles', 
     assert.equal(readyShow.status, 0, readyShow.stderr);
     assert.match(readyShow.stdout, /What happened: Completed: Explore review landing output\./);
     assert.doesNotMatch(readyShow.stdout, /Explore review landing output is ready to review/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready and finish accept landing capability sentences', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const readyAdd = runCli([
+      'task', 'add', 'Add digest landing sentence',
+      '--tag', 'cli',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(readyAdd.status, 0, readyAdd.stderr);
+    const readyRef = JSON.parse(readyAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', readyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const readySentence = 'Users can now trust the review queue to explain the result without opening the task.';
+    const ready = runCli([
+      'task', 'ready', readyRef,
+      '--proof', 'node --test test/autoland.test.js passed',
+      '--landing', readySentence,
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(ready.status, 0, ready.stderr);
+    assert.equal(ready.stderr, '');
+    const readyPayload = JSON.parse(ready.stdout);
+    assert.equal(readyPayload.landing_advisory, null);
+    assert.equal(readyPayload.task.review.landing.happened, readySentence);
+
+    const missingAdd = runCli([
+      'task', 'add', 'Warn when landing is missing',
+      '--tag', 'cli',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(missingAdd.status, 0, missingAdd.stderr);
+    const missingRef = JSON.parse(missingAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', missingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const missingReady = runCli([
+      'task', 'ready', missingRef,
+      '--proof', 'node --test test/autoland.test.js passed',
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(missingReady.status, 0, missingReady.stderr);
+    assert.match(missingReady.stderr, /day-one PM could read/);
+    assert.match(JSON.parse(missingReady.stdout).landing_advisory, /day-one PM could read/);
+
+    const finishAdd = runCli([
+      'task', 'add', 'Finish digest landing sentence',
+      '--tag', 'cli',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(finishAdd.status, 0, finishAdd.stderr);
+    const finishRef = JSON.parse(finishAdd.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', finishRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+
+    const finishSentence = 'Users can now trust the landed digest to explain the capability without opening the task.';
+    const finish = runCli([
+      'task', 'finish', finishRef,
+      '--proof', 'node --test test/autoland.test.js passed',
+      '--landing', finishSentence,
+      '--as', 'codex',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(finish.status, 0, finish.stderr);
+    assert.equal(finish.stderr, '');
+    const finishPayload = JSON.parse(finish.stdout);
+    assert.equal(finishPayload.landing_advisory, null);
+    assert.equal(finishPayload.task.review.landing.happened, finishSentence);
+
+    const finishProjection = JSON.parse(fs.readFileSync(finishPayload.projection_path, 'utf8'));
+    const projectedFinishTask = finishProjection.tasks.find(task => task.id === finishPayload.task_id);
+    const accepted = acceptedInLastDay([projectedFinishTask], Date.now());
+    assert.equal(accepted.human.length, 1);
+    assert.equal(accepted.human[0].happened, finishSentence);
   } finally {
     cleanupTempDir(dir);
   }
