@@ -271,6 +271,8 @@ What to inspect:
 - `atris experiments replay endstate` runs the full public dry-run rehearsal
 - the benchmark contract lives at `atris/features/endstate/contract.md`
 - the verification log lives at `atris/features/endstate/validate.md`
+- receipts can include `provider_seed`; if a seeded provider row is wedged,
+  compare reports the run as inconclusive instead of a normal score decision
 
 The stack wins Level 1 only if it beats the baseline on total score and does
 not lose the reviewed completion category.
