@@ -30,6 +30,15 @@ const {
   formatBytes,
 } = require('../lib/runs-prune');
 const { operatorReady, hasAgentJargon } = require('./autoland');
+const {
+  MISSION_INSPECT_FIELDS,
+  readFieldsFlag,
+  stripInspectArgs,
+  validateFields,
+  missionInspectFieldValues,
+  inspectTextLines,
+  buildInspectPayload,
+} = require('../lib/inspect-fields');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -6855,6 +6864,8 @@ atris mission - durable goal + loop + owner + proof state
                        default model atris:fast; runner codex_goal publishes the goal for a live
                        Codex session to pull via atris mission goal)
   atris mission status [id] [--status <state>] [--limit <n>] [--local] [--json]
+  atris mission inspect <id> --fields status,runner,ack,pings [--json]
+                       Field-selectable mission state (status, runner, native goal ack, ping counts)
   atris mission doctor [--local] [--json]   Flag no-verifier missions, help missions, stale ready receipts, and blocked always-on loops
   atris mission attach-task <id> [--json]   Create the missing task spine for an existing active mission
   atris mission report [id] [--limit <n>] [--local] [--json]   Plain outcome, worker receipt, verifier receipt, and next move
@@ -7149,6 +7160,36 @@ function findMissionAcrossWorktrees(ref, root = process.cwd()) {
 // atris mission ping <id> "<message>" — leave a note the mission's next tick
 // reads (and consumes) as operator direction. This is how you talk to an
 // always-on member mid-run without stopping it.
+function inspectMission(args) {
+  const asJson = wantsJson(args);
+  const parsed = readFieldsFlag(args, '--fields');
+  if (!parsed || parsed.error) {
+    exitMissionError(
+      parsed?.error || 'Usage: atris mission inspect <id> --fields status,runner,ack,pings [--json]',
+      2,
+      asJson,
+    );
+  }
+  const fieldError = validateFields(parsed.fields, MISSION_INSPECT_FIELDS, 'mission');
+  if (fieldError) exitMissionError(fieldError, 2, asJson);
+  const ref = stripInspectArgs(args)[0] || '';
+  if (!ref) {
+    exitMissionError('Usage: atris mission inspect <id> --fields status,runner,ack,pings [--json]', 2, asJson);
+  }
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) exitMissingMission(ref, 1, asJson);
+  const { mission } = found;
+  const values = missionInspectFieldValues(mission, parsed.fields);
+  const payload = buildInspectPayload({
+    action: 'mission_inspect',
+    idKey: 'mission_id',
+    idValue: mission.id,
+    fields: parsed.fields,
+    values,
+  });
+  printJsonOrText(payload, inspectTextLines(parsed.fields, values), asJson);
+}
+
 function pingMission(args) {
   const asJson = args.includes('--json');
   const rest = args.filter((a) => a !== '--json');
@@ -7235,6 +7276,8 @@ function missionCommand(args) {
       return goalLoopMission(rest);
     case 'ping':
       return pingMission(rest);
+    case 'inspect':
+      return inspectMission(rest);
     case 'tick':
       return tickMission(rest);
     case 'run':
@@ -7257,6 +7300,7 @@ function missionCommand(args) {
 
 module.exports = {
   missionCommand,
+  inspectMission,
   missionHeartbeatLines,
   listMissions,
   listWorktreeRollupMissions,

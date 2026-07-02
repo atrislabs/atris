@@ -16,6 +16,14 @@ const {
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
 } = require('../lib/functional-owner');
 const { operatorReady, hasAgentJargon } = require('./autoland');
+const {
+  TASK_INSPECT_FIELDS,
+  readFieldsFlag,
+  stripInspectArgs,
+  validateFields,
+  inspectTextLines,
+  buildInspectPayload,
+} = require('../lib/inspect-fields');
 
 const DEFAULT_OWNER = process.env.ATRIS_AGENT_ID
   || process.env.USER
@@ -156,6 +164,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            review-state lanes: needs-agent, continue-work, human-accept-waiting, certified
   atris task note <id> "<message>"         Append dialogue/context to a task
   atris task show <id> [--json]            Show a task card + dialogue
+  atris task inspect <id> --fields review,status,title [--json]
+                                           Field-selectable task state (review metadata, status, title, owner, tag)
   atris task page <id> [--json]            Show the one-task page contract
   atris task step <id> [--json]            Refine chat, then advance one safe Plan/Do/Review step
   atris task done <id> --proof "..."       Mark complete with proof
@@ -1105,6 +1115,50 @@ function taskReviewSummary(task) {
   review.landing = taskReviewLanding(task, review, payload);
   review.result = taskReviewResult(task, review, payload);
   return reviewSummaryWithVerificationChat(task, review);
+}
+
+function taskReviewInspectMetadata(task) {
+  const review = task.review || taskReviewSummary(task);
+  if (!review) return null;
+  return {
+    approval_status: review.approval_status || null,
+    agent_certified: review.agent_certified === true,
+    agent_review_pass_count: review.agent_review_pass_count || null,
+    agent_certification_policy: review.agent_certification_policy || null,
+    summary: review.summary || null,
+    proof: review.proof || null,
+    lesson: review.lesson || null,
+    next_task: review.next_task || null,
+    human_revision_count: review.human_revision_count || null,
+    human_revision_note: review.human_revision_note || null,
+    reward: review.reward ?? null,
+  };
+}
+
+function taskInspectFieldValues(task, fields) {
+  const values = {};
+  for (const field of fields) {
+    switch (field) {
+      case 'status':
+        values.status = task.status || null;
+        break;
+      case 'title':
+        values.title = task.title || null;
+        break;
+      case 'claimed_by':
+        values.claimed_by = task.claimed_by || null;
+        break;
+      case 'tag':
+        values.tag = task.tag || null;
+        break;
+      case 'review':
+        values.review = taskReviewInspectMetadata(task);
+        break;
+      default:
+        break;
+    }
+  }
+  return values;
 }
 
 function reviewSummaryWithVerificationChat(task, review) {
@@ -5904,6 +5958,40 @@ function cmdClearPlan(args) {
   console.log(`clear-plan moved ${result.cleared.length} task${result.cleared.length === 1 ? '' : 's'} to Backlog`);
 }
 
+function cmdInspect(args) {
+  const parsed = readFieldsFlag(args, '--fields');
+  if (!parsed || parsed.error) {
+    failTask('atris task inspect', 'missing_fields', parsed?.error || 'Usage: atris task inspect <id> --fields review,status,title [--json]');
+  }
+  const fieldError = validateFields(parsed.fields, TASK_INSPECT_FIELDS, 'task');
+  if (fieldError) failTask('atris task inspect', 'unknown_fields', fieldError);
+  const ref = stripInspectArgs(args)[0] || '';
+  if (!ref) {
+    failTask('atris task inspect', 'missing_id', 'Usage: atris task inspect <id> --fields review,status,title [--json]');
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, ref, 'atris task inspect');
+  const projection = enrichTaskProjection(taskDb.taskProjection(db, { taskId }));
+  const task = projection.tasks[0];
+  if (!task) {
+    failTask('atris task inspect', 'not_found', `task not found: ${ref}`, 1);
+  }
+  const values = taskInspectFieldValues(task, parsed.fields);
+  const payload = buildInspectPayload({
+    action: 'task_inspect',
+    idKey: 'task_id',
+    idValue: task.id,
+    fields: parsed.fields,
+    values,
+  });
+  if (wantsJson(args)) {
+    printJson(payload);
+    return;
+  }
+  for (const line of inspectTextLines(parsed.fields, values)) console.log(line);
+}
+
 function cmdShow(args) {
   const pos = positional(args);
   const id = pos[0];
@@ -10027,6 +10115,7 @@ async function run(args) {
     case 'note':   return cmdNote(rest);
     case 'say':    return cmdNote(rest);
     case 'show':   return cmdShow(rest);
+    case 'inspect': return cmdInspect(rest);
     case 'page':   return cmdPage(rest);
     case 'step':   return cmdStep(rest);
     case 'review-chat':
