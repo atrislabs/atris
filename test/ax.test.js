@@ -1313,3 +1313,36 @@ test('ax auto logger can opt into full transcripts explicitly', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('ax finds and hints workspace approval artifacts from local turns', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ax-workspace-approvals-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const approvalsDir = path.join(dir, 'atris', 'approvals');
+  fs.mkdirSync(approvalsDir, { recursive: true });
+  const record = {
+    schema: 'atris.local_approval.v1',
+    approval_id: 'appr_20260702T000000Z_testonly',
+    status: 'pending',
+    action_type: 'git_push',
+    summary: 'Push 1 commit to origin/master',
+    payload: { workspace: dir, remote: 'origin', branch: 'master', head_commit: 'abc1234' },
+    decision: { approved: false },
+  };
+  fs.writeFileSync(path.join(approvalsDir, `${record.approval_id}.json`), JSON.stringify(record));
+
+  const found = ax.findWorkspaceApproval('appr_20260702T000000Z_test', dir);
+  assert.ok(found);
+  assert.equal(found.record.action_type, 'git_push');
+
+  const pending = ax.pendingWorkspaceApprovalsSince(dir, Date.now() - 60000);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].record.approval_id, record.approval_id);
+
+  // Spent artifacts stop hinting.
+  fs.writeFileSync(
+    path.join(approvalsDir, `${record.approval_id}.json`),
+    JSON.stringify({ ...record, status: 'executed' })
+  );
+  assert.equal(ax.pendingWorkspaceApprovalsSince(dir, Date.now() - 60000).length, 0);
+  assert.equal(ax.findWorkspaceApproval('appr_nonexistent', dir), null);
+});

@@ -1476,6 +1476,99 @@ function removeStoredApproval(ref, options = {}) {
   return record;
 }
 
+// Local turns stage side effects as signed artifacts in the workspace's
+// atris/approvals/ (atris.local_approval.v1), a different store from
+// ~/.atris/ax-approvals.json. ax --approve redeems them through the local
+// backend's approvals/execute endpoint, which re-signs with explicit user
+// approval and runs the gated executor.
+function workspaceApprovalsDir(cwd) {
+  return path.join(cwd || process.cwd(), 'atris', 'approvals');
+}
+
+function listWorkspaceApprovals(cwd) {
+  const dir = workspaceApprovalsDir(cwd);
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter(name => name.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  const records = [];
+  for (const name of names) {
+    const filePath = path.join(dir, name);
+    try {
+      const record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (record && record.schema === 'atris.local_approval.v1') {
+        records.push({ path: filePath, record, mtimeMs: fs.statSync(filePath).mtimeMs });
+      }
+    } catch {
+      // Unreadable artifact: skip, never block the turn.
+    }
+  }
+  return records;
+}
+
+function findWorkspaceApproval(ref, cwd) {
+  const target = String(ref || '').trim();
+  if (!target) return null;
+  const matches = listWorkspaceApprovals(cwd)
+    .filter(item => String(item.record.approval_id || '').startsWith(target));
+  if (matches.length !== 1) return null;
+  return matches[0];
+}
+
+function pendingWorkspaceApprovalsSince(cwd, sinceMs) {
+  return listWorkspaceApprovals(cwd).filter(item => (
+    item.mtimeMs >= sinceMs
+    && String(item.record.status || '') === 'pending'
+    && !(item.record.decision && item.record.decision.approved)
+  ));
+}
+
+async function approveWorkspaceApproval(ref, options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const found = findWorkspaceApproval(ref, cwd);
+  if (!found) throw new Error(`Pending approval not found: ${ref}`);
+  const output = options.output || process.stdout;
+  const { record } = found;
+  const startedAt = Date.now();
+  const payload = record.payload && typeof record.payload === 'object' ? record.payload : {};
+  output.write(`${formatAuxRow('id', record.approval_id, output)}\n`);
+  if (record.summary) output.write(`${formatAuxRow('action', record.summary, output)}\n`);
+  if (payload.command) output.write(`${formatAuxRow('command', payload.command, output)}\n`);
+  output.write('Accepted.\n');
+  const response = await postJson(APPROVAL_EXECUTE_PATH, {
+    model: modelForMode(options.mode || 'fast'),
+    approval_request: {
+      action_type: record.action_type,
+      approval_id: record.approval_id,
+      summary: record.summary,
+      payload: { ...payload, workspace: payload.workspace || cwd },
+    },
+  }, { route: 'local' });
+  const execution = response && response.data && typeof response.data === 'object' ? response.data : {};
+  const executed = Boolean(execution.execution && execution.execution.executed) || execution.status === 'executed';
+  const statusText = executed
+    ? 'Done.'
+    : `Not executed: ${String(execution.status || response.error || `HTTP ${response.status || 0}`)}`;
+  output.write(`${formatAuxRow(executed ? 'done' : 'wait', statusText, output)}\n`);
+  try {
+    const spent = { ...record, status: executed ? 'executed' : record.status, executed_at: executed ? new Date().toISOString() : undefined };
+    fs.writeFileSync(found.path, `${JSON.stringify(spent, null, 2)}\n`);
+  } catch {
+    // Bookkeeping only; the backend holds replay protection.
+  }
+  output.write(`${formatDoneLine(Date.now() - startedAt)}\n`);
+  if (!response.ok && !executed) process.exitCode = 1;
+  return { response, executed };
+}
+
+function writeWorkspaceApprovalHints(cwd, sinceMs, output) {
+  for (const item of pendingWorkspaceApprovalsSince(cwd, sinceMs)) {
+    output.write(`${formatAuxRow('approve', formatApprovalCommand(item.record.approval_id), output)}\n`);
+  }
+}
+
 function formatStoredApprovals(store, options = {}) {
   const approvals = Array.isArray(store && store.approvals) ? store.approvals : [];
   if (!approvals.length) return 'No pending approvals.';
@@ -2444,6 +2537,7 @@ async function chat(options = {}) {
     if (!(await ensureRuntimeReady(turnRoute))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const turnId = options.turnId || createTurnId();
+    const turnStartedAt = Date.now();
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId, turnId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
@@ -2453,6 +2547,7 @@ async function chat(options = {}) {
         output,
         ...(options.postApproval ? { postApproval: options.postApproval } : {}),
       });
+    if (!options.turnFunction) writeWorkspaceApprovalHints(cwd, turnStartedAt, output);
     output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
     const receipt = receiptFromState(result);
     const approvalRequest = approvalExecution
@@ -3365,7 +3460,11 @@ async function main() {
     }
 
     if (approveId) {
-      await approveStoredApproval(approveId, { mode, output: process.stdout });
+      if (findStoredApproval(approveId)) {
+        await approveStoredApproval(approveId, { mode, output: process.stdout });
+      } else {
+        await approveWorkspaceApproval(approveId, { cwd: process.cwd(), mode, output: process.stdout });
+      }
       return;
     }
 
@@ -3383,6 +3482,7 @@ async function main() {
     console.log(formatHeader({ mode, cwd: process.cwd(), chat: false }, process.stdout));
     console.log('');
     maybeWriteAtrisGoalBanner(process.stdout, process.cwd());
+    const turnStartedAt = Date.now();
     const result = await turnFunctionForMode(mode)(prompt, { mode, cwd: process.cwd(), route: route === 'auto' ? undefined : route, business, verify });
     const receipt = receiptFromState(result);
     const approvalRequest = normalizeMode(mode) === 'code-fast' ? null : approvalRequestFromReceipt(receipt);
@@ -3390,6 +3490,9 @@ async function main() {
       ? persistPendingApproval(receipt, approvalRequest, { cwd: process.cwd(), mode })
       : null;
     if (approvalRecord) console.log(formatAuxRow('approve', formatApprovalCommand(approvalRecord.id), process.stdout));
+    // A one-shot has no next turn, so "reply yes to approve" is a dead end;
+    // surface the exact redeem command for anything the turn staged on disk.
+    writeWorkspaceApprovalHints(process.cwd(), turnStartedAt, process.stdout);
     console.log('');
     console.log(formatDoneLine(result.durationMs, creditsFromState(result)));
   } catch (error) {
@@ -3417,6 +3520,10 @@ module.exports = {
   approvalRequestFromReceipt,
   approvalStorePath,
   approveStoredApproval,
+  approveWorkspaceApproval,
+  findWorkspaceApproval,
+  listWorkspaceApprovals,
+  pendingWorkspaceApprovalsSince,
   backendBaseUrl,
   backendStartCommand,
   backendUrl,
