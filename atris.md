@@ -93,7 +93,7 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
 
 ## the ladder
 
-Six primitives, one sentence each. Every agent in every repo holds this model:
+Six primitives, one sentence each:
 
 - **The Mission** (MISSION.md): the enduring purpose. Never ends. Sits at the top and helps members pick goals.
 - **Goals** (endgame, member goals): direction derived from the Mission. A goal points; it does not commit.
