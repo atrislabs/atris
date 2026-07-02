@@ -106,7 +106,7 @@ In one line: the Mission anchors, goals point, a mission run commits, tasks prov
 
 Never conflate the two things called "mission": the Mission is permanent purpose; a mission run is a bounded commitment. An agent that mistakes a run for the Mission never stops working on it; one that mistakes the Mission for a run tries to complete it.
 
-Drift smells: a member goal tracing to no Mission is freelancing; a goal that never becomes a mission run is a wish; a run with no goal above it is busywork; a loop deciding what "done" means owns the wrong axis.
+Drift smells: a member goal tracing to no Mission is freelancing; a goal that never becomes a mission run is a wish; a run with no goal above it is busywork; a loop deciding what "done" means owns the wrong axis. A loop may run without a member, never without a witness: every loop names an owner, and its failure escalates to something with judgment.
 
 ## task source of truth
 
