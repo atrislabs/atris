@@ -824,6 +824,58 @@ async function slackSearch(query, args = []) {
   formatSlackMessages(messages);
 }
 
+async function slackSend(channel, textParts) {
+  const target = String(channel || '').trim();
+  const text = (textParts || []).join(' ').trim();
+  if (!target || !text) {
+    console.error('Usage: atris slack send <channel> "<message>"');
+    process.exit(1);
+  }
+
+  const token = await getAuthToken();
+
+  console.log(`Sending to ${target}...`);
+
+  const result = await apiRequestJson('/integrations/slack/me/send', {
+    method: 'POST',
+    token,
+    body: { channel: target, text },
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to send'}`);
+    process.exit(1);
+  }
+
+  console.log(`Sent to ${target} as you.`);
+}
+
+async function slackDm(userId, textParts) {
+  const target = String(userId || '').trim();
+  const text = (textParts || []).join(' ').trim();
+  if (!target || !text) {
+    console.error('Usage: atris slack dm <slack_user_id> "<message>"');
+    process.exit(1);
+  }
+
+  const token = await getAuthToken();
+
+  console.log(`Sending DM to ${target}...`);
+
+  const result = await apiRequestJson('/integrations/slack/me/dm', {
+    method: 'POST',
+    token,
+    body: { slack_user_id: target, text },
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to send DM'}`);
+    process.exit(1);
+  }
+
+  console.log(`DM sent to ${target} as you.`);
+}
+
 async function slackCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'channels':
@@ -840,12 +892,20 @@ async function slackCommand(subcommand, ...args) {
     case 'search':
       await slackSearch(argsWithoutLimit(args).join(' '), args);
       break;
+    case 'send':
+      await slackSend(args[0], args.slice(1));
+      break;
+    case 'dm':
+      await slackDm(args[0], args.slice(1));
+      break;
     default:
       console.log('Slack commands:');
       console.log('  atris slack channels             - List Slack channels');
       console.log('  atris slack dms                  - List Slack DMs');
       console.log('  atris slack messages <channel>   - Read recent messages');
       console.log('  atris slack search <query>       - Search Slack messages');
+      console.log('  atris slack send <channel> "<message>" - Send a message as you');
+      console.log('  atris slack dm <user_id> "<message>"   - DM someone as you');
   }
 }
 

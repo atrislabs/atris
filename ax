@@ -862,6 +862,19 @@ function formatAtrisGoal(goal) {
   ].filter(Boolean).join('\n');
 }
 
+function formatGoalStatusLine(goal, options = {}) {
+  if (!goal || !goal.objective) return '';
+  const status = String(goal.mission_status || '').toLowerCase();
+  if (!['active', 'running', 'planning', 'in_progress', 'ready'].includes(status)) return '';
+  const elapsed = goalElapsedSeconds(goal);
+  const objective = String(goal.objective).length > 64
+    ? `${String(goal.objective).slice(0, 61)}...`
+    : String(goal.objective);
+  const parts = [`goal: ${objective}`, status];
+  if (elapsed !== null) parts.push(`${formatSeconds(elapsed)} in`);
+  return paint(`· ${parts.join(' · ')}`, [ANSI.muted], options);
+}
+
 function writeAtrisGoalBanner(output, cwd = process.cwd()) {
   const text = formatAtrisGoal(currentAtrisGoal(cwd));
   if (!text) return false;
@@ -2047,8 +2060,30 @@ function writeAuxLine(state, output, line) {
   state.needsBullet = true;
 }
 
+// Turns beyond the recent window used to fall off a cliff: turn 9 of a chat
+// silently forgot turn 1 and never said so. Evicted turns now compress into
+// a digest that rides as the first previous message, so long chats keep the
+// thread of the whole conversation. AX_NO_COMPACT=1 restores the bare window.
+const HISTORY_DIGEST_MAX_CHARS = 2400;
+
+function compactedHistoryDigest(evicted) {
+  const lines = [];
+  for (const turn of evicted) {
+    const who = turn && turn.role === 'assistant' ? 'atris' : 'user';
+    const text = String((turn && turn.content) || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (text) lines.push(`${who}: ${text}`);
+  }
+  let digest = lines.join('\n');
+  if (digest.length > HISTORY_DIGEST_MAX_CHARS) {
+    digest = digest.slice(digest.length - HISTORY_DIGEST_MAX_CHARS);
+    digest = digest.slice(digest.indexOf('\n') + 1);
+  }
+  return digest;
+}
+
 function structuredHistory(history, limit = 8) {
-  return (Array.isArray(history) ? history : [])
+  const rows = Array.isArray(history) ? history : [];
+  const recent = rows
     .slice(-limit)
     .map(turn => {
       const message = {
@@ -2061,6 +2096,16 @@ function structuredHistory(history, limit = 8) {
       return message;
     })
     .filter(turn => turn.content.trim());
+  if (rows.length <= limit || process.env.AX_NO_COMPACT === '1') return recent;
+  const digest = compactedHistoryDigest(rows.slice(0, rows.length - limit));
+  if (!digest) return recent;
+  return [
+    {
+      role: 'user',
+      content: `[conversation so far, compacted from ${rows.length - limit} earlier turns]\n${digest}`,
+    },
+    ...recent,
+  ];
 }
 
 function latestPendingTaskPreview(history = []) {
@@ -2585,6 +2630,7 @@ async function chat(options = {}) {
   const logger = createRunLogger({ cwd, mode, kind: 'play', output: baseOutput });
   const output = logger ? logger.output : baseOutput;
   const history = [];
+  let lastCompactionNotice = 0;
   const conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
 
   output.write(`${formatHeader({ mode, cwd, chat: true }, output)}\n\n`);
@@ -2730,6 +2776,11 @@ async function chat(options = {}) {
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const turnId = options.turnId || createTurnId();
     const turnStartedAt = Date.now();
+    const compactedTurns = process.env.AX_NO_COMPACT === '1' ? 0 : Math.max(0, history.length - 8);
+    if (compactedTurns > 0 && compactedTurns !== lastCompactionNotice) {
+      lastCompactionNotice = compactedTurns;
+      output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
+    }
     const result = await turnFunction(trimmed, { mode, cwd, history, output, route, business: options.business, verify: options.verify, conversationId, turnId });
     if (result.output && !result.output.endsWith('\n')) output.write('\n');
     const approvalExecution = normalizeMode(mode) === 'code-fast'
@@ -2740,7 +2791,10 @@ async function chat(options = {}) {
         ...(options.postApproval ? { postApproval: options.postApproval } : {}),
       });
     if (!options.turnFunction) writeWorkspaceApprovalHints(cwd, turnStartedAt, output);
-    output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n\n`);
+    output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n`);
+    const goalLine = options.turnFunction ? '' : formatGoalStatusLine(currentAtrisGoal(cwd), output);
+    if (goalLine) output.write(`${goalLine}\n`);
+    output.write('\n');
     const receipt = receiptFromState(result);
     const approvalRequest = approvalExecution
       ? (

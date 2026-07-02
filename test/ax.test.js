@@ -1365,3 +1365,36 @@ test('ax finds and hints workspace approval artifacts from local turns', (t) => 
   assert.equal(ax.pendingWorkspaceApprovalsSince(dir, Date.now() - 60000).length, 0);
   assert.equal(ax.findWorkspaceApproval('appr_nonexistent', dir), null);
 });
+
+test('ax compacts evicted history into a digest instead of forgetting it', () => {
+  const history = [];
+  for (let i = 1; i <= 12; i++) {
+    history.push({ role: 'user', content: `user turn ${i}` });
+    history.push({ role: 'assistant', content: `assistant reply ${i}` });
+  }
+  const payload = ax.buildPayload('and what did I ask first?', {
+    mode: 'fast',
+    cwd: NON_WORKSPACE_CWD,
+    history,
+  });
+  const previous = payload.previous_messages;
+  assert.equal(previous.length, 9);
+  assert.match(previous[0].content, /compacted from 16 earlier turns/);
+  assert.match(previous[0].content, /user turn 1/);
+  assert.equal(previous[previous.length - 1].content, 'assistant reply 12');
+
+  const previousEnv = process.env.AX_NO_COMPACT;
+  process.env.AX_NO_COMPACT = '1';
+  try {
+    const bare = ax.buildPayload('and what did I ask first?', {
+      mode: 'fast',
+      cwd: NON_WORKSPACE_CWD,
+      history,
+    });
+    assert.equal(bare.previous_messages.length, 8);
+    assert.doesNotMatch(bare.previous_messages[0].content, /compacted/);
+  } finally {
+    if (previousEnv === undefined) delete process.env.AX_NO_COMPACT;
+    else process.env.AX_NO_COMPACT = previousEnv;
+  }
+});
