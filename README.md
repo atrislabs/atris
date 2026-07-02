@@ -81,7 +81,7 @@ atris
 
 `atris init` scaffolds the workspace, including `atris/wiki/`. `atris` loads context and hands the workflow off to `atris/atris.md`.
 
-If you're still shaping the idea, use `atris brainstorm`. If you want Atris to keep cycling, use `atris run` or `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
+If you're still shaping the idea, use `atris brainstorm`. If you want one bounded mission pursued to proof, use `atris run "<objective>"`. If you want Atris to keep picking the next mission or member until you say stop, use `atris autopilot`. If you want project memory checked for stale pages and missing context, use `atris loop`. `atris activate` surfaces wiki state from `atris/wiki/STATUS.md` when it exists.
 
 Core loop: `plan` -> `do` -> `review`
 
@@ -186,14 +186,14 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris plan` | Create the plan/spec |
 | `atris do` | Execute work |
 | `atris review` | Validate work and capture learnings |
-| `atris run` | Auto-chain `plan -> do -> review` |
+| `atris run` | One bounded mission pursuit: start or resume, tick, complete (`--legacy` for the old plan/do/review chain) |
 | `atris run logs` | Browse glass run logs (phase reasoning persisted to disk) |
 | `atris run prune-logs` | Prune old run logs, keeping only the most recent N |
 | `atris run search` | Search phase reasoning across all run logs by keyword |
 | `atris run stats` | Show run log stats: phase counts, avg durations |
 | `atris run export` | Export all run logs as a JSON bundle |
 | `atris run diff` | Compare two run logs side by side |
-| `atris autopilot` | Guided loop with approvals |
+| `atris autopilot` | Keep the workspace moving: mission/member legs until `atris autopilot stop` (`--legacy` for the old approval loop) |
 | `atris pulse` | Install or run the durable overnight heartbeat |
 | `atris log` | Add inbox items to today's journal |
 | `atris now` | Show the current operating truth |

@@ -765,9 +765,21 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing" atris/po
 
 **Search:** `rg "generateVisual|buildImagePrompt|visualizeAtris" commands/visualize.js`
 
-### Feature: Autopilot (`atris autopilot`)
+### Feature: Front doors (`atris run` / `atris autopilot`)
 
-**Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review.
+**Purpose:** Both commands are thin front doors over the mission runtime (2026-07-01). `atris run` = one bounded pursuit: start a mission from the objective or resume the most logical runnable mission, tick it, complete on pass, exit. `atris autopilot` = keep the workspace moving: each leg picks a runnable mission, else a member choosing useful work, else a self-chosen mission, and loops until stopped.
+
+- **Run front door:** `commands/run-front.js` (`runMissionFront`, `pickRunnableMission` — running > planning, newest first, skips ready + continuation placeholders)
+- **Autopilot front door:** `commands/autopilot-front.js` (`autopilotFront` main loop; `legPlan` selection; `driveLeg` spawns one bounded `mission run`/`member run` leg and polls the stop file every 2s so `atris autopilot stop` kills the running leg fast; fast-fail backoff stops after 5 quick failures)
+- **Stop/status:** `atris autopilot stop` / `atris autopilot status`; state in `.atris/state/autopilot.json`, stop marker `.atris/state/autopilot.stop`
+- **Dispatch:** `bin/atris.js` `command === 'run'` and `command === 'autopilot'` branches — default routes to the fronts, `--legacy` routes to the old loops below
+- **Regression:** `test/front-doors.test.js`
+
+**Search:** `rg "runMissionFront|autopilotFront|legPlan" commands/run-front.js commands/autopilot-front.js`
+
+### Feature: Autopilot legacy loop (`atris autopilot --legacy`)
+
+**Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review. Reached only via `--legacy`; its exports (`writeLesson`, `runTaskOnce`, `readEndgameState`, `getVerifyCommand`) are still consumed by `commands/lesson.js`, `commands/experiments.js`, and `bin/atris.js`.
 
 - **Entry point:** `commands/autopilot.js:3095` (autopilotAtris function)
 - **From-todo mode:** `commands/autopilot.js:3709` (autopilotFromTodo function)

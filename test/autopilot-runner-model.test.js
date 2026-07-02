@@ -97,13 +97,17 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_MODEL = runnerModel/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_MODEL = runnerModel/);
-  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(args\)[\s\S]*runAtris/);
-  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(args\)[\s\S]*autopilotAtris/);
+  // Legacy loops keep runner flags behind --legacy; the default paths are
+  // mission front doors (run-front / autopilot-front).
+  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(legacyArgs\)[\s\S]*runAtris/);
+  assert.match(BIN_SRC, /command === 'run'[\s\S]*runMissionFront/);
+  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(legacyArgs\)[\s\S]*autopilotAtris/);
+  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*autopilotFront/);
   assert.match(BIN_SRC, /--runner-bin/);
   assert.match(BIN_SRC, /--runner-template/);
   assert.match(BIN_SRC, /--runner-model/);
   assert.match(BIN_SRC, /--runner-profile/);
-  assert.match(BIN_SRC, /!isOptionValue\(args, i, RUNNER_FLAG_NAMES\)/);
+  assert.match(BIN_SRC, /!isOptionValue\(legacyArgs, i, RUNNER_FLAG_NAMES\)/);
 });
 
 test('mission claude ticks spawn the configured runner binary', () => {
