@@ -504,6 +504,58 @@ async function calendarDate(dateText) {
   await calendarRange(`Events on ${dateText}`, { timeMin: start.toISOString(), timeMax: end.toISOString() });
 }
 
+async function calendarAdd(args) {
+  // atris calendar add "Title" --date YYYY-MM-DD --from HH:MM --to HH:MM
+  //   or: --start <ISO> --end <ISO>; optional --location, --description
+  const rest = [...(args || [])];
+  const flags = {};
+  const positional = [];
+  for (let i = 0; i < rest.length; i++) {
+    const arg = String(rest[i] || '');
+    if (arg.startsWith('--')) {
+      flags[arg.slice(2)] = String(rest[i + 1] || '');
+      i += 1;
+    } else {
+      positional.push(arg);
+    }
+  }
+  const summary = positional.join(' ').trim();
+  let start = String(flags.start || '').trim();
+  let end = String(flags.end || '').trim();
+  if (!start && flags.date && flags.from) start = `${flags.date}T${flags.from}:00`;
+  if (!end && flags.date && flags.to) end = `${flags.date}T${flags.to}:00`;
+  if (!summary || !start || !end) {
+    console.error('Usage: atris calendar add "Title" --date YYYY-MM-DD --from HH:MM --to HH:MM');
+    console.error('   or: atris calendar add "Title" --start <ISO datetime> --end <ISO datetime>');
+    process.exit(1);
+  }
+
+  const token = await getAuthToken();
+
+  console.log(`Creating event: ${summary} (${start} to ${end})...`);
+
+  const body = { summary, start, end };
+  if (flags.location) body.location = flags.location;
+  if (flags.description) body.description = flags.description;
+  if (flags.timezone) body.timezone = flags.timezone;
+
+  const result = await apiRequestJson('/integrations/google-calendar/events', {
+    method: 'POST',
+    token,
+    body,
+  });
+
+  if (!result.ok) {
+    console.error(`Error: ${result.error || 'Failed to create event'}`);
+    process.exit(1);
+  }
+
+  const created = result.data || {};
+  console.log(`Created: ${created.summary || summary}`);
+  if (created.htmlLink) console.log(`Link: ${created.htmlLink}`);
+  console.log(`Verified on calendar: ${created.verified ? 'yes' : 'no'}`);
+}
+
 async function calendarCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'today':
@@ -522,6 +574,10 @@ async function calendarCommand(subcommand, ...args) {
     case 'search':
       await calendarSearch(args);
       break;
+    case 'add':
+    case 'create':
+      await calendarAdd(args);
+      break;
     default:
       console.log('Calendar commands:');
       console.log('  atris calendar today          - Show today\'s events');
@@ -529,6 +585,7 @@ async function calendarCommand(subcommand, ...args) {
       console.log('  atris calendar week           - Show this week\'s events');
       console.log('  atris calendar date YYYY-MM-DD - Show events on a date');
       console.log('  atris calendar search <query> [--days 30] [--limit 20] [--timeout-ms 10000] [--json] - Search upcoming events');
+      console.log('  atris calendar add \"Title\" --date YYYY-MM-DD --from HH:MM --to HH:MM - Create an event');
   }
 }
 

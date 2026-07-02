@@ -682,13 +682,13 @@ test('ax renders basic markdown for terminal output', () => {
 });
 
 test('ax streaming markdown handles split bold delimiters', () => {
-  // Line-buffered: partial lines hold until a newline arrives, so delimiters
-  // split across deltas can never shred.
+  // Hybrid: prose streams character-live; delimiters split across deltas
+  // hold only the marker, never the prose before it.
   const state = {};
   const options = { color: false, isTTY: true };
-  assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), '');
+  assert.equal(ax.renderStreamingMarkdown(state, 'This is *', options), 'This is ');
   assert.equal(ax.renderStreamingMarkdown(state, '*bold', options), '');
-  assert.equal(ax.renderStreamingMarkdown(state, '** now\n', options), 'This is bold now\n');
+  assert.equal(ax.renderStreamingMarkdown(state, '** now\n', options), 'bold now\n');
 });
 
 test('ax streaming markdown renders headers, tables, fences, and bullets', () => {

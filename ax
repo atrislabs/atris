@@ -939,6 +939,8 @@ function resetMarkdownState(state) {
   state.markdownCarry = '';
   state.markdownFence = false;
   state.markdownTable = [];
+  state.markdownLine = '';
+  state.markdownLineMode = 'start';
 }
 
 function ensureMarkdownState(state) {
@@ -947,6 +949,8 @@ function ensureMarkdownState(state) {
   if (typeof state.markdownCarry !== 'string') state.markdownCarry = '';
   if (typeof state.markdownFence !== 'boolean') state.markdownFence = false;
   if (!Array.isArray(state.markdownTable)) state.markdownTable = [];
+  if (typeof state.markdownLine !== 'string') state.markdownLine = '';
+  if (!state.markdownLineMode) state.markdownLineMode = 'start';
 }
 
 function renderInlineMarkdown(text, options = {}) {
@@ -1032,41 +1036,179 @@ function renderMarkdownLine(state, line, options = {}) {
   return `${out}${renderInlineMarkdown(line, options)}\n`;
 }
 
-// Line-buffered streaming renderer: deltas accumulate until a full line
-// exists, then the line renders with block context (fences, tables, headers,
-// bullets). Whole-line buffering is what makes split delimiters and
-// multi-line constructs safe; the cost is line-at-a-time streaming, which is
-// how every serious terminal agent renders anyway.
+// Hybrid streaming renderer. Prose streams character-live through the inline
+// state machine (bold/code style as delimiters close), so chat feels
+// immediate. Structure-shaped lines (tables, fences, headers, bullets,
+// quotes) buffer to the line boundary and render as blocks, because they
+// cannot be styled until the whole line exists. The first character of each
+// line decides which lane the line takes.
+const MARKDOWN_BLOCK_LINE_START = new Set(['|', '#', '`', '>', '-', '*']);
+
 function renderStreamingMarkdown(state, text, options = {}) {
   ensureMarkdownState(state);
-  const input = `${state.markdownCarry || ''}${String(text || '')}`;
-  state.markdownCarry = '';
-  const parts = input.split('\n');
-  state.markdownCarry = parts.pop() || '';
+  const input = String(text || '');
   let out = '';
-  for (const line of parts) {
-    out += renderMarkdownLine(state, line, options);
+
+  for (let i = 0; i < input.length;) {
+    const char = input[i];
+
+    // Structure lane: buffer the whole line, render at the newline.
+    if (state.markdownFence || state.markdownLineMode === 'block') {
+      if (char === '\n') {
+        out += renderMarkdownLine(state, state.markdownLine, options);
+        state.markdownLine = '';
+        state.markdownLineMode = 'start';
+      } else {
+        state.markdownLine += char;
+      }
+      i += 1;
+      continue;
+    }
+
+    // Line start: decide which lane this line takes.
+    if (state.markdownLineMode === 'start') {
+      if (char === '\n') {
+        out += flushMarkdownTable(state, options);
+        out += '\n';
+        i += 1;
+        continue;
+      }
+      if (MARKDOWN_BLOCK_LINE_START.has(char)) {
+        state.markdownLineMode = 'block';
+        state.markdownLine = char;
+        i += 1;
+        continue;
+      }
+      out += flushMarkdownTable(state, options);
+      state.markdownLineMode = 'prose';
+      continue;
+    }
+
+    // Prose lane: the inline state machine, character-live.
+    const next = input[i + 1];
+    if (state.markdownMode === 'normal') {
+      if (state.markdownCarry === '*') {
+        state.markdownCarry = '';
+        if (char === '*') {
+          state.markdownMode = 'bold';
+          state.markdownBuffer = '';
+          i += 1;
+          continue;
+        }
+        out += '*';
+      }
+      if (char === '\n') {
+        out += '\n';
+        state.markdownLineMode = 'start';
+        i += 1;
+        continue;
+      }
+      if (char === '*' && next === undefined) {
+        state.markdownCarry = '*';
+        i += 1;
+        continue;
+      }
+      if (char === '*' && next === '*') {
+        state.markdownMode = 'bold';
+        state.markdownBuffer = '';
+        i += 2;
+        continue;
+      }
+      if (char === '`') {
+        state.markdownMode = 'code';
+        state.markdownBuffer = '';
+        i += 1;
+        continue;
+      }
+      out += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'bold') {
+      if (char === '\n') {
+        out += `**${state.markdownBuffer}\n`;
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownLineMode = 'start';
+        i += 1;
+        continue;
+      }
+      if (char === '*' && next === undefined) {
+        state.markdownCarry = '*';
+        i += 1;
+        continue;
+      }
+      if (char === '*' && (next === '*' || state.markdownCarry === '*')) {
+        out += paint(state.markdownBuffer, [ANSI.bold], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownCarry = '';
+        i += next === '*' ? 2 : 1;
+        continue;
+      }
+      if (state.markdownCarry === '*') {
+        state.markdownCarry = '';
+        if (char === '*') {
+          out += paint(state.markdownBuffer, [ANSI.bold], options);
+          state.markdownMode = 'normal';
+          state.markdownBuffer = '';
+          i += 1;
+          continue;
+        }
+        state.markdownBuffer += '*';
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
+
+    if (state.markdownMode === 'code') {
+      if (char === '\n') {
+        out += `\`${state.markdownBuffer}\n`;
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        state.markdownLineMode = 'start';
+        i += 1;
+        continue;
+      }
+      if (char === '`') {
+        out += paint(state.markdownBuffer, [ANSI.accent], options);
+        state.markdownMode = 'normal';
+        state.markdownBuffer = '';
+        i += 1;
+        continue;
+      }
+      state.markdownBuffer += char;
+      i += 1;
+      continue;
+    }
   }
+
   return out;
 }
 
 function flushStreamingMarkdown(state, output) {
   ensureMarkdownState(state);
   let out = '';
-  const carry = state.markdownCarry || '';
-  state.markdownCarry = '';
-  if (carry) {
-    if (/^\s*```/.test(carry)) {
+  if (state.markdownLine) {
+    if (/^\s*```/.test(state.markdownLine)) {
       // A fence marker with no trailing newline is a block boundary, not code.
       state.markdownFence = !state.markdownFence;
     } else if (state.markdownFence) {
-      out += `  ${paint(carry, [ANSI.accent], output)}`;
-    } else if (/^\s*\|/.test(carry)) {
-      state.markdownTable.push(carry);
+      out += `  ${paint(state.markdownLine, [ANSI.accent], output)}`;
     } else {
-      out += flushMarkdownTable(state, output);
-      out += renderInlineMarkdown(carry, output);
+      out += renderMarkdownLine(state, state.markdownLine, output).replace(/\n$/, '');
     }
+    state.markdownLine = '';
+  }
+  if (state.markdownCarry) {
+    out += state.markdownCarry;
+  }
+  if (state.markdownMode === 'bold' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.bold], output);
+  } else if (state.markdownMode === 'code' && state.markdownBuffer) {
+    out += paint(state.markdownBuffer, [ANSI.accent], output);
   }
   out += flushMarkdownTable(state, output);
   resetMarkdownState(state);
