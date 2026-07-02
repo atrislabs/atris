@@ -185,6 +185,10 @@ function hasFlag(args, name) {
   return args.includes(name);
 }
 
+function helpRequested(args = []) {
+  return args.includes('--help') || args.includes('-h') || args.includes('help');
+}
+
 function swarloClaim(root, { channel, taskKey, content }) {
   const script = path.join(root, 'scripts', 'swarlo.py');
   if (!fs.existsSync(script)) return 'skip: scripts/swarlo.py not found';
@@ -583,6 +587,16 @@ function help() {
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]');
 }
 
+function shipHelp() {
+  console.log('Usage: atris worktree ship --message "<commit>" --verify "<cmd>" [--merge]');
+  console.log('');
+  console.log('  --message, -m   Commit message to use when local changes exist');
+  console.log('  --verify        Command to run before push');
+  console.log('  --no-pr         Push branch without opening a PR');
+  console.log('  --merge         Open and merge the PR');
+  console.log('  --dry-run       Show the ship plan without committing, pushing, or opening a PR');
+}
+
 function worktreeCommand(args = []) {
   const sub = args[0] || 'status';
   const rest = args.slice(1);
@@ -592,7 +606,7 @@ function worktreeCommand(args = []) {
   }
   if (sub === 'guide' || sub === 'recipe') return guide();
   if (sub === 'start') return startWorktree(rest);
-  if (sub === 'ship') return shipWorktree(rest);
+  if (sub === 'ship') return helpRequested(rest) ? shipHelp() : shipWorktree(rest);
   if (sub === 'status') {
     printStatus();
     return 0;

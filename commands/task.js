@@ -9,7 +9,7 @@ const path = require('path');
 const os = require('os');
 const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
 const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
-const { extractReceiptEvidence } = require('../lib/receipt-evidence');
+const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const {
   normalizeOwnerSlug,
@@ -38,6 +38,8 @@ const REVIEW_LANE_RUN_MAX_RUNS = 20;
 const PENDING_REVIEW_CHAT_STOP_REASON = 'pending_review_chat_waiting_for_agent_review';
 const PROOF_BOUNDARY_BLOCKED_ACTION = 'proof_boundary_blocked';
 const PROOF_BOUNDARY_BLOCKED_REASON = 'proof_boundary_blocked_requires_revision';
+const MISSION_XP_END_TO_END_REASON = 'mission_xp_requires_end_to_end_receipt';
+const MISSION_XP_END_TO_END_DETAIL = 'mission XP proof must name a zero-papercut end-to-end fresh-laptop pass through install, init, first mission, and first self-landed task; generic mission/tick receipts are not enough';
 
 const STATUS_PLAN_TAGS = new Set([
   'agent',
@@ -441,6 +443,78 @@ function meaningfulTaskProofIssue(proof, { required = true } = {}) {
   return state.ok ? null : state.reason;
 }
 
+function goldenPathMissionXpTask(task) {
+  if (!task) return false;
+  const metadata = task.metadata || {};
+  const text = [
+    task.title,
+    task.tag,
+    metadata.goal_id,
+    metadata.goalId,
+    metadata.mission_id,
+    metadata.stop_condition,
+    metadata.goal_objective,
+    metadata.objective,
+  ].filter(Boolean).join(' ');
+  const missionXp = String(task.title || '').trim().toLowerCase().startsWith('mission xp:')
+    || String(task.tag || '').toLowerCase() === 'agent-xp'
+    || /^mission-/i.test(String(metadata.goal_id || metadata.goalId || metadata.mission_id || ''));
+  return missionXp
+    && /\b(?:golden[- ]path|zero[- ]knowledge|zero[- ]papercuts?|fresh[- ](?:laptop|environment|install|home)|self[- ]landed)\b/i.test(text);
+}
+
+function receiptTextForProof(proof, root = process.cwd()) {
+  const chunks = [];
+  const pattern = new RegExp(RECEIPT_PATH_PATTERN.source, 'g');
+  let match;
+  while ((match = pattern.exec(String(proof || ''))) && chunks.length < 3) {
+    const rel = match[1];
+    if (!rel || rel.includes('*')) continue;
+    try {
+      const raw = fs.readFileSync(path.resolve(root, rel), 'utf8');
+      const parsed = JSON.parse(raw);
+      chunks.push(JSON.stringify({
+        schema: parsed.schema || null,
+        mission_id: parsed.mission_id || null,
+        result: parsed.result || null,
+        landing: parsed.landing || null,
+        last_landing: parsed.last_landing || null,
+        summary: parsed.summary || null,
+      }).slice(0, 12000));
+    } catch {}
+  }
+  return chunks.join(' ');
+}
+
+function missionXpEndToEndProofIssue(task, proof, root = process.cwd()) {
+  if (!goldenPathMissionXpTask(task)) return null;
+  const corpus = `${String(proof || '')} ${receiptTextForProof(proof, root)}`
+    .replace(/\s+/g, ' ')
+    .trim();
+  const hasZeroPapercut = /\b(?:zero|0|no)\s+(?:new\s+)?papercuts?\b|\bzero[- ]papercut\b/i.test(corpus);
+  const hasEndToEnd = /\bend[- ]to[- ]end\b|\bfull\s+(?:fresh[- ](?:laptop|environment)\s+)?pass\b|\bfresh[- ](?:laptop|environment|install)\b|\bclean\s+temp\s+home\b|\bnpm\s+pack\b/i.test(corpus);
+  const hasSelfLanded = /\bself[- ]landed\b|\bfirst\s+self[- ]landed\s+task\b|\btask\s+reaches\s+done\b|\binstall\b.{0,120}\binit\b.{0,120}\bmission\b.{0,120}\b(?:self[- ]landed|task)\b/i.test(corpus);
+  return hasZeroPapercut && hasEndToEnd && hasSelfLanded ? null : MISSION_XP_END_TO_END_DETAIL;
+}
+
+function missionXpProofBoundaryEvaluation(task, proofOverride = null) {
+  if (!goldenPathMissionXpTask(task)) return null;
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const proof = proofOverride === null
+    ? String(review.proof || metadata.latest_agent_proof || '').trim()
+    : String(proofOverride || '').trim();
+  const issue = missionXpEndToEndProofIssue(task, proof, task.workspace_root || process.cwd());
+  if (!issue) return null;
+  return {
+    eligible: false,
+    ref: taskRef(task),
+    reason: MISSION_XP_END_TO_END_REASON,
+    next_action: 'attach the zero-papercut end-to-end fresh-laptop receipt, then resubmit Mission XP proof',
+    proof,
+  };
+}
+
 function requireMeaningfulTaskProof(label, proof, { required = true } = {}) {
   const issue = meaningfulTaskProofIssue(proof, { required });
   if (issue) failTask(label, 'weak_proof', `meaningful proof required: ${issue}`);
@@ -692,6 +766,8 @@ function certifiedReviewNextAction(nextTaskTitle) {
 }
 
 function proofBoundaryBlockedEvaluation(task) {
+  const missionXpBoundary = missionXpProofBoundaryEvaluation(task);
+  if (missionXpBoundary) return missionXpBoundary;
   const evaluation = evaluateAutoAccept(task, { strictVerify: false, minPasses: 0 });
   return evaluation && evaluation.reason === 'proof_unmerged_or_draft_pr_boundary'
     ? evaluation
@@ -1521,7 +1597,10 @@ function reviewHandoffForTask(task, { suppressExistingFollowUp = false, hasExist
   if (proofBoundary) {
     handoff.reason = proofBoundary.reason;
     handoff.next_action_detail = proofBoundary.next_action || null;
-    handoff.revise_command = `atris task revise ${taskRef(task)} --note "<replace stale PR proof with merged proof or move back to Do>"`;
+    const note = proofBoundary.reason === MISSION_XP_END_TO_END_REASON
+      ? '<attach zero-papercut end-to-end fresh-laptop receipt or move back to Do>'
+      : '<replace stale PR proof with merged proof or move back to Do>';
+    handoff.revise_command = `atris task revise ${taskRef(task)} --note "${note}"`;
   } else if (agentCertified && nextTask && !hasExistingFollowUp) {
     handoff.next_task = nextTask;
     handoff.continue_work_command = continueWorkCommandForTask(task);
@@ -4786,6 +4865,11 @@ function cmdAcceptGroup(args) {
     const isVerified = verifiedIds.has(task.id);
     const proof = String(task.review?.proof || task.metadata?.latest_agent_proof || '').trim()
       || `Accepted via group spot-check (${groupLabel}); human ${actor} verified ${verifiedIds.size}/${group.length}.`;
+    const missionXpIssue = missionXpEndToEndProofIssue(task, proof, taskDb.workspaceRoot());
+    if (missionXpIssue) {
+      accepted.push({ id: task.id, ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue });
+      continue;
+    }
     const done = taskDb.doneTask(db, {
       id: task.id,
       status: 'done',
@@ -5503,7 +5587,7 @@ function cmdNext(args) {
       const continueWorkCommand = handoff.next_action === 'continue_work'
         ? continueWorkCommandForTask(reviewTask, { owner })
         : null;
-      const nextAgentAction = handoff.next_action === 'human_accept_waiting'
+      const nextAgentAction = handoff.next_action === 'human_accept_waiting' && !scoped
         ? readEndgameAgentAction(taskDb.workspaceRoot(), owner, { tasks: projection.tasks || [] })
         : null;
       if (hasFlag(args, '--create-next')) {
@@ -7322,6 +7406,10 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     if (proofIssue) {
       throw taskStepError(proof ? 'weak_proof' : 'proof_required', `meaningful proof required: ${proofIssue}`, { status: 400, exitCode: 2, page: actionPage });
     }
+    const missionXpIssue = missionXpEndToEndProofIssue(task, proof, task.workspace_root || process.cwd());
+    if (missionXpIssue) {
+      throw taskStepError(MISSION_XP_END_TO_END_REASON, missionXpIssue, { status: 409, exitCode: 1, page: actionPage });
+    }
     const lesson = String(options.lesson || '');
     const nextTask = String(options.nextTask || '');
     const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, { actor, proof });
@@ -7341,7 +7429,10 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
   } else if (current === 'review' && task.status === 'review') {
     const handoffState = reviewHandoffForTask(task, { suppressExistingFollowUp: true });
     if (handoffState && handoffState.next_action === PROOF_BOUNDARY_BLOCKED_ACTION) {
-      throw taskStepError(PROOF_BOUNDARY_BLOCKED_REASON, 'atris task step: Review proof cites an open/draft/unmerged PR boundary; revise the row before further stepping', { status: 409, exitCode: 1, page: actionPage });
+      const detail = handoffState.reason === MISSION_XP_END_TO_END_REASON
+        ? `atris task step: ${MISSION_XP_END_TO_END_DETAIL}`
+        : 'atris task step: Review proof cites an open/draft/unmerged PR boundary; revise the row before further stepping';
+      throw taskStepError(PROOF_BOUNDARY_BLOCKED_REASON, detail, { status: 409, exitCode: 1, page: actionPage });
     }
     if (handoffState && (handoffState.next_action === 'continue_work' || handoffState.next_action === 'human_accept_waiting')) {
       const reason = handoffState.next_action === 'continue_work'
@@ -7466,9 +7557,13 @@ function runCurrentTaskStep(taskDb, db, { owner = DEFAULT_OWNER, reviewer = 'cod
     throw error;
   }
   if (nextActionKey === PROOF_BOUNDARY_BLOCKED_ACTION) {
+    const boundaryReason = current.page?.review?.handoff?.reason || current.selected?.review?.handoff?.reason || '';
+    const detail = boundaryReason === MISSION_XP_END_TO_END_REASON
+      ? `atris task current-step: ${MISSION_XP_END_TO_END_DETAIL}`
+      : 'atris task current-step: selected Review row has stale/open/draft/unmerged PR proof; revise it instead of accepting or auto-stepping';
     const error = taskStepError(
       PROOF_BOUNDARY_BLOCKED_REASON,
-      'atris task current-step: selected Review row has stale/open/draft/unmerged PR proof; revise it instead of accepting or auto-stepping',
+      detail,
       {
         status: 409,
         exitCode: 1,
@@ -7888,6 +7983,11 @@ function cmdReady(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
+  const beforeTask = taskDetail(taskDb, db, taskId);
+  const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
+  if (missionXpIssue) {
+    failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
+  }
   const resultTrace = buildAutomaticResultTrace(taskDb, db, taskId, {
     actor,
     proof: String(proof),
@@ -7995,6 +8095,10 @@ async function cmdAccept(args) {
     process.exit(2);
   }
   requireMeaningfulTaskProof('atris task accept', proof);
+  const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
+  if (missionXpIssue) {
+    failTask('atris task accept', MISSION_XP_END_TO_END_REASON, missionXpIssue);
+  }
   const readyReview = beforeTask?.review || {};
   const clearLesson = hasEmptyFlagValue(args, '--lesson');
   const clearNextTask = hasEmptyFlagValue(args, '--next');
@@ -8094,6 +8198,11 @@ function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
 }
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '' }) {
+  const task = taskDetail(taskDb, db, taskId);
+  const missionXpIssue = missionXpEndToEndProofIssue(task, proof, taskDb.workspaceRoot());
+  if (missionXpIssue) {
+    return { ok: false, reason: MISSION_XP_END_TO_END_REASON, detail: missionXpIssue };
+  }
   const done = taskDb.doneTask(db, {
     id: taskId,
     status: 'done',
@@ -8190,6 +8299,11 @@ function cmdCertifyVerified(args) {
     const tag = String(task.tag || '').toLowerCase();
     if (DENIED_TAGS.has(tag)) {
       results.push({ ref, action: 'skipped', reason: `denied_tag_${tag}` });
+      continue;
+    }
+    const proofBoundary = proofBoundaryBlockedEvaluation(task);
+    if (proofBoundary) {
+      results.push({ ref, action: 'skipped', reason: proofBoundary.reason });
       continue;
     }
     // Skip only rows the accept lane can already land, or rows blocked by
@@ -8318,6 +8432,11 @@ function cmdAutoAcceptCertified(args) {
       continue;
     }
     const evaluation = evaluateAutoAccept(task, { strictVerify });
+    const proofBoundary = proofBoundaryBlockedEvaluation(task);
+    if (proofBoundary) {
+      results.push({ ...proofBoundary, action: 'skipped' });
+      continue;
+    }
     if (!evaluation.eligible) {
       results.push({ ...evaluation, action: 'skipped' });
       continue;
