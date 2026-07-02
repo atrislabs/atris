@@ -14,12 +14,14 @@
 // ATRIS_RUNNER_PROFILE always beat the file.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   RUNNER_PROFILE_DEFS,
   RUNNER_PROFILE_ALIASES,
   RUNNER_PROFILE_NAMES,
+  buildRunnerCommand,
 } = require('../lib/runner-command');
 
 const HOUSE_ENGINE = 'atris-fast';
@@ -108,10 +110,145 @@ function printRoster(root) {
   console.log('');
 }
 
+// Preflight: run one engine CLI headless with a reply-OK prompt and report
+// pass/fail. A dead login, missing binary, or hung spawn is a one-command
+// diagnosis instead of a failed overnight flight. `name` is canonical.
+const PROBE_PROMPT = 'Reply with exactly the two characters: OK';
+// Real engines think before replying: cursor measured at ~68s for a one-word
+// answer on 2026-07-02. 30s produced a false FAIL on a healthy engine.
+const PROBE_DEFAULT_TIMEOUT_MS = 120000;
+
+function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
+  const def = RUNNER_PROFILE_DEFS[name];
+  if (!binInstalled(def.bin)) {
+    return {
+      engine: name,
+      bin: def.bin,
+      pass: false,
+      reason: 'not-installed',
+      message: `${def.bin} CLI not installed`,
+      stdout: '',
+      stderr: '',
+      durationMs: 0,
+    };
+  }
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-probe-'));
+  const promptFile = path.join(tmpDir, 'prompt.txt');
+  fs.writeFileSync(promptFile, `${PROBE_PROMPT}\n`);
+  let cmd;
+  const prevProfile = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = name;
+  try {
+    cmd = buildRunnerCommand({ promptFile });
+  } finally {
+    if (prevProfile === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = prevProfile;
+  }
+  const start = Date.now();
+  let res;
+  try {
+    res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8', timeout });
+  } catch (err) {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    return {
+      engine: name,
+      bin: def.bin,
+      pass: false,
+      reason: 'spawn-error',
+      message: String(err && err.message ? err.message : err),
+      stdout: '',
+      stderr: '',
+      durationMs: Date.now() - start,
+    };
+  }
+  const durationMs = Date.now() - start;
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  const stdout = res.stdout || '';
+  const stderr = res.stderr || '';
+  const timedOut = res.status === null && Boolean(res.signal) && String(res.signal).toLowerCase().includes('term');
+  const combined = `${stdout}\n${stderr}`.trim();
+  const ok = res.status === 0 && /OK/i.test(combined);
+  let reason;
+  if (ok) reason = 'ok';
+  else if (timedOut) reason = 'timeout';
+  else if (res.status !== 0 && res.status !== null) reason = 'bad-exit';
+  else if (!/OK/i.test(combined)) reason = 'no-ok';
+  else reason = 'unknown';
+  return {
+    engine: name,
+    bin: def.bin,
+    pass: ok,
+    reason,
+    message: ok
+      ? 'responded OK'
+      : (timedOut ? `no reply within ${timeout}ms` : `did not reply OK (exit ${res.status}, signal ${res.signal})`),
+    stdout,
+    stderr,
+    durationMs,
+  };
+}
+
+function runEngineTest(targets, { json, root } = {}) {
+  let enginesToTest;
+  if (targets && targets.length) {
+    enginesToTest = targets.map((n) => {
+      const c = canonicalEngineName(n);
+      if (!c) {
+        throw new Error(`Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`);
+      }
+      return c;
+    });
+  } else {
+    enginesToTest = RUNNER_PROFILE_NAMES.filter((n) => binInstalled(RUNNER_PROFILE_DEFS[n].bin));
+    if (!enginesToTest.length) {
+      if (json) {
+        console.log(JSON.stringify({ ok: false, results: [], summary: { pass: 0, fail: 0 } }, null, 2));
+      } else {
+        console.error('\n  no installed engines to test\n');
+      }
+      return 1;
+    }
+  }
+  const results = enginesToTest.map((name) => probeEngine(name));
+  const failures = results.filter((r) => !r.pass);
+  const passed = results.length - failures.length;
+  if (json) {
+    console.log(JSON.stringify({
+      ok: failures.length === 0,
+      results,
+      summary: { pass: passed, fail: failures.length },
+    }, null, 2));
+  } else {
+    console.log('');
+    for (const r of results) {
+      const mark = r.pass ? '✓' : '✗';
+      const line = r.pass
+        ? `  ${mark} ${r.engine.padEnd(12)} pass — ${r.message} (${r.durationMs}ms)`
+        : `  ${mark} ${r.engine.padEnd(12)} FAIL — ${r.message}`;
+      if (r.pass) console.log(line);
+      else console.error(line);
+    }
+    console.log('');
+    if (failures.length) {
+      console.error(`  ${failures.length} engine${failures.length === 1 ? '' : 's'} failed: ${failures.map((f) => f.engine).join(', ')}`);
+      console.error(`  fix the login/binary, then re-run: atris engine test${targets && targets.length ? ' ' + targets.join(' ') : ''}`);
+    } else {
+      console.log(`  all engines responded — clear for flight`);
+    }
+    console.log('');
+  }
+  return failures.length ? 1 : 0;
+}
+
 function engineCommand(args = []) {
   const json = args.includes('--json');
-  const sub = (args.find((a) => !a.startsWith('--')) || '').trim();
+  const positional = args.filter((a) => !a.startsWith('--'));
+  const sub = (positional[0] || '').trim();
   const root = process.cwd();
+
+  if (sub === 'test') {
+    return runEngineTest(positional.slice(1), { json, root });
+  }
 
   if (!sub || sub === 'list' || sub === 'status') {
     if (json) {
@@ -132,7 +269,7 @@ function engineCommand(args = []) {
   }
 
   if (sub === 'help') {
-    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+    console.log('\n  atris engine            roster + current default\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
     return 0;
   }
 
@@ -156,5 +293,7 @@ module.exports = {
   setEngine,
   resetEngine,
   roster,
+  probeEngine,
+  runEngineTest,
   HOUSE_ENGINE,
 };

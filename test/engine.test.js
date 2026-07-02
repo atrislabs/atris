@@ -121,3 +121,122 @@ test('house default is atris-fast and profile templates stay engine-shaped', () 
   // claude rides the default claude-shaped spawn, no template needed
   assert.equal(RUNNER_PROFILES.claude.commandTemplate, '');
 });
+
+function makeBinDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-bin-'));
+}
+
+function writeFakeBin(binDir, name, body) {
+  const p = path.join(binDir, name);
+  fs.writeFileSync(p, body);
+  fs.chmodSync(p, 0o755);
+  return p;
+}
+
+// Preflight regression: `atris engine test` runs the engine CLI headless with
+// a reply-OK prompt and reports pass/fail per engine. A clean PATH keeps the
+// test deterministic regardless of which engines are installed on the host.
+const CLEAN_PATH = '/usr/bin:/bin';
+
+test('engine test <name> exits 0 with a pass line when the CLI replies OK', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho OK\n');
+  try {
+    const res = runCli(['engine', 'test', 'cursor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /cursor/i);
+    assert.match(res.stdout, /pass/i);
+    assert.match(res.stdout, /clear for flight|responded/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('engine test <name> exits nonzero naming the failing engine when it cannot reply', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho "broken login"\nexit 1\n');
+  try {
+    const res = runCli(['engine', 'test', 'cursor'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.notEqual(res.status, 0);
+    const combined = `${res.stdout}\n${res.stderr}`;
+    assert.match(combined, /cursor/);
+    assert.match(combined, /FAIL/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('engine test <name> exits nonzero naming the engine when its CLI is not installed', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['engine', 'test', 'cursor'], dir, { PATH: CLEAN_PATH });
+    assert.notEqual(res.status, 0);
+    const combined = `${res.stdout}\n${res.stderr}`;
+    assert.match(combined, /cursor/);
+    assert.match(combined, /not installed|FAIL/i);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('engine test --json reports a per-engine pass/fail shape', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho OK\n');
+  writeFakeBin(binDir, 'codex', '#!/bin/sh\necho "nope"\nexit 1\n');
+  try {
+    const res = runCli(['engine', 'test', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, false);
+    assert.ok(Array.isArray(parsed.results));
+    assert.equal(parsed.summary.fail, 1);
+    assert.equal(parsed.summary.pass, 1);
+    const cursor = parsed.results.find((r) => r.engine === 'cursor');
+    const codex = parsed.results.find((r) => r.engine === 'codex');
+    assert.ok(cursor, 'cursor result present');
+    assert.equal(cursor.pass, true);
+    assert.equal(cursor.reason, 'ok');
+    assert.ok(codex, 'codex result present');
+    assert.equal(codex.pass, false);
+    assert.ok(['bad-exit', 'no-ok'].includes(codex.reason));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('engine test --json on a single passing engine reports ok:true', () => {
+  const dir = makeTempDir();
+  const binDir = makeBinDir();
+  writeFakeBin(binDir, 'cursor-agent', '#!/bin/sh\necho OK\n');
+  try {
+    const res = runCli(['engine', 'test', 'cursor', '--json'], dir, { PATH: `${binDir}:${CLEAN_PATH}` });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.results.length, 1);
+    assert.equal(parsed.results[0].engine, 'cursor');
+    assert.equal(parsed.results[0].pass, true);
+    assert.equal(parsed.summary.pass, 1);
+    assert.equal(parsed.summary.fail, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('engine test rejects an unknown engine name fast', () => {
+  const dir = makeTempDir();
+  try {
+    const res = runCli(['engine', 'test', 'gpt-11'], dir, { PATH: CLEAN_PATH });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /Unknown engine "gpt-11"/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
