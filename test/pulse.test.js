@@ -338,6 +338,20 @@ test('buildCrontabLine rejects invalid human cadence shorthands', () => {
   assert.throws(() => pulse.buildCrontabLine({ cron: 'soon', scriptPath: '/x/tick.sh' }), /invalid cadence/);
 });
 
+test('pulse installer resolves the checkout CLI before a stale global atris', () => {
+  const root = tmpRoot();
+  try {
+    const binDir = path.join(root, 'bin');
+    const bin = path.join(binDir, 'atris.js');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(bin, '#!/usr/bin/env node\n', { mode: 0o755 });
+    const { resolveAtrisBin } = require('../commands/pulse');
+    assert.equal(resolveAtrisBin(root), bin);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('normalizeExpiryDuration accepts hours for short overnight runs', () => {
   assert.deepEqual(pulse.normalizeExpiryDuration({ hours: '6', days: '7' }), {
     source: 'hours',

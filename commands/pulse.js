@@ -366,11 +366,16 @@ function statusCommand(args, root = process.cwd()) {
 
 // --- atris pulse install / uninstall ---
 
-function resolveAtrisBin() {
-  // Prefer a globally linked `atris`; fall back to this checkout's bin.
+function resolveAtrisBin(root = process.cwd()) {
+  // The heartbeat must run the checkout that installed it. A stale global
+  // `atris` can make cron look alive while calling old command surfaces.
+  const checkoutBin = path.join(root, 'bin', 'atris.js');
+  if (fs.existsSync(checkoutBin)) return checkoutBin;
+  const packageBin = path.join(__dirname, '..', 'bin', 'atris.js');
+  if (fs.existsSync(packageBin)) return packageBin;
   const which = spawnSync('which', ['atris'], { encoding: 'utf8', timeout: 8000 });
   if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
-  return `${process.execPath} ${path.join(__dirname, '..', 'bin', 'atris.js')}`;
+  return 'atris';
 }
 
 // The dirs holding the binaries the engine spawns by bare name (claude, node,
@@ -443,7 +448,7 @@ function installCommand(args, root = process.cwd()) {
   const pathDirs = resolveEngineBinDirs([runnerBin]);
   const script = pulse.buildTickScript({
     root,
-    atrisBin: resolveAtrisBin(),
+    atrisBin: resolveAtrisBin(root),
     stateHome: STATE_HOME,
     deadlineEpoch,
     model,
@@ -561,5 +566,6 @@ module.exports = {
   runEngine,
   gitChangedFiles,
   runVerify,
+  resolveAtrisBin,
   STATE_HOME,
 };
