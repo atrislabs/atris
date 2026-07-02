@@ -128,7 +128,16 @@ function isOptionValue(args, index, optionNames) {
 
 function applyRunnerFlags(args) {
   const runnerProfile = readOptionArg(args, '--runner-profile');
-  if (runnerProfile) process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+  if (runnerProfile) {
+    // Fail fast at the CLI boundary: an unknown profile otherwise stays silent
+    // until a heartbeat spawn resolves it mid-loop (silent overnight outage).
+    const { RUNNER_PROFILES, RUNNER_PROFILE_NAMES } = require('../lib/runner-command');
+    if (!Object.prototype.hasOwnProperty.call(RUNNER_PROFILES, runnerProfile)) {
+      console.error(`Unknown --runner-profile "${runnerProfile}". Known profiles: ${RUNNER_PROFILE_NAMES.join(', ')}.`);
+      process.exit(1);
+    }
+    process.env.ATRIS_RUNNER_PROFILE = runnerProfile;
+  }
   const runnerBin = readOptionArg(args, '--runner-bin');
   if (runnerBin) {
     process.env.ATRIS_RUNNER_BIN = runnerBin;
@@ -885,7 +894,7 @@ function showAutopilotHelp() {
   console.log('  --runner-bin PATH       Runner binary for this run');
   console.log('  --runner-template CMD   Runner command template for this run');
   console.log('  --runner-model MODEL    Runner model for this run');
-  console.log('  --runner-profile NAME   Runner profile for this run (e.g. atris-fast)');
+  console.log(`  --runner-profile NAME   Runner profile for this run (one of: ${require('../lib/runner-command').RUNNER_PROFILE_NAMES.join(', ')})`);
   console.log('');
   console.log('Examples:');
   console.log('  atris autopilot                        # Suggest from existing work');
@@ -1849,7 +1858,8 @@ if (command === 'init') {
     console.log('');
     console.log('Legacy options (with --legacy):');
     console.log('  --cycles=N --once --verbose --dry-run --timeout=N --no-push');
-    console.log('  --runner-bin / --runner-template / --runner-model / --runner-profile');
+    console.log('  --runner-bin PATH / --runner-template CMD / --runner-model MODEL');
+    console.log(`  --runner-profile NAME   Runner profile for this run (one of: ${require('../lib/runner-command').RUNNER_PROFILE_NAMES.join(', ')})`);
     console.log('');
     console.log('Subcommands:');
     console.log('  atris run logs [--tail N] [--cat FILE] [--json]  Browse glass run logs');
@@ -1862,13 +1872,14 @@ if (command === 'init') {
     process.exit(0);
   }
 
+  applyRunnerFlags(args);
+
   if (args.includes('--legacy')) {
     const legacyArgs = args.filter(a => a !== '--legacy');
     const verbose = legacyArgs.includes('--verbose') || legacyArgs.includes('-v');
     const dryRun = legacyArgs.includes('--dry-run');
     const once = legacyArgs.includes('--once');
     const push = !legacyArgs.includes('--no-push');
-    applyRunnerFlags(legacyArgs);
     const cyclesArg = legacyArgs.find(a => a.startsWith('--cycles='));
     const maxCycles = cyclesArg ? parseInt(cyclesArg.split('=')[1]) : 5;
     const timeoutArg = legacyArgs.find(a => a.startsWith('--timeout='));
@@ -1893,6 +1904,8 @@ if (command === 'init') {
   process.exit(code);
 } else if (command === 'autopilot') {
   const args = process.argv.slice(3);
+  applyRunnerFlags(args);
+
   if (args.includes('--legacy')) {
     const legacyArgs = args.filter(a => a !== '--legacy');
     if (legacyArgs.includes('--help') || legacyArgs.includes('-h') || legacyArgs[0] === 'help') {
@@ -1904,7 +1917,6 @@ if (command === 'init') {
     const verbose = legacyArgs.includes('--verbose') || legacyArgs.includes('-v');
     const dryRun = legacyArgs.includes('--dry-run');
     const auto = legacyArgs.includes('--auto');
-    applyRunnerFlags(legacyArgs);
     const maxIterationsArg = legacyArgs.find(a => a.startsWith('--iterations='));
     const maxIterations = maxIterationsArg ? parseInt(maxIterationsArg.split('=')[1]) : undefined;
     const durationArg = legacyArgs.find(a => a.startsWith('--duration='));

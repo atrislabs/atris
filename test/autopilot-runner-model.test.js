@@ -97,11 +97,11 @@ test('run and autopilot expose runner flags through the bin router', () => {
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_COMMAND_TEMPLATE = runnerTemplate/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_RUNNER_MODEL = runnerModel/);
   assert.match(BIN_SRC, /process\.env\.ATRIS_CLAUDE_MODEL = runnerModel/);
-  // Legacy loops keep runner flags behind --legacy; the default paths are
-  // mission front doors (run-front / autopilot-front).
-  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(legacyArgs\)[\s\S]*runAtris/);
+  // Runner flags validate before the legacy/front split, so bad config fails at
+  // the CLI boundary for both old runner loops and new mission front doors.
+  assert.match(BIN_SRC, /command === 'run'[\s\S]*applyRunnerFlags\(args\)[\s\S]*runAtris/);
   assert.match(BIN_SRC, /command === 'run'[\s\S]*runMissionFront/);
-  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(legacyArgs\)[\s\S]*autopilotAtris/);
+  assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*applyRunnerFlags\(args\)[\s\S]*autopilotAtris/);
   assert.match(BIN_SRC, /command === 'autopilot'[\s\S]*autopilotFront/);
   assert.match(BIN_SRC, /--runner-bin/);
   assert.match(BIN_SRC, /--runner-template/);

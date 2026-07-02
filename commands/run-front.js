@@ -7,7 +7,18 @@ const { spawnSync } = require('child_process');
 
 const CLI_PATH = path.join(__dirname, '..', 'bin', 'atris.js');
 
-const RUN_VALUE_FLAGS = new Set(['--owner', '--cadence', '--minutes', '--hours', '--max-ticks', '--max-wall']);
+const RUN_VALUE_FLAGS = new Set([
+  '--owner',
+  '--cadence',
+  '--minutes',
+  '--hours',
+  '--max-ticks',
+  '--max-wall',
+  '--runner-bin',
+  '--runner-template',
+  '--runner-model',
+  '--runner-profile',
+]);
 
 function readValueFlag(args, name) {
   const index = args.indexOf(name);
