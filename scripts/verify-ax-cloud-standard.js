@@ -39,10 +39,11 @@ const WORKSPACE_PROMPTS = [
   'what did Atris ship last night? give me the highlights in plain words',
   'summarize the journal from yesterday',
 ];
-// GitHub connector phrasing stays cloud even inside a workspace — only
-// local-checkout wording (commit/branch/change) claims the local lane.
+// GitHub connector reads stay cloud even inside a workspace. Repo-shaped work
+// such as push/pull/commit routes local inside a checkout and cloud outside.
 assert.equal(ax.resolveRoute('what github repos do I have?', { cwd: repoRoot }), 'cloud');
-assert.equal(ax.resolveRoute('push something to github', { cwd: repoRoot }), 'cloud');
+assert.equal(ax.resolveRoute('push something to github', { cwd: repoRoot }), 'local');
+assert.equal(ax.resolveRoute('push something to github', { cwd: bareCwd }), 'cloud');
 const CHAT_PROMPTS = [
   'write an essay about the product',
   'plan my morning',
