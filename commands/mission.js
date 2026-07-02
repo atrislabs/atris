@@ -5418,7 +5418,10 @@ function spawnClaudeTick(mission, opts) {
     else if (sessionMode === 'resume') args.push('--resume', sessionId);
 
     const startedAt = Date.now();
-    const proc = spawn(resolveClaudeRunnerBin(), args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    // detached: the runner spawns its own children; killing only the direct
+    // child on timeout leaves them holding the session lock, and the next
+    // tick's resume fails with "Session ID ... is already in use".
+    const proc = spawn(resolveClaudeRunnerBin(), args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -5435,8 +5438,11 @@ function spawnClaudeTick(mission, opts) {
     let aborted = false;
 
     const kill = (reason) => {
-      try { proc.kill('SIGTERM'); } catch {}
-      setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3000).unref();
+      const killGroup = (sig) => {
+        try { process.kill(-proc.pid, sig); } catch { try { proc.kill(sig); } catch {} }
+      };
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 3000).unref();
     };
     const timer = setTimeout(() => { timedOut = true; kill('timeout'); }, timeoutMs);
     const onAbort = () => { aborted = true; kill('aborted'); };
@@ -5792,6 +5798,20 @@ async function runMission(args) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
           let reason = claudeResult.timedOut ? 'claude-timeout' : 'claude-error';
           if (deadModel) { reason = 'model-unavailable'; result.model_unavailable = deadModel; }
+          // A killed tick (usually claude-timeout) can leave the session lock
+          // held, so the next resume fails with "already in use". Session
+          // continuity is disposable — mission state lives on disk (receipts,
+          // logs, now.md) — so rotate to a fresh id instead of grinding the
+          // repeated-error breaker on a stale lock.
+          if (/session id .* is already in use/i.test(claudeResult.stderr || '')) {
+            reason = 'claude-session-busy';
+            pendingSessionId = crypto.randomUUID();
+            sessionId = null;
+            mission = saveMission(
+              { ...mission, claude_session_id: null, pending_session_id: pendingSessionId },
+              cwd, 'mission_session_rotated', { reason: 'session-lock-busy', session_id: pendingSessionId },
+            ).mission;
+          }
           result = { ...result, status: 'errored', reason };
         } else {
           // Promote pending session id ONLY if claude confirmed the exact UUID we requested.
@@ -5918,7 +5938,10 @@ async function runMission(args) {
       if (result.status === 'ran') {
         ranTicks++;
         backoffAttempt = 0;
-      } else if (result.status === 'errored') {
+      } else if (result.status === 'errored' && result.reason !== 'claude-session-busy') {
+        // A rotated session is already healed — the next tick starts on a
+        // fresh id, so backing off just burns wall clock. If rotation itself
+        // keeps failing, the repeated-error breaker below still stops the run.
         backoffAttempt++;
       }
 
@@ -5938,7 +5961,7 @@ async function runMission(args) {
 
       // Sleep until next tick
       let sleepMs = 0;
-      if (result.status === 'errored') {
+      if (result.status === 'errored' && result.reason !== 'claude-session-busy') {
         sleepMs = computeBackoff(MISSION_RUN_DEFAULTS.backoff, backoffAttempt);
       } else if (cadenceSeconds > 0) {
         sleepMs = cadenceSeconds * 1000;

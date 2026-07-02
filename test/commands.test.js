@@ -3810,6 +3810,77 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
   }
 });
 
+test('stale session lock rotates to a fresh session instead of grinding the error breaker', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    const busyMarker = path.join(dir, 'resume-failed-once');
+    // The first --resume fails the way a killed tick's stale lock does; every
+    // other call succeeds and confirms the requested session id. A run that
+    // rotates recovers on the next tick; one that keeps resuming the locked id
+    // would have died here before the rotation existed.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      'mode=""; sid=""; prev=""',
+      'for a in "$@"; do',
+      '  if [ "$prev" = "--session-id" ]; then mode=set; sid="$a"; fi',
+      '  if [ "$prev" = "--resume" ]; then mode=resume; sid="$a"; fi',
+      '  prev="$a"',
+      'done',
+      `if [ "$mode" = "resume" ] && [ ! -f "${busyMarker}" ]; then`,
+      `  touch "${busyMarker}"`,
+      '  echo "Error: Session ID $sid is already in use." >&2',
+      '  exit 1',
+      'fi',
+      'echo "{\\"type\\":\\"result\\",\\"is_error\\":false,\\"result\\":\\"did work\\",\\"session_id\\":\\"$sid\\"}"',
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const start = runCli([
+      'mission', 'start', 'stale session lock rotates instead of pausing',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(1)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    // tick 1 ran (verifier fail), tick 2 hit the lock and rotated, ticks 3-4
+    // ran on the fresh session until the verifier breaker stopped the run.
+    // Without rotation the resume error repeats and the run pauses at
+    // repeated-error:claude-error after tick 3.
+    assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
+    assert.equal(payload.tick_count, 4);
+    assert.equal(payload.ran_ticks, 3);
+
+    // The rotation is visible as the busy tick's dedicated reason; without it
+    // the tick records plain claude-error and no fresh session id ever appears.
+    const stateLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8');
+    assert.match(stateLog, /claude-session-busy/);
+    const sessionIds = new Set([...stateLog.matchAll(/"claude_session_id":"([0-9a-f-]+)"/g)].map((m) => m[1]));
+    assert.equal(sessionIds.size, 2, `expected a rotated second session id, saw: ${[...sessionIds].join(', ')}`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
