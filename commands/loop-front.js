@@ -293,11 +293,13 @@ function renderLoopReport(rep) {
     lines.push('');
     lines.push('  in flight:');
     r.claimed.slice(0, 4).forEach((t) => lines.push(`    [~] ${t}`));
+    if (r.claimed.length > 4) lines.push(`    ... and ${r.claimed.length - 4} more`);
   }
   if (r.open.length) {
     lines.push('');
     lines.push('  next up:');
     r.open.slice(0, 4).forEach((t) => lines.push(`    [ ] ${t}`));
+    if (r.open.length > 4) lines.push(`    ... and ${r.open.length - 4} more`);
   }
   if (Array.isArray(rep.next_moves) && rep.next_moves.length) {
     lines.push('');

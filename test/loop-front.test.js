@@ -166,6 +166,27 @@ test('loopReport groups roadmap state and renders without an em dash', () => {
   }
 });
 
+// Regression: the report header counts every roadmap item, but the lists cap at
+// a few rows. When "in flight" / "next up" overflow, they must show an overflow
+// hint (like "handled:" already does) so the list never silently disagrees with
+// the header count.
+test('renderLoopReport shows an overflow hint when in-flight/queued lists are truncated', () => {
+  const rep = {
+    roadmap: {
+      done: [],
+      claimed: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'],
+      open: ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7'],
+    },
+    next_moves: [],
+    pulse: null,
+    local_runs: { count: 0 },
+  };
+  const out = renderLoopReport(rep);
+  assert.match(out, /6 in flight, 7 queued/);
+  assert.match(out, /in flight:[\s\S]*\.\.\. and 2 more/);
+  assert.match(out, /next up:[\s\S]*\.\.\. and 3 more/);
+});
+
 test('loop ranked source combines roadmap, active missions, and endgame', () => {
   const dir = makeTempDir();
   try {
