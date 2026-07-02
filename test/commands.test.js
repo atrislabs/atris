@@ -722,6 +722,14 @@ test('worktree ship requires a message for dirty isolated checkout', () => {
     ], { cwd: repo }).status, 0);
     fs.appendFileSync(path.join(worktreePath, 'README.md'), 'changed\n');
 
+    const help = runCli(['worktree', 'ship', '--help'], { cwd: worktreePath });
+    assert.equal(help.status, 0, help.stderr || help.stdout);
+    assert.match(help.stdout, /Usage: atris worktree ship --message/);
+    assert.doesNotMatch(help.stderr, /--message is required/);
+    const afterHelpStatus = runGit(['status', '--short'], worktreePath);
+    assert.match(afterHelpStatus, /README\.md/);
+    assert.match(afterHelpStatus, /\?\? \.atris\//);
+
     const res = runCli(['worktree', 'ship', '--verify', 'git status --short', '--dry-run', '--no-pr'], { cwd: worktreePath });
 
     assert.equal(res.status, 2);
@@ -11655,6 +11663,66 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
   }
 });
 
+test('task next scoped by tag does not surface unrelated Endgame fallback', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'onboarding' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), [
+      '# TODO.md',
+      '',
+      '## Endgame',
+      '',
+      '**Slug:** runner-swap-safe',
+      '**Horizon:** runner swaps should be config-only, not overnight outages',
+      '',
+      '## Backlog',
+      '',
+      '(empty)',
+      '',
+    ].join('\n'), 'utf8');
+
+    const created = runCli(['task', 'new', 'Golden path certified checkpoint', '--tag', 'golden-path', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --test test/commands.test.js passed', '--as', 'onboarding'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli([
+      'task', 'review', ref,
+      '--reward', '0',
+      '--as', 'codex-review',
+      '--proof', 'node --test test/commands.test.js passed during certification',
+    ], { cwd: dir, env }).status, 0);
+
+    const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(scopedNext.status, 0, scopedNext.stderr);
+    const payload = JSON.parse(scopedNext.stdout);
+    assert.equal(payload.action, 'human_accept_waiting');
+    assert.equal(payload.scope.tag, 'golden-path');
+    assert.equal(payload.review_task.display_id, ref);
+    assert.equal(payload.review_task.tag, 'golden-path');
+    assert.equal(payload.next_agent_action, null);
+
+    const scopedText = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
+    assert.equal(scopedText.status, 0, scopedText.stderr);
+    assert.match(scopedText.stdout, /No open tasks for tag=golden-path/);
+    assert.match(scopedText.stdout, /ready for approval/);
+    assert.match(scopedText.stdout, /No next agent task is attached/);
+    assert.doesNotMatch(scopedText.stdout, /Create the next bounded task/);
+    assert.doesNotMatch(scopedText.stdout, /runner swaps should be config-only/);
+    assert.doesNotMatch(scopedText.stdout, /Create: atris task new/);
+
+    const scopedCreate = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--create-next', '--json'], { cwd: dir, env });
+    assert.notEqual(scopedCreate.status, 0);
+    const createPayload = JSON.parse(scopedCreate.stdout);
+    assert.equal(createPayload.reason, 'no_create_next_seed');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task next does not repeat an Endgame seed that already exists', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -13862,6 +13930,159 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
   }
 });
 
+test('task current-step rejects bookkeeping receipts for golden-path mission XP', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'onboarding', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'bookkeeping.json'), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'mission-golden-path',
+      result: {
+        landing: {
+          changed: 'Review-row bookkeeping now has a receipt.',
+          checked: 'Tick recorded; no verifier was run.',
+        },
+      },
+    }, null, 2), 'utf8');
+
+    const created = runCli([
+      'task', 'new',
+      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+      '--tag', 'agent-xp',
+      '--goal-id', 'mission-golden-path',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const ref = task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
+
+    const weakProof = 'atris/runs/bookkeeping.json';
+    const blocked = runCli([
+      'task', 'current-step',
+      '--goal-id', 'mission-golden-path',
+      '--as', 'onboarding',
+      '--proof', weakProof,
+      '--json',
+    ], { cwd: dir, env });
+    assert.notEqual(blocked.status, 0);
+    const blockedPayload = JSON.parse(blocked.stdout);
+    assert.equal(blockedPayload.reason, 'mission_xp_requires_end_to_end_receipt');
+    assert.match(blockedPayload.detail, /zero-papercut end-to-end fresh-laptop pass/);
+
+    const ready = runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', weakProof, '--json'], { cwd: dir, env });
+    assert.notEqual(ready.status, 0);
+    assert.equal(JSON.parse(ready.stdout).reason, 'mission_xp_requires_end_to_end_receipt');
+
+    const strongProof = 'zero-papercut end-to-end fresh install -> init -> first mission -> first self-landed task receipt: atris/runs/bookkeeping.json';
+    const passed = runCli([
+      'task', 'current-step',
+      '--goal-id', 'mission-golden-path',
+      '--as', 'onboarding',
+      '--proof', strongProof,
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(passed.status, 0, passed.stderr);
+    const passedPayload = JSON.parse(passed.stdout);
+    assert.equal(passedPayload.step.step_action, 'ready');
+    assert.equal(passedPayload.task.status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task review lanes block weak golden-path mission XP proof from accept', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'onboarding', ATRIS_SKIP_UPDATE_CHECK: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'bookkeeping.json'), JSON.stringify({
+      schema: 'atris.mission_receipt.v1',
+      mission_id: 'mission-golden-path',
+      result: {
+        landing: {
+          changed: 'Review-row bookkeeping now has a receipt.',
+          checked: 'Tick recorded; no verifier was run.',
+        },
+      },
+    }, null, 2), 'utf8');
+
+    const strongProof = 'zero-papercut end-to-end fresh install -> init -> first mission -> first self-landed task receipt: atris/runs/bookkeeping.json';
+    const created = runCli([
+      'task', 'new',
+      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+      '--tag', 'agent-xp',
+      '--goal-id', 'mission-golden-path',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const task = JSON.parse(created.stdout).task;
+    const ref = task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
+
+    const weakProof = 'atris/runs/bookkeeping.json';
+    const seeded = spawnSync(process.execPath, ['-e', `
+      const { DatabaseSync } = require('node:sqlite');
+      const sqlite = new DatabaseSync(process.argv[1]);
+      try {
+        const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);
+        const metadata = JSON.parse(row.metadata || '{}');
+        metadata.latest_agent_proof = process.argv[3];
+        metadata.agent_certified = true;
+        metadata.approval_status = 'pending';
+        metadata.agent_review_pass_count = 2;
+        metadata.stop_condition = 'a full fresh-environment pass completes with zero new papercuts';
+        sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);
+      } finally {
+        sqlite.close();
+      }
+    `, dbPath, task.id, weakProof], {
+      encoding: 'utf8',
+      env: { ...process.env, NODE_NO_WARNINGS: '1' },
+    });
+    assert.equal(seeded.status, 0, seeded.stderr);
+
+    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    assert.equal(reviews.status, 0, reviews.stderr);
+    const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
+    assert.equal(reviewItem.id, task.id);
+    assert.equal(reviewItem.next_action, 'proof_boundary_blocked');
+    assert.equal(reviewItem.accept_command, null);
+    assert.equal(reviewItem.blocked_accept_reason, 'mission_xp_requires_end_to_end_receipt');
+
+    const current = runCli([
+      'task', 'current',
+      '--goal-id', 'mission-golden-path',
+      '--review-state', 'proof-boundary-blocked',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(current.status, 0, current.stderr);
+    const currentPayload = JSON.parse(current.stdout);
+    assert.equal(currentPayload.current.selected_task_id, task.id);
+    assert.equal(currentPayload.current.next.key, 'proof_boundary_blocked');
+    assert.equal(currentPayload.current.next.human_accept_command, null);
+
+    const accept = runCli(['task', 'accept', ref, '--as', 'keshav', '--json'], { cwd: dir, env });
+    assert.notEqual(accept.status, 0);
+    assert.equal(JSON.parse(accept.stdout).reason, 'mission_xp_requires_end_to_end_receipt');
+
+    const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    const dryRunResult = JSON.parse(dryRun.stdout).results[0];
+    assert.equal(dryRunResult.action, 'skipped');
+    assert.equal(dryRunResult.reason, 'mission_xp_requires_end_to_end_receipt');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task serve continue-work creates scoped follow-up', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -15802,15 +16023,15 @@ test('top-level help shows local and global first-run commands', () => {
   }
 });
 
-test('fresh workspace prompt shows the npx init path for local installs', () => {
+test('fresh workspace prompt gives one primary first command plus local fallback', () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
     const res = runCli([], { cwd: dir, env: { HOME: home } });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /No atris\/ folder found/);
-    assert.match(res.stdout, /atris init\s+if Atris is installed globally/);
-    assert.match(res.stdout, /npx atris init\s+if Atris was installed in this project/);
+    assert.match(res.stdout, /^Next: atris init$/m);
+    assert.match(res.stdout, /^Local project install instead\? Run: npx atris init$/m);
     assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
     assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
