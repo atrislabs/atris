@@ -262,6 +262,26 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   }
 });
 
+test('two passes from one actor still get the independent check and land', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code' });
+    // second pass by the SAME actor: certified-looking but not landable
+    // (needs_second_reviewer_or_third_pass) until a distinct actor re-runs the check
+    const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
+    assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    assert.equal(receipt.reviews_certified, 1);
+    assert.deepEqual(receipt.landed, [id]);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick is a no-op when the policy is off', () => {
   const { base, repo } = makeTempRepo();
   try {

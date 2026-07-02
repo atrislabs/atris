@@ -8000,13 +8000,23 @@ function cmdCertifyVerified(args) {
       results.push({ ref, action: 'skipped', reason: `approval_${approval}` });
       continue;
     }
-    if (review.agent_certified === true || metadata.agent_certified === true) {
-      results.push({ ref, action: 'skipped', reason: 'already_certified' });
-      continue;
-    }
     const tag = String(task.tag || '').toLowerCase();
     if (DENIED_TAGS.has(tag)) {
       results.push({ ref, action: 'skipped', reason: `denied_tag_${tag}` });
+      continue;
+    }
+    // Skip only rows the accept lane can already land, or rows blocked by
+    // something an executed second-actor check cannot cure. A row with two
+    // passes from ONE actor is exactly what this command exists to cure —
+    // "certified" alone is not landable.
+    const evaluation = evaluateAutoAccept(task, { strictVerify: false });
+    if (evaluation.eligible) {
+      results.push({ ref, action: 'skipped', reason: 'already_landable' });
+      continue;
+    }
+    const curable = ['not_agent_certified', 'needs_second_reviewer_or_third_pass', 'insufficient_review_passes'];
+    if (!curable.includes(evaluation.reason)) {
+      results.push({ ref, action: 'skipped', reason: evaluation.reason });
       continue;
     }
     const verify = certifyVerifyCandidate(task);
