@@ -183,6 +183,7 @@ test('runFleetFlight full loop: claims, dispatches in parallel, lands serially, 
     assert.equal(flight.paused.length, 1);
     assert.equal(flight.paused[0].task, 'F-2');
     assert.ok(cliCalls.some((c) => c.startsWith('task ready F-1')));
+    assert.ok(cliCalls.find((c) => c.startsWith('task ready F-1')).includes('Receipt saved at atris/runs/fleet-'), 'ready proof must cite the flight receipt path');
     assert.ok(!cliCalls.some((c) => c.startsWith('task ready F-2')));
     // receipt on disk, no other fleet state file anywhere
     assert.ok(fs.existsSync(flight.receipt));
