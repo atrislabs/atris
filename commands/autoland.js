@@ -29,6 +29,10 @@ function operatorReady(title) {
   return OPERATOR_WHY.test(text) && !AGENT_JARGON.test(text);
 }
 
+function hasAgentJargon(text) {
+  return AGENT_JARGON.test(String(text || ''));
+}
+
 // The digest's "next, if you agree" section: top candidate moves from Atris
 // state, each with the member best suited to own it. Moves that can't explain
 // themselves are counted, not shown. Never blocks the digest.
@@ -364,4 +368,4 @@ function autolandCommand(args = []) {
   return 1;
 }
 
-module.exports = { autolandCommand, operatorReady };
+module.exports = { autolandCommand, operatorReady, hasAgentJargon };
