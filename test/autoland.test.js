@@ -86,16 +86,33 @@ test('digest and alarm compose in plain language', () => {
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', tag: 'billing', hours: 30 }],
     landed: { branches: 2, due: 1 },
     project: 'atris-cli',
+    nextMoves: [
+      { title: 'Finish the taste filters: scores should use the role weights', owner: 'auto-improver' },
+      { title: 'Give the stuck codex mission an engine or stop it', owner: null },
+    ],
   });
-  assert.match(digest, /got their final sign-off on their own/);
+  assert.match(digest, /landed on their own \(verified twice, proof on file\)/);
   assert.match(digest, /- fixed full-duration mission budget inference/);
   assert.match(digest, /- add hourly member loop/);
   assert.match(digest, /- 2 checks that the loop stops cleanly instead of inventing work/);
   assert.match(digest, /you approved 1 piece yourself/);
   assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
-  assert.match(digest, /2 pieces of work still in the air, 1 overdue/);
+  assert.match(digest, /in the air: 2 pieces, 1 overdue/);
+  assert.match(digest, /next, if you agree:/);
+  assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
+  assert.match(digest, /stuck codex mission/);
   assert.match(digest, /the full story: atris autoland digest/);
-  assert.doesNotMatch(digest, /branch|worktree|ttl|certif/i);
+  assert.doesNotMatch(digest, /branch|worktree|ttl|certif(?!ied)/i);
+
+  const quiet = autoland.composeDigest({
+    accepted: { auto: [], human: [] },
+    waiting: [],
+    landed: { branches: 2, due: 0 },
+    project: 'atris-cli',
+  });
+  assert.match(quiet, /waiting on you: nothing/);
+  assert.match(quiet, /in the air: 2 pieces, all fresh/);
+  assert.doesNotMatch(quiet, /next, if you agree/);
 
   const alarm = autoland.composeAlarm({
     waiting: [{ ref: 'CLI-9', title: 'Send invoice', hours: 30 }],

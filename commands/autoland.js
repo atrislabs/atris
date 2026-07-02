@@ -17,6 +17,22 @@ function projectName(root) {
   return path.basename(root);
 }
 
+// The digest's "next, if you agree" section: top candidate moves from Atris
+// state, each with the member best suited to own it. Never blocks the digest.
+function digestNextMoves(root) {
+  try {
+    const { nextMoves } = require('../lib/next-moves');
+    const { resolveFunctionalOwner } = require('../lib/functional-owner');
+    return (nextMoves(root, 3) || []).map((move) => {
+      let owner = null;
+      try { owner = resolveFunctionalOwner({ title: move.title, root })?.owner || null; } catch {}
+      return { title: move.title, owner };
+    });
+  } catch {
+    return [];
+  }
+}
+
 function flag(args, name, fallback = '') {
   const idx = args.indexOf(name);
   if (idx === -1) return fallback;
@@ -186,6 +202,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     waiting: autoland.waitingOnHuman(tasks),
     landed: landSummarySafe(root),
     project: projectName(root),
+    nextMoves: digestNextMoves(root),
   });
   console.log(text);
   // the full story: what each piece actually was, in its own words
@@ -271,6 +288,7 @@ function runTick(root, args) {
       waiting,
       landed: landSummarySafe(root),
       project: projectName(root),
+      nextMoves: digestNextMoves(root),
     });
     if (policy.imessage_to) {
       const sent = autoland.sendImessage(root, policy.imessage_to, text);
