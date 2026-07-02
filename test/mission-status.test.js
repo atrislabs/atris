@@ -96,6 +96,20 @@ function appendMissionState(dir, mission) {
   }) + '\n', 'utf8');
 }
 
+function writeMemberProfile(dir, slug, role) {
+  fs.mkdirSync(path.join(dir, 'atris', 'team', slug), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'atris', 'team', slug, 'MEMBER.md'), [
+    '---',
+    `name: ${slug}`,
+    `role: ${role}`,
+    'description: Test member profile.',
+    '---',
+    '',
+    `# ${slug}`,
+    '',
+  ].join('\n'), 'utf8');
+}
+
 function ackNativeCodexGoal(dir, mission, env = {}) {
   const ack = runCli([
     'mission',
@@ -3680,6 +3694,7 @@ test('continuation mission includes member value preview before starting next mi
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    writeMemberProfile(dir, 'researcher', 'Demo Reliability Owner');
     fs.writeFileSync(path.join(dir, 'ROADMAP.md'), [
       '# Roadmap',
       '',
@@ -3709,27 +3724,113 @@ test('continuation mission includes member value preview before starting next mi
       updated_at: '2026-06-30T12:00:00.000Z',
     });
 
-    const attached = runCli(['mission', 'attach-task', 'mission-choice-preview', '--json'], { cwd: dir });
+    const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+    const attached = runCli(['mission', 'attach-task', 'mission-choice-preview', '--json'], { cwd: dir, env });
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
     const attachedPayload = JSON.parse(attached.stdout);
     assert.match(attachedPayload.mission.next_action, /atris mission run 'Ship ax connector turn isolation and Gmail receipt previews' --owner researcher/);
     assert.equal(attachedPayload.mission.next_action_preview.schema, 'atris.mission_value_preview.v1');
-    assert.equal(attachedPayload.mission.next_action_preview.profile.id, 'technical_homerun');
+    assert.equal(attachedPayload.mission.next_action_preview.profile.id, 'usability_operator');
+    assert.equal(attachedPayload.mission.next_action_preview.profile.role, 'Demo Reliability Owner');
+    assert.match(attachedPayload.mission.next_action_preview.profile.role_reason, /optimize usability/);
+    assert(attachedPayload.mission.next_action_preview.value_signals.some(signal => signal.id === 'usability'));
     assert.equal(
       attachedPayload.mission.next_action_preview.feynman.what,
       'Make ax safer with Gmail: keep each chat request separate, and show a clear preview or receipt before Gmail actions.',
     );
-    assert.match(attachedPayload.mission.next_action_preview.feynman.why_now, /technical bet/);
+    assert.match(attachedPayload.mission.next_action_preview.feynman.why_now, /Member role says optimize usability/);
+    assert.match(attachedPayload.mission.next_action_preview.feynman.why_now, /easier or faster/);
     assert.match(attachedPayload.mission.next_action_preview.feynman.validation, /before\/after receipt/);
 
-    const ack = ackNativeCodexGoal(dir, attachedPayload.mission);
+    const ack = ackNativeCodexGoal(dir, attachedPayload.mission, env);
     assert.equal(ack.codex_goal_state.goal.next_action_preview.feynman.what, attachedPayload.mission.next_action_preview.feynman.what);
 
-    const status = runCli(['mission', 'status', 'mission-choice-preview'], { cwd: dir });
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.goal.next_action_preview.feynman.what, attachedPayload.mission.next_action_preview.feynman.what);
+
+    const status = runCli(['mission', 'status', 'mission-choice-preview'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /preview: Make ax safer with Gmail/);
   } finally {
     cleanupTempDir(dir);
+  }
+});
+
+test('member role taste filters cover technical and security preview rationale', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const cases = [
+    {
+      slug: 'technical-owner',
+      role: 'Technical Architect',
+      title: 'Build compiler benchmark harness',
+      profile: 'technical_homerun',
+      signal: 'technical',
+      reason: /chase validated technical homeruns/,
+      whyNow: /technical bet/,
+      validation: /small benchmark|regression test/,
+    },
+    {
+      slug: 'security-owner',
+      role: 'Security Risk Guard',
+      title: 'Harden Gmail connector approval privacy isolation',
+      profile: 'security_guard',
+      signal: 'trust',
+      reason: /guard risk/,
+      whyNow: /trust failures/,
+      validation: /unsafe state/,
+    },
+  ];
+
+  for (const item of cases) {
+    const dir = makeTempDir();
+    try {
+      fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+      writeMemberProfile(dir, item.slug, item.role);
+      fs.writeFileSync(path.join(dir, 'ROADMAP.md'), [
+        '# Roadmap',
+        '',
+        '## Open loop items',
+        '',
+        `- [ ] ${item.title}`,
+        '',
+      ].join('\n'), 'utf8');
+      appendMissionState(dir, {
+        id: `mission-choice-${item.slug}`,
+        slug: `mission-choice-${item.slug}`,
+        owner: item.slug,
+        objective: `Decide and start the next useful mission after: ${item.slug} awake loop`,
+        status: 'planning',
+        runner: 'codex_goal',
+        verifier: '',
+        started_from: 'mission_run_continuation',
+        continuation_policy: 'choose_next_mission',
+        parent_mission_id: 'mission-parent',
+        parent_objective: `${item.slug} awake loop`,
+        native_goal_ack: {
+          runtime: 'codex',
+          status: 'active',
+          objective: `Decide and start the next useful mission after: ${item.slug} awake loop`,
+        },
+        created_at: '2026-06-30T12:00:00.000Z',
+        updated_at: '2026-06-30T12:00:00.000Z',
+      });
+
+      const env = { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') };
+      const attached = runCli(['mission', 'attach-task', `mission-choice-${item.slug}`, '--json'], { cwd: dir, env });
+      assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+      const preview = JSON.parse(attached.stdout).mission.next_action_preview;
+      assert.equal(preview.schema, 'atris.mission_value_preview.v1');
+      assert.equal(preview.profile.id, item.profile);
+      assert.equal(preview.profile.role, item.role);
+      assert.match(preview.profile.role_reason, item.reason);
+      assert(preview.value_signals.some(signal => signal.id === item.signal));
+      assert.match(preview.feynman.why_now, item.whyNow);
+      assert.match(preview.feynman.validation, item.validation);
+      assert.match(preview.feynman.what, /\.$/);
+    } finally {
+      cleanupTempDir(dir);
+    }
   }
 });
 

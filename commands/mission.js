@@ -2008,7 +2008,51 @@ function normalizeMissionOwner(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function missionMemberTasteProfile(owner) {
+function readMissionMemberRole(owner, root = process.cwd()) {
+  const dir = memberDir(owner, root);
+  if (!dir) return '';
+  try {
+    const text = fs.readFileSync(path.join(dir, 'MEMBER.md'), 'utf8');
+    const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!match) return '';
+    const role = match[1].match(/^role:\s*(.+)$/im);
+    return role ? role[1].replace(/^["']|["']$/g, '').trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function missionTasteProfileForRole(role) {
+  const text = String(role || '').toLowerCase();
+  if (!text) return null;
+  if (/\b(security|risk|trust|privacy|compliance|safety|safe|guard|inspector)\b/.test(text)) {
+    return {
+      id: 'security_guard',
+      name: 'Security / trust',
+      bias: 'Prefer work that prevents unsafe behavior, privacy mistakes, or quiet trust breaks.',
+      role_reason: 'Member role says guard risk before spending tokens.',
+    };
+  }
+  if (/\b(demo|reliability|ux|usability|support|operator|launcher|customer|growth|onboarding)\b/.test(text)) {
+    return {
+      id: 'usability_operator',
+      name: 'Usability / demo',
+      bias: 'Prefer work that makes the product easier, faster, clearer, or more demo-ready.',
+      role_reason: 'Member role says optimize usability before spending tokens.',
+    };
+  }
+  if (/\b(technical|engineer|architect|research|improver|runtime|compiler|infra|backend|agent|model)\b/.test(text)) {
+    return {
+      id: 'technical_homerun',
+      name: 'Technical homerun',
+      bias: 'Prefer technical leaps, but require a usability or proof gate before spending serious tokens.',
+      role_reason: 'Member role says chase validated technical homeruns.',
+    };
+  }
+  return null;
+}
+
+function missionOwnerTasteProfile(owner) {
   const key = normalizeMissionOwner(owner);
   if (/\b(security|sync-inspector|proof-inspector|validator)\b/.test(key)) {
     return {
@@ -2031,13 +2075,25 @@ function missionMemberTasteProfile(owner) {
   };
 }
 
+function missionMemberTasteProfile(owner, root = process.cwd()) {
+  const role = readMissionMemberRole(owner, root);
+  const roleProfile = missionTasteProfileForRole(role);
+  const profile = roleProfile || missionOwnerTasteProfile(owner);
+  return {
+    ...profile,
+    role: role || null,
+    role_source: roleProfile ? `atris/team/${normalizeMissionOwner(owner)}/MEMBER.md` : null,
+    role_reason: roleProfile?.role_reason || null,
+  };
+}
+
 function missionValueSignals(title) {
   const text = String(title || '').toLowerCase();
   const signals = [];
   const add = (id, label, pattern) => {
     if (pattern.test(text)) signals.push({ id, label });
   };
-  add('usability', 'simplifies use', /\b(simple|simplify|preview|clear|plain|feynman|demo|onboarding|ux|workflow|usable|understand)\b/);
+  add('usability', 'simplifies use', /\b(simple|simplify|previews?|clear|plain|feynman|demos?|onboarding|ux|workflow|usable|understand)\b/);
   add('speed', 'speeds the process', /\b(speed|fast|faster|latency|token|waste|friction|shortcut|automation|auto)\b/);
   add('users_revenue', 'can help users or revenue', /\b(user|users|customer|revenue|payment|checkout|pricing|conversion|retention|demo)\b/);
   add('trust', 'protects trust', /\b(security|safe|safety|trust|permission|approval|auth|privacy|gmail|email|connector|leak|isolation)\b/);
@@ -2265,6 +2321,7 @@ function missionTasteMemoryReason(tasteMemory, signals) {
 
 function missionPreviewWhyNow(move, profile, signals, tasteMemory = null) {
   const ids = new Set((signals || []).map((signal) => signal.id));
+  const roleReason = profile?.role_reason ? `${profile.role_reason} ` : '';
   let base = '';
   if (profile.id === 'technical_homerun') {
     base = ids.has('technical')
@@ -2282,7 +2339,7 @@ function missionPreviewWhyNow(move, profile, signals, tasteMemory = null) {
     base = move?.why || 'This needs a clear reason before it should spend serious tokens.';
   }
   const memoryReason = missionTasteMemoryReason(tasteMemory, signals);
-  return memoryReason ? `${base} Taste memory says: ${memoryReason}` : base;
+  return memoryReason ? `${roleReason}${base} Taste memory says: ${memoryReason}` : `${roleReason}${base}`;
 }
 
 function missionPreviewRisk(signals) {
@@ -2301,7 +2358,7 @@ function missionPreviewValidation(signals) {
 }
 
 function missionValuePreview(move, mission, root = process.cwd()) {
-  const profile = missionMemberTasteProfile(mission?.owner);
+  const profile = missionMemberTasteProfile(mission?.owner, root);
   const signals = missionValueSignals(move?.title);
   const tasteMemory = readMissionTasteMemory(root, mission?.owner);
   const score = missionValueScore(signals, profile, tasteMemory);
