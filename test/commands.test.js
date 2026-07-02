@@ -3695,6 +3695,121 @@ test('mission run bounds errored claude ticks with max-ticks', () => {
   }
 });
 
+test('member run --minutes scales max-ticks past a single tick, untimed stays at one', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    // Runner succeeds every tick; the verifier always fails. That drives the
+    // 'consecutive-verifier-fails' breaker (trips at 2) with no error-backoff
+    // sleep, so the loop is fast and its tick count is fully observable.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      'echo "{\"type\":\"result\",\"is_error\":false,\"result\":\"did work\"}"',
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const startMission = (title) => {
+      const start = runCli([
+        'mission', 'start', title,
+        '--owner', 'mission-lead',
+        '--runner', 'claude',
+        '--cadence', 'manual',
+        '--verify', 'node -e "process.exit(1)"',
+        '--json',
+      ], { cwd: dir, env });
+      assert.equal(start.status, 0, start.stderr || start.stdout);
+      return JSON.parse(start.stdout).mission;
+    };
+
+    // The verifier fails each tick, so the loop stops at min(max-ticks, 2):
+    //   max-ticks 1 -> exactly 1 tick (a lone tick can never break the streak)
+    //   max-ticks >1 -> 2 ticks, then 'consecutive-verifier-fails'
+    // An untimed run keeps the single-tick default; a timed run must loop.
+    const untimed = startMission('untimed member run defaults to one tick');
+    const untimedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', untimed.id, '--json'], { cwd: dir, env });
+    assert.equal(untimedRun.status, 0, untimedRun.stderr || untimedRun.stdout);
+    const untimedPayload = JSON.parse(untimedRun.stdout);
+    // With max-ticks 1 it is impossible to tick more than once.
+    assert.equal(untimedPayload.tick_count, 1);
+    assert.equal(untimedPayload.ran_ticks, 1);
+
+    const timed = startMission('timed member run loops for the budget');
+    const timedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', timed.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    assert.equal(timedRun.status, 0, timedRun.stderr || timedRun.stdout);
+    const timedPayload = JSON.parse(timedRun.stdout);
+    // max(4, ceil(600/300)) = 4 > 1, so it ticks past one before the breaker trips.
+    // The old default of max-ticks 1 could never reach a second tick.
+    assert.equal(timedPayload.tick_count, 2);
+    assert.equal(timedPayload.ran_ticks, 2);
+    assert.equal(timedPayload.pause_reason, 'consecutive-verifier-fails');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('allowed rate-limit info with a future resetsAt does not pause a timed run', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    // Claude reports the five-hour window's resetsAt on every turn even when
+    // status is "allowed" (resetsAt here is year 2100, far past any wall).
+    // Only a non-allowed status is a real cooldown; an allowed one must not
+    // pause the run with rate-limit-exceeded-wall after tick 1.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      "echo '{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":4102444800,\"rateLimitType\":\"five_hour\"}}'",
+      "echo '{\"type\":\"result\",\"is_error\":false,\"result\":\"did work\"}'",
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const start = runCli([
+      'mission', 'start', 'timed run survives allowed rate-limit info',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--verify', 'node -e "process.exit(1)"',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    // The failing verifier is the intended stop; a rate-limit pause after one
+    // tick means the allowed-status window info was mistaken for a cooldown.
+    assert.notEqual(payload.pause_reason, 'rate-limit-exceeded-wall');
+    assert.equal(payload.tick_count, 2);
+    assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',

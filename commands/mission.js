@@ -5766,10 +5766,11 @@ async function runMission(args) {
           aborted: claudeResult.aborted,
         };
         if (claudeResult.rate_limit_info) {
-          lastRateLimit = claudeResult.rate_limit_info;
-          if (lastRateLimit.status && lastRateLimit.status !== 'allowed') {
-            // throttled / overage
-          }
+          // Claude reports the five-hour window's resetsAt on every turn, even
+          // when status is "allowed". Only a non-allowed status is a cooldown;
+          // treating an allowed resetsAt as one pauses every timed run after
+          // tick 1 with rate-limit-exceeded-wall.
+          lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }
         if (claudeResult.authExpired) { pauseReason = 'auth-required'; break; }

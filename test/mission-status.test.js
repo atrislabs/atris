@@ -796,6 +796,85 @@ test('full-budget mission keeps running after early passing proof', () => {
   }
 });
 
+test('full-budget passing tick without xp or always-on stays running and names the remaining budget', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const start = runCli([
+      'mission', 'start', 'spend the whole hour improving proofs',
+      '--owner', 'tester',
+      '--lane', 'code',
+      '--minutes', '60',
+      '--verify', 'node -e "process.exit(0)"',
+      '--json',
+    ], { cwd: dir });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+    assert.equal(mission.budget_contract.policy, 'spend_full_budget');
+    assert.equal(mission.runner, 'manual');
+
+    // --complete-on-pass would normally finish, but budget-left overrides it:
+    // a passing tick with time on the clock is a loop, not a finish.
+    const tick = runCli(['mission', 'tick', mission.id, '--verify', '--complete-on-pass', '--json'], { cwd: dir });
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const payload = JSON.parse(tick.stdout);
+    assert.equal(payload.mission.status, 'running');
+    assert.notEqual(payload.mission.status, 'complete');
+    assert.match(payload.mission.next_action, /left on the budget/);
+    assert.match(payload.mission.next_action, /pick the next useful move/);
+    assert.match(payload.mission.next_action, new RegExp(`atris mission tick ${mission.id} --verify`));
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission show/info/view alias to status and never create a mission', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const mission = startMission(dir, 'aliased read-only view');
+
+    const statePath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+    const before = fs.readFileSync(statePath, 'utf8');
+
+    for (const alias of ['show', 'info', 'view']) {
+      const res = runCli(['mission', alias, mission.id, '--json'], { cwd: dir });
+      assert.equal(res.status, 0, `${alias}: ${res.stderr || res.stdout}`);
+      const payload = JSON.parse(res.stdout);
+      assert.equal(payload.action, 'mission_status', alias);
+      assert.equal(payload.missions.length, 1, alias);
+      assert.equal(payload.missions[0].id, mission.id, alias);
+    }
+
+    // Read-only aliases must not mutate or append to the mission store.
+    assert.equal(fs.readFileSync(statePath, 'utf8'), before);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission show/info/view error on an unknown id with exit 1 and create nothing', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const statePath = path.join(dir, '.atris', 'state', 'missions.jsonl');
+
+    for (const alias of ['show', 'info', 'view']) {
+      const res = runCli(['mission', alias, 'mission-does-not-exist', '--json'], { cwd: dir });
+      assert.equal(res.status, 1, `${alias}: ${res.stdout}`);
+      const payload = JSON.parse(res.stdout);
+      assert.equal(payload.ok, false, alias);
+      assert.match(payload.error, /not found/, alias);
+    }
+
+    // A read of an unknown id must never seed a mission store.
+    assert.equal(fs.existsSync(statePath), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission run summary starts with product landing instead of run internals', () => {
   const dir = makeTempDir();
   try {
