@@ -190,6 +190,49 @@ test('ax chat defaults cloud and does not show local backend instructions when o
   assert.doesNotMatch(text, /secret-token/);
 });
 
+test('ax chat inside a workspace downgrades to cloud when local backend is not listening', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const chunks = [];
+  const output = {
+    isTTY: false,
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+  };
+  const preflightRoutes = [];
+  try {
+    await ax.chat({
+      mode: 'fast',
+      cwd: path.join(__dirname, '..'),
+      input: Readable.from(['what files are here?\n', 'exit\n']),
+      output,
+      localBackendProbe: async () => false,
+      runtimeHealth: async ({ route }) => {
+        preflightRoutes.push(route);
+        return {
+          schema: 'ax.runtime_health.v1',
+          route,
+          backend: { ready: false, reachable: false, status: 0, error: 'ECONNREFUSED secret-token' },
+          fast: { ready: false, route_ready: false },
+          permissions: { ready: false },
+        };
+      },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+
+  const text = chunks.join('');
+  // The auto-routed local turn must preflight cloud, never surface the
+  // localhost lane to the user.
+  assert.deepEqual(preflightRoutes, ['cloud']);
+  assert.doesNotMatch(text, /Start backend:|uvicorn main:app|start local backend/);
+  assert.doesNotMatch(text, /secret-token/);
+});
+
 test('ax chat shows local backend instructions only for explicit local route', async () => {
   const previousAuto = process.env.AX_AUTO_LOG;
   process.env.AX_AUTO_LOG = '0';
