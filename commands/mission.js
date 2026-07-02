@@ -7190,7 +7190,9 @@ function inspectMission(args) {
   printJsonOrText(payload, inspectTextLines(parsed.fields, values), asJson);
 }
 
-function pingMission(args) {
+// always-on member mid-run without stopping it. opts.silent skips console
+// output so callers (member ping) can compose their own multi-lane report.
+function pingMission(args, opts = {}) {
   const asJson = args.includes('--json');
   const rest = args.filter((a) => a !== '--json');
   let from = process.env.USER || 'operator';
@@ -7222,10 +7224,12 @@ function pingMission(args) {
     { from, text: text.slice(0, 200) },
   ).mission;
   const pending = (saved.pings || []).filter((p) => p && !p.consumed_at).length;
-  if (asJson) {
-    console.log(JSON.stringify({ ok: true, action: 'mission_ping', mission_id: saved.id, pending_pings: pending, ping }));
-  } else {
-    console.log(`pinged ${saved.id} — the next tick reads it (${pending} unread).`);
+  if (!opts.silent) {
+    if (asJson) {
+      console.log(JSON.stringify({ ok: true, action: 'mission_ping', mission_id: saved.id, pending_pings: pending, ping }));
+    } else {
+      console.log(`pinged ${saved.id} — the next tick reads it (${pending} unread).`);
+    }
   }
   return saved;
 }
