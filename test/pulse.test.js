@@ -113,6 +113,19 @@ test('detectStaleTick handles an empty channel', () => {
   assert.equal(pulse.detectStaleTick([]).reason, 'no_receipts');
 });
 
+// Regression: a finished tick whose timestamp is missing or corrupt must NOT
+// read as fresh — otherwise a silently-dead loop looks alive forever, the exact
+// runner-death failure mode this detection exists to catch.
+test('detectStaleTick flags a finished tick with an unreadable timestamp', () => {
+  const now = Date.parse('2026-07-02T12:00:00Z');
+  const missing = pulse.detectStaleTick([{ phase: 'finished', tick_index: 1 }], now);
+  assert.equal(missing.stale, true);
+  assert.equal(missing.reason, 'last_tick_unreadable_ts');
+  const corrupt = pulse.detectStaleTick([{ phase: 'finished', tick_index: 1, ts: 'not-a-date' }], now);
+  assert.equal(corrupt.stale, true);
+  assert.equal(corrupt.reason, 'last_tick_unreadable_ts');
+});
+
 // --- summarize ---
 
 test('summarizePulse aggregates reward, verify counts, and last tick', () => {
