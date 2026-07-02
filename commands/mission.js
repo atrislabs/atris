@@ -203,6 +203,7 @@ function printJsonOrText(payload, lines, asJson) {
 }
 
 const MISSION_RUN_VALUE_FLAGS = [
+  '--slots',
   '--max-ticks',
   '--max-wall',
   '--minutes',
@@ -222,6 +223,8 @@ const MISSION_RUN_VALUE_FLAGS = [
 const MISSION_RUN_BOOLEAN_FLAGS = [
   '--json',
   '--due',
+  '--fleet',
+  '--dry-run',
   '--no-claude',
   '--no-verify',
   '--complete-on-pass',
@@ -5786,6 +5789,21 @@ async function runMission(args) {
     help();
     return;
   }
+  // --fleet: staff every idle capable engine on the board's claimable
+  // safe-lane tasks, build in parallel worktrees, land serially. Humble flag,
+  // full loop — see lib/fleet.js. --dry-run previews the staffing only.
+  if (hasFlag(args, '--fleet')) {
+    const { runFleetFlight } = require('../lib/fleet');
+    const slots = Math.max(1, Number(readFlag(args, '--slots', '')) || 3);
+    const flight = await runFleetFlight({
+      slots,
+      dryRun: hasFlag(args, '--dry-run'),
+      log: asJson ? () => {} : console.log,
+    });
+    if (asJson) console.log(JSON.stringify(flight, null, 2));
+    process.exitCode = flight.paused && flight.paused.length > 0 ? 1 : 0;
+    return;
+  }
   const dueMode = hasFlag(args, '--due');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
@@ -6880,6 +6898,7 @@ atris mission - durable goal + loop + owner + proof state
   atris mission goal-loop [--max-wall 28800] [--max-iterations 32] [--no-claude] [--json]
   atris mission tick <id> [--verify ["cmd"]] [--complete-on-pass] [--summary "..."] [--json]
   atris mission "<objective>" [--owner <member>]   Shortcut for: atris mission run "<objective>"
+  atris mission run --fleet [--slots 3] [--dry-run] [--json]   Staff every idle capable engine on claimable safe-lane tasks: parallel worktree builds, serial rebase-before-ship landings, receipt in atris/runs/
   atris mission run ["objective"|<member> ["objective"]|id|--due] [--owner <member>] [--max-ticks 4] [--max-wall 3600] [--cadence "15m"]
                                 [--native-goal-status active|paused] [--native-goal-objective "..."] [--allow-native-goal-supersede]
                                 [--spend-full-budget|--use-whole-budget|--stop-when-done] [--room-preflight|--no-room-preflight]

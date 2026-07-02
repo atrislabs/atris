@@ -29,7 +29,9 @@ function engineFile(root = process.cwd()) {
 }
 
 function binInstalled(bin) {
-  const probe = spawnSync('command', ['-v', bin], { encoding: 'utf8', shell: true });
+  const safe = String(bin || '').replace(/[^A-Za-z0-9_.-]/g, '');
+  if (!safe) return false;
+  const probe = spawnSync('sh', ['-c', `command -v ${safe}`], { encoding: 'utf8' });
   return probe.status === 0 && Boolean(String(probe.stdout || '').trim());
 }
 

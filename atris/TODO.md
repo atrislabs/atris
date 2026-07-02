@@ -4,12 +4,25 @@
 
 ## Endgame
 
-**Slug:** autopilot-runner-agnostic
-**Picked:** 2026-06-15 23:32
-**Horizon:** the autopilot/run heartbeat is engine-agnostic like missions already are — a claude -p pricing change, model retirement, or runner swap is a config flag, not a code change or a silent overnight outage
-**Source:** user-prompt (Agent SDK credit-pause email surfaced the exposed flank: run.js + autopilot.js hardcode `claude -p` with no `--model`, while mission.js already resolves runner+model)
+**Slug:** mission-run-fleet
+**Picked:** 2026-07-02 12:20
+**Horizon:** `atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks — one mission per task with a verifier, one worktree per engine, arrivals landed serially with rebase-before-ship so every task ends merged-or-reaped, receipt-backed, orb-signed. Falsifiable: one command on this repo's real board produces >=3 merged PRs from >=3 different engines with zero manual git surgery. Humble name outside, the full loop inside.
+**Source:** user-prompt (manual 3-engine flight 2026-07-02 landed PRs #191-193; founder: try first, endgame after — this is the reverse path from that flight)
 
 ## Backlog
+
+- **T1:** Dispatch primitive in lib/fleet.js: buildFleetPrompt(task) generates the bounded prompt from the task's own Done:/Check: lines; dispatchToEngine(task, engine, worktreePath) spawns via RUNNER_PROFILE_DEFS and captures the report as plain data. Eliminate: hand-written dispatch prompts, and fleet NEVER gets its own state file — flight state is missions + worktrees + receipts. [endgame]
+  **Verify:** node --test test/fleet.test.js
+- **T2:** Staffing: pick claimable safe-lane tasks only (no denied tags), disjoint-file heuristic between concurrent picks, wrap each in mission start --verify (receipts for free), assign engines from the roster in commands/engine.js. [endgame]
+  **Verify:** node --test test/fleet.test.js
+- **T3:** Serial landing lane: conductor lands one arrival at a time, rebase-before-ship, conflict = pause + surface (never auto-resolve), terminal state merged-or-reaped per the land contract. [endgame]
+  **Verify:** node --test test/fleet.test.js
+- **T4:** The flight is watchable and receipted: atris mission run --fleet prints a live board (engine, task, state); every flight writes a receipt to atris/runs/; wire --fleet into mission run help + MAP.md. [endgame]
+  **Verify:** node --test test/fleet.test.js && grep -q "\-\-fleet" commands/mission.js
+- **T5:** Release 3.33.3: real-board fleet flight receipt on this repo, bump version, tag v3.33.3, CI publishes, npm view confirms, GitHub release + launch post drafted from the flight receipt. [endgame]
+  **Verify:** node -e "process.exit(require('./package.json').version==='3.33.3'?0:1)"
+- **T6:** RSI audit: read this endgame's halts, verify failures, and lessons. If the loop itself broke during this endgame (parser, reward, scorecard, verify wiring), fix it. If nothing broke, no-op. [endgame]
+  **Verify:** npm test
 
 - **[CLI-762]** Ship npm auto-update for packaged installs (git checkouts stay manual) [update]
 - **[CLI-761]** Ship ax connector turn isolation and Gmail receipt previews [ax]
