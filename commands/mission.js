@@ -2949,7 +2949,7 @@ function attachMissionTask(args) {
   }
   let mission = resolveMission(ref);
   if (!mission) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
 
   const lock = acquireMissionLock(mission.id, process.cwd(), { waitMs: 2000 });
@@ -3559,7 +3559,7 @@ function reportMission(args) {
     missions.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
   }
   if (ref && !missions.length) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   missions = missions.slice(0, limit);
   const reports = missions.map((mission) => missionReportFor(mission, mission.worktree_root || process.cwd()));
@@ -3600,7 +3600,7 @@ function timelineMission(args) {
     ? resolveMission(ref)
     : (missions.find((row) => !TERMINAL_STATUSES.has(row.status)) || missions[0] || null);
   if (ref && !mission) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   if (!mission) {
     printJsonOrText(
@@ -4071,7 +4071,7 @@ function watchMission(args) {
     return listMissions().filter((mission) => !HEARTBEAT_TERMINAL_STATUSES.has(mission.status));
   };
   if (ref && !loadTargets().length) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, false);
+    exitMissingMission(ref, 1, false);
   }
   const stamp = () => new Date().toTimeString().slice(0, 8);
   const shortId = (mission) => mission.id.length > 20 ? `…${mission.id.slice(-8)}` : mission.id;
@@ -6498,7 +6498,7 @@ function completeMission(args) {
   }
   const mission = resolveMission(ref);
   if (!mission) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   const gate = missionCompletionGate(mission, proof, root);
   if (!gate.ok && !force) {
@@ -6574,7 +6574,7 @@ function stopMission(args) {
   }
   const mission = resolveMission(ref);
   if (!mission) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   const status = pause ? 'paused' : 'stopped';
   // Full stops abandon work, so leave evidence: snapshot the worktree against
@@ -6690,7 +6690,7 @@ function ackMissionGoal(args) {
   const status = String(readFlag(args, '--status', 'active') || 'active').trim().toLowerCase();
   let mission = resolveMission(ref);
   if (!mission) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   if (runtime !== 'codex' || status !== 'active') {
     exitMissionError('Native goal ack requires --runtime codex --status active.', 2, asJson);
@@ -7150,8 +7150,7 @@ function pingMission(args) {
   }
   const found = findMissionAcrossWorktrees(ref);
   if (!found) {
-    console.error(`Mission "${ref}" not found.`);
-    process.exit(1);
+    exitMissingMission(ref, 1, asJson);
   }
   const { mission, root } = found;
   if (TERMINAL_STATUSES.has(mission.status)) {
