@@ -534,7 +534,7 @@ function showHelp() {
   console.log('  worktree   - Isolated Git worktrees plus guarded ship/merge for parallel agents');
   console.log('  land       - The landing: what is actually done vs still in the air; --reap backs up + clears overdue');
   console.log('  autoland   - Approve the policy once; certified work lands itself, you keep irreversible calls');
-  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run');
+  console.log('  engine     - Bring any intelligence: roster of installed coding CLIs, default engine, --engine per run, `engine test` preflight');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
   console.log('  visualize  - Generate a Slack/deck-ready visual from a prompt');
   console.log('  youtube    - Process YouTube videos with timestamped transcript-first analysis');
