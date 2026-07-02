@@ -7,14 +7,22 @@ const { Readable } = require('node:stream');
 
 const ax = require('../ax');
 
-test('ax defaults workspace questions to Atris cloud', () => {
-  assert.equal(ax.resolveRoute('what files are here?'), 'cloud');
-  assert.equal(ax.resolveRoute('search src for the input component'), 'cloud');
-  assert.equal(ax.resolveRoute('fix the xp game tests'), 'cloud');
+// A cwd with no .git/atris/atris.md marker anywhere up its (nonexistent) tree.
+// os.tmpdir() and /tmp are not safe here — a stray /tmp/atris turns them into
+// a "workspace" for the walk-up detector.
+const NON_WORKSPACE_CWD = '/nonexistent/ax-non-workspace';
+
+test('ax routes workspace questions local inside a workspace, cloud outside', () => {
+  const repoCwd = path.join(__dirname, '..');
+  assert.equal(ax.resolveRoute('what files are here?', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('search src for the input component', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('fix the xp game tests', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('what files are here?', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+  assert.equal(ax.resolveRoute('what is the capital of france?', { cwd: repoCwd }), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
-    cwd: '/tmp/project',
+    cwd: NON_WORKSPACE_CWD,
   });
 
   assert.equal(payload.model, 'atris:fast');
@@ -35,7 +43,7 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
 
   const payload = ax.buildPayload('refactor this module and verify the tests', {
     mode: 'max',
-    cwd: '/tmp/project',
+    cwd: NON_WORKSPACE_CWD,
   });
   assert.equal(payload.model, 'atris:max');
   assert.equal(payload.workspace_path, undefined);
@@ -58,7 +66,7 @@ test('ax exposes Atris 2 Max as the highest-reasoning tier', () => {
 
   assert.match(ax.formatHeader({ mode: 'max', cwd: '/tmp/project', chat: true }), /Atris 2 Max chat/);
 
-  const profile = ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' });
+  const profile = ax.buildRunProfile({ mode: 'max', cwd: NON_WORKSPACE_CWD });
   assert.equal(profile.model, 'atris:max');
   assert.equal(profile.route, 'cloud');
   assert.equal(profile.max_turns, 1);
@@ -409,10 +417,18 @@ test('ax sends chat history as structured previous messages, not a prompt wrappe
   assert.doesNotMatch(payload.message, /Current user message|Recent conversation|Continue this terminal/);
 });
 
-test('ax routes GitHub repo mutations to cloud unless local is explicit', () => {
-  assert.equal(ax.resolveRoute('push something to github'), 'cloud');
-  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github'), 'cloud');
-  assert.equal(ax.resolveRoute('open a pull request for this branch on github'), 'cloud');
+test('ax routes GitHub repo mutations to cloud outside a workspace, local tools take them inside', () => {
+  assert.equal(ax.resolveRoute('push something to github', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+  assert.equal(ax.resolveRoute('open a pull request for this branch on github', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+
+  // Inside a workspace the workspace-intent detector claims repo-shaped work
+  // for local tools when the wording overlaps (change/branch); pure connector
+  // phrasing stays cloud.
+  const repoCwd = path.join(__dirname, '..');
+  assert.equal(ax.resolveRoute('push something to github', { cwd: repoCwd }), 'cloud');
+  assert.equal(ax.resolveRoute('commit a tiny proof change and push to github', { cwd: repoCwd }), 'local');
+
   assert.equal(ax.resolveRoute('push something to github', { route: 'local' }), 'local');
 });
 

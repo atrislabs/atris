@@ -622,22 +622,25 @@ function githubWorkspaceIntent(message) {
 }
 
 // Walk up from cwd looking for a workspace marker (.git or atris/ or atris.md).
-// Cached per process — resolveRoute runs per chat line.
+// The process.cwd() answer is cached — resolveRoute runs per chat line — but an
+// explicit startDir (callers pass their own cwd) is always checked fresh.
 let _workspaceCwd = null;
-function insideWorkspaceCwd() {
-  if (_workspaceCwd !== null) return _workspaceCwd;
-  let dir = process.cwd();
+function insideWorkspaceCwd(startDir) {
+  const explicit = typeof startDir === 'string' && startDir.length > 0;
+  if (!explicit && _workspaceCwd !== null) return _workspaceCwd;
+  let dir = explicit ? startDir : process.cwd();
+  let found = false;
   for (let i = 0; i < 24; i += 1) {
     if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'atris.md')) || fs.existsSync(path.join(dir, 'atris'))) {
-      _workspaceCwd = true;
-      return true;
+      found = true;
+      break;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  _workspaceCwd = false;
-  return false;
+  if (!explicit) _workspaceCwd = found;
+  return found;
 }
 
 function resolveRoute(message, options = {}) {
@@ -648,7 +651,7 @@ function resolveRoute(message, options = {}) {
   // `ax --fast` answered repo questions from the tool-less cloud chat lane and
   // confabulated (SwapBench finding, 2026-07-02: 1/6 vs 6/6 with tools).
   // Casual chat and non-workspace cwds keep the fast cloud lane.
-  if (workspaceIntent(message) && insideWorkspaceCwd()) return 'local';
+  if (workspaceIntent(message) && insideWorkspaceCwd(options.cwd)) return 'local';
   return 'cloud';
 }
 
