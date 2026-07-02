@@ -29,6 +29,11 @@ const WORKSPACE_PROMPTS = [
   'search src for the input component',
   'fix the xp game tests',
   'commit a tiny proof change and push to github',
+  // Live misses 2026-07-02: a literal path / SCREAMING_SNAKE identifier /
+  // launchd-lane phrasing routed cloud and the model answered tool-less.
+  "in scripts/fast-coach/tick.mjs, what does SLOW_MS control and what's its value?",
+  'which launchd lane runs fast-coach nightly and at what time?',
+  'what does CLAUDE_TIMEOUT_MS default to?',
 ];
 // GitHub connector phrasing stays cloud even inside a workspace — only
 // local-checkout wording (commit/branch/change) claims the local lane.
@@ -38,6 +43,9 @@ const CHAT_PROMPTS = [
   'write an essay about the product',
   'plan my morning',
   'what is the capital of france?',
+  // Prose slashes and math must NOT trip the path detector.
+  "what's 15% of 2400?",
+  'is it an either/or decision — pick one for me',
 ];
 
 // 1) Chat prompts route cloud from ANYWHERE — even inside a workspace.

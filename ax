@@ -650,13 +650,23 @@ function insideWorkspaceCwd(startDir) {
 // GitHub write intent.
 const ROUTE_STRONG_NOUN = /\b(files?|folders?|repos?|repository|codebase|director(?:y|ies)|src|grep|diff|branch(?:es)?|commits?|\.git\b|package\.json|readme|map\.md|todo\.md|workspace)\b/i;
 const ROUTE_VERB = /\b(find|where|which|search|locate|name|show|list|read|open|inspect|edit|fix|patch|modify|change|refactor|run|debug|trace|failing)\b/i;
-const ROUTE_CODE_NOUN = /\b(functions?|class(?:es)?|modules?|components?|scripts?|tests?|gates?|configs?|imports?|exports?|variables?|lines?|paths?|projects?|channels?|handlers?|endpoints?|ipc)\b/i;
+const ROUTE_CODE_NOUN = /\b(functions?|class(?:es)?|modules?|components?|scripts?|tests?|gates?|configs?|imports?|exports?|variables?|lines?|paths?|projects?|channels?|handlers?|endpoints?|ipc|launchd|plists?|lanes?|crons?|daemons?|missions?|receipts?)\b/i;
+// A literal path or code identifier IS the workspace — the strongest routing
+// signal there is, and the regex vocabulary above can't see it. Live miss
+// 2026-07-02: "in scripts/fast-coach/tick.mjs, what does SLOW_MS control?"
+// routed cloud (no tools) because no English keyword matched. Matches:
+// slash-joined path ending in an extension, a bare code-extension filename,
+// or a SCREAMING_SNAKE identifier (case-sensitive on purpose). Bare prose
+// slashes ("either/or", "24/7") don't match — the path form needs the
+// extension.
+const ROUTE_PATH = /\b[\w.-]+(?:\/[\w.-]+)+\.\w{1,8}\b|\b[\w-]+\.(?:mjs|cjs|jsx?|tsx?|json|md|py|sh|rb|go|rs|ya?ml|toml|plist|sql|css|html)\b|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/;
 function workspaceRouteIntent(message) {
   const text = String(message || '');
   // GitHub-mentioning prompts are connector work by default (the cloud GitHub
   // API lane, e.g. "what github repos do I have?", "push something to github");
   // only explicit local-checkout wording claims them for local tools.
   if (/\bgithub\b/i.test(text)) return /\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff)\b/i.test(text);
+  if (ROUTE_PATH.test(text)) return true;
   if (ROUTE_STRONG_NOUN.test(text)) return true;
   if (ROUTE_VERB.test(text) && ROUTE_CODE_NOUN.test(text)) return true;
   return false;
