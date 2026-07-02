@@ -4295,6 +4295,15 @@ const MISSION_RUN_DEFAULTS = {
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
+// Claude sessions accumulate context across resumed ticks; an always-on
+// mission would grow without bound. Continuity lives on disk (receipts, logs,
+// now.md), so a healthy session is disposable: rotate to a fresh one every N
+// ran ticks. Failure-path rotation (stale lock) stays separate below.
+const CLAUDE_SESSION_CONTEXT_ROTATE_TICKS = Math.max(
+  1,
+  Number(process.env.ATRIS_CLAUDE_SESSION_ROTATE_TICKS) || 8,
+);
+
 function runnerUsesCallerSession(runner) {
   return new Set(['codex_goal', 'caller_session', 'current_agent']).has(String(runner || '').trim().toLowerCase());
 }
@@ -5403,9 +5412,30 @@ function probeClaudeBinary() {
   return { ok: true };
 }
 
-function buildTickPrompt(mission, tickIndex, maxTicks, frozen) {
+// Pull unread operator pings off the mission and mark them consumed, so the
+// next tick's prompt carries them exactly once. Pings are how a human talks to
+// an always-on member mid-run: atris member ping <name> "<msg>".
+function consumeMissionPings(mission, cwd) {
+  const pending = (Array.isArray(mission.pings) ? mission.pings : []).filter((p) => p && !p.consumed_at);
+  if (!pending.length) return { mission, pings: [] };
+  const consumedAt = stampIso();
+  const pings = (mission.pings || []).map((p) => (p && !p.consumed_at ? { ...p, consumed_at: consumedAt } : p));
+  const saved = saveMission({ ...mission, pings }, cwd, 'mission_pings_consumed', { count: pending.length }).mission;
+  return { mission: saved, pings: pending };
+}
+
+function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
+  const pingLines = pings.length
+    ? [
+      ``,
+      `## Operator pings (read these first)`,
+      `Your operator sent ${pings.length === 1 ? 'a message' : 'messages'} mid-run. Treat them as fresh direction for this tick (they do not change the frozen verifier or lane):`,
+      ...pings.map((p) => `- [${p.at}] ${p.from || 'operator'}: ${p.text}`),
+    ]
+    : [];
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
+    ...pingLines,
     ``,
     `**Objective:** ${mission.objective}`,
     `**Owner:** ${mission.owner}`,
@@ -5809,7 +5839,9 @@ async function runMission(args) {
           claude: { skipped: true, reason: callerSessionRunner ? 'runner-uses-caller-session' : 'no-claude-mode' },
         };
       } else if (atris2Runner) {
-        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
+        const pingDrain = consumeMissionPings(mission, cwd);
+        mission = pingDrain.mission;
+        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const { runAtris2Turn } = require('./probe');
         const businessId = businessIdForAtris2Mission(mission, cwd);
         const turn = await runAtris2Turn({
@@ -5839,7 +5871,9 @@ async function runMission(args) {
       } else {
         const sessionMode = sessionId ? 'resume' : 'set';
         const useId = sessionId || pendingSessionId;
-        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen);
+        const pingDrain = consumeMissionPings(mission, cwd);
+        mission = pingDrain.mission;
+        const prompt = buildTickPrompt(mission, tickIdx, effectiveMaxTicks, frozen, pingDrain.pings);
         const claudeResult = await spawnClaudeTick(mission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           timeoutMs: MISSION_RUN_DEFAULTS.claudeTimeoutMs, prompt,
@@ -5974,6 +6008,11 @@ async function runMission(args) {
       } else if (result.status === 'ran' && mission.always_on) {
         nextAction = nextCandidateTickAction(mission);
       }
+      // Context hygiene: count ran claude ticks on this session; at the
+      // rotation threshold, drop the session so the next tick starts fresh.
+      const claudeRanTick = Boolean(result.claude) && result.status === 'ran';
+      const claudeSessionTicks = claudeRanTick ? Number(mission.claude_session_ticks || 0) + 1 : Number(mission.claude_session_ticks || 0);
+      const rotateSessionForContext = claudeRanTick && claudeSessionTicks >= CLAUDE_SESSION_CONTEXT_ROTATE_TICKS;
       mission = saveMission({
         ...mission,
         status: newStatus,
@@ -5988,9 +6027,23 @@ async function runMission(args) {
         verifier_result: verifierResult || mission.verifier_result || null,
         receipt_path: receiptPath,
         next_action: nextAction,
+        claude_session_ticks: rotateSessionForContext ? 0 : claudeSessionTicks,
       }, cwd, 'mission_tick', {
         tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath, layer: result.layer,
       }).mission;
+      if (rotateSessionForContext) {
+        // Same shape as the stale-lock rotation above: mint the fresh pending
+        // id AND reset the loop locals, or the next tick resumes the old
+        // session from its stale local and the rotation is a no-op.
+        pendingSessionId = crypto.randomUUID();
+        sessionId = null;
+        mission = saveMission(
+          { ...mission, claude_session_id: null, pending_session_id: pendingSessionId },
+          cwd, 'mission_session_rotated', {
+            reason: 'context-refresh', after_ticks: claudeSessionTicks, session_id: pendingSessionId,
+          },
+        ).mission;
+      }
       appendMemberLog(mission.owner, `Mission run tick ${tickIdx}`, {
         mission: mission.objective,
         state: mission.status,
@@ -6950,6 +7003,65 @@ function pruneRunsMission(args) {
   if (result.errors.length) process.exitCode = 1;
 }
 
+// Locate a mission whose state may live in a sibling worktree (--worktree
+// missions keep their jsonl there). Returns the mission plus the root whose
+// state file owns it, so writes land where the runner reads.
+function findMissionAcrossWorktrees(ref, root = process.cwd()) {
+  const local = resolveMission(ref, root);
+  if (local) return { mission: local, root };
+  for (const rolled of listWorktreeRollupMissions(root)) {
+    if (rolled.id === ref || rolled.id.startsWith(ref) || rolled.slug === ref) {
+      const { worktree_root, worktree_branch, ...mission } = rolled;
+      return { mission, root: worktree_root };
+    }
+  }
+  return null;
+}
+
+// atris mission ping <id> "<message>" — leave a note the mission's next tick
+// reads (and consumes) as operator direction. This is how you talk to an
+// always-on member mid-run without stopping it.
+function pingMission(args) {
+  const asJson = args.includes('--json');
+  const rest = args.filter((a) => a !== '--json');
+  let from = process.env.USER || 'operator';
+  const fromIdx = rest.indexOf('--from');
+  if (fromIdx !== -1) {
+    from = rest[fromIdx + 1] || from;
+    rest.splice(fromIdx, 2);
+  }
+  const [ref, ...textParts] = rest;
+  const text = textParts.join(' ').trim();
+  if (!ref || !text) {
+    console.error('usage: atris mission ping <id> "<message>" [--from <name>]');
+    process.exit(2);
+  }
+  const found = findMissionAcrossWorktrees(ref);
+  if (!found) {
+    console.error(`Mission "${ref}" not found.`);
+    process.exit(1);
+  }
+  const { mission, root } = found;
+  if (TERMINAL_STATUSES.has(mission.status)) {
+    console.error(`Mission ${mission.id} is ${mission.status}; pings only reach live missions.`);
+    process.exit(1);
+  }
+  const ping = { at: stampIso(), from, text };
+  const saved = saveMission(
+    { ...mission, pings: [...(Array.isArray(mission.pings) ? mission.pings : []), ping] },
+    root,
+    'mission_ping',
+    { from, text: text.slice(0, 200) },
+  ).mission;
+  const pending = (saved.pings || []).filter((p) => p && !p.consumed_at).length;
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, action: 'mission_ping', mission_id: saved.id, pending_pings: pending, ping }));
+  } else {
+    console.log(`pinged ${saved.id} — the next tick reads it (${pending} unread).`);
+  }
+  return saved;
+}
+
 function missionCommand(args) {
   const subcommand = args[0] || 'status';
   const rest = args.slice(1);
@@ -6994,6 +7106,8 @@ function missionCommand(args) {
     case 'goal-loop':
     case 'codex-goal-loop':
       return goalLoopMission(rest);
+    case 'ping':
+      return pingMission(rest);
     case 'tick':
       return tickMission(rest);
     case 'run':
@@ -7018,6 +7132,8 @@ module.exports = {
   missionCommand,
   missionHeartbeatLines,
   listMissions,
+  listWorktreeRollupMissions,
+  pingMission,
   loadMissionMap,
   renderMissionStatus,
   selectDueMission,

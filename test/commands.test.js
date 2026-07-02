@@ -3791,7 +3791,6 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
       '--owner', 'mission-lead',
       '--runner', 'claude',
       '--cadence', 'manual',
-      '--verify', 'node -e "process.exit(1)"',
       '--json',
     ], { cwd: dir, env });
     assert.equal(start.status, 0, start.stderr || start.stdout);
@@ -3800,11 +3799,69 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
     const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
-    // The failing verifier is the intended stop; a rate-limit pause after one
-    // tick means the allowed-status window info was mistaken for a cooldown.
+    // The budgeted run should spend its 4-tick budget; a rate-limit pause after
+    // one tick means the allowed-status window info was mistaken for a cooldown.
     assert.notEqual(payload.pause_reason, 'rate-limit-exceeded-wall');
-    assert.equal(payload.tick_count, 2);
-    assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
+    assert.equal(payload.tick_count, 4);
+    assert.equal(payload.ran_ticks, 4);
+    assert.equal(payload.pause_reason, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member ping reaches the next tick prompt exactly once', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    const promptDump = path.join(dir, 'tick-prompt.txt');
+    // Dump the -p prompt so the test can assert what the tick actually saw.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      `printf '%s' "$2" > "${promptDump}"`,
+      "echo '{\"type\":\"result\",\"is_error\":false,\"result\":\"did work\"}'",
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+
+    const start = runCli([
+      'mission', 'start', 'always-on member you can text',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    // ping by member name — it must resolve to the live mission
+    const ping = runCli(['member', 'ping', 'mission-lead', 'ship the login fix first'], { cwd: dir, env });
+    assert.equal(ping.status, 0, ping.stderr || ping.stdout);
+    assert.match(ping.stdout, /1 unread/);
+
+    const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--max-ticks', '1', '--json'], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+
+    const prompt = fs.readFileSync(promptDump, 'utf8');
+    assert.match(prompt, /Operator pings \(read these first\)/);
+    assert.match(prompt, /ship the login fix first/);
+
+    // consumed: a second run's prompt must not repeat it
+    const run2 = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--max-ticks', '1', '--json'], { cwd: dir, env });
+    assert.equal(run2.status, 0, run2.stderr || run2.stdout);
+    const prompt2 = fs.readFileSync(promptDump, 'utf8');
+    assert.doesNotMatch(prompt2, /ship the login fix first/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -3876,6 +3933,71 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
     assert.match(stateLog, /claude-session-busy/);
     const sessionIds = new Set([...stateLog.matchAll(/"claude_session_id":"([0-9a-f-]+)"/g)].map((m) => m[1]));
     assert.equal(sessionIds.size, 2, `expected a rotated second session id, saw: ${[...sessionIds].join(', ')}`);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('healthy claude sessions rotate for context refresh after N ran ticks', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead'], { cwd: dir }).status, 0);
+
+    const fakeBin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeClaude = path.join(fakeBin, 'claude');
+    // Every call succeeds and confirms the requested session id — no failures.
+    // Rotation must come from the context-refresh counter alone.
+    fs.writeFileSync(fakeClaude, [
+      '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then',
+      '  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"',
+      '  exit 0',
+      'fi',
+      'sid=""; prev=""',
+      'for a in "$@"; do',
+      '  if [ "$prev" = "--session-id" ]; then sid="$a"; fi',
+      '  if [ "$prev" = "--resume" ]; then sid="$a"; fi',
+      '  prev="$a"',
+      'done',
+      'echo "{\\"type\\":\\"result\\",\\"is_error\\":false,\\"result\\":\\"did work\\",\\"session_id\\":\\"$sid\\"}"',
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const env = {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`,
+      ATRIS_CLAUDE_SESSION_ROTATE_TICKS: '2',
+    };
+
+    // No verifier: ticks keep running to max-ticks, so the third tick can
+    // mint the fresh session the rotation cleared the way for.
+    const start = runCli([
+      'mission', 'start', 'healthy sessions rotate for context refresh',
+      '--owner', 'mission-lead',
+      '--runner', 'claude',
+      '--cadence', 'manual',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(start.status, 0, start.stderr || start.stdout);
+    const mission = JSON.parse(start.stdout).mission;
+
+    const run = runCli(['mission', 'run', mission.id, '--max-ticks', '3', '--max-wall', '120', '--json'], { cwd: dir, env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.ran_ticks, 3, run.stdout);
+
+    // Rotation event: fires after tick 2 (threshold 2) with the context reason.
+    const eventsLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'mission_events.jsonl'), 'utf8');
+    assert.match(eventsLog, /mission_session_rotated/);
+    assert.match(eventsLog, /context-refresh/);
+
+    // Tick 2's record zeroes the counter and drops the session; tick 3 runs on
+    // a fresh id, so two distinct session ids appear despite zero failures.
+    const stateLog = fs.readFileSync(path.join(dir, '.atris', 'state', 'missions.jsonl'), 'utf8');
+    const sessionIds = new Set([...stateLog.matchAll(/"claude_session_id":"([0-9a-f-]+)"/g)].map((m) => m[1]));
+    assert.equal(sessionIds.size, 2, `expected a fresh session after rotation, saw: ${[...sessionIds].join(', ')}`);
   } finally {
     cleanupTempDir(dir);
   }

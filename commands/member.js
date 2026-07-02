@@ -611,6 +611,36 @@ function startMemberRunMission(name, missionText, args = []) {
   }
 }
 
+// atris member ping <name> "<message>" — talk to an always-on member mid-run.
+// Finds the member's most recently touched live mission (including --worktree
+// missions in sibling checkouts) and leaves the note its next tick consumes.
+function memberPing(name, ...args) {
+  if (!name || name === '--help' || name === '-h') {
+    console.log('Usage: atris member ping <name> "<message>" [--json]');
+    console.log('Leaves a note on the member\'s active mission; the next tick reads it as operator direction.');
+    return;
+  }
+  const text = args.filter((a) => !a.startsWith('--')).join(' ').trim();
+  if (!text) {
+    console.error('atris member ping: message required');
+    process.exit(2);
+  }
+  const missionMod = require('./mission');
+  const terminal = new Set(['complete', 'stopped', 'failed']);
+  const candidates = [
+    ...missionMod.listMissions(process.cwd()),
+    ...missionMod.listWorktreeRollupMissions(process.cwd()),
+  ]
+    .filter((m) => m && m.owner === name && !terminal.has(m.status))
+    .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  if (!candidates.length) {
+    console.error(`atris member ping: no live mission owned by "${name}". Start one: atris member run ${name} "<objective>"`);
+    process.exit(1);
+  }
+  const passthrough = args.filter((a) => a.startsWith('--'));
+  return missionMod.pingMission([candidates[0].id, text, ...passthrough]);
+}
+
 function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member run <name> ["mission text"] [--minutes N|--hours N] [--json]');
@@ -8063,6 +8093,8 @@ async function memberCommand(subcommand, ...args) {
       return memberWake(args[0], ...args.slice(1));
     case 'run':
       return memberRun(args[0], ...args.slice(1));
+    case 'ping':
+      return memberPing(args[0], ...args.slice(1));
     case 'loop':
       return memberLoop(args[0], ...args.slice(1));
     case 'alive':
