@@ -12,6 +12,14 @@ Computer = workspace + files + tools + secrets + memory + agents + validation lo
 
 A computer can be personal or shared by a business. It can run a job like code, research, CRM, reporting, event ops, support, or business ops.
 
+## Quick Start
+
+```bash
+npm install -g atris
+cd your-project
+atris init && atris
+```
+
 ## For Coding Agents
 
 **Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first** — why agents adopt Atris, 60-second start, spread-it instructions.
@@ -47,6 +55,7 @@ Then read the workspace's `atris/atris.md` and follow it exactly. `atris.md` is 
 | `atris/features/` | Feature packs with `idea.md`, `build.md`, `validate.md` |
 | `atris/skills/` | Reusable skills for agents |
 | `atris/team/` | Team member specs and local context |
+| `atris/wiki/` | Repo memory, briefs, concepts, and wiki health |
 
 ```text
 atris/
@@ -56,7 +65,8 @@ atris/
 ├── logs/
 ├── features/
 ├── skills/
-└── team/
+├── team/
+└── wiki/
 ```
 
 ## Install
