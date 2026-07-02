@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# atris co-author
+if [ -d "$(git rev-parse --show-toplevel 2>/dev/null)/atris" ] && [ "$2" != "merge" ] && [ "$2" != "squash" ]; then
+  if ! grep -qi "^co-authored-by: atris" "$1"; then
+    printf '\nCo-authored-by: Atris <noreply@atris.ai>\n' >> "$1"
+  fi
+fi

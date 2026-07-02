@@ -994,6 +994,13 @@ Read atris/MAP.md. Begin iteration 1.`;
     console.log('✓ Created .claude/settings.json (auto-loads Atris on startup)');
   }
 
+  // Co-author trailer: commits in this workspace credit Atris, same as Claude/Cursor do
+  try {
+    const { installSignHook } = require('./sign');
+    const { already } = installSignHook();
+    if (!already) console.log('✓ Installed co-author hook (commits credit Atris — remove with `atris sign off`)');
+  } catch {} // not a git repo — skip quietly
+
   // Update root CLAUDE.md with Atris block (prepend with markers)
   const rootClaudeMd = path.join(process.cwd(), 'CLAUDE.md');
   const atrisBlock = `<!-- ATRIS:START - Auto-generated, do not edit -->
