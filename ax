@@ -621,9 +621,34 @@ function githubWorkspaceIntent(message) {
   return /\b(push|commit|commits?|branch|branches|checkout|merge|rebase|tag|release|pr|pull request|pull-request|repo change|code change|small change)\b/i.test(text);
 }
 
+// Walk up from cwd looking for a workspace marker (.git or atris/ or atris.md).
+// Cached per process — resolveRoute runs per chat line.
+let _workspaceCwd = null;
+function insideWorkspaceCwd() {
+  if (_workspaceCwd !== null) return _workspaceCwd;
+  let dir = process.cwd();
+  for (let i = 0; i < 24; i += 1) {
+    if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'atris.md')) || fs.existsSync(path.join(dir, 'atris'))) {
+      _workspaceCwd = true;
+      return true;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  _workspaceCwd = false;
+  return false;
+}
+
 function resolveRoute(message, options = {}) {
   if (options.route === 'local' || options.forceLocal) return 'local';
   if (options.route === 'cloud' || options.forceCloud) return 'cloud';
+  // Auto: a workspace-shaped question asked from inside a workspace gets local
+  // tools. The intent detector above existed but was never consulted, so plain
+  // `ax --fast` answered repo questions from the tool-less cloud chat lane and
+  // confabulated (SwapBench finding, 2026-07-02: 1/6 vs 6/6 with tools).
+  // Casual chat and non-workspace cwds keep the fast cloud lane.
+  if (workspaceIntent(message) && insideWorkspaceCwd()) return 'local';
   return 'cloud';
 }
 
