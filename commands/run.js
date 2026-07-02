@@ -381,12 +381,15 @@ async function runAtris(options = {}) {
     process.exit(1);
   }
 
-  // Check configured runner CLI is available.
-  try {
-    execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
-  } catch (err) {
-    console.error(runnerAvailabilityFailureMessage(err));
-    process.exit(1);
+  // Check configured runner CLI is available. Dry runs preview context only —
+  // they must work on machines (and CI) without the runner installed.
+  if (!dryRun) {
+    try {
+      execSync(buildRunnerAvailabilityCommand(), { stdio: 'pipe' });
+    } catch (err) {
+      console.error(runnerAvailabilityFailureMessage(err));
+      process.exit(1);
+    }
   }
 
   console.log('');

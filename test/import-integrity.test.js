@@ -34,6 +34,18 @@ function sourceFiles() {
 // const { a, b: c } = require('./x')  /  require('../x')  — local modules only.
 const DESTRUCTURE_REQUIRE = /const\s*\{([^}]+)\}\s*=\s*require\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 
+// Drop block comments and full-line // comments so documentation examples
+// (e.g. `const { a } = require('./x')` in a comment) are never scanned as
+// real imports. Trailing same-line comments are left alone: stripping them
+// safely would need a real parser, and a require() call never follows one.
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .join('\n');
+}
+
 function importedNames(group) {
   return group
     .split(',')
@@ -43,7 +55,7 @@ function importedNames(group) {
 
 function scanFile(rel) {
   const abs = path.join(repoRoot, rel);
-  const src = fs.readFileSync(abs, 'utf8');
+  const src = stripComments(fs.readFileSync(abs, 'utf8'));
   const dir = path.dirname(abs);
   const problems = [];
   let match;

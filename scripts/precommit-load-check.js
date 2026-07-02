@@ -26,12 +26,22 @@ function stagedJsFiles(repoRoot) {
   return out.split('\n').map((l) => l.trim()).filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
 }
 
+// Drop block comments and full-line // comments so documentation examples of
+// the destructure pattern are never treated as real imports.
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .join('\n');
+}
+
 // `const { a, b: c } = require('./x')` -> [{ names: ['a','b'], spec: './x' }]
 function destructuredRequires(source) {
   const found = [];
   const re = /const\s*\{([^}]+)\}\s*=\s*require\(\s*(['"])([^'"]+)\2\s*\)/g;
   let m;
-  while ((m = re.exec(source)) !== null) {
+  while ((m = re.exec(stripComments(source))) !== null) {
     const names = m[1]
       .split(',')
       .map((part) => part.split(':')[0].trim())
