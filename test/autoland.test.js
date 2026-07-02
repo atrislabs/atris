@@ -105,9 +105,14 @@ test('digest and alarm compose in plain language', () => {
   // Clean-stop check-offs fold into the on-ask count; results get air between
   // them so the whole message fits a laptop screen with no scrolling.
   assert.match(digest, /\n\n- slow mission budgets/);
-  assert.match(digest, /2 more results when you want them: atris autoland digest/);
+  // The jargon-heavy result shows de-jargoned instead of hiding: content
+  // always ships. Held count = clean-stop fold only.
+  assert.match(digest, /- add hourly flag so users save time/);
+  assert.match(digest, /1 more result when you want them: atris autoland digest/);
   assert.match(digest, /you approved 1 piece yourself/);
-  assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
+  // Waiting items are the ask, so they carry names, not counts.
+  assert.match(digest, /waiting on you \(approve or bounce: atris task reviews\):/);
+  assert.match(digest, /- Send invoice \(30h\)/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);
   assert.match(digest, /next, if you agree:/);
   assert.match(digest, /taste filters.*\(best fit: auto-improver\)/);
