@@ -507,6 +507,47 @@ test('worktree start supports generic subagent checkout without a member persona
   }
 });
 
+test('legacy agent_worktree.py create command maps to atris worktree start', () => {
+  const dir = makeTempDir();
+  let worktreePath;
+  try {
+    const runGit = (args, cwd = dir) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+
+    worktreePath = path.join(dir, '..', `${path.basename(dir)}-legacy-script-worktree`);
+    const res = spawnSync('python3', [
+      path.join(repoRoot, 'scripts', 'agent_worktree.py'),
+      'create',
+      '--agent',
+      'codex-reviewer',
+      '--task',
+      'Smoke Task',
+      '--base',
+      'HEAD',
+      '--path',
+      worktreePath,
+    ], { cwd: dir, encoding: 'utf8', env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1' } });
+
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /compat: scripts\/agent_worktree\.py maps to:/);
+    assert.match(res.stdout, /atris worktree start --agent codex-reviewer --task Smoke Task --base HEAD/);
+    assert.match(res.stdout, new RegExp(`path: ${worktreePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.equal(fs.existsSync(path.join(worktreePath, 'README.md')), true);
+  } finally {
+    if (worktreePath) cleanupTempDir(worktreePath);
+    cleanupTempDir(dir);
+  }
+});
+
 test('worktree start defaults to upstream remote base and records ship metadata', () => {
   const dir = makeTempDir();
   let worktreePath;
@@ -6661,6 +6702,67 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
   }
 });
 
+test('task next and list honor tag scope before mutating tasks', () => {
+  if (!hasNodeSqlite()) return;
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    const loopCreated = runCli([
+      'task',
+      'new',
+      'Loop janitor keeps unrelated work visible to operators',
+      '--tag',
+      'loop',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(loopCreated.status, 0, loopCreated.stderr);
+    const loopTask = JSON.parse(loopCreated.stdout).task;
+    const loopClaim = runCli(['task', 'claim', loopTask.display_id, '--as', 'onboarding'], { cwd: dir, env });
+    assert.equal(loopClaim.status, 0, loopClaim.stderr);
+
+    const noMatch = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(noMatch.status, 0, noMatch.stderr);
+    const noMatchPayload = JSON.parse(noMatch.stdout);
+    assert.equal(noMatchPayload.action, 'none');
+    assert.equal(noMatchPayload.task_id, null);
+    assert.equal(noMatchPayload.scope.tag, 'golden-path');
+
+    const loopAfterNoMatch = JSON.parse(runCli(['task', 'show', loopTask.display_id, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(loopAfterNoMatch.status, 'claimed');
+    assert.equal(loopAfterNoMatch.claimed_by, 'onboarding');
+    assert.equal(loopAfterNoMatch.tag, 'loop');
+
+    const goldenCreated = runCli([
+      'task',
+      'new',
+      'Golden path work keeps first-run onboarding focused',
+      '--tag',
+      'golden-path',
+      '--json',
+    ], { cwd: dir, env });
+    assert.equal(goldenCreated.status, 0, goldenCreated.stderr);
+    const goldenTask = JSON.parse(goldenCreated.stdout).task;
+
+    const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    assert.equal(scopedNext.status, 0, scopedNext.stderr);
+    const scopedNextPayload = JSON.parse(scopedNext.stdout);
+    assert.equal(scopedNextPayload.action, 'next');
+    assert.equal(scopedNextPayload.task_id, goldenTask.id);
+    assert.equal(scopedNextPayload.task.tag, 'golden-path');
+
+    const filteredList = runCli(['task', 'list', '--tag', 'golden-path'], { cwd: dir, env });
+    assert.equal(filteredList.status, 0, filteredList.stderr);
+    assert.match(filteredList.stdout, /#golden-path/);
+    assert.match(filteredList.stdout, /Golden path work keeps first-run onboarding focused/);
+    assert.doesNotMatch(filteredList.stdout, /Loop janitor/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('task add warns when title lacks operator-ready plain why', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -12449,17 +12551,41 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(claimConflictPayload.command, 'atris task claim');
     assert.equal(claimConflictPayload.reason, 'already_claimed');
     assert.equal(claimConflictPayload.claimed_by, 'bot');
+    assert.equal(claimConflictPayload.recovery_command, `atris task release ${shortId} --as bot`);
 
     const humanClaimConflict = runCli(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env });
     assert.equal(humanClaimConflict.status, 1);
     assert.equal(humanClaimConflict.stdout, '');
     assert.match(humanClaimConflict.stderr, /claim failed: already_claimed \(held by bot\)/);
+    assert.match(humanClaimConflict.stderr, new RegExp(`Recovery: atris task release ${shortId} --as bot`));
+
+    const releaseOther = runCli(['task', 'release', shortId, '--as', 'other', '--json'], { cwd: dir, env });
+    assert.equal(releaseOther.status, 1);
+    assert.equal(releaseOther.stderr, '');
+    const releaseOtherPayload = JSON.parse(releaseOther.stdout);
+    assert.equal(releaseOtherPayload.reason, 'held_by_other');
+    assert.equal(releaseOtherPayload.claimed_by, 'bot');
+
+    const release = runCli(['task', 'release', shortId, '--as', 'bot', '--json'], { cwd: dir, env });
+    assert.equal(release.status, 0, release.stderr);
+    const releasePayload = JSON.parse(release.stdout);
+    assert.equal(releasePayload.ok, true);
+    assert.equal(releasePayload.action, 'released');
+    assert.equal(releasePayload.task.status, 'open');
+    assert.equal(releasePayload.task.claimed_by || null, null);
+    assert.equal(releasePayload.event_version, 3);
+
+    const reclaim = runCli(['task', 'claim', shortId, '--as', 'bot', '--json'], { cwd: dir, env });
+    assert.equal(reclaim.status, 0, reclaim.stderr);
+    const reclaimPayload = JSON.parse(reclaim.stdout);
+    assert.equal(reclaimPayload.action, 'claimed');
+    assert.equal(reclaimPayload.task.claimed_by, 'bot');
 
     const note = runCli(['task', 'say', shortId, 'machine-readable context', '--as', 'bot', '--json'], { cwd: dir, env });
     assert.equal(note.status, 0, note.stderr);
     const notePayload = JSON.parse(note.stdout);
     assert.equal(notePayload.action, 'noted');
-    assert.equal(notePayload.version, 3);
+    assert.equal(notePayload.version, 5);
     assert.equal(notePayload.task.latest_event_type, 'message');
 
     const shown = runCli(['task', 'show', shortId, '--json'], { cwd: dir, env });
@@ -12508,7 +12634,7 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     const events = runCli(['task', 'events', shortId, '--json'], { cwd: dir, env });
     assert.equal(events.status, 0, events.stderr);
     const eventsPayload = JSON.parse(events.stdout);
-    assert.deepEqual(eventsPayload.events.map(e => e.event_type), ['created', 'claimed', 'message', 'completed', 'reviewed']);
+    assert.deepEqual(eventsPayload.events.map(e => e.event_type), ['created', 'claimed', 'claim_released', 'claimed', 'message', 'completed', 'reviewed']);
 
     const where = runCli(['task', 'where', '--json'], { cwd: dir, env });
     assert.equal(where.status, 0, where.stderr);
@@ -15656,6 +15782,37 @@ test('soul help prints usage without workspace state', () => {
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `soul ${helpArg} created atris/`);
       assert.equal(fs.existsSync(path.join(home, '.atris')), false, `soul ${helpArg} created ~/.atris`);
     }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('top-level help shows local and global first-run commands', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli(['--help'], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /atris init\s+Global install/);
+    assert.match(res.stdout, /npx atris init\s+Local install/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('fresh workspace prompt shows the npx init path for local installs', () => {
+  const dir = makeTempDir();
+  try {
+    const home = path.join(dir, 'home');
+    const res = runCli([], { cwd: dir, env: { HOME: home } });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.match(res.stdout, /No atris\/ folder found/);
+    assert.match(res.stdout, /atris init\s+if Atris is installed globally/);
+    assert.match(res.stdout, /npx atris init\s+if Atris was installed in this project/);
+    assert.equal(fs.existsSync(path.join(dir, 'atris')), false);
+    assert.equal(fs.existsSync(path.join(home, '.atris')), false);
   } finally {
     cleanupTempDir(dir);
   }

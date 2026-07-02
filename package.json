@@ -12,6 +12,7 @@
     "cli/*.py",
     "commands/",
     "decks/",
+    "scripts/agent_worktree.py",
     "utils/",
     "lib/",
     "templates/",

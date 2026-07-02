@@ -105,7 +105,8 @@ atris task - durable local task state (SQLite, gitignored)
 
   atris task                              Show the task desk
   atris task new "<title>"                Create a task
-  atris task next [--create-next]         Claim/show next open task; optionally create the generated Endgame fallback
+  atris task next [--tag <tag>] [--create-next]
+                                           Claim/show next open task; optionally create the generated Endgame fallback
   atris task continue-work <id>           Create/reuse a certified Review follow-up task
   atris task say <id> "<message>"         Add context to a task
   atris task chat <id> "<message>" [--goal "..."]  Refine a task chat + working goal
@@ -139,6 +140,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task day [--json]                  Show today's owner-grouped task list
   atris task list [--all] [--status <s>]   List tasks (default: this workspace)
   atris task claim <id> [--as <owner>]     Atomic claim
+  atris task release <id> [--as <owner>]   Release your own mistaken claim back to open
   atris task capabilities [--json]         Read-only task CLI/API capability contract
   atris task capabilities-check [--json]   Verify task capability contract conformance
   atris task review-lane-drain [--json]    Pick next safe Review-lane agent action
@@ -3204,6 +3206,11 @@ function formatTaskQueueScope(scope = {}) {
     .join(' ');
 }
 
+function noOpenTasksMessage(scope = {}) {
+  const scopeText = formatTaskQueueScope(scope);
+  return scopeText ? `No open tasks for ${scopeText}.` : 'No open tasks.';
+}
+
 function taskQueueContract(projection, { reviewer = 'codex-review', limit = 8, scope = {}, hasExistingReviewFollowUp = null, hasPendingReviewChat = null, excludeTaskIds = null } = {}) {
   const normalizedScope = normalizeTaskQueueScope(scope);
   const tasks = filterTasksByScope(sortTasksNewestFirst(projection.tasks || []), normalizedScope, { hasExistingReviewFollowUp });
@@ -5175,20 +5182,24 @@ function cmdHome(args) {
 function cmdList(args) {
   const all = hasFlag(args, '--all');
   const status = flag(args, '--status');
+  const scope = taskQueueScopeFromArgs(args);
+  const scoped = !taskQueueScopeIsEmpty(scope);
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const rows = taskDb.listTasks(db, {
+  const rawRows = taskDb.listTasks(db, {
     workspaceRoot: all ? null : taskDb.workspaceRoot(),
     status: typeof status === 'string' ? status : null,
-    limit: 200,
+    limit: scoped ? null : 200,
   });
+  const rows = filterTasksByScope(rawRows, scope);
   const displayRows = taskDb.withTaskDisplayRefs(rows, workspaceRefRows(taskDb, db, all));
   if (wantsJson(args)) {
-    printJson({ ok: true, action: 'list', tasks: displayRows });
+    printJson({ ok: true, action: 'list', scope: normalizeTaskQueueScope(scope), tasks: displayRows });
     return;
   }
   if (rows.length === 0) {
-    console.log('(no tasks)');
+    const scopeText = formatTaskQueueScope(scope);
+    console.log(scopeText ? `(no tasks for ${scopeText})` : '(no tasks)');
     return;
   }
   for (const r of displayRows) {
@@ -5224,19 +5235,68 @@ function cmdClaim(args) {
     }
     console.log(`claimed ${taskRef(compactTaskFromProjection(projection, taskId))} as ${owner}`);
   } else {
+    const recoveryCommand = result.reason === 'already_claimed' && result.claimed_by
+      ? `atris task release ${id} --as ${result.claimed_by}`
+      : null;
     if (wantsJson(args)) {
       printJson({
         ok: false,
         command: 'atris task claim',
         reason: result.reason,
         claimed_by: result.claimed_by || null,
+        recovery_command: recoveryCommand,
         detail: `claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`,
       });
       process.exit(1);
     }
     console.error(`claim failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`);
+    if (recoveryCommand) console.error(`Recovery: ${recoveryCommand}`);
     process.exit(1);
   }
+}
+
+function cmdRelease(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) {
+    failTask('atris task release', 'missing_id', 'id required');
+  }
+  const owner = flag(args, '--as') || DEFAULT_OWNER;
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task release');
+  const result = taskDb.releaseTask(db, { id: taskId, actor: String(owner) });
+  if (result.released) {
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const task = compactTaskFromProjection(projection, taskId);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'released',
+        task_id: taskId,
+        owner: String(owner),
+        projection_path: outPath,
+        task,
+        event_version: result.event && result.event.version || null,
+      });
+      return;
+    }
+    console.log(`released ${taskRef(task)} from ${owner}`);
+    console.log(`Next: atris task next --as ${owner}`);
+    return;
+  }
+  if (wantsJson(args)) {
+    printJson({
+      ok: false,
+      command: 'atris task release',
+      reason: result.reason,
+      claimed_by: result.claimed_by || null,
+      detail: `release failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`,
+    });
+    process.exit(1);
+  }
+  console.error(`release failed: ${result.reason}${result.claimed_by ? ` (held by ${result.claimed_by})` : ''}`);
+  process.exit(1);
 }
 
 function liveTaskWithTitle(tasks, title) {
@@ -5342,14 +5402,16 @@ function createEndgameSeedTask(taskDb, db, seed, owner) {
 
 function cmdNext(args) {
   const owner = flag(args, '--as') || DEFAULT_OWNER;
+  const scope = taskQueueScopeFromArgs(args);
+  const scoped = !taskQueueScopeIsEmpty(scope);
   const taskDb = getTaskDb();
   const db = taskDb.open();
-  const claimed = taskDb.listTasks(db, {
+  const claimed = filterTasksByScope(taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
     status: 'claimed',
     claimedBy: String(owner),
-    limit: 1,
-  });
+    limit: scoped ? null : 1,
+  }), scope);
   if (claimed.length) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
     if (wantsJson(args)) {
@@ -5358,6 +5420,7 @@ function cmdNext(args) {
         action: 'current',
         task_id: claimed[0].id,
         owner: String(owner),
+        scope: normalizeTaskQueueScope(scope),
         projection_path: outPath,
         task: compactTaskFromProjection(projection, claimed[0].id),
       });
@@ -5368,14 +5431,14 @@ function cmdNext(args) {
     return;
   }
   const reviewProjection = writeDefaultProjection(taskDb, db);
-  const reviewTasks = (reviewProjection.projection.tasks || [])
+  const reviewTasks = filterTasksByScope(reviewProjection.projection.tasks || [], scope)
     .map(compactTaskForStatus)
     .filter(task => task && task.review && task.review.handoff);
-  const open = taskDb.listTasks(db, {
+  const open = filterTasksByScope(taskDb.listTasks(db, {
     workspaceRoot: taskDb.workspaceRoot(),
     status: 'open',
-    limit: 1,
-  });
+    limit: scoped ? null : 1,
+  }), scope);
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
     const reviewTask = reviewTasks.find(task => task.review.handoff.next_action === 'agent_review_again')
@@ -5405,6 +5468,7 @@ function cmdNext(args) {
             action: 'created_next',
             task_id: created.task_id,
             owner: String(owner),
+            scope: normalizeTaskQueueScope(scope),
             projection_path: createdOutPath,
             handoff,
             next_agent_action: nextAgentAction,
@@ -5427,6 +5491,7 @@ function cmdNext(args) {
           action: handoff.next_action,
           task_id: handoff.next_action === 'continue_work' ? null : reviewTask.id,
           owner: String(owner),
+          scope: normalizeTaskQueueScope(scope),
           projection_path: outPath,
           handoff,
           next_agent_action: nextAgentAction,
@@ -5436,7 +5501,7 @@ function cmdNext(args) {
         });
         return;
       }
-      console.log('No open tasks.');
+      console.log(noOpenTasksMessage(scope));
       console.log(handoff.next_action === 'agent_review_again'
         ? `${taskRef(reviewTask)} needs one more agent check before approval.`
         : `${taskRef(reviewTask)} is ready for approval.`);
@@ -5461,11 +5526,12 @@ function cmdNext(args) {
         action: 'none',
         task_id: null,
         owner: String(owner),
+        scope: normalizeTaskQueueScope(scope),
         projection_path: outPath,
       });
       return;
     }
-    console.log('No open tasks.');
+    console.log(noOpenTasksMessage(scope));
     console.log('Start with: atris task new "..."');
     return;
   }
@@ -5481,6 +5547,7 @@ function cmdNext(args) {
       action: 'next',
       task_id: open[0].id,
       owner: String(owner),
+      scope: normalizeTaskQueueScope(scope),
       projection_path: outPath,
       task: compactTaskFromProjection(projection, open[0].id),
     });
@@ -9912,6 +9979,9 @@ async function run(args) {
       return cmdClearPlan(rest);
     case 'claim':  return cmdClaim(rest);
     case 'start':  return cmdClaim(rest);
+    case 'release':
+    case 'unclaim':
+      return cmdRelease(rest);
     case 'current':
     case 'select':
       return cmdCurrent(rest);

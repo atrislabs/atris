@@ -206,6 +206,36 @@ test('cron line is labeled and removable', () => {
   assert.match(line, /autoland tick/);
 });
 
+test('autoland help forms are read-only and do not run a heartbeat', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const codeTask = certifiedTask(repo, 'Help must not land work', { tag: 'code' });
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+
+    for (const args of [
+      ['autoland', '--help'],
+      ['autoland', 'tick', '--help'],
+      ['autoland', 'tick', 'help'],
+      ['autoland', 'bogus', '--help'],
+    ]) {
+      const help = runCli(args, repo);
+      assert.equal(help.status, 0, help.stderr || help.stdout);
+      assert.match(help.stdout, /atris autoland — you approve the policy once/);
+      assert.match(help.stdout, /atris autoland tick \[--json\]/);
+      assert.match(help.stdout, /tick --help never lands work/);
+      assert.doesNotMatch(help.stdout, /autoland tick:/);
+    }
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
+    assert.equal(byRef[codeTask].status, 'review');
+    assert.equal(byRef[codeTask].metadata.accepted_by, undefined);
+    assert.equal(fs.existsSync(path.join(repo, '.atris', 'state', 'autoland.json')), false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('live auto-accept refuses without policy, lands with it, blocks denied lanes', () => {
   const { base, repo } = makeTempRepo();
   try {

@@ -357,15 +357,21 @@ function showHelp() {
   console.log('                                     on you past 24h');
   console.log('  atris autoland off                 back to approving every item');
   console.log('  atris autoland digest [--send]     the daily message, now');
-  console.log('  atris autoland tick                one heartbeat (what the hourly cron runs)');
+  console.log('  atris autoland tick [--json]       one heartbeat (what the hourly cron runs)');
+  console.log('');
+  console.log('help is always read-only: atris autoland tick --help never lands work.');
   console.log('');
   return 0;
 }
 
+function wantsHelp(args = []) {
+  return args.some((arg) => arg === 'help' || arg === '--help' || arg === '-h');
+}
+
 function autolandCommand(args = []) {
   const [sub, ...rest] = args;
+  if (wantsHelp(args)) return showHelp();
   if (!sub || sub.startsWith('--')) return showStatus(repoRoot(), args);
-  if (sub === 'help' || sub === '--help' || sub === '-h') return showHelp();
   const root = repoRoot();
   if (sub === 'on') return turnOn(root, rest);
   if (sub === 'off') return turnOff(root);

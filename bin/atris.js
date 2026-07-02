@@ -429,11 +429,13 @@ function showHelp() {
   console.log('Quick Start:');
   console.log('');
   console.log('  1. atris                  Open a persistent AI computer for this workspace');
+  console.log('     npx atris              Same command after a local project install');
   console.log('  2. Describe what you want run, built, researched, or validated');
   console.log('  3. Atris acts with context, memory, tools, and a review loop');
   console.log('');
   console.log('Common invocations:');
-  console.log('  atris init');
+  console.log('  atris init                Global install: initialize this project');
+  console.log('  npx atris init            Local install: initialize this project');
   console.log('  atris computer');
   console.log('  atris business init "My Company"');
   console.log('  atris run');
@@ -1059,7 +1061,11 @@ async function interactiveEntry(userInput) {
 
   // Fresh install - offer init
   if (state.state === 'fresh') {
-    console.log('\nNo atris/ folder found. Run: atris init');
+    console.log('\nNo atris/ folder found.');
+    console.log('');
+    console.log('Start here:');
+    console.log('  atris init       if Atris is installed globally');
+    console.log('  npx atris init   if Atris was installed in this project');
     return;
   }
 
