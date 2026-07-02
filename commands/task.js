@@ -8,7 +8,7 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 const { taskProofState, buildVerifiedProof } = require('../lib/task-proof');
-const { evaluateAutoAccept, parseVerifyCommand } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, parseVerifyCommand, runVerifyCommand, DENIED_TAGS } = require('../lib/auto-accept-certified');
 const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const {
@@ -113,6 +113,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task review-chat <id> [--as <owner>]  Start a task-owned /codex verification chat
   atris task accept <id> [--proof "..."] [--public]
                                            Human accepts proof, marks done; --public also publishes AgentXP
+  atris task certify-verified [--dry-run] [--limit <n>] [--as <actor>]
+                                           Re-run the runnable check named in each Review proof as a second actor; passing rows certify (denied lanes and check-less rows wait for a human)
   atris task auto-accept-certified --dry-run [--strict-verify] [--limit <n>]
                                            Preview certified Review rows; live accept needs --confirm-human-accept --as <human>
   atris task revise <id> --note "..."      Send reviewed work back to Do
@@ -7909,6 +7911,141 @@ function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '
   return { ok: true, reviewed };
 }
 
+// Second-actor certification for proof-backed Review rows whose proof names a
+// runnable, allowlisted check. Re-running that check as a distinct actor IS
+// the independent verification the certification gate asks for — the row
+// becomes certified and autoland can land it on the same heartbeat. Rows in
+// denied lanes, without a runnable check, or already certified keep their
+// existing paths (review chats, human accept).
+function certifyVerifyCandidate(task) {
+  const metadata = task.metadata || {};
+  const review = task.review || {};
+  const recorded = typeof metadata.verify === 'string' && metadata.verify.trim() ? [metadata.verify.trim()] : [];
+  const proof = String(review.proof || metadata.latest_agent_proof || '');
+  for (const raw of [...recorded, ...taskReviewEvidenceCommands(proof)]) {
+    // The evidence extractor can keep trailing prose ("git diff --check. Evidence
+    // inspected: ..."); try the full clause, then the first sentence of it.
+    for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
+      if (candidate && parseVerifyCommand(candidate).ok) return candidate;
+    }
+  }
+  return null;
+}
+
+function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
+  const row = taskDb.getTask(db, taskId);
+  if (!row) return;
+  const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
+  metadata.verify = metadata.verify || verify;
+  metadata.certified_verified_at = new Date().toISOString();
+  metadata.certified_verified_by = actor;
+  db.prepare(`
+    UPDATE tasks
+       SET metadata = ?,
+           updated_at = ?
+     WHERE id = ?
+  `).run(JSON.stringify(metadata), Date.now(), taskId);
+}
+
+function cmdCertifyVerified(args) {
+  const dryRun = hasFlag(args, '--dry-run');
+  const asJson = wantsJson(args);
+  const actor = String(flag(args, '--as') || 'autoland-verifier');
+  const limitRaw = flag(args, '--limit');
+  const max = limitRaw && limitRaw !== true ? Math.max(1, Number(limitRaw) || 6) : 6;
+
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const { projection } = writeDefaultProjection(taskDb, db);
+  const candidates = (projection.tasks || [])
+    .filter((t) => t && t.status === 'review')
+    .sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0))
+    .slice(0, max);
+  const results = [];
+  for (const item of candidates) {
+    const fullProjection = enrichTaskProjection(taskDb.taskProjection(db, { taskId: item.id }));
+    const task = fullProjection.tasks[0] || null;
+    if (!task) {
+      results.push({ ref: item.display_id || item.id, action: 'skipped', reason: 'task_not_found' });
+      continue;
+    }
+    const ref = task.display_id || task.legacy_ref || task.id;
+    const metadata = task.metadata || {};
+    const review = task.review || {};
+    if (task.status !== 'review') {
+      results.push({ ref, action: 'skipped', reason: 'not_in_review' });
+      continue;
+    }
+    const approval = String(review.approval_status || metadata.approval_status || 'pending').toLowerCase();
+    if (approval !== 'pending') {
+      results.push({ ref, action: 'skipped', reason: `approval_${approval}` });
+      continue;
+    }
+    if (review.agent_certified === true || metadata.agent_certified === true) {
+      results.push({ ref, action: 'skipped', reason: 'already_certified' });
+      continue;
+    }
+    const tag = String(task.tag || '').toLowerCase();
+    if (DENIED_TAGS.has(tag)) {
+      results.push({ ref, action: 'skipped', reason: `denied_tag_${tag}` });
+      continue;
+    }
+    const verify = certifyVerifyCandidate(task);
+    if (!verify) {
+      results.push({ ref, action: 'skipped', reason: 'no_runnable_check_in_proof' });
+      continue;
+    }
+    if (dryRun) {
+      results.push({ ref, action: 'would_certify', verify });
+      continue;
+    }
+    const run = runVerifyCommand(verify, task.workspace_root || process.cwd());
+    if (!run.ok) {
+      results.push({ ref, action: 'verify_failed', reason: run.reason, verify });
+      continue;
+    }
+    const builderProof = String(review.proof || metadata.latest_agent_proof || '').slice(0, 200);
+    const readied = taskDb.readyTask(db, {
+      id: task.id,
+      actor,
+      proof: `Second-actor check: \`${verify}\` re-run by ${actor}, exited 0. Builder proof inspected: ${builderProof}`,
+      lesson: '',
+      nextTask: '',
+    });
+    if (!readied.ready) {
+      results.push({ ref, action: 'certify_failed', reason: readied.reason, verify });
+      continue;
+    }
+    stampCertifyVerifyMetadata(taskDb, db, task.id, actor, verify);
+    const certifiedNow = readied.event?.payload?.agent_certified === true;
+    results.push({ ref, action: certifiedNow ? 'certified' : 'pass_recorded', verify });
+  }
+  const { outPath } = writeDefaultProjection(taskDb, db);
+  const certified = results.filter((r) => r.action === 'certified').length;
+  const payload = {
+    ok: true,
+    action: dryRun ? 'certify_verified_dry_run' : 'certify_verified',
+    actor,
+    certified,
+    would_certify: results.filter((r) => r.action === 'would_certify').length,
+    skipped: results.filter((r) => r.action === 'skipped').length,
+    failed: results.filter((r) => r.action === 'verify_failed' || r.action === 'certify_failed').length,
+    results,
+    projection_path: outPath,
+  };
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else if (results.length === 0) {
+    console.log('certify-verified: no review rows to consider.');
+  } else {
+    for (const r of results) {
+      console.log(`${r.action.padEnd(14)} ${r.ref}${r.verify ? `  \`${r.verify}\`` : ''}${r.reason ? `  (${r.reason})` : ''}`);
+    }
+    console.log(`certified ${certified}; humans keep denied lanes and rows without a runnable check.`);
+  }
+  return payload;
+}
+
 function cmdAutoAcceptCertified(args) {
   const dryRun = hasFlag(args, '--dry-run');
   const strictVerify = hasFlag(args, '--strict-verify');
@@ -9769,6 +9906,8 @@ async function run(args) {
     case 'auto-accept-certified':
     case 'auto-accept':
       return cmdAutoAcceptCertified(rest);
+    case 'certify-verified':
+      return cmdCertifyVerified(rest);
     case 'accept-group':
       return cmdAcceptGroup(rest);
     case 'revise': return cmdRevise(rest);

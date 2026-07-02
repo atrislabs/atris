@@ -221,7 +221,22 @@ function runTick(root, args) {
     return 0;
   }
 
-  // 1. land what is eligible — the policy is the standing authorization
+  // 1. certify what has executable proof — re-run the runnable check named in
+  // each Review proof as a second actor. Without this the tick only lands rows
+  // some always-on mission happened to certify, and everything else waits on a
+  // human who never needed to look. Denied lanes and check-less proofs still wait.
+  if (policy.drain_reviews !== false) {
+    const certify = runOwnCli(root, ['task', 'certify-verified', '--json']);
+    try {
+      const parsed = JSON.parse(certify.stdout);
+      receipt.reviews_certified = parsed.certified ?? 0;
+      if (parsed.ok !== true) receipt.certify_error = 'certify-verified failed';
+    } catch {
+      receipt.certify_error = certify.stderr.slice(0, 200) || 'certify-verified output unreadable';
+    }
+  }
+
+  // 2. land what is eligible — the policy is the standing authorization
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--limit', '12'];
   if (policy.strict_verify !== false) cliArgs.push('--strict-verify');
   const accept = runOwnCli(root, cliArgs);
@@ -232,7 +247,7 @@ function runTick(root, args) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
 
-  // 2. alarm on anything waiting on a human past the line
+  // 3. alarm on anything waiting on a human past the line
   const state = autoland.readState(root);
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
@@ -247,7 +262,7 @@ function runTick(root, args) {
     }
   }
 
-  // 3. daily digest at the configured hour
+  // 4. daily digest at the configured hour
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
   if (new Date().getHours() === digestHour && state.last_digest_date !== today) {
@@ -264,7 +279,7 @@ function runTick(root, args) {
     receipt.digest_text = text;
     state.last_digest_date = today;
 
-    // 4. once a day, keep the receipt shelf lean: compress old run receipts
+    // 5. once a day, keep the receipt shelf lean: compress old run receipts
     // into the manifest and drop unreferenced clutter, newest 200 kept.
     const prune = runOwnCli(root, ['mission', 'prune-runs', '--apply', '--days', '14', '--keep-newest', '200', '--json']);
     try {
@@ -278,7 +293,7 @@ function runTick(root, args) {
 
   if (json) console.log(JSON.stringify(receipt));
   else {
-    console.log(`autoland tick: ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}`);
+    console.log(`autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms, digest ${receipt.digest_sent ? 'sent' : 'not due'}`);
   }
   return 0;
 }

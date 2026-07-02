@@ -170,6 +170,51 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
   }
 });
 
+// Walk a task only to first proof: builder ready, no second reviewer. The tick
+// must supply the second-actor check itself by re-running the proof's command.
+function proofBackedTask(repo, title, { tag = 'code' } = {}) {
+  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
+  assert.equal(created.status, 0, created.stderr || created.stdout);
+  const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
+  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
+  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const proof = 'Command passed: git diff --check. Evidence inspected: clean tree, change verified in place.';
+  assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
+  return String(id);
+}
+
+test('tick certifies proof-backed reviews by re-running their check, then lands them', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const codeTask = proofBackedTask(repo, 'One-tick landing', { tag: 'code' });
+    const securityTask = proofBackedTask(repo, 'Rotate the signing key', { tag: 'security' });
+    const noCheckCreated = runCli(['task', 'new', 'No runnable check', '--tag', 'code', '--json'], repo);
+    const noCheckTask = String(JSON.parse(noCheckCreated.stdout).task?.display_id);
+    assert.equal(runCli(['task', 'claim', noCheckTask, '--as', 'builder'], repo).status, 0);
+    // meaningful proof (receipt path) but no runnable command to re-run
+    assert.equal(runCli(['task', 'ready', noCheckTask, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
+
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    // one heartbeat: the code task is certified by the re-run check AND landed
+    assert.equal(receipt.reviews_certified, 1);
+    assert.deepEqual(receipt.landed, [codeTask]);
+
+    const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
+    const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
+    assert.equal(byRef[codeTask].status, 'done');
+    // the protected lane and the check-less proof both keep waiting for a human
+    assert.equal(byRef[securityTask].status, 'review');
+    assert.equal(byRef[securityTask].review.agent_certified, false);
+    assert.equal(byRef[noCheckTask].status, 'review');
+    assert.equal(byRef[noCheckTask].review.agent_certified, false);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('tick is a no-op when the policy is off', () => {
   const { base, repo } = makeTempRepo();
   try {
