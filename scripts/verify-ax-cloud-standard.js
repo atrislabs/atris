@@ -34,6 +34,10 @@ const WORKSPACE_PROMPTS = [
   "in scripts/fast-coach/tick.mjs, what does SLOW_MS control and what's its value?",
   'which launchd lane runs fast-coach nightly and at what time?',
   'what does CLAUDE_TIMEOUT_MS default to?',
+  // Live miss 2026-07-02 (Clowen's first prompt): recent-events phrasing —
+  // the journal IS the workspace answer surface.
+  'what did Atris ship last night? give me the highlights in plain words',
+  'summarize the journal from yesterday',
 ];
 // GitHub connector phrasing stays cloud even inside a workspace — only
 // local-checkout wording (commit/branch/change) claims the local lane.

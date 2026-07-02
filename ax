@@ -649,6 +649,11 @@ function insideWorkspaceCwd(startDir) {
 // that IS the filespace, a locate/edit verb PAIRED with a code noun, or a
 // GitHub write intent.
 const ROUTE_STRONG_NOUN = /\b(files?|folders?|repos?|repository|codebase|director(?:y|ies)|src|grep|diff|branch(?:es)?|commits?|\.git\b|package\.json|readme|map\.md|todo\.md|workspace)\b/i;
+// Recent-events phrasing is workspace-shaped INSIDE a workspace — the journal
+// (atris/logs) is the answer surface. Live miss 2026-07-02: "what did Atris
+// ship last night?" routed cloud tool-less and the model asked the user to
+// paste a changelog it was sitting on top of.
+const ROUTE_RECENT_EVENTS = /\b(shipp?ed|shipping|changelog|journals?|overnight|last night|yesterday)\b|\bship\b.*\b(today|tonight|last|this week)\b|\bwhat(?:'s| is| did| got)?\s+(?:\w+\s+){0,3}(?:new|ship|shipped|done|built|landed)\b/i;
 const ROUTE_VERB = /\b(find|where|which|search|locate|name|show|list|read|open|inspect|edit|fix|patch|modify|change|refactor|run|debug|trace|failing)\b/i;
 const ROUTE_CODE_NOUN = /\b(functions?|class(?:es)?|modules?|components?|scripts?|tests?|gates?|configs?|imports?|exports?|variables?|lines?|paths?|projects?|channels?|handlers?|endpoints?|ipc|launchd|plists?|lanes?|crons?|daemons?|missions?|receipts?)\b/i;
 // A literal path or code identifier IS the workspace — the strongest routing
@@ -668,6 +673,7 @@ function workspaceRouteIntent(message) {
   if (/\bgithub\b/i.test(text)) return /\b(commits?|branch(?:es)?|checkout|merge|rebase|changes?|diff)\b/i.test(text);
   if (ROUTE_PATH.test(text)) return true;
   if (ROUTE_STRONG_NOUN.test(text)) return true;
+  if (ROUTE_RECENT_EVENTS.test(text)) return true;
   if (ROUTE_VERB.test(text) && ROUTE_CODE_NOUN.test(text)) return true;
   return false;
 }
