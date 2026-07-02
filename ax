@@ -2012,7 +2012,11 @@ async function postTurn(message, options = {}) {
   // Relayed business turns wait on EC2 terminal calls (up to 60s each) with no
   // SSE traffic in between, so the socket-idle timeout needs more headroom.
   const baseTimeoutMs = payload.model === 'atris:max' ? 300000 : payload.model === 'atris:pro' ? 180000 : 60000;
-  const timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
+  let timeoutMs = options.business ? Math.max(baseTimeoutMs, 180000) : baseTimeoutMs;
+  // Local workspace tool loops (max_turns 8/14) legitimately run past the fast
+  // lane's 60s chat wall — SwapBench 2026-07-02: three tool-loop tasks died at
+  // ~60s as "Atris cloud did not respond". Same headroom as business relays.
+  if (local) timeoutMs = Math.max(timeoutMs, 180000);
   const turnUrl = new URL(backendUrl({ route: endpointRoute }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
   const state = {
