@@ -2428,7 +2428,7 @@ async function chat(options = {}) {
     const pendingTaskPreview = latestPendingTaskPreview(history);
     const route = pendingTaskPreview ? 'cloud' : options.route;
     maybeWriteAtrisGoalBanner(output, cwd);
-    const turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route });
+    const turnRoute = options.business ? 'cloud' : resolveRoute(trimmed, { route, cwd });
     if (!(await ensureRuntimeReady(turnRoute))) return false;
     const turnFunction = options.turnFunction || turnFunctionForMode(mode);
     const turnId = options.turnId || createTurnId();

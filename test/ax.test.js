@@ -18,7 +18,10 @@ test('ax routes workspace questions local inside a workspace, cloud outside', ()
   assert.equal(ax.resolveRoute('search src for the input component', { cwd: repoCwd }), 'local');
   assert.equal(ax.resolveRoute('fix the xp game tests', { cwd: repoCwd }), 'local');
   assert.equal(ax.resolveRoute('what files are here?', { cwd: NON_WORKSPACE_CWD }), 'cloud');
-  assert.equal(ax.resolveRoute('what is the capital of france?', { cwd: repoCwd }), 'cloud');
+  // Workspace standard v2: inside a workspace every prompt routes local with
+  // tools attached; the model decides whether to use them, even for pure chat.
+  assert.equal(ax.resolveRoute('what is the capital of france?', { cwd: repoCwd }), 'local');
+  assert.equal(ax.resolveRoute('what is the capital of france?', { cwd: NON_WORKSPACE_CWD }), 'cloud');
 
   const payload = ax.buildPayload('what files are here?', {
     mode: 'fast',
@@ -363,14 +366,16 @@ test('ax shows credits, tier colors, spinner verbs, and clickable paths', () => 
 });
 
 test('ax routes connector reads to authenticated cloud context', () => {
-  assert.equal(ax.resolveRoute('what is on my calendar today?'), 'cloud');
-  assert.equal(ax.resolveRoute('which integrations are connected?'), 'cloud');
-  assert.equal(ax.resolveRoute('what github repos do I have?'), 'cloud');
-  assert.equal(ax.resolveRoute('create a github issue for this bug'), 'cloud');
+  // Workspace standard v2: connector reads route cloud outside a workspace;
+  // GitHub-connector phrasing keeps the cloud lane even inside one.
+  assert.equal(ax.resolveRoute('what is on my calendar today?', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+  assert.equal(ax.resolveRoute('which integrations are connected?', { cwd: NON_WORKSPACE_CWD }), 'cloud');
+  assert.equal(ax.resolveRoute('what github repos do I have?', { cwd: path.join(__dirname, '..') }), 'cloud');
+  assert.equal(ax.resolveRoute('create a github issue for this bug', { cwd: path.join(__dirname, '..') }), 'cloud');
 
   const payload = ax.buildPayload('what is on my calendar today?', {
     mode: 'fast',
-    cwd: '/tmp/project',
+    cwd: NON_WORKSPACE_CWD,
     connectionContext: {
       schema: 'atris.connection_capabilities.v1',
       connections: [],
@@ -429,7 +434,7 @@ test('ax sends chat history as structured previous messages, not a prompt wrappe
   ];
   const payload = ax.buildPayload('can you add a calendar event at 2PM today please for buunch', {
     mode: 'fast',
-    cwd: '/tmp/project',
+    cwd: NON_WORKSPACE_CWD,
     history,
     conversationId: 'ax-thread-1',
     connectionContext: {

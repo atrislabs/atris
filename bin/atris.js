@@ -557,7 +557,7 @@ function showHelp() {
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
-  console.log('  chat       - Chat with the selected Atris agent (or: atris chat scan)');
+  console.log('  chat       - Chat with Atris 2 Fast in this workspace (--agent for cloud agent; or: atris chat scan)');
   console.log('  fast       - Chat with Atris2 Fast');
   console.log('  login      - Sign in or add another account');
   console.log('  logout     - Sign out of current account');
@@ -2674,18 +2674,21 @@ async function agentAtris() {
 
 
 async function chatAtris() {
-  // Get message from command line args
-  const message = process.argv.slice(3).join(' ').trim();
+  // Get message from command line args; --agent forces the legacy cloud-agent lane
+  const rawArgs = process.argv.slice(3);
+  const agentLane = rawArgs.includes('--agent');
+  const message = rawArgs.filter(arg => arg !== '--agent').join(' ').trim();
 
   // Respect -h / --help before any auth/state checks
   if (message === '-h' || message === '--help' || message === 'help') {
     console.log('Usage: atris chat ["message"]');
     console.log('');
-    console.log('  Open an interactive session with the selected agent, or send a one-shot message.');
-    console.log('  Requires `atris login` and `atris agent` to be run first.');
+    console.log('  Chat with Atris 2 Fast in this workspace: tools attached, same turn as `ax --fast`.');
+    console.log('  Requires `atris login`.');
     console.log('');
-    console.log('  atris chat                  Interactive REPL with selected agent');
-    console.log('  atris chat "what now?"      One-shot message');
+    console.log('  atris chat                  Interactive chat (ax --fast --chat)');
+    console.log('  atris chat "what now?"      One-shot message (ax --fast)');
+    console.log('  atris chat --agent [...]    Legacy cloud-agent lane (needs `atris agent`)');
     process.exit(0);
   }
 
@@ -2699,6 +2702,22 @@ async function chatAtris() {
   const missionIntent = missionRunIntentFromFastMessage(message);
   if (missionIntent) {
     process.exit(await runLocalFastMission(missionIntent));
+  }
+
+  // Workspace standard v2: `atris chat` is the same turn as `ax --fast`,
+  // Atris 2 Fast with tools attached, ax owning routing (local tool loop,
+  // cloud fallback when no backend listens). The pro-chat cloud-agent lane
+  // survives behind --agent only; it 404s the moment a saved agent is
+  // deleted server-side and cannot see the workspace.
+  if (!agentLane) {
+    try {
+      const axPath = path.join(__dirname, '..', 'ax');
+      const axArgs = message ? ['--fast', message] : ['--fast', '--chat'];
+      const run = spawnSync(process.execPath, [axPath, ...axArgs], { stdio: 'inherit' });
+      process.exit(run.status || 0);
+    } catch {
+      // ax unavailable: fall through to the agent lane.
+    }
   }
 
   printAtrisGoalBanner(process.cwd());
@@ -2750,7 +2769,13 @@ async function chatOnce(config, credentials, message) {
     await streamProChat(endpoint, credentials.token, body);
     console.log('\n\n✓ Complete\n');
   } catch (error) {
-    console.error(`\n✗ Error: ${error.message || error}`);
+    const detail = String(error.message || error);
+    if (/404/.test(detail) && /agent not found/i.test(detail)) {
+      console.error(`\n✗ Error: Agent "${config.agent_name || agentId}" no longer exists on the server.`);
+      console.error('  Run "atris agent" to pick a new one, or drop --agent to use the fast workspace lane.');
+    } else {
+      console.error(`\n✗ Error: ${detail}`);
+    }
     process.exit(1);
   }
 }
