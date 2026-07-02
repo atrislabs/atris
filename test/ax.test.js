@@ -295,6 +295,38 @@ test('ax chat renders claude-style blocks and a slash menu', () => {
   assert.deepEqual(ax.chatCompleter('hello'), [[], 'hello']);
 });
 
+test('AX_TIMING prints event timing to stderr without changing chat output', () => {
+  const previousTiming = process.env.AX_TIMING;
+  const previousWrite = process.stderr.write;
+  const timingLines = [];
+  process.env.AX_TIMING = '1';
+  process.stderr.write = (chunk) => {
+    timingLines.push(String(chunk));
+    return true;
+  };
+  try {
+    const writes = [];
+    const out = { isTTY: false, write: (chunk) => writes.push(chunk) };
+    const state = {
+      events: [], errors: [], output: '', pendingText: '', wroteText: false,
+      wroteActivity: false, lastChar: '\n', progress: null, inAuxBlock: false,
+      needsBullet: true, lastAux: '',
+    };
+
+    ax.handleEvent({ type: 'assistant_blocks', blocks: [{ type: 'tool_use', tool: 'Read' }] }, state, out);
+    ax.handleEvent({ type: 'tool_results', results: [{ content: 'ok' }] }, state, out);
+
+    assert.match(timingLines.join(''), /\[ax-timing\].*assistant_blocks tool:Read/);
+    assert.match(timingLines.join(''), /\[ax-timing\].*tool_results results:1/);
+    assert.equal(state.events.length, 2);
+    assert.equal(writes.join(''), '● Read()\n  ⎿  ok\n');
+  } finally {
+    if (previousTiming === undefined) delete process.env.AX_TIMING;
+    else process.env.AX_TIMING = previousTiming;
+    process.stderr.write = previousWrite;
+  }
+});
+
 test('ax shows credits, tier colors, spinner verbs, and clickable paths', () => {
   assert.equal(ax.formatDoneLine(7000, 3), '— Worked for 7s · 3 credits —');
   assert.equal(ax.formatDoneLine(7000, 1), '— Worked for 7s · 1 credit —');

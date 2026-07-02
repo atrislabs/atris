@@ -1920,6 +1920,19 @@ function codeFastWorkspaceNotice(result) {
 function handleEvent(event, state, output) {
   if (!event || typeof event !== 'object') return;
   state.events.push(event);
+  // AX_TIMING=1: phase scoreboard to stderr: one line per SSE event with ms
+  // since turn start and since the previous event, so latency work can see
+  // WHERE a slow turn spends its time (model TTFT vs tool exec vs loop count).
+  if (process.env.AX_TIMING === '1') {
+    const now = Date.now();
+    if (!state._t0) state._t0 = now;
+    const kind = event.type || event.status || 'event';
+    const detail = event.type === 'assistant_blocks' && Array.isArray(event.blocks)
+      ? event.blocks.map((b) => (b && b.type === 'tool_use' ? `tool:${b.tool}` : b && b.type)).join(',')
+      : event.type === 'tool_results' ? `results:${(event.results || []).length}` : '';
+    process.stderr.write(`[ax-timing] +${String(now - state._t0).padStart(6)}ms (gap ${String(now - (state._tPrev || now)).padStart(5)}ms) ${kind}${detail ? ' ' + detail : ''}\n`);
+    state._tPrev = now;
+  }
 
   if (event.type === 'system_init') {
     state.runtime = event;
