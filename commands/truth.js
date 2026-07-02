@@ -38,7 +38,8 @@ function loadMissions(cwd) {
       if (id) seen.set(id, rec);
     } catch { /* skip bad lines */ }
   }
-  return [...seen.values()].filter((m) => m.status && m.status !== 'complete' && m.status !== 'archived');
+  // stopped = killed-on-purpose = a closed loop; only genuinely open states count
+  return [...seen.values()].filter((m) => m.status && !['complete', 'archived', 'stopped'].includes(m.status));
 }
 
 function loadTaskCounts() {
