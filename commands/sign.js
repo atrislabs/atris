@@ -7,13 +7,13 @@ const path = require('path');
 // Idempotent and non-destructive: appends a marked block, removes only its own block.
 
 const MARKER = '# atris co-author';
-const TRAILER = 'Co-authored-by: Atris <4198675+atris-builder[bot]@users.noreply.github.com>';
+const TRAILER = 'Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>';
 
 const HOOK_BLOCK = `
 ${MARKER}
 if [ -d "$(git rev-parse --show-toplevel 2>/dev/null)/atris" ] && [ "$2" != "merge" ] && [ "$2" != "squash" ]; then
   if ! grep -qi "^co-authored-by: atris" "$1"; then
-    printf '\\nCo-authored-by: Atris <4198675+atris-builder[bot]@users.noreply.github.com>\\n' >> "$1"
+    printf '\\nCo-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>\\n' >> "$1"
   fi
 fi
 `;
