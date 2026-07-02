@@ -5380,6 +5380,123 @@ test('mission goal skips agent-certified mission tasks waiting for human accept'
   }
 });
 
+test('whole-budget active mission stays due while certified task waits for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
+  const dir = makeTempDir();
+  const previousDb = process.env.ATRIS_TASKS_DB;
+  let taskDb = null;
+  try {
+    const taskDbPath = path.join(dir, '.atris', 'tasks.db');
+    process.env.ATRIS_TASKS_DB = taskDbPath;
+    taskDb = require('../lib/task-db');
+    taskDb.close();
+
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskDb.open();
+    const task = taskDb.addTask(db, {
+      title: 'Mission XP: keep dogfooding for two hours',
+      status: 'review',
+      claimedBy: 'mission-lead',
+      tag: 'agent-xp',
+      workspaceRoot: taskDb.workspaceRoot(dir),
+      metadata: {
+        approval_status: 'pending',
+        agent_review_pass_count: 2,
+        agent_certified: true,
+        goal_id: 'active-budget-codex',
+        mission_id: 'active-budget-codex',
+      },
+    });
+
+    const now = new Date();
+    const createdAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+    const lastTickAt = new Date(now.getTime() - 60 * 1000).toISOString();
+    const newerAt = new Date(now.getTime() + 1000).toISOString();
+
+    appendMissionState(dir, {
+      id: 'newer-due-codex',
+      slug: 'newer-due-codex',
+      objective: 'newer due codex mission',
+      status: 'running',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      cadence: '13m',
+      created_at: newerAt,
+      updated_at: newerAt,
+    });
+    appendMissionState(dir, {
+      id: 'active-budget-codex',
+      slug: 'active-budget-codex',
+      objective: 'keep dogfooding for 2 hours',
+      status: 'ready',
+      runner: 'codex_goal',
+      verifier: 'true',
+      always_on: true,
+      cadence: '13m',
+      continue_on_complete: true,
+      task_id: task.id,
+      current_task_id: task.id,
+      task_ids: [task.id],
+      xp_task: {
+        task_id: task.id,
+        ref: 'CLI-2000',
+      },
+      native_goal_ack: {
+        runtime: 'codex',
+        status: 'active',
+        mission_id: 'active-budget-codex',
+        objective: 'keep dogfooding for 2 hours',
+        acknowledged_at: createdAt,
+      },
+      budget_contract: {
+        schema: 'atris.mission_budget_contract.v1',
+        requested_seconds: 7200,
+        budget_label: '2 hours',
+        policy: 'spend_full_budget',
+        plain_language: 'Use the whole time.',
+        stop_rule: 'Use the whole 2 hours; keep picking the next useful move until time is up, unless blocked or unsafe.',
+      },
+      max_wall_seconds: 7200,
+      last_tick_at: lastTickAt,
+      last_tick_status: 'ran',
+      last_tick_index: 1,
+      verifier_result: {
+        command: 'true',
+        status: 0,
+        signal: null,
+        passed: true,
+        stdout: '',
+        stderr: '',
+      },
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    const due = selectDueMission(dir, now);
+    assert.equal(due.id, 'active-budget-codex');
+    const selected = selectCodexGoalMission(dir, {}, now);
+    assert.equal(selected.mission.id, 'active-budget-codex');
+
+    const goal = runCli(['mission', 'goal', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(goal.status, 0, goal.stderr || goal.stdout);
+    const goalPayload = JSON.parse(goal.stdout);
+    assert.equal(goalPayload.action, 'codex_goal_candidate');
+    assert.equal(goalPayload.goal.mission_id, 'active-budget-codex');
+    assert.notEqual(goalPayload.goal.reason, 'next_move_continuation_seeded');
+
+    const run = runCli(['mission', 'run', '--due', '--no-claude', '--no-drain', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir, env: { ATRIS_TASKS_DB: taskDbPath } });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const runPayload = JSON.parse(run.stdout);
+    assert.equal(runPayload.mission.id, 'active-budget-codex');
+    assert.equal(runPayload.continuation_goal, null);
+  } finally {
+    if (taskDb) taskDb.close();
+    if (previousDb === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previousDb;
+    cleanupTempDir(dir);
+  }
+});
+
 test('mission goal seeds next-move continuation after certified mission waits for human accept', { skip: !hasNodeSqlite() && 'node:sqlite unavailable' }, () => {
   const dir = makeTempDir();
   const previousDb = process.env.ATRIS_TASKS_DB;
@@ -5919,6 +6036,7 @@ test('always-on missions become due again after cadence even after verifier pass
     ], { cwd: dir });
     assert.equal(started.status, 0, started.stderr || started.stdout);
     const mission = JSON.parse(started.stdout).mission;
+    assert.equal(mission.budget_contract, undefined);
     ackNativeCodexGoal(dir, mission);
 
     const firstRun = runCli(['mission', 'run', '--due', '--no-claude', '--max-ticks', '1', '--complete-on-pass', '--json'], { cwd: dir });

@@ -1312,6 +1312,13 @@ function missionFullBudgetRemainingSeconds(mission, nowMs = Date.now()) {
   return Math.max(0, Math.ceil((startedMs + budgetSeconds * 1000 - nowMs) / 1000));
 }
 
+function missionFullBudgetOpen(mission, now = new Date()) {
+  const nowMs = now instanceof Date
+    ? now.getTime()
+    : (typeof now === 'number' ? now : Date.parse(String(now || '')));
+  return missionFullBudgetRemainingSeconds(mission, Number.isFinite(nowMs) ? nowMs : Date.now()) > 0;
+}
+
 function missionGoalChainIntent(text) {
   const lower = String(text || '').toLowerCase().replace(/\s+/g, ' ');
   return /\b(3\s*(?:or|-)?\s*4|three\s+or\s+four|multiple|child|subgoals?|goal\s+after\s+goal|keeps?\s+goaling|mission\s+feeling\s+good|feels?\s+good|validated\s+and\s+i\s+can\s+understand)\b/.test(lower)
@@ -1800,7 +1807,7 @@ function sleepLengthBudgetIntent(requestedSeconds, text = '') {
 }
 
 function inferRunObjectiveBudgetContract(objective, args = []) {
-  const text = `${objective || ''} ${Array.isArray(args) ? args.join(' ') : ''}`;
+  const objectiveText = String(objective || '');
   const explicitHours = Number(readFlag(args, '--hours', ''));
   const explicitMinutes = Number(readFlag(args, '--minutes', ''));
   const explicitMaxWall = Number(readFlag(args, '--max-wall', ''));
@@ -1809,8 +1816,9 @@ function inferRunObjectiveBudgetContract(objective, args = []) {
     : (Number.isFinite(explicitMinutes) && explicitMinutes > 0
       ? Math.round(explicitMinutes * 60)
       : (Number.isFinite(explicitMaxWall) && explicitMaxWall > 0 ? Math.round(explicitMaxWall) : null));
-  const requestedSeconds = explicitSeconds || durationSecondsFromText(text);
-  const overnight = /\bovernight\b/i.test(text);
+  const text = explicitSeconds ? `${objectiveText} ${durationLabel(explicitSeconds)}` : objectiveText;
+  const requestedSeconds = explicitSeconds || durationSecondsFromText(objectiveText);
+  const overnight = /\bovernight\b/i.test(objectiveText);
   if (!requestedSeconds && !overnight) return null;
   const spendBudget = !hasFlag(args, '--stop-when-done')
     && (wantsFullBudget(text, args) || sleepLengthBudgetIntent(requestedSeconds, text));
@@ -2671,6 +2679,7 @@ function completeActiveContinuationForStartedMission(nextMission, root = process
 function missionCanSeedContinuation(parent) {
   if (!parent) return false;
   if (parent.status === 'complete') return true;
+  if (missionFullBudgetOpen(parent)) return false;
   return GOAL_LOOP_STATUSES.has(String(parent.status || '')) && missionTaskHumanAcceptWaiting(parent);
 }
 
@@ -4574,6 +4583,7 @@ function missionVerifierPassed(mission) {
 
 function missionDueAt(mission, now = new Date()) {
   const cadenceSeconds = parseCadenceSeconds(mission.cadence);
+  if (missionFullBudgetOpen(mission, now)) return true;
   if (!mission.last_tick_at) return true;
   if (cadenceSeconds === 0) return !(mission.always_on && missionVerifierPassed(mission));
   const lastTickAt = Date.parse(mission.last_tick_at);
@@ -4671,12 +4681,20 @@ function missionSortTime(mission) {
 function selectDueMission(root = process.cwd(), now = new Date()) {
   const candidates = listMissions(root)
     .filter((mission) => missionSelectableForLoop(mission, now))
-    .filter((mission) => !missionTaskHumanAcceptWaiting(mission))
+    .filter((mission) => !missionTaskHumanAcceptWaiting(mission) || missionFullBudgetOpen(mission, now))
     .filter((mission) => effectiveMissionVerifier(mission) || callerSessionMissionReadyForDue(mission))
-    .filter((mission) => mission.always_on || !missionVerifierPassed(mission))
+    .filter((mission) => mission.always_on || !missionVerifierPassed(mission) || missionFullBudgetOpen(mission, now))
     .filter((mission) => missionDueAt(mission, now));
 
   candidates.sort((a, b) => {
+    const aAck = codexNativeGoalAck(a) ? 1 : 0;
+    const bAck = codexNativeGoalAck(b) ? 1 : 0;
+    if (aAck !== bAck) return bAck - aAck;
+
+    const aBudgetOpen = missionFullBudgetOpen(a, now) ? 1 : 0;
+    const bBudgetOpen = missionFullBudgetOpen(b, now) ? 1 : 0;
+    if (aBudgetOpen !== bBudgetOpen) return bBudgetOpen - aBudgetOpen;
+
     const aCaller = runnerUsesCallerSession(a.runner) ? 1 : 0;
     const bCaller = runnerUsesCallerSession(b.runner) ? 1 : 0;
     if (aCaller !== bCaller) return bCaller - aCaller;
@@ -4697,7 +4715,7 @@ function callerSessionMissionReadyForDue(mission) {
 
 function missionSelectableForCodexGoal(mission, now = new Date()) {
   if (!missionIsRunnable(mission)) return false;
-  if (missionTaskHumanAcceptWaiting(mission)) return false;
+  if (missionTaskHumanAcceptWaiting(mission) && !missionFullBudgetOpen(mission, now)) return false;
   if (mission.always_on && missionVerifierPassed(mission) && !missionDueAt(mission, now)) {
     return parseCadenceSeconds(mission.cadence) > 0;
   }
@@ -4718,6 +4736,14 @@ function selectCodexGoalMission(root = process.cwd(), options = {}, now = new Da
   }
 
   candidates.sort((a, b) => {
+    const aAck = codexNativeGoalAck(a) ? 1 : 0;
+    const bAck = codexNativeGoalAck(b) ? 1 : 0;
+    if (aAck !== bAck) return bAck - aAck;
+
+    const aBudgetOpen = missionFullBudgetOpen(a, now) ? 1 : 0;
+    const bBudgetOpen = missionFullBudgetOpen(b, now) ? 1 : 0;
+    if (aBudgetOpen !== bBudgetOpen) return bBudgetOpen - aBudgetOpen;
+
     const aRank = missionGoalSelectionRank(a);
     const bRank = missionGoalSelectionRank(b);
     if (aRank !== bRank) return aRank - bRank;
