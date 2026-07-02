@@ -1632,7 +1632,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot']).join(' ').trim();
   if (!objective) {
     exitMissionError('Usage: atris mission start "<objective>" --owner <member> [--verify "..."] [--cadence manual] [--worktree]', 1, wantsJson(args));
   }
@@ -2778,9 +2778,53 @@ function inheritedWorktreeBase(cwd) {
   }
 }
 
+// Dedup gate: the same objective + owner already active anywhere in the
+// workspace family (this store or any worktree's) is reused, never cloned.
+// Born 2026-07-02: an hourly alive loop spawned six identical auto-improver
+// missions in six fresh worktrees in one day — pure token burn. --duplicate
+// is the explicit escape hatch.
+const TWIN_ACTIVE_STATUSES = new Set(['planning', 'ready', 'running']);
+
+function normalizedObjective(text) {
+  return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function findActiveTwinMission(objective, owner, root = process.cwd()) {
+  const wantObjective = normalizedObjective(objective);
+  const wantOwner = String(owner || '').trim().toLowerCase();
+  if (!wantObjective) return null;
+  const candidates = [
+    ...listMissions(root),
+    ...listWorktreeRollupMissions(root),
+  ];
+  for (const m of candidates) {
+    if (!m || !TWIN_ACTIVE_STATUSES.has(m.status)) continue;
+    if (normalizedObjective(m.objective) !== wantObjective) continue;
+    if (String(m.owner || '').trim().toLowerCase() !== wantOwner) continue;
+    return m;
+  }
+  return null;
+}
+
 function startMission(args) {
   const asJson = wantsJson(args);
   const mission = missionFromArgs(args);
+  if (!hasFlag(args, '--duplicate')) {
+    const twin = findActiveTwinMission(mission.objective, mission.owner);
+    if (twin) {
+      printJsonOrText(
+        { ok: true, action: 'mission_reused', reused: true, mission: twin, note: 'an active mission with this objective and owner already exists; resumed instead of cloning (pass --duplicate to force a second one)' },
+        [
+          `Already active: ${twin.id} (${twin.status})`,
+          `Same objective, same owner — reusing it instead of starting a clone.`,
+          `Resume: atris mission run ${twin.id}`,
+          `Really want a second one: re-run with --duplicate`,
+        ],
+        asJson,
+      );
+      return;
+    }
+  }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
   // member files all land inside the worktree — ticks run there, and the main
