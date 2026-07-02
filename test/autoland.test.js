@@ -101,7 +101,10 @@ test('digest and alarm compose in plain language', () => {
   assert.match(digest, /landed on their own \(verified twice, proof on file\)/);
   assert.match(digest, /- fixed full-duration mission budget inference/);
   assert.match(digest, /- add hourly member loop/);
-  assert.match(digest, /- 2 checks that the loop stops cleanly instead of inventing work/);
+  // Clean-stop check-offs fold into the on-ask count; results get air between
+  // them so the whole message fits a laptop screen with no scrolling.
+  assert.match(digest, /\n\n- fixed full-duration/);
+  assert.match(digest, /1 more result when you want them: atris autoland digest/);
   assert.match(digest, /you approved 1 piece yourself/);
   assert.match(digest, /waiting on you: 1 \(oldest 30h\)/);
   assert.match(digest, /in the air: 2 pieces, 1 overdue/);

@@ -82,6 +82,11 @@ The same discipline for words. Output stays sharp no matter how bloated the cont
 - **Match the register.** The operator wants the next move; a spec wants the contract; a journal wants one line. Jargon is a lever only when shared: use the reader's precise terms, define a new one once.
 - **Specific AND workable.** Vocabulary carries both: precise enough that another agent can act on it, plain enough that the operator gets it on a phone. A sentence only one of those audiences can use is half-written.
 - **Every queue item earns its surface.** Anything an operator might see (task title, mission objective, roadmap item, tick summary) carries its own why in the same sentence: what it costs to skip, or what it buys. "Agents burn tokens hand-rolling state parsers: add one shared inspect view" surfaces; "novel goal-chain demo" does not. Digests refuse raw titles that can't explain themselves.
+- **Results are capabilities, not test counts.** When work lands, the sentence states what someone can do now that they couldn't before, then what it means for them or the business. Tests are one word ("verified"); the meaning is the sentence. Copy these shapes:
+  - "One word now runs the work: `atris autopilot` picks the next mission and keeps going until you say stop. Autonomy stopped being a setup and became a feature."
+  - "Missions survive everything: one engine starts the work, another picks it up cold, a third lands it. Work is no longer tied to a chat window, a session, or a vendor."
+  - "The system reports in plain English: one daily message with what landed, what waits on you, and who should own what's next. One person can supervise many projects."
+- **Fit the screen.** An operator-facing report shows three results, air between them, and holds the rest on ask. No scrolling: reading it is one glance, and the reader asks for more if they want more.
 
 `expected`: this is how an Atris agent writes and builds. Shipping slop or rambling is a failure smell, same as drift or a stale task.
 
