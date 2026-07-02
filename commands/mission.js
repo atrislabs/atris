@@ -29,6 +29,7 @@ const {
   runsPruneLines,
   formatBytes,
 } = require('../lib/runs-prune');
+const { operatorReady } = require('./autoland');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -88,6 +89,14 @@ function exitMissionError(message, code = 1, asJson = false) {
   if (asJson) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
   else console.error(message);
   process.exit(code);
+}
+
+function warnIfSummaryNeedsOperatorWhy(summary) {
+  const text = String(summary || '').trim();
+  if (!text || operatorReady(text)) return null;
+  const warning = 'Warning: add the why in plain words to this tick summary: what changed, what it buys or costs, and no flags or identifiers.';
+  console.error(warning);
+  return warning;
 }
 
 function readPositiveIntegerFlag(args, name, fallback = null, options = {}) {
@@ -499,10 +508,72 @@ function listWorktreeRollupMissions(root = process.cwd()) {
   return rolled;
 }
 
+function missionMatchesRef(mission, ref) {
+  return mission && (mission.id === ref || mission.id.startsWith(ref) || mission.slug === ref);
+}
+
+function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
+  if (!ref) return [];
+  const baseRoot = path.resolve(root);
+  const parent = path.dirname(baseRoot);
+  let here = baseRoot;
+  try {
+    here = fs.realpathSync(baseRoot);
+  } catch { /* keep raw path */ }
+  let entries = [];
+  try {
+    entries = fs.readdirSync(parent, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const hints = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const candidateRoot = path.join(parent, entry.name);
+    let candidateReal = candidateRoot;
+    try {
+      candidateReal = fs.realpathSync(candidateRoot);
+    } catch {
+      continue;
+    }
+    if (candidateReal === here) continue;
+    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
+    const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
+    if (!mission) continue;
+    hints.push({
+      id: mission.id,
+      status: mission.status,
+      objective: mission.objective,
+      workspace_root: candidateRoot,
+      command: `cd ${shellQuote(candidateRoot)} && atris mission status ${mission.id}`,
+    });
+    if (hints.length >= limit) break;
+  }
+  return hints;
+}
+
+function exitMissingMission(ref, code = 1, asJson = false) {
+  const error = `Mission "${ref}" not found.`;
+  const hints = listSiblingWorkspaceMissionHints(ref);
+  if (asJson) {
+    const payload = { ok: false, error };
+    if (hints.length) payload.workspace_hint = hints[0];
+    if (hints.length > 1) payload.workspace_hints = hints;
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.error(error);
+    if (hints.length) {
+      console.error(`Workspace hint: mission ${hints[0].id} exists in ${hints[0].workspace_root}.`);
+      console.error(`Run: ${hints[0].command}`);
+    }
+  }
+  process.exit(code);
+}
+
 function resolveMission(ref, root = process.cwd()) {
   const missions = listMissions(root);
   if (!ref) return missions.find((mission) => !TERMINAL_STATUSES.has(mission.status)) || missions[0] || null;
-  return missions.find((mission) => mission.id === ref || mission.id.startsWith(ref) || mission.slug === ref) || null;
+  return missions.find((mission) => missionMatchesRef(mission, ref)) || null;
 }
 
 function missionMatchesStatusFilter(mission, statusFilter) {
@@ -3022,7 +3093,7 @@ function statusMission(args) {
   if (!ref && statusFilter) missions = missions.filter((mission) => missionMatchesStatusFilter(mission, statusFilter));
   if (!ref && limit) missions = missions.slice(0, limit);
   if (ref && !missions.length) {
-    exitMissionError(`Mission "${ref}" not found.`, 1, asJson);
+    exitMissingMission(ref, 1, asJson);
   }
   const missionViews = missions.map(missionStatusView);
   // Member state renders are cwd-local writes; rolled-up missions stay read-only.
@@ -5490,6 +5561,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = []) {
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Edit / run / research as needed for the lane.`,
     `- After your work, the harness runs the frozen verifier — make sure it'll pass.`,
+    `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
     `- If you can't make progress this tick, say why explicitly. Don't fake it.`,
     ``,
     `## Constraints`,
@@ -6210,10 +6282,12 @@ function tickMission(args) {
   const verifyOverride = readFlag(args, '--verify', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const summary = readFlag(args, '--summary', '');
+  const operatorSummaryWarning = warnIfSummaryNeedsOperatorWhy(summary);
   const ref = stripKnownFlags(args, ['--summary', '--verify'], ['--json', '--complete-on-pass'])[0] || '';
   let mission = resolveMission(ref);
   if (!mission) {
-    exitMissionError(ref ? `Mission "${ref}" not found.` : 'No mission found. Run: atris mission start "..."', 1, asJson);
+    if (ref) exitMissingMission(ref, 1, asJson);
+    exitMissionError('No mission found. Run: atris mission start "..."', 1, asJson);
   }
 
   // Same per-mission flock that `mission run` uses. Without it, a tick could
@@ -6355,7 +6429,7 @@ function tickMission(args) {
     const atrisGoalState = refreshAtrisGoalController(process.cwd(), { missionId: outputMission.id });
     const codexGoalState = refreshCodexGoalController(process.cwd());
     printJsonOrText(
-      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal },
+      { ok: true, action: 'mission_tick', mission: outputMission, tick: tickRecord, verifier_result: verifierResult, receipt_path: receiptPath, log_path: logPath, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, operator_summary_warning: operatorSummaryWarning },
       [
         ...missionTickResultLines(outputMission, tickIdx, receiptPath, verifierResult, summary),
         ...(continuationGoal?.mission ? [`Next goal: ${continuationGoal.mission.objective}`] : []),

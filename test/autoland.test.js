@@ -45,6 +45,10 @@ function runCli(args, cwd) {
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
   delete env.CLAUDE_CODE_SSE_PORT;
+  delete env.CODEX_SANDBOX;
+  delete env.CURSOR_AGENT;
+  delete env.DEVIN_SESSION_ID;
+  delete env.ATRIS_AGENT_PROOF_ONLY;
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',

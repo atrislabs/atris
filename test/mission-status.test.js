@@ -269,6 +269,40 @@ test('mission status rejects invalid filters before listing history', () => {
   }
 });
 
+test('mission status and tick hint when mission id lives in a sibling workspace', () => {
+  const parent = makeTempDir();
+  const wrongWorkspace = path.join(parent, 'atrisos-backend');
+  const missionWorkspace = path.join(parent, 'atris-cli');
+  try {
+    fs.mkdirSync(wrongWorkspace, { recursive: true });
+    fs.mkdirSync(missionWorkspace, { recursive: true });
+    appendMissionState(missionWorkspace, {
+      id: 'mission-golden-path',
+      slug: 'golden-path',
+      objective: 'Golden path test mission',
+      status: 'running',
+      updated_at: '2026-07-02T00:00:00.000Z',
+    });
+    const canonicalMissionWorkspace = fs.realpathSync(missionWorkspace);
+
+    const status = runCli(['mission', 'status', 'mission-golden-path', '--json'], { cwd: wrongWorkspace });
+    assert.equal(status.status, 1);
+    assert.equal(status.stderr, '');
+    const payload = JSON.parse(status.stdout);
+    assert.equal(payload.error, 'Mission "mission-golden-path" not found.');
+    assert.equal(payload.workspace_hint.workspace_root, canonicalMissionWorkspace);
+    assert.equal(payload.workspace_hint.command, `cd '${canonicalMissionWorkspace}' && atris mission status mission-golden-path`);
+
+    const tick = runCli(['mission', 'tick', 'mission-golden-path', '--summary', 'wrong workspace'], { cwd: wrongWorkspace });
+    assert.equal(tick.status, 1);
+    assert.equal(tick.stdout, '');
+    assert.match(tick.stderr, /Workspace hint: mission mission-golden-path exists in /);
+    assert.match(tick.stderr, new RegExp(`cd '${canonicalMissionWorkspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' && atris mission status mission-golden-path`));
+  } finally {
+    cleanupTempDir(parent);
+  }
+});
+
 test('mission doctor flags no-verifier, help, stale ready receipts, and blocked always-on loops', () => {
   const dir = makeTempDir();
   try {
@@ -974,6 +1008,32 @@ test('mission tick landing uses step summary when provided', () => {
     assert.doesNotMatch(ticked.stdout, /Changed: overnight self improve loop is ready for review\./);
     assert.match(ticked.stdout, /How I checked: Verifier passed: node -e "process\.exit\(0\)"/);
     assert.match(ticked.stdout, /What I tested: Verifier command passed: node -e "process\.exit\(0\)"/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('mission tick warns when summary lacks operator-ready plain why', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const mission = startMission(dir, 'operator summary warning mission');
+
+    const ticked = runCli([
+      'mission',
+      'tick',
+      mission.id,
+      '--summary',
+      'Add --inspect flag so users save time',
+      '--json',
+    ], { cwd: dir });
+
+    assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
+    assert.match(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
+    const payload = JSON.parse(ticked.stdout);
+    assert.equal(payload.action, 'mission_tick');
+    assert.equal(payload.tick.summary, 'Add --inspect flag so users save time');
+    assert.match(payload.operator_summary_warning, /what changed, what it buys or costs/);
   } finally {
     cleanupTempDir(dir);
   }
