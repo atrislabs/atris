@@ -242,6 +242,38 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 - `atris pull` and `atris push` sync cloud workspaces and journals
 - `atris live` keeps a business brain fresh by checking/fixing the workspace, pushing local state, pulling cloud state, and pushing again after local changes go quiet
 
+## Engines
+
+An engine is the intelligence that builds a mission. Every installed headless coding CLI is a swappable worker behind one contract: a bounded prompt goes in, verified proof comes out, and engines never self-certify their own work. The house default is `atris-fast` (`ax`); the roster also covers `claude`, `codex`, `cursor`, and `devin` when their CLIs are installed.
+
+Show the roster and the current default:
+
+```bash
+atris engine
+```
+
+Flip the default for this workspace (persists to `.atris/engine.json`):
+
+```bash
+atris engine cursor
+atris engine reset   # back to the house default (atris-fast)
+```
+
+Ride a different engine for one run only, without changing the default. `--engine <name>` works on `mission run`, `autopilot`, and `run`. Per-run flags and `ATRIS_RUNNER_PROFILE` always beat the saved file.
+
+```bash
+atris mission run "fix the flaky login test" --engine codex
+```
+
+### Fleet Flight
+
+`atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks — one mission per task, one worktree per engine. Builds run in parallel; arrivals land serially with rebase-before-ship, so a rebase conflict pauses that landing (never auto-resolved) and keeps its worktree instead of orphaning work. Each flight writes a receipt to `atris/runs/fleet-<stamp>.json`.
+
+```bash
+atris mission run --fleet --slots 3          # staff up to 3 engines
+atris mission run --fleet --dry-run          # preview the staffing only
+```
+
 ## Verifiable Feedback Loop
 
 Under the hood, Atris can keep score on real repo work.
