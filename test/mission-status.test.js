@@ -1024,16 +1024,16 @@ test('mission tick warns when summary lacks operator-ready plain why', () => {
       'tick',
       mission.id,
       '--summary',
-      'Refactor mission summary wording',
+      'Refactor buildTickPrompt so --summary flags parse via mission_state',
       '--json',
     ], { cwd: dir });
 
     assert.equal(ticked.status, 0, ticked.stderr || ticked.stdout);
-    assert.match(ticked.stderr, /Warning: add the why in plain words to this tick summary/);
+    assert.match(ticked.stderr, /Warning: this tick summary contains flags, ids, or code identifiers/);
     const payload = JSON.parse(ticked.stdout);
     assert.equal(payload.action, 'mission_tick');
-    assert.equal(payload.tick.summary, 'Refactor mission summary wording');
-    assert.match(payload.operator_summary_warning, /what changed, what it buys or costs/);
+    assert.equal(payload.tick.summary, 'Refactor buildTickPrompt so --summary flags parse via mission_state');
+    assert.match(payload.operator_summary_warning, /identifiers belong in the receipt body/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -1044,7 +1044,9 @@ test('mission tick accepts plain recovery summary without warning', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const mission = startMission(dir, 'operator recovery summary mission');
-    const summary = 'Users who paste a mission from the wrong folder now get a clearer place to stand, saving the first recovery step.';
+    // Deliberately contains NO why-marker words and no jargon: a strict
+    // word-list check would cry wolf on it; the jargon-only check must not.
+    const summary = 'The run picked up where it left off and finished the remaining work.';
 
     const ticked = runCli([
       'mission',
@@ -1075,7 +1077,7 @@ test('mission attach-task warns when generated task title lacks operator-ready p
     appendMissionState(dir, {
       id: 'mission-operator-title-warning',
       slug: 'operator-title-warning',
-      objective: 'Refactor mission task title',
+      objective: 'Refactor codex_goal task_spine handling for --json output',
       owner: 'validator',
       status: 'running',
       runner: 'codex_goal',
@@ -1089,10 +1091,10 @@ test('mission attach-task warns when generated task title lacks operator-ready p
 
     const attached = runCli(['mission', 'attach-task', 'mission-operator-title-warning', '--json'], { cwd: dir, env });
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
-    assert.match(attached.stderr, /Warning: add the why in plain words to this task title/);
+    assert.match(attached.stderr, /Warning: this task title contains flags, ids, or code identifiers/);
     const payload = JSON.parse(attached.stdout);
     assert.equal(payload.action, 'mission_task_spine_attached');
-    assert.match(payload.mission.xp_task.operator_title_warning, /what it buys or costs/);
+    assert.match(payload.mission.xp_task.operator_title_warning, /identifiers belong in the task body/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -2531,7 +2533,9 @@ test('mission run preflights messy shower input before writing the visible goal'
     const rawObjective = 'ok lets try atris mission run for 10 minutes while i shower: messy input should become the right mission input, visible goal, task spine, proof receipt, and next action; use the whole 10 minutes';
     const run = runCli(['mission', 'run', rawObjective, '--owner', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
-    assert.match(run.stderr, /Warning: add the why in plain words to this task title/);
+    // The shaped title carries no identifiers, so the jargon-only advisory
+    // stays silent; strictness lives at the digest surface, not the pen.
+    assert.doesNotMatch(run.stderr, /Warning: this task title contains flags/);
     const payload = JSON.parse(run.stdout);
     const preflight = payload.mission.mission_run_preflight;
 
@@ -2553,7 +2557,7 @@ test('mission run preflights messy shower input before writing the visible goal'
     assert.equal(payload.budget_contract.policy, 'spend_full_budget');
     assert.equal(payload.budget_contract.requested_seconds, 600);
     assert.equal(payload.mission.xp_task.ref, payload.codex_goal_state.goal.task_spine.task_ref);
-    assert.match(payload.mission.xp_task.operator_title_warning, /what it buys or costs/);
+    assert.equal(payload.mission.xp_task.operator_title_warning, null);
     assert.equal(payload.codex_goal_state.goal.task_spine.has_task, true);
     assert.equal(payload.codex_goal_state.goal.task_spine.current_step_command.includes('atris task current-step'), true);
     assert.equal(fs.existsSync(path.join(dir, preflight.room_receipt_path)), true);

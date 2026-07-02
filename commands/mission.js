@@ -29,7 +29,7 @@ const {
   runsPruneLines,
   formatBytes,
 } = require('../lib/runs-prune');
-const { operatorReady } = require('./autoland');
+const { operatorReady, hasAgentJargon } = require('./autoland');
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
@@ -91,18 +91,24 @@ function exitMissionError(message, code = 1, asJson = false) {
   process.exit(code);
 }
 
+// Write-time warnings judge only what a machine can truly judge: identifiers,
+// flags, and task ids. Whether a why is present is a judgment call — the tick
+// prompt demands it, the review pass judges it. A warning that cries wolf on
+// plain sentences teaches agents to ignore it (golden-path papercut). The
+// strict operatorReady bar stays at the digest surface, where under-showing
+// is cheap. Boundary pinned by the marker-free fixture in mission-status tests.
 function warnIfSummaryNeedsOperatorWhy(summary) {
   const text = String(summary || '').trim();
-  if (!text || operatorReady(text)) return null;
-  const warning = 'Warning: add the why in plain words to this tick summary: what changed, what it buys or costs, and no flags or identifiers.';
+  if (!text || !hasAgentJargon(text)) return null;
+  const warning = 'Warning: this tick summary contains flags, ids, or code identifiers. Rewrite it in words the operator can use; identifiers belong in the receipt body.';
   console.error(warning);
   return warning;
 }
 
 function warnIfTaskTitleNeedsOperatorWhy(title) {
   const text = String(title || '').trim();
-  if (!text || operatorReady(text)) return null;
-  const warning = 'Warning: add the why in plain words to this task title: what it buys or costs, who benefits, and no flags or identifiers.';
+  if (!text || !hasAgentJargon(text)) return null;
+  const warning = 'Warning: this task title contains flags, ids, or code identifiers. Rewrite it in words the operator can use; identifiers belong in the task body.';
   console.error(warning);
   return warning;
 }
